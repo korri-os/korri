@@ -1,3 +1,4 @@
+use crate::plugin_admin::{PluginRefusal as Refusal, PluginRefusalCategory as Category};
 mod graph_update;
 
 use crate::{
@@ -72,13 +73,13 @@ pub struct Host {
 struct BootChecks {
     snapshot: package::StoreSnapshot,
     /// Plugin ID -> (package it was loaded from, its report or load error).
-    reports: BTreeMap<String, (PathBuf, Result<Report, String>)>,
+    reports: BTreeMap<String, (PathBuf, Result<Report, Refusal>)>,
 }
 
 /// Read-only live/cold restore assessment. This is not another journal.
 struct RestorePlan {
-    report: Option<Result<Report, String>>,
-    authorized: Result<(), String>,
+    report: Option<Result<Report, Refusal>>,
+    authorized: Result<(), Refusal>,
     healthy: bool,
     owned: bool,
 }
@@ -127,7 +128,7 @@ impl Host {
         iptables: &Path,
         ip6tables: &Path,
         lifecycle: LifecyclePolicy,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Refusal> {
         let paths = HostPaths::production();
         let nix = package::tools(nix)?;
         let systemctl = package::tools(systemctl)?;
@@ -168,7 +169,7 @@ impl Host {
         nix: PathBuf,
         lifecycle: LifecyclePolicy,
         runtime: TestRuntime,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Refusal> {
         let state_root = root.join("state");
         let paths = HostPaths {
             roots: root.join("roots"),
@@ -201,16 +202,16 @@ impl Host {
         })
     }
 
-    pub fn inspect(&self, source: &str, package: &Path) -> Result<Report, String> {
+    pub fn inspect(&self, source: &str, package: &Path) -> Result<Report, Refusal> {
         self.graph_update_pending()?;
         package::validate_store_path(package)?;
         let download = self.paths.roots.join("download");
         storage::root_link(&download, package)?;
         package::import(&self.nix, source, package)?;
         let mut releases = false;
-        crate::dependencies::dependency_order([package.to_path_buf()], |path| {
+        crate::dependencies::dependency_order_with::<Refusal>([package.to_path_buf()], |path| {
             releases |= !package::manifest_releases(path)?.is_empty();
-            package::manifest_requires(path)
+            package::manifest_requires(path).map_err(Refusal::from)
         })?;
         if releases {
             self.state.cleanup_staging()?;
@@ -236,7 +237,7 @@ impl Host {
         source: &str,
         id: &str,
         revision: &str,
-    ) -> Result<Report, String> {
+    ) -> Result<Report, Refusal> {
         self.graph_update_pending()?;
         validate_id(id)?;
         let batch = crate::release::batch_url(source, revision)?;
@@ -249,7 +250,8 @@ impl Host {
             return Err(format!(
                 "publisher {namespace} is bound to cache {}",
                 binding.cache_url
-            ));
+            )
+            .into());
         }
         let paths = crate::release::fetch_paths(
             &package::tools(curl)?,
@@ -259,7 +261,9 @@ impl Host {
             None,
         )?;
         let selected = crate::release::select_output(&paths, id, |path| {
-            self.inspect(source, path).map(|report| report.id)
+            self.inspect(source, path)
+                .map(|report| report.id)
+                .map_err(|error| error.to_string())
         })?;
         // Each candidate replaces the temporary download root. Reinspect the
         // selected output to retain its root, even if GC ran during the scan.
@@ -271,7 +275,7 @@ impl Host {
     }
 
     /// Every committed selection receipt, read under the host lock.
-    pub fn installed(&self) -> Result<Vec<Receipt>, String> {
+    pub fn installed(&self) -> Result<Vec<Receipt>, Refusal> {
         self.graph_update_pending()?;
         self.receipts()
     }
@@ -281,48 +285,50 @@ impl Host {
         self.publishers.contains_key(namespace)
     }
 
-    pub fn sources(&self) -> Result<Vec<SourceUrl>, String> {
-        source_store::list_sources(&self.state)
+    pub fn sources(&self) -> Result<Vec<SourceUrl>, Refusal> {
+        source_store::list_sources(&self.state).map_err(Refusal::from)
     }
 
     pub fn add_source(
         &self,
         config: &Configuration,
         source: &SourceUrl,
-    ) -> Result<source_store::AddOutcome, String> {
+    ) -> Result<source_store::AddOutcome, Refusal> {
         if config.official.as_ref() == Some(source) {
             return Ok(source_store::AddOutcome::AlreadyPresent);
         }
-        repository::fetch_catalog(&config.curl, source, config.ca_bundle.as_deref())?;
-        source_store::add(&self.state, source)
+        repository::fetch_catalog(&config.curl, source, config.ca_bundle.as_deref())
+            .map_err(Refusal::from)?;
+        source_store::add(&self.state, source).map_err(Refusal::from)
     }
 
     pub fn remove_source(
         &self,
         config: &Configuration,
         source: &SourceUrl,
-    ) -> Result<source_store::RemoveOutcome, String> {
+    ) -> Result<source_store::RemoveOutcome, Refusal> {
         if config.official.as_ref() == Some(source) {
             return Err("official source is managed by trusted host configuration".into());
         }
-        source_store::remove(&self.state, source)
+        source_store::remove(&self.state, source).map_err(Refusal::from)
     }
 
     pub fn catalog(
         &self,
         config: &Configuration,
         source: &SourceUrl,
-    ) -> Result<crate::catalog::Catalog, String> {
+    ) -> Result<crate::catalog::Catalog, Refusal> {
         if config.official.as_ref() != Some(source) && !self.sources()?.contains(source) {
-            return Err(format!("repository not configured: {source}"));
+            return Err(format!("repository not configured: {source}").into());
         }
         repository::fetch_catalog(&config.curl, source, config.ca_bundle.as_deref())
+            .map_err(Refusal::from)
     }
 
-    pub fn installed_source(&self, id: &str) -> Result<SourceUrl, String> {
+    pub fn installed_source(&self, id: &str) -> Result<SourceUrl, Refusal> {
         let receipt = self.status(id)?.ok_or("plugin is not installed")?;
         match receipt.provenance {
-            Provenance::Repository { source_url, .. } => SourceUrl::parse(&source_url),
+            Provenance::Repository { source_url, .. } => SourceUrl::parse(&source_url).map_err(Refusal::from),
             Provenance::RawCache { .. } | Provenance::Sideload { .. } => Err("plugin was installed from a raw cache; inspect and switch to a repository explicitly".into()),
         }
     }
@@ -333,7 +339,7 @@ impl Host {
         source: &SourceUrl,
         id: &str,
         release: &str,
-    ) -> Result<Report, String> {
+    ) -> Result<Report, Refusal> {
         self.graph_update_pending()?;
         validate_id(id)?;
         crate::catalog::validate_release_version(release)?;
@@ -368,7 +374,7 @@ impl Host {
         config: &Configuration,
         source: &SourceUrl,
         record: &crate::catalog::CatalogRecord,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<PathBuf, Refusal> {
         let stage = self.state.staging()?;
         let archive_path = stage.path().join("archive.tar");
         repository::download(
@@ -384,7 +390,7 @@ impl Host {
         self.import_archive_file(&archive_path, Some((source, record)))
     }
 
-    pub fn inspect_archive(&self, config: &Configuration, path: &Path) -> Result<Report, String> {
+    pub fn inspect_archive(&self, config: &Configuration, path: &Path) -> Result<Report, Refusal> {
         self.graph_update_pending()?;
         self.candidate_roots.borrow_mut().clear();
         self.candidates.borrow_mut().clear();
@@ -399,7 +405,7 @@ impl Host {
         &self,
         path: &Path,
         record: Option<(&SourceUrl, &crate::catalog::CatalogRecord)>,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<PathBuf, Refusal> {
         use sha2::{Digest, Sha256};
         use std::io::Read;
         let stage = self.state.staging()?;
@@ -464,8 +470,11 @@ impl Host {
             .or_else(|| pins.get(&namespace).map(|p| p.public_key.as_str()));
         let signed =
             package::archive_signature(&self.nix, &package, &cache_uri, key).map_err(|e| {
-                if record.is_none() || e == "signed archive requires a trusted publisher key" {
-                    format!("publisher {namespace} is not trusted on this device")
+                if record.is_none() || e.category == Category::PublisherNotTrusted {
+                    Refusal::new(
+                        Category::PublisherNotTrusted,
+                        format!("publisher {namespace} is not trusted on this device"),
+                    )
                 } else {
                     e
                 }
@@ -514,7 +523,7 @@ impl Host {
 
     /// Nix owns the indirect root registry. Korri retains only the existing
     /// private staging TempDir for this request; no candidate lock is persisted.
-    fn pin_candidate(&self, package: &Path) -> Result<(), String> {
+    fn pin_candidate(&self, package: &Path) -> Result<(), Refusal> {
         let stage = self.state.staging()?;
         let root = stage.path().join("download");
         let nix_store = package::tools(
@@ -551,27 +560,25 @@ impl Host {
         Ok(())
     }
 
-    fn pins(&self) -> Result<crate::trust::Pins, String> {
+    fn pins(&self) -> Result<crate::trust::Pins, Refusal> {
         let pins: crate::trust::Pins =
             storage::read_json(&self.state.root().join("publishers.json"))?.unwrap_or_default();
         for (namespace, pin) in &pins {
             validate_id(&format!("{namespace}:pin"))?;
             package::public_key_bytes(&pin.public_key)?;
             if self.publishers.contains_key(namespace) {
-                return Err(format!(
-                    "config-bound publisher {namespace} cannot have a pin"
-                ));
+                return Err(format!("config-bound publisher {namespace} cannot have a pin").into());
             }
         }
         Ok(pins)
     }
 
-    pub fn trust_publisher(&self, namespace: &str, public_key: &str) -> Result<(), String> {
+    pub fn trust_publisher(&self, namespace: &str, public_key: &str) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         validate_id(&format!("{namespace}:pin"))?;
         package::public_key_bytes(public_key)?;
         if self.publishers.contains_key(namespace) {
-            return Err(format!("publisher {namespace} is config-bound"));
+            return Err(format!("publisher {namespace} is config-bound").into());
         }
         let unsigned: Vec<_> = self
             .receipts()?
@@ -587,9 +594,12 @@ impl Host {
             .map(|r| r.id)
             .collect();
         if !unsigned.is_empty() {
-            return Err(format!(
-                "remove the unsigned {namespace} plugins first: {}",
-                unsigned.join(", ")
+            return Err(Refusal::new(
+                Category::NamespaceTaken,
+                format!(
+                    "remove the unsigned {namespace} plugins first: {}",
+                    unsigned.join(", ")
+                ),
             ));
         }
         let mut pins = self.pins()?;
@@ -605,11 +615,11 @@ impl Host {
         Ok(())
     }
 
-    pub fn revoke_publisher(&self, namespace: &str) -> Result<(), String> {
+    pub fn revoke_publisher(&self, namespace: &str) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         validate_id(&format!("{namespace}:pin"))?;
         if self.publishers.contains_key(namespace) {
-            return Err(format!("publisher {namespace} is config-bound"));
+            return Err(format!("publisher {namespace} is config-bound").into());
         }
         let mut pins = self.pins()?;
         pins.remove(namespace);
@@ -619,7 +629,7 @@ impl Host {
         self.invalidate_registry()
     }
 
-    pub fn publishers(&self) -> Result<crate::plugin_admin::PluginPublishers, String> {
+    pub fn publishers(&self) -> Result<crate::plugin_admin::PluginPublishers, Refusal> {
         use crate::plugin_admin::*;
         let receipts = self.installed()?;
         let mut entries = Vec::new();
@@ -660,7 +670,7 @@ impl Host {
     pub fn catalog_publisher(
         &self,
         namespace: &str,
-    ) -> Result<crate::plugin_admin::PluginPublisher, String> {
+    ) -> Result<crate::plugin_admin::PluginPublisher, Refusal> {
         use crate::plugin_admin::PluginPublisherState::*;
         crate::trust::publisher(
             namespace,
@@ -680,7 +690,7 @@ impl Host {
         config: &Configuration,
         source: &SourceUrl,
         record: &crate::catalog::CatalogRecord,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<PathBuf, Refusal> {
         let package = PathBuf::from(&record.store_path);
         let existing = self
             .candidates
@@ -692,7 +702,7 @@ impl Host {
                 if source_url == source.as_str() && plugin_id == &record.plugin_id
                     && release_version == &record.release_version && archive_sha256 == &record.archive_sha256)
             {
-                return Err(format!("conflicting repository requirements for {}: exact build has different source or release provenance", record.plugin_id));
+                return Err(Refusal::new(Category::RequirementConflict, format!("conflicting repository requirements for {}: exact build has different source or release provenance", record.plugin_id)));
             }
         } else {
             self.fetch_record(config, source, record)?;
@@ -700,9 +710,9 @@ impl Host {
         Ok(package)
     }
 
-    fn resolve_candidates(&self, config: &Configuration, root: &Path) -> Result<(), String> {
+    fn resolve_candidates(&self, config: &Configuration, root: &Path) -> Result<(), Refusal> {
         let receipts = self.receipts()?;
-        let repository_of = |path: &Path| -> Result<Option<SourceUrl>, String> {
+        let repository_of = |path: &Path| -> Result<Option<SourceUrl>, Refusal> {
             let origin = self
                 .candidates
                 .borrow()
@@ -715,14 +725,14 @@ impl Host {
                         .map(|receipt| receipt.provenance.clone())
                 });
             match origin {
-                Some(Provenance::Repository { source_url, .. }) => {
-                    SourceUrl::parse(&source_url).map(Some)
-                }
+                Some(Provenance::Repository { source_url, .. }) => SourceUrl::parse(&source_url)
+                    .map_err(Refusal::from)
+                    .map(Some),
                 _ => Ok(None),
             }
         };
         let mut repositories = BTreeMap::from([(root.to_path_buf(), repository_of(root)?)]);
-        crate::dependencies::dependency_order([root.to_path_buf()], |path| {
+        crate::dependencies::dependency_order_with::<Refusal>([root.to_path_buf()], |path| {
             let source = repository_of(path)?.or_else(|| repositories.get(path).cloned().flatten());
             let mut requires = package::manifest_requires(path)?;
             for exact in &requires {
@@ -730,7 +740,7 @@ impl Host {
                 if !self.publishers.contains_key(&namespace) {
                     let id = package::load_declaration(exact)?.id();
                     let Some(source) = &source else {
-                        return Err(format!("{id} is not in a repository; publish it there or use a release requirement."));
+                        return Err(format!("{id} is not in a repository; publish it there or use a release requirement.").into());
                     };
                     // Existing selections keep their independent provenance.
                     // A fresh unbound exact build needs its own release record;
@@ -784,18 +794,18 @@ impl Host {
         Ok(())
     }
 
-    fn locked_releases(path: &Path, receipts: &[Receipt]) -> Result<Vec<PathBuf>, String> {
+    fn locked_releases(path: &Path, receipts: &[Receipt]) -> Result<Vec<PathBuf>, Refusal> {
         package::manifest_releases(path)?.iter().map(|spec| {
             let source = SourceUrl::parse(&spec.repository)?;
             let receipt = receipts.iter().find(|r| r.id == spec.id && !matches!(r.desired, Desired::Removed { .. })).ok_or_else(|| format!("required plugin {} is not installed", spec.id))?;
             if !matches!(&receipt.provenance, Provenance::Repository { source_url, release_version, .. } if source_url == source.as_str() && spec.release.as_ref().is_none_or(|label| label == release_version)) {
-                return Err(format!("required plugin {} has a mismatched repository or release", spec.id));
+                return Err(format!("required plugin {} has a mismatched repository or release", spec.id).into());
             }
             Ok(receipt.package.clone())
         }).collect()
     }
 
-    fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, String> {
+    fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, Refusal> {
         let mut report = self.report_for_in(
             selected,
             provenance,
@@ -819,7 +829,7 @@ impl Host {
         selected: &Path,
         provenance: Provenance,
         snapshot: Option<&package::StoreSnapshot>,
-    ) -> Result<Report, String> {
+    ) -> Result<Report, Refusal> {
         self.report_for_in(selected, provenance, snapshot, None)
     }
 
@@ -829,7 +839,7 @@ impl Host {
         provenance: Provenance,
         snapshot: Option<&package::StoreSnapshot>,
         contents: Option<package::StoreContents>,
-    ) -> Result<Report, String> {
+    ) -> Result<Report, Refusal> {
         #[cfg(test)]
         if let Some(runtime) = self.test_runtime.as_ref().filter(|r| !r.real_packages) {
             return runtime
@@ -837,7 +847,9 @@ impl Host {
                 .borrow()
                 .get(selected)
                 .cloned()
-                .ok_or_else(|| format!("missing test report for {}", selected.display()));
+                .ok_or_else(|| {
+                    Refusal::from(format!("missing test report for {}", selected.display()))
+                });
         }
         if let Some(contents) = contents {
             self.verify_publisher_in(snapshot, selected, &provenance, contents)?;
@@ -899,7 +911,7 @@ impl Host {
     fn report_publisher(
         &self,
         report: &Report,
-    ) -> Result<crate::plugin_admin::PluginPublisher, String> {
+    ) -> Result<crate::plugin_admin::PluginPublisher, Refusal> {
         if let Some((_, publisher)) = self.candidates.borrow().get(&report.package) {
             return Ok(publisher.clone());
         }
@@ -929,7 +941,7 @@ impl Host {
         report: &Report,
         checks: Option<&BootChecks>,
         contents: package::StoreContents,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         for report in report
             .brings
             .iter()
@@ -955,15 +967,14 @@ impl Host {
         selected: &Path,
         provenance: &Provenance,
         contents: package::StoreContents,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         #[cfg(test)]
         if let Some(runtime) = &self.test_runtime {
             let _ = (provenance, contents);
             if runtime.revoked.borrow().contains(selected) {
-                return Err(format!(
-                    "injected publisher revocation for {}",
-                    selected.display()
-                ));
+                return Err(
+                    format!("injected publisher revocation for {}", selected.display()).into(),
+                );
             }
             return Ok(());
         }
@@ -990,7 +1001,8 @@ impl Host {
             );
             if !signed {
                 crate::trust::inspect(&namespace, None, &self.publishers, &pins)?;
-                return package::verify_unsigned(&self.nix, selected, contents);
+                return package::verify_unsigned(&self.nix, selected, contents)
+                    .map_err(Refusal::from);
             }
             let candidate = self.candidates.borrow();
             let key = candidate
@@ -1002,8 +1014,14 @@ impl Host {
                         .map(|b| b.public_key.as_str())
                 })
                 .or_else(|| pins.get(&namespace).map(|p| p.public_key.as_str()))
-                .ok_or_else(|| format!("publisher {namespace} is not trusted on this device"))?;
-            return package::verify_local_signature(&self.nix, snapshot, selected, key, contents);
+                .ok_or_else(|| {
+                    Refusal::new(
+                        Category::PublisherNotTrusted,
+                        format!("publisher {namespace} is not trusted on this device"),
+                    )
+                })?;
+            return package::verify_local_signature(&self.nix, snapshot, selected, key, contents)
+                .map_err(Refusal::from);
         }
         package::verify_publisher_in(
             &self.nix,
@@ -1019,7 +1037,7 @@ impl Host {
         Ok(())
     }
 
-    pub fn release_download(&self) -> Result<(), String> {
+    pub fn release_download(&self) -> Result<(), Refusal> {
         self.candidate_roots.borrow_mut().clear();
         for name in ["download", "download.new"] {
             storage::remove(&self.paths.roots.join(name))?;
@@ -1034,8 +1052,8 @@ impl Host {
         &self,
         required: Vec<Report>,
         optional: Vec<Report>,
-    ) -> Result<ReleaseUpdateReview, String> {
-        crate::lifecycle::review_release_update(required, optional)
+    ) -> Result<ReleaseUpdateReview, Refusal> {
+        crate::lifecycle::review_release_update(required, optional).map_err(Refusal::from)
     }
 
     /// Install every newly required plugin before the caller selects its new
@@ -1048,9 +1066,9 @@ impl Host {
         review: ReleaseUpdateReview,
         approvals: &BTreeMap<String, String>,
         select_release: F,
-    ) -> Result<(), String>
+    ) -> Result<(), Refusal>
     where
-        F: FnOnce() -> Result<(), String>,
+        F: FnOnce() -> Result<(), Refusal>,
     {
         self.graph_update_pending()?;
         let (roots, _optional_ids) = review.into_parts();
@@ -1065,7 +1083,8 @@ impl Host {
                 return Err(format!(
                     "approval for required plugin {} does not match its disclosed permissions",
                     report.id
-                ));
+                )
+                .into());
             }
             let checked = self.load(&report.package, report.provenance.clone())?;
             if checked.approval != report.approval {
@@ -1082,7 +1101,8 @@ impl Host {
                             return Err(format!(
                                 "conflicting exact selection for required plugin {}",
                                 dep.report.id
-                            ));
+                            )
+                            .into());
                         }
                         self.approved(&receipt)?;
                     }
@@ -1094,7 +1114,8 @@ impl Host {
                             return Err(format!(
                                 "conflicting exact selection for required plugin {}",
                                 dep.report.id
-                            ));
+                            )
+                            .into());
                         }
                     } else {
                         required.push(dep.report.clone());
@@ -1109,7 +1130,8 @@ impl Host {
                     return Err(format!(
                         "conflicting exact selection for required plugin {}",
                         report.id
-                    ));
+                    )
+                    .into());
                 }
             } else {
                 required.push(report);
@@ -1120,7 +1142,7 @@ impl Host {
             report.provenance.validate(&report.id)?;
             match self.receipt(&report.id)? {
                 Some(receipt) if matches!(receipt.desired, Desired::Removed { .. }) => {
-                    return Err(format!("plugin {} removal is unfinished", report.id));
+                    return Err(format!("plugin {} removal is unfinished", report.id).into());
                 }
                 Some(receipt) => {
                     self.approved(&receipt)?;
@@ -1134,10 +1156,11 @@ impl Host {
         // or second transaction format.
         for report in &required {
             if additions.contains(&report.id) {
-                if let Err(error) = self
-                    .prepare(&report.id)
-                    .and_then(|_| self.selection(&report.id).stage(&report.package))
-                {
+                if let Err(error) = self.prepare(&report.id).and_then(|_| {
+                    self.selection(&report.id)
+                        .stage(&report.package)
+                        .map_err(Refusal::from)
+                }) {
                     return self.rollback_release_additions(
                         &additions,
                         format!("required plugin staging failed: {error}"),
@@ -1184,20 +1207,20 @@ impl Host {
         &self,
         additions: &[String],
         operation_error: String,
-    ) -> Result<(), String> {
-        let mut rollback_errors = Vec::new();
+    ) -> Result<(), Refusal> {
+        let mut rollback_errors: Vec<String> = Vec::new();
         if let Err(error) = self.release_download() {
-            rollback_errors.push(error);
+            rollback_errors.push(error.to_string());
         }
         if let Err(error) = self.invalidate_registry() {
-            rollback_errors.push(error);
+            rollback_errors.push(error.to_string());
         }
         for id in additions.iter().rev() {
             let cleanup = match self.receipt(id) {
                 Ok(Some(_)) => self.deactivate(id, Desired::Removed { purge: false }),
                 Ok(None) => self
                     .units_stop(id, false)
-                    .and_then(|_| self.selection(id).remove()),
+                    .and_then(|_| self.selection(id).remove().map_err(Refusal::from)),
                 Err(error) => Err(error),
             };
             if let Err(error) = cleanup {
@@ -1205,15 +1228,16 @@ impl Host {
             }
         }
         if let Err(error) = self.publish_registry() {
-            rollback_errors.push(error);
+            rollback_errors.push(error.to_string());
         }
         if rollback_errors.is_empty() {
-            Err(operation_error)
+            Err(operation_error.into())
         } else {
             Err(format!(
                 "{operation_error}; required-plugin rollback failed: {}",
                 rollback_errors.join("; ")
-            ))
+            )
+            .into())
         }
     }
 
@@ -1223,7 +1247,7 @@ impl Host {
     /// That is the existing update intent and keeps the desired state. Any
     /// other selection for an installed plugin needs `repository update` or
     /// `repository switch`, which the socket does not offer.
-    pub fn install_reviewed(&self, report: Report, approval: &str) -> Result<(), String> {
+    pub fn install_reviewed(&self, report: Report, approval: &str) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         validate_id(&report.id)?;
         let id = report.id.clone();
@@ -1241,7 +1265,7 @@ impl Host {
         report: Report,
         approval: &str,
         intent: SelectionIntent<'_>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         if self.review_approval(&report)? != approval {
             return Err(
@@ -1298,7 +1322,10 @@ impl Host {
                         if !matches!(intent, SelectionIntent::Update { .. })
                             || matches!(receipt.desired, Desired::Removed { .. })
                         {
-                            return Err(self.requirement_conflict(&checked, dep, &receipt)?);
+                            return Err(Refusal::new(
+                                Category::RequirementConflict,
+                                self.requirement_conflict(&checked, dep, &receipt)?,
+                            ));
                         }
                         replacements
                             .insert(dep.id.clone(), matches!(receipt.desired, Desired::Enabled));
@@ -1324,11 +1351,14 @@ impl Host {
                     .unwrap()
                     .report;
                 if matches!(target.provenance, Provenance::Repository { .. }) {
-                    return Err(self.requirement_conflict(
-                        &checked,
-                        target,
-                        &self.receipt(id)?.ok_or("dependency missing")?,
-                    )?);
+                    return Err(Refusal::new(
+                        Category::RequirementConflict,
+                        self.requirement_conflict(
+                            &checked,
+                            target,
+                            &self.receipt(id)?.ok_or("dependency missing")?,
+                        )?,
+                    ));
                 }
                 return Err(error);
             }
@@ -1363,7 +1393,7 @@ impl Host {
                     return Err(format!(
                         "cannot replace required plugin {} again; restore the committed root's exact dependency graph for {} first",
                         target.id, committed.id
-                    ));
+                    ).into());
                 }
             }
         }
@@ -1410,7 +1440,7 @@ impl Host {
                     self.deactivate(id, Desired::Removed { purge: false })
                 } else {
                     self.units_stop(id, false)
-                        .and_then(|_| self.selection(id).remove())
+                        .and_then(|_| self.selection(id).remove().map_err(Refusal::from))
                 };
                 if let Err(cleanup) = cleanup {
                     cleanup_errors.push(format!("{id}: {cleanup}"));
@@ -1423,7 +1453,8 @@ impl Host {
                 } else {
                     format!("; dependency cleanup failed: {}", cleanup_errors.join("; "))
                 }
-            ));
+            )
+            .into());
         }
         self.release_download()
     }
@@ -1433,7 +1464,7 @@ impl Host {
         root: &Report,
         dep: &Report,
         locked: &Receipt,
-    ) -> Result<String, String> {
+    ) -> Result<String, Refusal> {
         if !matches!(dep.provenance, Provenance::Repository { .. }) {
             return Ok(format!(
                 "conflicting exact selection for required plugin {}",
@@ -1469,12 +1500,12 @@ impl Host {
         ))
     }
 
-    pub fn review_approval(&self, report: &Report) -> Result<String, String> {
+    pub fn review_approval(&self, report: &Report) -> Result<String, Refusal> {
         #[cfg(test)]
         if self.test_runtime.as_ref().is_some_and(|r| !r.real_packages) {
             return Ok(report.approval.clone());
         }
-        package::review_approval(report)
+        package::review_approval(report).map_err(Refusal::from)
     }
 
     fn install_one(
@@ -1482,7 +1513,7 @@ impl Host {
         report: Report,
         approval: &str,
         intent: SelectionIntent<'_>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         if report.approval != approval {
             return Err(
                 "approval does not match this package and its execution policy; inspect it first"
@@ -1552,7 +1583,7 @@ impl Host {
 
     /// Swap the two exact approved selections. No inspection, repository
     /// lookup, import, or dependency substitution is part of rollback.
-    pub fn rollback(&self, id: &str) -> Result<(), String> {
+    pub fn rollback(&self, id: &str) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         validate_id(id)?;
         self.prepare(id)?;
@@ -1575,7 +1606,7 @@ impl Host {
         self.apply(candidate)
     }
 
-    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
+    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         validate_id(id)?;
         self.prepare(id)?;
@@ -1590,7 +1621,7 @@ impl Host {
             let report = self.approved(&receipt)?;
             self.verify_report(&report, None, package::StoreContents::Rehash)?;
             self.check_dependencies(&report, false, None)?;
-            Ok::<_, String>(report)
+            Ok::<_, Refusal>(report)
         })();
         let report = match preflight {
             Ok(report) => report,
@@ -1613,7 +1644,7 @@ impl Host {
         self.apply(receipt)
     }
 
-    fn activate_dependencies(&self, report: &Report) -> Result<(), String> {
+    fn activate_dependencies(&self, report: &Report) -> Result<(), Refusal> {
         // brings is a checked dependency-first flat closure. All approvals and
         // exact selections are checked before the first activation.
         self.check_dependencies(report, false, None)?;
@@ -1644,7 +1675,7 @@ impl Host {
         report: &Report,
         enabled: bool,
         checks: Option<&BootChecks>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         #[cfg(test)]
         let real = self.test_runtime.as_ref().is_none_or(|r| r.real_packages);
         #[cfg(not(test))]
@@ -1678,12 +1709,13 @@ impl Host {
                 return Err(format!(
                     "required plugin {} has a stale or unapproved exact selection",
                     dep.id
-                ));
+                )
+                .into());
             }
             self.approved_in(&receipt, checks)?;
             if enabled {
                 if !matches!(receipt.desired, Desired::Enabled) {
-                    return Err(format!("{} requires enabled plugin {}", report.id, dep.id));
+                    return Err(format!("{} requires enabled plugin {}", report.id, dep.id).into());
                 }
                 self.settled(&receipt)?;
             }
@@ -1691,11 +1723,11 @@ impl Host {
         Ok(())
     }
 
-    fn check_required_by_enabled(&self, id: &str) -> Result<(), String> {
+    fn check_required_by_enabled(&self, id: &str) -> Result<(), Refusal> {
         self.check_required_by(id, true)
     }
 
-    fn check_required_by(&self, id: &str, active_only: bool) -> Result<(), String> {
+    fn check_required_by(&self, id: &str, active_only: bool) -> Result<(), Refusal> {
         self.check_required_by_except(id, active_only, &BTreeSet::new())
     }
 
@@ -1704,7 +1736,7 @@ impl Host {
         id: &str,
         active_only: bool,
         updating: &BTreeSet<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         let Some(selected) = self.receipt(id)? else {
             return Ok(());
         };
@@ -1721,75 +1753,79 @@ impl Host {
             {
                 continue;
             }
-            let runtime =
-                crate::dependencies::dependency_order([receipt.package.clone()], |path| {
+            let runtime = crate::dependencies::dependency_order_with::<Refusal>(
+                [receipt.package.clone()],
+                |path| {
                     if *path == receipt.package {
                         self.runtime_requires(&receipt)
                     } else {
                         self.selection_requires(path)
                     }
-                })?;
+                },
+            )?;
             let report = self.report_for(&receipt.package, receipt.provenance.clone(), None)?;
             if runtime.contains(&selected.package)
                 || report.brings.iter().any(|dep| dep.report.id == id)
             {
                 return Err(if matches!(receipt.desired, Desired::Enabled) {
-                    format!("plugin {id} is actively required by {}", receipt.id)
+                    format!("plugin {id} is actively required by {}", receipt.id).into()
                 } else if active_only {
                     format!(
                         "plugin {id} is actively required by {}; dependent cleanup is unfinished",
                         receipt.id
                     )
+                    .into()
                 } else {
-                    format!("plugin {id} is required by installed plugin {}; remove or update that dependent first", receipt.id)
+                    format!("plugin {id} is required by installed plugin {}; remove or update that dependent first", receipt.id).into()
                 });
             }
         }
         Ok(())
     }
 
-    fn units_owned(&self, id: &str) -> Result<bool, String> {
+    fn units_owned(&self, id: &str) -> Result<bool, Refusal> {
         #[cfg(test)]
         if let Some(runtime) = &self.test_runtime {
             return Ok(runtime.owned.borrow().contains(id));
         }
-        self.units.has_owned_units(id)
+        self.units.has_owned_units(id).map_err(Refusal::from)
     }
 
-    fn cleanup_unfinished(&self, receipt: &Receipt) -> Result<bool, String> {
+    fn cleanup_unfinished(&self, receipt: &Receipt) -> Result<bool, Refusal> {
         if matches!(receipt.desired, Desired::Enabled) || self.units_owned(&receipt.id)? {
             return Ok(true);
         }
         match fs::symlink_metadata(self.root(&receipt.id, "pending")) {
             Ok(_) => Ok(true),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(error.to_string()),
+            Err(error) => Err(error.to_string().into()),
         }
     }
 
-    fn journal_cleanup(&self, receipt: &Receipt) -> Result<(), String> {
+    fn journal_cleanup(&self, receipt: &Receipt) -> Result<(), Refusal> {
         match fs::symlink_metadata(self.root(&receipt.id, "pending")) {
             Ok(_) => Ok(()), // Keep an interrupted candidate pinned through cleanup.
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                self.selection(&receipt.id).stage(&receipt.package)
-            }
-            Err(error) => Err(error.to_string()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => self
+                .selection(&receipt.id)
+                .stage(&receipt.package)
+                .map_err(Refusal::from),
+            Err(error) => Err(error.to_string().into()),
         }
     }
 
-    fn runtime_requires(&self, receipt: &Receipt) -> Result<Vec<PathBuf>, String> {
+    fn runtime_requires(&self, receipt: &Receipt) -> Result<Vec<PathBuf>, Refusal> {
         let mut requires = self.selection_requires(&receipt.package)?;
         match fs::read_link(self.root(&receipt.id, "pending")) {
             Ok(candidate) => requires.extend(self.selection_requires(&candidate)?),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
+            Err(error) => return Err(error.to_string().into()),
         }
         requires.sort();
         requires.dedup();
         Ok(requires)
     }
 
-    fn selection_requires(&self, path: &Path) -> Result<Vec<PathBuf>, String> {
+    fn selection_requires(&self, path: &Path) -> Result<Vec<PathBuf>, Refusal> {
         package::validate_store_path(path)?;
         #[cfg(test)]
         if let Some(runtime) = self.test_runtime.as_ref().filter(|r| !r.real_packages) {
@@ -1798,7 +1834,12 @@ impl Host {
                 .borrow()
                 .get(path)
                 .map(|r| r.requires.clone())
-                .ok_or_else(|| format!("cannot discover required plugins for {}", path.display()));
+                .ok_or_else(|| {
+                    Refusal::from(format!(
+                        "cannot discover required plugins for {}",
+                        path.display()
+                    ))
+                });
         }
         let mut paths = package::manifest_requires(path)?;
         paths.extend(Self::locked_releases(path, &self.receipts()?)?);
@@ -1812,7 +1853,7 @@ impl Host {
         &self,
         id: &str,
         quiesced: &std::collections::BTreeSet<PathBuf>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         let Some(selected) = self.receipt(id)? else {
             return Ok(());
         };
@@ -1823,24 +1864,28 @@ impl Host {
             {
                 continue;
             }
-            let order = crate::dependencies::dependency_order([receipt.package.clone()], |path| {
-                if *path == receipt.package {
-                    self.runtime_requires(&receipt)
-                } else {
-                    self.selection_requires(path)
-                }
-            })?;
+            let order = crate::dependencies::dependency_order_with::<Refusal>(
+                [receipt.package.clone()],
+                |path| {
+                    if *path == receipt.package {
+                        self.runtime_requires(&receipt)
+                    } else {
+                        self.selection_requires(path)
+                    }
+                },
+            )?;
             if order.contains(&selected.package) {
                 return Err(format!(
                     "plugin {id} is actively required by {}; dependent cleanup is unfinished",
                     receipt.id
-                ));
+                )
+                .into());
             }
         }
         Ok(())
     }
 
-    fn stop_enabled_dependents(&self, package: &Path) -> Result<(), String> {
+    fn stop_enabled_dependents(&self, package: &Path) -> Result<(), Refusal> {
         // Discovery/size/cycle refusal must not leave a stale projection.
         self.invalidate_registry()?;
         let mut affected = BTreeMap::new();
@@ -1848,24 +1893,30 @@ impl Host {
             if !self.cleanup_unfinished(&receipt)? || receipt.package == package {
                 continue;
             }
-            let order = crate::dependencies::dependency_order([receipt.package.clone()], |path| {
-                if *path == receipt.package {
-                    self.runtime_requires(&receipt)
-                } else {
-                    self.selection_requires(path)
-                }
-            })?;
+            let order = crate::dependencies::dependency_order_with::<Refusal>(
+                [receipt.package.clone()],
+                |path| {
+                    if *path == receipt.package {
+                        self.runtime_requires(&receipt)
+                    } else {
+                        self.selection_requires(path)
+                    }
+                },
+            )?;
             if order.contains(&package.to_path_buf()) {
                 let requires = self.runtime_requires(&receipt)?;
                 affected.insert(receipt.package.clone(), (receipt, requires));
             }
         }
-        let order = crate::dependencies::dependency_order(affected.keys().cloned(), |path| {
-            Ok(affected
-                .get(path)
-                .map(|(_, requires)| requires.clone())
-                .unwrap_or_default())
-        })?;
+        let order = crate::dependencies::dependency_order_with::<Refusal>(
+            affected.keys().cloned(),
+            |path| {
+                Ok(affected
+                    .get(path)
+                    .map(|(_, requires)| requires.clone())
+                    .unwrap_or_default())
+            },
+        )?;
         // Quiesce outer dependents before any required service can stop.
         for path in order.into_iter().rev() {
             let Some((mut receipt, _)) = affected.remove(&path) else {
@@ -1881,14 +1932,14 @@ impl Host {
         Ok(())
     }
 
-    pub fn remove(&self, id: &str, purge: bool) -> Result<(), String> {
+    pub fn remove(&self, id: &str, purge: bool) -> Result<(), Refusal> {
         self.graph_update_pending()?;
         self.lifecycle.check_removal(id)?;
         self.prepare(id)?;
         self.deactivate(id, Desired::Removed { purge })
     }
 
-    fn deactivate(&self, id: &str, desired: Desired) -> Result<(), String> {
+    fn deactivate(&self, id: &str, desired: Desired) -> Result<(), Refusal> {
         self.check_required_by(id, !matches!(desired, Desired::Removed { .. }))?;
         let mut receipt = self.receipt(id)?.ok_or("plugin is not installed")?;
         if matches!(receipt.desired, Desired::Removed { .. }) {
@@ -1925,7 +1976,7 @@ impl Host {
         self.publish_registry()
     }
 
-    pub fn status(&self, id: &str) -> Result<Option<Receipt>, String> {
+    pub fn status(&self, id: &str) -> Result<Option<Receipt>, Refusal> {
         self.graph_update_pending()?;
         validate_id(id)?;
         self.receipt(id)
@@ -1935,7 +1986,7 @@ impl Host {
     /// single selection snapshot. No package realization, receipt repair or
     /// callback execution occurs. Signature verification may consult the bound
     /// cache; pending transitions never publish launch authority.
-    pub fn enabled_packages(&self) -> Result<Vec<Report>, String> {
+    pub fn enabled_packages(&self) -> Result<Vec<Report>, Refusal> {
         self.graph_update_pending()?;
         // Every install, enable, disable, update and rollback republishes this
         // list. Loading each enabled graph separately costs several Nix calls
@@ -1965,22 +2016,19 @@ impl Host {
 
     /// An enabled receipt is listed only when its selection is committed and
     /// its active root pins exactly the receipt's package.
-    fn settled(&self, receipt: &Receipt) -> Result<(), String> {
+    fn settled(&self, receipt: &Receipt) -> Result<(), Refusal> {
         if fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok() {
-            return Err(format!("plugin {} has an unfinished selection", receipt.id));
+            return Err(format!("plugin {} has an unfinished selection", receipt.id).into());
         }
         if fs::read_link(self.root(&receipt.id, "active")).map_err(|e| e.to_string())?
             != receipt.package
         {
-            return Err(format!(
-                "plugin {} has an inconsistent active root",
-                receipt.id
-            ));
+            return Err(format!("plugin {} has an inconsistent active root", receipt.id).into());
         }
         Ok(())
     }
 
-    fn receipts(&self) -> Result<Vec<Receipt>, String> {
+    fn receipts(&self) -> Result<Vec<Receipt>, Refusal> {
         let mut receipts = Vec::new();
         for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
@@ -2019,12 +2067,12 @@ impl Host {
         Ok(receipts)
     }
 
-    pub fn restore_all(&self) -> Result<(), String> {
+    pub fn restore_all(&self) -> Result<(), Refusal> {
         self.invalidate_registry()?;
         self.recover_graph_update()?;
         let mut errors = Vec::new();
         if let Err(error) = self.state.cleanup_staging() {
-            errors.push(error);
+            errors.push(error.to_string());
         }
         self.release_download()?;
         let mut enabled = Vec::new();
@@ -2044,7 +2092,7 @@ impl Host {
             }
         }
         let mut edges = BTreeMap::new();
-        let order = crate::dependencies::dependency_order(
+        let order = crate::dependencies::dependency_order_with::<Refusal>(
             receipts.iter().map(|r| r.package.clone()),
             |path| {
                 let requires = if released.contains(path) {
@@ -2152,7 +2200,9 @@ impl Host {
             let result = if entry.file_name() == storage::SOURCES_DIR
                 || entry.file_name() == storage::STAGING_DIR
             {
-                storage::directory(&entry.path()).map(|()| Restored::Nothing)
+                storage::directory(&entry.path())
+                    .map(|()| Restored::Nothing)
+                    .map_err(Refusal::from)
             } else {
                 self.restore_directory(&entry.path(), &plans, &quiesced, &blocked)
             };
@@ -2160,7 +2210,7 @@ impl Host {
                 Ok(Restored::Running(receipt, report)) => enabled.push((receipt, report)),
                 Ok(Restored::Stopped(receipt, report)) => stopped.push((receipt, report)),
                 Ok(Restored::Nothing) => {}
-                Err(error) => errors.push(error),
+                Err(error) => errors.push(error.to_string()),
             }
         }
         // Start one dependency level per systemd batch. A failed node blocks
@@ -2203,18 +2253,19 @@ impl Host {
                         "plugin {}: required plugin failed to restore or dependency cycle",
                         receipt.id
                     );
-                    errors.push(error);
+                    errors.push(error.to_string());
                     if let Err(error) = self.block_dependency_start(&receipt, &quiesced) {
-                        errors.push(error);
+                        errors.push(error.to_string());
                     }
                     outcomes.insert(path, false);
                 } else if running {
                     // Even healthy dependents must wait for dependency
                     // authority before reopening their ports or settling roots.
-                    match self
-                        .firewall_apply(&report)
-                        .and_then(|()| self.selection(&receipt.id).settle(&receipt))
-                    {
+                    match self.firewall_apply(&report).and_then(|()| {
+                        self.selection(&receipt.id)
+                            .settle(&receipt)
+                            .map_err(Refusal::from)
+                    }) {
                         Ok(()) => {
                             outcomes.insert(path, true);
                             enabled.push((receipt, report));
@@ -2225,7 +2276,7 @@ impl Host {
                             if !report.requires.is_empty() {
                                 if let Err(error) = self.block_dependency_start(&receipt, &quiesced)
                                 {
-                                    errors.push(error);
+                                    errors.push(error.to_string());
                                 }
                             }
                         }
@@ -2245,7 +2296,11 @@ impl Host {
                 self.units_start_all(&reports)
             };
             for ((receipt, report), result) in start.into_iter().zip(started) {
-                match result.and_then(|()| self.selection(&receipt.id).settle(&receipt)) {
+                match result.and_then(|()| {
+                    self.selection(&receipt.id)
+                        .settle(&receipt)
+                        .map_err(Refusal::from)
+                }) {
                     Ok(()) => {
                         outcomes.insert(receipt.package.clone(), true);
                         enabled.push((receipt, report));
@@ -2255,7 +2310,7 @@ impl Host {
                         errors.push(format!("plugin {}: {error}", receipt.id));
                         if !report.requires.is_empty() {
                             if let Err(error) = self.block_dependency_start(&receipt, &quiesced) {
-                                errors.push(error);
+                                errors.push(error.to_string());
                             }
                         }
                     }
@@ -2277,14 +2332,14 @@ impl Host {
         for (receipt, report) in enabled {
             match self.settled(&receipt) {
                 Ok(()) => reports.push(report),
-                Err(error) => errors.push(error),
+                Err(error) => errors.push(error.to_string()),
             }
         }
         self.write_registry(reports)?;
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors.join("; "))
+            Err(errors.join("; ").into())
         }
     }
 
@@ -2366,7 +2421,7 @@ impl Host {
         plans: &BTreeMap<PathBuf, RestorePlan>,
         quiesced: &std::collections::BTreeSet<PathBuf>,
         blocked: &std::collections::BTreeSet<PathBuf>,
-    ) -> Result<Restored, String> {
+    ) -> Result<Restored, Refusal> {
         storage::directory(path)?;
         if let Some(receipt) = storage::read_json::<Receipt>(&path.join("selection.json"))? {
             if self.directory(&receipt.id) != path {
@@ -2381,7 +2436,7 @@ impl Host {
                 .ok_or("selection changed during restore planning")?;
             return self
                 .restore_receipt(receipt, plan, quiesced)
-                .map_err(|error| format!("plugin {id}: {error}"));
+                .map_err(|error| Refusal::new(error.category, format!("plugin {id}: {error}")));
         }
         // Install is always disabled. Without a committed receipt it
         // cannot have started a daemon. A completed removal also reaches
@@ -2407,7 +2462,7 @@ impl Host {
         receipt: Receipt,
         plan: &RestorePlan,
         quiesced: &std::collections::BTreeSet<PathBuf>,
-    ) -> Result<Restored, String> {
+    ) -> Result<Restored, Refusal> {
         self.prepare(&receipt.id)?;
         if !matches!(receipt.desired, Desired::Enabled) {
             self.restore_one_in(&receipt.id, quiesced, Some(plan))?;
@@ -2439,7 +2494,7 @@ impl Host {
         Ok(Restored::Stopped(receipt, report))
     }
 
-    fn deny_start(&self, receipt: &Receipt) -> Result<(), String> {
+    fn deny_start(&self, receipt: &Receipt) -> Result<(), Refusal> {
         self.deny_start_in(receipt, &std::collections::BTreeSet::new())
     }
 
@@ -2447,7 +2502,7 @@ impl Host {
         &self,
         receipt: &Receipt,
         quiesced: &std::collections::BTreeSet<PathBuf>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         self.invalidate_registry()?;
         self.check_stop(&receipt.id, quiesced)?;
         self.journal_cleanup(receipt)?;
@@ -2467,14 +2522,16 @@ impl Host {
         &self,
         receipt: &Receipt,
         quiesced: &std::collections::BTreeSet<PathBuf>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         self.deny_start_in(receipt, quiesced)?;
         let mut blocked = receipt.clone();
         blocked.desired = Desired::Disabled;
-        self.selection(&receipt.id).settle(&blocked)
+        self.selection(&receipt.id)
+            .settle(&blocked)
+            .map_err(Refusal::from)
     }
 
-    fn apply(&self, candidate: Receipt) -> Result<(), String> {
+    fn apply(&self, candidate: Receipt) -> Result<(), Refusal> {
         let id = &candidate.id;
         let report = self.approved(&candidate)?;
         let changes_selection = self.receipt(id)?.is_some_and(|old| {
@@ -2496,15 +2553,15 @@ impl Host {
         });
         if let Err(error) = result {
             return match self.restore_one(id) {
-                Ok(()) => Err(format!("operation failed; committed selection restored: {error}")),
-                Err(recovery) => Err(format!("operation failed: {error}; recovery failed: {recovery}; package remains pinned; run restore-all")),
+                Ok(()) => Err(format!("operation failed; committed selection restored: {error}").into()),
+                Err(recovery) => Err(format!("operation failed: {error}; recovery failed: {recovery}; package remains pinned; run restore-all").into()),
             };
         }
         self.selection(id).commit(&candidate)?;
         self.publish_registry()
     }
 
-    fn invalidate_registry(&self) -> Result<(), String> {
+    fn invalidate_registry(&self) -> Result<(), Refusal> {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let directory = &self.paths.registry_directory;
         if !directory.exists() {
@@ -2519,14 +2576,14 @@ impl Host {
         {
             return Err("plugin registry directory must be protected by root".into());
         }
-        storage::remove(&self.paths.registry_path)
+        storage::remove(&self.paths.registry_path).map_err(Refusal::from)
     }
 
-    fn publish_registry(&self) -> Result<(), String> {
+    fn publish_registry(&self) -> Result<(), Refusal> {
         self.write_registry(self.enabled_packages()?)
     }
 
-    fn write_registry(&self, reports: Vec<Report>) -> Result<(), String> {
+    fn write_registry(&self, reports: Vec<Report>) -> Result<(), Refusal> {
         let selections: Vec<_> = reports
             .into_iter()
             .map(|report| crate::plugin_installation::EnabledPackage {
@@ -2570,19 +2627,21 @@ impl Host {
         match result {
             Ok(()) => Ok(()),
             Err(error) => match self.invalidate_registry() {
-                Ok(()) => Err(error),
-                Err(cleanup) => Err(format!(
-                    "{error}; failed to withdraw enabled projection: {cleanup}"
-                )),
+                Ok(()) => Err(error.into()),
+                Err(cleanup) => {
+                    Err(format!("{error}; failed to withdraw enabled projection: {cleanup}").into())
+                }
             },
         }
     }
 
-    fn reclaim_software(&self) -> Result<(), String> {
-        SoftwareCleanup::new(self.nix.clone()).reclaim()
+    fn reclaim_software(&self) -> Result<(), Refusal> {
+        SoftwareCleanup::new(self.nix.clone())
+            .reclaim()
+            .map_err(Refusal::from)
     }
 
-    fn units_stop(&self, id: &str, purge: bool) -> Result<(), String> {
+    fn units_stop(&self, id: &str, purge: bool) -> Result<(), Refusal> {
         #[cfg(test)]
         if let Some(runtime) = &self.test_runtime {
             runtime
@@ -2602,9 +2661,10 @@ impl Host {
                     if parent == id {
                         continue;
                     }
-                    let order = crate::dependencies::dependency_order([path.clone()], |path| {
-                        self.selection_requires(path)
-                    })
+                    let order = crate::dependencies::dependency_order_with::<Refusal>(
+                        [path.clone()],
+                        |path| self.selection_requires(path),
+                    )
                     .unwrap();
                     if order.contains(&target) {
                         runtime
@@ -2615,17 +2675,17 @@ impl Host {
                 }
             }
             if runtime.fail_stop.borrow().as_deref() == Some(id) {
-                return Err(format!("injected stop failure for {id}"));
+                return Err(format!("injected stop failure for {id}").into());
             }
             runtime.running.borrow_mut().remove(id);
             runtime.owned.borrow_mut().remove(id);
             runtime.owned_packages.borrow_mut().remove(id);
             return Ok(());
         }
-        self.units.stop(id, purge)
+        self.units.stop(id, purge).map_err(Refusal::from)
     }
 
-    fn units_start(&self, report: &Report) -> Result<(), String> {
+    fn units_start(&self, report: &Report) -> Result<(), Refusal> {
         #[cfg(test)]
         if let Some(runtime) = &self.test_runtime {
             runtime
@@ -2635,7 +2695,7 @@ impl Host {
             if runtime.fail_start.borrow().as_deref() == Some(report.id.as_str())
                 || runtime.fail_start_package.borrow().as_deref() == Some(report.package.as_path())
             {
-                return Err(format!("injected start failure for {}", report.id));
+                return Err(format!("injected start failure for {}", report.id).into());
             }
             runtime.running.borrow_mut().insert(report.id.clone());
             runtime.owned.borrow_mut().insert(report.id.clone());
@@ -2645,10 +2705,10 @@ impl Host {
                 .insert(report.id.clone(), report.package.clone());
             return Ok(());
         }
-        self.units.start(report)
+        self.units.start(report).map_err(Refusal::from)
     }
 
-    fn units_start_all(&self, reports: &[&Report]) -> Vec<Result<(), String>> {
+    fn units_start_all(&self, reports: &[&Report]) -> Vec<Result<(), Refusal>> {
         #[cfg(test)]
         if let Some(runtime) = &self.test_runtime {
             let ids: Vec<&str> = reports.iter().map(|report| report.id.as_str()).collect();
@@ -2661,26 +2721,33 @@ impl Host {
                 .map(|report| self.units_start(report))
                 .collect();
         }
-        self.units.start_all(reports)
+        self.units
+            .start_all(reports)
+            .into_iter()
+            .map(|result| result.map_err(Refusal::from))
+            .collect()
     }
 
-    fn units_matches_running(&self, report: &Report) -> Result<bool, String> {
+    fn units_matches_running(&self, report: &Report) -> Result<bool, Refusal> {
         #[cfg(test)]
         if let Some(runtime) = &self.test_runtime {
             return Ok(runtime.running.borrow().contains(&report.id));
         }
-        self.units.matches_running(report)
+        self.units.matches_running(report).map_err(Refusal::from)
     }
 
-    fn firewall_apply(&self, report: &Report) -> Result<(), String> {
+    fn firewall_apply(&self, report: &Report) -> Result<(), Refusal> {
         #[cfg(test)]
         if self.test_runtime.is_some() {
             return Ok(());
         }
-        self.units.firewall.apply(&report.id, &report.ports)
+        self.units
+            .firewall
+            .apply(&report.id, &report.ports)
+            .map_err(Refusal::from)
     }
 
-    fn approved(&self, receipt: &Receipt) -> Result<Report, String> {
+    fn approved(&self, receipt: &Receipt) -> Result<Report, Refusal> {
         self.approved_in(receipt, None)
     }
 
@@ -2688,7 +2755,7 @@ impl Host {
         &self,
         receipt: &Receipt,
         checks: Option<&BootChecks>,
-    ) -> Result<Report, String> {
+    ) -> Result<Report, Refusal> {
         validate_id(&receipt.id)?;
         let load = || {
             if let Some((_, report)) = checks
@@ -2722,12 +2789,12 @@ impl Host {
         #[cfg(not(test))]
         let report = load()?;
         if report.id != receipt.id || report.approval != receipt.approval {
-            return Err(APPROVAL_STALE.into());
+            return Err(Refusal::new(Category::NeedsReview, APPROVAL_STALE));
         }
         Ok(report)
     }
 
-    fn recover_one(&self, id: &str) -> Result<(), String> {
+    fn recover_one(&self, id: &str) -> Result<(), Refusal> {
         let pending = fs::symlink_metadata(self.root(id, "pending")).is_ok();
         let removed = self
             .receipt(id)?
@@ -2740,7 +2807,7 @@ impl Host {
 
     /// Recovery for single-plugin operations. Boot restore handles enabled
     /// plugins itself and reaches this only for disabled or removed ones.
-    fn restore_one(&self, id: &str) -> Result<(), String> {
+    fn restore_one(&self, id: &str) -> Result<(), Refusal> {
         self.restore_one_in(id, &std::collections::BTreeSet::new(), None)
     }
 
@@ -2749,7 +2816,7 @@ impl Host {
         id: &str,
         quiesced: &std::collections::BTreeSet<PathBuf>,
         plan: Option<&RestorePlan>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         self.check_stop(id, quiesced)?;
         let receipt = self.receipt(id)?;
         match receipt {
@@ -2801,16 +2868,16 @@ impl Host {
             }
             None => {
                 self.units_stop(id, false)?;
-                self.selection(id).remove()?;
+                self.selection(id).remove().map_err(Refusal::from)?;
             }
         }
         Ok(())
     }
 
-    fn prepare(&self, id: &str) -> Result<(), String> {
+    fn prepare(&self, id: &str) -> Result<(), Refusal> {
         validate_id(id)?;
         storage::directory(&self.directory(id))?;
-        storage::directory(&self.paths.roots.join(package::unit_name(id)))
+        storage::directory(&self.paths.roots.join(package::unit_name(id))).map_err(Refusal::from)
     }
     fn directory(&self, id: &str) -> PathBuf {
         self.state.root().join(package::unit_name(id))
@@ -2827,8 +2894,8 @@ impl Host {
             self.paths.roots.join(package::unit_name(id)),
         )
     }
-    fn receipt(&self, id: &str) -> Result<Option<Receipt>, String> {
-        self.selection(id).read()
+    fn receipt(&self, id: &str) -> Result<Option<Receipt>, Refusal> {
+        self.selection(id).read().map_err(Refusal::from)
     }
 }
 
@@ -2836,7 +2903,7 @@ fn dependency_provenance(
     path: &Path,
     receipts: &[Receipt],
     publishers: &package::PublisherBindings,
-) -> Result<Provenance, String> {
+) -> Result<Provenance, Refusal> {
     if let Some(receipt) = receipts.iter().find(|receipt| receipt.package == path) {
         return Ok(receipt.provenance.clone());
     }

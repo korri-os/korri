@@ -1,4 +1,5 @@
 //! Device-local pins (approved schema sheet row 9). Config bindings are separate.
+use crate::plugin_admin::{PluginRefusal as Refusal, PluginRefusalCategory as Category};
 use crate::{
     package,
     plugin_admin::{PluginPublisher, PluginPublisherState},
@@ -14,7 +15,7 @@ pub struct Pin {
 }
 pub type Pins = BTreeMap<String, Pin>;
 
-pub fn fingerprint(key: &str) -> Result<String, String> {
+pub fn fingerprint(key: &str) -> Result<String, Refusal> {
     package::public_key_bytes(key)?;
     let (label, encoded) = key.split_once(':').unwrap();
     Ok(format!(
@@ -31,7 +32,7 @@ pub fn publisher(
     namespace: &str,
     state: PluginPublisherState,
     key: Option<&str>,
-) -> Result<PluginPublisher, String> {
+) -> Result<PluginPublisher, Refusal> {
     Ok(PluginPublisher {
         namespace: namespace.into(),
         state,
@@ -47,14 +48,15 @@ pub fn inspect(
     release_key: Option<&str>,
     bindings: &package::PublisherBindings,
     pins: &Pins,
-) -> Result<PluginPublisher, String> {
+) -> Result<PluginPublisher, Refusal> {
     use PluginPublisherState::*;
     let bound = bindings.get(namespace).map(|b| b.public_key.as_str());
     let pinned = pins.get(namespace).map(|b| b.public_key.as_str());
     let Some(key) = release_key else {
         if bound.or(pinned).is_some() {
-            return Err(format!(
-                "namespace {namespace} is already trusted; unsigned plugins are refused"
+            return Err(Refusal::new(
+                Category::NamespaceTaken,
+                format!("namespace {namespace} is already trusted; unsigned plugins are refused"),
             ));
         }
         return publisher(namespace, Unsigned, None);
@@ -64,7 +66,8 @@ pub fn inspect(
         if bound != key {
             return Err(format!(
                 "package is not signed by the full key bound to publisher {namespace}"
-            ));
+            )
+            .into());
         }
         return publisher(namespace, Bound, Some(key));
     }
@@ -81,21 +84,27 @@ pub fn inspect(
     Ok(result)
 }
 
-pub fn require_trusted(publisher: &PluginPublisher) -> Result<(), String> {
+pub fn require_trusted(publisher: &PluginPublisher) -> Result<(), Refusal> {
     use PluginPublisherState::*;
     match publisher.state {
-        New => Err(format!(
-            "publisher {} is not trusted on this device",
-            publisher.namespace
+        New => Err(Refusal::new(
+            Category::PublisherNotTrusted,
+            format!(
+                "publisher {} is not trusted on this device",
+                publisher.namespace
+            ),
         )),
-        KeyChanged => Err(format!(
-            "publisher {} key changed: was {}, now {}",
-            publisher.namespace,
-            publisher
-                .previous_fingerprint
-                .as_deref()
-                .unwrap_or("unknown"),
-            publisher.fingerprint.as_deref().unwrap_or("unknown")
+        KeyChanged => Err(Refusal::new(
+            Category::PublisherKeyChanged,
+            format!(
+                "publisher {} key changed: was {}, now {}",
+                publisher.namespace,
+                publisher
+                    .previous_fingerprint
+                    .as_deref()
+                    .unwrap_or("unknown"),
+                publisher.fingerprint.as_deref().unwrap_or("unknown")
+            ),
         )),
         _ => Ok(()),
     }
@@ -113,7 +122,10 @@ mod tests {
         let mut pins = Pins::new();
         let new = inspect("@a", Some(a), &bindings, &pins).unwrap();
         assert_eq!(new.state, PluginPublisherState::New);
-        assert!(require_trusted(&new).is_err());
+        assert_eq!(
+            require_trusted(&new).unwrap_err().category,
+            Category::PublisherNotTrusted
+        );
         assert_eq!(new.public_key.as_deref(), Some(a));
         assert_eq!(
             inspect("@a", None, &bindings, &pins)
@@ -132,9 +144,16 @@ mod tests {
             inspect("@a", Some(a), &bindings, &pins).unwrap().state,
             PluginPublisherState::Trusted
         );
-        assert!(inspect("@a", None, &bindings, &pins).is_err());
+        assert_eq!(
+            inspect("@a", None, &bindings, &pins).unwrap_err().category,
+            Category::NamespaceTaken
+        );
         let changed = inspect("@a", Some(b), &bindings, &pins).unwrap();
         assert_eq!(changed.state, PluginPublisherState::KeyChanged);
+        assert_eq!(
+            require_trusted(&changed).unwrap_err().category,
+            Category::PublisherKeyChanged
+        );
         assert!(require_trusted(&changed)
             .unwrap_err()
             .contains("key changed: was"));
