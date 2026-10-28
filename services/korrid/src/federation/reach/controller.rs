@@ -1,8 +1,8 @@
 use super::{
-    policy, relay,
+    relay,
     settings::StunList,
     signal::{Answer, Offer, SIGNAL_LIFETIME},
-    stun, tunnel, LiveRoute, Routes, ALPN,
+    stun, tunnel, Environment, InterfaceReader, LiveRoute, Routes, ALPN,
 };
 use crate::{
     config::snapshot::{ConfigSnapshotCoordinator, SnapshotAuthorization},
@@ -63,6 +63,7 @@ pub(crate) fn start(
     config_root: Option<&Path>,
     peer_router: axum::Router,
     relay_port: u16,
+    environment: Environment,
 ) -> Option<ReachLifetime> {
     // Some unit tests compose routers synchronously. Korrid constructs its
     // production routers inside its runtime. It starts no private runtime.
@@ -83,6 +84,7 @@ pub(crate) fn start(
         key,
         peer_router,
         relay_port,
+        environment,
         endpoint: None,
         tasks: JoinSet::new(),
         relay_task: None,
@@ -113,6 +115,7 @@ struct Controller {
     key: iroh::SecretKey,
     peer_router: axum::Router,
     relay_port: u16,
+    environment: Environment,
     endpoint: Option<Endpoint>,
     tasks: JoinSet<()>,
     relay_task: Option<JoinHandle<()>>,
@@ -143,7 +146,9 @@ impl Controller {
         {
             return Err(io::Error::other("reach settings are unauthorized"));
         }
-        let relays =
+        let relays = if let Some(relays) = &self.environment.relays {
+            Some(relays.clone())
+        } else {
             RelayList::from_linux_environment(std::env::var("KORRID_RELAYS").ok().as_deref())
                 .map_err(io::Error::other)?
                 .or(state
@@ -151,7 +156,8 @@ impl Controller {
                     .map(|s| RelayList::from_device_settings(&s.snapshot))
                     .transpose()
                     .map_err(io::Error::other)?
-                    .flatten());
+                    .flatten())
+        };
         let stun = StunList::from_linux_environment(std::env::var("KORRID_STUN").ok().as_deref())
             .map_err(io::Error::other)?
             .or(state
@@ -201,7 +207,7 @@ impl Controller {
         if let Some(endpoint) = &self.endpoint {
             return Ok(endpoint.clone());
         }
-        let addresses = interfaces::interface_addresses()?;
+        let addresses = (self.environment.interfaces)()?;
         let ips = addresses
             .iter()
             .filter(|a| a.interface != "tailscale0" && relay::allowed_relay_ip(a.address))
@@ -259,7 +265,7 @@ impl Controller {
         let relay_addresses = self.relay_addresses.clone();
         if self.relay_task.is_none() {
             self.relay_task = Some(tokio::spawn(relay::supervise(
-                Arc::new(policy::LinuxEnvironment::new()),
+                self.environment.relay.clone(),
                 access.clone(),
                 relay::listener_ips(&addresses),
                 relay_addresses,
@@ -331,7 +337,13 @@ impl Controller {
     }
     async fn run(mut self) {
         loop {
-            let changed = network_changed(network_snapshot());
+            let interfaces = self.environment.interfaces.clone();
+            let previous = network_snapshot(&interfaces);
+            let changed = network_changed_with(
+                previous,
+                move || network_snapshot(&interfaces),
+                interfaces::ADDRESS_POLL,
+            );
             tokio::select! {
                 _ = self.drive() => break,
                 _ = changed => self.reset().await,
@@ -819,16 +831,13 @@ impl Controller {
 }
 
 type NetworkSnapshot = Vec<(String, IpAddr, bool)>;
-fn network_snapshot() -> Option<NetworkSnapshot> {
-    interfaces::interface_addresses().ok().map(|addresses| {
+fn network_snapshot(read: &InterfaceReader) -> Option<NetworkSnapshot> {
+    read().ok().map(|addresses| {
         addresses
             .into_iter()
             .map(|a| (a.interface, a.address, a.has_default_route))
             .collect()
     })
-}
-async fn network_changed(previous: Option<NetworkSnapshot>) {
-    network_changed_with(previous, network_snapshot, interfaces::ADDRESS_POLL).await;
 }
 pub(super) async fn network_changed_with(
     mut previous: Option<NetworkSnapshot>,

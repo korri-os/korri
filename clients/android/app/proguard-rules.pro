@@ -40,5 +40,10 @@
 -dontwarn javax.jmdns.impl.DNSCache
 -dontwarn org.slf4j.**
 
+# Rust polls Android network evidence through the captured application class.
+-keepclassmembers class com.simonwjackson.korri.korrid.KorridServer {
+    public static java.lang.String networkSnapshot(android.content.Context);
+}
+
 # Called through JNI by iroh's TLS certificate verifier.
 -keep,includedescriptorclasses class org.rustls.platformverifier.** { *; }

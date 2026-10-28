@@ -4952,6 +4952,7 @@ fn secure_host_routers_with_federation(
         runtime.route_root().ok(),
         peer.clone().iroh_router(),
         if cfg!(test) { 0 } else { 443 },
+        federation::reach::Environment::linux(),
     );
     let local = Router::new().route("/rpc", post(rpc)).with_state(local);
     let local = match private_input {
@@ -5015,6 +5016,7 @@ pub fn korrid_version() -> String {
 pub struct EmbeddedPlatform {
     pub relays: Option<relay::RelayList>,
     pub owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
+    pub(crate) reach: Option<federation::reach::Environment>,
 }
 
 /// Start one localhost brain with explicitly supplied native effects.
@@ -5028,7 +5030,12 @@ pub fn start_local_server(
         allowed_origin,
         local_storage_root,
         private_state_root,
-        plugin_policy::RegistrySource::Installed,
+        // This embedded stream client installs no native plugins. Linux owns
+        // its installed registry through the standalone host composition.
+        plugin_policy::RegistrySource::Selected(Arc::new(
+            plugin::PluginRegistry::new(Vec::new(), Vec::new())
+                .expect("an empty plugin selection is valid"),
+        )),
         platform,
     )
 }
@@ -5088,6 +5095,7 @@ fn start_local_server_for_platform(
     let server_federation = federation.clone();
     let relay_config = moonlight_config_snapshot.clone();
     let product_relays = platform.relays;
+    let reach_environment = platform.reach;
     let owner_binding = platform.owner_binding;
     let server_owner_binding = owner_binding.clone();
     let (federation_wake, discovery) = Discovery::new(
@@ -5118,6 +5126,7 @@ fn start_local_server_for_platform(
                 let listener = tokio::net::TcpListener::from_std(listener)
                     .expect("convert localhost listener");
                 let shutdown_discovery = server_federation_wake.clone();
+                let peer_resources = server_federation.clone();
                 let (mut app_state, ()) = brain_app_state(
                     &server_capability,
                     &allowed_origin,
@@ -5131,13 +5140,34 @@ fn start_local_server_for_platform(
                     Some(server_federation_wake.clone()),
                 );
                 app_state.owner_binding = server_owner_binding;
-                let server = axum::serve(listener, portal_router_from_state(app_state))
-                    .with_graceful_shutdown(async move {
-                        let _ = stopped.await;
-                        // Keep existing RPC draining, but do not wait for it to
-                        // cancel a blocked relay operation.
-                        shutdown_discovery.cancel();
-                    });
+                let peer = peer_rpc::PeerRpcServer::with_shared_authority(
+                    app_state.clone(),
+                    Path::new(&private_state_root),
+                    peer_resources.credentials.clone(),
+                    peer_resources.authorization,
+                )
+                .expect("load embedded peer authority");
+                let reach = reach_environment.and_then(|environment| {
+                    federation::reach::start(
+                        Path::new(&private_state_root),
+                        peer_resources.directory,
+                        peer_resources.credentials,
+                        Some(Path::new(&local_storage_root)),
+                        peer.iroh_router(),
+                        0,
+                        environment,
+                    )
+                });
+                let server = axum::serve(
+                    listener,
+                    portal_router_from_state(app_state).layer(axum::Extension(reach)),
+                )
+                .with_graceful_shutdown(async move {
+                    let _ = stopped.await;
+                    // Keep existing RPC draining, but do not wait for it to
+                    // cancel a blocked relay operation.
+                    shutdown_discovery.cancel();
+                });
                 // Both tasks live inside this runtime and are joined before it exits.
                 let discovery = tokio::spawn(discovery);
                 let result = server.await;
@@ -5348,6 +5378,9 @@ mod settings_secrets_tests;
 pub mod upstream;
 pub mod upstream_native;
 pub mod upstreams;
+
+#[cfg(test)]
+mod embedded_tests;
 
 #[cfg(test)]
 mod tests {

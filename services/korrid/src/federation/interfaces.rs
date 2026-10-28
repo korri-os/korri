@@ -34,7 +34,7 @@ pub fn endpoints_or_query_only(
 
 // Process-local evidence from getifaddrs and Linux's native route dump;
 // not a persisted or announcement shape.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct InterfaceAddress {
     pub interface: String,
     pub address: IpAddr,

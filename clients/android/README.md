@@ -76,6 +76,18 @@ identity switching are not available on Android; the public status reports that
 limit instead of exposing controls which cannot work. Device ownership and peer
 membership are re-read after binding without rotating the browser capability.
 
+The embedded stream client selects an explicitly empty local plugin registry.
+It does not read Linux's installed-package record or weaken Linux plugin checks.
+Its runtime starts the existing signed peer RPC and reach transport, retains
+them with the localhost router, and stops them with the brain.
+
+`KorridNetwork` reads Android's `ConnectivityManager` and battery broadcast for
+the existing Rust `InterfaceAddress` and `RelayFacts` consumers. Rust captures
+the application class and context during JNI startup; worker threads attach to
+the VM when they need a fresh observation. Linux keeps its route and power
+readers. No observation is persisted. QUIC uses physical links; unknown power
+or metering denies relaying. No public traffic relay or STUN default is added.
+
 ## Device check
 
 `KorriRpcBindingDeviceTest` exercises the real WebView, JNI library and RPC

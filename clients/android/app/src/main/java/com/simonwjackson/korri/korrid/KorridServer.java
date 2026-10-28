@@ -43,6 +43,11 @@ public final class KorridServer {
     public static native void detachOwnerSigner(long generation);
     public static native void stop();
 
+    /** Called by Rust through the captured application class, never a browser bridge. */
+    public static String networkSnapshot(android.content.Context context) {
+        return KorridNetwork.snapshot(context);
+    }
+
     public static int startAndLog(
             android.content.Context context, String allowedOrigin, String localStorageRoot, String privateStateRoot) {
         int port = start(context.getApplicationContext(), allowedOrigin, localStorageRoot, privateStateRoot, BuildConfig.PRODUCT_RELAYS);

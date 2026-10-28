@@ -78,6 +78,7 @@ async fn publishes_offer(path: NativePath) -> bool {
         .await
         .unwrap();
     let mut controller = Controller {
+        environment: Environment::linux(),
         directory: devices.da.clone(),
         credentials: devices.ca.clone(),
         config: None,
@@ -221,6 +222,7 @@ async fn signed_call_after_relay_metadata(
         tunnel::serve(incoming, router).await;
     });
     let mut controller = Controller {
+        environment: Environment::linux(),
         directory: devices.da.clone(),
         credentials: devices.ca.clone(),
         config: None,
@@ -472,6 +474,7 @@ async fn reach_admits_matching_live_batch_before_slow_relay_expires_pending_offe
     let pending_expires = unix_time() + 2;
     let token = devices.da.begin_peer_work(&peer).unwrap();
     let mut controller = Controller {
+        environment: Environment::linux(),
         directory: devices.da.clone(),
         credentials: devices.ca.clone(),
         config: None,

@@ -15,7 +15,30 @@ pub(crate) use tunnel::NetplayForward;
 mod viewer;
 
 // The registry uses this boundary to prepare a viewer and retain its lease.
+pub(crate) use policy::RelayEnvironment;
+#[cfg(target_os = "android")]
+pub(crate) use policy::RelayFacts;
 pub(crate) use viewer::{prepare_peer_viewer, SelectedViewer};
+
+pub(crate) type InterfaceReader =
+    Arc<dyn Fn() -> io::Result<Vec<super::interfaces::InterfaceAddress>> + Send + Sync>;
+
+/// Live platform observations and public product policy, never persisted config.
+#[derive(Clone)]
+pub(crate) struct Environment {
+    pub interfaces: InterfaceReader,
+    pub relay: Arc<dyn RelayEnvironment>,
+    pub relays: Option<crate::relay::RelayList>,
+}
+impl Environment {
+    pub(crate) fn linux() -> Self {
+        Self {
+            interfaces: Arc::new(super::interfaces::interface_addresses),
+            relay: Arc::new(policy::LinuxEnvironment::new()),
+            relays: None,
+        }
+    }
+}
 
 use crate::federation::FederationDirectory;
 use iroh::endpoint::Connection;

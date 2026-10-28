@@ -1,7 +1,7 @@
 use futures::future::BoxFuture;
 use std::{io, path::Path};
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize)]
 pub(crate) struct RelayFacts {
     pub external_power: bool,
     pub unmetered: bool,

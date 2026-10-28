@@ -14,6 +14,7 @@ use jni::{
     JNIEnv,
 };
 use std::ptr;
+mod network;
 
 #[no_mangle]
 pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_version(
@@ -87,9 +88,23 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
         );
         return -1;
     };
+    let reach = match network::environment(&mut env, &_class, &application_context, relays.clone())
+    {
+        Ok(reach) => reach,
+        Err(_) => {
+            if !env.exception_check().unwrap_or(true) {
+                let _ = env.throw_new(
+                    "java/lang/IllegalStateException",
+                    "Android network observation is unavailable",
+                );
+            }
+            return -1;
+        }
+    };
     let platform = EmbeddedPlatform {
         relays: Some(relays),
         owner_binding: Some(crate::owner_binding::OwnerBindingCoordinator::default()),
+        reach: Some(reach),
     };
     match start_local_server(
         &allowed_origin,

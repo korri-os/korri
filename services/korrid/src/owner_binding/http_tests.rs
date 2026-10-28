@@ -23,6 +23,7 @@ fn authenticated_setup_uses_the_current_native_effect_and_signature_validation()
         let platform = EmbeddedPlatform {
             relays: None,
             owner_binding: Some(bridge.clone()),
+            ..EmbeddedPlatform::default()
         };
         let registry = plugin_policy::RegistrySource::Selected(Arc::new(
             plugin_test_fixtures::installed(readable.path()),
