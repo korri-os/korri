@@ -1477,8 +1477,9 @@ impl Host {
                 previous: None,
             },
         };
-        self.apply(candidate)?;
-        self.release_download()
+        // The outer graph installation owns acquisition roots until every
+        // dependency and the root selection have committed.
+        self.apply(candidate)
     }
 
     /// Swap the two exact approved selections. No inspection, repository
@@ -6389,6 +6390,20 @@ mod tests {
         );
         let first = inspect(&host, "@pack:pack");
         let first_digest = host.review_approval(&first).unwrap();
+        let candidate_roots: Vec<_> = host
+            .candidate_roots
+            .borrow()
+            .iter()
+            .map(|dir| dir.path().to_path_buf())
+            .collect();
+        let dependency = &first.brings[0].report;
+        host.install_one(
+            dependency.clone(),
+            &dependency.approval,
+            SelectionIntent::Install,
+        )
+        .unwrap();
+        assert!(candidate_roots.iter().all(|path| path.exists()), "committing a dependency must not release the root or remaining candidate acquisition roots");
         host.install_reviewed(first.clone(), &first_digest).unwrap();
         assert_eq!(
             host.receipt("@dep:runner").unwrap().unwrap().package,
