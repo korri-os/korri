@@ -14,9 +14,15 @@ let
       gid = 1000;
       home = "/home/korri";
     };
+    # Owner decision, 2026-10-28 (#315): five independent operators that
+    # passed korrid's 30078, gift-wrap (1059) and owner-statement checks
+    # without AUTH in two probe runs. relay.nostr.band was dead.
     relays = [
-      "wss://relay.nostr.band"
+      "wss://offchain.pub"
+      "wss://nostr-pub.wellorder.net"
       "wss://relay.primal.net"
+      "wss://nos.lol"
+      "wss://nostr.oxtr.dev"
     ];
     # Owner decision, 2026-10-28 (#313): two independent operators, so one
     # outage leaves the other. They see a device's public IP, never traffic.
