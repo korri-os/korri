@@ -4086,22 +4086,14 @@ command = ["native-game"]
             .unwrap();
         let second = NativeClient::new(sobo).prepare_stream("two").await.unwrap();
 
+        // The selected holder reports that the exact launch ended: recovery
+        // stops this device's viewer itself instead of waiting for an exact
+        // stop request (#292), and never adopts the other peer's new launch.
         assert!(matches!(
-            registry.session_status().await,
-            Err(UpstreamError::Tagged { code, .. })
-                if code == "NativeViewerRecoveryIncomplete"
+            registry.session_status().await.unwrap(),
+            UpstreamSessionStatus::SessionStatus { active: None }
         ));
-        assert_eq!(
-            registry.selected().unwrap().launch_id,
-            first.session.launch_id
-        );
-        assert!(matches!(
-            registry
-                .session_stop(Some(&first.session.launch_id), false)
-                .await
-                .unwrap(),
-            UpstreamSessionStop::NothingToStop {}
-        ));
+        assert!(registry.selected().is_none());
 
         assert!(matches!(
             registry.session_status().await.unwrap(),
