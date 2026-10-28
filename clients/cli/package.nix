@@ -84,7 +84,6 @@ craneLib.buildPackage (
     nativeCheckInputs = [
       pkgs.python3
       pkgs.typescript
-      pkgs.nix
     ];
     meta.mainProgram = "korri";
   }

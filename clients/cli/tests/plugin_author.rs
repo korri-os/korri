@@ -13,8 +13,10 @@ fn cli(root: &Path) -> Command {
 
 #[test]
 fn plugin_new_is_self_contained_and_never_overwrites_a_project() {
-    let root = tempfile::tempdir().unwrap();
-    let output = cli(root.path())
+    let tools = AuthorTools::new();
+    let root = &tools.root;
+    let output = tools
+        .cli()
         .args(["plugins", "new", "hello", "--namespace", "@author"])
         .output()
         .unwrap();
@@ -40,37 +42,8 @@ fn plugin_new_is_self_contained_and_never_overwrites_a_project() {
     let native = fs::read_to_string(project.join("plugin.nix")).unwrap();
     assert!(native.contains("packages.coreutils = pkgs.coreutils;"));
     assert!(native.contains("files.cat = \"${pkgs.coreutils}/bin/cat\";"));
-    for file in ["flake.nix", "plugin.nix"] {
-        let parsed = Command::new("nix-instantiate")
-            .arg("--parse")
-            .arg(project.join(file))
-            .output()
-            .unwrap();
-        assert!(
-            parsed.status.success(),
-            "{}",
-            String::from_utf8_lossy(&parsed.stderr)
-        );
-    }
-    let evaluated = Command::new("nix")
-        .args(["eval", "--json", "--impure", "--expr"])
-        .arg(format!(
-            "import {} {{ pkgs.coreutils = \"/nix/store/test-coreutils\"; }}",
-            project.join("plugin.nix").display()
-        ))
-        .args(["--extra-experimental-features", "nix-command"])
-        .output()
-        .unwrap();
-    assert!(
-        evaluated.status.success(),
-        "{}",
-        String::from_utf8_lossy(&evaluated.stderr)
-    );
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&evaluated.stdout).unwrap()["files"]["cat"],
-        "/nix/store/test-coreutils/bin/cat"
-    );
-    let output = cli(root.path())
+    let output = tools
+        .cli()
         .args(["plugins", "new", "hello", "--namespace", "@author"])
         .output()
         .unwrap();
@@ -79,6 +52,8 @@ fn plugin_new_is_self_contained_and_never_overwrites_a_project() {
         fs::read_to_string(project.join("plugin.ts")).unwrap(),
         source
     );
+    assert!(!root.path().join("nix.calls").exists());
+    assert!(!root.path().join("publisher.calls").exists());
 }
 
 #[test]
@@ -201,6 +176,7 @@ fn plugin_publish_stops_when_the_publisher_fails() {
 }
 
 #[test]
+#[ignore = "Uses real Nix, which initializes Nix state; run explicitly outside the build sandbox"]
 fn plugin_publish_uses_the_real_nix_secret_key_format() {
     let nix = std::env::split_paths(&std::env::var_os("PATH").unwrap())
         .map(|path| path.join("nix"))
@@ -355,6 +331,41 @@ fn plugin_publish_validates_release_and_repository_address_before_building_or_cr
     assert!(!tools.root.path().join("config").exists());
 }
 
+// Preserve real Nix syntax and evaluation assertions in the explicit build
+// proof. Nix initializes its state even for --parse, outside the author fixture.
+fn assert_generated_nix_files_parse_and_evaluate(project: &Path) {
+    for file in ["flake.nix", "plugin.nix"] {
+        let parsed = Command::new("nix-instantiate")
+            .arg("--parse")
+            .arg(project.join(file))
+            .output()
+            .unwrap();
+        assert!(
+            parsed.status.success(),
+            "{}",
+            String::from_utf8_lossy(&parsed.stderr)
+        );
+    }
+    let evaluated = Command::new("nix")
+        .args(["eval", "--json", "--impure", "--expr"])
+        .arg(format!(
+            "import {} {{ pkgs.coreutils = \"/nix/store/test-coreutils\"; }}",
+            project.join("plugin.nix").display()
+        ))
+        .args(["--extra-experimental-features", "nix-command"])
+        .output()
+        .unwrap();
+    assert!(
+        evaluated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&evaluated.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&evaluated.stdout).unwrap()["files"]["cat"],
+        "/nix/store/test-coreutils/bin/cat"
+    );
+}
+
 /// Separate real-build proof; ordinary CLI tests use configured author tools.
 #[test]
 #[ignore = "Performs a local Nix plugin build; run explicitly with --ignored --exact"]
@@ -366,6 +377,7 @@ fn plugin_new_builds_and_admits_the_generated_runner() {
         .status()
         .unwrap()
         .success());
+    assert_generated_nix_files_parse_and_evaluate(&root.path().join("hello"));
     let system = Command::new("nix")
         .args([
             "eval",

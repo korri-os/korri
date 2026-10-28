@@ -14,6 +14,15 @@ The cost is that a CLI build also compiles the daemon's library dependencies.
   sandbox, settings, and daemon-argument tests. This is not the full korrid gate.
 - `nix build .#checks.x86_64-linux.korrid-linux-device-module --no-link`
 
+The default CLI/package tests use configured author executables and do not
+initialize Nix state. Real Nix key-format and scaffold parse/evaluation/build/
+admission proofs remain explicit integration tests. Run both outside the build
+sandbox with writable Nix state and store access:
+
+```sh
+nix develop .#korrid --command cargo test --manifest-path clients/cli/Cargo.toml --test plugin_author -- --ignored
+```
+
 The product installs `korri` on PATH. `--version` includes the source identity
 when the Nix build provides one. Help, version, and shell completion work with
 no daemon. `--socket` or `KORRI_CLI_SOCKET` selects a local Unix socket only.
