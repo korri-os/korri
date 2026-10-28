@@ -163,6 +163,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     public NvConnection conn;
     private SpinnerDialog spinner;
+    private static final long KORRI_REVEAL_FALLBACK_MS = 1500;
+    private boolean korriRevealPending;
     private boolean displayedFailureDialog = false;
     private boolean connecting = false;
     public boolean connected = false;
@@ -563,9 +565,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (getIntent().getBooleanExtra(EXTRA_KORRI_SESSION, false)) {
             korriSessionOverlay = new KorriSessionOverlay(this);
             korriSessionOverlay.attach();
-        } else {
+        } else if (!korriViewerRequested) {
             spinner = SpinnerDialog.displayDialog(this, getResources().getString(R.string.conn_establishing_title),
                     getResources().getString(R.string.conn_establishing_msg), true);
+            // Only Korri viewer sessions start see-through (values-v30 theme).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setTranslucent(false);
         }
 
 
@@ -621,6 +625,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         streamContainer.setOnKeyListener(this);
         streamContainer.setInputCallbacks(this);
         streamContainer.setCommitTextEnabled(prefConfig.enableCommitText);
+        // A Korri viewer has no connecting screen of its own: the portal stays
+        // visible through this see-through window until the first video frame
+        // (API 30+). Older systems show the stream's black window instead.
+        if (korriViewerRequested && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            korriRevealPending = true;
+            streamContainer.setSurfaceAlpha(0f);
+        }
 
         rootView = streamContainer.getParent();
 
@@ -821,6 +832,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 shouldInvertDecoderResolution,
                 glPrefs.glRenderer,
                 this);
+        decoderRenderer.setFirstFrameRenderedListener(() -> runOnUiThread(this::revealKorriStream));
 
 // --- Force tight thresholds (prefConfig.forceTightThresholds) ---
         try {
@@ -3674,6 +3686,16 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         });
     }
 
+    /** Show the stream over the portal. Idempotent; UI thread only. */
+    private void revealKorriStream() {
+        if (!korriRevealPending || isFinishing()) return;
+        korriRevealPending = false;
+        streamContainer.setSurfaceAlpha(1f);
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setTranslucent(false);
+        logKorriLifecycle("stream-revealed", "first-frame");
+    }
+
     @Override
     public void connectionStarted() {
         if (korriViewerRequested && !KorriStreamViewer.canPresent(this, korriViewerLease)) return;
@@ -3699,6 +3721,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     connected = true;
                     connecting = false;
                     updatePipAutoEnter();
+                    // Some decoders never report rendered frames; do not keep a
+                    // live stream hidden behind the portal.
+                    timerHandler.postDelayed(Game.this::revealKorriStream, KORRI_REVEAL_FALLBACK_MS);
                     // Gameplay controls become truthful only after the live stream
                     // and all Game-owned action fields are ready.
                     logKorriLifecycle("connection-started", "connected");

@@ -180,6 +180,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
     private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
     private long lastRenderedFrameTimeNanos;
+    // Called once per decoder configuration, on the codec's callback thread,
+    // after MediaCodec reports a frame actually rendered to the surface.
+    private volatile Runnable firstFrameRenderedListener;
+    private volatile boolean firstFrameRendered;
+
+    public void setFirstFrameRenderedListener(Runnable listener) {
+        firstFrameRenderedListener = listener;
+    }
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
 
@@ -772,13 +780,18 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         }
 
-        if (USE_FRAME_RENDER_TIME && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             videoDecoder.setOnFrameRenderedListener(new MediaCodec.OnFrameRenderedListener() {
                 @Override
                 public void onFrameRendered(MediaCodec mediaCodec, long presentationTimeUs, long renderTimeNanos) {
-                    long delta = (renderTimeNanos / 1000000L) - (presentationTimeUs / 1000);
-                    if (delta >= 0 && delta < 1000) {
-                        if (USE_FRAME_RENDER_TIME) {
+                    if (!firstFrameRendered) {
+                        firstFrameRendered = true;
+                        Runnable listener = firstFrameRenderedListener;
+                        if (listener != null) listener.run();
+                    }
+                    if (USE_FRAME_RENDER_TIME) {
+                        long delta = (renderTimeNanos / 1000000L) - (presentationTimeUs / 1000);
+                        if (delta >= 0 && delta < 1000) {
                             activeWindowVideoStats.totalTimeMs += delta;
                         }
                     }

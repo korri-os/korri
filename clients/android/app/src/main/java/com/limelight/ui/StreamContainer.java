@@ -8,6 +8,7 @@ import android.view.KeyEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -103,6 +104,14 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     public void updateSgsrParams(float sharpness, float threshold) {
         if (mSgsrRenderer != null) {
             mSgsrRenderer.updateEdgeParams(sharpness, threshold);
+        }
+    }
+
+    /** Alpha of every stream surface. SurfaceView applies it to its surface on API 30+. */
+    public void setSurfaceAlpha(float alpha) {
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            if (child instanceof SurfaceView) child.setAlpha(alpha);
         }
     }
 

@@ -1,0 +1,15 @@
+<resources>
+
+    <!--
+      Korri viewer sessions keep the portal visible until the stream's first
+      video frame, so the stream window starts see-through. Game makes it
+      opaque at that frame, and at once for any other session. API 30 is the
+      first level where Activity.setTranslucent can do that; older systems
+      keep the opaque v24 theme.
+    -->
+    <style name="StreamBaseTheme" parent="AppBaseTheme">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+    </style>
+
+</resources>
