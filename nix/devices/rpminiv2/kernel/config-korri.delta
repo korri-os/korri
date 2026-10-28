@@ -56,3 +56,33 @@ CONFIG_USB_U_SERIAL=y
 # CONFIG_SCSI_UFS_BSG is not set
 # PMIC RTC remains enabled from ROCKNIX, by owner choice on 2026-09-26.
 # Its first runtime load set 2066 before NTP corrected the clock.
+# Issue #314: a hang left no kernel record. The kernel answered ping while
+# userspace and the journal stopped, and nothing reached disk. These detectors
+# report tasks stuck in D state and CPUs stuck in kernel code. They only print
+# by default; panic stays a runtime sysctl choice. DEBUG_KERNEL only makes the
+# "Debug Oops, Lockups and Hangs" menu visible (lib/Kconfig.debug).
+CONFIG_DEBUG_KERNEL=y
+CONFIG_DETECT_HUNG_TASK=y
+CONFIG_SOFTLOCKUP_DETECTOR=y
+# Resolved with the two detectors: the 120 s default timeout, report-only
+# panic defaults (0), the shared lockup core, and the mutex/semaphore blocker
+# report that names the task holding the lock a hung task waits on.
+CONFIG_DEFAULT_HUNG_TASK_TIMEOUT=120
+CONFIG_BOOTPARAM_HUNG_TASK_PANIC=0
+CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC=0
+CONFIG_LOCKUP_DETECTOR=y
+CONFIG_DETECT_HUNG_TASK_BLOCKER=y
+# DEBUG_KERNEL turns these on by default. Keep them off, so the menu switch
+# adds no other debug code and no RCU tracepoints. DEBUG_INFO_NONE is the
+# visible form of the unchanged "no debug info" choice.
+# CONFIG_DEBUG_MISC is not set
+# CONFIG_RCU_TRACE is not set
+CONFIG_DEBUG_INFO_NONE=y
+# Kernel log to the build host over the USB network link (usb0), with no
+# userspace and no disk on the path. Configured at runtime through configfs.
+# NETCONSOLE selects NETPOLL; NETCONSOLE_DYNAMIC selects PRINTK_EXECUTION_CTX.
+CONFIG_NETCONSOLE=y
+CONFIG_NETCONSOLE_DYNAMIC=y
+CONFIG_NETPOLL=y
+CONFIG_NET_POLL_CONTROLLER=y
+CONFIG_PRINTK_EXECUTION_CTX=y

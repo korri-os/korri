@@ -65,6 +65,28 @@ symbol. ARM64 Kconfig enables it only when PCI is disabled. The product keeps
 PCI for Wi-Fi, so that old trim value cannot survive resolution. The separate
 NixOS initrd remains unchanged.
 
+Issue #314 added hang evidence. A freeze on 2026-10-28 left the kernel
+answering ping while userspace and the journal stopped. The product kernel
+had no hung-task or soft-lockup detector, and the disk received no record.
+The delta now enables `DETECT_HUNG_TASK` (120 s, report only),
+`SOFTLOCKUP_DETECTOR` (report only) and `NETCONSOLE` with configfs targets.
+`DEBUG_KERNEL` only makes that menu visible; `DEBUG_MISC` and `RCU_TRACE`,
+which it would turn on by default, stay off. The detectors panic only if a
+person sets `kernel.hung_task_panic` or `kernel.softlockup_panic`.
+Netconsole sends kernel messages over `usb0` with no userspace and no disk in
+the path. Enable it at runtime, for one boot, from the build host:
+
+```sh
+ssh -p 2222 root@10.42.3.1 'set -e; d=/sys/kernel/config/netconsole/korri
+  mkdir -p $d; echo usb0 > $d/dev_name; echo 10.42.3.1 > $d/local_ip
+  echo 10.42.3.255 > $d/remote_ip; echo 60315 > $d/remote_port; echo 1 > $d/enabled'
+nix shell nixpkgs#socat -c socat -u UDP-RECV:60315 STDOUT | tee mini-netconsole.log
+```
+
+The broadcast address reaches whichever DHCP lease the host holds. Zao's
+firewall already accepts UDP 60000 to 61000. The path is source-verified only:
+netconsole on the NCM gadget still needs a hardware check.
+
 Touch, grouped stick LEDs, PMIC temperature alarms and the PMIC RTC come from
 the full ROCKNIX baseline. The owner chose to retain the RTC on 2026-09-26.
 Its first runtime driver load set the clock to 2066 before NTP corrected it.
