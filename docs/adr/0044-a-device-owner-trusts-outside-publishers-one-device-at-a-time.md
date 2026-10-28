@@ -1,0 +1,46 @@
+---
+status: accepted
+---
+
+# A device owner trusts outside publishers one device at a time
+
+**Owner decisions, 2026-10-28.** This follows ADR 0042. Today a device trusts a
+publisher only through a key and cache URL in its NixOS configuration
+(`services.korri.pluginHost.publishers`), so a stranger's plugin cannot reach a
+stock device. Nix itself accepts an unsigned content-addressed path; refusing
+one is Korri's own rule (`services/korrid/plugin-host/README.md`).
+
+## Decision
+
+- Owner approval of exact files and the sandbox stay mandatory for every
+  plugin, signed or not.
+- `@korri` stays checked against a key written into the image. Nothing learned
+  at runtime can stand in for it.
+- **Signed lane, the default.** The author tooling creates the publisher key
+  and signs every build, so the author never handles a key. A device pins the
+  key the first time its owner trusts that publisher. Later releases must match
+  it.
+- **Unsigned lane.** A device owner can install an unsigned plugin after a
+  disclosure that names the risk: Korri cannot confirm who made it, or that an
+  update comes from the same person. The disclosure appears again for every
+  update. Nothing can revoke an unsigned plugin except removing it.
+- An unsigned plugin may use any namespace except one the device already trusts.
+- Trust is per device. Trusting a publisher on one device does not trust it on
+  the owner's other devices.
+- A device owner can enter a repository address three ways: typed on the
+  device, from a computer with `korri ... --device`, or passed from a phone.
+
+## Consequences
+
+The first trust of a signed publisher trusts whoever answers at that moment.
+An author who loses their key cannot ship updates under the same publisher.
+Two unsigned plugins on one device can claim the same namespace. An owner with
+several devices repeats each trust decision on each of them.
+
+Handhelds have no camera, so "from a phone" means the phone reads the address
+and sends it to the device. The remote `korri` path already covers repository
+add through `--device`; trusting a publisher remotely is a further widening
+that `clients/cli/README.md` does not allow today.
+
+The storage and wire format of a pinned key, and how the disclosure is worded,
+are not decided.

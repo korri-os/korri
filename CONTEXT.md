@@ -21,6 +21,12 @@ _Avoid_: vendor, developer account
 The set of plugin releases that one publisher hosts at one web address. A device owner adds it by its address. Korri hosts only its own.
 _Avoid_: store, marketplace, plugin source
 
+**Unsigned plugin**:
+A plugin with no publisher signature. Its namespace proves nothing about who made it.
+
+**Sideload**:
+Putting an author's own plugin build on a device without a plugin repository. The device owner still approves it.
+
 **Person key**:
 The Nostr key that identifies one person to Korri. korrid never holds its private half.
 _Avoid_: account, user key, login

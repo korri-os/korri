@@ -42,5 +42,6 @@ they do not stop an owner from trusting a bad author.
 This is not legal advice. Ask a lawyer before publishing an official catalog
 or a new `@korri` acquisition provider.
 
-Open: how a device trusts an outside publisher, how a sideloaded build reaches
-the device, and the contract stability promise to outside authors (#325).
+ADR 0044 records how a device trusts an outside publisher. ADR 0046 records
+how a sideloaded build reaches a device. The contract stability promise to
+outside authors is still open (#325).
