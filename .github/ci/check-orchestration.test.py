@@ -272,6 +272,17 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertEqual(commands.count("nix run .#korri-nix-cache-check"), 1)
         self.assertEqual(commands.count("nix run .#rpminiv2-delivery-check"), 1)
 
+    def test_architecture_lint_apps_declare_the_node_launcher_runtime(self):
+        tasks = (ROOT / "nix/tasks.nix").read_text()
+        for surface in ["pico", "zone"]:
+            with self.subTest(surface=surface):
+                task = tasks.split(f"    {surface}-check = {{", 1)[1].split(
+                    "\n    };", 1
+                )[0]
+                inputs = task.split("runtimeInputs = [", 1)[1].split("];", 1)[0]
+                self.assertIn("pkgs.bun", inputs)
+                self.assertIn("pkgs.nodejs", inputs)
+
     def test_zone_font_builder_receives_the_locked_native_package_source(self):
         task = (
             (ROOT / "nix/tasks.nix")

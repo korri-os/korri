@@ -668,7 +668,11 @@ let
 
     pico-check = {
       description = "Run the Pico surface unit tests, gates, typecheck, and architecture lint.";
-      runtimeInputs = [ pkgs.bun ];
+      # Architecture tests launch oxlint directly through its env-node shebang.
+      runtimeInputs = [
+        pkgs.bun
+        pkgs.nodejs
+      ];
       # The two-display browser test (test/pico-displays-browser.test.ts)
       # runs in this Chromium; without CHROMIUM it is skipped.
       env.CHROMIUM = "${pkgs.chromium}/bin/chromium";
@@ -684,7 +688,11 @@ let
     zone-check = {
       description = "Run the Zone surface unit tests, gates and acceptance, typecheck, and architecture lint.";
       usageSuffix = " -- [bun test arguments]";
-      runtimeInputs = [ pkgs.bun ];
+      # Architecture tests launch oxlint directly through its env-node shebang.
+      runtimeInputs = [
+        pkgs.bun
+        pkgs.nodejs
+      ];
       # The font reproducibility check launches its native Nix-shebang builder.
       # Hosted Nix installs need not have a channel or a pre-existing NIX_PATH.
       env.NIX_PATH = "nixpkgs=${pkgs.path}";

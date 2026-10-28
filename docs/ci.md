@@ -172,6 +172,14 @@ NIX_PATH= nix run .#zone-check -- test/zone-caps-font.test.ts
 
 Without Bun test arguments, the normal Zone lane still runs every Zone test.
 
+Pico and Zone also declare `pkgs.nodejs` from the locked Nix package set. Bun
+runs the suites, but their architecture tests execute the real
+`node_modules/.bin/oxlint` launcher, whose shebang is `/usr/bin/env node`.
+Bun alone does not supply that executable. The CI contract test guards both
+runtime declarations. No architecture assertion, test deadline, or workflow
+budget changes. This fixes missing Node, not the separate intermittent
+five-second linter failure.
+
 ## Local verification
 
 Focused CI policy checks:
@@ -265,3 +273,45 @@ sample; repeat suspected regressions. Historical timings are leads, not budgets.
 Parallel lanes consume more simultaneous runners and can queue when the account
 has fewer slots. Keep the independently measured improvements and defer any
 unproven topology rather than claim savings from job counts alone.
+
+### Pico and Zone Node runtime (#319)
+
+On an x86_64-linux build host, both unchanged oxlint launchers failed with
+exit 127 and empty stdout without Node: Pico in 3.1 ms, Zone in 1.9 ms.
+Both architecture suites then failed while parsing the empty output. With the
+runtime declaration, both real `nix run` apps passed with caller `PATH`
+restricted to a directory containing only `nix` and `nix-shell` symlinks.
+Pico passed 1435 tests, including Chromium; Zone passed 1388, including its
+native font rebuild. Both typechecks and lints passed. The declared Node was
+24.20.0; no lockfile or architecture test changed.
+
+Warm comparisons used the old generated apps from
+`54ea01704f98cf4a564f9d502a0492b8baf866cf` with that same Node explicitly
+supplied, versus the patched apps without ambient Node. Each surface ran
+old/new/new/old sequentially, with two samples per version. The table gives
+medians timed from generated-app startup, not from `nix run`. Setup includes
+frozen dependency installation and ends at the `bun test` banner. First
+feedback is the planted-violation architecture assertion, not a deliberate
+suite failure.
+
+| Surface | Measure | Old app + explicit Node | Patched app | Difference |
+| --- | --- | ---: | ---: | ---: |
+| Pico | Warm setup | 0.052 s | 0.018 s | -0.034 s |
+| Pico | First architecture result | 0.511 s | 0.630 s | +0.119 s |
+| Pico | Complete app | 69.943 s | 67.728 s | -2.215 s |
+| Zone | Warm setup | 0.011 s | 0.014 s | +0.002 s |
+| Zone | First architecture result | 0.404 s | 0.571 s | +0.167 s |
+| Zone | Complete app | 17.343 s | 20.967 s | +3.624 s |
+
+Separate, unpaired three-sample `nix eval` medians were 2.255/5.994 s for
+old/patched Pico and 0.991/1.678 s for Zone. These samples do not isolate
+Node's evaluation cost. Node was already in the store, so no cold download
+was measured. Recursive uncompressed NAR size increased by 131.4 MiB for
+Pico and 172.2 MiB for Zone; shared dependencies make these non-additive.
+The local timings do not prove unchanged hosted or cold-start latency.
+Zone's measured warm increase remains recorded, not explained away.
+
+The qualification script and timestamped logs were saved under
+`/tmp/korri-319-qualify.py` and `/tmp/korri-319-qualification/` on the build
+host. No result here establishes the cause or repair of the separate
+five-second linter failure.
