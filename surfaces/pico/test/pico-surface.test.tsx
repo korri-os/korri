@@ -81,6 +81,27 @@ describe("launching", () => {
   })
 })
 
+for (const initialView of [{ _tag: "Find" }, { _tag: "Detail", gameId: "tetris" }] as const) {
+  test(`a failure from ${initialView._tag} shows the shared korri LIBRARY frame, not the originating page`, () => {
+    const host = createFixtureHost()
+    const view = render(<PicoSurface host={host} initialView={initialView} model={model()} />)
+    const problem = model({ status: {
+      _tag: "Problem", kicker: "Operation failed",
+      reason: "Korri cannot start this entry on this device.", canRetry: false,
+    } })
+    view.rerender(<PicoSurface host={host} initialView={initialView} model={problem} />)
+    const header = screen.getByRole("banner").textContent
+    expect(header).toContain("korri")
+    expect(header).toContain("LIBRARY")
+    expect(header).not.toContain("FIND")
+    expect(header).not.toContain("LIBRARY ›")
+    expect(screen.getByText("Operation failed")).toBeTruthy()
+    expect(screen.getByText("Korri cannot start this entry on this device.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "OK" })).toBeTruthy()
+    expect(host.calls).toEqual([])
+  })
+}
+
 describe("a game's own screen", () => {
   const open = (name: RegExp) => {
     const host = createFixtureHost()

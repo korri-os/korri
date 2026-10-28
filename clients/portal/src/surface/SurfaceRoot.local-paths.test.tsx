@@ -105,6 +105,27 @@ for (const mode of ["shelf", "grid", "hero"] as const) {
   })
 }
 
+test("Library row -> Play -> This device sends the exact folded id and local location to SurfaceHost", async () => {
+  const view = await mount({ _tag: "Home" })
+  const launch = spyOn(view.host(), "launchGame")
+  const action = spyOn(view.host(), "runGameAction")
+  expect(view.ui.getByRole("banner").textContent).toContain("LIBRARY")
+  await invoke(() => view.bus.emit({ type: "options" }))
+  expect(view.ui.getByText("FIND")).toBeTruthy()
+  await view.click(/Teenage Mutant/)
+  expect(view.ui.getByText("LIBRARY ›")).toBeTruthy()
+  expect(launch).not.toHaveBeenCalled()
+  expect(action).not.toHaveBeenCalled()
+  await view.play()
+  expect(launch).toHaveBeenCalledTimes(1)
+  expect(launch).toHaveBeenCalledWith(
+    "local-game:teenage-mutant-ninja-turtles-iv-turtles-in-time-usa",
+    '["local",null,"teenage-mutant-ninja-turtles-iv-turtles-in-time-usa"]',
+  )
+  expect(action).not.toHaveBeenCalled()
+  await view.expectLocalLaunch()
+})
+
 for (const order of ["korri", "recent"] as const) {
   test(`captured catalog: Find (${order}) search -> detail -> This device`, async () => {
     const view = await mount({ _tag: "Find", order })
