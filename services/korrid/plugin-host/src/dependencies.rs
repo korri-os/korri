@@ -10,8 +10,15 @@ pub const MAX_EDGES: usize = 1024;
 
 pub fn dependency_order(
     roots: impl IntoIterator<Item = PathBuf>,
-    mut load: impl FnMut(&PathBuf) -> Result<Vec<PathBuf>, String>,
+    load: impl FnMut(&PathBuf) -> Result<Vec<PathBuf>, String>,
 ) -> Result<Vec<PathBuf>, String> {
+    dependency_order_with(roots, load)
+}
+
+pub fn dependency_order_with<E: From<String>>(
+    roots: impl IntoIterator<Item = PathBuf>,
+    mut load: impl FnMut(&PathBuf) -> Result<Vec<PathBuf>, E>,
+) -> Result<Vec<PathBuf>, E> {
     let mut graph = BTreeMap::new();
     let mut pending: Vec<_> = roots.into_iter().collect();
     let mut edges = 0;
@@ -20,14 +27,18 @@ pub fn dependency_order(
             continue;
         }
         if graph.len() >= MAX_PLUGINS {
-            return Err("plugin dependency graph exceeds 128 plugins".into());
+            return Err("plugin dependency graph exceeds 128 plugins"
+                .to_owned()
+                .into());
         }
         let mut requires = load(&path)?;
         requires.sort();
         requires.dedup();
         edges += requires.len();
         if edges > MAX_EDGES {
-            return Err("plugin dependency graph exceeds 1024 edges".into());
+            return Err("plugin dependency graph exceeds 1024 edges"
+                .to_owned()
+                .into());
         }
         pending.extend(requires.iter().cloned());
         graph.insert(path, requires);
@@ -61,7 +72,7 @@ pub fn dependency_order(
         }
     }
     if order.len() != graph.len() {
-        return Err("plugin dependency cycle".into());
+        return Err("plugin dependency cycle".to_owned().into());
     }
     Ok(order)
 }

@@ -9,7 +9,7 @@
 //! restore and enabled-packages are not reachable from here.
 pub use crate::plugin_admin::*;
 use crate::{
-    host::{Host, APPROVAL_STALE},
+    host::Host,
     package,
     package::Report,
     provenance::{current_platform, Provenance},
@@ -105,29 +105,12 @@ fn source(raw: &str) -> Result<SourceUrl, PluginAdminFailure> {
     SourceUrl::parse(raw).map_err(|error| failure(CODE_URL_INVALID, error))
 }
 
-fn host_failure(error: String) -> PluginAdminFailure {
-    failure(
-        if error.contains("key changed: was") {
-            CODE_PUBLISHER_KEY_CHANGED
-        } else if error.contains("is not trusted on this device") {
-            CODE_PUBLISHER_NOT_TRUSTED
-        } else if error.contains("namespace") && error.contains("unsigned")
-            || error.contains("remove the unsigned")
-        {
-            CODE_NAMESPACE_TAKEN
-        } else if (error.contains(" needs ") && error.contains(" locked "))
-            || error.contains("conflicting repository requirements")
-        {
-            CODE_REQUIREMENT_CONFLICT
-        } else {
-            CODE_REFUSED
-        },
-        error,
-    )
+fn host_failure(error: PluginRefusal) -> PluginAdminFailure {
+    error.into_failure()
 }
 
-pub fn host_refused(error: String) -> PluginAdminResponse {
-    refused(CODE_REFUSED, error)
+pub fn host_refused(error: PluginRefusal) -> PluginAdminResponse {
+    PluginAdminResponse::Refused(host_failure(error))
 }
 
 /// Run one request through the existing host boundary.
@@ -204,13 +187,7 @@ pub fn handle(
         PluginAdminRequest::SetEnabled(PluginSetEnabledRequest { id, enabled }) => host
             .set_enabled(&id, enabled)
             .map(|()| PluginAdminResponse::Applied(PluginChangeApplied {}))
-            .map_err(|error| {
-                if error == APPROVAL_STALE {
-                    failure(CODE_NEEDS_REVIEW, error)
-                } else {
-                    host_failure(error)
-                }
-            }),
+            .map_err(host_failure),
     };
     result.unwrap_or_else(PluginAdminResponse::Refused)
 }
@@ -224,7 +201,7 @@ fn installed_state(desired: &Desired) -> Option<PluginInstalledState> {
     }
 }
 
-fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminResponse, String> {
+fn repositories(host: &Host, config: &Configuration) -> Result<PluginAdminResponse, PluginRefusal> {
     let user_added = host
         .sources()?
         .into_iter()
@@ -274,7 +251,7 @@ fn catalog(
     host: &Host,
     config: &Configuration,
     source: &SourceUrl,
-) -> Result<PluginAdminResponse, String> {
+) -> Result<PluginAdminResponse, PluginRefusal> {
     let catalog = host.catalog(config, source)?;
     let mut installed = std::collections::BTreeMap::new();
     let mut entries = Vec::new();
@@ -306,7 +283,7 @@ fn catalog(
     Ok(PluginAdminResponse::Catalog(PluginCatalog { entries }))
 }
 
-pub fn inspection(host: &Host, report: &Report) -> Result<PluginInspection, String> {
+pub fn inspection(host: &Host, report: &Report) -> Result<PluginInspection, PluginRefusal> {
     Ok(PluginInspection {
         publisher: report.publisher.clone().unwrap_or(
             host.catalog_publisher(report.id.split_once(':').ok_or("invalid plugin ID")?.0)?,
@@ -366,6 +343,36 @@ mod tests {
 
     fn applied(_: PluginAdminRequest) -> PluginAdminResponse {
         PluginAdminResponse::Applied(PluginChangeApplied {})
+    }
+
+    #[test]
+    fn domain_refusal_codes_do_not_depend_on_diagnostic_wording() {
+        use PluginRefusalCategory::*;
+        for (category, code) in [
+            (PublisherNotTrusted, CODE_PUBLISHER_NOT_TRUSTED),
+            (PublisherKeyChanged, CODE_PUBLISHER_KEY_CHANGED),
+            (NamespaceTaken, CODE_NAMESPACE_TAKEN),
+            (RequirementConflict, CODE_REQUIREMENT_CONFLICT),
+            (UploadNotFound, CODE_UPLOAD_NOT_FOUND),
+            (NeedsReview, CODE_NEEDS_REVIEW),
+        ] {
+            let failure = host_failure(PluginRefusal::new(
+                category,
+                "wording can change without changing this decision",
+            ));
+            assert_eq!(failure.code, code);
+            assert_eq!(
+                failure.message,
+                "wording can change without changing this decision"
+            );
+        }
+        assert_eq!(
+            host_failure(PluginRefusal::from(
+                "publisher @a key changed: was x, now y"
+            ))
+            .code,
+            CODE_REFUSED
+        );
     }
 
     #[test]

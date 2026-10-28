@@ -1,6 +1,7 @@
 //! A transient decision joins the existing exact receipts and pending roots.
 //! This finishes an interrupted approved update; it is not graph rollback.
 use super::Host;
+use crate::plugin_admin::{PluginRefusal as Refusal, PluginRefusalCategory as Category};
 use crate::{
     declaration::validate_id,
     package::{self, Report},
@@ -37,7 +38,7 @@ struct Selection {
 }
 
 impl Host {
-    pub(super) fn graph_update_pending(&self) -> Result<(), String> {
+    pub(super) fn graph_update_pending(&self) -> Result<(), Refusal> {
         if storage::read_json::<GraphUpdate>(&self.state.root().join(JOURNAL))?.is_some() {
             return Err("plugin graph update is unfinished; run restore-all".into());
         }
@@ -46,7 +47,7 @@ impl Host {
 
     /// The caller has re-inspected and approved the root, and checked both
     /// shared-root refusals and the committed graph's provenance retention.
-    pub(super) fn update_root_graph(&self, report: Report) -> Result<(), String> {
+    pub(super) fn update_root_graph(&self, report: Report) -> Result<(), Refusal> {
         self.verify_report(&report, None, package::StoreContents::Rehash)?;
         let installed = self.receipts()?;
         let root = self.receipt(&report.id)?.ok_or("plugin is not installed")?;
@@ -56,7 +57,8 @@ impl Host {
                 return Err(format!(
                     "plugin {} removal is unfinished; run restore-all",
                     receipt.id
-                ));
+                )
+                .into());
             }
             self.settled(receipt)?;
             final_graph.insert(
@@ -79,7 +81,7 @@ impl Host {
                 return Err(format!(
                     "required plugin {} has an unrecorded pending selection or native cleanup; run restore-all",
                     target.id
-                ));
+                ).into());
             }
             let mut after = match &before {
                 Some(before) => before.select(
@@ -130,12 +132,13 @@ impl Host {
             storage::write_json(&self.state.root().join(JOURNAL), &update)?;
             self.graph_checkpoint("switching")?;
             self.finish_graph_update(&update)?;
-            Ok::<_, String>(())
+            Ok::<_, Refusal>(())
         })();
         if let Err(error) = switched {
             return Err(format!(
                 "graph update interrupted: {error}; selections remain pinned; run restore-all"
-            ));
+            )
+            .into());
         }
         self.restore_all().map_err(|error| {
             let mut outcome = format!("graph selections committed; restore-all failed: {error}");
@@ -148,11 +151,11 @@ impl Host {
                     _ => {}
                 }
             }
-            outcome
+            Refusal::new(error.category, outcome)
         })
     }
 
-    fn quiesce_graph_update(&self, update: &GraphUpdate) -> Result<(), String> {
+    fn quiesce_graph_update(&self, update: &GraphUpdate) -> Result<(), Refusal> {
         let mut reports = BTreeMap::new();
         for before in update
             .selections
@@ -165,7 +168,7 @@ impl Host {
             }
             reports.insert(report.package, report.requires);
         }
-        let order = crate::dependencies::dependency_order(
+        let order = crate::dependencies::dependency_order_with::<Refusal>(
             update
                 .selections
                 .iter()
@@ -204,7 +207,7 @@ impl Host {
         Ok(())
     }
 
-    fn finish_graph_update(&self, update: &GraphUpdate) -> Result<(), String> {
+    fn finish_graph_update(&self, update: &GraphUpdate) -> Result<(), Refusal> {
         for selection in &update.selections {
             self.selection(&selection.after.id)
                 .commit(&selection.after)?;
@@ -214,7 +217,7 @@ impl Host {
         self.graph_checkpoint("finished")
     }
 
-    pub(super) fn recover_graph_update(&self) -> Result<(), String> {
+    pub(super) fn recover_graph_update(&self) -> Result<(), Refusal> {
         let path = self.state.root().join(JOURNAL);
         if let Some(update) = storage::read_json::<GraphUpdate>(&path)? {
             if update.selections.is_empty()
@@ -276,10 +279,10 @@ impl Host {
                 }
             }
         }
-        storage::remove(&path.with_extension("new"))
+        storage::remove(&path.with_extension("new")).map_err(Refusal::from)
     }
 
-    fn validate_recovery_graph(&self, update: &GraphUpdate) -> Result<(), String> {
+    fn validate_recovery_graph(&self, update: &GraphUpdate) -> Result<(), Refusal> {
         validate_id(&update.root)?;
         let root = update
             .selections
@@ -379,7 +382,7 @@ impl Host {
         &self,
         receipt: &Receipt,
         update: &GraphUpdate,
-    ) -> Result<Report, String> {
+    ) -> Result<Report, Refusal> {
         #[cfg(test)]
         if self
             .test_runtime
@@ -401,7 +404,7 @@ impl Host {
         receipt: &Receipt,
         update: &GraphUpdate,
         after: bool,
-    ) -> Result<Report, String> {
+    ) -> Result<Report, Refusal> {
         #[cfg(test)]
         if self.test_runtime.as_ref().is_some_and(|r| !r.real_packages) {
             return self.approved(receipt);
@@ -424,12 +427,12 @@ impl Host {
             |path| super::dependency_provenance(path, &selected, &self.publishers),
         )?;
         if report.id != receipt.id || report.approval != receipt.approval {
-            return Err(super::APPROVAL_STALE.into());
+            return Err(Refusal::new(Category::NeedsReview, super::APPROVAL_STALE));
         }
         Ok(report)
     }
 
-    fn graph_checkpoint(&self, _stage: &str) -> Result<(), String> {
+    fn graph_checkpoint(&self, _stage: &str) -> Result<(), Refusal> {
         #[cfg(test)]
         if let Some(runtime) = &self.test_runtime {
             let count = runtime.graph_checkpoints.get() + 1;
@@ -437,14 +440,15 @@ impl Host {
             if runtime.interrupt_graph_at.get() == Some(count) {
                 return Err(format!(
                     "injected graph interruption at {_stage}:{count}; run restore-all"
-                ));
+                )
+                .into());
             }
         }
         Ok(())
     }
 }
 
-fn validate_final_graph(graph: &BTreeMap<String, (Receipt, Report)>) -> Result<(), String> {
+fn validate_final_graph(graph: &BTreeMap<String, (Receipt, Report)>) -> Result<(), Refusal> {
     for (receipt, report) in graph.values() {
         for dep in &report.brings {
             let selected = graph.get(&dep.report.id).ok_or_else(|| {
@@ -462,17 +466,17 @@ fn validate_final_graph(graph: &BTreeMap<String, (Receipt, Report)>) -> Result<(
                     report.id,
                     dep.report.package.display(),
                     dep.report.id
-                ));
+                )
+                .into());
             }
             if receipt.desired == Desired::Enabled && selected.0.desired != Desired::Enabled {
-                return Err(format!(
-                    "{} requires enabled plugin {}",
-                    report.id, dep.report.id
-                ));
+                return Err(
+                    format!("{} requires enabled plugin {}", report.id, dep.report.id).into(),
+                );
             }
         }
     }
-    crate::dependencies::dependency_order(
+    crate::dependencies::dependency_order_with::<Refusal>(
         graph.values().map(|(_, r)| r.package.clone()),
         |path: &PathBuf| {
             graph

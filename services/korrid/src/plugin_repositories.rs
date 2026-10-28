@@ -165,21 +165,28 @@ impl Uploads {
             self.active = None;
         }
     }
-    fn selected(&mut self, id: &str) -> Result<&mut Upload, RpcFailure> {
+    fn selected(&mut self, id: &str) -> Result<&mut Upload, PluginRefusal> {
         self.expire(Instant::now());
         if !self.active.as_ref().is_some_and(|u| u.id == id) {
             // A failed upload operation releases this device's sole staging slot.
             self.active = None;
-            return Err(RpcFailure {
-                code: CODE_UPLOAD_NOT_FOUND.into(),
-                message: "archive upload is missing or expired".into(),
-            });
+            return Err(PluginRefusal::new(
+                PluginRefusalCategory::UploadNotFound,
+                "archive upload is missing or expired",
+            ));
         }
         let upload = self.active.as_mut().unwrap();
         upload.touched = Instant::now();
         Ok(upload)
     }
 }
+fn upload_refusal(error: PluginRefusal) -> RpcFailure {
+    RpcFailure {
+        code: error.category.code().into(),
+        message: error.message,
+    }
+}
+
 fn upload_failure(message: &str) -> RpcFailure {
     RpcFailure {
         code: CODE_REFUSED.into(),
@@ -283,7 +290,9 @@ impl PluginAdminSocket {
     ) -> Result<PluginChangeApplied, RpcFailure> {
         let mut uploads = self.uploads.lock().await;
         let result = (|| {
-            let upload = uploads.selected(&request.upload_id)?;
+            let upload = uploads
+                .selected(&request.upload_id)
+                .map_err(upload_refusal)?;
             if upload.finished || request.offset != upload.received {
                 return Err(upload_failure("archive chunk has the wrong offset"));
             }
@@ -311,7 +320,9 @@ impl PluginAdminSocket {
     ) -> Result<PluginChangeApplied, RpcFailure> {
         let mut uploads = self.uploads.lock().await;
         let result = (|| {
-            let upload = uploads.selected(&request.upload_id)?;
+            let upload = uploads
+                .selected(&request.upload_id)
+                .map_err(upload_refusal)?;
             if upload.received != upload.size
                 || hex::encode(upload.digest.clone().finalize()) != upload.expected
             {
@@ -343,7 +354,7 @@ impl PluginAdminSocket {
     ) -> Result<PluginAdminResponse, RpcFailure> {
         let mut uploads = self.uploads.lock().await;
         let result = async {
-            let upload = uploads.selected(id)?;
+            let upload = uploads.selected(id).map_err(upload_refusal)?;
             if !upload.finished {
                 return Err(upload_failure("archive upload is not finished"));
             }
@@ -373,7 +384,8 @@ impl PluginAdminSocket {
         .await;
         let trust_review = approval.is_none()
             && result.as_ref().is_err_and(|error| {
-                error.code == CODE_PUBLISHER_NOT_TRUSTED || error.code == CODE_PUBLISHER_KEY_CHANGED
+                error.code == PluginRefusalCategory::PublisherNotTrusted.code()
+                    || error.code == PluginRefusalCategory::PublisherKeyChanged.code()
             });
         if (result.is_err() && !trust_review) || approval.is_some() {
             uploads.active = None;
@@ -657,6 +669,16 @@ mod archive_tests {
             CODE_UPLOAD_NOT_FOUND
         );
         server.await.unwrap();
+    }
+
+    #[test]
+    fn missing_upload_has_a_typed_category_before_wire_encoding() {
+        let mut uploads = Uploads::default();
+        let error = uploads.selected("unknown").unwrap_err();
+        assert_eq!(error.category, PluginRefusalCategory::UploadNotFound);
+        let wire = upload_refusal(PluginRefusal::new(error.category, "different diagnostic"));
+        assert_eq!(wire.code, CODE_UPLOAD_NOT_FOUND);
+        assert_eq!(wire.message, "different diagnostic");
     }
 
     #[test]

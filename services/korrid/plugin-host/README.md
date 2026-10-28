@@ -487,7 +487,10 @@ Plugin administration from the portal has one separate route, approved
 through `korri-plugin-admin.socket` (see **korrid's admin socket** above), including publisher trust/revoke and staged archive inspection/install.
 The host keeps every check for those operations: the lock, catalog
 validation, archive hash, publisher signature and approval digest. korrid
-exposes them only to the full-permission local portal. Verified same-owner peer devices have the same plugin authority. Read-only portals can list repositories, catalogs and publishers but cannot inspect, install or change trust.
+exposes them only to the full-permission local portal. Verified same-owner
+peer devices have the same plugin authority. Read-only portals can list
+repository settings and installed selections. Catalog and publisher listing,
+inspection, installation and trust changes require full permission.
 
 Linux discovery reads these selections. Several
 claims for one system make one catalog candidate; a disagreement about the

@@ -1,3 +1,4 @@
+use crate::plugin_admin::{PluginRefusal as Refusal, PluginRefusalCategory as Category};
 use crate::{
     declaration::Declaration, process, provenance::Provenance, script::source::SourceSnapshot,
 };
@@ -707,13 +708,18 @@ pub fn archive_signature(
     package: &Path,
     cache: &str,
     key: Option<&str>,
-) -> Result<bool, String> {
+) -> Result<bool, Refusal> {
     let text = package.to_str().ok_or("invalid package path")?;
     let info = path_info(nix, text, Some(cache))?;
     if info.signatures.is_empty() {
         return Ok(false);
     }
-    let key = key.ok_or("signed archive requires a trusted publisher key")?;
+    let key = key.ok_or_else(|| {
+        Refusal::new(
+            Category::PublisherNotTrusted,
+            "signed archive requires a trusted publisher key",
+        )
+    })?;
     if !signed_by(&info, &fingerprint(text, &info)?, &public_key_bytes(key)?) {
         return Err("archive signature does not verify against the publisher public key".into());
     }
@@ -842,49 +848,31 @@ pub fn load_graph(
     snapshot: Option<&StoreSnapshot>,
     package: &Path,
     provenance: Provenance,
-    mut dependency_provenance: impl FnMut(&Path) -> Result<Provenance, String>,
+    dependency_provenance: impl FnMut(&Path) -> Result<Provenance, String>,
 ) -> Result<Report, String> {
-    let AssembledGraph {
-        order,
-        mut reports,
-        closures,
-    } = assemble_graph([package.to_path_buf()], |path| {
-        let origin = if path == package {
-            provenance.clone()
-        } else {
-            dependency_provenance(path)?
-        };
-        let closure = match snapshot {
-            Some(snapshot) if snapshot.contains(path) => snapshot.closure(path)?,
-            _ => closure_of(nix, path)?,
-        };
-        build_report(path, origin, Some(&closure))
-    })?;
-    let mut report = reports.remove(package).unwrap();
-    report.brings = order
-        .iter()
-        .filter(|path| closures[package].contains(*path))
-        .map(|path| DependencyReport {
-            report: reports[path].clone(),
-            already_approved: false,
-        })
-        .collect();
-    Ok(report)
+    load_resolved_graph(
+        nix,
+        snapshot,
+        package,
+        provenance,
+        |_| Ok(Vec::new()),
+        dependency_provenance,
+    )
 }
 
-pub fn load_resolved_graph(
+pub fn load_resolved_graph<E: From<String>>(
     nix: &Path,
     snapshot: Option<&StoreSnapshot>,
     package: &Path,
     provenance: Provenance,
-    mut resolve: impl FnMut(&Path) -> Result<Vec<PathBuf>, String>,
-    mut dependency_provenance: impl FnMut(&Path) -> Result<Provenance, String>,
-) -> Result<Report, String> {
+    mut resolve: impl FnMut(&Path) -> Result<Vec<PathBuf>, E>,
+    mut dependency_provenance: impl FnMut(&Path) -> Result<Provenance, E>,
+) -> Result<Report, E> {
     let AssembledGraph {
         order,
         mut reports,
         closures,
-    } = assemble_graph([package.to_path_buf()], |path| {
+    } = assemble_graph::<E>([package.to_path_buf()], |path| {
         let origin = if path == package {
             provenance.clone()
         } else {
@@ -942,12 +930,12 @@ struct AssembledGraph {
     closures: BTreeMap<PathBuf, BTreeSet<PathBuf>>,
 }
 
-fn assemble_graph(
+fn assemble_graph<E: From<String>>(
     roots: impl IntoIterator<Item = PathBuf>,
-    mut load: impl FnMut(&Path) -> Result<Report, String>,
-) -> Result<AssembledGraph, String> {
+    mut load: impl FnMut(&Path) -> Result<Report, E>,
+) -> Result<AssembledGraph, E> {
     let mut reports = BTreeMap::new();
-    let order = crate::dependencies::dependency_order(roots, |path| {
+    let order = crate::dependencies::dependency_order_with::<E>(roots, |path| {
         let report = load(path)?;
         let requires = report.requires.clone();
         reports.insert(path.clone(), report);
@@ -959,10 +947,7 @@ fn assemble_graph(
             .insert(report.id.clone(), report.package.clone())
             .is_some()
         {
-            return Err(format!(
-                "conflicting exact versions for plugin {}",
-                report.id
-            ));
+            return Err(format!("conflicting exact versions for plugin {}", report.id).into());
         }
     }
     let mut closures: BTreeMap<PathBuf, BTreeSet<PathBuf>> = BTreeMap::new();

@@ -1,3 +1,4 @@
+use korri_plugin_host::plugin_admin::PluginRefusal as Refusal;
 use korri_plugin_host::{
     admin,
     host::Host,
@@ -173,10 +174,10 @@ fn seed_selection(report: &package::Report) -> Receipt {
     }
 }
 
-fn print_review(host: &Host, report: &package::Report) -> Result<(), String> {
+fn print_review(host: &Host, report: &package::Report) -> Result<(), Refusal> {
     let mut reviewed = report.clone();
     reviewed.approval = host.review_approval(report)?;
-    print_json(&reviewed)
+    print_json(&reviewed).map_err(Refusal::from)
 }
 
 fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
@@ -207,7 +208,7 @@ fn lifecycle_policy() -> Result<LifecyclePolicy, String> {
     )?])
 }
 
-fn open_host() -> Result<Host, String> {
+fn open_host() -> Result<Host, Refusal> {
     let nix =
         env::var("KORRI_PLUGIN_NIX").map_err(|_| "host package must supply KORRI_PLUGIN_NIX")?;
     let systemctl = env::var("KORRI_PLUGIN_SYSTEMCTL")
@@ -263,7 +264,7 @@ fn inherited_listener() -> Result<std::os::unix::net::UnixListener, String> {
 
 /// One request at a time. Each opens the host, and so takes its lock, only
 /// for that request; boot restore and the CLI keep working in between.
-fn serve_admin() -> Result<(), String> {
+fn serve_admin() -> Result<(), Refusal> {
     let peer = admin_peer_uid()?;
     let listener = inherited_listener()?;
     for stream in listener.incoming() {
@@ -287,7 +288,7 @@ fn serve_admin() -> Result<(), String> {
     Ok(())
 }
 
-fn run(args: Vec<String>) -> Result<(), String> {
+fn run(args: Vec<String>) -> Result<(), Refusal> {
     if args == ["serve-admin"] {
         return serve_admin();
     }
@@ -325,10 +326,10 @@ fn run(args: Vec<String>) -> Result<(), String> {
         ["disable", id] => host.set_enabled(id, false),
         ["remove", id] => host.remove(id, false),
         ["remove", id, "--purge"] => host.remove(id, true),
-        ["status", id] => print_json(&host.status(id)?.ok_or("plugin is not installed")?),
+        ["status", id] => print_json(&host.status(id)?.ok_or("plugin is not installed")?).map_err(Refusal::from),
         ["restore-all"] => host.restore_all(),
         ["restore", id] => host.rollback(id),
-        ["enabled-packages"] => print_json(&host.enabled_packages()?),
+        ["enabled-packages"] => print_json(&host.enabled_packages()?).map_err(Refusal::from),
         ["unit", id] => {
             korri_plugin_host::declaration::validate_id(id)?;
             println!("{}.service", package::unit_name(id));
@@ -338,7 +339,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
     }
 }
 
-fn repository_command(host: &Host, config: &Configuration, args: &[&str]) -> Result<(), String> {
+fn repository_command(host: &Host, config: &Configuration, args: &[&str]) -> Result<(), Refusal> {
     match args {
         ["add", raw] => {
             let source = SourceUrl::parse(raw)?;
@@ -350,7 +351,7 @@ fn repository_command(host: &Host, config: &Configuration, args: &[&str]) -> Res
             let source = SourceUrl::parse(raw)?;
             match host.remove_source(config, &source)? {
                 source_store::RemoveOutcome::Removed => { println!("repository removed: {source}"); Ok(()) }
-                source_store::RemoveOutcome::NotFound => Err(format!("repository not configured: {source}")),
+                source_store::RemoveOutcome::NotFound => Err(format!("repository not configured: {source}").into()),
             }
         }
         ["list"] => {
@@ -363,7 +364,7 @@ fn repository_command(host: &Host, config: &Configuration, args: &[&str]) -> Res
             }
             Ok(())
         }
-        ["catalog", source] => print_json(&host.catalog(config, &SourceUrl::parse(source)?)?),
+        ["catalog", source] => print_json(&host.catalog(config, &SourceUrl::parse(source)?)?).map_err(Refusal::from),
         ["inspect", source, id, release] => {
             print_review(host, &host.inspect_repository(config, &SourceUrl::parse(source)?, id, release)?)?;
             host.release_download()

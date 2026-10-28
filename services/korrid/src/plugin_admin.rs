@@ -30,6 +30,83 @@ pub const CODE_NAMESPACE_TAKEN: &str = "PluginNamespaceTaken";
 pub const CODE_REQUIREMENT_CONFLICT: &str = "PluginRequirementConflict";
 pub const CODE_NEEDS_REVIEW: &str = "PluginNeedsReview";
 
+/// Internal refusal categories. These are not a new persisted or wire shape;
+/// the admin socket still sends PluginAdminFailure { code, message }.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PluginRefusalCategory {
+    PublisherNotTrusted,
+    PublisherKeyChanged,
+    NamespaceTaken,
+    RequirementConflict,
+    UploadNotFound,
+    NeedsReview,
+    Other,
+}
+
+impl PluginRefusalCategory {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::PublisherNotTrusted => CODE_PUBLISHER_NOT_TRUSTED,
+            Self::PublisherKeyChanged => CODE_PUBLISHER_KEY_CHANGED,
+            Self::NamespaceTaken => CODE_NAMESPACE_TAKEN,
+            Self::RequirementConflict => CODE_REQUIREMENT_CONFLICT,
+            Self::UploadNotFound => CODE_UPLOAD_NOT_FOUND,
+            Self::NeedsReview => CODE_NEEDS_REVIEW,
+            Self::Other => CODE_REFUSED,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PluginRefusal {
+    pub category: PluginRefusalCategory,
+    pub message: String,
+}
+
+impl PluginRefusal {
+    pub fn new(category: PluginRefusalCategory, message: impl Into<String>) -> Self {
+        Self {
+            category,
+            message: message.into(),
+        }
+    }
+    pub fn into_failure(self) -> PluginAdminFailure {
+        PluginAdminFailure {
+            code: self.category.code().into(),
+            message: self.message,
+        }
+    }
+}
+impl From<String> for PluginRefusal {
+    fn from(message: String) -> Self {
+        Self::new(PluginRefusalCategory::Other, message)
+    }
+}
+impl From<&str> for PluginRefusal {
+    fn from(message: &str) -> Self {
+        Self::from(message.to_owned())
+    }
+}
+impl std::fmt::Display for PluginRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+impl std::error::Error for PluginRefusal {}
+// Text remains convenient for diagnostics and message assertions. Decisions
+// use category, never these text operations.
+impl std::ops::Deref for PluginRefusal {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.message
+    }
+}
+impl PartialEq<&str> for PluginRefusal {
+    fn eq(&self, other: &&str) -> bool {
+        self.message == *other
+    }
+}
+
 // Producers: `main.rs` `repository list` (official vs user-added split),
 // `source_store.rs` list_sources, `repository.rs` Configuration.official, and
 // the host receipts (`selection.rs` Receipt, `provenance.rs` Repository).
