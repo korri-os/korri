@@ -173,6 +173,7 @@ pub(crate) async fn netplay_route() -> NetplayRoute {
         device.clone(),
         LiveRoute {
             connection: outgoing.clone(),
+            signalled: Vec::new(),
         },
     );
     let forward = devices.da.netplay_forward(&device).await.unwrap();
@@ -272,6 +273,7 @@ async fn reach_signed_peer_call_and_plaintext_403_over_real_iroh() {
         devices.cb.public_key().unwrap(),
         LiveRoute {
             connection: outgoing.clone(),
+            signalled: Vec::new(),
         },
     );
     let client = crate::upstream_native::NativeClient::new_secure_candidates(
@@ -384,6 +386,7 @@ async fn reach_failure_sentence_clears_after_recovery_and_forward_address_wins()
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     assert!(

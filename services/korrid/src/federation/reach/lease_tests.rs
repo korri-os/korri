@@ -10,16 +10,20 @@ async fn reach_selection_switches_exact_peer_and_drop_releases_the_ports() {
         tcp: [0; 3],
         udp: [0; 5],
     });
-    routes
-        .live
-        .write()
-        .unwrap()
-        .insert("A".into(), LiveRoute { connection: ab });
-    routes
-        .live
-        .write()
-        .unwrap()
-        .insert("B".into(), LiveRoute { connection: cd });
+    routes.live.write().unwrap().insert(
+        "A".into(),
+        LiveRoute {
+            connection: ab,
+            signalled: Vec::new(),
+        },
+    );
+    routes.live.write().unwrap().insert(
+        "B".into(),
+        LiveRoute {
+            connection: cd,
+            signalled: Vec::new(),
+        },
+    );
     assert!(routes.stream_address("A").is_none());
     assert!(routes.stream_address("B").is_none());
     let first = routes.activate("A").await.unwrap().unwrap();
@@ -86,6 +90,7 @@ async fn reach_stream_probe_keeps_native_then_uses_iroh_and_preserves_native_fai
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -156,6 +161,7 @@ async fn reach_selected_session_end_and_viewer_error_release_the_lease() {
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     *devices.da.reach.bindings.write().unwrap() = Some(tunnel::Bindings {

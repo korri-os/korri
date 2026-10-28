@@ -49,6 +49,7 @@ async fn reach_candidate_race_precedes_iroh_and_injected_failure_uses_it() {
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -169,6 +170,7 @@ async fn reach_direct_failure_waits_five_seconds_before_the_member_relay() {
         key.clone(),
         LiveRoute {
             connection: outgoing.clone(),
+            signalled: Vec::new(),
         },
     );
     let client = crate::upstream_native::NativeClient::new_secure_candidates(

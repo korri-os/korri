@@ -193,7 +193,12 @@ impl Controller {
         }
         self.pending.clear();
         self.retry.clear();
-        self.processed.clear();
+        // Keep `processed`. Relay reads have no cursor, so every pass rereads
+        // each unexpired offer. An offer answered before a reset has been
+        // consumed by its sender, which ignores a second answer and does not
+        // dial back. Our own dial then times out while it holds the per-peer
+        // dial slot that the answer to our fresh offer needs (#315).
+        // Entries still expire with their offers in `drive`.
         self.relaying.write().expect("relay answers").clear();
         self.bindings.write().expect("reach bindings").clear();
         self.relay_addresses
@@ -264,7 +269,24 @@ impl Controller {
                 .bind_addr(SocketAddr::new(ip, port))
                 .map_err(io::Error::other)?;
         }
-        let endpoint = builder.bind().await.map_err(io::Error::other)?;
+        let endpoint = builder.bind().await.map_err(|error| {
+            // Privacy-safe: an error kind, never an address. After a rejoin an
+            // IPv6 address can refuse to bind until DAD completes (#315).
+            let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+            let mut kind = None;
+            while let Some(error) = source {
+                if let Some(error) = error.downcast_ref::<io::Error>() {
+                    kind = Some(error.kind());
+                    break;
+                }
+                source = error.source();
+            }
+            eprintln!(
+                "korrid: reach: {} stage=endpoint_failed error_kind={kind:?}",
+                self.directory.reach.diagnostics.stamp()
+            );
+            io::Error::other(error)
+        })?;
         eprintln!(
             "korrid: reach: {} stage=endpoint_bound port={port}",
             self.directory.reach.diagnostics.stamp()
@@ -747,13 +769,11 @@ impl Controller {
         } else {
             self.retry.get(&device).map_or(0, |(_, n)| *n)
         };
-        self.retry.insert(
-            device.clone(),
-            (
-                Instant::now() + retry_delay(failures),
-                failures.saturating_add(1),
-            ),
+        let attempt = (
+            Instant::now() + retry_delay(failures),
+            failures.saturating_add(1),
         );
+        self.retry.insert(device.clone(), attempt);
         let mut candidates = peer
             .current_endpoint
             .or(peer.remembered_endpoint)
@@ -799,6 +819,9 @@ impl Controller {
             }
         }
         let Ok(endpoint) = self.ensure_endpoint(stun).await else {
+            // No offer left. A native-ready refresh must not stand in for it:
+            // right after a rejoin the endpoint often cannot bind yet (#315).
+            self.retry.insert(device.clone(), attempt);
             set_failed(&self.directory, &device, &token);
             return;
         };
@@ -840,6 +863,10 @@ impl Controller {
         let Some(endpoint) = self.endpoint.clone() else {
             return;
         };
+        // Probing a route to the peer's replaced endpoint cannot help, and the
+        // rebuilt endpoint needs our dial (#315). Closing the route lets the
+        // check below dial instead of refreshing it.
+        self.directory.reach.close_replaced(&device, &addresses);
         if refresh_open_route(&mut self.tasks, &self.directory, &device)
             || !self
                 .dialing
@@ -870,6 +897,7 @@ impl Controller {
         };
         let (directory, routes) = (self.directory.clone(), self.directory.reach.clone());
         let relay_answers = self.relaying.clone();
+        let signalled = addresses.clone();
         self.tasks.spawn(async move {
             let _guard = guard;
             let Ok(id) = endpoint_id.parse::<EndpointId>() else {
@@ -911,7 +939,13 @@ impl Controller {
                         .live
                         .write()
                         .expect("reach routes")
-                        .insert(device.clone(), LiveRoute { connection })
+                        .insert(
+                            device.clone(),
+                            LiveRoute {
+                                connection,
+                                signalled,
+                            },
+                        )
                     {
                         old.connection.close(0u32.into(), b"connection replaced");
                     }

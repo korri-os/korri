@@ -78,6 +78,29 @@ impl Recovery {
             .insert(connection.stable_id(), (peer, connection));
         true
     }
+    /// Close this peer's incoming and outgoing connections to an endpoint it
+    /// has replaced. A connection with a path at one of the replacement's
+    /// signed addresses stays open. A relay-only connection stays open too:
+    /// its address proves nothing about the endpoint behind it.
+    pub fn close_replaced(&mut self, peer: &str, addresses: &[std::net::SocketAddr]) {
+        for (owner, connection) in self.connections.values() {
+            let paths = connection.paths();
+            let direct = paths
+                .iter()
+                .filter_map(|path| match path.remote_addr() {
+                    iroh::TransportAddr::Ip(address) => Some(*address),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if owner == peer
+                && !direct.is_empty()
+                && !direct.iter().any(|address| addresses.contains(address))
+            {
+                connection.close(0u32.into(), b"peer endpoint replaced");
+            }
+        }
+        self.observe_closed();
+    }
     pub fn failed(&mut self, peer: &str) {
         self.observe_closed();
         self.policy.failed(peer);

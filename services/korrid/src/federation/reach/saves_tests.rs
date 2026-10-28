@@ -47,6 +47,7 @@ async fn reach_saves_use_the_iroh_route_for_a_roster_only_peer() {
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     assert!(devices.da.snapshot().unwrap()[0]

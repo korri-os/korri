@@ -56,6 +56,8 @@ use tokio::sync::Notify;
 pub(super) const ALPN: &[u8] = b"korri/reach/1";
 pub(super) struct LiveRoute {
     connection: Connection,
+    /// The signed direct addresses this route was dialed with.
+    signalled: Vec<std::net::SocketAddr>,
 }
 #[derive(Clone, Default)]
 pub(crate) struct Routes {
@@ -151,6 +153,34 @@ impl Routes {
             .get(device)
             .filter(|r| r.connection.close_reason().is_none())
             .map(|r| r.connection.clone())
+    }
+    /// A peer endpoint binds every local address on one fresh port, and keeps
+    /// it for its whole life. A signal that shares no address with the one
+    /// this live route was dialed with comes from a rebuilt endpoint. The old
+    /// route can still look live here until iroh's idle timeout, because the
+    /// peer's close was lost with its network. While any connection to an
+    /// endpoint id is open, iroh sends a new dial only on that connection's
+    /// selected path: the old address. So close those connections first.
+    fn close_replaced(&self, device: &str, addresses: &[std::net::SocketAddr]) {
+        let Ok(live) = self.live.read() else {
+            return;
+        };
+        let Some(route) = live.get(device).filter(|route| {
+            route.connection.close_reason().is_none()
+                && !route.signalled.is_empty()
+                && !addresses.is_empty()
+                && !addresses.iter().any(|a| route.signalled.contains(a))
+        }) else {
+            return;
+        };
+        route
+            .connection
+            .close(0u32.into(), b"peer endpoint replaced");
+        drop(live);
+        self.recovery
+            .lock()
+            .expect("reach recovery")
+            .close_replaced(device, addresses);
     }
     fn stream_address(&self, device: &str) -> Option<String> {
         let lease = self.selected.try_lock().ok()?.as_ref()?.upgrade()?;

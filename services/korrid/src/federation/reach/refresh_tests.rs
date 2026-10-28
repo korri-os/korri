@@ -20,6 +20,7 @@ async fn reach_stopped_viewer_without_native_address_keeps_a_live_forward() {
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     *devices.da.reach.bindings.write().unwrap() = Some(tunnel::Bindings {
@@ -69,6 +70,7 @@ async fn reach_registered_forward_address_is_not_native_evidence() {
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     *devices.da.reach.bindings.write().unwrap() = Some(tunnel::Bindings {
@@ -101,6 +103,7 @@ async fn reach_successful_background_refresh_clears_a_stalled_request_on_the_sam
         key.clone(),
         LiveRoute {
             connection: outgoing.clone(),
+            signalled: Vec::new(),
         },
     );
     let stalled = Arc::new(AtomicBool::new(true));
@@ -216,6 +219,7 @@ async fn reach_stream_player_owns_a_forward_without_controlling_the_holder() {
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     *devices.da.reach.bindings.write().unwrap() = Some(tunnel::Bindings {

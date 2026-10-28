@@ -925,3 +925,349 @@ async fn reach_answer_and_direct_dial_advance_before_the_failed_publication_tail
         "the peer never received a valid signed answer"
     );
 }
+
+/// Signed in-process relay, real native peer and a controller without an
+/// endpoint, as `reset` leaves it. `bindable` models the first seconds after
+/// a rejoin, when a new interface address exists but cannot yet be bound.
+struct RebindFixture {
+    devices: Devices,
+    controller: Controller,
+    signal: CoordinatedRelays<InProcessRelayNetwork>,
+    receiver: CoordinatedRelays<InProcessRelayNetwork>,
+    snapshot: crate::federation::PeerSnapshot,
+    bindable: Arc<std::sync::atomic::AtomicBool>,
+    serving: JoinHandle<()>,
+}
+impl Drop for RebindFixture {
+    fn drop(&mut self) {
+        self.serving.abort();
+    }
+}
+async fn rebind_fixture() -> RebindFixture {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let devices = Devices::new();
+    let router = devices.router();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let serving = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let relays = RelayList::configured(vec!["wss://signal.invalid".into()]).unwrap();
+    let network = Arc::new(InProcessRelayNetwork::new(&relays));
+    let signal = CoordinatedRelays::new(
+        relays.clone(),
+        devices.ca.identity_snapshot().unwrap(),
+        network.clone(),
+    )
+    .unwrap();
+    let receiver =
+        CoordinatedRelays::new(relays, devices.cb.identity_snapshot().unwrap(), network).unwrap();
+    let bindable = Arc::new(AtomicBool::new(false));
+    let reader = bindable.clone();
+    // TEST-NET-1 is never assigned to this host, so bind fails with the same
+    // EADDRNOTAVAIL as an IPv6 address during duplicate address detection.
+    // Bind one stable host address only. This host's other addresses, such
+    // as rotating IPv6 temporary addresses, can be briefly unbindable too.
+    let interfaces: InterfaceReader = Arc::new(move || {
+        let mut addresses = interfaces::interface_addresses()?
+            .into_iter()
+            .filter(|a| a.has_default_route && a.address.is_ipv4() && a.interface != "tailscale0")
+            .take(1)
+            .collect::<Vec<_>>();
+        if !reader.load(Ordering::SeqCst) {
+            addresses.push(interfaces::InterfaceAddress {
+                interface: "wlan0".into(),
+                address: "192.0.2.1".parse().unwrap(),
+                has_default_route: false,
+            });
+        }
+        Ok(addresses)
+    });
+    let controller = Controller {
+        environment: Environment {
+            interfaces,
+            ..Environment::linux()
+        },
+        directory: devices.da.clone(),
+        credentials: devices.ca.clone(),
+        config: None,
+        key: iroh::SecretKey::generate(),
+        peer_router: axum::Router::new(),
+        relay_port: 0,
+        endpoint: None,
+        tasks: JoinSet::new(),
+        relay_task: None,
+        bindings: Arc::new(RwLock::new(BTreeMap::new())),
+        dialing: Arc::new(Mutex::new(BTreeSet::new())),
+        relay_addresses: Arc::new(RwLock::new(Vec::new())),
+        pending: BTreeMap::new(),
+        processed: BTreeMap::new(),
+        retry: BTreeMap::new(),
+        relaying: Arc::new(RwLock::new(BTreeMap::new())),
+    };
+    let mut snapshot = devices.da.snapshot().unwrap().remove(0);
+    snapshot.current_endpoint = Some(crate::relay::EndpointRecord {
+        device_public_key: devices.cb.public_key().unwrap(),
+        owner_public_key: snapshot.membership.owner_public_key.clone(),
+        generation: 1,
+        candidates: vec![origin],
+        issued_at: unix_time(),
+        expires_at: unix_time() + 60,
+        label: None,
+        moonlight_address: None,
+    });
+    RebindFixture {
+        devices,
+        controller,
+        signal,
+        receiver,
+        snapshot,
+        bindable,
+        serving,
+    }
+}
+impl RebindFixture {
+    async fn offers(&self) -> usize {
+        let sender = self.devices.ca.public_key().unwrap();
+        self.receiver
+            .receive(unix_time())
+            .await
+            .unwrap()
+            .commands
+            .iter()
+            .filter(|command| {
+                matches!(command,
+                CoordinationCommand::ReachOffer { sender_device_public_key, .. }
+                    if *sender_device_public_key == sender)
+            })
+            .count()
+    }
+    async fn offer(&mut self) {
+        self.controller
+            .offer_peer(
+                self.snapshot.clone(),
+                &self.signal,
+                &StunList(Vec::new()),
+                unix_time(),
+            )
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn reach_unbindable_endpoint_after_reset_does_not_defer_our_offer_to_a_native_peer() {
+    let mut fixture = rebind_fixture().await;
+    fixture.offer().await;
+    assert_eq!(fixture.offers().await, 0, "fixture endpoint was bindable");
+    assert_eq!(
+        fixture.devices.da.snapshot().unwrap()[0].state,
+        PeerState::Ready,
+        "fixture did not take the native-ready path"
+    );
+    // The address becomes bindable. Native HTTP stays healthy, but it cannot
+    // carry netplay: our iroh offer is still owed, on the normal first retry.
+    fixture
+        .bindable
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    tokio::time::sleep(retry_delay(0) + Duration::from_millis(200)).await;
+    fixture.offer().await;
+    let offers = fixture.offers().await;
+    fixture.controller.reset().await;
+    assert_eq!(
+        offers, 1,
+        "a native-ready refresh deferred the iroh offer that the endpoint could not send"
+    );
+}
+
+#[tokio::test]
+async fn reach_network_reset_does_not_answer_a_replayed_offer_again() {
+    let mut fixture = rebind_fixture().await;
+    fixture
+        .bindable
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let peer_endpoint = publication_loopback_endpoint(iroh::SecretKey::generate()).await;
+    let request_id = "e1".repeat(32);
+    let now = unix_time();
+    fixture
+        .receiver
+        .queue_command(
+            &fixture.devices.ca.public_key().unwrap(),
+            CoordinationCommand::ReachOffer {
+                sender_device_public_key: fixture.devices.cb.public_key().unwrap(),
+                offer: Offer {
+                    endpoint_id: peer_endpoint.id().to_string(),
+                    direct_addresses: endpoint_addresses(&peer_endpoint),
+                    expires_at: now + SIGNAL_LIFETIME,
+                    request_id: request_id.clone(),
+                },
+            },
+            now,
+        )
+        .await
+        .unwrap();
+    let answers = async |fixture: &RebindFixture| {
+        fixture
+            .receiver
+            .receive(unix_time())
+            .await
+            .unwrap()
+            .commands
+            .iter()
+            .filter(|command| {
+                matches!(command,
+                CoordinationCommand::ReachAnswer { answer, .. } if answer.request_id == request_id)
+            })
+            .count()
+    };
+    fixture
+        .controller
+        .receive_reach(&fixture.signal, &StunList(Vec::new()), unix_time())
+        .await;
+    assert_eq!(answers(&fixture).await, 1, "fixture offer was not answered");
+    // Relay reads have no cursor: every pass rereads each unexpired offer.
+    // The sender consumed our answer, so after our own network reset the
+    // replay must not cost a second answer or a dial bound to time out.
+    fixture.controller.reset().await;
+    fixture
+        .controller
+        .receive_reach(&fixture.signal, &StunList(Vec::new()), unix_time())
+        .await;
+    let replayed = answers(&fixture).await;
+    fixture.controller.reset().await;
+    peer_endpoint.close().await;
+    assert_eq!(
+        replayed, 1,
+        "a network reset answered an already answered offer again"
+    );
+}
+
+/// The controller holds a live route, dialed through production `dial`, to
+/// the peer's `old` endpoint. The peer side keeps that connection open but no
+/// longer serves it, like a peer whose CONNECTION_CLOSE was lost with its
+/// Wi-Fi: until iroh's idle timeout the route still looks live here.
+struct LiveRouteFixture {
+    fixture: RebindFixture,
+    peer_key: iroh::SecretKey,
+    old: Endpoint,
+    _old_connection: Connection,
+    endpoint: Endpoint,
+}
+async fn live_route_fixture() -> LiveRouteFixture {
+    let mut fixture = rebind_fixture().await;
+    let endpoint = publication_loopback_endpoint(fixture.controller.key.clone()).await;
+    fixture.controller.endpoint = Some(endpoint.clone());
+    let peer = fixture.devices.cb.public_key().unwrap();
+    let peer_key = iroh::SecretKey::generate();
+    let old = publication_loopback_endpoint(peer_key.clone()).await;
+    let accepting = old.clone();
+    let router = fixture.devices.router();
+    let (sent, accepted) = tokio::sync::oneshot::channel();
+    let serving = tokio::spawn(async move {
+        let connection = accepting.accept().await.unwrap().await.unwrap();
+        let _ = sent.send(connection.clone());
+        tunnel::serve(connection, router).await;
+    });
+    fixture.controller.dial(
+        peer.clone(),
+        old.id().to_string(),
+        endpoint_addresses(&old),
+        Vec::new(),
+    );
+    let old_connection = timeout(Duration::from_secs(5), accepted)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(Duration::from_secs(10), async {
+        while let Some(result) = fixture.controller.tasks.join_next().await {
+            result.unwrap();
+        }
+    })
+    .await
+    .expect("production dial did not finish");
+    assert!(
+        fixture.devices.da.has_iroh_route(&peer),
+        "fixture has no live route"
+    );
+    serving.abort();
+    let _ = serving.await;
+    LiveRouteFixture {
+        fixture,
+        peer_key,
+        old,
+        _old_connection: old_connection,
+        endpoint,
+    }
+}
+impl LiveRouteFixture {
+    async fn offer_from(&mut self, endpoint: &Endpoint, request_id: &str) {
+        let now = unix_time();
+        self.fixture
+            .receiver
+            .queue_command(
+                &self.fixture.devices.ca.public_key().unwrap(),
+                CoordinationCommand::ReachOffer {
+                    sender_device_public_key: self.fixture.devices.cb.public_key().unwrap(),
+                    offer: Offer {
+                        endpoint_id: endpoint.id().to_string(),
+                        direct_addresses: endpoint_addresses(endpoint),
+                        expires_at: now + SIGNAL_LIFETIME,
+                        request_id: request_id.into(),
+                    },
+                },
+                now,
+            )
+            .await
+            .unwrap();
+        self.fixture
+            .controller
+            .receive_reach(&self.fixture.signal, &StunList(Vec::new()), unix_time())
+            .await;
+    }
+    async fn close(mut self) {
+        self.fixture.controller.reset().await;
+        self.endpoint.close().await;
+        self.old.close().await;
+    }
+}
+
+#[tokio::test]
+async fn reach_offer_from_a_rebuilt_peer_endpoint_dials_despite_an_old_live_route() {
+    let mut fixture = live_route_fixture().await;
+    // A network reset rebuilds the peer's endpoint: same key, new port. Its
+    // firewall admits our packets only after we send to the new address, so
+    // its own dial to us cannot succeed unless we dial it too.
+    let rebuilt = publication_loopback_endpoint(fixture.peer_key.clone()).await;
+    let accepting = rebuilt.clone();
+    let accepted = tokio::spawn(async move { accepting.accept().await.is_some() });
+    fixture.offer_from(&rebuilt, &"a2".repeat(32)).await;
+    let dialed = timeout(Duration::from_secs(5), accepted).await;
+    rebuilt.close().await;
+    fixture.close().await;
+    assert!(
+        matches!(dialed, Ok(Ok(true))),
+        "a route to the peer's old endpoint suppressed the dial to its rebuilt endpoint"
+    );
+}
+
+#[tokio::test]
+async fn reach_repeated_offer_from_the_same_peer_endpoint_keeps_the_live_route() {
+    let mut fixture = live_route_fixture().await;
+    let peer = fixture.fixture.devices.cb.public_key().unwrap();
+    let route = fixture.fixture.devices.da.reach.connection(&peer).unwrap();
+    // Live peers re-offer to refresh relay eligibility. That must not replace
+    // a route that an active netplay or stream forward may be using.
+    let accepting = fixture.old.clone();
+    let accepted = tokio::spawn(async move { accepting.accept().await.is_some() });
+    let old = fixture.old.clone();
+    fixture.offer_from(&old, &"a3".repeat(32)).await;
+    let redialed = timeout(Duration::from_secs(1), accepted).await;
+    let current = fixture.fixture.devices.da.reach.connection(&peer);
+    fixture.close().await;
+    assert!(
+        redialed.is_err(),
+        "a repeated offer redialed the same endpoint"
+    );
+    assert_eq!(
+        current.map(|connection| connection.stable_id()),
+        Some(route.stable_id()),
+        "a repeated offer replaced a live route"
+    );
+}

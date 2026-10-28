@@ -41,6 +41,7 @@ async fn reach_failed_signalling_keeps_a_live_signed_route_ready() {
         key.clone(),
         LiveRoute {
             connection: outgoing,
+            signalled: Vec::new(),
         },
     );
     let calls = Arc::new(AtomicUsize::new(0));
@@ -90,6 +91,7 @@ async fn reach_failed_signalling_with_a_dead_route_sets_the_sentence() {
         key.clone(),
         LiveRoute {
             connection: outgoing.clone(),
+            signalled: Vec::new(),
         },
     );
     devices
