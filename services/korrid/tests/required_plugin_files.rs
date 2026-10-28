@@ -28,8 +28,8 @@ const RUNNER_ID: &str = "@korri:mgba/mgba";
 /// the same keys korrid put into the launch input.
 const RUNNER: &str = r#"
 export const name = "mgba"
-export const systems = { gba: { id: "gba", title: "Game Boy Advance", content: { extensions: ["gba"] } } }
-export const runners = { mgba: { id: "@korri:mgba/mgba", program: "retroarch", core: "mgba", systems: ["gba"] } }
+export const systems = { gba: { title: "Game Boy Advance", content: { extensions: ["gba"] } } }
+export const runners = { mgba: { program: "retroarch", core: "mgba", systems: ["gba"] } }
 export const handlers = {
   "launch.prepare": input => ({
     command: input.program,

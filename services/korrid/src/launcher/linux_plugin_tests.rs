@@ -772,3 +772,33 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
         .values
         .contains_key("settings.input.ports.4.joypad-index"));
 }
+
+#[test]
+fn default_launch_refuses_authored_settings_before_validation_can_discard_them() {
+    let mut game = DiscoveredGame::new();
+    let package = game
+        .registry
+        .installed_package(&game.route.runner_id)
+        .unwrap();
+    let source = include_str!("../../examples/libretro-core.plugin.ts").replace(
+        "export { handlers } from \"./retroarch\"",
+        "export const handlers = {'settings.validate': () => { throw Error('must not validate'); }}",
+    );
+    fs::write(package.package.join("plugin.ts"), source).unwrap();
+    let device_path = game.root.path().join("device.yaml");
+    let mut device: serde_json::Value =
+        serde_yaml::from_str(&fs::read_to_string(&device_path).unwrap()).unwrap();
+    device["host"] = serde_json::json!({"runners":{"@korri:mgba/mgba":{"settings":{"speed":2}}}});
+    fs::write(&device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
+    game.snapshot = (*ConfigSnapshotCoordinator::new(game.root.path())
+        .reload()
+        .snapshot)
+        .clone();
+    let error = game.launch().unwrap_err().to_string();
+    assert!(
+        error.contains(
+            "runner @korri:mgba/mgba has no launch.prepare handler, so it takes no settings"
+        ),
+        "{error}"
+    );
+}

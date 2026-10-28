@@ -11,14 +11,13 @@ export const title = "PPSSPP"
 export const description = "Runs PlayStation Portable content with PPSSPP."
 
 export const systems = {
-  psp: { id: "psp", title: "PlayStation Portable", content: { extensions: ["iso", "cso", "pbp"] } },
+  psp: { title: "PlayStation Portable", content: { extensions: ["iso", "cso", "pbp"] } },
 }
 
 // No `family`. A family is a shared settings scope, and this runner shares its
 // settings with nothing, so it declares none. Launching does not depend on one.
 export const runners = {
   ppsspp: {
-    id: "@korri:ppsspp/ppsspp",
     program: "ppsspp",
     systems: ["psp"],
   },

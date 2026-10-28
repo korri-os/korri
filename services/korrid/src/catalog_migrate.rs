@@ -1846,7 +1846,7 @@ mod tests {
     }
 
     fn real_registry(rules: &Rules) -> PluginRegistry {
-        let systems: BTreeMap<_, _> = rules.systems.iter().map(|rule| (rule.system.clone(), serde_json::json!({"id":rule.system,"content":{"extensions":rule.extensions,"layout":rule.layouts}}))).collect();
+        let systems: BTreeMap<_, _> = rules.systems.iter().map(|rule| (rule.system.clone(), serde_json::json!({"content":{"extensions":rule.extensions,"layout":rule.layouts}}))).collect();
         let games: BTreeMap<_, _> = rules
             .games
             .values()
@@ -2372,8 +2372,8 @@ mod tests {
             let plugin = crate::plugin::load_plugin_source(
                 "@test",
                 r#"export const name = "discs"; export const systems = {
-                psx:{id:"psx",content:{extensions:["cue","m3u","bin"],evidence:{names:["^Game"]}}},
-                saturn:{id:"saturn",content:{extensions:["cue","m3u","bin"]}}
+                psx:{content:{extensions:["cue","m3u","bin"],evidence:{names:["^Game"]}}},
+                saturn:{content:{extensions:["cue","m3u","bin"]}}
             };"#,
             )
             .unwrap();
@@ -3036,7 +3036,7 @@ mod tests {
         .unwrap();
         let source = format!(
             r#"export const name = "migration"; export const title = "Migration";
-export const systems = {{gba:{{id:"gba",content:{{extensions:["gba"]}}}},snes:{{id:"snes",content:{{extensions:["sfc"]}}}},megadrive:{{id:"megadrive",content:{{extensions:["md"]}}}},lynx:{{id:"lynx",content:{{extensions:["lnx"]}}}}}};
+export const systems = {{gba:{{content:{{extensions:["gba"]}}}},snes:{{content:{{extensions:["sfc"]}}}},megadrive:{{content:{{extensions:["md"]}}}},lynx:{{content:{{extensions:["lnx"]}}}}}};
 export const games = {{fallout:{{title:"Fallout", releases:{{prepared:{{hashes:["{hash}"],file:"fallout-ce/MASTER.DAT"}}}}}}}};"#
         );
         let plugin = crate::plugin::load_plugin_source("@test", &source).unwrap();

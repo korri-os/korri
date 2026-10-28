@@ -31,6 +31,7 @@ struct ProviderContribution {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SystemRecord {
+    #[serde(skip)]
     pub id: String,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub title: Option<String>,
@@ -238,6 +239,7 @@ pub struct ArtifactFile {
 pub struct RunnerRecord {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub netplay: Option<crate::netplay::RunnerNetplay>,
+    #[serde(skip)]
     pub id: String,
     #[serde(default)]
     pub artifacts: Vec<String>,
@@ -1093,7 +1095,9 @@ pub fn decode_plugin_declaration(
     namespace: &str,
     declaration_json: &str,
 ) -> Result<Plugin, PluginError> {
-    let mut declaration: PluginDeclaration = serde_json::from_str(declaration_json)?;
+    let value: serde_json::Value = serde_json::from_str(declaration_json)?;
+    script::reject_derived_ids(&value).map_err(PluginError::Evaluation)?;
+    let mut declaration: PluginDeclaration = serde_json::from_value(value)?;
     declaration.namespace = namespace.to_owned();
     normalize_plugin(declaration)
 }
@@ -1177,17 +1181,11 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (local_id, system) in &declaration.systems {
+    for (local_id, system) in &mut declaration.systems {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId { kind: "system" });
         }
-        if system.id != *local_id {
-            return Err(PluginError::InvalidContribution {
-                kind: "system",
-                record_id: local_id.clone(),
-                reason: format!("record id {} does not match its local key", system.id),
-            });
-        }
+        system.id = local_id.clone();
         if let Some(panes) = &system.panes {
             let unique: BTreeSet<_> = panes.iter().collect();
             if panes.is_empty() || unique.len() != panes.len() || panes.iter().any(|p| p.is_empty())
@@ -1295,18 +1293,11 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (local_id, runner) in &declaration.runners {
+    for (local_id, runner) in &mut declaration.runners {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId { kind: "runner" });
         }
-        let expected_id = plugin_record_id(&id, local_id);
-        if runner.id != expected_id {
-            return Err(PluginError::InvalidContribution {
-                kind: "runner",
-                record_id: local_id.clone(),
-                reason: format!("record id {} must be {expected_id}", runner.id),
-            });
-        }
+        runner.id = plugin_record_id(&id, local_id);
         if runner.netplay.as_ref().is_some_and(|facts| {
             [&facts.library, &facts.version].iter().any(|value| {
                 value.trim().is_empty() || value.len() > 512 || value.chars().any(char::is_control)
@@ -1886,10 +1877,7 @@ mod tests {
     }
 
     fn content(value: Value) -> Result<Plugin, PluginError> {
-        plugin(
-            "rules",
-            json!({"systems": {"nes": {"id": "nes", "content": value}}}),
-        )
+        plugin("rules", json!({"systems": {"nes": {"content": value}}}))
     }
 
     #[test]
@@ -2045,11 +2033,11 @@ mod tests {
 
     #[test]
     fn registry_merges_enabled_content_in_plugin_id_order_without_runners() {
-        let a = plugin("a", json!({"systems": {"nes": {"id": "nes", "title": "First", "content": {"extensions": ["nes"], "layout": ["{title}.{ext}", "**/{title}.{ext}"], "evidence": {"bytes": [{"offset": 0, "hex": "00"}], "names": ["first"]}, "header": [{"size": 16, "bytes": {"offset": 0, "hex": "00"}}]}}, "gb": {"id": "gb"}}})).unwrap();
-        let b = plugin("b", json!({"systems": {"nes": {"id": "nes", "title": "Second", "content": {"extensions": ["nes", "fds"], "layout": ["**/{title}.{ext}", "*/{title}.{ext}"], "evidence": {"bytes": [{"offset": 0, "hex": "00"}, {"offset": 1, "hex": "ff"}], "names": ["first", "second"]}, "header": [{"size": 16, "bytes": {"offset": 0, "hex": "00"}}, {"size": 512, "remainder": {"divisor": 1024, "value": 512}}]}}}})).unwrap();
+        let a = plugin("a", json!({"systems": {"nes": {"title": "First", "content": {"extensions": ["nes"], "layout": ["{title}.{ext}", "**/{title}.{ext}"], "evidence": {"bytes": [{"offset": 0, "hex": "00"}], "names": ["first"]}, "header": [{"size": 16, "bytes": {"offset": 0, "hex": "00"}}]}}, "gb": {}}})).unwrap();
+        let b = plugin("b", json!({"systems": {"nes": {"title": "Second", "content": {"extensions": ["nes", "fds"], "layout": ["**/{title}.{ext}", "*/{title}.{ext}"], "evidence": {"bytes": [{"offset": 0, "hex": "00"}, {"offset": 1, "hex": "ff"}], "names": ["first", "second"]}, "header": [{"size": 16, "bytes": {"offset": 0, "hex": "00"}}, {"size": 512, "remainder": {"divisor": 1024, "value": 512}}]}}}})).unwrap();
         let disabled = plugin(
             "disabled",
-            json!({"systems": {"nes": {"id": "nes", "content": {"extensions": ["ignored"]}}}}),
+            json!({"systems": {"nes": {"content": {"extensions": ["ignored"]}}}}),
         )
         .unwrap();
         let registry =
@@ -2083,13 +2071,9 @@ mod tests {
 
     #[test]
     fn groups_merge_drop_undeclared_members_and_cannot_shadow_systems() {
-        let a = plugin("a", json!({"systems": {"gb": {"id": "gb"}}, "groups": {"gameboy": {"id": "gameboy", "title": "First", "systems": ["gb", "gbc", "missing"]}}})).unwrap();
-        let b = plugin("b", json!({"systems": {"gbc": {"id": "gbc", "content": {"extensions": ["gbc"]}}}, "groups": {"gameboy": {"id": "gameboy", "title": "Second", "systems": ["gbc", "gb"]}}})).unwrap();
-        let disabled = plugin(
-            "disabled",
-            json!({"systems": {"missing": {"id": "missing"}}}),
-        )
-        .unwrap();
+        let a = plugin("a", json!({"systems": {"gb": {}}, "groups": {"gameboy": {"id": "gameboy", "title": "First", "systems": ["gb", "gbc", "missing"]}}})).unwrap();
+        let b = plugin("b", json!({"systems": {"gbc": {"content": {"extensions": ["gbc"]}}}, "groups": {"gameboy": {"id": "gameboy", "title": "Second", "systems": ["gbc", "gb"]}}})).unwrap();
+        let disabled = plugin("disabled", json!({"systems": {"missing": {}}})).unwrap();
         let registry = PluginRegistry::new(
             vec![b, a.clone(), disabled],
             ["@test:b".into(), "@test:a".into()],
@@ -2124,7 +2108,7 @@ mod tests {
         let source = format!(
             r#"
             export const name = "games";
-            export const systems = {{nes: {{id: "nes", content: {{extensions: ["nes"], layout: ["**/{{title}}.{{ext}}"], evidence: {{names: ["^Game"]}}, header: [{{size: 16, bytes: {{offset: 0, hex: "4e45531a"}}}}]}}}}}};
+            export const systems = {{nes: {{content: {{extensions: ["nes"], layout: ["**/{{title}}.{{ext}}"], evidence: {{names: ["^Game"]}}, header: [{{size: 16, bytes: {{offset: 0, hex: "4e45531a"}}}}]}}}}}};
             export const groups = {{nintendo: {{id: "nintendo", systems: ["nes"]}}}};
             export const games = {{game: {{title: "Game", releases: {{original: {{hashes: ["{hash}"], system: "nes"}}}}}}}};
         "#
@@ -2145,10 +2129,10 @@ mod tests {
     fn default_layout_is_only_added_when_no_enabled_plugin_supplies_one() {
         let a = plugin(
             "a",
-            json!({"systems": {"nes": {"id": "nes", "content": {"extensions": ["nes"]}}}}),
+            json!({"systems": {"nes": {"content": {"extensions": ["nes"]}}}}),
         )
         .unwrap();
-        let b = plugin("b", json!({"systems": {"nes": {"id": "nes", "title": "NES", "content": {"extensions": ["fds"], "layout": ["{title}.{ext}"]}}}})).unwrap();
+        let b = plugin("b", json!({"systems": {"nes": {"title": "NES", "content": {"extensions": ["fds"], "layout": ["{title}.{ext}"]}}}})).unwrap();
         let default = PluginRegistry::new(vec![a.clone()], ["@test:a".into()]).unwrap();
         assert_eq!(
             default.content_rules("nes").unwrap().layouts,
@@ -2199,7 +2183,7 @@ mod tests {
 
     #[test]
     fn an_enabled_group_cannot_shadow_a_disabled_registered_system() {
-        let system = plugin("system", json!({"systems": {"gb": {"id": "gb"}}})).unwrap();
+        let system = plugin("system", json!({"systems": {"gb": {}}})).unwrap();
         let group = plugin(
             "group",
             json!({"groups": {"gb": {"id": "gb", "systems": []}}}),
@@ -2407,7 +2391,7 @@ mod artifact_tests {
     #[test]
     fn runners_resolve_only_enabled_artifacts() {
         let runtime = decode(declaration()).unwrap();
-        let runner = load_plugin_source("@test", "export const name='player'; export const runners={play:{id:'@test:player/play', command:'play', artifacts:['@test:runtime/rootfs']}};").unwrap();
+        let runner = load_plugin_source("@test", "export const name='player'; export const runners={play:{command:'play', artifacts:['@test:runtime/rootfs']}};").unwrap();
         assert!(PluginRegistry::new(
             vec![runner.clone(), runtime.clone()],
             ["@test:player".into()]

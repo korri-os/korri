@@ -1230,8 +1230,8 @@ mod tests {
             std::fs::create_dir(&package).unwrap();
             std::fs::write(package.join("plugin.ts"),r#"
                 export const name='mgba';
-                export const systems={gba:{id:'gba',title:'Game Boy Advance',content:{extensions:['gba']}}};
-                export const runners={mgba:{id:'@korri:mgba/mgba',program:'program',systems:['gba']}};
+                export const systems={gba:{title:'Game Boy Advance',content:{extensions:['gba']}}};
+                export const runners={mgba:{program:'program',systems:['gba']}};
                 export const handlers={'launch.prepare':input=>({command:input.program,args:[],saveLocations:[{key:'saves',kind:'save',path:input.saveRoot+'/saves'}]})};
             "#).unwrap();
             if missing {

@@ -13,7 +13,7 @@ fn registry(root: &std::path::Path, hashes: bool) -> PluginRegistry {
     } else {
         "systems: ['gba']".into()
     };
-    fs::write(root.join("plugin.ts"), format!("export const name = 'runner'; export const systems = {{ gba: {{id: 'gba', title: 'Game Boy Advance', content: {{extensions: ['gba', 'cue', 'm3u'], layout: ['**/{{title}} (Disc {{disc}}).{{ext}}', '**/{{title}}.{{ext}}']}}}} }}; export const runners = {{ core: {{id: '@test:runner/core', program: 'runner', {selector}}} }}; export const handlers = {{'launch.prepare': () => ({{command: 'runner', args: []}})}};")).unwrap();
+    fs::write(root.join("plugin.ts"), format!("export const name = 'runner'; export const systems = {{ gba: {{title: 'Game Boy Advance', content: {{extensions: ['gba', 'cue', 'm3u'], layout: ['**/{{title}} (Disc {{disc}}).{{ext}}', '**/{{title}}.{{ext}}']}}}} }}; export const runners = {{ core: {{program: 'runner', {selector}}} }}; export const handlers = {{'launch.prepare': () => ({{command: 'runner', args: []}})}};")).unwrap();
     PluginRegistry::from_installed(vec![EnabledPackage {
         id: "@test:runner".into(),
         package: root.into(),

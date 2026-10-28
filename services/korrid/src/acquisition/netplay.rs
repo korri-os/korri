@@ -180,7 +180,7 @@ mod tests {
         fs::create_dir_all(root.path().join("catalog")).unwrap();
         fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
         fs::write(root.path().join("catalog/library.yaml"), "{}\n").unwrap();
-        let plugin = load_plugin_source("@test", "export const name='core'; export const systems={snes:{id:'snes',title:'Super Nintendo',content:{extensions:['sfc']}}};").unwrap();
+        let plugin = load_plugin_source("@test", "export const name='core'; export const systems={snes:{title:'Super Nintendo',content:{extensions:['sfc']}}};").unwrap();
         let registry = PluginRegistry::new(vec![plugin], ["@test:core".into()]).unwrap();
         let private_root = root.path().join("private");
         let discovery = DiscoveryLifecycleCoordinator::new_with_registry_source(

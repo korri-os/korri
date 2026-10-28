@@ -860,7 +860,7 @@ fn registry_and_attention_adapter_identifies_real_plugin_content() {
 export const name = "content";
 export const title = "Content";
 export const systems = {
-    gb: { id: "gb", title: "Game Boy", content: { extensions: ["gb"] } },
+    gb: { title: "Game Boy", content: { extensions: ["gb"] } },
 };
 "#,
         )

@@ -17,7 +17,7 @@ use std::{
 
 const RUNNER: &str = r#"
 export const name = 'mgba';
-export const runners = {mgba: {id: '@korri:mgba/mgba', systems:['gba'], program:'program'}};
+export const runners = {mgba: {systems:['gba'], program:'program'}};
 export const handlers = {'launch.prepare': input => ({
  command: input.program, args: ['-c', 'test "$PRESERVED" = yes && test -z "${REMOVED+x}" && test -f provisioned && printf game > game-ran'],
  env:{PRESERVED:'yes', PASSWORD:'very-private'}, envUnset:['REMOVED'], cwd:input.accountRoot,
@@ -954,7 +954,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
         root.path(),
         "@korri:moonlight",
         &format!(
-            r#"export const name='moonlight';export const runners={{moonlight:{{id:'@korri:moonlight/moonlight',program:'program'}}}};export const handlers={{'settings.describe':()=>({{schema:{schema},revision:'moon-v1'}}),'settings.validate':input=>({{valid:input.values.video?.fps!==999,diagnostics:input.values.video?.fps===999?[{{severity:'error',code:'fps',path:['video','fps'],message:'unsupported fps'}}]:[]}}),'settings.render':input=>({{args:['-fps',String(input.settings.video.fps),'-width',String(input.display.width)]}})}};"#
+            r#"export const name='moonlight';export const runners={{moonlight:{{program:'program'}}}};export const handlers={{'settings.describe':()=>({{schema:{schema},revision:'moon-v1'}}),'settings.validate':input=>({{valid:input.values.video?.fps!==999,diagnostics:input.values.video?.fps===999?[{{severity:'error',code:'fps',path:['video','fps'],message:'unsupported fps'}}]:[]}}),'settings.render':input=>({{args:['-fps',String(input.settings.video.fps),'-width',String(input.display.width)]}})}};"#
         ),
         None,
     );

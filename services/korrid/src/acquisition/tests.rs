@@ -152,7 +152,7 @@ fn registry(url: &str, digest: &str) -> PluginRegistry {
     let declaration = serde_json::json!({
         "name":"runtime", "title":"Runtime",
         "artifacts":{"payload":{"id":"@test:runtime/payload", "version":"v1", "files":[{"url":url, "sha256":format!("sha256:{digest}"), "bytes":4}]}},
-        "runners":{"run":{"id":"@test:runtime/run", "command":"run", "artifacts":["@test:runtime/payload"]}}
+        "runners":{"run":{"command":"run", "artifacts":["@test:runtime/payload"]}}
     });
     let plugin =
         crate::plugin::decode_plugin_declaration("@test", &declaration.to_string()).unwrap();

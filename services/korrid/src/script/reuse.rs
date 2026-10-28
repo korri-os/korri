@@ -35,16 +35,17 @@ const REUSED_OPERATIONS: [&str; 6] = [
 const MAX_ANSWERS: usize = 4096;
 const MAX_ANSWER_BYTES: usize = 16 * 1024 * 1024;
 
-/// One question: a declaration, or one operation with its input.
+/// One question: a declaration, operation presence, or an operation with input.
 pub(super) enum Question<'a> {
     Declaration,
+    HasOperation(&'a str),
     Operation { name: &'a str, input: &'a str },
 }
 
 impl Question<'_> {
     fn reused(&self) -> bool {
         match self {
-            Self::Declaration => true,
+            Self::Declaration | Self::HasOperation(_) => true,
             Self::Operation { name, .. } => REUSED_OPERATIONS.contains(name),
         }
     }
@@ -82,6 +83,10 @@ fn digest(snapshot: &SourceSnapshot, entry: &str, question: &Question<'_>) -> [u
     }
     match question {
         Question::Declaration => field(b"declaration"),
+        Question::HasOperation(name) => {
+            field(b"has-operation");
+            field(name.as_bytes());
+        }
         Question::Operation { name, input } => {
             field(b"operation");
             field(name.as_bytes());

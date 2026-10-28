@@ -22,7 +22,7 @@ fn content_source(releases: serde_json::Value) -> String {
     format!(
         "export const name = 'content';
          export const runners = {{main: {{
-           id: '@test:content/main', program: 'program', releases: {releases}
+           program: 'program', releases: {releases}
          }}}};
          export const handlers = {{'launch.prepare': input => ({{
            command: input.program, args: [input.contentPath]
@@ -86,9 +86,9 @@ fn release_hash_matching_is_a_native_runner_contract() {
 
 const SYSTEM_SOURCE: &str = "
     export const name = 'system';
-    export const systems = {gba: {id: 'gba', title: 'Game Boy Advance', content: {extensions: ['gba']}}};
+    export const systems = {gba: {title: 'Game Boy Advance', content: {extensions: ['gba']}}};
     export const runners = {main: {
-      id: '@test:system/main', program: 'program', systems: ['gba']
+      program: 'program', systems: ['gba']
     }};
     export const handlers = {'launch.prepare': input => ({
       command: input.program, args: [input.contentPath]

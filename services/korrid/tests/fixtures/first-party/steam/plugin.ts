@@ -14,12 +14,11 @@ export const discovery = [
 ]
 
 export const systems = {
-  steam: { id: "steam", title: "Steam" },
+  steam: { title: "Steam" },
 }
 
 export const runners = {
   steam: {
-    id: "@korri:steam/steam",
     program: "steam-session",
     systems: ["steam"],
     // korrid downloads these before it starts the runner and passes the

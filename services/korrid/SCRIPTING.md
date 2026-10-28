@@ -192,7 +192,7 @@ JSON containing its data exports, not the JavaScript completion value.
 `description`. Data export names come from the current producers: `providers`,
 `systems`, `groups`, `games`, `families`, `runners`, `artifacts`, `transports`,
 `controls`, and the constrained `discovery` list described below. Native
-launcher/runtime fields follow the instance/kind model described below.
+runner fields name package file keys as described below.
 `sessionControls` is an unknown export and fails admission. `services` names
 native units packaged by `plugin.nix`. The Linux host selects those units; the data registry validates the names but does not
 activate them or change its existing records. `daemons` and the old `contributes`
@@ -216,8 +216,9 @@ unimplemented operation instead of returning an empty success.
 `script::call_plugin_operation_ts(source, operation, input)` invokes one handler
 in a fresh interpreter with bounded JSON input and output. `LAUNCH_PREPARE` is
 the operation that turns a selected runner and target into a launch plan; a
-native runner is admitted only when it carries that handler. Module evaluation
-and invocation share one deadline, memory limit, and output budget. A handler
+native runner may omit that handler and use the default launch described below.
+Module evaluation and invocation share one deadline, memory limit, and output
+budget. A handler
 must return JSON synchronously; a promise, function, non-finite number, or
 undefined is rejected. Safe integral JavaScript Numbers serialize as JSON
 integers, including values produced by `Number(...)`. Fractions and values
@@ -302,11 +303,30 @@ inside the fixture's sandbox: this CLI does not create a systemd unit, establish
 permissions, or perform session save sync. The old three-argument `plugin-launch`
 form is not supported.
 
-Native instances use the approved `{ id, kind, program }` fields. A runtime
-uses `launcher` and its existing `path` field as a manifest file key. The
-instance owns the program key, the runtime owns the core key, and the kind
-owns callback source and auxiliary files. The kind's default instance points
-to itself.
+Runner and system declarations have no `id` field. korrid derives each runner ID
+as `<pluginId>/<key>` and each system ID as its map key. An authored `id`, even
+when it equals the derived ID, fails admission with `runner <key>: id is derived;
+remove it` (or `system <key>: id is derived; remove it`). Providers keep their
+optional `id` field.
+
+A native runner with `program` and no `handlers["launch.prepare"]` uses the
+default launch: `{ command: program, args: [contentPath] }`. `program` is the
+resolved program path. The plan adds no environment, cwd, directories, files or
+save locations. An empty authored settings map is allowed. It refuses:
+
+- A target with `ref` and no `contentPath`: `runner <id> has no launch.prepare
+  handler, so it cannot start provider references`.
+- Non-empty authored settings: `runner <id> has no launch.prepare handler, so
+  it takes no settings`.
+- Any raw config override, including an empty object: `runner <id> has no
+  launch.prepare handler, so it takes no config override`.
+
+A runner with a handler keeps its existing behavior. `runtime.resolve`,
+`settings.*`, and modifier `launch.compose` are unchanged. Settings-only native
+runners still require `settings.render`.
+
+Each native runner names `program` and optional `core` as file keys in its own
+installed manifest. Auxiliary files arrive through `PluginLaunchInput.files`.
 
 ### Declared artifacts
 
@@ -1005,7 +1025,7 @@ exception below; it does not permit build-tree scans.
 ```ts
 export const systems = {
   nes: {
-    id: "nes", title: "NES", aliases: ["famicom"],
+    title: "NES", aliases: ["famicom"],
     content: {
       extensions: ["nes"],
       layout: ["**/{title}.{ext}"],
@@ -1046,7 +1066,8 @@ Enabled plugins sharing a system ID union extensions, evidence and header rules.
 Layouts concatenate in plugin-ID order with duplicates removed. Titles and
 header precedence follow that same order. Groups merge by ID, union their system
 members, and drop members no enabled plugin declares. A group ID must not also
-be a system ID. Group record IDs, like system record IDs, must equal their map keys.
+be a system ID. Group record IDs must equal their map keys. System IDs are derived from their
+map keys.
 
 A `games` export declares known games and release hashes (ADR 0003):
 

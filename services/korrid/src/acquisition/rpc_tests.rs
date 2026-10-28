@@ -16,9 +16,9 @@ async fn local_rpc_download_retry_and_launch_gate_share_cache_truth() {
     fs::write(package.join("plugin.ts"), format!(r#"
         export const name = 'runtime';
         export const title = 'Runtime';
-        export const systems = {{gba:{{id:'gba', content:{{extensions:['gba']}}}}}};
+        export const systems = {{gba:{{content:{{extensions:['gba']}}}}}};
         export const artifacts = {{payload:{{id:'@test:runtime/payload', version:'v1', files:[{{url:'file:///private', sha256:'sha256:{digest}', bytes:7}}]}}}};
-        export const runners = {{run:{{id:'@test:runtime/run', program:'run', systems:['gba'], artifacts:['@test:runtime/payload']}}}};
+        export const runners = {{run:{{program:'run', systems:['gba'], artifacts:['@test:runtime/payload']}}}};
         export const handlers = {{'launch.prepare': input => ({{command:input.program, args:[input.artifacts.payload]}})}};
     "#)).unwrap();
     fs::write(
@@ -225,9 +225,9 @@ async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start()
         fs::create_dir(&package).unwrap();
         fs::write(package.join("plugin.ts"), format!(r#"
             export const name = '{name}';
-            export const systems = {{gba:{{id:'gba',content:{{extensions:['gba']}}}}}};
+            export const systems = {{gba:{{content:{{extensions:['gba']}}}}}};
             export const artifacts = {{payload:{{id:'@test:{name}/payload',version:'v1',files:[{{url:'https://example.com/{name}',sha256:'sha256:{}'}}]}}}};
-            export const runners = {{run:{{id:'@test:{name}/run',program:'run',systems:['gba'],artifacts:['@test:{name}/payload']}}}};
+            export const runners = {{run:{{program:'run',systems:['gba'],artifacts:['@test:{name}/payload']}}}};
             export const handlers = {{'launch.prepare': input => ({{command:input.program,args:[]}})}};
         "#, "a".repeat(64))).unwrap();
         packages.push(plugin_installation::EnabledPackage {

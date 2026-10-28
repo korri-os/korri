@@ -8,9 +8,9 @@ use std::{collections::BTreeMap, fs, path::Path};
 const GBA_CLAIM: &str = r#"
 export const name = "core";
 export const title = "GBA Core";
-export const systems = { gba: { id: "gba", title: "Game Boy Advance", content: { extensions: ["gba"] } } };
+export const systems = { gba: { title: "Game Boy Advance", content: { extensions: ["gba"] } } };
 export const runners = {
-  core: { id: "@korri:core/core", program: "retroarch", systems: ["gba"] },
+  core: { program: "retroarch", systems: ["gba"] },
 };
 
 export const handlers = {
