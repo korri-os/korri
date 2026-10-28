@@ -25,6 +25,17 @@ one is Korri's own rule (`services/korrid/plugin-host/README.md`).
   update comes from the same person. The disclosure appears again for every
   update. Nothing can revoke an unsigned plugin except removing it.
 - An unsigned plugin may use any namespace except one the device already trusts.
+  If unsigned plugins already use a namespace, the device refuses to trust a
+  signed publisher for it until the owner removes them.
+- Unsigned plugins get the same affordances as signed ones, including native
+  services. The disclosure and the privileged warnings both appear.
+- **Key change.** A release signed by a key other than the pinned one is
+  refused with "publisher key changed". The owner can trust the new key
+  knowingly, as with SSH host keys. There is no rotation record.
+- **Revocation.** The owner can revoke a trusted publisher from the portal and
+  from `korri`. This has the same effect as removing a configured binding
+  today: the publisher's packages no longer start, and stop and cleanup still
+  work.
 - Trust is per device. Trusting a publisher on one device does not trust it on
   the owner's other devices.
 - A device owner can enter a repository address three ways: typed on the
