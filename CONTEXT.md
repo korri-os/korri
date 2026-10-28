@@ -13,6 +13,14 @@ A Korri installation image that has not qualified as a supported image. It can b
 **Required plugin**:
 A plugin needed for a Korri release to provide an agreed required behavior on a device. Inclusion in a default bundle alone does not make it required.
 
+**Publisher**:
+The author identity behind one plugin namespace, such as `@korri`. A device owner trusts a publisher on one device, then approves each of its plugins separately.
+_Avoid_: vendor, developer account
+
+**Plugin repository**:
+The set of plugin releases that one publisher hosts at one web address. A device owner adds it by its address. Korri hosts only its own.
+_Avoid_: store, marketplace, plugin source
+
 **Person key**:
 The Nostr key that identifies one person to Korri. korrid never holds its private half.
 _Avoid_: account, user key, login
