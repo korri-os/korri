@@ -693,7 +693,17 @@ impl Host {
                     })?;
                 let record = catalog.record(&requirement.id, release, current_platform())?;
                 let package = PathBuf::from(&record.store_path);
-                if !self.candidates.borrow().contains_key(&package) {
+                let existing = self
+                    .candidates
+                    .borrow()
+                    .get(&package)
+                    .map(|(origin, _)| origin.clone());
+                if let Some(origin) = &existing {
+                    if !matches!(origin, Provenance::Repository { source_url, plugin_id, release_version, archive_sha256, .. } if source_url == source.as_str() && plugin_id == &record.plugin_id && release_version == &record.release_version && archive_sha256 == &record.archive_sha256)
+                    {
+                        return Err(format!("conflicting repository requirements for {}: exact build has different source or release provenance", record.plugin_id));
+                    }
+                } else {
                     self.fetch_record(config, &source, record)?;
                 }
                 requires.push(package);
@@ -1356,6 +1366,12 @@ impl Host {
         dep: &Report,
         locked: &Receipt,
     ) -> Result<String, String> {
+        if !matches!(dep.provenance, Provenance::Repository { .. }) {
+            return Ok(format!(
+                "conflicting exact selection for required plugin {}",
+                dep.id
+            ));
+        }
         let release = |provenance: &Provenance, path: &Path| match provenance {
             Provenance::Repository {
                 release_version, ..
@@ -1375,7 +1391,7 @@ impl Host {
             }
         }
         Ok(format!(
-            "{} needs {} {}, but {} locked {} {} (conflicting exact selection)",
+            "{} needs {} {}, but {} locked {} {}",
             root.id,
             dep.id,
             release(&dep.provenance, &dep.package),
@@ -6268,6 +6284,22 @@ mod tests {
         let dep2 = publish(&make("@dep", "runner", "two", None), "v2");
         let pack = publish(&make("@pack", "pack", "Pack", Some(None)), "root");
         let other = publish(&make("@pack", "other", "Other", Some(Some("v1"))), "root");
+        let conflict_source = root.path().join("conflicting-origins");
+        fs::create_dir(&conflict_source).unwrap();
+        fs::write(
+            conflict_source.join("plugin.ts"),
+            "export const name = 'conflict';",
+        )
+        .unwrap();
+        fs::write(conflict_source.join("manifest.json"), serde_json::json!({"publisher":{"namespace":"@pack"},"entry":"plugin.ts","sources":["plugin.ts"],"requiresReleases":[{"repository":source_url,"id":"@dep:runner"},{"repository":"https://other.invalid/catalog.json","id":"@dep:runner"}]}).to_string()).unwrap();
+        let conflict = publish(
+            &PathBuf::from(run(&[
+                "store",
+                "add-path",
+                conflict_source.to_str().unwrap(),
+            ])),
+            "root",
+        );
         assert_eq!(pack.record.platform, "any");
         let unpacked = root.path().join("unpacked");
         fs::create_dir(&unpacked).unwrap();
@@ -6283,6 +6315,7 @@ mod tests {
         let catalog = |latest: &str| Catalog {
             records: vec![
                 pack.record.clone(),
+                conflict.record.clone(),
                 other.record.clone(),
                 dep1.record.clone(),
                 dep2.record.clone(),
@@ -6341,6 +6374,19 @@ mod tests {
             .contains("not trusted"));
         host.trust_publisher("@pack", &public).unwrap();
         host.trust_publisher("@dep", &public).unwrap();
+        let conflict_error = host
+            .inspect_repository(
+                &config,
+                config.official.as_ref().unwrap(),
+                "@pack:conflict",
+                "root",
+            )
+            .err()
+            .unwrap();
+        assert!(
+            conflict_error.contains("conflicting repository requirements for @dep:runner"),
+            "{conflict_error}"
+        );
         let first = inspect(&host, "@pack:pack");
         let first_digest = host.review_approval(&first).unwrap();
         host.install_reviewed(first.clone(), &first_digest).unwrap();

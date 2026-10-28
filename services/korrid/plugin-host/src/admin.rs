@@ -115,7 +115,9 @@ fn host_failure(error: String) -> PluginAdminFailure {
             || error.contains("remove the unsigned")
         {
             CODE_NAMESPACE_TAKEN
-        } else if error.contains(" needs ") && error.contains(" locked ") {
+        } else if (error.contains(" needs ") && error.contains(" locked "))
+            || error.contains("conflicting repository requirements")
+        {
             CODE_REQUIREMENT_CONFLICT
         } else {
             CODE_REFUSED

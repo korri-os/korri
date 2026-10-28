@@ -385,7 +385,7 @@ impl PluginAdminSocket {
 /// Strict RFC 4648 decoding with a bound checked before allocation. Keeping
 /// this at the transport boundary avoids an unbounded decoded JSON payload.
 fn decode_chunk(encoded: &str) -> Result<Vec<u8>, RpcFailure> {
-    if encoded.len() > CHUNK_BYTES.div_ceil(3) * 4 || encoded.len() % 4 != 0 {
+    if encoded.len() > CHUNK_BYTES.div_ceil(3) * 4 || !encoded.len().is_multiple_of(4) {
         return Err(upload_failure(
             "archive chunk exceeds 1 MiB or is invalid base64",
         ));

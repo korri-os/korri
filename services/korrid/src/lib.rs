@@ -1273,6 +1273,8 @@ pub enum PluginCatalogOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
+// One owned response per RPC; preserve the shared projection constructors.
+#[allow(clippy::large_enum_variant)]
 pub enum PluginInspectOutcome {
     Ok(plugin_admin::PluginInspection),
     Err(RpcFailure),
@@ -4104,12 +4106,9 @@ async fn dispatch(
                 Some(socket) => socket
                     .use_archive(&request.upload_id, None)
                     .await
-                    .and_then(|r| {
-                        (|r| match r {
-                            PluginAdminResponse::Inspection(payload) => Some(payload),
-                            _ => None,
-                        })(r)
-                        .ok_or_else(plugin_repositories::wrong_response)
+                    .and_then(|r| match r {
+                        PluginAdminResponse::Inspection(payload) => Ok(payload),
+                        _ => Err(plugin_repositories::wrong_response()),
                     }),
                 None => Err(plugin_repositories::not_configured()),
             })
