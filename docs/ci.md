@@ -126,8 +126,8 @@ Inputd lane retains a 45-minute budget for complete runs. Its new module/package
 coverage dominated the same-source full comparison: 1838 seconds versus 702 seconds
 for the old checks, with a 1782-second Inputd job. Ordinary PR/affected runs now
 exclude only that new heavy coverage, as the user requested. Complete runs still
-include every assertion. The narrowed source needs new hosted qualification;
-these measurements are not a speed claim for the new profile.
+include every assertion. These full-mode measurements describe the added
+coverage cost, not the affected PR profile.
 
 The stable `Host, portal, and surface` aggregate always runs. It requires the
 selector to succeed and every selected lane to report success. Missing, skipped,
@@ -154,6 +154,12 @@ udev settle and read/write prerequisite as published acceptance, before installi
 Nix. Missing KVM fails that full job; no system-feature override substitutes for
 actual access. Signed native Sunshine preparation remains immediately before
 module evaluation. The fast profile needs neither KVM nor published plugin inputs.
+
+The deployment-shell fixture also models transport process groups. GNU
+`timeout` creates a group outside the gate's `setsid` group. Interrupted-attempt
+tests kill both owned groups before releasing their modeled lock. Otherwise a
+paused fixture can survive cleanup and overwrite the next attempt's marker.
+A real-process regression checks this cleanup; production code is unchanged.
 
 Zone's check supplies the locked `NIX_PATH` to its existing Nix-shebang font
 builder. It does not require a runner channel. Builder failures include stderr;
@@ -222,8 +228,33 @@ Each row is one pair. Do not pool these different cache states. The cause is not
 established; neither pair qualifies the proposed change. Its selection/aggregate
 path is therefore deferred, and the frozen base workflow is preserved byte for
 byte. This gives up fast docs-only acceptance in exchange for unchanged coverage
-and cache behavior. The narrowed Host workflow still needs final combined and
-hosted qualification.
+and cache behavior.
+
+The narrowed PR profile has the following measured results:
+
+| Measure | Old workflow | New workflow |
+| --- | ---: | ---: |
+| Host result | 657 s | 540 s |
+| First deliberate TypeScript error | 539.856 s | 39.902 s |
+| Observed Host runner-minutes | 10.88 | 34.90 |
+| Peak observed running Host jobs | 1 | 13 |
+
+The passing Host pair is control `40608396074` and PR run `40610187854`.
+Their tested trees differ only in four CLI fixture fields that the old command
+does not exercise. This is a matched-product-input comparison, not an identical
+full-SHA claim. New coverage consumes more compute; this is not an overall
+compute saving.
+
+The deliberate-error pair uses the exact same source, with one type error in
+Zone's existing options producer: candidate `40608663912` and repeated control
+`40612480423`. The first control `40608753640` timed out in an unrelated
+SteamGridDB test before typechecking. It remains a censored sample, not an error
+latency. There is one candidate sample and two controls, including that timeout.
+
+Published acceptance still runs independently. Its PR run `40610187851` took
+1207 seconds, including 286 seconds of queue time. Overall required completion
+was therefore 1207 seconds, not the Host's 540 seconds. These component
+measurements do not replace full verification of the combined source.
 
 Selection tests prove coverage relationships, not hosted latency. Before landing
 a topology change, compare the same source and runner class in full and path
