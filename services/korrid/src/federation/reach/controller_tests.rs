@@ -7,6 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 #[derive(Clone, Copy)]
 enum NativePath {
     Healthy,
+    HealthyAfterNetworkReset,
     RecoveryBlocked,
     NoCandidate,
     UnsignedResponse,
@@ -46,7 +47,9 @@ async fn publishes_offer(path: NativePath) -> bool {
         match path {
             NativePath::RecoveryBlocked | NativePath::NoCandidate => assert!(matches!(result,
                 Err(UpstreamError::Tagged { code, .. }) if code == "HostRecoveryBlocked")),
-            NativePath::Healthy => assert!(result.is_ok(), "{result:?}"),
+            NativePath::Healthy | NativePath::HealthyAfterNetworkReset => {
+                assert!(result.is_ok(), "{result:?}")
+            }
             NativePath::UnsignedResponse => {
                 assert!(matches!(result, Err(UpstreamError::Wire(_))), "{result:?}")
             }
@@ -96,6 +99,9 @@ async fn publishes_offer(path: NativePath) -> bool {
         retry: BTreeMap::new(),
         relaying: Arc::new(RwLock::new(BTreeMap::new())),
     };
+    if matches!(path, NativePath::HealthyAfterNetworkReset) {
+        controller.reset().await;
+    }
     let mut snapshot = devices.da.snapshot().unwrap().remove(0);
     // Use the existing endpoint producer's shape. No public relay or STUN
     // service is contacted, and every key and server belongs to this test.
@@ -153,6 +159,14 @@ async fn reach_native_recovery_refusal_does_not_suppress_relay_discovery() {
 #[tokio::test]
 async fn reach_healthy_native_peer_refreshes_relay_discovery() {
     assert!(publishes_offer(NativePath::Healthy).await);
+}
+
+#[tokio::test]
+async fn reach_native_peer_restarts_discovery_after_network_reset() {
+    assert!(
+        publishes_offer(NativePath::HealthyAfterNetworkReset).await,
+        "native HTTP must not suppress rebuilding the iroh route after a network reset"
+    );
 }
 
 #[tokio::test]

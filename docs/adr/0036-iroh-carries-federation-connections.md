@@ -95,6 +95,14 @@ signed reply keeps the peer Ready. A successful signal also triggers this read
 when the QUIC connection remains open. Its signed reply clears a previous
 network failure without a user operation or a new connection.
 
+After a local network change, native signed HTTP must not suppress rebuilding
+iroh's endpoint and publishing a fresh offer. Native HTTP alone cannot carry
+netplay or stream forwards. While reach is configured, peer status stays Loading
+until both signed peer contact and a live iroh route exist. This is a projection
+of the existing contact and route facts, not another stored readiness flag.
+Invite calls keep their existing bounded route wait while the endpoint rebinds.
+Native-only configurations retain their signed HTTP readiness.
+
 ## Local stream forwards
 
 While a nearby link is up, korrid uses its peer IP instead of the remembered

@@ -525,3 +525,89 @@ async fn reach_relay_refuses_nonmembers_and_stops_existing_sessions_within_30_se
     assert_eq!(controller::retry_delay(0), Duration::from_secs(5));
     assert_eq!(controller::retry_delay(32), Duration::from_secs(300));
 }
+
+#[tokio::test]
+async fn reach_ready_waits_for_a_usable_route_across_network_reset() {
+    let devices = Devices::new();
+    let peer = devices.cb.public_key().unwrap();
+    // A signed native read succeeds while the shared-play transport recovers.
+    let native_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let native_origin = format!("http://{}", native_listener.local_addr().unwrap());
+    let router = devices.router();
+    let native_server = tokio::spawn(async move {
+        axum::serve(native_listener, router).await.unwrap();
+    });
+    let native = crate::upstream_native::NativeClient::new_secure(
+        native_origin.clone(),
+        peer.clone(),
+        devices.ca.clone(),
+    )
+    .with_directory(devices.da.clone());
+    native.session_status().await.unwrap();
+    assert_eq!(devices.da.snapshot().unwrap()[0].state, PeerState::Ready);
+
+    let root = tempfile::tempdir().unwrap();
+    let lifetime = super::controller::start(
+        root.path(),
+        devices.da.clone(),
+        devices.ca.clone(),
+        None,
+        axum::Router::new(),
+        0,
+        Environment {
+            interfaces: Arc::new(|| Ok(Vec::new())),
+            relay: Arc::new(policy::LinuxEnvironment::new()),
+            // Only the in-process HTTP listener is contacted. It refuses the
+            // WebSocket upgrade, so recovery has no signal answer to rely on.
+            relays: Some(
+                crate::relay::RelayList::configured(
+                    vec![native_origin.replacen("http:", "ws:", 1)],
+                )
+                .unwrap(),
+            ),
+        },
+    )
+    .unwrap();
+    native.session_status().await.unwrap();
+    assert_eq!(
+        devices.da.snapshot().unwrap()[0].state,
+        PeerState::Loading,
+        "native HTTP alone must not report shared-play readiness"
+    );
+    assert!(
+        timeout(
+            Duration::from_millis(25),
+            devices.da.reach_connection(&peer)
+        )
+        .await
+        .is_err(),
+        "an invite must wait for recovery, not fail because the endpoint is rebinding"
+    );
+
+    let (a, b, outgoing, incoming) = pair().await;
+    let serving = tokio::spawn(tunnel::serve(incoming, devices.router()));
+    devices.da.reach.live.write().unwrap().insert(
+        peer.clone(),
+        LiveRoute {
+            connection: outgoing,
+        },
+    );
+    native.session_status().await.unwrap();
+    assert!(devices.da.has_iroh_route(&peer));
+    assert_eq!(devices.da.snapshot().unwrap()[0].state, PeerState::Ready);
+
+    devices.da.reach.clear();
+    native.session_status().await.unwrap();
+    assert_eq!(devices.da.snapshot().unwrap()[0].state, PeerState::Loading);
+    assert!(timeout(
+        Duration::from_millis(25),
+        devices.da.reach_connection(&peer)
+    )
+    .await
+    .is_err());
+    drop(lifetime);
+    serving.abort();
+    native_server.abort();
+    a.close().await;
+    b.close().await;
+}

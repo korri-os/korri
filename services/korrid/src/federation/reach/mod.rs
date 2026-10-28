@@ -142,6 +142,9 @@ impl Routes {
             .any(owns)
     }
 
+    pub(super) fn awaiting_route(&self, device: &str) -> bool {
+        self.active.load(Ordering::Acquire) && self.connection(device).is_none()
+    }
     fn connection(&self, device: &str) -> Option<Connection> {
         self.live
             .read()
@@ -165,7 +168,6 @@ impl Routes {
             .lock()
             .expect("reach recovery")
             .stop(forget_losses);
-        self.active.store(false, Ordering::Release);
         if let Ok(selected) = self.selected.try_lock() {
             if let Some(lease) = selected.as_ref().and_then(Weak::upgrade) {
                 StreamLease(lease).release();

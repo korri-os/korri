@@ -46,6 +46,9 @@ struct Lifetime {
 impl Drop for Lifetime {
     fn drop(&mut self) {
         self.task.abort();
+        self.routes
+            .active
+            .store(false, std::sync::atomic::Ordering::Release);
         self.routes.clear();
     }
 }
@@ -96,6 +99,12 @@ pub(crate) fn start(
         retry: BTreeMap::new(),
         relaying: Arc::new(RwLock::new(BTreeMap::new())),
     };
+    // Active means reach is configured, including while its endpoint is
+    // being rebound. Native-only configurations do not wait for iroh.
+    routes.active.store(
+        matches!(controller.settings(), Ok((Some(_), _))),
+        std::sync::atomic::Ordering::Release,
+    );
     let task = runtime.spawn(controller.run());
     Some(ReachLifetime(Arc::new(Lifetime { task, routes })))
 }
@@ -129,6 +138,10 @@ struct Controller {
 }
 impl Drop for Controller {
     fn drop(&mut self) {
+        self.directory
+            .reach
+            .active
+            .store(false, std::sync::atomic::Ordering::Release);
         self.directory.reach.clear();
         if let Some(task) = &self.relay_task {
             task.abort();
@@ -315,10 +328,6 @@ impl Controller {
                 }
             }
         });
-        self.directory
-            .reach
-            .active
-            .store(true, std::sync::atomic::Ordering::Release);
         self.endpoint = Some(endpoint.clone());
         // Give the first bounded facts read time to publish a usable listener
         // before the first answer. Battery and unknown metering still deny it.
@@ -367,10 +376,18 @@ impl Controller {
             }
             let settings = self.settings();
             let Ok((Some(relays), stun)) = settings else {
+                self.directory
+                    .reach
+                    .active
+                    .store(false, std::sync::atomic::Ordering::Release);
                 self.reset().await;
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             };
+            self.directory
+                .reach
+                .active
+                .store(true, std::sync::atomic::Ordering::Release);
             if old_settings.as_ref() != Some(&(relays.clone(), stun.clone())) {
                 self.reset().await;
                 old_settings = Some((relays.clone(), stun.clone()));
@@ -661,9 +678,9 @@ impl Controller {
                     device.clone(),
                     (Instant::now() + Duration::from_secs(30), 0),
                 );
-                if self.endpoint.is_none() {
-                    return;
-                }
+                // Native HTTP cannot carry netplay or stream forwards. Even
+                // after a network reset, rebuild iroh and send our own offer
+                // instead of waiting for another device's signal to start it.
                 // Ready consumes this token. A missing optional
                 // relay answer must not make a native-reachable peer fail.
             }
