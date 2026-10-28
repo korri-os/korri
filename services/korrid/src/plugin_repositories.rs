@@ -359,7 +359,16 @@ impl PluginAdminSocket {
                 }),
                 None => PluginAdminRequest::InspectArchive(PluginArchiveRequest { path }),
             };
-            self.request(&request).await
+            let response = self.request(&request).await?;
+            if matches!(
+                (&approval, &response),
+                (None, PluginAdminResponse::Inspection(_))
+                    | (Some(_), PluginAdminResponse::Applied(_))
+            ) {
+                Ok(response)
+            } else {
+                Err(wrong_response())
+            }
         }
         .await;
         let trust_review = approval.is_none()

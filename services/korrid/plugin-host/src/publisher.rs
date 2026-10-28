@@ -249,11 +249,21 @@ pub fn detected_platform(nix: &Path, package: &Path) -> Result<String, String> {
         ],
         None,
     )?;
-    let values: BTreeMap<String, serde_json::Value> =
-        serde_json::from_str(&derivation).map_err(|e| e.to_string())?;
-    let systems: HashSet<_> = values
+    // Observed Nix derivation-show JSON: the versioned response contains a
+    // derivations map; each record's system is the builder's Nix platform.
+    #[derive(Deserialize)]
+    struct Derivations {
+        derivations: BTreeMap<String, DerivationPlatform>,
+    }
+    #[derive(Deserialize)]
+    struct DerivationPlatform {
+        system: String,
+    }
+    let response: Derivations = serde_json::from_str(&derivation).map_err(|e| e.to_string())?;
+    let systems: HashSet<_> = response
+        .derivations
         .values()
-        .filter_map(|v| v.get("system").and_then(|s| s.as_str()))
+        .map(|d| d.system.as_str())
         .collect();
     if systems.len() != 1 {
         return Err("cannot detect the native package platform from its derivation".into());

@@ -858,6 +858,9 @@ impl Host {
             .map(|dep| &dep.report)
             .chain(std::iter::once(report))
         {
+            if let Some(publisher) = &report.publisher {
+                crate::trust::require_trusted(publisher)?;
+            }
             self.verify_publisher_in(
                 checks.map(|checks| &checks.snapshot),
                 &report.package,
