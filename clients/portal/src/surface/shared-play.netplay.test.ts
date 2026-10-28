@@ -4,7 +4,7 @@
  * problem, and the plugin install that comes first when the core is missing.
  */
 import { expect, spyOn, test } from "bun:test"
-import { SessionFreezerState, type Invite, type InviteNetplay, type NetplayStatus } from "@contracts/generated/korrid"
+import { PluginPublisherState, SessionFreezerState, type Invite, type InviteNetplay, type NetplayStatus } from "@contracts/generated/korrid"
 import { createHttpKorridClient, createInMemoryKorridClient, type InMemoryPluginHostConfig } from "../korrid/client"
 import { LaunchablesState } from "../launchables/state"
 import { initialPluginFacts } from "./plugin-repositories"
@@ -215,11 +215,11 @@ const pluginHost: InMemoryPluginHostConfig = {
 const needsPlugin: InviteNetplay = { _tag: "NeedsPlugin", pluginId: SNES9X, title: "Snes9x 2010" }
 
 test("the newest trusted release of the plugin is the one installed", () => {
-  const entries = (index: number, state: "Bound" | "New") => pluginHost.repositories[index]!.entries
+  const entries = (index: number, state: PluginPublisherState) => pluginHost.repositories[index]!.entries
     .map(({ publicKey: _key, ...entry }) => ({ ...entry, publisher: { namespace: "@korri", state } }))
   const facts = { ...initialPluginFacts, catalogs: {
-    [OFFICIAL]: { _tag: "Ready" as const, entries: entries(0, "Bound") },
-    [COMMUNITY]: { _tag: "Ready" as const, entries: entries(1, "New") },
+    [OFFICIAL]: { _tag: "Ready" as const, entries: entries(0, PluginPublisherState.Bound) },
+    [COMMUNITY]: { _tag: "Ready" as const, entries: entries(1, PluginPublisherState.New) },
   } }
   expect(newestRelease(facts, SNES9X)).toEqual({ sourceUrl: OFFICIAL, pluginId: SNES9X, releaseVersion: "2026.10.2" })
   expect(newestRelease(facts, "@korri:absent")).toBeUndefined()

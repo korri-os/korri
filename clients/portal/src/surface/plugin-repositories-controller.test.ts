@@ -17,7 +17,7 @@ import {
   type PluginFacts,
   type PluginRepositoryClient,
 } from "./plugin-repositories"
-import { PluginRepositoryAddResult, PluginRepositoryRemoveResult } from "@contracts/generated/korrid"
+import { PluginPublisherState, PluginRepositoryAddResult, PluginRepositoryRemoveResult } from "@contracts/generated/korrid"
 import { createPluginRepositoriesController } from "./plugin-repositories-controller"
 import {
   OFFICIAL,
@@ -117,10 +117,10 @@ describe("plugin repositories controller", () => {
       addPluginRepository: () => new Promise(resolve => { answer = resolve }) as never,
     })
     const h = harness(client)
-    expect(h.controller.change(ADD_REPOSITORY_SETTING, "  https://github.com/ada/retro-plugins ")).toBe(true)
+    expect(h.controller.change(ADD_REPOSITORY_SETTING, "  https://git.example/ada/retro-plugins ")).toBe(true)
     expect(h.last()).toEqual({ _tag: "Saving", settingId: ADD_REPOSITORY_SETTING })
     expect(h.busy()).toBe(true)
-    expect(calls).toEqual([["addPluginRepository", "https://github.com/ada/retro-plugins"]])
+    expect(calls).toEqual([["addPluginRepository", "https://git.example/ada/retro-plugins"]])
     answer(ok(PluginRepositoryAddResult.Added))
     await settle()
     expect(h.last()).toEqual({ _tag: "Idle" })
@@ -131,7 +131,7 @@ describe("plugin repositories controller", () => {
   it("invalid address: says to use https and asks korrid nothing", () => {
     const { client, calls } = fakePluginClient({})
     const h = harness(client)
-    h.controller.change(ADD_REPOSITORY_SETTING, "http://github.com/ada")
+    h.controller.change(ADD_REPOSITORY_SETTING, "http://git.example/ada")
     expect(h.last()).toEqual({ _tag: "Problem", settingId: ADD_REPOSITORY_SETTING, message: INVALID_ADDRESS })
     expect(calls).toEqual([])
   })
@@ -380,7 +380,7 @@ describe("plugin repositories controller", () => {
 
 describe("publisher trust", () => {
   const miner = { sourceUrl: RETRO, pluginId: "@mallory:miner", releaseVersion: "9.9.9" }
-  const trustedMiner = { ...newPublisherInspection, approval: "sha256:after-trust", publisher: { namespace: "@mallory", fingerprint: "mallory-1 TWFs bG9y eSBz YW1w", state: "Trusted" as const } }
+  const trustedMiner = { ...newPublisherInspection, approval: "sha256:after-trust", publisher: { namespace: "@mallory", fingerprint: "mallory-1 TWFs bG9y eSBz YW1w", state: PluginPublisherState.Trusted } }
 
   it("trusts exactly the key the report showed, then checks the release again for the approval", async () => {
     let inspected = 0

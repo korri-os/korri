@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import { PluginPublisherState } from "@contracts/generated/korrid"
 import type { SurfaceSettingGroup } from "@contracts/surface/korri-surface"
 import {
   ADD_REPOSITORY_SETTING,
@@ -96,12 +97,12 @@ describe("plugin settings groups", () => {
     const facts = readyFacts({
       repositories: { _tag: "Ready", value: repositories({ official: OFFICIAL, userAdded: [RETRO] }) },
       catalogs: {
-        [OFFICIAL]: { _tag: "Ready", entries: [{ pluginId: "@korri:tailscale", title: "Tailscale", releaseVersion: "1.0", publisher: { namespace: "@korri", state: "Bound" } }] },
+        [OFFICIAL]: { _tag: "Ready", entries: [{ pluginId: "@korri:tailscale", title: "Tailscale", releaseVersion: "1.0", publisher: { namespace: "@korri", state: PluginPublisherState.Bound } }] },
         [RETRO]: { _tag: "Ready", entries: retroCatalog },
       },
     })
     const groups = pluginSettingGroups(facts, [])
-    expect(groups.map(group => group.title)).toEqual([PLUGINS_GROUP, OFFICIAL_GROUP, "github.com/ada/retro-plugins"])
+    expect(groups.map(group => group.title)).toEqual([PLUGINS_GROUP, OFFICIAL_GROUP, "git.example/ada/retro-plugins"])
     expect(groups[0]?.items[0]).toMatchObject({ id: OFFICIAL_REPOSITORY_ROW, value: "1 plugin", description: "Always here. It can't be removed." })
     expect(groups[0]?.items[0]?.interaction).toBeUndefined()
     const all = groups.flatMap(group => group.items)
@@ -111,7 +112,7 @@ describe("plugin settings groups", () => {
   })
 
   it("groups each added repository's plugins, one row per plugin, ending with Remove", () => {
-    const retro = groupNamed(pluginSettingGroups(retroFacts(), []), "github.com/ada/retro-plugins")
+    const retro = groupNamed(pluginSettingGroups(retroFacts(), []), "git.example/ada/retro-plugins")
     expect(retro?.items.map(item => [item.label, item.value ?? null])).toEqual([
       ["Chiptune", "Install"],
       ["CRT look", "Install 2.1.0"],
@@ -127,7 +128,7 @@ describe("plugin settings groups", () => {
       destructive: true,
       confirmation: {
         title: "Remove this repository?",
-        message: `Korri stops showing plugins from github.com/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under "${REMOVED_GROUP}".`,
+        message: `Korri stops showing plugins from git.example/ada/retro-plugins. The plugin you installed from it stays, and still turns on and off under "${REMOVED_GROUP}".`,
         confirmLabel: "Remove",
       },
     })
@@ -140,15 +141,15 @@ describe("plugin settings groups", () => {
         repositoryInstalls: Array.from({ length: installs }, (_, index) =>
           ({ id: `@ada:p${index}`, sourceUrl: RETRO, releaseVersion: "1", enabled: true })),
       }) } })
-      const remove = groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items.at(-1)?.interaction
+      const remove = groupNamed(pluginSettingGroups(facts, []), "git.example/ada/retro-plugins")?.items.at(-1)?.interaction
       return remove?.kind === "action" ? remove.confirmation?.message : undefined
     }
-    expect(message(0)).toBe("Korri stops showing plugins from github.com/ada/retro-plugins. You can add it again later.")
-    expect(message(2)).toBe(`Korri stops showing plugins from github.com/ada/retro-plugins. The 2 plugins you installed from it stay, and still turn on and off under "${REMOVED_GROUP}".`)
+    expect(message(0)).toBe("Korri stops showing plugins from git.example/ada/retro-plugins. You can add it again later.")
+    expect(message(2)).toBe(`Korri stops showing plugins from git.example/ada/retro-plugins. The 2 plugins you installed from it stay, and still turn on and off under "${REMOVED_GROUP}".`)
   })
 
   it("uses one release silently, and offers several in catalog order without picking one", () => {
-    const retro = groupNamed(pluginSettingGroups(retroFacts(), []), "github.com/ada/retro-plugins")
+    const retro = groupNamed(pluginSettingGroups(retroFacts(), []), "git.example/ada/retro-plugins")
     const chip = retro?.items[0]
     expect(chip).toEqual({
       id: releaseRowId(chiptune),
@@ -167,7 +168,7 @@ describe("plugin settings groups", () => {
   })
 
   it("offers Install from a publisher not trusted yet, and says so: the key shows after the check", () => {
-    const row = groupNamed(pluginSettingGroups(retroFacts(), []), "github.com/ada/retro-plugins")?.items
+    const row = groupNamed(pluginSettingGroups(retroFacts(), []), "git.example/ada/retro-plugins")?.items
       .find(item => item.label === "Free coins")
     const miner = { sourceUrl: RETRO, pluginId: "@mallory:miner", releaseVersion: "9.9.9" }
     expect(row).toEqual({
@@ -181,10 +182,10 @@ describe("plugin settings groups", () => {
 
   it("names the publisher's state on every version of an untrusted plugin's first row only", () => {
     const facts = retroFacts({ catalogs: { [RETRO]: { _tag: "Ready", entries: [
-      { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.9", publisher: { namespace: "@mallory", state: "New" } },
-      { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.8", publisher: { namespace: "@mallory", state: "New" } },
+      { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.9", publisher: { namespace: "@mallory", state: PluginPublisherState.New } },
+      { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.8", publisher: { namespace: "@mallory", state: PluginPublisherState.New } },
     ] } } })
-    const rows = groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items.filter(item => item.label === "Free coins")
+    const rows = groupNamed(pluginSettingGroups(facts, []), "git.example/ada/retro-plugins")?.items.filter(item => item.label === "Free coins")
     expect(rows?.map(row => [row.value, row.description ?? null])).toEqual([
       ["Install 9.9.9", "Publisher @mallory is not trusted yet. Pick the version to install."],
       ["Install 9.9.8", null],
@@ -193,7 +194,7 @@ describe("plugin settings groups", () => {
 
   it("turns an inspected release into Review and turn on, whose confirmation is the report", () => {
     const facts = withReview(retroFacts(), chiptune, inspection)
-    const items = groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items ?? []
+    const items = groupNamed(pluginSettingGroups(facts, []), "git.example/ada/retro-plugins")?.items ?? []
     const row = items[0]
     // Every publisher the install brings follows it, read-only.
     expect(items.slice(1, 3)).toEqual([
@@ -230,12 +231,12 @@ describe("plugin settings groups", () => {
   })
 
   it("shows an unreachable repository with the host's words while its installs still toggle", () => {
-    const facts = retroFacts({ catalogs: { [RETRO]: { _tag: "Unreachable", message: "Could not reach github.com: timed out after 30 s" } } })
+    const facts = retroFacts({ catalogs: { [RETRO]: { _tag: "Unreachable", message: "Could not reach git.example: timed out after 30 s" } } })
     const groups = pluginSettingGroups(facts, [{ id: "@ada:netplay", title: "Netplay", enabled: true }])
-    expect(groups[0]?.items[1]).toMatchObject({ label: "github.com/ada/retro-plugins", value: "Can't reach it" })
-    const retro = groupNamed(groups, "github.com/ada/retro-plugins")
+    expect(groups[0]?.items[1]).toMatchObject({ label: "git.example/ada/retro-plugins", value: "Can't reach it" })
+    const retro = groupNamed(groups, "git.example/ada/retro-plugins")
     expect(retro?.items.map(item => [item.label, item.value ?? null, item.description ?? null])).toEqual([
-      ["Can't reach this repository", null, "Could not reach github.com: timed out after 30 s"],
+      ["Can't reach this repository", null, "Could not reach git.example: timed out after 30 s"],
       ["Netplay", "On", null],
       ["Remove this repository", null, null],
     ])
@@ -246,7 +247,7 @@ describe("plugin settings groups", () => {
     const facts = retroFacts({ catalogs: {} })
     const groups = pluginSettingGroups(facts, [])
     expect(groups[0]?.items[1]?.value).toBe("Checking…")
-    expect(groupNamed(groups, "github.com/ada/retro-plugins")?.items[0]?.label).toBe("Checking for plugins…")
+    expect(groupNamed(groups, "git.example/ada/retro-plugins")?.items[0]?.label).toBe("Checking for plugins…")
   })
 
   it("lists installs from removed repositories with titles from settings, falling back to the id", () => {
@@ -283,7 +284,7 @@ describe("plugin settings groups", () => {
 
   it("shows Needs review on an installed plugin whose approval went stale, and reviews it again", () => {
     const facts = withNeedsReview(retroFacts(), "@ada:netplay", true)
-    const row = groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items
+    const row = groupNamed(pluginSettingGroups(facts, []), "git.example/ada/retro-plugins")?.items
       .find(item => item.label === "Netplay")
     expect(row).toMatchObject({
       id: toggleSettingId("@ada:netplay"),
@@ -292,7 +293,7 @@ describe("plugin settings groups", () => {
     })
     const reviewed = withReview(facts, { sourceUrl: RETRO, pluginId: "@ada:netplay", releaseVersion: "0.4.0" }, { ...inspection, id: "@ada:netplay" })
     // A stale installed plugin is reviewed on its own row; it has no release row.
-    expect(groupNamed(pluginSettingGroups(reviewed, []), "github.com/ada/retro-plugins")?.items
+    expect(groupNamed(pluginSettingGroups(reviewed, []), "git.example/ada/retro-plugins")?.items
       .find(item => item.label === "Netplay")).toMatchObject({
       id: toggleSettingId("@ada:netplay"),
       value: "Review and turn on",
@@ -306,7 +307,7 @@ describe("plugin settings groups", () => {
   })
 
   it("treats an empty warning as no warning", () => {
-    expect(reviewMessage({ ...inspection, warning: "  ", brings: [{ id: "@x:y", title: "Y", warning: "", alreadyApproved: false, publisher: { namespace: "@x", state: "Bound" } }] }).split("\n"))
+    expect(reviewMessage({ ...inspection, warning: "  ", brings: [{ id: "@x:y", title: "Y", warning: "", alreadyApproved: false, publisher: { namespace: "@x", state: PluginPublisherState.Bound } }] }).split("\n"))
       .toEqual([
         `Publisher @ada, trusted on this device. Key ${ADA_FINGERPRINT}.`,
         "Opens network ports: TCP 7000, 7001; UDP 5353.",
@@ -318,7 +319,7 @@ describe("plugin settings groups", () => {
   it("a stale approval met on Off asks to review and turn off", () => {
     const netplay = { sourceUrl: RETRO, pluginId: "@ada:netplay", releaseVersion: "0.4.0" }
     const stale = withNeedsReview(retroFacts(), "@ada:netplay", false)
-    const row = () => groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items.find(item => item.label === "Netplay")
+    const row = () => groupNamed(pluginSettingGroups(facts, []), "git.example/ada/retro-plugins")?.items.find(item => item.label === "Netplay")
     let facts = stale
     expect(row()).toMatchObject({ value: "Needs review", description: "It changed since you approved it. Check it again to turn it off." })
     facts = withReview(stale, netplay, { ...inspection, id: "@ada:netplay", title: "Netplay" })
@@ -371,9 +372,9 @@ describe("plugin ids", () => {
   })
 
   it("accepts only https addresses with a host", () => {
-    expect(httpsAddress("  https://github.com/ada/retro-plugins  ")).toBe("https://github.com/ada/retro-plugins")
-    expect(httpsAddress("http://github.com/ada")).toBeUndefined()
-    expect(httpsAddress("github.com/ada")).toBeUndefined()
+    expect(httpsAddress("  https://git.example/ada/retro-plugins  ")).toBe("https://git.example/ada/retro-plugins")
+    expect(httpsAddress("http://git.example/ada")).toBeUndefined()
+    expect(httpsAddress("git.example/ada")).toBeUndefined()
     expect(httpsAddress("https://")).toBeUndefined()
     expect(httpsAddress("ftp://x")).toBeUndefined()
   })
@@ -386,7 +387,7 @@ describe("plugin ids", () => {
 })
 
 describe("publishers on the review", () => {
-  const RETRO_GROUP = "github.com/ada/retro-plugins"
+  const RETRO_GROUP = "git.example/ada/retro-plugins"
   const miner = { sourceUrl: RETRO, pluginId: "@mallory:miner", releaseVersion: "9.9.9" }
   const dither = { sourceUrl: RETRO, pluginId: "@pocket:dither", releaseVersion: "0.1.0" }
   const rowsAfter = (target: typeof chiptune, report: Parameters<typeof withReview>[2]) => {
@@ -485,7 +486,7 @@ describe("publishers on the review", () => {
     const [step] = rowsAfter(miner, both)
     expect(step).toMatchObject({ value: "Trust @mallory" })
     expect(confirmationOf(step)?.confirmation?.message.split("\n").at(-1)).toBe("After this, Free coins also needs you to trust @lib.")
-    const [next] = rowsAfter(miner, { ...both, publisher: { ...mallory, state: "Trusted" } })
+    const [next] = rowsAfter(miner, { ...both, publisher: { ...mallory, state: PluginPublisherState.Trusted } })
     expect(next).toMatchObject({ value: "Trust @lib" })
   })
 
@@ -589,7 +590,7 @@ describe("the Publishers list", () => {
 
   it("names an installed plugin by its catalog title, else its id", () => {
     const withTitles = readyFacts({
-      publishers: { _tag: "Ready", value: { entries: [{ namespace: "@ada", fingerprint: ADA_FINGERPRINT, state: "Trusted", installed: ["@ada:chiptune", "@ada:unknown"] }] } },
+      publishers: { _tag: "Ready", value: { entries: [{ namespace: "@ada", fingerprint: ADA_FINGERPRINT, state: PluginPublisherState.Trusted, installed: ["@ada:chiptune", "@ada:unknown"] }] } },
       catalogs: { [RETRO]: { _tag: "Ready", entries: retroCatalog } },
     })
     const row = pluginSettingGroups(withTitles, []).at(-1)?.items[0]

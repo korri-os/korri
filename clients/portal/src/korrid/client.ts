@@ -53,7 +53,15 @@ import type {
   SettingsUpdateOutcome,
   SourceStatusOutcome,
   PeerListOutcome,
+  PluginCatalog,
+  PluginCatalogEntry,
+  PluginCatalogOutcome,
   PluginChangeOutcome,
+  PluginDependency,
+  PluginInspectOutcome,
+  PluginInspection,
+  PluginPublisher,
+  PluginPublishersOutcome,
   PluginRepositories,
   PluginRepositoriesOutcome,
   PluginRepositoryAddOutcome,
@@ -67,21 +75,6 @@ import type {
   RpcResponse,
 } from "@contracts/generated/korrid"
 import { createInMemorySaves, type InMemorySavesConfig } from "./in-memory-saves"
-import {
-  PUBLISHERS_TAG,
-  PublisherRefusal,
-  REVOKE_PUBLISHER_TAG,
-  TRUST_PUBLISHER_TAG,
-  UNSIGNED_DISCLOSURE,
-  type PluginCatalog,
-  type PluginCatalogEntry,
-  type PluginCatalogOutcome,
-  type PluginDependency,
-  type PluginInspectOutcome,
-  type PluginInspection,
-  type PluginPublisher,
-  type PluginPublishersOutcome,
-} from "./plugin-admin"
 import {
   createInMemoryLaunchSettings,
   type InMemoryLaunchSettingsConfig,
@@ -99,6 +92,7 @@ import {
   FocusOwnership,
   InitialHandoff,
   PluginInstalledState,
+  PluginPublisherState,
   PluginRepositoryAddResult,
   PluginRepositoryRemoveResult,
   PendingLaunchPhase,
@@ -284,35 +278,6 @@ export async function callKorrid<Request extends RpcRequest>(
   request: Request,
   timeoutMs = RPC_TIMEOUT_MS,
 ): Promise<RpcResponseFor<Request>> {
-  return (await postRpc(baseUrl, capability, request, timeoutMs)) as RpcResponseFor<Request>
-}
-
-/**
- * A plugin admin request whose shapes `contracts/generated/` does not carry
- * yet (`./plugin-admin.ts`). Same transport as `callKorrid`; the outcome is
- * typed by the mirrored shapes. Once the generated treaty has these tags,
- * these calls become `callKorrid`.
- */
-type PluginAdminRequest =
-  | { readonly _tag: typeof PUBLISHERS_TAG; readonly payload: Record<string, never> }
-  | { readonly _tag: typeof TRUST_PUBLISHER_TAG; readonly payload: { readonly namespace: string; readonly publicKey: string } }
-  | { readonly _tag: typeof REVOKE_PUBLISHER_TAG; readonly payload: { readonly namespace: string } }
-
-async function callPluginAdmin<Outcome>(
-  baseUrl: string,
-  capability: string,
-  request: PluginAdminRequest,
-  timeoutMs = RPC_TIMEOUT_MS,
-): Promise<Outcome> {
-  return ((await postRpc(baseUrl, capability, request, timeoutMs)) as { readonly outcome: Outcome }).outcome
-}
-
-async function postRpc(
-  baseUrl: string,
-  capability: string,
-  request: { readonly _tag: string; readonly payload: unknown },
-  timeoutMs: number,
-): Promise<unknown> {
   const response = await fetch(`${baseUrl}/rpc`, {
     method: "POST",
     headers: {
@@ -323,7 +288,7 @@ async function postRpc(
     signal: AbortSignal.timeout(timeoutMs),
   })
   if (!response.ok) throw new KorridHttpError(response.status)
-  return response.json()
+  return (await response.json()) as RpcResponseFor<Request>
 }
 
 const unreachable = (error: unknown) => ({
@@ -903,14 +868,12 @@ export function createHttpKorridClient(
     },
     async pluginCatalog(url) {
       try {
-        // The generated outcome still names `publisherTrusted`; the host sends `publisher`.
-        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.catalog", payload: { url } }, PLUGIN_CATALOG_TIMEOUT_MS)).outcome as unknown as PluginCatalogOutcome
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.catalog", payload: { url } }, PLUGIN_CATALOG_TIMEOUT_MS)).outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async inspectPlugin(url, pluginId, releaseVersion) {
       try {
-        // The generated outcome does not carry `publisher` yet; the host sends it.
-        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.inspect", payload: { url, pluginId, releaseVersion } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome as unknown as PluginInspectOutcome
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.inspect", payload: { url, pluginId, releaseVersion } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async installPlugin(url, pluginId, releaseVersion, approval) {
@@ -925,18 +888,18 @@ export function createHttpKorridClient(
     },
     async pluginPublishers() {
       try {
-        return await callPluginAdmin<PluginPublishersOutcome>(baseUrl, capability, { _tag: PUBLISHERS_TAG, payload: {} })
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.publishers", payload: {} })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async trustPublisher(namespace, publicKey) {
       try {
         // The host serves plugin requests in turn, so a trust can wait behind an install.
-        return await callPluginAdmin<PluginChangeOutcome>(baseUrl, capability, { _tag: TRUST_PUBLISHER_TAG, payload: { namespace, publicKey } }, PLUGIN_PACKAGE_TIMEOUT_MS)
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.publisher.trust", payload: { namespace, publicKey } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async revokePublisher(namespace) {
       try {
-        return await callPluginAdmin<PluginChangeOutcome>(baseUrl, capability, { _tag: REVOKE_PUBLISHER_TAG, payload: { namespace } }, PLUGIN_PACKAGE_TIMEOUT_MS)
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.publisher.revoke", payload: { namespace } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async savesStatus() {
@@ -992,6 +955,13 @@ export function createHttpKorridClient(
     },
   }
 }
+
+/** The unsigned disclosure (schema sheet row 14; the host's
+ * `plugin-host/src/trust.rs` DISCLOSURE). The host sends it as
+ * `PluginPublisher.disclosure`; the portal shows the host's words, and this
+ * text only when the host sends none. */
+export const UNSIGNED_DISCLOSURE =
+  "This plugin is not signed. Korri cannot confirm who made it, or that updates come from the same person. Install it only if you trust the address you got it from."
 
 /** One release record as the in-memory plugin host's catalog holds it. The
  * host derives the catalog's `publisher` from the device's keys. */
@@ -1142,6 +1112,13 @@ export function inMemoryFingerprint(publicKey: string): string {
 }
 
 const pluginFailure = (code: string, message: string) => ({ _tag: "Err" as const, payload: { code, message } })
+
+/** The host's refusal codes for publisher trust (services/korrid/src/plugin_admin.rs). */
+const PublisherRefusal = {
+  NotTrusted: "PluginPublisherNotTrusted",
+  KeyChanged: "PluginPublisherKeyChanged",
+  NamespaceTaken: "PluginNamespaceTaken",
+} as const
 type Refusal = ReturnType<typeof pluginFailure>
 const refused = (value: object): value is Refusal => "_tag" in value
 
@@ -1190,24 +1167,24 @@ function createInMemoryPluginHost(
     if (publicKey === undefined) {
       return bound !== undefined || pinned !== undefined
         ? pluginFailure(PublisherRefusal.NamespaceTaken, `${namespace} is trusted on this device, so its plugins must be signed`)
-        : { namespace, state: "Unsigned", disclosure: UNSIGNED_DISCLOSURE }
+        : { namespace, state: PluginPublisherState.Unsigned, disclosure: UNSIGNED_DISCLOSURE }
     }
     const fingerprint = inMemoryFingerprint(publicKey)
     if (bound !== undefined) {
       return bound === publicKey
-        ? { namespace, fingerprint, state: "Bound" }
+        ? { namespace, fingerprint, state: PluginPublisherState.Bound }
         : pluginFailure("PluginHostRefused", `release is not signed by the key bound for ${namespace}`)
     }
-    if (pinned === undefined) return { namespace, fingerprint, state: "New", publicKey }
-    if (pinned === publicKey) return { namespace, fingerprint, state: "Trusted" }
-    return { namespace, fingerprint, state: "KeyChanged", previousFingerprint: inMemoryFingerprint(pinned), publicKey }
+    if (pinned === undefined) return { namespace, fingerprint, state: PluginPublisherState.New, publicKey }
+    if (pinned === publicKey) return { namespace, fingerprint, state: PluginPublisherState.Trusted }
+    return { namespace, fingerprint, state: PluginPublisherState.KeyChanged, previousFingerprint: inMemoryFingerprint(pinned), publicKey }
   }
   /** The catalog states only Bound or Trusted, else New, and no key. */
   const catalogPublisher = (item: InMemoryPluginRecord): PluginPublisher => {
     const namespace = namespaceOf(item.pluginId)
-    if (item.publicKey !== undefined && bindings.get(namespace) === item.publicKey) return { namespace, state: "Bound" }
-    if (item.publicKey !== undefined && pins.get(namespace) === item.publicKey) return { namespace, state: "Trusted" }
-    return { namespace, state: "New" }
+    if (item.publicKey !== undefined && bindings.get(namespace) === item.publicKey) return { namespace, state: PluginPublisherState.Bound }
+    if (item.publicKey !== undefined && pins.get(namespace) === item.publicKey) return { namespace, state: PluginPublisherState.Trusted }
+    return { namespace, state: PluginPublisherState.New }
   }
   /** Inspect one release: the report with every publisher, or the refusal. */
   const report = (item: InMemoryPluginRecord): PluginInspection | Refusal => {
@@ -1300,10 +1277,10 @@ function createInMemoryPluginHost(
       if (refused(inspected)) return inspected
       // Install refuses until the owner trusts every publisher it brings.
       for (const publisher of [inspected.publisher, ...inspected.brings.map(bring => bring.publisher)]) {
-        if (publisher.state === "New") {
+        if (publisher.state === PluginPublisherState.New) {
           return pluginFailure(PublisherRefusal.NotTrusted, `publisher ${publisher.namespace} is not trusted on this device`)
         }
-        if (publisher.state === "KeyChanged") {
+        if (publisher.state === PluginPublisherState.KeyChanged) {
           return pluginFailure(PublisherRefusal.KeyChanged,
             `publisher ${publisher.namespace} key changed: was ${publisher.previousFingerprint}, now ${publisher.fingerprint}`)
         }
@@ -1344,8 +1321,8 @@ function createInMemoryPluginHost(
     },
     async pluginPublishers() {
       const entries = [
-        ...[...bindings].map(([namespace, key]) => ({ namespace, key, state: "Bound" as const })),
-        ...[...pins].map(([namespace, key]) => ({ namespace, key, state: "Trusted" as const })),
+        ...[...bindings].map(([namespace, key]) => ({ namespace, key, state: PluginPublisherState.Bound })),
+        ...[...pins].map(([namespace, key]) => ({ namespace, key, state: PluginPublisherState.Trusted })),
       ].map(({ namespace, key, state }) => ({
         namespace,
         fingerprint: inMemoryFingerprint(key),

@@ -14,14 +14,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import {
   PluginInstalledState,
-  type PluginRepositories,
-  type PluginRepositoriesOutcome,
-  type PluginRepositoryInstall,
-  type PluginSetting,
-} from "@contracts/generated/korrid"
-import type { KorridClient } from "../korrid/client"
-import {
-  UNSIGNED_DISCLOSURE,
+  PluginPublisherState,
   type PluginCatalogEntry,
   type PluginCatalogOutcome,
   type PluginInspection,
@@ -29,8 +22,12 @@ import {
   type PluginPublisherEntry,
   type PluginPublishers,
   type PluginPublishersOutcome,
-  type PluginPublisherState,
-} from "../korrid/plugin-admin"
+  type PluginRepositories,
+  type PluginRepositoriesOutcome,
+  type PluginRepositoryInstall,
+  type PluginSetting,
+} from "@contracts/generated/korrid"
+import { UNSIGNED_DISCLOSURE, type KorridClient } from "../korrid/client"
 
 /** The korrid methods this flow uses. */
 export type PluginRepositoryClient = Pick<
@@ -345,28 +342,28 @@ const listOf = (items: readonly string[]) => items.join(", ")
 
 /** Bound or Trusted: the host installs from it without asking again. */
 export const isTrustedPublisher = (publisher: PluginPublisher): boolean =>
-  publisher.state === "Bound" || publisher.state === "Trusted"
+  publisher.state === PluginPublisherState.Bound || publisher.state === PluginPublisherState.Trusted
 
 /** The owner must trust this key before anything from it installs. */
 const awaitsTrust = (publisher: PluginPublisher): boolean =>
-  publisher.state === "New" || publisher.state === "KeyChanged"
+  publisher.state === PluginPublisherState.New || publisher.state === PluginPublisherState.KeyChanged
 
 /** A publisher's state as the value of its row. */
 export const PUBLISHER_STATE_LABEL: Readonly<Record<PluginPublisherState, string>> = {
-  Bound: "Configured",
-  Trusted: "Trusted",
-  New: "Not trusted yet",
-  KeyChanged: "Key changed",
-  Unsigned: "Not signed",
+  [PluginPublisherState.Bound]: "Configured",
+  [PluginPublisherState.Trusted]: "Trusted",
+  [PluginPublisherState.New]: "Not trusted yet",
+  [PluginPublisherState.KeyChanged]: "Key changed",
+  [PluginPublisherState.Unsigned]: "Not signed",
 }
 
 /** The same state inside a sentence. */
 const STATE_IN_A_LINE: Readonly<Record<PluginPublisherState, string>> = {
-  Bound: "configured",
-  Trusted: "trusted",
-  New: "not trusted yet",
-  KeyChanged: "key changed",
-  Unsigned: "not signed",
+  [PluginPublisherState.Bound]: "configured",
+  [PluginPublisherState.Trusted]: "trusted",
+  [PluginPublisherState.New]: "not trusted yet",
+  [PluginPublisherState.KeyChanged]: "key changed",
+  [PluginPublisherState.Unsigned]: "not signed",
 }
 
 const keyPart = (publisher: PluginPublisher) =>
@@ -392,7 +389,7 @@ export const publishersToTrust = (report: PluginInspection): readonly PluginPubl
 
 /** Whether the install takes an unsigned plugin, its own or one it brings. */
 const bringsUnsigned = (report: PluginInspection): boolean =>
-  [report.publisher, ...report.brings.map(bring => bring.publisher)].some(publisher => publisher.state === "Unsigned")
+  [report.publisher, ...report.brings.map(bring => bring.publisher)].some(publisher => publisher.state === PluginPublisherState.Unsigned)
 
 /**
  * The key change text (schema sheet row 15), one sentence per line. Joined
@@ -415,11 +412,11 @@ const disclosureOf = (publisher: PluginPublisher): string =>
 function publisherLine(publisher: PluginPublisher): string {
   const name = publisher.namespace
   switch (publisher.state) {
-    case "Bound": return `Publisher ${name}, trusted by this device's configuration.${keyPart(publisher)}`
-    case "Trusted": return `Publisher ${name}, trusted on this device.${keyPart(publisher)}`
-    case "New": return `Publisher ${name}, not trusted yet.${keyPart(publisher)}`
-    case "KeyChanged": return `Publisher ${name}: key changed. Before ${publisher.previousFingerprint ?? "unknown"}. Now ${publisher.fingerprint ?? "unknown"}.`
-    case "Unsigned": return `Publisher ${name}, not signed.`
+    case PluginPublisherState.Bound: return `Publisher ${name}, trusted by this device's configuration.${keyPart(publisher)}`
+    case PluginPublisherState.Trusted: return `Publisher ${name}, trusted on this device.${keyPart(publisher)}`
+    case PluginPublisherState.New: return `Publisher ${name}, not trusted yet.${keyPart(publisher)}`
+    case PluginPublisherState.KeyChanged: return `Publisher ${name}: key changed. Before ${publisher.previousFingerprint ?? "unknown"}. Now ${publisher.fingerprint ?? "unknown"}.`
+    case PluginPublisherState.Unsigned: return `Publisher ${name}, not signed.`
   }
 }
 
@@ -433,9 +430,9 @@ function publisherLine(publisher: PluginPublisher): string {
  */
 export function reviewMessage(report: PluginInspection): string {
   const lines: string[] = []
-  if (report.publisher.state === "Unsigned") lines.push(disclosureOf(report.publisher))
+  if (report.publisher.state === PluginPublisherState.Unsigned) lines.push(disclosureOf(report.publisher))
   for (const bring of report.brings) {
-    if (bring.publisher.state === "Unsigned") lines.push(`${bring.title ?? bring.id}: ${disclosureOf(bring.publisher)}`)
+    if (bring.publisher.state === PluginPublisherState.Unsigned) lines.push(`${bring.title ?? bring.id}: ${disclosureOf(bring.publisher)}`)
   }
   lines.push(publisherLine(report.publisher))
   const asks: string[] = []
@@ -465,11 +462,11 @@ export function reviewMessage(report: PluginInspection): string {
 function publisherDescription(publisher: PluginPublisher): string {
   const key = publisher.fingerprint ? `Key ${publisher.fingerprint}.` : ""
   switch (publisher.state) {
-    case "Bound": return `${key} This device's configuration trusts it.`.trim()
-    case "Trusted": return `${key} You trusted it on this device.`.trim()
-    case "New": return `${key} Check it with the plugin maker before you trust it.`.trim()
-    case "KeyChanged": return `Before ${publisher.previousFingerprint ?? "unknown"}. Now ${publisher.fingerprint ?? "unknown"}.`
-    case "Unsigned": return disclosureOf(publisher)
+    case PluginPublisherState.Bound: return `${key} This device's configuration trusts it.`.trim()
+    case PluginPublisherState.Trusted: return `${key} You trusted it on this device.`.trim()
+    case PluginPublisherState.New: return `${key} Check it with the plugin maker before you trust it.`.trim()
+    case PluginPublisherState.KeyChanged: return `Before ${publisher.previousFingerprint ?? "unknown"}. Now ${publisher.fingerprint ?? "unknown"}.`
+    case PluginPublisherState.Unsigned: return disclosureOf(publisher)
   }
 }
 
@@ -501,7 +498,7 @@ function trustRow(
       interaction: { kind: "action", actionId: inspectActionId(review) },
     }
   }
-  if (publisher.state === "KeyChanged") {
+  if (publisher.state === PluginPublisherState.KeyChanged) {
     return {
       id,
       label,
@@ -624,12 +621,12 @@ const toggleRows = (
 /** What a catalog row says about a publisher it cannot install from yet. */
 function untrustedWords(publisher: PluginPublisher): string | undefined {
   switch (publisher.state) {
-    case "Bound":
-    case "Trusted":
+    case PluginPublisherState.Bound:
+    case PluginPublisherState.Trusted:
       return undefined
-    case "New": return `Publisher ${publisher.namespace} is not trusted yet.`
-    case "KeyChanged": return `The publisher key for ${publisher.namespace} changed.`
-    case "Unsigned": return `Not signed. Korri cannot confirm who made it.`
+    case PluginPublisherState.New: return `Publisher ${publisher.namespace} is not trusted yet.`
+    case PluginPublisherState.KeyChanged: return `The publisher key for ${publisher.namespace} changed.`
+    case PluginPublisherState.Unsigned: return `Not signed. Korri cannot confirm who made it.`
   }
 }
 
@@ -746,11 +743,11 @@ function publisherRow(entry: PluginPublisherEntry, titleOf: (id: string) => stri
   const installed = entry.installed.length === 0
     ? "No plugins installed from it."
     : `${count(entry.installed.length, "plugin")} installed from it.`
-  if (entry.state === "Bound") {
+  if (entry.state === PluginPublisherState.Bound) {
     return {
       id: publisherRowId(entry.namespace),
       label: entry.namespace,
-      value: PUBLISHER_STATE_LABEL.Bound,
+      value: PUBLISHER_STATE_LABEL[PluginPublisherState.Bound],
       description: `This device's configuration trusts it. Key ${entry.fingerprint}. ${installed}`,
     }
   }

@@ -19,7 +19,7 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
-const RETRO_TAB = "GITHUB.COM/ADA/RETRO-PLUGINS"
+const RETRO_TAB = "GIT.EXAMPLE/ADA/RETRO-PLUGINS"
 
 const open = (model: SurfaceModel, tab: string) => {
   const host = createFixtureHost()
@@ -59,7 +59,7 @@ describe("plugin rows", () => {
       view.unmount()
     }
     const adding = render(<Settings.PluginsAdding />)
-    expect(adding.getByRole("textbox", { name: "Add a repository" }).textContent).toContain("https://github.com/ada/retro-plugins")
+    expect(adding.getByRole("textbox", { name: "Add a repository" }).textContent).toContain("https://git.example/ada/retro-plugins")
     expect(adding.getAllByText("SAVING").length).toBeGreaterThan(0)
   })
 
@@ -235,9 +235,9 @@ describe("many and long sections", () => {
   test("every repository is a reachable tab, however long its name", () => {
     open(pluginModels.many, "PLUGINS")
     const tabs = screen.getAllByRole("tab").map(tab => tab.textContent)
-    expect(tabs).toContain("CODEBERG.ORG/PIXEL-COLLECTIVE/KORRI-HANDHELD-PLUGINS-FOR-SMALL-SCREENS")
-    expect(tabs).toContain("RAW.GITHUBUSERCONTENT.COM/SOMEONE/AVERYVERYVERYLONGREPOSITORYNAMEWITHOUTANYBREAKPOINTS/MAIN/CATALOG.JSON")
-    fireEvent.click(screen.getByRole("tab", { name: "GITLAB.COM/MIRA/KORRI" }))
+    expect(tabs).toContain("FORGE.EXAMPLE/PIXEL-COLLECTIVE/KORRI-HANDHELD-PLUGINS-FOR-SMALL-SCREENS")
+    expect(tabs).toContain("RAW.FILES.EXAMPLE/SOMEONE/AVERYVERYVERYLONGREPOSITORYNAMEWITHOUTANYBREAKPOINTS/MAIN/CATALOG.JSON")
+    fireEvent.click(screen.getByRole("tab", { name: "LAB.EXAMPLE/MIRA/KORRI" }))
     expect(screen.getByText("Can't reach this repository")).toBeTruthy()
   })
 
