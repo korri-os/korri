@@ -4718,7 +4718,10 @@ mod tests {
                     }
                     "dependency-omitted" => {
                         selections.retain(|entry| entry["after"]["id"] == first.id);
-                        "dependency"
+                        // Membership is checked before native effects. The
+                        // checks below still require identical journal bytes,
+                        // receipts, roots and live ownership on this refusal.
+                        "pending graph update selections differ from the approved root closure"
                     }
                     "unrelated-injected" => {
                         let target = host
@@ -4876,12 +4879,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the signed old Pro graph and current published ARM outputs in the build-machine store; no device access"]
-    fn real_store_graph_rg35xxpro_updates_all_four_with_one_root_approval() {
-        // Old outputs and approvals: observed device receipts in
-        // /tmp/rg35xxpro-upgrade/report.md, Exact transactional graph acceptance.
-        // Targets: nix/product/published-plugins.nix aarch64-linux at 5097e69ea,
-        // including build-bd4bfcfe4e9a's FAKE-08 save-state fix and rebuilt pack.
+    #[ignore = "requires observed retired signed ARM outputs in the build-machine store; no device access"]
+    fn real_store_graph_retired_rg35xxpro_sources_fail_closed_without_effects_or_state_loss() {
+        // Observed old graph and then-pinned targets from the RG35XX Pro
+        // inventory. ADR 0045 deliberately retires their authored contribution
+        // IDs. The real-store one-root-approval update proof moves to the image
+        // cut-over stage, against republished signed outputs. Do not rewrite
+        // these bytes, change pins, or treat their saved approvals as admission.
         let old = [
             "/nix/store/c0j4s87fx0j81n7s1szhszpimjlp9f48-korri-plugin",
             "/nix/store/66c4hds7g34kra7jkl53wmrm42p60v2w-korri-plugin",
@@ -4896,7 +4900,7 @@ mod tests {
             "/nix/store/fgpg2glx2n202j975w62d73jlj5l86xx-korri-plugin",
         ]
         .map(PathBuf::from);
-        let approvals = [
+        let selections = [
             (
                 "@korri:starter-pack",
                 "1217c3d5c7fcea11da169f96e33a14df331eda4da11f465146b8bc7ddb7fd7b8",
@@ -4917,20 +4921,16 @@ mod tests {
         let nix = PathBuf::from(
             std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable build-machine Nix"),
         );
-        let helper = package::tools(&PathBuf::from(
-            std::env::var_os("KORRI_TEST_TRUE").expect("immutable no-effect helper"),
-        ))
-        .unwrap();
         let root = tempfile::tempdir().unwrap();
+        // Real package admission, with controlled native effects so the test can
+        // prove there are none. Full-key verification has separate real-store
+        // coverage; this checkpoint specifically tests the source clean cut.
+        let runtime = TestRuntime {
+            real_packages: true,
+            ..TestRuntime::default()
+        };
         let mut host =
-            Host::for_test(root.path(), nix, permitted_policy(), TestRuntime::default()).unwrap();
-        // No report or signature double. The packages, source evaluation,
-        // closure checks and bound full-key verification are production code.
-        // These game plugins have zero native units; never run ARM payloads.
-        host.test_runtime = None;
-        host.units.systemctl = helper.clone();
-        host.units.firewall.ipv4 = helper.clone();
-        host.units.firewall.ipv6 = helper;
+            Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
         let cache = "https://github.com/korri-os/plugins/releases/download/cache/";
         host.publishers.insert(
             "@korri".into(),
@@ -4942,108 +4942,84 @@ mod tests {
         let origin = Provenance::RawCache {
             cache_url: cache.into(),
         };
-        let first = host.load(&old[0], origin.clone()).unwrap();
-        assert_eq!(first.brings.len(), 3);
-        assert_eq!(
-            first.requires.iter().cloned().collect::<BTreeSet<_>>(),
-            old[1..].iter().cloned().collect()
-        );
-        install(&host, first.clone());
-        host.set_enabled(&first.id, true).unwrap();
-        let before = host.receipts().unwrap();
-        for (id, approval) in approvals {
-            assert_eq!(host.status(id).unwrap().unwrap().approval, approval);
-        }
-        let data = root.path().join("existing-user-data");
-        fs::write(&data, b"preserve game progress").unwrap();
-        let seeded = package::load_graph_for_seed(&target, &host.publishers).unwrap();
-        let next = host.load(&target[0], origin).unwrap();
-        assert_eq!(
-            next.requires.iter().cloned().collect::<BTreeSet<_>>(),
-            target[1..].iter().cloned().collect()
-        );
-        assert!(next.native_units.is_empty());
-        assert!(next.brings.iter().all(|r| r.report.native_units.is_empty()));
-        let approval = seeded
-            .iter()
-            .find(|r| r.id == first.id)
-            .unwrap()
-            .approval
-            .clone();
-        assert_eq!(next.approval, approval);
-        // This is the same Host entry and single approval as plain CLI update.
-        host.install(next, &approval, SelectionIntent::Update { id: &first.id })
-            .unwrap();
-        host.restore_all().unwrap();
-        for previous in &before {
-            let selected = host.status(&previous.id).unwrap().unwrap();
-            assert!(target.contains(&selected.package));
-            assert_eq!(selected.desired, Desired::Enabled);
-            assert_eq!(
-                selected.previous.as_ref().unwrap().package,
-                previous.package
-            );
-            assert_eq!(
-                selected.previous.as_ref().unwrap().provenance,
-                previous.provenance
-            );
-            assert_eq!(
-                selected.previous.as_ref().unwrap().approval,
-                previous.approval
-            );
-            assert_eq!(
-                fs::read_link(host.root(&selected.id, "active")).unwrap(),
-                selected.package
-            );
-            assert_eq!(
-                fs::read_link(host.root(&selected.id, "previous")).unwrap(),
-                previous.package
-            );
-            assert!(fs::symlink_metadata(host.root(&selected.id, "pending")).is_err());
-        }
-        assert_eq!(host.enabled_packages().unwrap().len(), 4);
-        assert_eq!(fs::read(&data).unwrap(), b"preserve game progress");
-        assert!(!host.state.root().join("graph-update.json").exists());
-
-        // A real-store power-loss image: the decision is durable, but only
-        // one dependency's receipt has switched. Publisher revocation must
-        // not lose the recorded dependency provenance or strand this mix.
-        for receipt in &before {
-            host.selection(&receipt.id).commit(receipt).unwrap();
-        }
-        let mut selections = Vec::new();
-        let mut afters = Vec::new();
-        for report in seeded {
-            let previous = before.iter().find(|r| r.id == report.id).unwrap();
-            let after = previous
-                .select(report.package, report.provenance, report.approval)
+        for (index, (id, approval)) in selections.iter().enumerate() {
+            host.prepare(id).unwrap();
+            host.selection(id)
+                .commit(&Receipt {
+                    id: (*id).into(),
+                    package: old[index].clone(),
+                    provenance: origin.clone(),
+                    approval: (*approval).into(),
+                    desired: Desired::Enabled,
+                    // A stored approval cannot stand in for re-admission, even
+                    // when the requested previous selection is also a retired build.
+                    previous: Some(crate::selection::Previous {
+                        package: target[index].clone(),
+                        provenance: origin.clone(),
+                        approval: "unusable-retired-target-approval".into(),
+                    }),
+                })
                 .unwrap();
-            host.selection(&after.id).stage(&after.package).unwrap();
-            selections.push(serde_json::json!({"before": previous, "after": after}));
-            afters.push(after);
         }
-        storage::write_json(
-            &host.state.root().join("graph-update.json"),
-            &serde_json::json!({"root": first.id, "phase": "Switching", "selections": selections}),
-        )
-        .unwrap();
-        host.selection(&afters[0].id).commit(&afters[0]).unwrap();
-        host.publishers.clear();
-        assert!(
-            host.restore_all().is_err(),
-            "revoked packages must not activate"
-        );
-        assert!(
-            !host.state.root().join("graph-update.json").exists(),
-            "revocation must not strand a half-switched graph"
-        );
-        for after in afters {
-            let receipt = host.status(&after.id).unwrap().unwrap();
-            assert_eq!(receipt.package, after.package);
-            assert_eq!(receipt.provenance, after.provenance);
-            assert_eq!(receipt.approval, after.approval);
+        let user_data = root.path().join("existing-user-data");
+        fs::write(&user_data, b"preserve game progress").unwrap();
+        let before = host.receipts().unwrap();
+        let roots: Vec<_> = before
+            .iter()
+            .map(|r| {
+                ["active", "previous", "pending"]
+                    .map(|name| fs::read_link(host.root(&r.id, name)).ok())
+            })
+            .collect();
+        for path in old.iter().chain(&target) {
+            assert!(
+                path.is_dir(),
+                "observed retired output is missing: {}",
+                path.display()
+            );
+            let error = host
+                .load(path, origin.clone())
+                .err()
+                .expect("retired source must not load");
+            assert!(
+                error.contains("id is derived; remove it"),
+                "{}: {error}",
+                path.display()
+            );
         }
-        assert!(published(&host).1.is_empty());
+        for (index, (id, _)) in selections.iter().enumerate() {
+            // A caller-supplied report/digest must never bypass re-admission.
+            let mut requested = report(id, "caller-supplied-review");
+            requested.package = target[index].clone();
+            requested.provenance = origin.clone();
+            let error = host
+                .install(
+                    requested.clone(),
+                    &requested.approval,
+                    SelectionIntent::Update { id },
+                )
+                .unwrap_err();
+            assert!(error.contains("id is derived; remove it"), "{id}: {error}");
+            let error = host.rollback(id).unwrap_err();
+            assert!(error.contains("id is derived; remove it"), "{id}: {error}");
+        }
+        assert_eq!(host.receipts().unwrap(), before);
+        for (receipt, links) in before.iter().zip(roots) {
+            for (name, expected) in ["active", "previous", "pending"].into_iter().zip(links) {
+                assert_eq!(fs::read_link(host.root(&receipt.id, name)).ok(), expected);
+            }
+        }
+        assert_eq!(fs::read(user_data).unwrap(), b"preserve game progress");
+        assert!(
+            runtime
+                .events
+                .borrow()
+                .iter()
+                .all(|event| !event.starts_with("start:") && !event.starts_with("stop:")),
+            "{:?}",
+            runtime.events.borrow()
+        );
+        assert!(!host.state.root().join("graph-update.json").exists());
     }
 
     #[test]

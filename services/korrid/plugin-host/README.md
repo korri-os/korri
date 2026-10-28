@@ -283,11 +283,22 @@ nix develop .#plugin-host --command cargo test --locked --manifest-path services
 nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --lib real_store_graph -- --ignored
 ```
 
-### Real RG35XX Pro graph regression
+### Real RG35XX Pro clean-cut regression
 
-The ignored `real_store_graph_rg35xxpro_updates_all_four_with_one_root_approval` test uses the observed old Starter pack, FAKE-08, Solarus and ZQuest Classic outputs from the upgrade inventory, and the ARM outputs pinned in `nix/product/published-plugins.nix` at `5097e69ea`. It checks the device's exact old approvals, derives the target approval with the existing seed producer, and calls the ordinary root update once. It checks all four Enabled receipts, their independent previous slots and GC roots, and retained user data. Full bound-key and immutable-store validation run; no ARM payload, device service or device state is touched.
+The ignored `real_store_graph_retired_rg35xxpro_sources_fail_closed_without_effects_or_state_loss`
+test retains the same observed old and then-pinned Starter pack, FAKE-08,
+Solarus and ZQuest Classic store outputs from the Pro inventory. Those signed
+outputs still author contribution IDs, so ADR 0045 now refuses them with the
+derived-ID diagnostic. Their saved approvals cannot authorize a load, update or
+rollback. The test checks refusal before native effects and exact preservation
+of receipts, active/previous roots and user data for repair. It changes neither
+product pins nor published bytes and runs no ARM payload or device service.
 
-Run the focused real-store command above on a build machine with those signed outputs already realized. The test fails explicitly if an output is missing; it does not build or silently skip a package. Realize the exact old pack `/nix/store/c0j4s87fx0j81n7s1szhszpimjlp9f48-korri-plugin` and target pack `/nix/store/9rz2xjv1ppqzkgxkivvkqdy40573z4kj-korri-plugin` from the existing signed publisher cache first if needed. Their Nix closures include the three independent plugin dependencies. When product pins change, update this observed acceptance fixture deliberately, not by substituting another output during recovery.
+The real-store one-root-approval update proof moves to the image cut-over stage,
+against the republished signed outputs. The old package outputs remain an
+explicit fail-closed checkpoint, not a compatibility route. Run the focused
+real-store command above with those observed outputs already realized; missing
+outputs fail rather than silently skipping or building a replacement.
 
 ## Exact publishing-commit lookup
 
