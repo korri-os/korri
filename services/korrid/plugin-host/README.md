@@ -7,8 +7,8 @@ The host installs previously unknown plugins without a NixOS update or a device 
 Authors publish a complete repository folder with:
 
 ```sh
-korri-publish repository --secret-key FILE --release LABEL --base-url https://example.org/releases/ OUTPUT_DIR STORE_PATH...
-korri-publish archive --secret-key FILE OUTPUT_DIR STORE_PATH
+korri-publish repository --secret-key FILE --release LABEL --base-url URL [--platform SYSTEM] OUTPUT_DIR STORE_PATH...
+korri-publish archive --secret-key FILE [--platform SYSTEM] OUTPUT_DIR STORE_PATH
 ```
 
 Both commands convert the complete closure to content-addressed outputs, run
@@ -21,12 +21,15 @@ version ordering. `archive` writes no catalog. It prints one JSON line with
 Only the existing `declaration NAMESPACE SOURCE_ROOT SOURCE...` metadata mode
 remains. There is no positional publication form or compatibility reader.
 
-The publisher detects a native output's platform from its Nix derivation. It
-emits `any` automatically when the package has no references and no manifest
-`packages`, `files`, `services`, or exact `requires` paths. The host checks both
-conditions before accepting an `any` record on its own platform. Release
-requirements do not themselves make a source-only package architecture-specific.
-A native output whose build platform cannot be determined is refused.
+The publisher uses a native output's known Nix derivation system. An imported
+output can have no known deriver; supply `--platform SYSTEM` for that output.
+If a known derivation and `--platform` disagree, publication refuses and names
+the output and both platforms. It never guesses the publishing machine's system.
+The publisher emits `any` automatically, even with `--platform`, when the package
+has no references and no manifest `packages`, `files`, `services`, or exact
+`requires` paths. The host checks both conditions before accepting an `any`
+record on its own platform. Release requirements do not themselves make a
+source-only package architecture-specific.
 
 ## Publisher trust
 

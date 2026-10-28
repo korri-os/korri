@@ -234,9 +234,30 @@ pub fn public_half(secret: &str) -> Result<String, String> {
     Ok(key)
 }
 
-pub fn detected_platform(nix: &Path, package: &Path) -> Result<String, String> {
+pub fn publication_platform(
+    nix: &Path,
+    package: &Path,
+    requested: Option<&str>,
+) -> Result<String, String> {
+    if let Some(platform) = requested {
+        validate_platform(platform)?;
+    }
     if package::architecture_independent(package)? && package::no_references(nix, package)? {
-        return Ok("any".into());
+        return select_platform(package, true, None, requested);
+    }
+    // Nix can import a valid output without its build history. Ask for valid
+    // derivers explicitly; do not classify failures by their diagnostic text.
+    let derivers = process::checked_uncapped(
+        &nix.with_file_name("nix-store"),
+        [
+            "--query",
+            "--valid-derivers",
+            package.to_str().ok_or("invalid path")?,
+        ],
+        None,
+    )?;
+    if derivers.trim().is_empty() {
+        return select_platform(package, false, None, requested);
     }
     let derivation = process::checked_uncapped(
         nix,
@@ -245,8 +266,9 @@ pub fn detected_platform(nix: &Path, package: &Path) -> Result<String, String> {
             "nix-command",
             "derivation",
             "show",
-            package.to_str().ok_or("invalid path")?,
-        ],
+        ]
+        .into_iter()
+        .chain(derivers.split_whitespace()),
         None,
     )?;
     // Observed Nix derivation-show JSON: the versioned response contains a
@@ -269,8 +291,44 @@ pub fn detected_platform(nix: &Path, package: &Path) -> Result<String, String> {
         return Err("cannot detect the native package platform from its derivation".into());
     }
     let system = systems.into_iter().next().unwrap();
-    validate_platform(system)?;
-    Ok(system.into())
+    select_platform(package, false, Some(system), requested)
+}
+
+fn select_platform(
+    package: &Path,
+    architecture_independent: bool,
+    known: Option<&str>,
+    requested: Option<&str>,
+) -> Result<String, String> {
+    if let Some(platform) = requested {
+        validate_platform(platform)?;
+    }
+    if architecture_independent {
+        return Ok("any".into());
+    }
+    if let Some(known) = known {
+        validate_platform(known)?;
+        if let Some(requested) = requested {
+            if known != requested {
+                return Err(format!(
+                    "platform of {} is {known}, but --platform is {requested}",
+                    package.display()
+                ));
+            }
+        }
+        return Ok(known.into());
+    }
+    match requested {
+        Some("any") => Err(format!(
+            "{} is not architecture-independent; --platform any is not valid",
+            package.display()
+        )),
+        Some(platform) => Ok(platform.into()),
+        None => Err(format!(
+            "cannot tell the platform of {}; pass --platform",
+            package.display()
+        )),
+    }
 }
 
 pub fn publish_repository(
@@ -280,6 +338,7 @@ pub fn publish_repository(
     base_url: &str,
     output: &Path,
     packages: &[PathBuf],
+    platform: Option<&str>,
 ) -> Result<Catalog, String> {
     validate_archive_url(base_url)?;
     let base = url::Url::parse(base_url).map_err(|e| e.to_string())?;
@@ -296,7 +355,7 @@ pub fn publish_repository(
         if !seen_inputs.insert(package.clone()) {
             continue;
         }
-        let platform = detected_platform(nix, package)?;
+        let platform = publication_platform(nix, package, platform)?;
         let converted = content_addressed(nix, package)?;
         if records
             .iter()
@@ -331,4 +390,130 @@ pub fn publish_repository(
         0o644,
     )?;
     Ok(catalog)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn output() -> &'static Path {
+        Path::new("/nix/store/00000000000000000000000000000000-plugin")
+    }
+
+    #[test]
+    fn eligible_source_only_outputs_always_get_any() {
+        for explicit in [None, Some("aarch64-linux"), Some("any")] {
+            assert_eq!(
+                select_platform(output(), true, Some("x86_64-linux"), explicit).unwrap(),
+                "any"
+            );
+        }
+    }
+
+    #[test]
+    fn known_derivation_system_wins_and_mismatches_name_both_values() {
+        for explicit in [None, Some("x86_64-linux")] {
+            assert_eq!(
+                select_platform(output(), false, Some("x86_64-linux"), explicit).unwrap(),
+                "x86_64-linux"
+            );
+        }
+        let error = select_platform(output(), false, Some("x86_64-linux"), Some("aarch64-linux"))
+            .unwrap_err();
+        assert!(
+            error.contains(output().to_str().unwrap())
+                && error.contains("x86_64-linux")
+                && error.contains("aarch64-linux")
+        );
+    }
+
+    #[test]
+    fn imported_native_output_without_a_deriver_needs_an_explicit_platform() {
+        assert_eq!(
+            select_platform(output(), false, None, Some("aarch64-linux")).unwrap(),
+            "aarch64-linux"
+        );
+        assert_eq!(
+            select_platform(output(), false, None, None).unwrap_err(),
+            format!(
+                "cannot tell the platform of {}; pass --platform",
+                output().display()
+            )
+        );
+    }
+
+    #[test]
+    fn requested_platform_is_validated_and_any_cannot_describe_native_outputs() {
+        assert!(select_platform(output(), false, None, Some("invalid")).is_err());
+        assert!(select_platform(output(), false, None, Some("any")).is_err());
+        assert!(select_platform(output(), true, None, Some("invalid")).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires builder fixtures and writable build-machine Nix; no target builds"]
+    fn direction_imported_native_outputs_publish_without_derivers() {
+        let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
+        let fixtures = PathBuf::from(
+            std::env::var_os("KORRI_TEST_DEPENDENCY_FIXTURES").expect("builder fixtures"),
+        );
+        let original = fs::canonicalize(fixtures.join("native")).unwrap();
+        let imported = content_addressed(&nix, &original).unwrap();
+        assert!(process::checked_uncapped(
+            &nix.with_file_name("nix-store"),
+            ["--query", "--valid-derivers", imported.as_str()],
+            None
+        )
+        .unwrap()
+        .trim()
+        .is_empty());
+        let platform = crate::provenance::current_platform();
+        assert_eq!(
+            publication_platform(&nix, Path::new(&imported), None).unwrap_err(),
+            format!("cannot tell the platform of {imported}; pass --platform")
+        );
+        assert_eq!(
+            publication_platform(&nix, Path::new(&imported), Some(platform)).unwrap(),
+            platform
+        );
+        let root = tempfile::tempdir().unwrap();
+        let secret = process::checked_uncapped(
+            &nix,
+            [
+                "--extra-experimental-features",
+                "nix-command",
+                "key",
+                "generate-secret",
+                "--key-name",
+                "imported-native-output",
+            ],
+            None,
+        )
+        .unwrap();
+        let key = root.path().join("secret");
+        fs::write(&key, secret).unwrap();
+        let repository = root.path().join("repository");
+        let catalog = publish_repository(
+            &nix,
+            &key,
+            "v1",
+            "https://example.invalid/releases/",
+            &repository,
+            &[PathBuf::from(&imported)],
+            Some(platform),
+        )
+        .unwrap();
+        assert_eq!(catalog.records[0].store_path, imported);
+        assert_eq!(catalog.records[0].platform, platform);
+        let archive_path =
+            repository.join(catalog.records[0].archive_url.rsplit('/').next().unwrap());
+        let cache = root.path().join("cache");
+        fs::create_dir(&cache).unwrap();
+        crate::archive::extract(&archive_path, &cache).unwrap();
+        assert!(package::archive_signature(
+            &nix,
+            Path::new(&imported),
+            &crate::archive::path_to_file_uri(&cache).unwrap(),
+            catalog.records[0].public_key.as_deref()
+        )
+        .unwrap());
+    }
 }
