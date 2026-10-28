@@ -59,7 +59,14 @@ response object. `status` and `devices list` return arrays. `play` always
 returns an array, including failed preflights; after launch it contains the
 save-check and launch responses. Setup orchestration returns an array of its
 completed operations; setup restart/finish and an initial failed status return
-one response. Setting writes return their final native response only. `version --json` and
+one response. Sideload returns an array of observed native responses: a fresh run
+normally returns `[PluginArchiveBegin, PluginArchiveInspect]` or
+`[PluginArchiveBegin, PluginArchiveInstall]`. The begin response's
+`outcome.payload.uploadId` is the resume ID. Successful chunk/finish
+acknowledgements are omitted; a failed upload step is the final response.
+A resumed `--upload ID` run returns only its observed final response in an
+array; it does not invent a begin response to echo the ID the caller supplied.
+Setting writes return their final native response only. `version --json` and
 `completion <shell> --json` return JSON strings. The offline author commands
 `plugins new`, `build` and `publish` also return JSON strings; they have no RPC
 response. Help stays text, even when
@@ -396,15 +403,40 @@ The target must already bind or pin the signing key. When inspection refuses
 an unknown/changed author key, terminal sideload shows the local author's
 fingerprint and asks explicitly to trust it, then reinspects the same upload.
 `--yes` supplies neither trust nor permission approval. The target retains that
-upload for this trust step; an idle upload expires after 10 minutes. If it
-expires during trust, the CLI explains and uploads the same signed bytes once
-more. Other failures stop without retry; korrid owns staging cleanup.
+upload for this trust step; an idle upload expires after 10 minutes. A fresh run
+can resend its retained signed bytes once if the upload expires during terminal
+trust. A resumed `--upload` run never rebuilds or resends bytes; a missing or
+expired upload exits 1 and says to run sideload again without `--upload`.
+Other failures stop without retry; korrid owns staging cleanup.
 
 After inspection, terminal sideload asks for the exact approval digest. Piped
-or JSON sideload without `--approval` returns only the inspection and installs
-nothing. Review it, then repeat sideload with `--approval DIGEST` on the same
-device. The host rechecks the digest. Install leaves the plugin off; enable it
-with `plugins on ID`. Owner approval and the sandbox are unchanged.
+or JSON sideload without `--approval` returns the begin response and inspection
+and installs nothing. Human output shows the upload ID and an exact resume
+command. Review the inspection, then reuse that ID on the same device:
+
+```sh
+korri plugins sideload . --device DEVICE --upload ID --approval DIGEST
+```
+
+Do not begin another upload for the approval step: korrid has one active staging
+slot per device. `--upload ID` skips the build and upload and reinspects the
+same bytes before accepting the exact digest. JSON output stays an array of
+unchanged native RPC responses, with no CLI envelope or copied begin response.
+
+A publisher-trust refusal also returns the begin response and its upload ID.
+Scripts must run `plugins trust NAMESPACE --key FULL_PUBLIC_KEY` on the same
+`--device`, then resume with `--upload ID` to obtain and review the inspection.
+Resume once more with `--upload ID --approval DIGEST` to install it. Terminal
+resumes can offer trust using the same plugin directory (`[dir]`, default `.`): Nix
+resolves its already-built outputs, the generated manifest supplies the
+namespace, and the existing local secret key supplies its public half. This
+performs no build, archive publication, or key creation and stores no CLI
+session. Without that project or key, sideload gives the explicit trust command
+and tells the owner to resume the same upload after trust. `--yes` never trusts
+a key or supplies the approval digest.
+
+The host rechecks the digest. Install leaves the plugin off; enable it with
+`plugins on ID`. Owner approval and the sandbox are unchanged.
 
 ### Host-only process proof
 

@@ -401,10 +401,18 @@ fn plugin_new_builds_and_admits_the_generated_runner() {
         .unwrap()
         .parent()
         .unwrap();
+    // The project's own input must resolve to this checkout for both the build
+    // and the later read-only namespace lookup. A per-command override would
+    // not persist in the project's native lock file.
+    let flake_path = root.path().join("hello/flake.nix");
+    let flake = fs::read_to_string(&flake_path).unwrap().replace(
+        "github:korri-os/korri",
+        &format!("git+file://{}", repository.display()),
+    );
+    fs::write(flake_path, flake).unwrap();
     let output = Command::new("nix")
         .current_dir(root.path().join("hello"))
-        .args(["build", "--json", "--no-link", "--override-input", "korri"])
-        .arg(format!("git+file://{}", repository.display()))
+        .args(["build", "--json", "--no-link"])
         .arg(format!(".#packages.{system}.default"))
         .args(["--extra-experimental-features", "nix-command flakes"])
         .output()
@@ -413,6 +421,10 @@ fn plugin_new_builds_and_admits_the_generated_runner() {
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        korri::plugin_author::project_namespace(&root.path().join("hello")).unwrap(),
+        "@author"
     );
     let builds: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let package = PathBuf::from(builds[0]["outputs"]["out"].as_str().unwrap());
