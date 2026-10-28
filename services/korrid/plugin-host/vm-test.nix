@@ -488,6 +488,13 @@ pkgs.testers.runNixOSTest {
           splitPlugin
           impostor
           splitDependency.drvPath
+          # The cache VM is the author/publisher. Carry native Nix derivation
+          # metadata for platform detection; never build it or send it to the
+          # cold client. Store-image registration otherwise drops the deriver.
+          tailscalePackage.drvPath
+          updated.drvPath
+          broken.drvPath
+          interrupted.drvPath
         ]
         ++ injections
         ++ graphFixtures;
@@ -1278,7 +1285,14 @@ pkgs.testers.runNixOSTest {
         cache.succeed("printf %s " + shlex.quote(json.dumps({"records": records, "latest": {record["plugin_id"]: record["release_version"] for record in records}})) + " > /var/www/repositories/" + name + ".json")
 
     records = []
-    for release, package in [("v1", "${tailscalePackage}"), ("v2", "${updated}"), ("broken", "${broken}"), ("pending", "${interrupted}")]:
+    for release, package, deriver in [("v1", "${tailscalePackage}", "${tailscalePackage.drvPath}"), ("v2", "${updated}", "${updated.drvPath}"), ("broken", "${broken}", "${broken.drvPath}"), ("pending", "${interrupted}", "${interrupted.drvPath}")]:
+        # This VM's store image has prebuilt outputs, not build-history records.
+        # Restore only their genuine native Nix registration metadata. This is
+        # not a Korri manifest field and does not realise a derivation.
+        info = json.loads(cache.succeed("nix --extra-experimental-features nix-command path-info --json " + package))[package]
+        nar_hash = cache.succeed("nix --extra-experimental-features nix-command hash convert --hash-algo sha256 --to base16 " + shlex.quote(info["narHash"])).strip()
+        registration = "\n".join([package, nar_hash, str(info["narSize"]), deriver, str(len(info["references"])), *info["references"]]) + "\n"
+        cache.succeed("printf %s " + shlex.quote(registration) + " | nix-store --register-validity --hash-given --reregister")
         output = "/var/lib/publication-" + release
         cache.succeed("mkdir -p " + output)
         cache.succeed("korri-publish repository --secret-key ${key} --release " + release + " --base-url https://cache/repositories/ " + output + " " + package)
