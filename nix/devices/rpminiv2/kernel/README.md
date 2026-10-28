@@ -328,3 +328,12 @@ The changed `qcom-iris.ko` has SHA-256
 `36e04d76b378ee738dcb55ac8513aa085ec4c41a1e768de456792a09d428278b`.
 The module was tested by runtime-only `rmmod`/`insmod`; no boot files or installed
 modules were replaced. A persistent system deployment remains a separate step.
+
+## Hang-report kernel pin (2026-10-28)
+
+Issue #314 enabled the hung-task and soft-lockup detectors and `NETCONSOLE`
+in `config-korri.delta`. `verify-image.py` now pins the resulting
+57,473,536-byte product Image at
+`cc237f3606e17a66a60259aaeedf9b09a934e39642c490e8e10c2b17145c22b6`.
+The recovery Image and both DTB pins remain unchanged. No device was changed
+for this pin update.
