@@ -271,7 +271,7 @@ describe("LaunchablesState.fromSources", () => {
     })
   })
 
-  it("surfaces partial host catalog failures while keeping healthy games", () => {
+  it("keeps healthy games browsable when a peer catalog fails", () => {
     const state = LaunchablesState.fromSources({
       _tag: "Ok",
       payload: {
@@ -295,7 +295,8 @@ describe("LaunchablesState.fromSources", () => {
     })
     expect(state).toMatchObject({
       _tag: "Ready",
-      notice: { _tag: "Catalog", message: "zao: UpstreamUnreachable: connection refused" },
+      entries: [expect.objectContaining({ kind: "game", game: expect.objectContaining({ id: "legacy" }) })],
+      notice: null,
     })
   })
 

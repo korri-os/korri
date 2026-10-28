@@ -133,6 +133,43 @@ test("available games remain usable while another peer loads", async () => {
   expect(surfaceModelFrom(harness.current().state).catalog).toMatchObject({ _tag: "Ready", games: [expect.objectContaining({ title: game.title })] })
 })
 
+const unavailablePeer = { host: "rg35xxsp", code: "UpstreamUnreachable", message: "upstream unreachable: peer connect failed" }
+
+test("a partial Ok catalog shows reachable games without a blocking catalog problem", async () => {
+  const config = fixture()
+  const harness = await mount({ ...config.client, async catalogSnapshot() {
+    return { _tag: "Ok", payload: { games: [game], failures: [unavailablePeer] } }
+  } })
+  await waitFor(() => harness.current().state._tag === "Ready")
+  const model = surfaceModelFrom(harness.current().state)
+  expect(model.catalog).toMatchObject({ _tag: "Ready", games: [expect.objectContaining({ title: game.title })] })
+  expect(model.status).toEqual({ _tag: "Browsing" })
+})
+
+test("a partial catalog stays browsable and adds the recovered peer's games without remount", async () => {
+  const config = fixture()
+  const recoveredGame = { ...game, id: "recovered", title: "Recovered peer's game", host: "rg35xxsp", source: { label: "rg35xxsp", isLocal: false } }
+  let recovered = false
+  const harness = await mount({ ...config.client, async catalogSnapshot() {
+    return { _tag: "Ok", payload: {
+      games: recovered ? [game, recoveredGame] : [game],
+      failures: recovered ? [] : [unavailablePeer],
+    } }
+  } })
+  await waitFor(() => harness.current().state._tag === "Ready")
+  expect(surfaceModelFrom(harness.current().state).status).toEqual({ _tag: "Browsing" })
+  recovered = true
+  config.setPeers(peers(PeerListState.Ready))
+  await waitFor(() => {
+    const catalog = surfaceModelFrom(harness.current().state).catalog
+    return catalog._tag === "Ready" && catalog.games.length === 2
+  })
+  expect(surfaceModelFrom(harness.current().state)).toMatchObject({
+    catalog: { _tag: "Ready", games: [expect.objectContaining({ title: game.title }), expect.objectContaining({ title: recoveredGame.title })] },
+    status: { _tag: "Browsing" },
+  })
+})
+
 test("peer observation failures do not become a silent nothing-to-play state", async () => {
   const config = fixture({ _tag: "Err", payload: { code: "PeerListUnavailable", message: "peer directory unavailable" } })
   const harness = await mount(config.client)

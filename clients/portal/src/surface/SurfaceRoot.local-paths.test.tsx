@@ -69,9 +69,11 @@ async function mount(initialView: ComponentProps<typeof PicoSurface>["initialVie
     },
   }} />))
   await waitFor(() => model.catalog._tag === "Ready")
-  expect(model.status).toMatchObject({ _tag: "Problem", reason: expect.stringContaining("rg35xxpro") })
-  await invoke(() => host.dismiss())
+  // The capture includes an unreachable peer. It must not require OK before
+  // the player can use healthy games on any of Pico's library paths.
   expect(model.status._tag).toBe("Browsing")
+  expect(container.textContent).not.toContain("Catalog problem")
+  expect(container.querySelector('[role="dialog"]')).toBeNull()
   const ui = within(container)
   const click = async (name: string | RegExp) => { await invoke(() => ui.getByRole("button", { name }).click()) }
   const play = async () => {
@@ -218,8 +220,7 @@ test("captured catalog plus invite: PLAYING NOW streams; Ended dismisses before 
   remote = undefined
   await waitFor(() => view.model().status._tag === "Ended")
   await invoke(() => view.host().dismiss())
-  // The capture's separate catalog failures still need their own dismissal.
-  if (view.model().status._tag === "Problem") await invoke(() => view.host().dismiss())
+  expect(view.model().status._tag).toBe("Browsing")
   await waitFor(() => {
     const catalog = view.model().catalog
     return catalog._tag === "Ready" && !catalog.games.some(game => game.resumable)

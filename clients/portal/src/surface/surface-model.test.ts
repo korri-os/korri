@@ -46,11 +46,11 @@ const nowPlaying: PortalEntry = {
 }
 
 describe("surfaceModelFrom", () => {
-  test("catalog failures keep their cause and are not labelled as attempted launches", () => {
+  test("empty failed catalogs keep their cause and are not labelled as attempted launches", () => {
     const state = LaunchablesState.fromSources({
       _tag: "Ok",
       payload: {
-        games: [hostGame.game],
+        games: [],
         failures: [{ host: "rpminiv2", code: "LocalRomMissing", message: "The ROM file is missing" }],
       },
     })
@@ -61,8 +61,7 @@ describe("surfaceModelFrom", () => {
       reason: "rpminiv2: LocalRomMissing: The ROM file is missing",
       canRetry: false,
     })
-    if (model.catalog._tag !== "Ready") throw new Error("expected Ready")
-    expect(model.catalog.games[0]?.title).toBe(hostGame.game.title)
+    expect(model.catalog).toEqual({ _tag: "Empty" })
   })
 
   test("stop failures are not labelled as attempted launches", () => {
