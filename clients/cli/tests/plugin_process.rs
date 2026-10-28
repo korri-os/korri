@@ -705,6 +705,11 @@ fn plugin_sideload_platform_is_explicit_unless_the_publisher_proves_any_architec
             assert!(output.stdout.is_empty());
             assert!(String::from_utf8_lossy(&output.stderr).contains("--platform"));
         }
+        let publication = fs::read_to_string(tools.root.path().join("publisher.calls")).unwrap();
+        assert!(
+            !publication.lines().any(|argument| argument == "--platform"),
+            "{publication}"
+        );
         server.done();
     }
 }
@@ -761,11 +766,12 @@ fn plugin_publishers_human_output_names_bound_and_pinned_publishers_and_their_in
 #[test]
 fn plugin_sideload_accepts_host_platform_names_and_any_architecture() {
     let longest_platform = format!("{}-x", "a".repeat(62));
-    for platform in [
-        "x86_64-linux",
-        "aarch64-linux",
-        "any",
-        longest_platform.as_str(),
+    for (platform, published_platform) in [
+        ("x86_64-linux", "x86_64-linux"),
+        ("aarch64-linux", "aarch64-linux"),
+        ("any", "any"),
+        ("x86_64-linux", "any"),
+        (longest_platform.as_str(), longest_platform.as_str()),
     ] {
         let tools = AuthorTools::new();
         let bytes = b"archive";
@@ -792,11 +798,24 @@ fn plugin_sideload_accepts_host_platform_names_and_any_architecture() {
                 platform,
                 "--json",
             ])
-            .env("ARCHIVE_PLATFORM", platform)
+            .env("ARCHIVE_PLATFORM", published_platform)
             .env("ARCHIVE_SHA256", format!("{:x}", Sha256::digest(bytes)))
             .output()
             .unwrap();
         assert_staged_json(output, &response, 0);
+        let publication = fs::read_to_string(tools.root.path().join("publisher.calls")).unwrap();
+        let arguments = publication.lines().collect::<Vec<_>>();
+        let hint = arguments
+            .iter()
+            .position(|argument| *argument == "--platform");
+        if platform == "any" {
+            assert!(hint.is_none(), "{publication}");
+        } else {
+            assert_eq!(
+                arguments[hint.expect("archive publisher receives the concrete platform") + 1],
+                platform
+            );
+        }
         let calls = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
         assert!(
             calls

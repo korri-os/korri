@@ -511,3 +511,60 @@ fn plugin_fingerprint_uses_the_approved_row_16_label_and_four_groups() {
         "korri-plugins-1 AbCd EfGh IjKl MnOp",
     );
 }
+
+#[test]
+fn plugin_publish_forwards_only_concrete_platform_hints() {
+    for platform in [
+        None,
+        Some("x86_64-linux"),
+        Some("aarch64-linux"),
+        Some("any"),
+    ] {
+        let tools = AuthorTools::new();
+        let mut command = tools.cli();
+        command.args([
+            "plugins",
+            "publish",
+            "repository",
+            "--release",
+            "v1",
+            "--url",
+            "https://example.com/plugins/",
+        ]);
+        if let Some(platform) = platform {
+            command.args(["--platform", platform]);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{platform:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let calls = fs::read_to_string(tools.root.path().join("publisher.calls")).unwrap();
+        let arguments = calls.lines().collect::<Vec<_>>();
+        let hint = arguments
+            .iter()
+            .position(|argument| *argument == "--platform");
+        if let Some(platform) = platform.filter(|platform| *platform != "any") {
+            assert_eq!(
+                arguments[hint.expect("publisher receives the concrete platform") + 1],
+                platform
+            );
+        } else {
+            assert!(hint.is_none(), "{calls}");
+        }
+        let builds = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
+        if let Some(platform) = platform.filter(|platform| *platform != "any") {
+            assert!(builds.contains(&format!(".#packages.{platform}.default")));
+            let other = if platform == "x86_64-linux" {
+                "aarch64-linux"
+            } else {
+                "x86_64-linux"
+            };
+            assert!(!builds.contains(&format!(".#packages.{other}.default")));
+        } else {
+            assert!(builds.contains(".#packages.x86_64-linux.default"));
+            assert!(builds.contains(".#packages.aarch64-linux.default"));
+        }
+    }
+}
