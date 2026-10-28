@@ -308,13 +308,21 @@ async fn catalog_returns_available_games_within_budget_while_another_peer_has_no
     let slow_root = tempfile::tempdir().unwrap();
     let slow = owned(slow_root.path(), &devices.owner);
     let slow_key = slow.device_public_key().unwrap().to_owned();
-    devices.da.apply_membership(
-        &devices.da.begin_work().unwrap(),
-        &[
-            devices.cb.identity_snapshot().unwrap().owner_statement_json().unwrap(),
-            slow.owner_statement_json().unwrap(),
-        ],
-    ).unwrap();
+    devices
+        .da
+        .apply_membership(
+            &devices.da.begin_work().unwrap(),
+            &[
+                devices
+                    .cb
+                    .identity_snapshot()
+                    .unwrap()
+                    .owner_statement_json()
+                    .unwrap(),
+                slow.owner_statement_json().unwrap(),
+            ],
+        )
+        .unwrap();
     // Reach is running, but the second member has no connection yet. This is
     // the cold-start path, not the inactive-transport fast failure.
     devices.da.reach.active.store(true, Ordering::Release);
@@ -322,22 +330,35 @@ async fn catalog_returns_available_games_within_budget_while_another_peer_has_no
     let task = tokio::spawn(tunnel::serve(incoming, devices.router()));
     devices.da.reach.live.write().unwrap().insert(
         devices.cb.public_key().unwrap(),
-        LiveRoute { connection: outgoing, signalled: Vec::new() },
+        LiveRoute {
+            connection: outgoing,
+            signalled: Vec::new(),
+        },
     );
     let registry = crate::upstreams::UpstreamRegistry::new_secure(Vec::new(), devices.ca.clone())
         .with_federation(devices.da.clone());
     let catalog = timeout(
         crate::upstream_native::NATIVE_RPC_TIMEOUT + Duration::from_secs(1),
         registry.catalog_snapshot(),
-    ).await.expect("catalog waited beyond the native aggregate budget").unwrap();
+    )
+    .await
+    .expect("catalog waited beyond the native aggregate budget")
+    .unwrap();
     assert_eq!(catalog.games.len(), 1);
     assert_eq!(catalog.games[0].title, "Game");
     let failures = catalog.failures.unwrap();
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].code, "UpstreamUnreachable");
-    assert!(devices.da.snapshot().unwrap().iter().any(|peer|
-        peer.device_public_key == slow_key && matches!(peer.state, PeerState::Failed { .. })
-    ), "deadline must commit the failed peer observation, not cancel it");
+    assert!(
+        devices
+            .da
+            .snapshot()
+            .unwrap()
+            .iter()
+            .any(|peer| peer.device_public_key == slow_key
+                && matches!(peer.state, PeerState::Failed { .. })),
+        "deadline must commit the failed peer observation, not cancel it"
+    );
     task.abort();
     a.close().await;
     b.close().await;
