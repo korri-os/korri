@@ -223,6 +223,14 @@ impl PluginAdminSocket {
         {
             return Err(upload_failure("archive staging directory must be private"));
         }
+        let path = directory.join("archive.tar");
+        // A previous korrid process cannot retain an upload. Remove only this
+        // fixed private file; no caller supplies a filename or filesystem path.
+        match fs::remove_file(&path) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+            Err(_) => return Err(upload_failure("cannot clear archive staging file")),
+        }
         let directory_file = File::open(&directory)
             .map_err(|_| upload_failure("cannot open archive staging directory"))?;
         let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -231,14 +239,6 @@ impl PluginAdminSocket {
         }
         if (stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64) < request.size {
             return Err(upload_failure("not enough space for this archive"));
-        }
-        let path = directory.join("archive.tar");
-        // A previous korrid process cannot retain an upload. Remove only this
-        // fixed private file; no caller supplies a filename or filesystem path.
-        match fs::remove_file(&path) {
-            Ok(()) => (),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
-            Err(_) => return Err(upload_failure("cannot clear archive staging file")),
         }
         let file = OpenOptions::new()
             .write(true)
@@ -430,6 +430,27 @@ mod archive_tests {
             size: bytes.len() as u64,
         }
     }
+    #[tokio::test]
+    async fn begin_clears_crash_left_staging_before_a_free_space_refusal() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("plugin-archive");
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&directory)
+            .unwrap();
+        let archive = directory.join("archive.tar");
+        fs::write(&archive, b"stale").unwrap();
+        let socket = PluginAdminSocket::new(root.path().join("unused"));
+        let mut request = begin(b"abc");
+        request.size = u64::MAX;
+        assert!(socket.begin_archive(root.path(), request).await.is_err());
+        assert!(!archive.exists());
+        assert!(socket
+            .begin_archive(root.path(), begin(b"abc"))
+            .await
+            .is_ok());
+    }
+
     #[tokio::test]
     async fn wrong_offset_and_hash_mismatch_delete_staging_and_release_slot() {
         let root = tempfile::tempdir().unwrap();
