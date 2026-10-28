@@ -52,6 +52,12 @@ pub fn commands() -> Vec<Command> {
 fn publication_options(command: Command) -> Command {
     command
         .arg(
+            Arg::new("platform")
+                .long("platform")
+                .value_name("NIX_SYSTEM_OR_ANY")
+                .help("Build this platform and pass it as a publisher hint; any omits the hint"),
+        )
+        .arg(
             Arg::new("release")
                 .long("release")
                 .required(true)
@@ -120,13 +126,14 @@ pub fn run(args: &ArgMatches) -> Result<Output, CliError> {
                 .map_err(CliError::usage)?;
             let url = repository_url(args.get_one::<String>("url").expect("required"))
                 .map_err(CliError::usage)?;
-            let outputs = build(Path::new("."), None)?;
+            let platform = args.get_one::<String>("platform").map(String::as_str);
+            let outputs = build(Path::new("."), platform)?;
             let namespace = namespace(&outputs)?;
             let key = author_key(&namespace)?;
             let directory = Path::new(args.get_one::<String>("out-dir").expect("required"));
             fs::create_dir_all(directory)
                 .map_err(|_| file_error("create the repository folder"))?;
-            publish(&outputs, directory, &key, &release, &url)?;
+            publish(&outputs, directory, &key, &release, &url, platform)?;
             Ok(Output::text(format!(
                 "Repository folder: {}\nPublisher: {}\nFingerprint: {}",
                 directory.display(),
@@ -251,7 +258,7 @@ struct NixConfig {
 pub fn build(directory: &Path, platform: Option<&str>) -> Result<Vec<PathBuf>, CliError> {
     // "any" is release metadata, not a Nix package attribute. Build locally
     // like an omitted platform; the publisher must prove architecture independence.
-    let platform = platform.filter(|platform| *platform != "any");
+    let platform = native_platform(platform);
     if let Some(platform) = platform {
         // Match plugin-host/catalog.rs validate_platform before forming an attribute path.
         if platform.len() > 64
@@ -530,17 +537,25 @@ pub fn fingerprint(public: &str) -> Result<String, CliError> {
         .join(" ");
     Ok(format!("{label} {groups}"))
 }
+// "any" is chosen by the publisher's package inspection, never a native hint.
+fn native_platform(platform: Option<&str>) -> Option<&str> {
+    platform.filter(|platform| *platform != "any")
+}
+
 pub fn archive(
     output: &Path,
     directory: &Path,
     key: &AuthorKey,
+    platform: Option<&str>,
 ) -> Result<crate::plugin_sideload::Archive, CliError> {
+    let mut command = Process::new("korri-publish");
+    command.args(["archive", "--secret-key"]).arg(&key.path);
+    if let Some(platform) = native_platform(platform) {
+        command.args(["--platform", platform]);
+    }
+    command.arg(directory).arg(output);
     let bytes = checked(
-        Process::new("korri-publish")
-            .args(["archive", "--secret-key"])
-            .arg(&key.path)
-            .arg(directory)
-            .arg(output),
+        &mut command,
         "PluginPublishFailed",
         "make the signed archive",
     )?;
@@ -552,14 +567,17 @@ pub fn publish(
     key: &AuthorKey,
     release: &str,
     url: &str,
+    platform: Option<&str>,
 ) -> Result<(), CliError> {
     let mut command = Process::new("korri-publish");
     command
         .args(["repository", "--secret-key"])
         .arg(&key.path)
-        .args(["--release", release, "--base-url", url])
-        .arg(directory)
-        .args(outputs);
+        .args(["--release", release, "--base-url", url]);
+    if let Some(platform) = native_platform(platform) {
+        command.args(["--platform", platform]);
+    }
+    command.arg(directory).args(outputs);
     checked(
         &mut command,
         "PluginPublishFailed",

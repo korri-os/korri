@@ -382,7 +382,10 @@ Build prints each Nix output. It builds the plugin's platforms that match Nix's
 builder capabilities. Publish builds the same outputs, then calls
 `korri-publish repository` with the explicit release label and HTTPS base URL.
 It prints the repository folder and fingerprint; it does not upload anything.
-The folder contains the catalog, archives and latest mark.
+The folder contains the catalog, archives and latest mark. Optional
+`plugins publish --platform SYSTEM` builds that platform and passes the same
+`--platform SYSTEM` hint to `korri-publish repository`. Omit it to retain the
+normal local-platform builds. `--platform any` builds locally and sends no hint.
 
 The first publish or sideload creates a Nix secret key with
 `nix key generate-secret` at
@@ -397,7 +400,12 @@ sequential base64 chunks of at most 1 MiB raw, then finish. Terminal output show
 upload progress. Peers do not report a platform yet: supply `--platform` for
 native packages. Only packages the publisher marks `any` may omit it or use
 `--platform any`; this builds locally and still requires the publisher to verify
-that the package is architecture-independent.
+that the package is architecture-independent. A concrete `--platform SYSTEM`
+is also passed to `korri-publish archive`; absent or `any` values are not passed.
+The publisher uses this hint when no deriver is known and refuses a mismatch
+with a known derivation's system. Eligible source-only packages remain `any`
+regardless of the hint. Sideload uses the platform returned in the publisher's
+archive JSON, not the hint, for its later checks.
 
 The target must already bind or pin the signing key. When inspection refuses
 an unknown/changed author key, terminal sideload shows the local author's

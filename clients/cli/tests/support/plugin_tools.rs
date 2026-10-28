@@ -59,8 +59,14 @@ printf '%s\n' "$@" >> "$TOOLS_ROOT/publisher.calls"
 if [ "$1" = archive ]; then
   [ "$2" = --secret-key ] || exit 8
   [ -f "$3" ] || exit 8
-  cp "$TOOLS_ROOT/archive.bytes" "$4/plugin.tar"
-  printf '{"archive":"%s/plugin.tar","sha256":"%s","platform":"%s","storePath":"/nix/store/example-plugin"}\n' "$4" "$ARCHIVE_SHA256" "${ARCHIVE_PLATFORM:-aarch64-linux}"
+  shift 3
+  if [ "$1" = --platform ]; then
+    [ -n "$2" ] && [ "$2" != any ] || exit 8
+    shift 2
+  fi
+  [ "$#" = 2 ] || exit 8
+  cp "$TOOLS_ROOT/archive.bytes" "$1/plugin.tar"
+  printf '{"archive":"%s/plugin.tar","sha256":"%s","platform":"%s","storePath":"/nix/store/example-plugin"}\n' "$1" "$ARCHIVE_SHA256" "${ARCHIVE_PLATFORM:-aarch64-linux}"
   exit "${PUBLISH_EXIT:-0}"
 fi
 [ "$1" = repository ] || exit 8
@@ -68,8 +74,14 @@ fi
 [ -f "$3" ] || exit 8
 [ "$4" = --release ] || exit 8
 [ "$6" = --base-url ] || exit 8
-mkdir -p "$8"
-printf '%s\n' '{"records":[],"latest":{}}' > "$8/catalog.json"
+shift 7
+if [ "$1" = --platform ]; then
+  [ -n "$2" ] && [ "$2" != any ] || exit 8
+  shift 2
+fi
+[ "$#" -ge 2 ] || exit 8
+mkdir -p "$1"
+printf '%s\n' '{"records":[],"latest":{}}' > "$1/catalog.json"
 exit "${PUBLISH_EXIT:-0}"
 "#,
         );

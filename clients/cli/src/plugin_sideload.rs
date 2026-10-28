@@ -172,7 +172,12 @@ fn prepare(args: &ArgMatches) -> Result<PreparedArchive, CliError> {
             "Check the temporary folder's free space and permissions.",
         )
     })?;
-    let archive = plugin_author::archive(&outputs[0], workspace.path(), &key)?;
+    let archive = plugin_author::archive(
+        &outputs[0],
+        workspace.path(),
+        &key,
+        platform.map(String::as_str),
+    )?;
     if archive.platform != "any" && platform != Some(&archive.platform) {
         return Err(CliError::usage("The selected device does not report its build platform. Supply --platform with its Nix system; only any-architecture packages can omit it."));
     }
