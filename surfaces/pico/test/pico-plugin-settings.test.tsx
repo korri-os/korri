@@ -63,14 +63,15 @@ describe("plugin rows", () => {
     expect(adding.getAllByText("SAVING").length).toBeGreaterThan(0)
   })
 
-  test("a repository's group lists its plugins: install, versions, on/off, untrusted, remove", () => {
+  test("a repository's group lists its plugins: install, versions, on/off, not trusted yet, remove", () => {
     open(pluginModels.repositories, RETRO_TAB)
     expect(screen.getByRole("button", { name: /Chiptune.*Install/ })).toBeTruthy()
     expect(screen.getByRole("button", { name: /CRT look.*Install 2\.1\.0/ })).toBeTruthy()
     expect(screen.getByRole("button", { name: /CRT look.*Install 2\.0\.3/ })).toBeTruthy()
     expect(screen.getByRole("button", { name: /Netplay/ })).toBeTruthy()
-    expect(screen.queryByRole("button", { name: /Free coins/ })).toBeNull()
-    expect(screen.getByText("Publisher @mallory is not trusted on this device")).toBeTruthy()
+    // A publisher not trusted yet: Install still checks it, and the row says so.
+    expect(screen.getByRole("button", { name: /Free coins.*Install/ })).toBeTruthy()
+    expect(screen.getByText("Publisher @mallory is not trusted yet.")).toBeTruthy()
     expect(screen.getByRole("button", { name: /Remove this repository/ })).toBeTruthy()
   })
 
@@ -89,11 +90,12 @@ describe("plugin rows", () => {
     const dialog = screen.getByRole("dialog", { name: "Turn on Chiptune?" })
     const lines = within(dialog).getAllByRole("listitem").map(line => line.textContent)
     expect(lines).toEqual([
+      "Publisher @ada, trusted on this device. Key ada-plugins-1 QWRh IHNh bXBs ZSBr.",
       "Warning: Plays sound over the network to paired speakers.",
       "Opens network ports: TCP 7000, 7001; UDP 5353.",
       "Runs in the background: chiptune-daemon.service.",
-      "Also installs Audio core. Warning: Can change the system volume.",
-      "Also uses PipeWire bridge. You approved it before.",
+      "Also installs Audio core from @ada (trusted). Warning: Can change the system volume.",
+      "Also uses PipeWire bridge from @korri (configured). You approved it before.",
     ])
     // Asking, not warning: yellow, and the answer is not marked destructive.
     expect(dialog.querySelector(".pico-card")?.getAttribute("data-tone")).toBe("ask")
@@ -178,6 +180,54 @@ describe("the review report", () => {
     const remove = rows.find(row => row.id === pluginIds.removeRetro)
     expect(review?.control.kind === "action" && review.control.confirmation?.destructive).toBe(false)
     expect(remove?.control.kind === "action" && remove.control.confirmation?.destructive).toBe(true)
+  })
+})
+
+describe("publishers", () => {
+  test("a publisher not trusted yet: the row trusts it after a question that shows its key", () => {
+    const { host } = open(pluginModels.trustNew, RETRO_TAB)
+    expect(screen.getByRole("group", { name: /Publisher @mallory/ }).textContent).toContain("Not trusted yet")
+    fireEvent.click(screen.getByRole("button", { name: /Free coins.*Trust @mallory/ }))
+    expect(host.calls).toEqual([])
+    const dialog = screen.getByRole("dialog", { name: "Trust @mallory?" })
+    expect(dialog.querySelector(".pico-card")?.getAttribute("data-tone")).toBe("ask")
+    expect(within(dialog).getAllByRole("listitem").map(line => line.textContent)).toContain("Key mallory-1 TWFs bG9y eSBz YW1w.")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Trust" }))
+    expect(host.calls).toEqual([`action:${pluginIds.minerTrust}`])
+  })
+
+  test("a changed key warns in red with the key change text, and trusts the new key only on its answer", () => {
+    const { host } = open(pluginModels.keyChanged, RETRO_TAB)
+    fireEvent.click(screen.getByRole("button", { name: /Chiptune.*Trust the new key/ }))
+    const dialog = screen.getByRole("dialog", { name: "Trust the new key for @ada?" })
+    expect(dialog.querySelector(".pico-card")?.getAttribute("data-tone")).toBe("warn")
+    expect(within(dialog).getAllByRole("listitem").map(line => line.textContent)[0]).toBe("The publisher key for @ada changed.")
+    act(() => host.press("back"))
+    expect(host.calls).toEqual([])
+    fireEvent.click(screen.getByRole("button", { name: /Chiptune.*Trust the new key/ }))
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Trust the new key" }))
+    expect(host.calls).toEqual([`action:${pluginIds.chiptuneTrustKey}`])
+  })
+
+  test("an unsigned plugin's approval opens with the disclosure, in red", () => {
+    const { host } = open(pluginModels.unsigned, RETRO_TAB)
+    fireEvent.click(screen.getByRole("button", { name: /Pocket dither.*Review and turn on/ }))
+    const dialog = screen.getByRole("dialog", { name: "Turn on Pocket dither?" })
+    expect(dialog.querySelector(".pico-card")?.getAttribute("data-tone")).toBe("warn")
+    expect(within(dialog).getAllByRole("listitem")[0]?.textContent).toStartWith("This plugin is not signed.")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn on" }))
+    expect(host.calls).toEqual([`action:${pluginIds.ditherReview}`])
+  })
+
+  test("the Publishers list revokes an owner-trusted publisher after a red question; a configured one has nothing to press", () => {
+    const { host } = open(pluginModels.publishers, "PUBLISHERS")
+    expect(screen.queryByRole("button", { name: /^@korri/ })).toBeNull()
+    expect(screen.getByRole("group", { name: /@korri/ }).textContent).toContain("Configured")
+    fireEvent.click(screen.getByRole("button", { name: /@ada.*Revoke/ }))
+    const dialog = screen.getByRole("dialog", { name: "Revoke @ada?" })
+    expect(dialog.querySelector(".pico-card")?.getAttribute("data-tone")).toBe("warn")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }))
+    expect(host.calls).toEqual([`action:${pluginIds.revokeAda}`])
   })
 })
 

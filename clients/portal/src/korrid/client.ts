@@ -53,12 +53,7 @@ import type {
   SettingsUpdateOutcome,
   SourceStatusOutcome,
   PeerListOutcome,
-  PluginCatalog,
-  PluginCatalogEntry,
-  PluginCatalogOutcome,
   PluginChangeOutcome,
-  PluginInspectOutcome,
-  PluginInspection,
   PluginRepositories,
   PluginRepositoriesOutcome,
   PluginRepositoryAddOutcome,
@@ -72,6 +67,21 @@ import type {
   RpcResponse,
 } from "@contracts/generated/korrid"
 import { createInMemorySaves, type InMemorySavesConfig } from "./in-memory-saves"
+import {
+  PUBLISHERS_TAG,
+  PublisherRefusal,
+  REVOKE_PUBLISHER_TAG,
+  TRUST_PUBLISHER_TAG,
+  UNSIGNED_DISCLOSURE,
+  type PluginCatalog,
+  type PluginCatalogEntry,
+  type PluginCatalogOutcome,
+  type PluginDependency,
+  type PluginInspectOutcome,
+  type PluginInspection,
+  type PluginPublisher,
+  type PluginPublishersOutcome,
+} from "./plugin-admin"
 import {
   createInMemoryLaunchSettings,
   type InMemoryLaunchSettingsConfig,
@@ -226,6 +236,15 @@ export interface KorridClient extends StoreAcquisitionMethods, LaunchSettingsMet
   ): Promise<PluginChangeOutcome>
   /** Any installed plugin. A stale stored approval answers PluginNeedsReview. */
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginChangeOutcome>
+  /** Every publisher this device trusts: bound in its configuration, or
+   * trusted by its owner, with the plugins installed from each. */
+  pluginPublishers(): Promise<PluginPublishersOutcome>
+  /** Pin `publicKey` for `namespace`: a New publisher's first trust, or a
+   * changed key accepted knowingly. `publicKey` is the inspected release's. */
+  trustPublisher(namespace: string, publicKey: string): Promise<PluginChangeOutcome>
+  /** Remove the pin. The publisher's plugins no longer start; turning them
+   * off and removing them still work. */
+  revokePublisher(namespace: string): Promise<PluginChangeOutcome>
   /** Every game's save mark and save heads for this device's owner (ADR 0014). */
   savesStatus(): Promise<SaveStatusOutcome>
   /** One game's save history, and the snapshot this device continues from. */
@@ -265,6 +284,35 @@ export async function callKorrid<Request extends RpcRequest>(
   request: Request,
   timeoutMs = RPC_TIMEOUT_MS,
 ): Promise<RpcResponseFor<Request>> {
+  return (await postRpc(baseUrl, capability, request, timeoutMs)) as RpcResponseFor<Request>
+}
+
+/**
+ * A plugin admin request whose shapes `contracts/generated/` does not carry
+ * yet (`./plugin-admin.ts`). Same transport as `callKorrid`; the outcome is
+ * typed by the mirrored shapes. Once the generated treaty has these tags,
+ * these calls become `callKorrid`.
+ */
+type PluginAdminRequest =
+  | { readonly _tag: typeof PUBLISHERS_TAG; readonly payload: Record<string, never> }
+  | { readonly _tag: typeof TRUST_PUBLISHER_TAG; readonly payload: { readonly namespace: string; readonly publicKey: string } }
+  | { readonly _tag: typeof REVOKE_PUBLISHER_TAG; readonly payload: { readonly namespace: string } }
+
+async function callPluginAdmin<Outcome>(
+  baseUrl: string,
+  capability: string,
+  request: PluginAdminRequest,
+  timeoutMs = RPC_TIMEOUT_MS,
+): Promise<Outcome> {
+  return ((await postRpc(baseUrl, capability, request, timeoutMs)) as { readonly outcome: Outcome }).outcome
+}
+
+async function postRpc(
+  baseUrl: string,
+  capability: string,
+  request: { readonly _tag: string; readonly payload: unknown },
+  timeoutMs: number,
+): Promise<unknown> {
   const response = await fetch(`${baseUrl}/rpc`, {
     method: "POST",
     headers: {
@@ -275,7 +323,7 @@ export async function callKorrid<Request extends RpcRequest>(
     signal: AbortSignal.timeout(timeoutMs),
   })
   if (!response.ok) throw new KorridHttpError(response.status)
-  return (await response.json()) as RpcResponseFor<Request>
+  return response.json()
 }
 
 const unreachable = (error: unknown) => ({
@@ -855,12 +903,14 @@ export function createHttpKorridClient(
     },
     async pluginCatalog(url) {
       try {
-        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.catalog", payload: { url } }, PLUGIN_CATALOG_TIMEOUT_MS)).outcome
+        // The generated outcome still names `publisherTrusted`; the host sends `publisher`.
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.catalog", payload: { url } }, PLUGIN_CATALOG_TIMEOUT_MS)).outcome as unknown as PluginCatalogOutcome
       } catch (error) { return routeUnavailable(error) }
     },
     async inspectPlugin(url, pluginId, releaseVersion) {
       try {
-        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.inspect", payload: { url, pluginId, releaseVersion } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
+        // The generated outcome does not carry `publisher` yet; the host sends it.
+        return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.inspect", payload: { url, pluginId, releaseVersion } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome as unknown as PluginInspectOutcome
       } catch (error) { return routeUnavailable(error) }
     },
     async installPlugin(url, pluginId, releaseVersion, approval) {
@@ -871,6 +921,22 @@ export function createHttpKorridClient(
     async setPluginEnabled(id, enabled) {
       try {
         return (await callKorrid(baseUrl, capability, { _tag: "system.plugins.setEnabled", payload: { id, enabled } }, PLUGIN_PACKAGE_TIMEOUT_MS)).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async pluginPublishers() {
+      try {
+        return await callPluginAdmin<PluginPublishersOutcome>(baseUrl, capability, { _tag: PUBLISHERS_TAG, payload: {} })
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async trustPublisher(namespace, publicKey) {
+      try {
+        // The host serves plugin requests in turn, so a trust can wait behind an install.
+        return await callPluginAdmin<PluginChangeOutcome>(baseUrl, capability, { _tag: TRUST_PUBLISHER_TAG, payload: { namespace, publicKey } }, PLUGIN_PACKAGE_TIMEOUT_MS)
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async revokePublisher(namespace) {
+      try {
+        return await callPluginAdmin<PluginChangeOutcome>(baseUrl, capability, { _tag: REVOKE_PUBLISHER_TAG, payload: { namespace } }, PLUGIN_PACKAGE_TIMEOUT_MS)
       } catch (error) { return routeUnavailable(error) }
     },
     async savesStatus() {
@@ -927,53 +993,99 @@ export function createHttpKorridClient(
   }
 }
 
+/** One release record as the in-memory plugin host's catalog holds it. The
+ * host derives the catalog's `publisher` from the device's keys. */
+export interface InMemoryPluginRecord extends Omit<PluginCatalogEntry, "publisher"> {
+  /** The record's `publicKey` (`label:base64`, sheet row 7). Absent: the
+   * release is content-addressed and unsigned. */
+  readonly publicKey?: string
+}
+
 /** One repository the in-memory plugin host can fetch. */
 export interface InMemoryPluginRepository {
   readonly url: string
-  readonly entries: readonly PluginCatalogEntry[]
+  readonly entries: readonly InMemoryPluginRecord[]
+}
+
+/** A dependency an inspection brings, signed by `publicKey` or unsigned. */
+export interface InMemoryPluginDependency extends Omit<PluginDependency, "publisher"> {
+  readonly publicKey?: string
+}
+
+/** An inspection report without what the host derives: the approval digest
+ * and each publisher's state. */
+export interface InMemoryPluginInspection extends Omit<PluginInspection, "approval" | "publisher" | "brings"> {
+  readonly brings: readonly InMemoryPluginDependency[]
 }
 
 /** In-memory plugin host state. Every field mirrors a host producer:
- * configured sources, catalogs, receipts and the inspect report. */
+ * configured sources, catalogs, publisher keys, receipts and the inspect report. */
 export interface InMemoryPluginHostConfig {
   readonly official?: string
   readonly userAdded: readonly string[]
   /** Every catalog the fake can reach, configured or not. */
   readonly repositories: readonly InMemoryPluginRepository[]
-  /** Installed receipts: repository installs and their on/off state. */
-  readonly installs: readonly { id: string, sourceUrl: string, releaseVersion: string, enabled: boolean }[]
+  /** Publisher keys in the device's configuration (`PublisherBindings`), by namespace. */
+  readonly bindings?: Readonly<Record<string, string>>
+  /** Keys the owner trusted on this device (`state/publishers.json`), by namespace. */
+  readonly pins?: Readonly<Record<string, string>>
+  /** Installed receipts: repository installs and their on/off state.
+   * `signed: false` is an install from the unsigned lane. */
+  readonly installs: readonly { id: string, sourceUrl: string, releaseVersion: string, enabled: boolean, signed?: boolean }[]
   /** Installed receipts that are not from a repository: image-seeded and
    * raw-cache installs, on or off. */
   readonly otherInstalls?: readonly { id: string, title?: string, enabled: boolean }[]
   /** Installed plugins whose stored approval the host now finds stale. */
   readonly staleApprovals?: readonly string[]
-  readonly inspections?: Readonly<Record<string, Omit<PluginInspection, "approval">>>
+  readonly inspections?: Readonly<Record<string, InMemoryPluginInspection>>
 }
 
+/* Sample keys. Each is the base64 of a sentence saying it is not a key. */
+const KORRI_KEY = "korri-plugins-1:S29ycmkgc2FtcGxlIGtleSwgbm90IGEgcmVhbCBrZXk="
+const ADA_KEY = "ada-plugins-1:QWRhIHNhbXBsZSBrZXksIG5vdCBhIHJlYWwga2V5IQ=="
+const LIB_KEY = "lib-1:TGliIHNhbXBsZSBrZXksIG5vdCBhIHJlYWwga2V5IQ=="
+const COMMUNITY_KEY = "community-2026:Q29tbXVuaXR5IHNhbXBsZSBrZXksIG5vdCByZWFsIQ=="
+const PIXEL_OLD_KEY = "pixel-1:UGl4ZWwgb2xkIHNhbXBsZSBrZXksIG5vdCBhIHJlYWw="
+const PIXEL_NEW_KEY = "pixel-2:UGl4ZWwgbmV3IHNhbXBsZSBrZXksIG5vdCBhIHJlYWw="
+
+/**
+ * Browser dev's plugin host. It reaches every publisher state:
+ *
+ *   Bound       every `@korri` plugin (the configuration names its key)
+ *   Trusted     `@ada:chiptune`; `@pixel` in the publisher list
+ *   New         `@community:clock`, and `@lib:audio-core`, which Chiptune brings
+ *   Key changed `@pixel:scanlines`, signed by another key than the pinned one
+ *   Unsigned    `@homebrew:dither`
+ */
 const samplePluginHost: InMemoryPluginHostConfig = {
   official: "https://official.example/catalog.json",
   userAdded: ["https://community.example/catalog.json"],
+  bindings: { "@korri": KORRI_KEY },
+  pins: { "@ada": ADA_KEY, "@pixel": PIXEL_OLD_KEY },
   repositories: [
     {
       url: "https://official.example/catalog.json",
       entries: [
-        { pluginId: "@korri:ppsspp", title: "PPSSPP", description: "PlayStation Portable games.", releaseVersion: "1.18.1", publisherTrusted: true },
-        { pluginId: "@korri:sunshine", title: "Sunshine", description: "Stream games from this device.", releaseVersion: "2026.10.1", publisherTrusted: true },
-        { pluginId: "@korri:sunshine", title: "Sunshine", description: "Stream games from this device.", releaseVersion: "2026.09.2", publisherTrusted: true },
-        { pluginId: "@korri:tailscale", title: "Tailscale", releaseVersion: "1.84.0", installed: PluginInstalledState.Disabled, publisherTrusted: true },
+        { pluginId: "@korri:ppsspp", title: "PPSSPP", description: "PlayStation Portable games.", releaseVersion: "1.18.1", publicKey: KORRI_KEY },
+        { pluginId: "@korri:sunshine", title: "Sunshine", description: "Stream games from this device.", releaseVersion: "2026.10.1", publicKey: KORRI_KEY },
+        { pluginId: "@korri:sunshine", title: "Sunshine", description: "Stream games from this device.", releaseVersion: "2026.09.2", publicKey: KORRI_KEY },
+        { pluginId: "@korri:tailscale", title: "Tailscale", releaseVersion: "1.84.0", installed: PluginInstalledState.Disabled, publicKey: KORRI_KEY },
       ],
     },
     {
       url: "https://community.example/catalog.json",
       entries: [
-        { pluginId: "@korri:syncthing", title: "Syncthing", releaseVersion: "1.30.0", installed: PluginInstalledState.Enabled, publisherTrusted: true },
-        { pluginId: "@community:clock", title: "Clock", description: "From a publisher this device does not trust.", releaseVersion: "0.3.0", publisherTrusted: false },
+        { pluginId: "@korri:syncthing", title: "Syncthing", releaseVersion: "1.30.0", installed: PluginInstalledState.Enabled, publicKey: KORRI_KEY },
+        { pluginId: "@ada:chiptune", title: "Chiptune", description: "Music player for tracker songs.", releaseVersion: "1.0.0", publicKey: ADA_KEY },
+        { pluginId: "@community:clock", title: "Clock", description: "From a publisher this device has not trusted yet.", releaseVersion: "0.3.0", publicKey: COMMUNITY_KEY },
+        { pluginId: "@pixel:scanlines", title: "Scanlines", description: "Signed by another key than the one this device trusts.", releaseVersion: "2.0.0", publicKey: PIXEL_NEW_KEY },
+        { pluginId: "@homebrew:dither", title: "Dither", description: "Not signed.", releaseVersion: "0.1.0" },
       ],
     },
     {
       url: "https://more.example/catalog.json",
       entries: [
-        { pluginId: "@korri:moonlight", title: "Moonlight", releaseVersion: "6.1.0", publisherTrusted: true },
+        { pluginId: "@korri:moonlight", title: "Moonlight", releaseVersion: "6.1.0", publicKey: KORRI_KEY },
       ],
     },
   ],
@@ -981,6 +1093,7 @@ const samplePluginHost: InMemoryPluginHostConfig = {
     { id: "@korri:tailscale", sourceUrl: "https://official.example/catalog.json", releaseVersion: "1.84.0", enabled: false },
     { id: "@korri:syncthing", sourceUrl: "https://community.example/catalog.json", releaseVersion: "1.30.0", enabled: true },
     { id: "@korri:retro-clock", sourceUrl: "https://old.example/catalog.json", releaseVersion: "2.0.0", enabled: false },
+    { id: "@pixel:palette", sourceUrl: "https://community.example/catalog.json", releaseVersion: "1.2.0", enabled: true },
   ],
   otherInstalls: [
     { id: "@korri:starter-pack", title: "Starter pack", enabled: false },
@@ -996,12 +1109,44 @@ const samplePluginHost: InMemoryPluginHostConfig = {
       warning: "Runs a native service as root with device-wide authority.",
       ports: { allowedTCPPorts: [47984, 47989, 48010], allowedUDPPorts: [47998, 47999, 48000] },
       nativeUnits: ["sunshine.service"],
-      brings: [{ id: "@korri:sunshine-runtime", title: "Sunshine runtime", warning: "Adds the streaming runtime.", alreadyApproved: false }],
+      brings: [{ id: "@korri:sunshine-runtime", title: "Sunshine runtime", warning: "Adds the streaming runtime.", alreadyApproved: false, publicKey: KORRI_KEY }],
+    },
+    "@ada:chiptune": {
+      id: "@ada:chiptune",
+      title: "Chiptune",
+      warning: "Plays sound over the network to paired speakers.",
+      ports: { allowedTCPPorts: [7000, 7001], allowedUDPPorts: [5353] },
+      nativeUnits: ["chiptune-daemon.service"],
+      brings: [
+        { id: "@lib:audio-core", title: "Audio core", warning: "Can change the system volume.", alreadyApproved: false, publicKey: LIB_KEY },
+        { id: "@korri:pipewire", title: "PipeWire bridge", warning: "", alreadyApproved: true, publicKey: KORRI_KEY },
+      ],
+    },
+    "@homebrew:dither": {
+      id: "@homebrew:dither",
+      title: "Dither",
+      warning: "",
+      ports: { allowedTCPPorts: [], allowedUDPPorts: [] },
+      nativeUnits: [],
+      brings: [],
     },
   },
 }
 
+/** The host's fingerprint display (sheet row 16): the key label, then the
+ * base64 key's first 16 characters in groups of four. */
+export function inMemoryFingerprint(publicKey: string): string {
+  const colon = publicKey.indexOf(":")
+  const key = publicKey.slice(colon + 1, colon + 17)
+  return [publicKey.slice(0, colon), ...(key.match(/.{1,4}/g) ?? [])].join(" ")
+}
+
 const pluginFailure = (code: string, message: string) => ({ _tag: "Err" as const, payload: { code, message } })
+type Refusal = ReturnType<typeof pluginFailure>
+const refused = (value: object): value is Refusal => "_tag" in value
+
+/** "@x" from "@x:name". */
+const namespaceOf = (pluginId: string) => pluginId.split(":")[0] ?? pluginId
 
 /** The host's https_url::parse policy and SourceUrl normal form. */
 function pluginSourceUrl(raw: string): string | undefined {
@@ -1011,31 +1156,93 @@ function pluginSourceUrl(raw: string): string | undefined {
   return url.toString()
 }
 
+type InMemoryPluginMethods = Pick<KorridClient,
+  | "pluginRepositories" | "addPluginRepository" | "removePluginRepository" | "pluginCatalog"
+  | "inspectPlugin" | "installPlugin" | "setPluginEnabled"
+  | "pluginPublishers" | "trustPublisher" | "revokePublisher">
+
 function createInMemoryPluginHost(
   seed: InMemoryPluginHostConfig,
   imagePlugins: { has(id: string): boolean, set(id: string, enabled: boolean): void },
-): Pick<KorridClient, "pluginRepositories" | "addPluginRepository" | "removePluginRepository" | "pluginCatalog" | "inspectPlugin" | "installPlugin" | "setPluginEnabled"> {
+): InMemoryPluginMethods {
   const official = seed.official
   let userAdded = [...seed.userAdded]
   const installs = structuredClone([...seed.installs])
   const otherInstalls = structuredClone([...(seed.otherInstalls ?? [])])
   const stale = new Set(seed.staleApprovals ?? [])
   const catalogs = new Map(seed.repositories.map(repository => [repository.url, repository.entries]))
-  const approval = (pluginId: string, releaseVersion: string) => `in-memory-approval:${pluginId}@${releaseVersion}`
+  const bindings = new Map(Object.entries(seed.bindings ?? {}))
+  const pins = new Map(Object.entries(seed.pins ?? {}))
+  // The approval binds the unsigned provenance (sheet row 10).
+  const approval = (pluginId: string, releaseVersion: string, signed: boolean) =>
+    `in-memory-approval:${pluginId}@${releaseVersion}${signed ? "" : ":unsigned"}`
   const invalidUrl = () => pluginFailure("PluginRepositoryUrlInvalid", "URL must use HTTPS with a non-empty host")
   const configured = (url: string) => url === official || userAdded.includes(url)
   const entry = (url: string, pluginId: string, releaseVersion: string) =>
     catalogs.get(url)?.find(item => item.pluginId === pluginId && item.releaseVersion === releaseVersion)
   const notInCatalog = (pluginId: string, releaseVersion: string) =>
     pluginFailure("PluginHostRefused", `no catalog record for ${pluginId} version ${releaseVersion}`)
-  const untrusted = (pluginId: string) =>
-    pluginFailure("PluginHostRefused", `publisher ${pluginId.split(":")[0]} is not bound on this device`)
+
+  /** A release's publisher as inspection reports it, or the host's refusal. */
+  const releasePublisher = (namespace: string, publicKey: string | undefined): PluginPublisher | Refusal => {
+    const bound = bindings.get(namespace)
+    const pinned = pins.get(namespace)
+    if (publicKey === undefined) {
+      return bound !== undefined || pinned !== undefined
+        ? pluginFailure(PublisherRefusal.NamespaceTaken, `${namespace} is trusted on this device, so its plugins must be signed`)
+        : { namespace, state: "Unsigned", disclosure: UNSIGNED_DISCLOSURE }
+    }
+    const fingerprint = inMemoryFingerprint(publicKey)
+    if (bound !== undefined) {
+      return bound === publicKey
+        ? { namespace, fingerprint, state: "Bound" }
+        : pluginFailure("PluginHostRefused", `release is not signed by the key bound for ${namespace}`)
+    }
+    if (pinned === undefined) return { namespace, fingerprint, state: "New", publicKey }
+    if (pinned === publicKey) return { namespace, fingerprint, state: "Trusted" }
+    return { namespace, fingerprint, state: "KeyChanged", previousFingerprint: inMemoryFingerprint(pinned), publicKey }
+  }
+  /** The catalog states only Bound or Trusted, else New, and no key. */
+  const catalogPublisher = (item: InMemoryPluginRecord): PluginPublisher => {
+    const namespace = namespaceOf(item.pluginId)
+    if (item.publicKey !== undefined && bindings.get(namespace) === item.publicKey) return { namespace, state: "Bound" }
+    if (item.publicKey !== undefined && pins.get(namespace) === item.publicKey) return { namespace, state: "Trusted" }
+    return { namespace, state: "New" }
+  }
+  /** Inspect one release: the report with every publisher, or the refusal. */
+  const report = (item: InMemoryPluginRecord): PluginInspection | Refusal => {
+    const root = releasePublisher(namespaceOf(item.pluginId), item.publicKey)
+    if (refused(root)) return root
+    const seeded = seed.inspections?.[item.pluginId] ?? {
+      id: item.pluginId,
+      ...(item.title === undefined ? {} : { title: item.title }),
+      warning: "",
+      ports: { allowedTCPPorts: [], allowedUDPPorts: [] },
+      nativeUnits: [],
+      brings: [],
+    }
+    const brings: PluginDependency[] = []
+    for (const { publicKey, ...dependency } of seeded.brings) {
+      const publisher = releasePublisher(namespaceOf(dependency.id), publicKey)
+      if (refused(publisher)) return publisher
+      brings.push({ ...structuredClone(dependency), publisher })
+    }
+    return {
+      ...structuredClone({ ...seeded, brings: [] }),
+      publisher: root,
+      brings,
+      approval: approval(item.pluginId, item.releaseVersion, item.publicKey !== undefined),
+    }
+  }
+  const installedFrom = (namespace: string) => [...installs, ...otherInstalls]
+    .map(install => install.id)
+    .filter(id => namespaceOf(id) === namespace)
   return {
     async pluginRepositories() {
       const payload: PluginRepositories = {
         ...(official === undefined ? {} : { official }),
         userAdded: [...userAdded],
-        repositoryInstalls: structuredClone(installs),
+        repositoryInstalls: installs.map(({ signed: _signed, ...install }) => structuredClone(install)),
         otherInstalls: structuredClone(otherInstalls),
       }
       return { _tag: "Ok", payload }
@@ -1060,12 +1267,16 @@ function createInMemoryPluginHost(
       const url = pluginSourceUrl(raw)
       if (url === undefined) return invalidUrl()
       if (!configured(url)) return pluginFailure("PluginHostRefused", `repository not configured: ${url}`)
-      const entries = (catalogs.get(url) ?? []).map(item => {
+      const entries = (catalogs.get(url) ?? []).map((item): PluginCatalogEntry => {
         const installed = installs.find(install => install.id === item.pluginId)
-        const { installed: _seeded, ...rest } = item
-        return installed === undefined
-          ? { ...rest }
-          : { ...rest, installed: installed.enabled ? PluginInstalledState.Enabled : PluginInstalledState.Disabled }
+        const { installed: _seeded, publicKey: _key, ...rest } = item
+        return {
+          ...rest,
+          publisher: catalogPublisher(item),
+          ...(installed === undefined
+            ? {}
+            : { installed: installed.enabled ? PluginInstalledState.Enabled : PluginInstalledState.Disabled }),
+        }
       })
       const payload: PluginCatalog = { entries }
       return { _tag: "Ok", payload }
@@ -1076,17 +1287,8 @@ function createInMemoryPluginHost(
       if (!configured(url)) return pluginFailure("PluginHostRefused", `repository not configured: ${url}`)
       const item = entry(url, pluginId, releaseVersion)
       if (item === undefined) return notInCatalog(pluginId, releaseVersion)
-      if (!item.publisherTrusted) return untrusted(pluginId)
-      const report = seed.inspections?.[pluginId] ?? {
-        id: pluginId,
-        ...(item.title === undefined ? {} : { title: item.title }),
-        warning: "",
-        ports: { allowedTCPPorts: [], allowedUDPPorts: [] },
-        nativeUnits: [],
-        brings: [],
-      }
-      const payload: PluginInspection = { ...structuredClone(report), approval: approval(pluginId, releaseVersion) }
-      return { _tag: "Ok", payload }
+      const inspected = report(item)
+      return refused(inspected) ? inspected : { _tag: "Ok", payload: inspected }
     },
     async installPlugin(raw, pluginId, releaseVersion, digest) {
       const url = pluginSourceUrl(raw)
@@ -1094,8 +1296,19 @@ function createInMemoryPluginHost(
       if (!configured(url)) return pluginFailure("PluginHostRefused", `repository not configured: ${url}`)
       const item = entry(url, pluginId, releaseVersion)
       if (item === undefined) return notInCatalog(pluginId, releaseVersion)
-      if (!item.publisherTrusted) return untrusted(pluginId)
-      if (digest !== approval(pluginId, releaseVersion)) {
+      const inspected = report(item)
+      if (refused(inspected)) return inspected
+      // Install refuses until the owner trusts every publisher it brings.
+      for (const publisher of [inspected.publisher, ...inspected.brings.map(bring => bring.publisher)]) {
+        if (publisher.state === "New") {
+          return pluginFailure(PublisherRefusal.NotTrusted, `publisher ${publisher.namespace} is not trusted on this device`)
+        }
+        if (publisher.state === "KeyChanged") {
+          return pluginFailure(PublisherRefusal.KeyChanged,
+            `publisher ${publisher.namespace} key changed: was ${publisher.previousFingerprint}, now ${publisher.fingerprint}`)
+        }
+      }
+      if (digest !== inspected.approval) {
         return pluginFailure("PluginHostRefused", "approval does not match this package and its execution policy; inspect it first")
       }
       const installed = installs.find(install => install.id === pluginId)
@@ -1108,7 +1321,7 @@ function createInMemoryPluginHost(
         stale.delete(pluginId)
         return { _tag: "Ok", payload: {} }
       }
-      installs.push({ id: pluginId, sourceUrl: url, releaseVersion, enabled: false })
+      installs.push({ id: pluginId, sourceUrl: url, releaseVersion, enabled: false, signed: item.publicKey !== undefined })
       return { _tag: "Ok", payload: {} }
     },
     async setPluginEnabled(id, enabled) {
@@ -1119,8 +1332,46 @@ function createInMemoryPluginHost(
       if (enabled && stale.has(id)) {
         return pluginFailure("PluginNeedsReview", "installed package or host policy no longer matches its approval")
       }
+      // A revoked publisher's signed plugins no longer start; off still works.
+      const namespace = namespaceOf(id)
+      const signed = installs.find(item => item.id === id)?.signed !== false
+      if (enabled && signed && !bindings.has(namespace) && !pins.has(namespace)) {
+        return pluginFailure(PublisherRefusal.NotTrusted, `publisher ${namespace} is not trusted on this device`)
+      }
       if (install !== undefined) install.enabled = enabled
       if (imagePlugins.has(id)) imagePlugins.set(id, enabled)
+      return { _tag: "Ok", payload: {} }
+    },
+    async pluginPublishers() {
+      const entries = [
+        ...[...bindings].map(([namespace, key]) => ({ namespace, key, state: "Bound" as const })),
+        ...[...pins].map(([namespace, key]) => ({ namespace, key, state: "Trusted" as const })),
+      ].map(({ namespace, key, state }) => ({
+        namespace,
+        fingerprint: inMemoryFingerprint(key),
+        state,
+        installed: installedFrom(namespace),
+      }))
+      return { _tag: "Ok", payload: { entries } }
+    },
+    async trustPublisher(namespace, publicKey) {
+      if (bindings.has(namespace)) {
+        return pluginFailure(PublisherRefusal.NamespaceTaken, `publisher ${namespace} is bound in this device's configuration`)
+      }
+      if (!/^[^:\s]+:[A-Za-z0-9+/]+=*$/.test(publicKey)) return pluginFailure("PluginHostRefused", "not a Nix public key")
+      const unsigned = installs.filter(install => install.signed === false && namespaceOf(install.id) === namespace)
+      if (unsigned.length > 0) {
+        return pluginFailure(PublisherRefusal.NamespaceTaken,
+          `remove the unsigned ${namespace} plugins first: ${unsigned.map(install => install.id).join(", ")}`)
+      }
+      pins.set(namespace, publicKey)
+      return { _tag: "Ok", payload: {} }
+    },
+    async revokePublisher(namespace) {
+      if (bindings.has(namespace)) {
+        return pluginFailure("PluginHostRefused", `publisher ${namespace} is bound in this device's configuration`)
+      }
+      pins.delete(namespace)
       return { _tag: "Ok", payload: {} }
     },
   }

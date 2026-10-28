@@ -18,7 +18,15 @@ import {
   removeRepositoryActionId,
   reviewActionId,
   reviewMessage,
+  reviewPublisherRowId,
   toggleSettingId,
+  PUBLISHERS_GROUP,
+  PUBLISHERS_STATUS_ROW,
+  keyChangeLines,
+  publisherRowId,
+  revokeActionId,
+  trustActionId,
+  withPublishers,
   withCatalog,
   withNeedsReview,
   withRepositories,
@@ -36,6 +44,18 @@ import {
   readyFacts,
   repositories,
   retroCatalog,
+  ADA_FINGERPRINT,
+  ADA_NEW_FINGERPRINT,
+  KORRI_FINGERPRINT,
+  LIB_FINGERPRINT,
+  MALLORY_FINGERPRINT,
+  bringsNewInspection,
+  keyChangedInspection,
+  lib,
+  mallory,
+  newPublisherInspection,
+  trustedPublishers,
+  unsignedInspection,
 } from "./plugin-repositories.fixtures"
 
 const groupNamed = (groups: readonly SurfaceSettingGroup[], title: string) =>
@@ -76,7 +96,7 @@ describe("plugin settings groups", () => {
     const facts = readyFacts({
       repositories: { _tag: "Ready", value: repositories({ official: OFFICIAL, userAdded: [RETRO] }) },
       catalogs: {
-        [OFFICIAL]: { _tag: "Ready", entries: [{ pluginId: "@korri:tailscale", title: "Tailscale", releaseVersion: "1.0", publisherTrusted: true }] },
+        [OFFICIAL]: { _tag: "Ready", entries: [{ pluginId: "@korri:tailscale", title: "Tailscale", releaseVersion: "1.0", publisher: { namespace: "@korri", state: "Bound" } }] },
         [RETRO]: { _tag: "Ready", entries: retroCatalog },
       },
     })
@@ -97,7 +117,8 @@ describe("plugin settings groups", () => {
       ["CRT look", "Install 2.1.0"],
       ["CRT look", "Install 2.0.3"],
       ["Netplay", "On"],
-      ["Free coins", "Not trusted"],
+      ["Free coins", "Install"],
+      ["Pocket dither", "Install"],
       ["Remove this repository", null],
     ])
     expect(retro?.items.at(-1)?.interaction).toEqual({
@@ -145,16 +166,40 @@ describe("plugin settings groups", () => {
     ])
   })
 
-  it("shows an untrusted publisher as a read-only row naming the publisher", () => {
+  it("offers Install from a publisher not trusted yet, and says so: the key shows after the check", () => {
     const row = groupNamed(pluginSettingGroups(retroFacts(), []), "github.com/ada/retro-plugins")?.items
       .find(item => item.label === "Free coins")
-    expect(row?.description).toBe("Publisher @mallory is not trusted on this device")
-    expect(row?.interaction).toBeUndefined()
+    const miner = { sourceUrl: RETRO, pluginId: "@mallory:miner", releaseVersion: "9.9.9" }
+    expect(row).toEqual({
+      id: releaseRowId(miner),
+      label: "Free coins",
+      value: "Install",
+      description: "Publisher @mallory is not trusted yet.",
+      interaction: { kind: "action", actionId: inspectActionId(miner) },
+    })
+  })
+
+  it("names the publisher's state on every version of an untrusted plugin's first row only", () => {
+    const facts = retroFacts({ catalogs: { [RETRO]: { _tag: "Ready", entries: [
+      { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.9", publisher: { namespace: "@mallory", state: "New" } },
+      { pluginId: "@mallory:miner", title: "Free coins", releaseVersion: "9.9.8", publisher: { namespace: "@mallory", state: "New" } },
+    ] } } })
+    const rows = groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items.filter(item => item.label === "Free coins")
+    expect(rows?.map(row => [row.value, row.description ?? null])).toEqual([
+      ["Install 9.9.9", "Publisher @mallory is not trusted yet. Pick the version to install."],
+      ["Install 9.9.8", null],
+    ])
   })
 
   it("turns an inspected release into Review and turn on, whose confirmation is the report", () => {
     const facts = withReview(retroFacts(), chiptune, inspection)
-    const row = groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items[0]
+    const items = groupNamed(pluginSettingGroups(facts, []), "github.com/ada/retro-plugins")?.items ?? []
+    const row = items[0]
+    // Every publisher the install brings follows it, read-only.
+    expect(items.slice(1, 3)).toEqual([
+      { id: reviewPublisherRowId(chiptune, "@ada"), label: "Publisher @ada", value: "Trusted", description: `Key ${ADA_FINGERPRINT}. You trusted it on this device.` },
+      { id: reviewPublisherRowId(chiptune, "@korri"), label: "Publisher @korri", value: "Configured", description: `Key ${KORRI_FINGERPRINT}. This device's configuration trusts it.` },
+    ])
     expect(row).toEqual({
       id: releaseRowId(chiptune),
       label: "Chiptune",
@@ -171,16 +216,17 @@ describe("plugin settings groups", () => {
     })
   })
 
-  it("writes the report in plain words: warning, ports, background programs, and every dependency", () => {
+  it("writes the report in plain words: publisher, warning, ports, background programs, and every dependency with its publisher", () => {
     expect(reviewMessage(inspection).split("\n")).toEqual([
+      `Publisher @ada, trusted on this device. Key ${ADA_FINGERPRINT}.`,
       "Warning: Plays sound over the network to paired speakers.",
       "Opens network ports: TCP 7000, 7001; UDP 5353.",
       "Runs in the background: chiptune-daemon.service.",
-      "Also installs Audio core. Warning: Can change the system volume.",
-      "Also uses PipeWire bridge. You approved it before.",
+      "Also installs Audio core from @ada (trusted). Warning: Can change the system volume.",
+      "Also uses PipeWire bridge from @korri (configured). You approved it before.",
     ])
-    expect(reviewMessage({ ...inspection, warning: "", ports: { allowedTCPPorts: [], allowedUDPPorts: [] }, nativeUnits: [], brings: [] }))
-      .toBe("It asks for no network ports and runs nothing in the background.")
+    expect(reviewMessage({ ...inspection, warning: "", ports: { allowedTCPPorts: [], allowedUDPPorts: [] }, nativeUnits: [], brings: [] }).split("\n"))
+      .toEqual([`Publisher @ada, trusted on this device. Key ${ADA_FINGERPRINT}.`, "It asks for no network ports and runs nothing in the background."])
   })
 
   it("shows an unreachable repository with the host's words while its installs still toggle", () => {
@@ -260,11 +306,12 @@ describe("plugin settings groups", () => {
   })
 
   it("treats an empty warning as no warning", () => {
-    expect(reviewMessage({ ...inspection, warning: "  ", brings: [{ id: "@x:y", title: "Y", warning: "", alreadyApproved: false }] }).split("\n"))
+    expect(reviewMessage({ ...inspection, warning: "  ", brings: [{ id: "@x:y", title: "Y", warning: "", alreadyApproved: false, publisher: { namespace: "@x", state: "Bound" } }] }).split("\n"))
       .toEqual([
+        `Publisher @ada, trusted on this device. Key ${ADA_FINGERPRINT}.`,
         "Opens network ports: TCP 7000, 7001; UDP 5353.",
         "Runs in the background: chiptune-daemon.service.",
-        "Also installs Y.",
+        "Also installs Y from @x (configured).",
       ])
   })
 
@@ -335,5 +382,234 @@ describe("plugin ids", () => {
     const facts = readyFacts({ repositories: { _tag: "Ready", value: repositories({ userAdded: [RETRO, BROKEN] }) } })
     const ids = pluginSettingGroups(facts, []).flatMap(group => group.items.map(item => item.id))
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe("publishers on the review", () => {
+  const RETRO_GROUP = "github.com/ada/retro-plugins"
+  const miner = { sourceUrl: RETRO, pluginId: "@mallory:miner", releaseVersion: "9.9.9" }
+  const dither = { sourceUrl: RETRO, pluginId: "@pocket:dither", releaseVersion: "0.1.0" }
+  const rowsAfter = (target: typeof chiptune, report: Parameters<typeof withReview>[2]) => {
+    const items = groupNamed(pluginSettingGroups(withReview(retroFacts(), target, report), []), RETRO_GROUP)?.items ?? []
+    const at = items.findIndex(item => item.id === releaseRowId(target))
+    return items.slice(at)
+  }
+  const confirmationOf = (item: { readonly interaction?: unknown } | undefined) => {
+    const interaction = item?.interaction as { kind: string; confirmation?: { title: string; message: string; confirmLabel: string }; destructive?: boolean } | undefined
+    return interaction
+  }
+
+  it("New: the next press trusts the publisher, after a question that shows its key; Install comes after", () => {
+    const [step, publisher] = rowsAfter(miner, newPublisherInspection)
+    expect(step).toEqual({
+      id: releaseRowId(miner),
+      label: "Free coins",
+      value: "Trust @mallory",
+      description: "@mallory is not trusted yet. Check its key, then trust it.",
+      interaction: {
+        kind: "action",
+        actionId: trustActionId(miner, "@mallory"),
+        confirmation: {
+          title: "Trust @mallory?",
+          message: [
+            "Free coins comes from @mallory. This device has not trusted it before.",
+            `Key ${MALLORY_FINGERPRINT}.`,
+            "Trust it only if the plugin maker gave you this key.",
+            "Later plugins from @mallory must have the same key.",
+          ].join("\n"),
+          confirmLabel: "Trust",
+        },
+      },
+    })
+    expect(publisher).toEqual({
+      id: reviewPublisherRowId(miner, "@mallory"),
+      label: "Publisher @mallory",
+      value: "Not trusted yet",
+      description: `Key ${MALLORY_FINGERPRINT}. Check it with the plugin maker before you trust it.`,
+    })
+  })
+
+  it("Key changed: a red question with the key change text, and Trust the new key", () => {
+    const [step, publisher] = rowsAfter(chiptune, keyChangedInspection)
+    expect(step).toMatchObject({ value: "Trust the new key", description: "The publisher key for @ada changed." })
+    const interaction = confirmationOf(step)
+    expect(interaction?.destructive).toBe(true)
+    expect(interaction?.confirmation?.title).toBe("Trust the new key for @ada?")
+    expect(interaction?.confirmation?.confirmLabel).toBe("Trust the new key")
+    // Schema sheet row 15, word for word, one sentence per line.
+    expect(interaction?.confirmation?.message.split("\n").join(" ")).toBe(
+      `The publisher key for @ada changed. Before: ${ADA_FINGERPRINT}. Now: ${ADA_NEW_FINGERPRINT}. This can mean the author replaced their key, or that someone else is publishing as them. Trust the new key only if the author told you about the change.`)
+    expect(interaction).toMatchObject({ actionId: trustActionId(chiptune, "@ada") })
+    expect(publisher).toMatchObject({ label: "Publisher @ada", value: "Key changed", description: `Before ${ADA_FINGERPRINT}. Now ${ADA_NEW_FINGERPRINT}.` })
+    expect(keyChangeLines(keyChangedInspection.publisher)).toHaveLength(5)
+  })
+
+  it("Unsigned: the disclosure comes first in the approval, which warns", () => {
+    const [step, publisher] = rowsAfter(dither, unsignedInspection)
+    expect(step).toMatchObject({ value: "Review and turn on" })
+    const interaction = confirmationOf(step)
+    expect(interaction?.destructive).toBe(true)
+    expect(interaction?.confirmation?.title).toBe("Turn on Pocket dither?")
+    expect(interaction?.confirmation?.message.split("\n")).toEqual([
+      "This plugin is not signed. Korri cannot confirm who made it, or that updates come from the same person. Install it only if you trust the address you got it from.",
+      "Publisher @pocket, not signed.",
+      "It asks for no network ports and runs nothing in the background.",
+    ])
+    expect(publisher).toEqual({
+      id: reviewPublisherRowId(dither, "@pocket"),
+      label: "Publisher @pocket",
+      value: "Not signed",
+      description: "This plugin is not signed. Korri cannot confirm who made it, or that updates come from the same person. Install it only if you trust the address you got it from.",
+    })
+  })
+
+  it("Trusted and Bound: straight to the normal approval, which only asks", () => {
+    const [step] = rowsAfter(chiptune, inspection)
+    expect(confirmationOf(step)?.destructive).toBeUndefined()
+  })
+
+  it("a dependency's new publisher is trusted before the install, and every publisher is listed", () => {
+    const rows = rowsAfter(chiptune, bringsNewInspection)
+    expect(rows[0]).toMatchObject({ value: "Trust @lib", interaction: { actionId: trustActionId(chiptune, "@lib") } })
+    expect(confirmationOf(rows[0])?.confirmation?.message.split("\n")[0]).toBe("Chiptune needs Audio core from @lib. This device has not trusted it before.")
+    expect(rows.slice(1, 4).map(row => [row.label, row.value])).toEqual([
+      ["Publisher @ada", "Trusted"],
+      ["Publisher @lib", "Not trusted yet"],
+      ["Publisher @korri", "Configured"],
+    ])
+    expect(rows[2]?.description).toBe(`Key ${LIB_FINGERPRINT}. Check it with the plugin maker before you trust it.`)
+  })
+
+  it("several publishers to trust: one press each, and the question says what follows", () => {
+    const both = { ...newPublisherInspection, brings: [{ id: "@lib:audio-core", title: "Audio core", warning: "", alreadyApproved: false, publisher: lib }] }
+    const [step] = rowsAfter(miner, both)
+    expect(step).toMatchObject({ value: "Trust @mallory" })
+    expect(confirmationOf(step)?.confirmation?.message.split("\n").at(-1)).toBe("After this, Free coins also needs you to trust @lib.")
+    const [next] = rowsAfter(miner, { ...both, publisher: { ...mallory, state: "Trusted" } })
+    expect(next).toMatchObject({ value: "Trust @lib" })
+  })
+
+  it("lists each dependency's publisher and state in the report", () => {
+    const report = {
+      ...inspection,
+      brings: [
+        { id: "@lib:a", title: "A", warning: "", alreadyApproved: false, publisher: lib },
+        { id: "@ada:b", title: "B", warning: "", alreadyApproved: false, publisher: keyChangedInspection.publisher },
+        { id: "@pocket:c", title: "C", warning: "", alreadyApproved: true, publisher: unsignedInspection.publisher },
+      ],
+    }
+    expect(reviewMessage(report).split("\n")).toEqual([
+      "C: This plugin is not signed. Korri cannot confirm who made it, or that updates come from the same person. Install it only if you trust the address you got it from.",
+      `Publisher @ada, trusted on this device. Key ${ADA_FINGERPRINT}.`,
+      "Warning: Plays sound over the network to paired speakers.",
+      "Opens network ports: TCP 7000, 7001; UDP 5353.",
+      "Runs in the background: chiptune-daemon.service.",
+      "Also installs A from @lib (not trusted yet).",
+      "Also installs B from @ada (key changed).",
+      "Also uses C from @pocket (not signed). You approved it before.",
+    ])
+  })
+
+  it("a publisher to trust without a key to send offers to check again, never to trust", () => {
+    const { publicKey: _key, ...keyless } = mallory
+    const [step] = rowsAfter(miner, { ...newPublisherInspection, publisher: keyless })
+    expect(step).toMatchObject({ value: "Check again", interaction: { kind: "action", actionId: inspectActionId(miner) } })
+  })
+
+  it("a stale installed plugin whose key changed asks for trust on its own row", () => {
+    const netplay = { sourceUrl: RETRO, pluginId: "@ada:netplay", releaseVersion: "0.4.0" }
+    const facts = withReview(withNeedsReview(retroFacts(), "@ada:netplay", true), netplay, { ...keyChangedInspection, id: "@ada:netplay", title: "Netplay" })
+    const items = groupNamed(pluginSettingGroups(facts, []), RETRO_GROUP)?.items ?? []
+    const at = items.findIndex(item => item.id === toggleSettingId("@ada:netplay"))
+    expect(items[at]).toMatchObject({ value: "Trust the new key", interaction: { actionId: trustActionId(netplay, "@ada") } })
+    expect(items[at + 1]).toMatchObject({ id: reviewPublisherRowId(netplay, "@ada"), value: "Key changed" })
+  })
+})
+
+describe("the Publishers list", () => {
+  const facts = (publishers: PluginFacts["publishers"]) => readyFacts({ publishers })
+
+  it("comes last, lists every trusted publisher with its key and installs, and offers Revoke only for owner-trusted ones", () => {
+    const groups = pluginSettingGroups(
+      facts({ _tag: "Ready", value: trustedPublishers }),
+      [{ id: "@ada:netplay", title: "Netplay", enabled: true }, { id: "@korri:mgba", title: "mGBA", enabled: true }],
+    )
+    expect(groups.at(-1)?.title).toBe(PUBLISHERS_GROUP)
+    const [korri, ada, pixel] = groups.at(-1)?.items ?? []
+    expect(korri).toEqual({
+      id: publisherRowId("@korri"),
+      label: "@korri",
+      value: "Configured",
+      description: `This device's configuration trusts it. Key ${KORRI_FINGERPRINT}. 2 plugins installed from it.`,
+    })
+    expect(ada).toEqual({
+      id: publisherRowId("@ada"),
+      label: "@ada",
+      value: "Revoke",
+      description: `Trusted on this device. Key ${ADA_FINGERPRINT}. 1 plugin installed from it.`,
+      interaction: {
+        kind: "action",
+        actionId: revokeActionId("@ada"),
+        destructive: true,
+        confirmation: {
+          title: "Revoke @ada?",
+          message: [
+            "Plugins from @ada stop starting on this device: Netplay.",
+            "You can still turn them off and remove them.",
+            "To use them again, you check and trust the key of @ada again.",
+          ].join("\n"),
+          confirmLabel: "Revoke",
+        },
+      },
+    })
+    expect(pixel).toMatchObject({ value: "Revoke", description: expect.stringContaining("No plugins installed from it.") })
+    const pixelMessage = (pixel?.interaction as { confirmation?: { message: string } } | undefined)?.confirmation?.message
+    expect(pixelMessage).toBe([
+      "This device stops trusting @pixel-collective-handheld.",
+      "To install from @pixel-collective-handheld again, you check and trust its key again.",
+    ].join("\n"))
+  })
+
+  it("says when nothing is trusted, and shows the host's words when the list cannot be read", () => {
+    expect(pluginSettingGroups(facts({ _tag: "Ready", value: { entries: [] } }), []).at(-1)).toEqual({
+      title: PUBLISHERS_GROUP,
+      items: [{ id: PUBLISHERS_STATUS_ROW, label: "No trusted publishers", description: "Korri asks you to trust a publisher when you install its first plugin." }],
+    })
+    const failed = withPublishers(readyFacts(), err("BrainUnreachable", "korrid is not answering"))
+    expect(pluginSettingGroups(failed, []).at(-1)).toEqual({
+      title: PUBLISHERS_GROUP,
+      items: [{ id: PUBLISHERS_STATUS_ROW, label: "Can't read the publishers", description: "korrid is not answering" }],
+    })
+    // Still being read the first time: no group yet.
+    expect(pluginSettingGroups(readyFacts(), []).some(group => group.title === PUBLISHERS_GROUP)).toBe(false)
+    // Shown even while the repositories cannot be read.
+    expect(pluginSettingGroups({ ...initialPluginFacts, publishers: { _tag: "Ready", value: trustedPublishers } }, []).map(group => group.title))
+      .toEqual([PLUGINS_GROUP, PUBLISHERS_GROUP])
+  })
+
+  it("names an installed plugin by its catalog title, else its id", () => {
+    const withTitles = readyFacts({
+      publishers: { _tag: "Ready", value: { entries: [{ namespace: "@ada", fingerprint: ADA_FINGERPRINT, state: "Trusted", installed: ["@ada:chiptune", "@ada:unknown"] }] } },
+      catalogs: { [RETRO]: { _tag: "Ready", entries: retroCatalog } },
+    })
+    const row = pluginSettingGroups(withTitles, []).at(-1)?.items[0]
+    expect((row?.interaction as { confirmation?: { message: string } } | undefined)?.confirmation?.message.split("\n")[0])
+      .toBe("Plugins from @ada stop starting on this device: Chiptune, @ada:unknown.")
+  })
+
+  it("keeps every row id unique when a publisher shows on a review and in the list", () => {
+    const all = withReview(retroFacts({ publishers: { _tag: "Ready", value: trustedPublishers } }), chiptune, bringsNewInspection)
+    const ids = pluginSettingGroups(all, []).flatMap(group => group.items.map(item => item.id))
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe("publisher ids", () => {
+  it("round-trips trust and revoke actions whose names hold colons and slashes", () => {
+    const target = { sourceUrl: "https://x.example:8443/a:b/", pluginId: "@ada:crt", releaseVersion: "2.0.0-rc:1" }
+    expect(pluginActionFrom(trustActionId(target, "@ada:odd"))).toEqual({ _tag: "Trust", target, namespace: "@ada:odd" })
+    expect(pluginActionFrom(revokeActionId("@ada"))).toEqual({ _tag: "Revoke", namespace: "@ada" })
+    expect(pluginActionFrom("plugin-trust:only-one-part")).toBeUndefined()
+    expect(pluginActionFrom("plugin-publisher-revoke:")).toBeUndefined()
   })
 })

@@ -83,6 +83,7 @@ describe("settingsFrom", () => {
         catalogs: {},
         reviews: {},
         needsReview: {},
+        publishers: { _tag: "Loading" },
       },
     })
     expect(groups.map(candidate => candidate.title)).toEqual([

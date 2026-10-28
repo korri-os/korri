@@ -3,6 +3,9 @@ import type { SurfaceSettingsStatus } from "@contracts/surface/korri-surface"
 import {
   ADD_REPOSITORY_SETTING,
   ALREADY_ADDED,
+  publisherRowId,
+  revokeActionId,
+  trustActionId,
   INVALID_ADDRESS,
   NEEDS_REVIEW_CODE,
   initialPluginFacts,
@@ -25,6 +28,13 @@ import {
   ok,
   repositories,
   retroCatalog,
+  trustedPublishers,
+  ADA_NEW_KEY,
+  LIB_KEY,
+  MALLORY_KEY,
+  bringsNewInspection,
+  keyChangedInspection,
+  newPublisherInspection,
 } from "./plugin-repositories.fixtures"
 
 const chiptune = { sourceUrl: RETRO, pluginId: "@ada:chiptune", releaseVersion: "1.0.0" }
@@ -56,16 +66,31 @@ const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(
 
 const baseAnswers = {
   pluginRepositories: () => ok(repositories({ official: OFFICIAL, userAdded: [RETRO] })),
+  pluginPublishers: () => ok(trustedPublishers),
   pluginCatalog: (url: string) => url === OFFICIAL ? ok({ entries: [] }) : ok({ entries: retroCatalog }),
 }
 
 describe("plugin repositories controller", () => {
-  it("reads repositories, then every configured catalog", async () => {
+  it("reads repositories, the trusted publishers, then every configured catalog", async () => {
     const { client, calls } = fakePluginClient(baseAnswers)
     const h = harness(client)
     await h.controller.refresh()
-    expect(calls.map(call => call.join(" "))).toEqual(["pluginRepositories", `pluginCatalog ${OFFICIAL}`, `pluginCatalog ${RETRO}`])
+    expect(calls.map(call => call.join(" "))).toEqual(["pluginRepositories", "pluginPublishers", `pluginCatalog ${OFFICIAL}`, `pluginCatalog ${RETRO}`])
     expect(h.facts().catalogs[RETRO]).toEqual({ _tag: "Ready", entries: retroCatalog })
+    expect(h.facts().publishers).toEqual({ _tag: "Ready", value: trustedPublishers })
+  })
+
+  it("shows why the publishers cannot be read, and keeps a list it read before", async () => {
+    let answer: ReturnType<typeof err> | ReturnType<typeof ok<typeof trustedPublishers>> = err("BrainUnreachable", "korrid is not answering")
+    const { client } = fakePluginClient({ ...baseAnswers, pluginPublishers: () => answer })
+    const h = harness(client)
+    await h.controller.refresh()
+    expect(h.facts().publishers).toEqual({ _tag: "Failed", message: "korrid is not answering" })
+    answer = ok(trustedPublishers)
+    await h.controller.refresh()
+    answer = err("BrainUnreachable", "gone")
+    await h.controller.refresh()
+    expect(h.facts().publishers).toEqual({ _tag: "Ready", value: trustedPublishers })
   })
 
   it("reads catalogs one after another, never two at once", async () => {
@@ -73,6 +98,7 @@ describe("plugin repositories controller", () => {
     let most = 0
     const { client } = fakePluginClient({
       pluginRepositories: () => ok(repositories({ official: OFFICIAL, userAdded: [RETRO] })),
+      pluginPublishers: () => ok(trustedPublishers),
       pluginCatalog: async () => {
         most = Math.max(most, ++open)
         await Promise.resolve()
@@ -221,6 +247,7 @@ describe("plugin repositories controller", () => {
         userAdded: [RETRO],
         repositoryInstalls: [{ id: "@ada:netplay", sourceUrl: RETRO, releaseVersion: "0.4.0", enabled: false }],
       })),
+      pluginPublishers: () => ok(trustedPublishers),
       pluginCatalog: () => ok({ entries: retroCatalog }),
       setPluginEnabled: () => err(NEEDS_REVIEW_CODE, "Approval is out of date"),
       inspectPlugin: () => ok({ ...inspection, id: "@ada:netplay" }),
@@ -243,6 +270,7 @@ describe("plugin repositories controller", () => {
         userAdded: [RETRO],
         repositoryInstalls: [{ id: "@ada:netplay", sourceUrl: RETRO, releaseVersion: "0.4.0", enabled: true }],
       })),
+      pluginPublishers: () => ok(trustedPublishers),
       pluginCatalog: () => ok({ entries: retroCatalog }),
       setPluginEnabled: (_id, enabled) => enabled === false && calls.every(call => call[0] !== "installPlugin")
         ? err(NEEDS_REVIEW_CODE, "Approval is out of date")
@@ -279,6 +307,7 @@ describe("plugin repositories controller", () => {
         userAdded: [RETRO],
         repositoryInstalls: [{ id: "@ada:netplay", sourceUrl: RETRO, releaseVersion: "0.4.0", enabled }],
       })),
+      pluginPublishers: () => ok(trustedPublishers),
       pluginCatalog: () => ok({ entries: retroCatalog }),
       inspectPlugin: () => ok({ ...inspection, id: "@ada:netplay" }),
       installPlugin: () => {
@@ -346,5 +375,123 @@ describe("plugin repositories controller", () => {
     expect(calls.map(call => call[0])).toEqual(["addPluginRepository"])
     expect(h.controller.change("device-name", "usu")).toBe(false)
     expect(h.controller.run("library-folder-rescan")).toBe(false)
+  })
+})
+
+describe("publisher trust", () => {
+  const miner = { sourceUrl: RETRO, pluginId: "@mallory:miner", releaseVersion: "9.9.9" }
+  const trustedMiner = { ...newPublisherInspection, approval: "sha256:after-trust", publisher: { namespace: "@mallory", fingerprint: "mallory-1 TWFs bG9y eSBz YW1w", state: "Trusted" as const } }
+
+  it("trusts exactly the key the report showed, then checks the release again for the approval", async () => {
+    let inspected = 0
+    const { client, calls } = fakePluginClient({
+      ...baseAnswers,
+      inspectPlugin: () => ok(++inspected === 1 ? newPublisherInspection : trustedMiner),
+      trustPublisher: () => ok({}),
+    })
+    const h = harness(client)
+    await h.controller.refresh()
+    h.controller.run(inspectActionId(miner))
+    await settle()
+    calls.length = 0
+    expect(h.controller.run(trustActionId(miner, "@mallory"))).toBe(true)
+    expect(h.last()).toEqual({ _tag: "Saving", settingId: releaseRowId(miner) })
+    await settle()
+    expect(calls.slice(0, 2)).toEqual([
+      ["trustPublisher", "@mallory", MALLORY_KEY],
+      ["inspectPlugin", RETRO, "@mallory:miner", "9.9.9"],
+    ])
+    // The publishers and catalogs are read again: their states changed.
+    expect(calls.map(call => call[0])).toContain("pluginPublishers")
+    expect(Object.values(h.facts().reviews).map(review => review.report.approval)).toEqual(["sha256:after-trust"])
+    expect(calls.map(call => call[0])).not.toContain("installPlugin")
+    expect(h.last()).toEqual({ _tag: "Idle" })
+  })
+
+  it("trusts a changed key with the new key, and a dependency's publisher with its own key", async () => {
+    for (const [report, namespace, key] of [
+      [keyChangedInspection, "@ada", ADA_NEW_KEY],
+      [bringsNewInspection, "@lib", LIB_KEY],
+    ] as const) {
+      const { client, calls } = fakePluginClient({ ...baseAnswers, inspectPlugin: () => ok(report), trustPublisher: () => ok({}) })
+      const h = harness(client)
+      await h.controller.refresh()
+      h.controller.run(inspectActionId(chiptune))
+      await settle()
+      calls.length = 0
+      h.controller.run(trustActionId(chiptune, namespace))
+      await settle()
+      expect(calls[0]).toEqual(["trustPublisher", namespace, key])
+    }
+  })
+
+  it("trusts nothing the report did not ask for, and nothing without a report", async () => {
+    const { client, calls } = fakePluginClient({ ...baseAnswers, inspectPlugin: () => ok(inspection), trustPublisher: () => ok({}) })
+    const h = harness(client)
+    await h.controller.refresh()
+    h.controller.run(trustActionId(miner, "@mallory"))
+    h.controller.run(inspectActionId(chiptune))
+    await settle()
+    // Chiptune's publishers are trusted already; @mallory is not in its report.
+    h.controller.run(trustActionId(chiptune, "@ada"))
+    h.controller.run(trustActionId(chiptune, "@mallory"))
+    await settle()
+    expect(calls.map(call => call[0])).not.toContain("trustPublisher")
+  })
+
+  it("a refused trust shows the host's words and keeps the report", async () => {
+    const { client, calls } = fakePluginClient({
+      ...baseAnswers,
+      inspectPlugin: () => ok(newPublisherInspection),
+      trustPublisher: () => err("PluginNamespaceTaken", "remove the unsigned @mallory plugins first: @mallory:coins"),
+    })
+    const h = harness(client)
+    await h.controller.refresh()
+    h.controller.run(inspectActionId(miner))
+    await settle()
+    calls.length = 0
+    h.controller.run(trustActionId(miner, "@mallory"))
+    await settle()
+    expect(h.last()).toEqual({ _tag: "Problem", settingId: releaseRowId(miner), message: "remove the unsigned @mallory plugins first: @mallory:coins" })
+    expect(calls.map(call => call[0])).toEqual(["trustPublisher"])
+    expect(Object.keys(h.facts().reviews)).toHaveLength(1)
+  })
+
+  it("a trust that worked but a check that failed drops the old report", async () => {
+    let inspected = 0
+    const { client } = fakePluginClient({
+      ...baseAnswers,
+      inspectPlugin: () => ++inspected === 1 ? ok(newPublisherInspection) : err("PluginHostRefused", "archive download stalled"),
+      trustPublisher: () => ok({}),
+    })
+    const h = harness(client)
+    await h.controller.refresh()
+    h.controller.run(inspectActionId(miner))
+    await settle()
+    h.controller.run(trustActionId(miner, "@mallory"))
+    await settle()
+    expect(h.facts().reviews).toEqual({})
+    expect(h.last()).toEqual({ _tag: "Problem", settingId: releaseRowId(miner), message: "archive download stalled" })
+    expect(h.busy()).toBe(false)
+  })
+
+  it("revoke runs only the confirmed action on the publisher's row, then everything is read again", async () => {
+    const { client, calls } = fakePluginClient({ ...baseAnswers, revokePublisher: () => ok({}) })
+    const h = harness(client)
+    expect(h.controller.run(revokeActionId("@ada"))).toBe(true)
+    expect(h.last()).toEqual({ _tag: "Saving", settingId: publisherRowId("@ada") })
+    await settle()
+    expect(calls[0]).toEqual(["revokePublisher", "@ada"])
+    expect(h.last()).toEqual({ _tag: "Idle" })
+    expect(h.changes()).toBe(1)
+  })
+
+  it("a refused revoke shows the host's words on the publisher's row", async () => {
+    const { client } = fakePluginClient({ revokePublisher: () => err("PluginHostRefused", "publisher @korri is bound in this device's configuration") })
+    const h = harness(client)
+    h.controller.run(revokeActionId("@korri"))
+    await settle()
+    expect(h.last()).toEqual({ _tag: "Problem", settingId: publisherRowId("@korri"), message: "publisher @korri is bound in this device's configuration" })
+    expect(h.changes()).toBe(0)
   })
 })

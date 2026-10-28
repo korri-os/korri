@@ -1,12 +1,18 @@
 /**
- * The effects behind Settings' plugin rows: reading repositories and their
- * catalogs, adding and removing a repository, and the approval path.
+ * The effects behind Settings' plugin rows: reading repositories, their
+ * catalogs and the trusted publishers, adding and removing a repository,
+ * trusting and revoking a publisher, and the approval path.
  *
  * Approval is two presses. Install asks korrid to download and check one
  * release (`inspectPlugin`) and keeps the report. The row then offers Review
  * and turn on, whose confirmation shows that report. Only that confirmed
  * action installs, and it passes exactly the digest the report carried. An
  * install without a kept report does not happen.
+ *
+ * A publisher the report names as New or Key changed is trusted between the
+ * two presses, one press each (TrustPublisher with the key the report
+ * carried). Trust changes what the host reports, so the release is checked
+ * again after it, and the person approves that new report.
  *
  * One plugin or settings operation runs at a time, as for every other setting:
  * `busy` is the portal's shared settings lock.
@@ -19,6 +25,8 @@ import {
   NEEDS_REVIEW_CODE,
   checkingCatalogs,
   configuredRepositories,
+  publisherRowId,
+  publishersToTrust,
   httpsAddress,
   installOf,
   isPluginSettingId,
@@ -30,6 +38,8 @@ import {
   toggleSettingId,
   withCatalog,
   withNeedsReview,
+  withoutReport,
+  withPublishers,
   wantedAfterReview,
   withoutRepository,
   withoutReview,
@@ -118,6 +128,9 @@ export function createPluginRepositoriesController(
     if (seq !== readSeq || !host.alive()) return
     update(facts => withRepositories(facts, outcome))
     if (outcome._tag !== "Ok") return
+    const publishers = await client.pluginPublishers()
+    if (seq !== readSeq || !host.alive()) return
+    update(facts => withPublishers(facts, publishers))
     const urls = configuredRepositories(outcome.payload)
     update(facts => checkingCatalogs(facts, urls))
     // One at a time: korrid serves plugin requests in turn, so parallel
@@ -203,6 +216,54 @@ export function createPluginRepositoriesController(
     )
   }
 
+  /**
+   * Trust one publisher the kept report named, with exactly the key it
+   * reported, then check the release again: the new report is the one the
+   * person approves. A trust that worked but a check that did not drops the
+   * old report, so nothing approves what the host no longer says.
+   */
+  const trust = (target: ReleaseTarget, namespace: string) => {
+    const review = reviewFor(host.facts(), target)
+    const publisher = review === undefined
+      ? undefined
+      : publishersToTrust(review.report).find(candidate => candidate.namespace === namespace)
+    // Only a key the person was shown can be trusted.
+    const publicKey = publisher?.publicKey
+    if (review === undefined || publicKey === undefined) return
+    const rowId = rowIdForRelease(host.facts(), target)
+    let trusted = false
+    locked(
+      rowId,
+      async () => {
+        const outcome = await client.trustPublisher(namespace, publicKey)
+        if (outcome._tag === "Err") return outcome
+        trusted = true
+        return client.inspectPlugin(target.sourceUrl, target.pluginId, target.releaseVersion)
+      },
+      async report => {
+        update(facts => withReview(facts, target, report))
+        host.status({ _tag: "Idle" })
+        await refresh()
+      },
+      failure => {
+        if (!trusted) return false
+        update(facts => withoutReport(facts, target))
+        problem(rowId, failure.message)
+        void refresh()
+        return true
+      },
+    )
+  }
+
+  /** Remove the pin. The publisher's plugins stop starting, so everything
+   * that lists them is read again. */
+  const revoke = (namespace: string) => {
+    locked(publisherRowId(namespace), () => client.revokePublisher(namespace), () => {
+      host.status({ _tag: "Idle" })
+      host.changed()
+    })
+  }
+
   const toggle = (pluginId: string, enabled: boolean) => {
     locked(
       toggleSettingId(pluginId),
@@ -235,6 +296,12 @@ export function createPluginRepositoriesController(
           return true
         case "Review":
           approve(action.target)
+          return true
+        case "Trust":
+          trust(action.target, action.namespace)
+          return true
+        case "Revoke":
+          revoke(action.namespace)
           return true
       }
     },

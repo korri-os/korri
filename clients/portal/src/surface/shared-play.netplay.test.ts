@@ -196,15 +196,18 @@ test("Reconnecting holds Back: korrid retries for about 10 s and nothing is pres
 const SNES9X = "@korri:snes9x2010"
 const OFFICIAL = "https://official.example/catalog.json"
 const COMMUNITY = "https://community.example/catalog.json"
+const KORRI_KEY = "korri-plugins-1:S29ycmkgdGVzdCBrZXksIG5vdCBhIHJlYWwga2V5IQ=="
 const pluginHost: InMemoryPluginHostConfig = {
   official: OFFICIAL,
   userAdded: [COMMUNITY],
+  bindings: { "@korri": KORRI_KEY },
   repositories: [
     { url: OFFICIAL, entries: [
-      { pluginId: SNES9X, title: "Snes9x 2010", releaseVersion: "2026.9.30", publisherTrusted: true },
-      { pluginId: SNES9X, title: "Snes9x 2010", releaseVersion: "2026.10.2", publisherTrusted: true },
+      { pluginId: SNES9X, title: "Snes9x 2010", releaseVersion: "2026.9.30", publicKey: KORRI_KEY },
+      { pluginId: SNES9X, title: "Snes9x 2010", releaseVersion: "2026.10.2", publicKey: KORRI_KEY },
     ] },
-    { url: COMMUNITY, entries: [{ pluginId: SNES9X, title: "Snes9x 2010", releaseVersion: "2027.1.1", publisherTrusted: false }] },
+    // Signed by another key than the bound one: not trusted, so never chosen.
+    { url: COMMUNITY, entries: [{ pluginId: SNES9X, title: "Snes9x 2010", releaseVersion: "2027.1.1", publicKey: "other-1:T3RoZXIgdGVzdCBrZXksIG5vdCBhIHJlYWwga2V5IQ==" }] },
   ],
   installs: [],
   inspections: { [SNES9X]: { id: SNES9X, title: "Snes9x 2010", warning: "", ports: { allowedTCPPorts: [55435], allowedUDPPorts: [] }, nativeUnits: [], brings: [] } },
@@ -212,9 +215,11 @@ const pluginHost: InMemoryPluginHostConfig = {
 const needsPlugin: InviteNetplay = { _tag: "NeedsPlugin", pluginId: SNES9X, title: "Snes9x 2010" }
 
 test("the newest trusted release of the plugin is the one installed", () => {
+  const entries = (index: number, state: "Bound" | "New") => pluginHost.repositories[index]!.entries
+    .map(({ publicKey: _key, ...entry }) => ({ ...entry, publisher: { namespace: "@korri", state } }))
   const facts = { ...initialPluginFacts, catalogs: {
-    [OFFICIAL]: { _tag: "Ready" as const, entries: pluginHost.repositories[0]!.entries },
-    [COMMUNITY]: { _tag: "Ready" as const, entries: pluginHost.repositories[1]!.entries },
+    [OFFICIAL]: { _tag: "Ready" as const, entries: entries(0, "Bound") },
+    [COMMUNITY]: { _tag: "Ready" as const, entries: entries(1, "New") },
   } }
   expect(newestRelease(facts, SNES9X)).toEqual({ sourceUrl: OFFICIAL, pluginId: SNES9X, releaseVersion: "2026.10.2" })
   expect(newestRelease(facts, "@korri:absent")).toBeUndefined()
@@ -243,7 +248,8 @@ async function installFlow(after: InviteNetplay) {
 test("Install and play here: Settings' review first, then the install, then netplay", async () => {
   const flow = await installFlow({ _tag: "Ready" })
   expect(flow.shared.getSnapshot().status).toEqual({
-    _tag: "Confirm", kicker: "Install Snes9x 2010?", detail: "Opens network ports: TCP 55435.",
+    _tag: "Confirm", kicker: "Install Snes9x 2010?",
+    detail: "Publisher @korri, trusted by this device's configuration. Key korri-plugins-1 S29y cmkg dGVz dCBr.\nOpens network ports: TCP 55435.",
     actions: [{ id: "netplay:install", label: "Install and play here", enabled: true }, { id: "netplay:cancel", label: "Cancel", enabled: true }],
     // A stray press must never approve the install: the cursor starts on Cancel.
     declineActionId: "netplay:cancel",
