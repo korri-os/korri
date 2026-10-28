@@ -175,7 +175,7 @@ pub(crate) async fn netplay_route() -> NetplayRoute {
             connection: outgoing.clone(),
         },
     );
-    let forward = NetplayForward::open(outgoing).await.unwrap();
+    let forward = devices.da.netplay_forward(&device).await.unwrap();
     NetplayRoute {
         directory: devices.da.clone(),
         device,

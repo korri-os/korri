@@ -2,6 +2,7 @@
 //! routes. The existing selected remote session owns the one local forward set.
 mod controller;
 mod datagrams;
+mod diagnostics;
 pub(crate) mod http;
 pub(crate) mod nearby_seam;
 mod policy;
@@ -62,6 +63,7 @@ pub(crate) struct Routes {
     recovery: Arc<Mutex<recovery::Recovery>>,
     changed: Arc<Notify>,
     active: Arc<AtomicBool>,
+    diagnostics: diagnostics::Diagnostics,
     selected: Arc<tokio::sync::Mutex<Option<Weak<Lease>>>>,
     retired: Arc<Mutex<Vec<tunnel::Forwards>>>,
     #[cfg(test)]
@@ -271,7 +273,11 @@ impl FederationDirectory {
         self.reach.activate(device).await
     }
     pub(crate) async fn netplay_forward(&self, device: &str) -> io::Result<NetplayForward> {
-        NetplayForward::open(self.reach_connection(device).await?).await
+        let mut wait = self.reach.diagnostics.route_wait(device);
+        let connection = self.reach_connection(device).await;
+        wait.finish(connection.is_ok());
+        drop(wait);
+        NetplayForward::open(connection?).await
     }
     pub(crate) async fn reach_connection(&self, device: &str) -> io::Result<Connection> {
         if !self

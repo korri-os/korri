@@ -1,4 +1,5 @@
 use super::{
+    diagnostics::{connection_path, short_peer},
     relay,
     settings::StunList,
     signal::{Answer, Offer, SIGNAL_LIFETIME},
@@ -232,7 +233,7 @@ impl Controller {
         // Same-port public STUN precedes bind. Builder::empty has no address
         // lookup and no relay defaults. Explicit interface binds exclude VPNs
         // from QUIC's internal address exchange too, not only from the signal.
-        let (port, external) = stun::discover(&stun.0).await?;
+        let (port, external) = stun::discover(&stun.0, &self.directory.reach.diagnostics).await?;
         let mut builder = Builder::empty()
             .crypto_provider(iroh::tls::default_provider())
             .secret_key(self.key.clone())
@@ -267,6 +268,10 @@ impl Controller {
                 .map_err(io::Error::other)?;
         }
         let endpoint = builder.bind().await.map_err(io::Error::other)?;
+        eprintln!(
+            "korrid: reach: {} stage=endpoint_bound port={port}",
+            self.directory.reach.diagnostics.stamp()
+        );
         for address in external {
             endpoint.add_external_addr(address).await;
         }
@@ -289,18 +294,30 @@ impl Controller {
         recovery.lock().expect("reach recovery").started();
         let incoming_endpoint = endpoint.clone();
         let router = self.peer_router.clone();
+        let diagnostics = self.directory.reach.diagnostics.clone();
         self.tasks.spawn(async move {
             let mut sessions = JoinSet::new();
             loop {
                 tokio::select! {
                     incoming = incoming_endpoint.accept(), if sessions.len() < 64 => {
                         let Some(incoming) = incoming else {break};
-                        let (router,access,recovery) = (router.clone(),access.clone(),recovery.clone());
+                        let (router,access,recovery,diagnostics) = (router.clone(),access.clone(),recovery.clone(),diagnostics.clone());
                         sessions.spawn(async move {
-                            let Ok(Ok(connection)) = timeout(Duration::from_secs(10),incoming).await else {return};
+                            let connection = match timeout(Duration::from_secs(10),incoming).await {
+                                Ok(Ok(connection)) => connection,
+                                Ok(Err(_)) => {
+                                    eprintln!("korrid: reach: {} stage=connection_failed direction=incoming peer=unknown path=unknown error=handshake_failed", diagnostics.stamp());
+                                    return;
+                                }
+                                Err(_) => {
+                                    eprintln!("korrid: reach: {} stage=connection_failed direction=incoming peer=unknown path=unknown error=handshake_timeout", diagnostics.stamp());
+                                    return;
+                                }
+                            };
                             // QUIC authenticates remote_id. The member's
                             // device-signed signal must bind that id.
                             if !access.allows(connection.remote_id()) {
+                                eprintln!("korrid: reach: {} stage=connection_failed direction=incoming peer=unknown path={} error=unbound", diagnostics.stamp(),connection_path(&connection));
                                 connection.close(1u32.into(),b"not a bound federation device");return;
                             }
                             let device = if connection.remote_id() == access.local {
@@ -308,8 +325,13 @@ impl Controller {
                             } else {
                                 access.bindings.read().expect("reach bindings").get(&connection.remote_id()).cloned()
                             };
-                            let Some(device) = device else {connection.close(1u32.into(),b"unknown device");return};
-                            if !recovery.lock().expect("reach recovery").register(device,connection.clone()) {return;}
+                            let Some(device) = device else {
+                                eprintln!("korrid: reach: {} stage=connection_failed direction=incoming peer=unknown path={} error=unknown_device", diagnostics.stamp(),connection_path(&connection));
+                                connection.close(1u32.into(),b"unknown device");return;
+                            };
+                            let admitted = recovery.lock().expect("reach recovery").register(device.clone(),connection.clone());
+                            eprintln!("korrid: reach: {} stage=connection_established direction=incoming peer={} path={} admitted={admitted}", diagnostics.stamp(),short_peer(&device),connection_path(&connection));
+                            if !admitted {return;}
                             let monitor = async {
                                 loop {
                                     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -355,7 +377,10 @@ impl Controller {
             );
             tokio::select! {
                 _ = self.drive() => break,
-                _ = changed => self.reset().await,
+                _ = changed => {
+                    self.directory.reach.diagnostics.network_reset();
+                    self.reset().await;
+                },
             }
         }
     }
@@ -481,6 +506,8 @@ impl Controller {
                 for command in received.commands {
                     // Relay reads can wait several seconds. Bind against the
                     // current clock, not the timestamp before that I/O.
+                    // Log actionable signals below, after replay/current-offer
+                    // checks: rereading an old relay event is not a new stage.
                     let now = unix_time();
                     match command {
                         CoordinationCommand::ReachOffer {
@@ -506,6 +533,11 @@ impl Controller {
                             {
                                 continue;
                             }
+                            eprintln!(
+                                "korrid: reach: {} stage=signal_received kind=offer peer={}",
+                                self.directory.reach.diagnostics.stamp(),
+                                short_peer(&sender_device_public_key)
+                            );
                             let Ok(endpoint) = self.ensure_endpoint(stun).await else {
                                 continue;
                             };
@@ -530,11 +562,17 @@ impl Controller {
                                     .unwrap_or_default(),
                                 answer,
                             };
-                            if signal
+                            let started = Instant::now();
+                            let published = signal
                                 .queue_command(&sender_device_public_key, command, now)
-                                .await
-                                .is_ok_and(|p| p.accepted())
-                            {
+                                .await;
+                            self.directory.reach.diagnostics.publication(
+                                "answer_sent",
+                                &sender_device_public_key,
+                                &published,
+                                started.elapsed(),
+                            );
+                            if published.is_ok_and(|p| p.accepted()) {
                                 self.processed.insert(
                                     (sender_device_public_key.clone(), offer.request_id.clone()),
                                     offer.expires_at,
@@ -581,6 +619,11 @@ impl Controller {
                             {
                                 continue;
                             }
+                            eprintln!(
+                                "korrid: reach: {} stage=signal_received kind=answer peer={}",
+                                self.directory.reach.diagnostics.stamp(),
+                                short_peer(&sender_device_public_key)
+                            );
                             self.pending.remove(&sender_device_public_key);
                             // A current answer is the only source of relay URLs.
                             // Each URL names the actual embedded TCP listener.
@@ -709,11 +752,15 @@ impl Controller {
             sender_device_public_key: self.credentials.public_key().unwrap_or_default(),
             offer,
         };
-        if !signal
-            .queue_command(&device, command, now)
-            .await
-            .is_ok_and(|p| p.accepted())
-        {
+        let started = Instant::now();
+        let published = signal.queue_command(&device, command, now).await;
+        self.directory.reach.diagnostics.publication(
+            "offer_published",
+            &device,
+            &published,
+            started.elapsed(),
+        );
+        if !published.is_ok_and(|p| p.accepted()) {
             self.pending.remove(&device);
             handle_signalling_failure(&self.directory, &device, &token).await;
         }
@@ -763,6 +810,8 @@ impl Controller {
             let Ok(id) = endpoint_id.parse::<EndpointId>() else {
                 return;
             };
+            let started = Instant::now();
+            eprintln!("korrid: reach: {} stage=dial_started peer={} address_count={}", routes.diagnostics.stamp(),short_peer(&device),addresses.len());
             let result = connect_iroh(&endpoint, id, addresses, || {
                 // A signed answer can arrive while the direct phase is active.
                 // Read the SAME answer table at fallback, not a start-time copy.
@@ -786,14 +835,13 @@ impl Controller {
             .await;
             match result {
                 Ok(connection) => {
-                    if !routes
+                    let admitted = routes
                         .recovery
                         .lock()
                         .expect("reach recovery")
-                        .register(device.clone(), connection.clone())
-                    {
-                        return;
-                    }
+                        .register(device.clone(), connection.clone());
+                    eprintln!("korrid: reach: {} stage=connection_established direction=outgoing peer={} path={} admitted={admitted} dial_ms={}", routes.diagnostics.stamp(),short_peer(&device),connection_path(&connection),started.elapsed().as_millis());
+                    if !admitted { return; }
                     if let Some(old) = routes
                         .live
                         .write()
@@ -813,7 +861,8 @@ impl Controller {
                     .with_directory(directory.clone());
                     let _ = client.session_status().await;
                 }
-                Err(_) => {
+                Err(error) => {
+                    eprintln!("korrid: reach: {} stage=connection_failed direction=outgoing peer={} path=unknown error_kind={:?} dial_ms={}", routes.diagnostics.stamp(),short_peer(&device),error.kind(),started.elapsed().as_millis());
                     routes
                         .recovery
                         .lock()
