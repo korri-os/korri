@@ -61,6 +61,7 @@ describe("useLaunchables plugin rows", () => {
   test("reads repositories on load and routes plugin changes and actions to korrid", async () => {
     const { client, calls } = fakePluginClient({
       pluginRepositories: () => ok(repositories({ userAdded: [RETRO] })),
+      pluginPublishers: () => ok({ entries: [] }),
       pluginCatalog: () => ok({ entries: retroCatalog }),
       inspectPlugin: () => ok(inspection),
       installPlugin: () => ok({}),

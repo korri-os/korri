@@ -58,11 +58,11 @@ export const checks = {
     "the cursor starts on the report's first line": async ({ canvas, expect }: CheckTools) => {
       const [first] = reportLines(canvas)
       if (first) moveTo(first)
-      expect(document.activeElement?.textContent).toBe("Warning: Plays sound over the network to paired speakers.")
+      expect(document.activeElement?.textContent).toBe("Publisher @ada, trusted on this device. Key ada-plugins-1 QWRh IHNh bXBs ZSBr.")
     },
     "down walks every line of the report, then reaches Turn on": async ({ canvas, expect }: CheckTools) => {
       for (const line of reportLines(canvas)) moveTo(line)
-      expect(document.activeElement?.textContent).toBe("Also uses PipeWire bridge. You approved it before.")
+      expect(document.activeElement?.textContent).toBe("Also uses PipeWire bridge from @korri (configured). You approved it before.")
       moveTo(canvas.getByRole("button", { name: "Turn on" }))
       expect(document.activeElement?.textContent).toBe("Turn on")
     },
@@ -283,6 +283,55 @@ export function PluginsOtherInstalled() {
 }
 export function PluginsManyRepositories() {
   return <Settings model={pluginModels.many} opening={[openGroup(pluginModels.many, "Plugins")]} />
+}
+// Publisher trust (ADR 0044): the next step after a check, its question, and
+// the Publishers list with Revoke.
+export function PluginsTrustNew() {
+  return <Settings model={pluginModels.trustNew} opening={[openGroup(pluginModels.trustNew, RETRO_GROUP)]} />
+}
+export function PluginsTrustNewQuestion() {
+  const model = pluginModels.trustNew
+  return <Settings model={model} opening={[openGroup(model, RETRO_GROUP), ...askRow(model, pluginIds.minerRow)]} />
+}
+export function PluginsTrusting() {
+  return <Settings model={pluginModels.trusting} opening={[openGroup(pluginModels.trusting, RETRO_GROUP)]} />
+}
+export function PluginsTrustRefused() {
+  return <Settings model={pluginModels.trustRefused} opening={[openGroup(pluginModels.trustRefused, RETRO_GROUP)]} />
+}
+export function PluginsKeyChanged() {
+  return <Settings model={pluginModels.keyChanged} opening={[openGroup(pluginModels.keyChanged, RETRO_GROUP)]} />
+}
+export function PluginsKeyChangedQuestion() {
+  const model = pluginModels.keyChanged
+  return <Settings model={model} opening={[openGroup(model, RETRO_GROUP), ...askRow(model, pluginIds.chiptuneRow)]} />
+}
+export function PluginsBringsNewPublisher() {
+  return <Settings model={pluginModels.bringsNew} opening={[openGroup(pluginModels.bringsNew, RETRO_GROUP)]} />
+}
+export function PluginsBringsNewQuestion() {
+  const model = pluginModels.bringsNew
+  return <Settings model={model} opening={[openGroup(model, RETRO_GROUP), ...askRow(model, pluginIds.chiptuneRow)]} />
+}
+export function PluginsUnsigned() {
+  return <Settings model={pluginModels.unsigned} opening={[openGroup(pluginModels.unsigned, RETRO_GROUP)]} />
+}
+export function PluginsUnsignedReport() {
+  const model = pluginModels.unsigned
+  return <Settings model={model} opening={[openGroup(model, RETRO_GROUP), ...askRow(model, pluginIds.ditherRow)]} />
+}
+export function PluginsPublishers() {
+  return <Settings model={pluginModels.publishers} opening={[openGroup(pluginModels.publishers, "Publishers")]} />
+}
+export function PluginsRevokeQuestion() {
+  const model = pluginModels.publishers
+  return <Settings model={model} opening={[openGroup(model, "Publishers"), ...askRow(model, pluginIds.adaPublisher)]} />
+}
+export function PluginsRevoking() {
+  return <Settings model={pluginModels.revoking} opening={[openGroup(pluginModels.revoking, "Publishers")]} />
+}
+export function PluginsManyPublishers() {
+  return <Settings model={pluginModels.many} opening={[openGroup(pluginModels.many, "Publishers")]} />
 }
 export function PluginsLongRepositoryName() {
   const model = pluginModels.many

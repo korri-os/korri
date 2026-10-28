@@ -7,6 +7,8 @@ import { formatBytes } from "./acquisition-gate"
 import {
   initialPluginFacts,
   inspectActionId,
+  isTrustedPublisher,
+  publishersToTrust,
   reviewActionId,
   reviewFor,
   reviewMessage,
@@ -204,7 +206,7 @@ export function newestRelease(facts: PluginFacts, pluginId: string): ReleaseTarg
   for (const [sourceUrl, catalog] of Object.entries(facts.catalogs)) {
     if (catalog._tag !== "Ready") continue
     for (const entry of catalog.entries) {
-      if (entry.pluginId === pluginId && entry.publisherTrusted) offers.push({ sourceUrl, pluginId, releaseVersion: entry.releaseVersion })
+      if (entry.pluginId === pluginId && isTrustedPublisher(entry.publisher)) offers.push({ sourceUrl, pluginId, releaseVersion: entry.releaseVersion })
     }
   }
   return offers.sort((a, b) => newerFirst(a.releaseVersion, b.releaseVersion))[0]
@@ -572,6 +574,13 @@ export function createSharedPlay(korrid: KorridClient, context: {
     if (!still(op, "Checking")) return
     const review = reviewFor(checked.facts, target)
     if (checked.failure !== undefined || review === undefined) { fail(checked.failure ?? `${title} could not be checked.`, "Install failed"); return }
+    // Trusting a key is Settings' question, asked with the key in view; this
+    // flow only approves installs whose publishers are trusted already.
+    const untrusted = publishersToTrust(review.report).map(publisher => publisher.namespace)
+    if (untrusted.length > 0) {
+      fail(`${review.report.title ?? title} needs you to trust ${untrusted.join(", ")} first. Check the key in Settings, under Plugins.`, "Install failed")
+      return
+    }
     const gameId = gameFacts(context.state(), invite.session.gameId).id
     dispatch({ _tag: "ReviewReady", op, target, facts: checked.facts, question: {
       _tag: "Confirm",
