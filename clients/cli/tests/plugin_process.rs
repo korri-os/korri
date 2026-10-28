@@ -308,8 +308,15 @@ fn plugin_publisher_owner_actions_keep_wire_responses_and_target_device() {
         Some(2)
     );
     let output = server.run(&["plugins", "trust", "@author", "--key", FP]);
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("full public key"));
+    let output = server.run(&["plugins", "trust", "@author", "--key", FP, "--json"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stderr).unwrap()["code"],
+        "Usage"
+    );
     server.done();
 }
 #[test]
@@ -721,4 +728,128 @@ fn plugin_publishers_human_output_names_bound_and_pinned_publishers_and_their_in
         }
         server.done();
     }
+}
+
+#[test]
+fn plugin_sideload_accepts_host_platform_names_and_any_architecture() {
+    let longest_platform = format!("{}-x", "a".repeat(62));
+    for platform in [
+        "x86_64-linux",
+        "aarch64-linux",
+        "any",
+        longest_platform.as_str(),
+    ] {
+        let tools = AuthorTools::new();
+        let bytes = b"archive";
+        fs::write(tools.root.path().join("archive.bytes"), bytes).unwrap();
+        let mut exchanges = upload_exchanges(bytes, false);
+        let response = ok("system.plugins.archive.inspect", inspection("Trusted"));
+        exchanges.push(exchange(
+            true,
+            "system.plugins.archive.inspect",
+            json!({"uploadId":"upload-1"}),
+            response.clone(),
+        ));
+        let server = Server::new(exchanges);
+        let output = tools
+            .cli()
+            .arg("--socket")
+            .arg(server.root.path().join("cli.sock"))
+            .args([
+                "plugins",
+                "sideload",
+                "--device",
+                "There",
+                "--platform",
+                platform,
+                "--json",
+            ])
+            .env("ARCHIVE_PLATFORM", platform)
+            .env("ARCHIVE_SHA256", format!("{:x}", Sha256::digest(bytes)))
+            .output()
+            .unwrap();
+        assert_json(output, &response, 0);
+        let calls = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
+        if platform == "any" {
+            assert!(!calls.contains(".#packages.any.default"));
+            assert!(calls.contains(".#packages.x86_64-linux.default"));
+        } else {
+            assert!(calls.contains(&format!(".#packages.{platform}.default")));
+        }
+        server.done();
+    }
+}
+
+#[test]
+fn plugin_sideload_rejects_invalid_platforms_before_running_author_tools() {
+    let too_long = format!("{}-x", "a".repeat(63));
+    for platform in [
+        "",
+        "x86_64",
+        "x86_64/linux",
+        "x86_64.linux",
+        "x86_64-linux\n",
+        "é-linux",
+        too_long.as_str(),
+    ] {
+        let tools = AuthorTools::new();
+        let server = Server::new(target());
+        let output = tools
+            .cli()
+            .arg("--socket")
+            .arg(server.root.path().join("cli.sock"))
+            .args([
+                "plugins",
+                "sideload",
+                "--device",
+                "There",
+                "--platform",
+                platform,
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{platform:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stderr).unwrap()["code"],
+            "Usage"
+        );
+        assert!(!tools.root.path().join("nix.calls").exists());
+        assert!(!tools.root.path().join("publisher.calls").exists());
+        server.done();
+    }
+}
+
+#[test]
+fn plugin_sideload_any_refuses_native_archives_before_upload() {
+    let tools = AuthorTools::new();
+    let bytes = b"archive";
+    fs::write(tools.root.path().join("archive.bytes"), bytes).unwrap();
+    let server = Server::new(target());
+    let output = tools
+        .cli()
+        .arg("--socket")
+        .arg(server.root.path().join("cli.sock"))
+        .args([
+            "plugins",
+            "sideload",
+            "--device",
+            "There",
+            "--platform",
+            "any",
+            "--json",
+        ])
+        .env("ARCHIVE_PLATFORM", "aarch64-linux")
+        .env("ARCHIVE_SHA256", format!("{:x}", Sha256::digest(bytes)))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    server.done();
 }
