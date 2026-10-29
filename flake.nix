@@ -143,11 +143,12 @@
                 Run isolated korrid and inputd development processes without host mutation.
             nix run .#korri-bundle-select -- COMMAND
                 Select or roll back one immutable Korri bundle without NixOS activation.
-            ${pluginHost.help}${slintSpike.help}${slintSpikePackage.help}'';
+            ${pluginHost.help}${slintSpike.help}${slintSpikePackage.help}${slintSpikeWebos.help}'';
         };
         # THROWAWAY SPIKE: native Slint inspector over real korrid (README there).
         slintSpike = import ./clients/slint-spike { inherit pkgs proseql; };
         slintSpikePackage = import ./clients/slint-spike/webos { inherit pkgs; };
+        slintSpikeWebos = import ./clients/slint-spike/webos.nix { inherit pkgs proseql; };
       in
       {
         apps =
@@ -155,6 +156,7 @@
           // cli.apps
           // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
             inputplumber.apps // pluginHost.apps // slintSpike.apps // slintSpikePackage.apps
+            // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 slintSpikeWebos.apps
           );
         devShells.default = import ./devshell.nix {
           inherit pkgs;
