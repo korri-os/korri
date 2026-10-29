@@ -85,6 +85,25 @@ def add_bytes(archive, name, data, mode=0o644):
     archive.addfile(member, io.BytesIO(data))
 
 
+def write_ipk(destination, directory):
+    # Moonlight and accepted Lightkeeper use System V headers without GNU's
+    # trailing name slash, and include the regular-file bits in the mode.
+    # GNU ar's normalized listing hides these differences from old extractors.
+    with destination.open('xb') as output:
+        output.write(b'!<arch>\n')
+        for name in ('debian-binary', 'control.tar.gz', 'data.tar.gz'):
+            content = (directory / name).read_bytes()
+            header = (name.encode('ascii').ljust(16) + b'0'.ljust(12) +
+                      b'0'.ljust(6) + b'0'.ljust(6) + b'100644'.ljust(8) +
+                      str(len(content)).encode('ascii').ljust(10) + b'`\n')
+            if len(header) != 60:
+                raise ValueError('archive member exceeds the native header bounds')
+            output.write(header)
+            output.write(content)
+            if len(content) % 2:
+                output.write(b'\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('binary', type=pathlib.Path)
@@ -134,8 +153,7 @@ def main():
                    'webOS-Package-Format-Version: 2\nwebOS-Packager-Version: x.y.x\n')
         with tarfile.open(work / 'control.tar.gz', 'w:gz', format=tarfile.GNU_FORMAT) as archive:
             add_bytes(archive, 'control', control.encode())
-        subprocess.run(['ar', 'rcD', str(ipk), 'debian-binary', 'control.tar.gz', 'data.tar.gz'],
-                       cwd=work, check=True, capture_output=True)
+        write_ipk(ipk, work)
     # Provenance stays beside the package, outside the application's runtime data.
     digest = hashlib.sha256(ipk.read_bytes()).hexdigest()
     (target / (ipk.name + '.sha256')).write_text(digest + '  ' + ipk.name + '\n')
