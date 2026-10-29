@@ -17,6 +17,22 @@ let
     fontconfig.lib
     freetype
   ];
+  # SDL runtimes for the `webos` feature's workstation checks. The binary
+  # dlopens libSDL2-2.0.so.0; LD_LIBRARY_PATH chooses which one.
+  sdl204 = import ./sdl204.nix { inherit pkgs; };
+  # SDL 2.0.4's X11 driver dlopens these by soname; GL comes from libglvnd.
+  sdlX11Libraries = with pkgs; [
+    libxext
+    libxrender
+    libxfixes
+    libGL
+  ];
+  sdlEnvironment = ''
+    export SDL_COMPAT_LIB="${lib.getLib pkgs.SDL2}/lib"
+    export SDL_204_LIB="${sdl204}/lib"
+    export SDL_204_SOURCE="${sdl204.src}"
+    export LD_LIBRARY_PATH="${lib.makeLibraryPath sdlX11Libraries}:$LD_LIBRARY_PATH"
+  '';
   # Build-time native inputs: the linker, bindgen for rquickjs, and
   # pkg-config for yeslogic-fontconfig-sys (Slint system fonts).
   pkgConfigPath = lib.makeSearchPathOutput "dev" "lib/pkgconfig" [
@@ -86,7 +102,15 @@ in
     nix run .#slint-spike-check
         Spike fmt, clippy, unit tests, and the Xvfb self-test under a network-syscall audit.
     nix run .#slint-spike-proof -- OUTPUT_DIR
-        Spike screenshots of the real X11 window under Xvfb at the size ladder.'';
+        Spike screenshots of the real X11 window under Xvfb at the size ladder.
+    nix run .#slint-spike-sdl -- [--windowed=WxH]
+        THROWAWAY webOS experiment: the same window through the SDL adapter (upstream SDL 2.0.4).
+    nix run .#slint-spike-sdl-build
+        Build the SDL build and its tests (x86_64 workstation).
+    nix run .#slint-spike-sdl-check
+        SDL build: clippy, tests, SDL 2.0.4 ABI names, root refusal, Xvfb self-tests.
+    nix run .#slint-spike-sdl-proof -- OUTPUT_DIR
+        SDL build screenshots under Xvfb, driven by arrow keys, Return, Escape and a click.'';
 
   apps = {
     slint-spike-build = makeApp {
@@ -115,6 +139,56 @@ in
       ];
       script = ''
         exec bash "$crate/check.sh"
+      '';
+    };
+    slint-spike-sdl-build = makeApp {
+      name = "slint-spike-sdl-build";
+      description = "Build the SDL build of the spike and its tests without running them.";
+      script = ''
+        cargo build --locked --manifest-path "$crate/Cargo.toml" --no-default-features --features webos --all-targets
+        exec cargo test --locked --manifest-path "$crate/Cargo.toml" --no-default-features --features webos --no-run
+      '';
+    };
+    slint-spike-sdl = makeApp {
+      name = "slint-spike-sdl";
+      description = "Run the inspector through the SDL adapter over upstream SDL 2.0.4.";
+      script = ''
+        ${sdlEnvironment}
+        export LD_LIBRARY_PATH="$SDL_204_LIB:$LD_LIBRARY_PATH"
+        exec cargo run --locked --manifest-path "$crate/Cargo.toml" --no-default-features --features webos -- "$@"
+      '';
+    };
+    slint-spike-sdl-check = makeApp {
+      name = "slint-spike-sdl-check";
+      description = "Check the SDL build of the spike.";
+      extraInputs = [
+        pkgs.xvfb-run
+        pkgs.xorg-server
+        pkgs.strace
+        pkgs.gnugrep
+        pkgs.gawk
+        pkgs.gnutar
+        pkgs.gzip
+        pkgs.binutils
+        pkgs.util-linux
+      ];
+      script = ''
+        ${sdlEnvironment}
+        exec bash "$crate/sdl-check.sh"
+      '';
+    };
+    slint-spike-sdl-proof = makeApp {
+      name = "slint-spike-sdl-proof";
+      description = "Screenshot the SDL window under Xvfb.";
+      extraInputs = [
+        pkgs.xorg-server
+        pkgs.xdotool
+        pkgs.imagemagick
+        pkgs.gnugrep
+      ];
+      script = ''
+        ${sdlEnvironment}
+        exec bash "$crate/sdl-proof.sh" "$@"
       '';
     };
     slint-spike-proof = makeApp {

@@ -3560,6 +3560,8 @@ dependencies = [
 name = "korri-slint-spike"
 version = "0.0.0"
 dependencies = [
+ "fontique",
+ "i-slint-core",
  "korrid",
  "libc",
  "reqwest 0.12.28",

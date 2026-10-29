@@ -3,6 +3,15 @@
 
 mod brain;
 mod report;
+#[cfg(feature = "webos")]
+mod sdl;
+
+#[cfg(all(feature = "webos", feature = "desktop-x11"))]
+compile_error!(
+    "choose one window system: --no-default-features --features webos, or the default desktop-x11"
+);
+#[cfg(not(any(feature = "webos", feature = "desktop-x11")))]
+compile_error!("no window system: enable desktop-x11 (default) or webos");
 
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
@@ -27,6 +36,7 @@ enum Mode {
     ProofOffline,
 }
 
+#[cfg(not(feature = "webos"))]
 fn parse_mode() -> Result<Mode, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args
@@ -45,11 +55,76 @@ fn parse_mode() -> Result<Mode, String> {
     }
 }
 
+/// SDL build. The same modes, plus `--windowed=WIDTHxHEIGHT` for the
+/// workstation check. webOS's application manager may append one launch
+/// parameter: a JSON object (Moonlight TV `app_handle_launch` reads `argv[1]`
+/// that way). This build defines no launch parameters, so such an object is
+/// parsed, counted and dropped; its contents are never printed or kept.
+#[cfg(feature = "webos")]
+fn parse_mode() -> Result<(Mode, sdl::Placement), String> {
+    const USAGE: &str =
+        "usage: korri-slint-spike [--self-test | --proof-failure=unauthorized|offline] \
+                         [--windowed=WIDTHxHEIGHT] | [one webOS launch JSON object]";
+    /// Bound on a launch parameter; the inspector needs none.
+    const LAUNCH_PARAMETER_LIMIT: usize = 16 * 1024;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let [only] = args.as_slice() {
+        if only.starts_with('{') {
+            if only.len() > LAUNCH_PARAMETER_LIMIT {
+                return Err(format!(
+                    "launch parameter longer than {LAUNCH_PARAMETER_LIMIT} bytes"
+                ));
+            }
+            return match serde_json::from_str::<serde_json::Value>(only) {
+                Ok(serde_json::Value::Object(fields)) => {
+                    println!(
+                        "launch parameter: JSON object with {} field(s), ignored",
+                        fields.len()
+                    );
+                    Ok((Mode::Window, sdl::Placement::Fullscreen))
+                }
+                _ => Err("launch parameter is not a JSON object".into()),
+            };
+        }
+    }
+    let mut mode = None;
+    let mut placement = None;
+    for arg in &args {
+        let duplicate = match arg.as_str() {
+            "--self-test" => mode.replace(Mode::SelfTest).is_some(),
+            "--proof-failure=unauthorized" => mode.replace(Mode::ProofUnauthorized).is_some(),
+            "--proof-failure=offline" => mode.replace(Mode::ProofOffline).is_some(),
+            other => {
+                let Some((width, height)) = other
+                    .strip_prefix("--windowed=")
+                    .and_then(|size| size.split_once('x'))
+                    .and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)))
+                    .filter(|(w, h)| (64..=8192).contains(w) && (64..=8192).contains(h))
+                else {
+                    return Err(USAGE.into());
+                };
+                placement
+                    .replace(sdl::Placement::Windowed { width, height })
+                    .is_some()
+            }
+        };
+        if duplicate {
+            return Err(USAGE.into());
+        }
+    }
+    Ok((
+        mode.unwrap_or(Mode::Window),
+        placement.unwrap_or(sdl::Placement::Fullscreen),
+    ))
+}
+
 fn main() -> ExitCode {
     // Block SIGINT/SIGTERM before any thread exists, so every thread inherits
     // the mask and one waiter can quit the event loop. The scratch directories
     // then go through the normal shutdown instead of being left behind.
     let signals = block_termination_signals();
+    #[cfg(feature = "webos")]
+    sdl::prepare_environment();
     // As in clients/linux: no core dump may carry the in-memory capability.
     let no_core = libc::rlimit {
         rlim_cur: 0,
@@ -60,6 +135,7 @@ fn main() -> ExitCode {
         eprintln!("refusing to start: could not disable core dumps");
         return ExitCode::from(2);
     }
+    #[cfg(not(feature = "webos"))]
     let mode = match parse_mode() {
         Ok(mode) => mode,
         Err(usage) => {
@@ -67,6 +143,22 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    #[cfg(feature = "webos")]
+    let (mode, placement) = match parse_mode() {
+        Ok(parsed) => parsed,
+        Err(usage) => {
+            eprintln!("{usage}");
+            return ExitCode::from(2);
+        }
+    };
+    // The TV build must not run Korri with root privileges, whatever user
+    // the launcher picks. Fail closed before korrid or SDL starts.
+    #[cfg(feature = "webos")]
+    // SAFETY: geteuid has no preconditions.
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("refusing to start: effective user is root");
+        return ExitCode::from(2);
+    }
     let inherited = brain::inherited_korri_environment();
     if !inherited.is_empty() {
         eprintln!(
@@ -75,6 +167,12 @@ fn main() -> ExitCode {
             inherited.join(", ")
         );
         return ExitCode::from(2);
+    }
+
+    #[cfg(feature = "webos")]
+    if let Err(error) = sdl::install("Korri diagnostics", placement) {
+        eprintln!("could not open the SDL window: {error}");
+        return ExitCode::FAILURE;
     }
 
     let mut brain = match Brain::start() {

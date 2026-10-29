@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# THROWAWAY SPIKE check for the SDL build (`--no-default-features --features
+# webos`). Run through `nix run .#slint-spike-sdl-check`, which sets KORRI_ROOT,
+# CARGO_TARGET_DIR, the toolchain, SDL_COMPAT_LIB, SDL_204_LIB and
+# SDL_204_SOURCE.
+set -euo pipefail
+crate="$KORRI_ROOT/clients/slint-spike"
+manifest="$crate/Cargo.toml"
+features=(--no-default-features --features webos)
+spike="$CARGO_TARGET_DIR/debug/korri-slint-spike"
+
+scratch_root="$(mktemp -d)"
+audit="$(mktemp -d)"
+trap 'rm -rf "$scratch_root" "$audit"' EXIT
+
+echo "== fmt"
+cargo fmt --manifest-path "$manifest" --check
+echo "== clippy (webos feature)"
+cargo clippy --locked --manifest-path "$manifest" "${features[@]}" --all-targets -- -D warnings
+echo "== unit tests (webos feature: state mapping, layout plan, key translation)"
+cargo test --locked --manifest-path "$manifest" "${features[@]}"
+echo "== build (webos feature)"
+cargo build --locked --manifest-path "$manifest" "${features[@]}"
+
+echo "== SDL 2.0.4 ABI: every bound function is in 2.0.4's export list"
+tar -xzOf "$SDL_204_SOURCE" SDL2-2.0.4/src/dynapi/SDL_dynapi_procs.h \
+  | grep -o 'SDL_DYNAPI_PROC([^,]*,SDL_[A-Za-z0-9_]*' | sed 's/.*,//' | sort -u >"$audit/exports"
+sed -n '/^sdl_functions! {/,/^}/p' "$crate/src/sdl/ffi.rs" \
+  | grep -o '^    SDL_[A-Za-z0-9_]*' | tr -d ' ' | sort -u >"$audit/bound"
+missing="$(comm -23 "$audit/bound" "$audit/exports")"
+if [[ -n "$missing" ]]; then
+  echo "FAIL: not exported by SDL 2.0.4: $missing" >&2
+  exit 1
+fi
+echo "  ok   $(wc -l <"$audit/bound") functions, all in SDL 2.0.4"
+
+echo "== links no SDL, X11, fontconfig or Wayland library"
+needed="$(readelf -d "$spike" | grep NEEDED | sed 's/.*\[\(.*\)\]/\1/' | sort | tr '\n' ' ')"
+echo "  NEEDED: $needed"
+if grep -Eq 'SDL|X11|xcb|fontconfig|wayland|freetype' <<<"$needed"; then
+  echo "FAIL: the SDL build links a window-system or font library" >&2
+  exit 1
+fi
+
+echo "== refuses an effective root user (user namespace, uid 0 mapped)"
+set +e
+refusal="$(TMPDIR="$scratch_root" unshare --user --map-root-user "$spike" --windowed=640x360 2>&1)"
+status=$?
+set -e
+if [[ $status -ne 2 || "$refusal" != *"effective user is root"* ]]; then
+  echo "FAIL: root was not refused ($status): $refusal" >&2
+  exit 1
+fi
+echo "  ok   euid 0 refused before korrid or SDL starts"
+
+echo "== launch parameter handling (never echoed)"
+for bad in '[1,2]' '{"broken"' "{\"x\":\"$(head -c 17000 /dev/zero | tr '\0' a)\"}"; do
+  set +e
+  out="$(TMPDIR="$scratch_root" "$spike" "$bad" 2>&1)"
+  status=$?
+  set -e
+  if [[ $status -ne 2 || "$out" == *broken* || "$out" == *aaaa* ]]; then
+    echo "FAIL: bad launch parameter accepted or echoed ($status)" >&2
+    exit 1
+  fi
+done
+for bad in --windowed=10x10 --windowed=640 '--self-test --self-test' --unknown; do
+  set +e
+  # shellcheck disable=SC2086
+  TMPDIR="$scratch_root" "$spike" $bad >/dev/null 2>&1
+  status=$?
+  set -e
+  [[ $status -eq 2 ]] || { echo "FAIL: '$bad' was not a usage error" >&2; exit 1; }
+done
+echo "  ok   non-object, unterminated and oversized JSON refused; bad flags refused"
+
+summarize='
+  { family = "other" }
+  /sa_family=AF_INET6/ { family = ($0 ~ /"::1"/) ? "AF_INET6 loopback" : "AF_INET6 OUTSIDE" }
+  /sa_family=AF_INET[,}]/ { family = ($0 ~ /inet_addr\("127\.0\.0\.1"\)/) ? "AF_INET loopback" : "AF_INET OUTSIDE" }
+  /sa_family=AF_UNIX/ { family = "AF_UNIX" }
+  /sa_family=AF_NETLINK/ { family = "AF_NETLINK" }
+  /connect\(/ { count[family]++ }
+  END { for (f in count) print f, count[f] }'
+
+self_test() {
+  local label="$1" library_dir="$2"
+  echo "== Xvfb self-test over SDL ($label): real korrid, Refresh callback, auth probes"
+  rm -f "$audit/families"
+  TMPDIR="$scratch_root" LD_LIBRARY_PATH="$library_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
+    strace -f -qq -s 0 -e trace=connect -o "|awk '$summarize' > '$audit/families'" \
+    "$spike" --self-test --windowed=1920x1080 | tee "$audit/run.log"
+  grep -q '^SELF-TEST PASS$' "$audit/run.log"
+  grep -q '^sdl: runtime ' "$audit/run.log"
+  grep -q 'screen saver allowed: true' "$audit/run.log" \
+    || { echo "FAIL: SDL suppressed the screen saver" >&2; exit 1; }
+  sort "$audit/families" | sed 's/^/  /'
+  if grep -q OUTSIDE "$audit/families"; then
+    echo "FAIL: connect(2) to an IP address outside loopback" >&2
+    exit 1
+  fi
+  echo "  ok   every IP connect(2) went to 127.0.0.1 or ::1"
+}
+self_test "upstream SDL 2.0.4" "$SDL_204_LIB"
+self_test "nixpkgs sdl2-compat" "$SDL_COMPAT_LIB"
+
+echo "== launch JSON object starts the normal window; SIGTERM shuts down cleanly"
+log="$audit/launch.log"
+# Own Xvfb with -displayfd: xvfb-run -a can race the previous server's exit.
+exec 3<>"$audit/displayfd"
+Xvfb -displayfd 3 -screen 0 1280x720x24 -nolisten tcp >"$audit/xvfb.log" 2>&1 &
+xvfb=$!
+display=""
+for _ in $(seq 100); do
+  display="$(head -n1 "$audit/displayfd" 2>/dev/null || true)"
+  [[ -n "$display" ]] && break
+  sleep 0.05
+done
+[[ -n "$display" ]] || { echo "FAIL: Xvfb did not start" >&2; exit 1; }
+DISPLAY=":$display" TMPDIR="$scratch_root" LD_LIBRARY_PATH="$SDL_204_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  "$spike" '{"secretish":"never-printed"}' >"$log" 2>&1 &
+runner=$!
+for _ in $(seq 400); do grep -q 'refresh 1 complete' "$log" && break; sleep 0.05; done
+grep -q 'refresh 1 complete' "$log" || { cat "$log" >&2; kill "$runner" "$xvfb"; echo "FAIL: no first refresh" >&2; exit 1; }
+kill -TERM "$runner"
+wait "$runner"
+kill "$xvfb"
+grep -q 'sdl: display 0 desktop mode 1280x720' "$log"
+grep -q 'launch parameter: JSON object with 1 field(s), ignored' "$log"
+grep -q 'korrid stopped; scratch storage removed' "$log"
+if grep -q never-printed "$log"; then echo "FAIL: launch parameter echoed" >&2; exit 1; fi
+echo "  ok   fullscreen window, first refresh, SIGTERM, scratch removed, value not printed"
+
+echo "== scratch storage removed"
+if compgen -G "$scratch_root/korri-slint-spike-*" >/dev/null; then
+  echo "FAIL: this run's scratch directories remain" >&2
+  exit 1
+fi
+echo "  ok   no korri-slint-spike-* directory remains"
+echo "SLINT SPIKE SDL CHECK PASS"

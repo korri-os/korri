@@ -1,6 +1,9 @@
 // THROWAWAY SPIKE. One window, props in, two callbacks out.
 // Nothing here reads state: Rust derives one `Report` and sets it.
 import { ScrollView } from "std-widgets.slint";
+// Embedded so text renders where no system font exists (the LG TV build).
+// Provenance and licence: ui/fonts/README.md.
+import "fonts/Inter-VariableFont.ttf";
 
 export enum Tone { checking, healthy, partial, failed }
 export struct Fact { label: string, value: string, unbroken: bool }
@@ -154,6 +157,7 @@ component ListSection inherits Section {
 
 export component InspectorWindow inherits Window {
     title: "Korri diagnostics";
+    default-font-family: "Inter";
     preferred-width: 1180px;
     preferred-height: 760px;
     min-width: 300px;
