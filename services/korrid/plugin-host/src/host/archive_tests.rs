@@ -22,6 +22,109 @@ fn run(nix: &Path, args: &[&str]) -> String {
     String::from_utf8(result.stdout).unwrap().trim().to_owned()
 }
 
+/// Cleanup is deliberately independent of fixture assertions. Failed runs must
+/// not poison the next run, or turn a cleanup error into a second panic.
+fn cleanup_fixture_store(nix: &Path, run_id: &str) {
+    let listed = Command::new(nix)
+        .args([
+            "--extra-experimental-features",
+            "nix-command",
+            "path-info",
+            "--all",
+        ])
+        .output();
+    let output = match listed {
+        Ok(output) if output.status.success() => output,
+        other => {
+            eprintln!("slim fixture {run_id}: cannot list stale outputs: {other:?}");
+            return;
+        }
+    };
+    let paths: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|path| {
+            Path::new(path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains(run_id))
+        })
+        .map(str::to_owned)
+        .collect();
+    cleanup_fixture_paths(nix, run_id, &paths);
+}
+
+fn cleanup_fixture_paths(nix: &Path, run_id: &str, paths: &[String]) {
+    if paths.is_empty() {
+        return;
+    }
+    match Command::new(nix)
+        .args([
+            "--extra-experimental-features",
+            "nix-command",
+            "store",
+            "delete",
+        ])
+        .args(paths)
+        .output()
+    {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => eprintln!(
+            "slim fixture {run_id}: best-effort store cleanup failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ),
+        Err(error) => eprintln!("slim fixture {run_id}: best-effort store cleanup failed: {error}"),
+    }
+}
+
+struct FixtureRun {
+    directory: Option<tempfile::TempDir>,
+    nix: PathBuf,
+    id: String,
+}
+impl FixtureRun {
+    fn new(nix: &Path) -> Self {
+        use ring::rand::{SecureRandom, SystemRandom};
+        let mut bytes = [0u8; 16];
+        SystemRandom::new().fill(&mut bytes).unwrap();
+        let id = format!("{:032x}", u128::from_be_bytes(bytes));
+        let directory = tempfile::Builder::new()
+            .prefix(&format!("korri-slim-{id}-"))
+            .tempdir()
+            .unwrap();
+        Self {
+            directory: Some(directory),
+            nix: nix.to_owned(),
+            id,
+        }
+    }
+    fn directory(&self) -> &tempfile::TempDir {
+        self.directory.as_ref().unwrap()
+    }
+}
+impl Drop for FixtureRun {
+    fn drop(&mut self) {
+        // Every Host::for_test, selection and candidate root lives below this
+        // directory. Unlink those roots before asking Nix to delete outputs.
+        if let Some(directory) = self.directory.take() {
+            if let Err(error) = directory.close() {
+                eprintln!("slim fixture {}: removing roots failed: {error}", self.id);
+            }
+        }
+        cleanup_fixture_store(&self.nix, &self.id);
+    }
+}
+
+#[test]
+fn stale_fixture_cleanup_is_best_effort() {
+    let directory = tempfile::tempdir().unwrap();
+    let nix = directory.path().join("nix");
+    fs::write(&nix, "#!/bin/sh\ncase \" $* \" in *\" path-info --all \"*) echo /nix/store/00000000000000000000000000000000-stale-fixture-run;; *) echo 'still alive' >&2; exit 1;; esac\n").unwrap();
+    fs::set_permissions(&nix, fs::Permissions::from_mode(0o755)).unwrap();
+    cleanup_fixture_store(&nix, "stale-fixture-run");
+    fs::write(&nix, "#!/bin/sh\nexit 1\n").unwrap();
+    cleanup_fixture_store(&nix, "stale-fixture-run");
+}
+
 /// Publish different, valid NAR bytes under an input-addressed name, signed by
 /// the attacker. Nix still produces the NAR and parses the resulting metadata.
 fn forge_cache_path(nix: &Path, cache: &Path, target: &str, alternate: &str, secret: &Path) {
@@ -76,7 +179,9 @@ fn forge_cache_path(nix: &Path, cache: &Path, target: &str, alternate: &str, sec
 fn slim_real_nix_publish_install_security_and_offline() {
     let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
     let helper = PathBuf::from(std::env::var_os("KORRI_TEST_TRUE").expect("immutable coreutils"));
-    let root = tempfile::tempdir().unwrap();
+    let fixture = FixtureRun::new(&nix);
+    let root = fixture.directory();
+    let run_id = &fixture.id;
     let secret = run(
         &nix,
         &["key", "generate-secret", "--key-name", "slim-publisher"],
@@ -93,7 +198,7 @@ fn slim_real_nix_publish_install_security_and_offline() {
     fs::write(&upstream_secret, secret).unwrap();
     // An immutable tool binding supplies this test cache's independent normal
     // trusted key. Explicit per-invocation keys in the importer still override it.
-    let tools = root.path().join("tools");
+    let tools = root.path().join(format!("tools-{run_id}"));
     fs::create_dir(&tools).unwrap();
     let script = tools.join("nix");
     fs::write(
@@ -110,7 +215,7 @@ fn slim_real_nix_publish_install_security_and_offline() {
     std::os::unix::fs::symlink(nix.with_file_name("nix-store"), tools.join("nix-store")).unwrap();
     let bound_nix = PathBuf::from(run(&nix, &["store", "add-path", tools.to_str().unwrap()]));
     let nix = bound_nix.join("nix");
-    let shared_source = root.path().join("shared");
+    let shared_source = root.path().join(format!("shared-{run_id}"));
     fs::write(&shared_source, format!("shared {}", root.path().display())).unwrap();
     let shared = run(
         &nix,
@@ -129,13 +234,13 @@ fn slim_real_nix_publish_install_security_and_offline() {
     let upstream_cache = root.path().join("upstream");
     let upstream_uri = format!("file://{}", upstream_cache.display());
     run(&nix, &["copy", "--to", &upstream_uri, &shared]);
-    let source = root.path().join("source");
+    let source = root.path().join(format!("source-{run_id}"));
     fs::create_dir(&source).unwrap();
     fs::write(source.join("plugin.ts"), "export const name = 'native';").unwrap();
     fs::write(source.join("manifest.json"), serde_json::json!({"publisher":{"namespace":"@slim"},"entry":"plugin.ts","sources":["plugin.ts"],"packages":{"shared":shared}}).to_string()).unwrap();
     let source_path = run(&nix, &["store", "add-path", source.to_str().unwrap()]);
     let shell = fs::canonicalize("/bin/sh").unwrap();
-    let expression = format!("derivation {{ name = \"slim-{}\"; system = \"{}\"; builder = \"{}\"; args = [\"-c\" \"{} -R $source $out\"]; source = builtins.storePath \"{}\"; shared = builtins.storePath \"{}\"; }}", root.path().file_name().unwrap().to_str().unwrap(), current_platform(), shell.display(), helper.with_file_name("cp").display(), source_path, shared);
+    let expression = format!("derivation {{ name = \"slim-native-{}\"; system = \"{}\"; builder = \"{}\"; args = [\"-c\" \"{} -R $source $out\"]; source = builtins.storePath \"{}\"; shared = builtins.storePath \"{}\"; }}", run_id, current_platform(), shell.display(), helper.with_file_name("cp").display(), source_path, shared);
     let outputs = run(
         &nix,
         &[
@@ -297,7 +402,7 @@ fn slim_real_nix_publish_install_security_and_offline() {
     );
     // The attack has different NAR bytes, not merely a different signature
     // on the actual upstream bytes. Its signature is a valid publisher one.
-    let forged_source = root.path().join("forged-shared");
+    let forged_source = root.path().join(format!("forged-shared-{run_id}"));
     fs::write(&forged_source, "not the upstream shared package").unwrap();
     let alternate = run(
         &nix,
@@ -429,7 +534,7 @@ fn slim_real_nix_publish_install_security_and_offline() {
             package.to_str().unwrap(),
         ],
     );
-    let parent_source = root.path().join("parent-source");
+    let parent_source = root.path().join(format!("parent-source-{run_id}"));
     fs::create_dir(&parent_source).unwrap();
     fs::write(
         parent_source.join("plugin.ts"),
@@ -442,6 +547,10 @@ fn slim_real_nix_publish_install_security_and_offline() {
         &["store", "add-path", parent_source.to_str().unwrap()],
     );
     let parent_expression = expression
+        .replace(
+            &format!("slim-native-{run_id}"),
+            &format!("slim-parent-{run_id}"),
+        )
         .replace(&source_path, &parent_source_path)
         .replace(&shared, package.to_str().unwrap());
     let built = run(
@@ -607,6 +716,12 @@ fn slim_real_nix_publish_install_security_and_offline() {
     offline.selection("@slim:pack").remove().unwrap();
     offline.selection("@slim:native").remove().unwrap();
     drop(offline);
+    if let Err(error) = fs::remove_dir_all(&directory) {
+        eprintln!("slim fixture {run_id}: removing pack roots failed: {error}");
+    }
+    // The CA pack refers to the canonical native output used below. Remove
+    // this run's pack first, even when none of its selection roots remain.
+    cleanup_fixture_paths(&nix, run_id, &[offline_parent.ca_store_path]);
     run(&nix, &["store", "delete", parent.to_str().unwrap()]);
     // A second publisher cannot adopt an existing input-addressed output,
     // even when its archive has a valid signature for those same bytes.
@@ -740,7 +855,7 @@ fn slim_real_nix_publish_install_security_and_offline() {
             .unwrap();
         host.selection("@slim:native").remove().unwrap();
     }
-    let source = root.path().join("source-only");
+    let source = root.path().join(format!("source-only-{run_id}"));
     fs::create_dir(&source).unwrap();
     fs::write(source.join("plugin.ts"), "export const name = 'source';").unwrap();
     fs::write(
