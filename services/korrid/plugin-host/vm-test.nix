@@ -438,6 +438,9 @@ let
   # A test-only signing identity. This key grants no authority outside this VM.
   key = pkgs.writeText "plugin-test-cache-key" "korri-plugin-test:XMn+6POJ5fj568Beg6v8OLo4wMcNKehDPxH+7bUrt0Svsk3i8ixelBTno9/D1z0UPghq8N+uzEcf+5dLDFa9JQ==";
   publicKey = "korri-plugin-test:r7JN4vIsXpQU56Pfw9c9FD4IavDfrsxHH/uXSwxWvSU=";
+  # Independent test-only upstream identity. It grants authority only in these VMs.
+  upstreamKey = pkgs.writeText "plugin-test-upstream-key" "archive-vm-upstream:WXosrm/68rs1BCLwDsXUPwOL9HEyGEVm2ZDeCbB5I1MaXSiVsPEq0+KsiDXKqdWEhvhT2o/jA6qxhQyy31PZww==";
+  upstreamPublicKey = "archive-vm-upstream:Gl0olbDxKtPirIg1yqnVhIb4U9qP4wOqsYUMst9T2cM=";
 in
 pkgs.testers.runNixOSTest {
   name = "korri-runtime-plugin-host";
@@ -446,9 +449,11 @@ pkgs.testers.runNixOSTest {
   includeTestScriptReferences = false;
   nodes = {
     cache =
-      { lib, ... }:
+      { lib, nodes, ... }:
       {
         imports = [ hostModule ];
+        networking.hosts.${nodes.cache.networking.primaryIPAddress} = [ "cache.nixos.org" ];
+        nix.settings.trusted-public-keys = [ upstreamPublicKey ];
         # This node now also installs the SSH plugin for the coexistence gate.
         # Like the cold client, it must use only the real isolated test cache.
         nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
@@ -565,8 +570,10 @@ pkgs.testers.runNixOSTest {
         virtualisation.memorySize = 1536;
       };
     machine =
-      { lib, ... }:
+      { lib, nodes, ... }:
       {
+        networking.hosts.${nodes.cache.networking.primaryIPAddress} = [ "cache.nixos.org" ];
+        nix.settings.trusted-public-keys = [ upstreamPublicKey ];
         imports = [
           hostModule
           (import ../nixos-module.nix {
@@ -1286,16 +1293,10 @@ pkgs.testers.runNixOSTest {
     # Slim archives use exactly the production upstream address. This isolated
     # TLS server has its own key, unrelated to the plugin publisher. Neither VM
     # contacts the public cache or builds a package.
-    cache_ip = cache.succeed("getent ahostsv4 cache | head -1 | cut -d' ' -f1").strip()
-    for node in [cache, machine]:
-        node.succeed("printf '%s\\n' " + shlex.quote(cache_ip + " cache.nixos.org") + " >> /etc/hosts")
-    cache.succeed("mkdir -p /var/www/upstream; nix-store --generate-binary-cache-key archive-upstream /tmp/archive-upstream.key /tmp/archive-upstream.pub")
-    archive_upstream_key = cache.succeed("cat /tmp/archive-upstream.pub").strip()
-    for node in [cache, machine]:
-        node.succeed("printf '%s\\n' " + shlex.quote("extra-trusted-public-keys = " + archive_upstream_key) + " >> /etc/nix/nix.conf")
+    cache.succeed("mkdir -p /var/www/upstream")
     repository_packages = ["${tailscalePackage}", "${updated}", "${broken}", "${interrupted}"]
     shared_paths = sorted(set(cache.succeed("nix --extra-experimental-features nix-command path-info --recursive " + " ".join(repository_packages)).split()) - set(repository_packages))
-    cache.succeed("nix --extra-experimental-features nix-command store sign --key-file /tmp/archive-upstream.key " + " ".join(shared_paths))
+    cache.succeed("nix --extra-experimental-features nix-command store sign --key-file ${upstreamKey} " + " ".join(shared_paths))
     cache.succeed("nix --extra-experimental-features nix-command copy --no-recursive --to 'file:///var/www/upstream?compression=xz' " + " ".join(shared_paths))
     cache.wait_for_unit("nginx.service")
     machine.succeed("curl --fail --silent https://cache.nixos.org/nix-cache-info")

@@ -59,6 +59,13 @@ For each path outside separately verified required-plugin closures:
   substituter is allowed. Missing shared paths require network access or a
   self-contained archive.
 
+A required plugin's closure is excluded only after the same independent checks.
+Fresh config-bound exact requirements keep RawCache provenance, but acquisition
+on behalf of an archive uses the requirement's own key and the upstream-only
+shared path route. A cache copy signed only by the publisher cannot stand in for
+upstream authority.
+Ordinary explicit raw-cache commands are unchanged by this archive rule.
+
 Measured archive hashes, NAR hashes and sizes, immutable source, native policy
 and exact owner approval remain mandatory.
 

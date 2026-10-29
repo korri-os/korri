@@ -518,8 +518,9 @@ impl Host {
                 self.acquire_exact_for_slim(
                     config,
                     record.map(|(source, _)| source),
-                    &cache_uri,
+                    Some(&cache_uri),
                     &required,
+                    &package,
                 )?;
                 excluded.extend(
                     package::StoreSnapshot::query(&self.nix, &[&required])?.closure(&required)?,
@@ -528,11 +529,8 @@ impl Host {
             if excluded.contains(&package) {
                 return Err("required plugin closure contains its parent".into());
             }
-            let mut upstream = crate::slim::Upstream::new(&self.nix, config)?;
-            #[cfg(test)]
-            if let Some(cache) = &self.archive_upstream {
-                upstream = crate::slim::Upstream::file(&self.nix, cache);
-            }
+            storage::root_link(&self.paths.roots.join("download"), &package)?;
+            let mut upstream = self.shared_cache(config)?;
             crate::slim::import(&self.nix, &cache, &package, key, &mut upstream, &excluded)?;
             if package::manifest_namespace(&package)? != namespace {
                 return Err("import changed the publisher namespace".into());
@@ -602,47 +600,176 @@ impl Host {
         Ok(package)
     }
 
-    /// Exact required plugins establish their own publisher authority before
-    /// their closures can be excluded from the parent's slim signature scope.
+    fn shared_cache(&self, config: &Configuration) -> Result<crate::slim::Upstream, Refusal> {
+        #[cfg(test)]
+        if let Some(cache) = &self.archive_upstream {
+            return Ok(crate::slim::Upstream::file(&self.nix, cache));
+        }
+        crate::slim::Upstream::new(&self.nix, config).map_err(Refusal::from)
+    }
+
+    /// A required plugin establishes exactly the same per-path authority as
+    /// its parent, including when its established provenance is RawCache.
     fn acquire_exact_for_slim(
         &self,
         config: &Configuration,
         source: Option<&SourceUrl>,
-        cache: &str,
+        cache: Option<&str>,
         required: &Path,
+        parent: &Path,
     ) -> Result<(), Refusal> {
+        if required == parent || self.acquiring.borrow().contains(required) {
+            return Err("required plugin acquisition cycle".into());
+        }
         if self.candidates.borrow().contains_key(required) {
             return Ok(());
         }
-        if let Some(receipt) = self.receipts()?.iter().find(|r| r.package == required) {
-            self.verify_publisher_in(
-                None,
-                required,
-                &receipt.provenance,
-                package::StoreContents::Rehash,
-            )?;
-            return Ok(());
-        }
-        let (namespace, _) = package::archive_manifest(&self.nix, cache, required)?;
-        if let Some(binding) = self.publishers.get(&namespace) {
-            package::import(&self.nix, &binding.cache_url, required)?;
-            package::verify_publisher(
+        let selected = self.receipts()?.into_iter().find_map(|receipt| {
+            if receipt.package == required {
+                Some(receipt.provenance)
+            } else {
+                receipt
+                    .previous
+                    .filter(|previous| previous.package == required)
+                    .map(|previous| previous.provenance)
+            }
+        });
+        let namespace = if required.exists() {
+            package::manifest_namespace(required)?
+        } else {
+            package::archive_manifest(
                 &self.nix,
+                cache.ok_or_else(|| {
+                    format!(
+                        "required plugin {} is unavailable locally",
+                        required.display()
+                    )
+                })?,
                 required,
+            )?
+            .0
+        };
+        let pins = self.pins()?;
+        let key = self
+            .publishers
+            .get(&namespace)
+            .map(|binding| binding.public_key.as_str())
+            .or_else(|| pins.get(&namespace).map(|pin| pin.public_key.as_str()));
+        let provenance = if let Some(provenance) = selected {
+            self.verify_publisher_in(None, required, &provenance, package::StoreContents::Rehash)?;
+            let snapshot = package::StoreSnapshot::query(&self.nix, &[required])?;
+            let closure = snapshot.closure(required)?;
+            let mut content_addressed = true;
+            for path in &closure {
+                content_addressed &= snapshot
+                    .info(path)?
+                    .ca
+                    .as_deref()
+                    .is_some_and(|ca| !ca.is_empty());
+            }
+            if content_addressed {
+                package::verify_unsigned(&self.nix, required, package::StoreContents::Rehash)?;
+            } else {
+                self.verify_required_closure(
+                    config,
+                    source,
+                    required,
+                    key.ok_or("required plugin publisher is not trusted")?,
+                    None,
+                    parent,
+                )?;
+            }
+            provenance
+        } else if let Some(binding) = self.publishers.get(&namespace) {
+            self.verify_required_closure(
+                config,
+                source,
+                required,
+                &binding.public_key,
                 Some(&binding.cache_url),
-                &self.publishers,
-                package::StoreContents::Rehash,
+                parent,
             )?;
-            return self.pin_candidate(required);
-        }
-        let source = source.ok_or_else(|| format!("required plugin {} is not in a repository; publish it there or use a release requirement.", required.display()))?;
-        let catalog = repository::fetch_catalog(&config.curl, source, config.ca_bundle.as_deref())?;
-        let record = catalog.records.iter().find(|r| {
-            r.store_path == required.to_string_lossy()
-                && (r.platform == current_platform() || r.platform == "any")
-        }).ok_or_else(|| format!("required plugin {} is not in {source}; publish it there or use a release requirement.", required.display()))?;
-        self.fetch_record(config, source, record)?;
+            Provenance::RawCache {
+                cache_url: binding.cache_url.clone(),
+            }
+        } else {
+            let source = source.ok_or_else(|| format!("required plugin {} is not in a repository; publish it there or use a release requirement.", required.display()))?;
+            let catalog =
+                repository::fetch_catalog(&config.curl, source, config.ca_bundle.as_deref())?;
+            let record = catalog.records.iter().find(|r| r.store_path == required.to_string_lossy() && (r.platform == current_platform() || r.platform == "any"))
+                .ok_or_else(|| format!("required plugin {} is not in {source}; publish it there or use a release requirement.", required.display()))?;
+            self.fetch_record(config, source, record)?;
+            return Ok(());
+        };
+        self.pin_candidate(required)?;
+        let signed = !matches!(
+            provenance,
+            Provenance::Repository { signed: false, .. }
+                | Provenance::Sideload { signed: false, .. }
+        );
+        let publisher = crate::trust::inspect(
+            &namespace,
+            signed.then_some(key).flatten(),
+            &self.publishers,
+            &pins,
+        )?;
+        self.candidates
+            .borrow_mut()
+            .insert(required.to_path_buf(), (provenance, publisher));
         Ok(())
+    }
+
+    fn verify_required_closure(
+        &self,
+        config: &Configuration,
+        source: Option<&SourceUrl>,
+        required: &Path,
+        key: &str,
+        cache: Option<&str>,
+        parent: &Path,
+    ) -> Result<(), Refusal> {
+        if !self.acquiring.borrow_mut().insert(required.to_path_buf()) {
+            return Err("required plugin acquisition cycle".into());
+        }
+        let result = (|| {
+            if self.acquiring.borrow().len() > crate::dependencies::MAX_PLUGINS {
+                return Err(Refusal::from("too many required plugins"));
+            }
+            let children = if let Some(cache) = cache {
+                if !package::archive_signature(&self.nix, required, cache, Some(key))? {
+                    return Err("required plugin is not signed by its bound publisher".into());
+                }
+                package::archive_manifest(&self.nix, cache, required)?.1
+            } else {
+                package::manifest_requires(required)?
+            };
+            let mut excluded = BTreeSet::new();
+            for child in children {
+                self.acquire_exact_for_slim(config, source, cache, &child, required)?;
+                excluded
+                    .extend(package::StoreSnapshot::query(&self.nix, &[&child])?.closure(&child)?);
+            }
+            if excluded.contains(required) {
+                return Err("required plugin closure contains its parent".into());
+            }
+            let mut forbidden = self.acquiring.borrow().clone();
+            forbidden.remove(required);
+            forbidden.insert(parent.to_path_buf());
+            storage::root_link(&self.paths.roots.join("download"), required)?;
+            let mut upstream = self.shared_cache(config)?;
+            crate::slim::import_required(
+                &self.nix,
+                cache,
+                required,
+                key,
+                &mut upstream,
+                &excluded,
+                &forbidden,
+            )?;
+            Ok(())
+        })();
+        self.acquiring.borrow_mut().remove(required);
+        result
     }
 
     /// Nix owns the indirect root registry. Korri retains only the existing
