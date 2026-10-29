@@ -112,7 +112,10 @@ Seven are committed in `evidence/`:
 
 All twelve from that run, including check 3 (mouse click), 960x640, 320x240
 and the other error shapes, are kept outside the repository at
-`~/.cache/korri-slint-spike-evidence/14fa80689/` on the build host.
+`~/.cache/korri-slint-spike-evidence/14fa80689/` on the build host. That
+folder is kept for the life of this experiment. An annotated after-only crop
+of image 03 is at
+`~/.cache/research/korri-lg-b7-prep-20261029T175543Z/slint-native-proof.png`.
 
 ## Limitations
 
