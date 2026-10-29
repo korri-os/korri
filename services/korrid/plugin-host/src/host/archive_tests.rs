@@ -438,6 +438,23 @@ fn slim_real_nix_publish_install_security_and_offline() {
         package::StoreContents::Rehash,
     )
     .unwrap();
+    // A different bound publisher is not a normal upstream authority either.
+    bound.publishers.insert(
+        "@other".into(),
+        package::PublisherBinding {
+            public_key: upstream_key.clone(),
+            cache_url: publisher_shared_uri.clone(),
+        },
+    );
+    let error = bound
+        .inspect_archive(&config, &parent_archive.archive_path)
+        .err()
+        .unwrap();
+    assert!(
+        error.contains("not signed by a normal trusted NixOS cache key"),
+        "{error}"
+    );
+    bound.publishers.remove("@other");
     // A requirement's legitimate private cache still works, keeps RawCache
     // provenance, and can share separately verified upstream packages.
     let good_uri = format!(

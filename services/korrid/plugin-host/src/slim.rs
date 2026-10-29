@@ -22,6 +22,7 @@ pub(crate) struct Upstream {
     ca: Option<PathBuf>,
     notes: tempfile::TempDir,
     seen: BTreeMap<String, Option<NarInfo>>,
+    publisher_keys: BTreeSet<Vec<u8>>,
     #[cfg(test)]
     file_cache: Option<PathBuf>,
 }
@@ -34,6 +35,7 @@ impl Upstream {
             ca: config.ca_bundle.clone(),
             notes: tempfile::tempdir().map_err(|e| e.to_string())?,
             seen: BTreeMap::new(),
+            publisher_keys: BTreeSet::new(),
             #[cfg(test)]
             file_cache: None,
         })
@@ -52,6 +54,29 @@ impl Upstream {
         .unwrap();
         this.file_cache = Some(cache.into());
         this
+    }
+
+    pub(crate) fn exclude_publishers<'a>(
+        &mut self,
+        keys: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), String> {
+        for key in keys {
+            self.publisher_keys.insert(package::public_key_bytes(key)?);
+        }
+        Ok(())
+    }
+
+    fn trusted_keys(&self, nix: &Path, publisher: &str) -> Result<Vec<String>, String> {
+        let mut keys = Vec::new();
+        for key in normal_keys(nix, publisher)? {
+            if !self
+                .publisher_keys
+                .contains(&package::public_key_bytes(&key)?)
+            {
+                keys.push(key);
+            }
+        }
+        Ok(keys)
     }
 
     pub(crate) fn uri(&self) -> Result<String, String> {
@@ -377,7 +402,7 @@ fn acquire(
     forbidden: &BTreeSet<PathBuf>,
 ) -> Result<(), String> {
     let publisher = vec![key.to_owned()];
-    let trusted = normal_keys(nix, key)?;
+    let trusted = upstream.trusted_keys(nix, key)?;
     let mut queue = vec![root.to_string_lossy().into_owned()];
     let mut seen = BTreeSet::new();
     let mut shared = Vec::new();
