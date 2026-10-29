@@ -998,6 +998,12 @@ impl Host {
             let mut requires = package::manifest_requires(path)?;
             for exact in &requires {
                 let namespace = package::manifest_namespace(exact)?;
+                let archive_acquisition = self.candidates.borrow().contains_key(path);
+                if archive_acquisition && self.publishers.contains_key(&namespace) {
+                    // Read the imported manifest too. A mutable requirement
+                    // cache cannot hide a new exact dependency during preflight.
+                    self.acquire_exact_for_slim(config, source.as_ref(), None, exact, path)?;
+                }
                 if !self.publishers.contains_key(&namespace) {
                     let id = package::load_declaration(exact)?.id();
                     let Some(source) = &source else {

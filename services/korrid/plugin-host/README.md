@@ -48,15 +48,24 @@ For each path outside separately verified required-plugin closures:
 
 - A path served by the upstream cache must not appear in the archive. The host
   fetches it only from that cache with the device's normal trusted keys, with
-  all known plugin publisher keys excluded. A locally valid copy must already carry a
-  normal trusted cache signature.
+  all known plugin publisher keys excluded. An already valid local path is
+  accepted when it has a NixOS signature, or its NAR hash and size match the
+  NixOS-signed upstream narinfo, or it is unsigned and input-addressed. The last
+  case is a system image or root build: the plugin host never imports such a
+  path. A path signed only by another key that does not match upstream is
+  refused: `<path> is installed under another key and does not match
+  https://cache.nixos.org; refusing`.
 - Every other path must be in the archive and signed by the publisher, or
   already valid locally with that publisher's signature. A foreign local copy
   is refused rather than adopted, even if the archive signs the same bytes.
 - The host fetches shared paths first, imports private paths with only the
   publisher key for that invocation, then verifies the whole closure with the
-  correct key per path. No local or remote build, fallback, or ambient
-  substituter is allowed. Missing shared paths require network access or a
+  correct authority per path. Shared paths accepted by NAR identity or root
+  registration get Nix content verification; their authority comes from the
+  signed upstream metadata or root registration, not a publisher signature.
+  Private imports copy only the exact verified paths, so mutable caches cannot
+  introduce an unchecked reference. No local or remote build, fallback, or
+  ambient substituter is allowed. Missing shared paths require network access or a
   self-contained archive.
 
 A required plugin's closure is excluded only after the same independent checks.
