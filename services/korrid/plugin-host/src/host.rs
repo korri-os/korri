@@ -998,9 +998,13 @@ impl Host {
             let mut requires = package::manifest_requires(path)?;
             for exact in &requires {
                 let namespace = package::manifest_namespace(exact)?;
-                let mutable_requirement = self.candidates.borrow().get(path).is_some_and(|(provenance, _)| {
-                    matches!(provenance, Provenance::RawCache { .. })
-                });
+                let mutable_requirement =
+                    self.candidates
+                        .borrow()
+                        .get(path)
+                        .is_some_and(|(provenance, _)| {
+                            matches!(provenance, Provenance::RawCache { .. })
+                        });
                 if mutable_requirement && self.publishers.contains_key(&namespace) {
                     // Read the imported manifest too. A mutable requirement
                     // cache cannot hide a new exact dependency during preflight.
