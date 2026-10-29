@@ -501,6 +501,9 @@ fn plugin_sideload_builds_locally_uploads_sequential_chunks_and_requires_exact_a
         }
         let server = Server::new(exchanges);
         let mut command = sideload_command(&tools, &server, &bytes);
+        if approval == Some("exact-digest") {
+            command.arg("--self-contained");
+        }
         if let Some(approval) = approval {
             command.args(["--approval", approval]);
         }
@@ -524,6 +527,11 @@ fn plugin_sideload_builds_locally_uploads_sequential_chunks_and_requires_exact_a
         let calls = fs::read_to_string(tools.root.path().join("nix.calls")).unwrap();
         assert!(calls.contains(".#packages.aarch64-linux.default"));
         assert!(!calls.contains(".#packages.x86_64-linux.default"));
+        let calls = fs::read_to_string(tools.root.path().join("publisher.calls")).unwrap();
+        assert_eq!(
+            calls.contains("--self-contained"),
+            approval == Some("exact-digest")
+        );
         server.done();
     }
 }

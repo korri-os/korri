@@ -624,7 +624,8 @@ fn publisher_validates_inputs_without_nix() {
     let root = tempfile::tempdir().unwrap();
     // Bad archive_url (HTTP, not HTTPS): must be rejected before any Nix call.
     let err = publish(&PublishArgs {
-        secret_key: std::path::PathBuf::from("/unavailable-secret-key"),
+        secret_key: Some(std::path::PathBuf::from("/unavailable-secret-key")),
+        self_contained: true,
         nix: Path::new("/nonexistent/nix").to_path_buf(),
         input_store_path: Path::new("/nix/store/00000000000000000000000000000000-x").to_path_buf(),
         release_version: "1.0.0".into(),
@@ -680,7 +681,8 @@ fn publisher_converts_and_packs_korri_tailscale() {
     fs::write(&secret_key, secret.stdout).unwrap();
     let result =
         korri_plugin_host::publisher::publish(&korri_plugin_host::publisher::PublishArgs {
-            secret_key,
+            secret_key: Some(secret_key),
+            self_contained: true,
             nix: Path::new(&nix).to_path_buf(),
             input_store_path: Path::new(input_path).to_path_buf(),
             release_version: "1.0.0".into(),
@@ -790,7 +792,8 @@ fn publisher_rejects_invalid_store_path_nix() {
         std::env::var("KORRI_PUBLISH_NIX").expect("KORRI_PUBLISH_NIX must be set to run this test");
     let root = tempfile::tempdir().unwrap();
     let err = korri_plugin_host::publisher::publish(&korri_plugin_host::publisher::PublishArgs {
-        secret_key: std::path::PathBuf::from("/unavailable-secret-key"),
+        secret_key: Some(std::path::PathBuf::from("/unavailable-secret-key")),
+        self_contained: true,
         nix: Path::new(&nix).to_path_buf(),
         input_store_path: Path::new("/tmp/not-a-store-path").to_path_buf(),
         release_version: "1.0.0".into(),

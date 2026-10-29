@@ -2,7 +2,7 @@ use korri_plugin_host::{archive, catalog::Catalog, package};
 use std::{fs, path::Path, process::Command};
 
 #[test]
-fn publication_requires_explicit_signing_and_has_no_obsolete_forms() {
+fn publication_rejects_incomplete_or_obsolete_forms() {
     for args in [
         vec!["catalog"],
         vec!["verify-release"],

@@ -27,10 +27,12 @@ pub fn commands() -> Vec<Command> {
             .about("Build locally with Nix and print the outputs; no daemon needed"),
         publication_options(
             Command::new("publish")
+                .arg(self_contained_option())
                 .about("Build and sign a repository folder; does not upload it")
                 .arg(Arg::new("out-dir").required(true)),
         ),
         Command::new("sideload")
+            .arg(self_contained_option())
             .about("Build locally, then review and approve a signed archive on a device")
             .arg(Arg::new("dir").default_value("."))
             .arg(Arg::new("upload").long("upload").value_name("ID")
@@ -49,6 +51,13 @@ pub fn commands() -> Vec<Command> {
             ),
     ]
 }
+fn self_contained_option() -> Arg {
+    Arg::new("self-contained")
+        .long("self-contained")
+        .action(clap::ArgAction::SetTrue)
+        .help("Include shared packages for installation without network access")
+}
+
 fn publication_options(command: Command) -> Command {
     command
         .arg(
@@ -133,7 +142,15 @@ pub fn run(args: &ArgMatches) -> Result<Output, CliError> {
             let directory = Path::new(args.get_one::<String>("out-dir").expect("required"));
             fs::create_dir_all(directory)
                 .map_err(|_| file_error("create the repository folder"))?;
-            publish(&outputs, directory, &key, &release, &url, platform)?;
+            publish(
+                &outputs,
+                directory,
+                &key,
+                &release,
+                &url,
+                platform,
+                args.get_flag("self-contained"),
+            )?;
             Ok(Output::text(format!(
                 "Repository folder: {}\nPublisher: {}\nFingerprint: {}",
                 directory.display(),
@@ -547,9 +564,13 @@ pub fn archive(
     directory: &Path,
     key: &AuthorKey,
     platform: Option<&str>,
+    self_contained: bool,
 ) -> Result<crate::plugin_sideload::Archive, CliError> {
     let mut command = Process::new("korri-publish");
     command.args(["archive", "--secret-key"]).arg(&key.path);
+    if self_contained {
+        command.arg("--self-contained");
+    }
     if let Some(platform) = native_platform(platform) {
         command.args(["--platform", platform]);
     }
@@ -568,12 +589,16 @@ pub fn publish(
     release: &str,
     url: &str,
     platform: Option<&str>,
+    self_contained: bool,
 ) -> Result<(), CliError> {
     let mut command = Process::new("korri-publish");
     command
         .args(["repository", "--secret-key"])
         .arg(&key.path)
         .args(["--release", release, "--base-url", url]);
+    if self_contained {
+        command.arg("--self-contained");
+    }
     if let Some(platform) = native_platform(platform) {
         command.args(["--platform", platform]);
     }

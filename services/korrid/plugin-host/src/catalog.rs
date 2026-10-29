@@ -11,10 +11,9 @@
 //   release. This is a label, not a semver; ordering is always explicit.
 // - `platform`: Nix system string (e.g. "x86_64-linux", "aarch64-linux")
 //   sourced from the build environment at publish time.
-// - `store_path`: exact content-addressed /nix/store output produced by
-//   `nix store make-content-addressed`. Identity comes from the bytes, not a
-//   publisher key.
-// - `archive_url`: HTTPS URL where the complete Nix file-cache tar is hosted.
+// - `store_path`: exact signed native /nix/store output, or the CA output
+//   produced by `nix store make-content-addressed` for self-contained archives.
+// - `archive_url`: HTTPS URL where the slim or self-contained file-cache tar is hosted.
 //   The device downloads and verifies this before import.
 // - `archive_sha256`: lowercase hex SHA-256 of the archive bytes, measured by
 //   the publisher over the file it produced. The device re-measures before use.
@@ -51,9 +50,9 @@ pub struct CatalogRecord {
     pub release_version: String,
     /// Nix system string for this record's binary (e.g. "x86_64-linux").
     pub platform: String,
-    /// Content-addressed /nix/store path produced by make-content-addressed.
+    /// Exact input-addressed or content-addressed /nix/store output.
     pub store_path: String,
-    /// HTTPS URL of the published archive containing the complete Nix file cache.
+    /// HTTPS URL of the published slim or self-contained Nix file-cache archive.
     pub archive_url: String,
     /// Lowercase hex SHA-256 of the archive file bytes.
     pub archive_sha256: String,

@@ -18,7 +18,8 @@ use std::{
 
 pub struct PublishArgs {
     pub nix: PathBuf,
-    pub secret_key: PathBuf,
+    pub secret_key: Option<PathBuf>,
+    pub self_contained: bool,
     pub input_store_path: PathBuf,
     pub release_version: String,
     pub platform: String,
@@ -64,7 +65,7 @@ pub struct ArchiveResult {
     pub archive_sha256: String,
     pub platform: String,
     pub declaration: crate::declaration::Declaration,
-    pub public_key: String,
+    pub public_key: Option<String>,
 }
 
 pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
@@ -88,7 +89,7 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
                 .ok_or("invalid archive name")?
         ),
         archive_sha256: result.archive_sha256.clone(),
-        public_key: Some(result.public_key),
+        public_key: result.public_key,
     };
     record.validate()?;
     Ok(PublishResult {
@@ -100,6 +101,13 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
 }
 
 pub fn publish_archive(args: &PublishArgs) -> Result<ArchiveResult, String> {
+    publish_archive_with_upstream(args, None)
+}
+
+pub(crate) fn publish_archive_with_upstream(
+    args: &PublishArgs,
+    upstream: Option<&mut crate::slim::Upstream>,
+) -> Result<ArchiveResult, String> {
     package::validate_store_path(&args.input_store_path)?;
     validate_release_version(&args.release_version)?;
     validate_platform(&args.platform)?;
@@ -109,15 +117,40 @@ pub fn publish_archive(args: &PublishArgs) -> Result<ArchiveResult, String> {
     if !output_dir.is_dir() {
         return Err("output must be an existing directory".into());
     }
-    let secret = read_metadata(&args.secret_key)?;
-    let secret = std::str::from_utf8(&secret)
-        .map_err(|_| "invalid secret key")?
-        .trim();
-    let public_key = public_half(secret)?;
+    let public_key = args
+        .secret_key
+        .as_deref()
+        .map(|key| {
+            let secret = read_metadata(key)?;
+            public_half(
+                std::str::from_utf8(&secret)
+                    .map_err(|_| "invalid secret key")?
+                    .trim(),
+            )
+        })
+        .transpose()?;
     let declaration = package::load_declaration(&args.input_store_path)?;
     // Reuse the host's collision-free identity name, not a lossy punctuation
     // replacement that conflates different plugin namespaces.
-    let ca_store_path = content_addressed(&nix, &args.input_store_path)?;
+    let input_info = package::path_info(
+        &nix,
+        args.input_store_path
+            .to_str()
+            .ok_or("invalid package path")?,
+        None,
+    )?;
+    let self_contained = args.self_contained
+        || input_info.references.is_empty()
+        || input_info.ca.as_deref().is_some_and(|ca| !ca.is_empty())
+        || public_key.is_none();
+    let ca_store_path = if self_contained {
+        content_addressed(&nix, &args.input_store_path)?
+    } else {
+        args.input_store_path
+            .to_str()
+            .ok_or("invalid package path")?
+            .to_owned()
+    };
     let platform = if package::architecture_independent(Path::new(&ca_store_path))?
         && package::no_references(&nix, Path::new(&ca_store_path))?
     {
@@ -136,39 +169,123 @@ pub fn publish_archive(args: &PublishArgs) -> Result<ArchiveResult, String> {
     if fs::symlink_metadata(&archive_path).is_ok() {
         return Err("publication output already exists".into());
     }
-    process::checked_uncapped(
-        &nix,
-        [
-            "--extra-experimental-features",
-            "nix-command",
-            "store",
-            "sign",
-            "--recursive",
-            "--key-file",
-            args.secret_key.to_str().ok_or("invalid secret key path")?,
-            &ca_store_path,
-        ],
-        None,
-    )?;
+    if let Some(key) = &args.secret_key {
+        process::checked_uncapped(
+            &nix,
+            [
+                "--extra-experimental-features",
+                "nix-command",
+                "store",
+                "sign",
+                "--recursive",
+                "--key-file",
+                key.to_str().ok_or("invalid secret key path")?,
+                &ca_store_path,
+            ],
+            None,
+        )?;
+    }
     // A private export is disposable on every failure, so a retry cannot pick
     // up half an earlier cache or leave a persistent unpacked copy behind.
     let export = tempfile::tempdir_in(&output_dir).map_err(|e| e.to_string())?;
     let cache_dir = export.path().join("cache");
     fs::create_dir(&cache_dir).map_err(|e| e.to_string())?;
     let cache_uri = format!("{}?compression=xz", archive::path_to_file_uri(&cache_dir)?);
+    let mut outputs = package::StoreSnapshot::query(&nix, &[Path::new(&ca_store_path)])?
+        .closure(Path::new(&ca_store_path))?
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let mut upstream_notes = Vec::new();
+    if !self_contained {
+        let mut default_upstream;
+        let upstream = match upstream {
+            Some(upstream) => upstream,
+            None => {
+                let curl = std::env::var_os("KORRI_PLUGIN_CURL")
+                    .ok_or("publisher must supply KORRI_PLUGIN_CURL")?;
+                default_upstream = crate::slim::Upstream::new(
+                    &nix,
+                    &crate::repository::Configuration {
+                        curl: package::tools(Path::new(&curl))?,
+                        ca_bundle: None,
+                        official: None,
+                    },
+                )?;
+                &mut default_upstream
+            }
+        };
+        let keys = crate::slim::normal_keys(
+            &nix,
+            public_key
+                .as_deref()
+                .ok_or("slim archive requires a signing key")?,
+        )?;
+        let mut retained = Vec::new();
+        for path in outputs {
+            match upstream.info(&path)? {
+                Some(remote) => {
+                    let local = package::path_info(&nix, &path, None)?;
+                    if package::fingerprint(&path, &local)? != package::fingerprint(&path, &remote)?
+                    {
+                        return Err(format!("upstream NAR identity differs for {path}"));
+                    }
+                    if !crate::slim::signed(&path, &remote, &keys)? {
+                        return Err(format!(
+                            "upstream path {path} lacks a normal trusted cache signature"
+                        ));
+                    }
+                }
+                None => retained.push(path),
+            }
+        }
+        outputs = retained;
+        if !outputs.iter().any(|p| p == &ca_store_path) {
+            return Err("plugin root must not be served by cache.nixos.org".into());
+        }
+        upstream_notes = upstream.stage_metadata(&cache_dir)?;
+    }
     process::checked_uncapped(
         &nix,
         [
             "--extra-experimental-features",
             "nix-command",
             "copy",
+            "--no-recursive",
             "--to",
             &cache_uri,
-            &ca_store_path,
-        ],
+        ]
+        .into_iter()
+        .chain(outputs.iter().map(String::as_str)),
         None,
     )?;
-    archive::preflight_cache(&nix, &ca_store_path, &cache_dir)?;
+    for note in upstream_notes {
+        fs::remove_file(note).map_err(|e| e.to_string())?;
+    }
+    if public_key.is_none() {
+        // Nix retains signatures already registered for the same CA bytes.
+        // They are not this unsigned publication's publisher evidence.
+        for entry in fs::read_dir(&cache_dir).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.extension().is_some_and(|ext| ext == "narinfo") {
+                let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                fs::write(
+                    &path,
+                    text.lines()
+                        .filter(|line| !line.starts_with("Sig:"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                        + "\n",
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    if self_contained {
+        archive::preflight_cache(&nix, &ca_store_path, &cache_dir)?;
+    } else {
+        archive::preflight_slim(&nix, &outputs, &cache_dir)?;
+    }
     let converted = package::load_declaration(Path::new(&ca_store_path))?;
     if converted.id() != declaration.id() {
         return Err("conversion changed plugin identity".into());
@@ -331,15 +448,28 @@ fn select_platform(
     }
 }
 
-pub fn publish_repository(
-    nix: &Path,
-    secret_key: &Path,
-    release: &str,
-    base_url: &str,
-    output: &Path,
-    packages: &[PathBuf],
-    platform: Option<&str>,
-) -> Result<Catalog, String> {
+pub struct RepositoryArgs<'a> {
+    pub nix: &'a Path,
+    pub secret_key: Option<&'a Path>,
+    pub release: &'a str,
+    pub base_url: &'a str,
+    pub output: &'a Path,
+    pub packages: &'a [PathBuf],
+    pub platform: Option<&'a str>,
+    pub self_contained: bool,
+}
+
+pub fn publish_repository(args: &RepositoryArgs<'_>) -> Result<Catalog, String> {
+    let RepositoryArgs {
+        nix,
+        secret_key,
+        release,
+        base_url,
+        output,
+        packages,
+        platform,
+        self_contained,
+    } = *args;
     validate_archive_url(base_url)?;
     let base = url::Url::parse(base_url).map_err(|e| e.to_string())?;
     if !base_url.ends_with('/') || base.query().is_some() {
@@ -356,7 +486,12 @@ pub fn publish_repository(
             continue;
         }
         let platform = publication_platform(nix, package, platform)?;
-        let converted = content_addressed(nix, package)?;
+        let converted =
+            if self_contained || secret_key.is_none() || package::no_references(nix, package)? {
+                content_addressed(nix, package)?
+            } else {
+                package.to_string_lossy().into_owned()
+            };
         if records
             .iter()
             .any(|r: &CatalogRecord| r.store_path == converted)
@@ -365,7 +500,8 @@ pub fn publish_repository(
         }
         let result = publish(&PublishArgs {
             nix: nix.into(),
-            secret_key: secret_key.into(),
+            secret_key: secret_key.map(PathBuf::from),
+            self_contained,
             input_store_path: converted.into(),
             release_version: release.into(),
             platform,
@@ -491,15 +627,16 @@ mod tests {
         let key = root.path().join("secret");
         fs::write(&key, secret).unwrap();
         let repository = root.path().join("repository");
-        let catalog = publish_repository(
-            &nix,
-            &key,
-            "v1",
-            "https://example.invalid/releases/",
-            &repository,
-            &[PathBuf::from(&imported)],
-            Some(platform),
-        )
+        let catalog = publish_repository(&RepositoryArgs {
+            nix: &nix,
+            secret_key: Some(&key),
+            release: "v1",
+            base_url: "https://example.invalid/releases/",
+            output: &repository,
+            packages: &[PathBuf::from(&imported)],
+            platform: Some(platform),
+            self_contained: true,
+        })
         .unwrap();
         assert_eq!(catalog.records[0].store_path, imported);
         assert_eq!(catalog.records[0].platform, platform);

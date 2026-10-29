@@ -80,10 +80,41 @@ pub fn download(
     output: &Path,
     bounds: TransferBounds,
 ) -> Result<(), String> {
+    transfer(curl, url, ca, output, bounds, false).map(|_| ())
+}
+
+/// Only a real HTTP 404 means absent. Transport, TLS and server errors fail
+/// closed; they must never make a shared path look publisher-owned.
+pub(crate) fn download_optional(
+    curl: &Path,
+    url: &SourceUrl,
+    ca: Option<&Path>,
+    output: &Path,
+) -> Result<bool, String> {
+    transfer(
+        curl,
+        url,
+        ca,
+        output,
+        TransferBounds::Limited {
+            max_bytes: 1024 * 1024,
+            timeout: Duration::from_secs(30),
+        },
+        true,
+    )
+}
+
+fn transfer(
+    curl: &Path,
+    url: &SourceUrl,
+    ca: Option<&Path>,
+    output: &Path,
+    bounds: TransferBounds,
+    optional: bool,
+) -> Result<bool, String> {
     let mut args = vec![
         "--disable".into(),
         "--globoff".into(),
-        "--fail".into(),
         "--silent".into(),
         "--show-error".into(),
         "--proto".into(),
@@ -103,6 +134,11 @@ pub fn download(
         "--output".into(),
         output.to_str().ok_or("output path is not UTF-8")?.into(),
     ];
+    if optional {
+        args.extend(["--write-out".into(), "%{http_code}".into()]);
+    } else {
+        args.push("--fail".into());
+    }
     match bounds {
         TransferBounds::Limited { max_bytes, timeout } => args.extend([
             "--max-filesize".into(),
@@ -142,7 +178,14 @@ pub fn download(
             return Err(format!("HTTPS response exceeds {max_bytes} bytes"));
         }
     }
-    Ok(())
+    if optional {
+        return match result.stdout.trim() {
+            "200" => Ok(true),
+            "404" => Ok(false),
+            status => Err(format!("upstream returned HTTP {status}")),
+        };
+    }
+    Ok(true)
 }
 
 pub fn verify_archive_hash(path: &Path, expected: &str) -> Result<(), String> {

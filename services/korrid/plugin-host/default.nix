@@ -79,8 +79,8 @@ in
       type = "app";
       program = "${hostPackage}/bin/korri-plugin";
     };
-    # Build-side publisher: converts a plugin package to a CA closure archive
-    # and emits the catalog record. Does not require administrator privileges.
+    # Build-side publisher: signed native archives use shared upstream paths;
+    # source-only and explicitly self-contained archives use CA closures.
     korri-publish = {
       type = "app";
       program = "${hostPackage}/bin/korri-publish";
@@ -147,6 +147,8 @@ in
             nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --test dependencies --test seed --test namespace -- --ignored
             nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --lib real_store_graph -- --ignored
             nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --lib direction_ -- --ignored
+            nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --lib slim_ -- --ignored
+            nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --test publication_cli -- --ignored
             nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host .#checks.${pkgs.stdenv.hostPlatform.system}.korri-plugin-image-seed .#checks.${pkgs.stdenv.hostPlatform.system}.korri-runtime-plugin-host
           '';
         }
@@ -157,9 +159,9 @@ in
     nix run .#korri-plugin -- COMMAND
         Manage independently packaged Linux plugins with explicit administrator approval.
     nix run .#korri-publish -- repository --secret-key FILE --release LABEL --base-url URL OUTPUT_DIR STORE_PATH...
-        Sign complete content-addressed archives and write a repository catalog with latest marks.
+        Sign slim native archives and write a repository catalog with latest marks; --self-contained includes shared packages.
     nix run .#korri-publish -- archive --secret-key FILE OUTPUT_DIR STORE_PATH
-        Sign one content-addressed sideload archive; print archive metadata as JSON.
+        Sign one sideload archive; --self-contained includes shared packages for offline installation.
     nix run .#korri-publish -- declaration NAMESPACE SOURCE_ROOT SOURCE...
         Evaluate a closed source inventory as JSON for build-time metadata; grants no admission or effect authority.
     nix run .#korri-publisher-check -- [STORE_PACKAGE]

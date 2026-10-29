@@ -204,7 +204,11 @@ the caller. Nothing infers it from a filename or trusts a namespace inside
 plugin source.
 External daemon packages instead carry a generated `manifest.json` with
 `publisher.namespace`. The host verifies the selected NAR against the device's
-bound full public key before using that claim. See `plugin-host/README.md`.
+bound or pinned full public key before using that claim. Signed native archives
+normally omit shared packages supplied by `https://cache.nixos.org`; the host
+checks each path against its own cache or publisher key. Self-contained archives
+keep the complete content-addressed closure and work offline. See
+`plugin-host/README.md`.
 
 An optional `handlers` export is a map of operation name to handler function.
 The host names the operation it wants; a plugin never chooses which of its

@@ -72,7 +72,8 @@ craneLib.buildPackage (
       # The Nix binary is injected so publication does not require an ambient
       # nix on PATH, matching the same isolation used by korri-plugin.
       wrapProgram "$out/bin/korri-publish" \
-        --set KORRI_PUBLISH_NIX ${pkgs.nix}/bin/nix
+        --set KORRI_PUBLISH_NIX ${pkgs.nix}/bin/nix \
+        --set KORRI_PLUGIN_CURL ${pkgs.curl}/bin/curl
     '';
     meta.mainProgram = "korri-plugin";
   }

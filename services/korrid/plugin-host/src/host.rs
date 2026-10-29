@@ -1,4 +1,6 @@
 use crate::plugin_admin::{PluginRefusal as Refusal, PluginRefusalCategory as Category};
+#[cfg(test)]
+mod archive_tests;
 mod graph_update;
 
 use crate::{
@@ -64,9 +66,12 @@ pub struct Host {
     /// Only this locked inspection's exact, independently verified candidates.
     candidates: RefCell<BTreeMap<PathBuf, (Provenance, crate::plugin_admin::PluginPublisher)>>,
     resolved: RefCell<BTreeMap<PathBuf, Vec<PathBuf>>>,
+    acquiring: RefCell<BTreeSet<PathBuf>>,
     candidate_roots: RefCell<Vec<tempfile::TempDir>>,
     #[cfg(test)]
     test_runtime: Option<TestRuntime>,
+    #[cfg(test)]
+    archive_upstream: Option<PathBuf>,
 }
 
 /// Boot-time checks prepared before restore walks the plugins.
@@ -157,9 +162,12 @@ impl Host {
             rehashed: RefCell::default(),
             candidates: RefCell::default(),
             resolved: RefCell::default(),
+            acquiring: RefCell::default(),
             candidate_roots: RefCell::default(),
             #[cfg(test)]
             test_runtime: None,
+            #[cfg(test)]
+            archive_upstream: None,
         })
     }
 
@@ -197,8 +205,10 @@ impl Host {
             rehashed: RefCell::default(),
             candidates: RefCell::default(),
             resolved: RefCell::default(),
+            acquiring: RefCell::default(),
             candidate_roots: RefCell::default(),
             test_runtime: Some(runtime),
+            archive_upstream: None,
         })
     }
 
@@ -375,6 +385,24 @@ impl Host {
         source: &SourceUrl,
         record: &crate::catalog::CatalogRecord,
     ) -> Result<PathBuf, Refusal> {
+        let package = PathBuf::from(&record.store_path);
+        if !self.acquiring.borrow_mut().insert(package.clone()) {
+            return Err("required plugin acquisition cycle".into());
+        }
+        let result = self.fetch_record_inner(config, source, record);
+        self.acquiring.borrow_mut().remove(&package);
+        result
+    }
+
+    fn fetch_record_inner(
+        &self,
+        config: &Configuration,
+        source: &SourceUrl,
+        record: &crate::catalog::CatalogRecord,
+    ) -> Result<PathBuf, Refusal> {
+        if self.acquiring.borrow().len() > crate::dependencies::MAX_PLUGINS {
+            return Err("too many required plugins".into());
+        }
         let stage = self.state.staging()?;
         let archive_path = stage.path().join("archive.tar");
         repository::download(
@@ -387,7 +415,7 @@ impl Host {
             },
         )?;
         repository::verify_archive_hash(&archive_path, &record.archive_sha256)?;
-        self.import_archive_file(&archive_path, Some((source, record)))
+        self.import_archive_file(config, &archive_path, Some((source, record)))
     }
 
     pub fn inspect_archive(&self, config: &Configuration, path: &Path) -> Result<Report, Refusal> {
@@ -396,13 +424,14 @@ impl Host {
         self.candidates.borrow_mut().clear();
         self.resolved.borrow_mut().clear();
         self.state.cleanup_staging()?;
-        let package = self.import_archive_file(path, None)?;
+        let package = self.import_archive_file(config, path, None)?;
         self.resolve_candidates(config, &package)?;
         self.load(&package, self.candidates.borrow()[&package].0.clone())
     }
 
     fn import_archive_file(
         &self,
+        config: &Configuration,
         path: &Path,
         record: Option<(&SourceUrl, &crate::catalog::CatalogRecord)>,
     ) -> Result<PathBuf, Refusal> {
@@ -452,11 +481,63 @@ impl Host {
             Some((_, r)) => PathBuf::from(&r.store_path),
             None => archive::root_path(&cache)?,
         };
-        archive::preflight_cache(&self.nix, package.to_str().ok_or("invalid path")?, &cache)?;
-        // Import only the verified CA archive. Never consult a configured cache.
-        storage::root_link(&self.paths.roots.join("download"), &package)?;
         let cache_uri = archive::path_to_file_uri(&cache)?;
-        package::import_archive(&self.nix, &cache_uri, &package)?;
+        let info = package::path_info(
+            &self.nix,
+            package.to_str().ok_or("invalid path")?,
+            Some(&cache_uri),
+        )?;
+        storage::root_link(&self.paths.roots.join("download"), &package)?;
+        if info.ca.as_deref().is_some_and(|ca| !ca.is_empty()) {
+            archive::preflight_cache(&self.nix, package.to_str().ok_or("invalid path")?, &cache)?;
+            package::import_archive(&self.nix, &cache_uri, &package)?;
+        } else {
+            archive::preflight_slim(&self.nix, &archive::cache_paths(&cache)?, &cache)?;
+            let (namespace, requires) = package::archive_manifest(&self.nix, &cache_uri, &package)?;
+            let pins = self.pins()?;
+            let key = record
+                .and_then(|(_, r)| r.public_key.as_deref())
+                .or_else(|| {
+                    self.publishers
+                        .get(&namespace)
+                        .map(|b| b.public_key.as_str())
+                })
+                .or_else(|| pins.get(&namespace).map(|p| p.public_key.as_str()))
+                .ok_or_else(|| {
+                    Refusal::new(
+                        Category::PublisherNotTrusted,
+                        format!("publisher {namespace} is not trusted on this device"),
+                    )
+                })?;
+            crate::trust::inspect(&namespace, Some(key), &self.publishers, &pins)?;
+            if !package::archive_signature(&self.nix, &package, &cache_uri, Some(key))? {
+                return Err("input-addressed archive requires a publisher signature".into());
+            }
+            let mut excluded = BTreeSet::new();
+            for required in requires {
+                self.acquire_exact_for_slim(
+                    config,
+                    record.map(|(source, _)| source),
+                    &cache_uri,
+                    &required,
+                )?;
+                excluded.extend(
+                    package::StoreSnapshot::query(&self.nix, &[&required])?.closure(&required)?,
+                );
+            }
+            if excluded.contains(&package) {
+                return Err("required plugin closure contains its parent".into());
+            }
+            let mut upstream = crate::slim::Upstream::new(&self.nix, config)?;
+            #[cfg(test)]
+            if let Some(cache) = &self.archive_upstream {
+                upstream = crate::slim::Upstream::file(&self.nix, cache);
+            }
+            crate::slim::import(&self.nix, &cache, &package, key, &mut upstream, &excluded)?;
+            if package::manifest_namespace(&package)? != namespace {
+                return Err("import changed the publisher namespace".into());
+            }
+        }
         self.pin_candidate(&package)?;
         let namespace = package::manifest_namespace(&package)?;
         let pins = self.pins()?;
@@ -519,6 +600,49 @@ impl Host {
             .borrow_mut()
             .insert(package.clone(), (provenance, publisher));
         Ok(package)
+    }
+
+    /// Exact required plugins establish their own publisher authority before
+    /// their closures can be excluded from the parent's slim signature scope.
+    fn acquire_exact_for_slim(
+        &self,
+        config: &Configuration,
+        source: Option<&SourceUrl>,
+        cache: &str,
+        required: &Path,
+    ) -> Result<(), Refusal> {
+        if self.candidates.borrow().contains_key(required) {
+            return Ok(());
+        }
+        if let Some(receipt) = self.receipts()?.iter().find(|r| r.package == required) {
+            self.verify_publisher_in(
+                None,
+                required,
+                &receipt.provenance,
+                package::StoreContents::Rehash,
+            )?;
+            return Ok(());
+        }
+        let (namespace, _) = package::archive_manifest(&self.nix, cache, required)?;
+        if let Some(binding) = self.publishers.get(&namespace) {
+            package::import(&self.nix, &binding.cache_url, required)?;
+            package::verify_publisher(
+                &self.nix,
+                required,
+                Some(&binding.cache_url),
+                &self.publishers,
+                package::StoreContents::Rehash,
+            )?;
+            return self.pin_candidate(required);
+        }
+        let source = source.ok_or_else(|| format!("required plugin {} is not in a repository; publish it there or use a release requirement.", required.display()))?;
+        let catalog = repository::fetch_catalog(&config.curl, source, config.ca_bundle.as_deref())?;
+        let record = catalog.records.iter().find(|r| {
+            r.store_path == required.to_string_lossy()
+                && (r.platform == current_platform() || r.platform == "any")
+        }).ok_or_else(|| format!("required plugin {} is not in {source}; publish it there or use a release requirement.", required.display()))?;
+        self.fetch_record(config, source, record)?;
+        Ok(())
     }
 
     /// Nix owns the indirect root registry. Korri retains only the existing
@@ -6383,7 +6507,8 @@ mod tests {
         let publish = |path: &Path, label: &str| {
             crate::publisher::publish(&crate::publisher::PublishArgs {
                 nix: nix.clone(),
-                secret_key: key.clone(),
+                secret_key: Some(key.clone()),
+                self_contained: true,
                 input_store_path: path.into(),
                 release_version: label.into(),
                 platform: current_platform().into(),
@@ -6752,7 +6877,8 @@ mod tests {
         fs::write(&key, secret.stdout).unwrap();
         let mut args = crate::publisher::PublishArgs {
             nix: nix.clone(),
-            secret_key: key,
+            secret_key: Some(key),
+            self_contained: true,
             input_store_path: package,
             release_version: "native".into(),
             platform: "any".into(),
@@ -6852,7 +6978,8 @@ mod tests {
             .unwrap();
             crate::publisher::publish(&crate::publisher::PublishArgs {
                 nix: nix.clone(),
-                secret_key: secret,
+                secret_key: Some(secret),
+                self_contained: true,
                 input_store_path: fs::canonicalize(fixtures.join(name)).unwrap(),
                 release_version: label.into(),
                 platform: current_platform().into(),

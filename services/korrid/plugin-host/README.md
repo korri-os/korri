@@ -7,13 +7,21 @@ The host installs previously unknown plugins without a NixOS update or a device 
 Authors publish a complete repository folder with:
 
 ```sh
-korri-publish repository --secret-key FILE --release LABEL --base-url URL [--platform SYSTEM] OUTPUT_DIR STORE_PATH...
-korri-publish archive --secret-key FILE [--platform SYSTEM] OUTPUT_DIR STORE_PATH
+korri-publish repository [--secret-key FILE] --release LABEL --base-url URL [--platform SYSTEM] [--self-contained] OUTPUT_DIR STORE_PATH...
+korri-publish archive [--secret-key FILE] [--platform SYSTEM] [--self-contained] OUTPUT_DIR STORE_PATH
 ```
 
-Both commands convert the complete closure to content-addressed outputs, run
-`nix store sign --recursive --key-file FILE` before file-cache export, then
-pack a confined archive. Every exported narinfo carries a standard `Sig:` line.
+Signed native packages keep their normal input-addressed paths by default.
+The publisher checks narinfos at `https://cache.nixos.org` and omits paths that
+that cache serves with a normal trusted cache signature and identical NAR
+identity. It signs retained paths with the publisher key, exports them with
+`nix copy --no-recursive`, then packs the confined Nix file-cache archive.
+Source-only packages (no references), packages published without a key, and
+`--self-contained` publications always convert the complete closure to
+content-addressed paths. This preserves source-only `any` identity and permits
+offline installation. Signed exports carry standard `Sig:` lines; unsigned
+exports carry none. No catalog shape flag is needed: Nix metadata identifies CA
+and input-addressed roots.
 `repository` writes `catalog.json`, one archive per record, each record's full
 `publicKey`, and `latest: { "<pluginId>": "<releaseVersion>" }`. Labels have no
 version ordering. `archive` writes no catalog. It prints one JSON line with
@@ -33,10 +41,26 @@ source-only package architecture-specific.
 
 ## Publisher trust
 
-Repository and sideload admission verify the signature **inside the archive**.
-They never ask a configured Nix cache for that signature or for package bytes.
-The complete CA closure, measured archive hash, NAR hashes and sizes, immutable
-source, native policy and exact owner approval remain mandatory.
+Repository and sideload admission verify publisher signatures **inside the
+archive**. Self-contained CA archives need no network. Slim archives complete
+the closure with `https://cache.nixos.org`, never the publisher's bound cache.
+For each path outside separately verified required-plugin closures:
+
+- A path served by the upstream cache must not appear in the archive. The host
+  fetches it only from that cache with the device's normal trusted keys, with
+  the publisher's key excluded. A locally valid copy must already carry a
+  normal trusted cache signature.
+- Every other path must be in the archive and signed by the publisher, or
+  already valid locally with that publisher's signature. A foreign local copy
+  is refused rather than adopted, even if the archive signs the same bytes.
+- The host fetches shared paths first, imports private paths with only the
+  publisher key for that invocation, then verifies the whole closure with the
+  correct key per path. No local or remote build, fallback, or ambient
+  substituter is allowed. Missing shared paths require network access or a
+  self-contained archive.
+
+Measured archive hashes, NAR hashes and sizes, immutable source, native policy
+and exact owner approval remain mandatory.
 
 Config `PublisherBindings` retain their exact namespace-to-full-key check.
 Their cache URLs apply only to the raw-cache route. Runtime trust cannot replace
@@ -149,11 +173,11 @@ Adding a source trusts that HTTPS host. Sources have no priority; identical plug
 
 Review `warning`, `provenance`, `declaration`, `native_units`, `ports`, `hosts`, `unit_configuration`, and each dependency under `brings` before copying the approval digest. `warning` names each unit's privileged directives, capabilities, and devices. Inspection is required again when the release, archive bytes, package, source or effective execution policy changes. There is no automatic update or blanket approval. Switching a raw-cache installation to a repository also uses `repository switch`; raw `update` cannot change a repository installation's origin.
 
-Acquisition validates certificates and follows at most three HTTPS redirects. HTTP downgrades, URL credentials, curlrc and netrc credentials are disabled. Catalog transfers allow 30 seconds and 4 MiB. Archive transfers have no size or total time limit; one that moves less than 1 KiB/s for 60 seconds has stalled and fails, as in the plugin prepare programs. Connection setup allows 10 seconds for every transfer. The host measures the actual archive SHA256 **before** extraction. It checks confined extraction, typed Nix closure metadata, compressed file sizes and actual decompressed xz/NAR sizes and hashes through `archive::preflight_cache`. Only this private local file cache reaches the existing Nix importer. Recursive `--sigs-needed 1` verification remains active. No downloaded Nix options, builds, flake evaluation or signature bypass are accepted.
+Acquisition validates certificates and follows at most three HTTPS redirects. HTTP downgrades, URL credentials, curlrc and netrc credentials are disabled. Catalog transfers allow 30 seconds and 4 MiB. Archive transfers have no size or total time limit; one that moves less than 1 KiB/s for 60 seconds has stalled and fails, as in the plugin prepare programs. Connection setup allows 10 seconds for every transfer. The host measures the actual archive SHA256 **before** extraction. It checks confined extraction, typed Nix closure metadata, compressed file sizes and actual decompressed xz/NAR sizes and hashes through `archive::preflight_cache`. Self-contained archives use only this private local file cache. Slim archives use the per-path upstream/publisher import rules above. `--sigs-needed 1` verification remains active. No downloaded Nix options, builds, flake evaluation or signature bypass are accepted.
 
 The archive itself supplies signing evidence. Repository admission has no bound-cache fallback. See **Publisher trust** for signed and unsigned namespace rules.
 
-The cost is a complete per-release archive and temporary disk use: the whole archive plus its extracted compressed cache, in addition to imported store paths. Plugins have no size limit. Archive download, cache path-info, Nix import and store verification have no deadline. Nix output that grows with a closure (recursive path-info, and per-path build, copy and verify lines) has no output cap; other helpers keep their 1 MiB cap. The boot store-metadata query and closure listing keep their local deadlines (60 and 30 seconds). Publisher content-address conversion and cache export have no deadline. The archive keeps its 100,000-entry bound. Catalogs, release evidence and plugin source manifests keep their bounds. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A large package holds that lock until it finishes. Stall detection ends a stalled archive transfer, so it releases the lock. A lost connection requires a new download; there is no partial resume.
+The cost is temporary disk use: the whole archive plus its extracted compressed cache, in addition to imported store paths. Slim publication and cold installation also depend on upstream cache availability; self-contained publication duplicates shared packages but works offline. Plugins have no size limit. Archive download, cache path-info, Nix import and store verification have no deadline. Nix output that grows with a closure (recursive path-info, and per-path build, copy and verify lines) has no output cap; other helpers keep their 1 MiB cap. The boot store-metadata query and closure listing keep their local deadlines (60 and 30 seconds). Publisher content-address conversion and cache export have no deadline. The archive keeps its 100,000-entry bound. Catalogs, release evidence and plugin source manifests keep their bounds. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A large package holds that lock until it finishes. Stall detection ends a stalled archive transfer, so it releases the lock. A lost connection requires a new download; there is no partial resume.
 
 ## korrid's admin socket
 
@@ -180,7 +204,7 @@ Raw-cache install, update, switch, remove, purge, restore and `enabled-packages`
 
 ## Raw-cache installation and approval
 
-The existing explicit raw-cache route is separate from repository selection. Use the exact output published for this device architecture. The plugin cache can host only custom outputs; the rest of the closure must already exist locally or be available from configured trusted substituters. Every path requires a trusted signature for ordinary input-addressed paths or a verified content-addressed identity. A missing or untrusted dependency fails installation without a build. Adding the plugin cache does not add signing keys or change source identity or approval. The cost is dependence on configured cache availability: Nix can fail an import when it cannot initialize a cache, even if another cache has the needed output. HTTPS repository archives still require their complete content-addressed closure during preflight; this importer change does not change the archive or publisher contract.
+The existing explicit raw-cache route is separate from repository selection. Use the exact output published for this device architecture. The plugin cache can host only custom outputs; the rest of the closure must already exist locally or be available from configured trusted substituters. Every path requires a trusted signature for ordinary input-addressed paths or a verified content-addressed identity. A missing or untrusted dependency fails installation without a build. Adding the plugin cache does not add signing keys or change source identity or approval. The cost is dependence on configured cache availability: Nix can fail an import when it cannot initialize a cache, even if another cache has the needed output. Repository and sideload archives use the slim or self-contained preflight and signature rules above.
 
 ```sh
 sudo korri-plugin inspect "$CACHE_URL" "$PACKAGE"
@@ -457,7 +481,7 @@ The CLI uses korrid's actual evaluator from `services/korrid/src/script.rs`. Tha
 | `title`, `description` | The existing optional fields in `plugin.ts`; the publisher loads the real declaration through `package::load_declaration`. |
 | `release_version` | The explicit publisher CLI release label, independent of upstream binary version. |
 | `platform` | The Nix build system detected from the output derivation, or `any` after the reference/path checks. The consumer selects its compiled Nix system, not one supplied by the catalog caller. |
-| `store_path` | The exact output returned by Nix `store make-content-addressed`. |
+| `store_path` | The original signed native output, or the output returned by Nix `store make-content-addressed` for self-contained publication. |
 | `archive_url` | The publisher's explicit HTTPS asset destination. It is only a download location, never a Nix cache URI/options string. |
 | `archive_sha256` | SHA256 measured over the publisher's actual tar bytes. The consumer measures the downloaded file independently. |
 
@@ -551,7 +575,7 @@ nix develop .#plugin-host --command cargo test --manifest-path services/korrid/p
 nix develop .#plugin-host --command cargo clippy --manifest-path services/korrid/plugin-host/Cargo.toml --all-targets -- -D warnings
 ```
 
-The VM starts without the Tailscale package. A second fixture VM serves signed raw caches, real HTTPS catalogs and complete content-addressed archives produced by the prebuilt publisher. The cold client never publishes or builds. The test disables automatic test-script closure injection, so the client must actually import the package. It proves signature refusal, explicit approval, installation, service readiness, a TUN interface, independent plugin updates, failed-start rollback, power-loss recovery, data retention, purge, cleanup-failure refusal, and an unchanged NixOS generation. No compiler is on the client command path. The extended gates also cover two sources sharing an ID and identical bytes, same-source update, cross-source approval rejection, changed catalogs, failed/interrupted source-switch rollback, source removal with offline lifecycle, and owned stale-staging cleanup. These new VM gates must be run before claiming end-to-end verification.
+The VM starts without the Tailscale package. A second fixture VM serves signed raw caches, real HTTPS catalogs, a separately signed fake upstream cache, and slim or self-contained archives produced by the prebuilt publisher. The cold client never publishes or builds. The test disables automatic test-script closure injection, so the client must actually import the package. It proves signature refusal, explicit approval, installation, service readiness, a TUN interface, independent plugin updates, failed-start rollback, power-loss recovery, data retention, purge, cleanup-failure refusal, and an unchanged NixOS generation. No compiler is on the client command path. The extended gates also cover two sources sharing an ID and identical bytes, same-source update, cross-source approval rejection, changed catalogs, failed/interrupted source-switch rollback, source removal with offline lifecycle, and owned stale-staging cleanup. These new VM gates must be run before claiming end-to-end verification.
 
 The current/previous verification record is in `LIFECYCLE-VALIDATION.md`. The current/previous VM gates cover offline swaps with exact source approvals, enabled and disabled intent, failed explicit restore, preservation across failed updates and reboot, and prior-root cleanup on removal. Run them only as part of the final integrated gate. Focused receipt/filesystem tests cover the atomic commit and each root repair boundary without a VM.
 
