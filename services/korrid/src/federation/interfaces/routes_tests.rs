@@ -172,3 +172,47 @@ fn default_routes_without_a_resolvable_output_fail_closed() {
     }
     assert!(checked_single && checked_multipath);
 }
+
+#[test]
+fn receive_timeout_applies_native_subsecond_bounds_and_rejects_zero() {
+    let mut socket = Socket::new(NETLINK_ROUTE).unwrap();
+    socket.bind_auto().unwrap();
+    assert_eq!(
+        receive_timeout(&socket, Duration::ZERO).unwrap_err().kind(),
+        io::ErrorKind::TimedOut
+    );
+    for remaining in [Duration::from_nanos(1), Duration::from_micros(999_999)] {
+        receive_timeout(&socket, remaining).unwrap();
+        let mut timeout = libc::timeval {
+            tv_sec: 0,
+            tv_usec: 0,
+        };
+        let mut length = std::mem::size_of_val(&timeout) as libc::socklen_t;
+        // SAFETY: timeout and length are writable, native getsockopt outputs.
+        assert_eq!(
+            unsafe {
+                libc::getsockopt(
+                    socket.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    libc::SO_RCVTIMEO,
+                    (&mut timeout as *mut libc::timeval).cast(),
+                    &mut length,
+                )
+            },
+            0
+        );
+        assert_eq!(length as usize, std::mem::size_of_val(&timeout));
+        let actual = Duration::from_secs(timeout.tv_sec.try_into().unwrap())
+            + Duration::from_micros(timeout.tv_usec.try_into().unwrap());
+        // Linux rounds up to the kernel tick. A positive timeout must not become
+        // the all-zero timeval that would disable receive timeouts completely.
+        assert!(actual >= remaining);
+        assert!(actual <= Duration::from_secs(1));
+    }
+    receive_timeout(&socket, Duration::from_nanos(1)).unwrap();
+    let mut buffer = [0u8; 16];
+    assert_eq!(
+        socket.recv(&mut &mut buffer[..], 0).unwrap_err().kind(),
+        io::ErrorKind::WouldBlock
+    );
+}

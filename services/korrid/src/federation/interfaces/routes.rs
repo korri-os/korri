@@ -134,9 +134,17 @@ fn receive_timeout(socket: &Socket, remaining: Duration) -> io::Result<()> {
             "kernel route dump timed out",
         ));
     }
+    // Subseconds are < 1,000,000: this fits both ARM32's i32 and LP64's i64.
+    // Only LP64 has an infallible conversion from u32; keep the ARM32 check.
+    #[allow(clippy::unnecessary_fallible_conversions)]
+    let tv_usec = remaining
+        .subsec_micros()
+        .max(1)
+        .try_into()
+        .expect("subsecond microseconds fit libc::suseconds_t");
     let timeout = libc::timeval {
         tv_sec: remaining.as_secs() as libc::time_t,
-        tv_usec: remaining.subsec_micros().max(1).into(),
+        tv_usec,
     };
     // SAFETY: timeout has the native SO_RCVTIMEO layout and lives through this call.
     if unsafe {
