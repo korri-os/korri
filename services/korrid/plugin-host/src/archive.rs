@@ -163,6 +163,31 @@ pub fn extract(archive_path: &Path, staging_dir: &Path) -> Result<(), String> {
 
 /// A sideload has no catalog. Select the unique closure root from its narinfos.
 pub fn root_path(cache: &Path) -> Result<PathBuf, String> {
+    let (paths, referenced) = cache_inventory(cache)?;
+    let roots: Vec<_> = paths.difference(&referenced).collect();
+    if roots.len() != 1 {
+        return Err("archive must contain exactly one plugin closure root".into());
+    }
+    Ok(roots[0].clone())
+}
+
+pub(crate) fn cache_paths(cache: &Path) -> Result<Vec<String>, String> {
+    Ok(cache_inventory(cache)?
+        .0
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect())
+}
+
+fn cache_inventory(
+    cache: &Path,
+) -> Result<
+    (
+        std::collections::BTreeSet<PathBuf>,
+        std::collections::BTreeSet<PathBuf>,
+    ),
+    String,
+> {
     let mut paths = std::collections::BTreeSet::new();
     let mut referenced = std::collections::BTreeSet::new();
     for entry in fs::read_dir(cache).map_err(|e| e.to_string())? {
@@ -190,11 +215,7 @@ pub fn root_path(cache: &Path) -> Result<PathBuf, String> {
             }
         }
     }
-    let roots: Vec<_> = paths.difference(&referenced).collect();
-    if roots.len() != 1 {
-        return Err("archive must contain exactly one plugin closure root".into());
-    }
-    Ok(roots[0].clone())
+    Ok((paths, referenced))
 }
 
 fn create_entry(root: &File, path: &Path) -> Result<File, String> {
@@ -309,7 +330,20 @@ struct CacheInfo {
 /// Check real NAR sizes and hashes before system-store import. The metadata
 /// size fields are untrusted, so each NAR is decompressed and measured.
 pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result<(), String> {
-    crate::package::validate_store_path(Path::new(store_path))?;
+    preflight(nix, &[store_path.to_owned()], cache_dir, true)
+}
+
+/// A slim cache is deliberately incomplete. Closure completeness and per-path
+/// signature authority are checked by the slim importer, not by this NAR check.
+pub(crate) fn preflight_slim(nix: &Path, paths: &[String], cache_dir: &Path) -> Result<(), String> {
+    preflight(nix, paths, cache_dir, false)
+}
+
+fn preflight(nix: &Path, paths: &[String], cache_dir: &Path, complete: bool) -> Result<(), String> {
+    for path in paths {
+        crate::package::validate_store_path(Path::new(path))?;
+    }
+    let store_path = paths.first().ok_or("empty cache")?;
     let cache = path_to_file_uri(cache_dir)?;
     let json = crate::process::checked_uncapped(
         nix,
@@ -320,9 +354,10 @@ pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result
             &cache,
             "path-info",
             "--json",
-            "--recursive",
-            store_path,
-        ],
+        ]
+        .into_iter()
+        .chain(complete.then_some("--recursive"))
+        .chain(paths.iter().map(String::as_str)),
         None,
     )?;
     let infos: BTreeMap<String, CacheInfo> =
@@ -332,7 +367,7 @@ pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result
     }
     for (path, info) in infos {
         crate::package::validate_store_path(Path::new(&path))?;
-        if !info.ca.is_some_and(|value| !value.is_empty()) {
+        if complete && !info.ca.is_some_and(|value| !value.is_empty()) {
             return Err("repository archive must contain only content-addressed paths".into());
         }
         validate_cache_entry_path(&info.url)?;
@@ -356,6 +391,9 @@ pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result
             _ => return Err("unsupported NAR compression".into()),
         };
         verify_nar(reader, info.nar_size, &info.nar_hash)?;
+    }
+    if !complete {
+        return Ok(());
     }
     crate::process::checked_uncapped(
         nix,

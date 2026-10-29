@@ -16,6 +16,7 @@ pub mod publisher;
 pub mod release;
 pub mod repository;
 pub mod selection;
+mod slim;
 pub mod software_cleanup;
 pub mod source_store;
 pub mod storage;

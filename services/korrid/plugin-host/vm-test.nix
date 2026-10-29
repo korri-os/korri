@@ -70,7 +70,7 @@ let
         mkdir -p "$out"
         openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
           -out "$out/cert.pem" -keyout "$out/key.pem" \
-          -subj '/CN=cache' -addext 'subjectAltName=DNS:cache'
+          -subj '/CN=cache' -addext 'subjectAltName=DNS:cache,DNS:cache.nixos.org'
       '';
   mkPlugin = (import ./interface.nix).mkPlugin { inherit pkgs; };
   offlinePack = mkPlugin {
@@ -517,6 +517,12 @@ pkgs.testers.runNixOSTest {
         };
         services.nginx = {
           enable = true;
+          virtualHosts."cache.nixos.org" = {
+            addSSL = true;
+            sslCertificate = "${certificate}/cert.pem";
+            sslCertificateKey = "${certificate}/key.pem";
+            root = "/var/www/upstream";
+          };
           virtualHosts.cache = {
             addSSL = true;
             sslCertificate = "${certificate}/cert.pem";
@@ -1277,6 +1283,28 @@ pkgs.testers.runNixOSTest {
     def write_catalog(name, records):
         cache.succeed("printf %s " + shlex.quote(json.dumps({"records": records, "latest": {record["plugin_id"]: record["release_version"] for record in records}})) + " > /var/www/repositories/" + name + ".json")
 
+    # Slim archives use exactly the production upstream address. This isolated
+    # TLS server has its own key, unrelated to the plugin publisher. Neither VM
+    # contacts the public cache or builds a package.
+    cache_ip = cache.succeed("getent ahostsv4 cache | head -1 | cut -d' ' -f1").strip()
+    for node in [cache, machine]:
+        node.succeed("printf '%s\\n' " + shlex.quote(cache_ip + " cache.nixos.org") + " >> /etc/hosts")
+    cache.succeed("mkdir -p /var/www/upstream; nix-store --generate-binary-cache-key archive-upstream /tmp/archive-upstream.key /tmp/archive-upstream.pub")
+    archive_upstream_key = cache.succeed("cat /tmp/archive-upstream.pub").strip()
+    for node in [cache, machine]:
+        node.succeed("printf '%s\\n' " + shlex.quote("extra-trusted-public-keys = " + archive_upstream_key) + " >> /etc/nix/nix.conf")
+    repository_packages = ["${tailscalePackage}", "${updated}", "${broken}", "${interrupted}"]
+    shared_paths = sorted(set(cache.succeed("nix --extra-experimental-features nix-command path-info --recursive " + " ".join(repository_packages)).split()) - set(repository_packages))
+    cache.succeed("nix --extra-experimental-features nix-command store sign --key-file /tmp/archive-upstream.key " + " ".join(shared_paths))
+    cache.succeed("nix --extra-experimental-features nix-command copy --no-recursive --to 'file:///var/www/upstream?compression=xz' " + " ".join(shared_paths))
+    cache.wait_for_unit("nginx.service")
+    machine.succeed("curl --fail --silent https://cache.nixos.org/nix-cache-info")
+    # Image assembly can omit registered signatures. Rule (a) deliberately
+    # refuses those local copies; register only this fixture upstream's proof.
+    local_shared = sorted(set(machine.succeed("nix --extra-experimental-features nix-command path-info --all").split()) & set(shared_paths))
+    if local_shared:
+        machine.succeed("nix --extra-experimental-features nix-command store copy-sigs --substituter https://cache.nixos.org " + " ".join(local_shared))
+
     records = []
     for release, package in [("v1", "${tailscalePackage}"), ("v2", "${updated}"), ("broken", "${broken}"), ("pending", "${interrupted}")]:
         output = "/var/lib/publication-" + release
@@ -1285,6 +1313,10 @@ pkgs.testers.runNixOSTest {
         record = json.loads(cache.succeed("cat " + output + "/catalog.json"))["records"][0]
         cache.succeed("cp " + output + "/*.tar /var/www/repositories/")
         records.append(record)
+        assert record["store_path"] == package, record
+        archived = cache.succeed("tar tf " + output + "/*.tar").split()
+        for shared in shared_paths:
+            assert shared.rsplit("/", 1)[1][:32] + ".narinfo" not in archived
     write_catalog("a", records)
     write_catalog("b", records)
     write_catalog("official", [])

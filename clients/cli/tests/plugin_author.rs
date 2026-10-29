@@ -112,12 +112,14 @@ fn plugin_build_prints_outputs_for_the_systems_this_machine_can_build() {
 #[test]
 fn plugin_publish_creates_a_private_key_once_and_passes_it_to_the_publisher() {
     let tools = AuthorTools::new();
-    for _ in 0..2 {
-        let output = tools
-            .cli()
+    for self_contained in [false, true] {
+        let mut command = tools.cli();
+        command.args(["plugins", "publish"]);
+        if self_contained {
+            command.arg("--self-contained");
+        }
+        let output = command
             .args([
-                "plugins",
-                "publish",
                 "repository",
                 "--release",
                 "v1",
@@ -149,6 +151,7 @@ fn plugin_publish_creates_a_private_key_once_and_passes_it_to_the_publisher() {
     let calls = fs::read_to_string(tools.root.path().join("publisher.calls")).unwrap();
     assert!(calls.contains("--secret-key"));
     assert!(calls.contains("@author.secret"));
+    assert_eq!(calls.matches("--self-contained").count(), 1);
 }
 
 #[test]

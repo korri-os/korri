@@ -60,6 +60,7 @@ if [ "$1" = archive ]; then
   [ "$2" = --secret-key ] || exit 8
   [ -f "$3" ] || exit 8
   shift 3
+  if [ "$1" = --self-contained ]; then shift; fi
   if [ "$1" = --platform ]; then
     [ -n "$2" ] && [ "$2" != any ] || exit 8
     shift 2
@@ -75,6 +76,7 @@ fi
 [ "$4" = --release ] || exit 8
 [ "$6" = --base-url ] || exit 8
 shift 7
+if [ "$1" = --self-contained ]; then shift; fi
 if [ "$1" = --platform ]; then
   [ -n "$2" ] && [ "$2" != any ] || exit 8
   shift 2

@@ -177,6 +177,7 @@ fn prepare(args: &ArgMatches) -> Result<PreparedArchive, CliError> {
         workspace.path(),
         &key,
         platform.map(String::as_str),
+        args.get_flag("self-contained"),
     )?;
     if archive.platform != "any" && platform != Some(&archive.platform) {
         return Err(CliError::usage("The selected device does not report its build platform. Supply --platform with its Nix system; only any-architecture packages can omit it."));

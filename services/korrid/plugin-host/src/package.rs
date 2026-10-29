@@ -220,6 +220,10 @@ pub fn import_archive(nix: &Path, cache: &str, package: &Path) -> Result<(), Str
         ],
         None,
     )?;
+    sync_store()
+}
+
+pub(crate) fn sync_store() -> Result<(), String> {
     let store = fs::File::open("/nix/store").map_err(|e| e.to_string())?;
     if unsafe { libc::syncfs(store.as_raw_fd()) } != 0 {
         return Err(std::io::Error::last_os_error().to_string());
@@ -334,11 +338,43 @@ fn read_regular(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
 const MANIFEST_BYTES: u64 = 512 * 1024;
 
 fn manifest(package: &Path) -> Result<Manifest, String> {
-    let manifest: Manifest = serde_json::from_slice(&read_regular(
+    parse_manifest(&read_regular(
         &package.join("manifest.json"),
         MANIFEST_BYTES,
     )?)
-    .map_err(|error| format!("invalid plugin manifest: {error}"))?;
+}
+
+pub(crate) fn archive_manifest(
+    nix: &Path,
+    cache: &str,
+    package: &Path,
+) -> Result<(String, Vec<PathBuf>), String> {
+    let text = process::checked(
+        nix,
+        [
+            "--extra-experimental-features",
+            "nix-command",
+            "store",
+            "cat",
+            "--store",
+            cache,
+            package
+                .join("manifest.json")
+                .to_str()
+                .ok_or("invalid manifest path")?,
+        ],
+        Duration::from_secs(30),
+    )?;
+    let manifest = parse_manifest(text.as_bytes())?;
+    Ok((manifest.publisher.namespace, manifest.requires))
+}
+
+fn parse_manifest(bytes: &[u8]) -> Result<Manifest, String> {
+    if bytes.len() as u64 > MANIFEST_BYTES {
+        return Err("plugin manifest exceeds its size bound".into());
+    }
+    let manifest: Manifest = serde_json::from_slice(bytes)
+        .map_err(|error| format!("invalid plugin manifest: {error}"))?;
     crate::declaration::validate_id(&format!("{}:manifest", manifest.publisher.namespace))?;
     for names in [&manifest.packages, &manifest.files, &manifest.services] {
         crate::native_unit::validate_names(&names.keys().cloned().collect::<Vec<_>>())?;
@@ -436,15 +472,16 @@ pub fn public_key_bytes(key: &str) -> Result<Vec<u8>, String> {
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct NarInfo {
-    nar_hash: String,
-    nar_size: u64,
-    references: Vec<String>,
+pub(crate) struct NarInfo {
+    pub(crate) ca: Option<String>,
+    pub(crate) nar_hash: String,
+    pub(crate) nar_size: u64,
+    pub(crate) references: Vec<String>,
     #[serde(default)]
-    signatures: Vec<String>,
+    pub(crate) signatures: Vec<String>,
 }
 
-fn path_info(nix: &Path, package: &str, cache: Option<&str>) -> Result<NarInfo, String> {
+pub(crate) fn path_info(nix: &Path, package: &str, cache: Option<&str>) -> Result<NarInfo, String> {
     let mut args = vec![
         "--extra-experimental-features",
         "nix-command",
@@ -494,7 +531,7 @@ pub fn nix32_sha256(sri: &str) -> Result<String, String> {
     Ok(out)
 }
 
-fn fingerprint(package: &str, info: &NarInfo) -> Result<String, String> {
+pub(crate) fn fingerprint(package: &str, info: &NarInfo) -> Result<String, String> {
     // This is Nix's ValidPathInfo::fingerprint(), not a signature-name check.
     // Nix normalizes its SRI hash to the nix32 form used in that fingerprint.
     if !info.nar_hash.starts_with("sha256-") || info.nar_size == 0 {
@@ -515,7 +552,7 @@ fn fingerprint(package: &str, info: &NarInfo) -> Result<String, String> {
     ))
 }
 
-fn signed_by(info: &NarInfo, fingerprint: &str, key: &[u8]) -> bool {
+pub(crate) fn signed_by(info: &NarInfo, fingerprint: &str, key: &[u8]) -> bool {
     info.signatures.iter().any(|signature| {
         let Some((_, encoded)) = signature.split_once(':') else {
             return false;
@@ -580,7 +617,7 @@ impl StoreSnapshot {
             .is_some_and(|package| self.infos.contains_key(package))
     }
 
-    fn info(&self, package: &Path) -> Result<&NarInfo, String> {
+    pub(crate) fn info(&self, package: &Path) -> Result<&NarInfo, String> {
         package
             .to_str()
             .and_then(|package| self.infos.get(package))

@@ -382,7 +382,11 @@ Build prints each Nix output. It builds the plugin's platforms that match Nix's
 builder capabilities. Publish builds the same outputs, then calls
 `korri-publish repository` with the explicit release label and HTTPS base URL.
 It prints the repository folder and fingerprint; it does not upload anything.
-The folder contains the catalog, archives and latest mark. Optional
+The folder contains the catalog, archives and latest mark. Signed native
+archives are slim by default: devices fetch shared packages from
+`https://cache.nixos.org`. Add `--self-contained` to `plugins publish` or
+`plugins sideload` to include the complete content-addressed closure for offline
+installation. Source-only packages are always self-contained. Optional
 `plugins publish --platform SYSTEM` builds that platform and passes the same
 `--platform SYSTEM` hint to `korri-publish repository`. Omit it to retain the
 normal local-platform builds. `--platform any` builds locally and sends no hint.
