@@ -1,0 +1,306 @@
+// THROWAWAY SPIKE. One window, props in, two callbacks out.
+// Nothing here reads state: Rust derives one `Report` and sets it.
+import { ScrollView } from "std-widgets.slint";
+
+export enum Tone { checking, healthy, partial, failed }
+export struct Fact { label: string, value: string, unbroken: bool }
+export struct Report {
+    tone: Tone,
+    headline: string,
+    detail: string,
+    connection: [Fact],
+    identity: [Fact],
+    catalog-summary: string,
+    games: [string],
+    peers-summary: string,
+    peers: [string],
+    build: [Fact],
+    refreshing: bool,
+    checks: int,
+}
+export struct Plan { columns: int, header-inline: bool, compact: bool }
+
+// Brand values from brand/README.md (leaf, lobe, field dark). The neutrals and
+// state colours are spike-local choices, not product tokens.
+global Tokens {
+    out property <color> leaf: #7EFD3B;
+    out property <color> lobe: #5FD62F;
+    out property <color> field: #000000;
+    out property <color> ink: #ECEFE8;
+    out property <color> ink-muted: #9BA393;
+    out property <color> rule: #2B3128;
+    out property <color> warn: #F2C14E;
+    out property <color> fail: #FF8273;
+    out property <length> type-small: 13px;
+    out property <length> type-body: 15px;
+    out property <length> type-head: 17px;
+    out property <length> type-title: 22px;
+    out property <length> target: 44px;
+}
+
+component Action inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    out property <bool> focused: scope.has-focus;
+    callback activated();
+    forward-focus: scope;
+    min-width: max(104px, label.preferred-width + 32px);
+    height: Tokens.target;
+    border-radius: 6px;
+    background: !root.enabled ? Tokens.rule : root.primary ? Tokens.leaf : Tokens.field;
+    border-width: root.primary ? 0px : 1px;
+    border-color: Tokens.ink-muted;
+
+    // Focus ring drawn outside the control so it reads on the leaf fill too.
+    Rectangle {
+        x: -5px;
+        y: -5px;
+        width: parent.width + 10px;
+        height: parent.height + 10px;
+        border-radius: 10px;
+        border-width: 3px;
+        border-color: scope.has-focus ? Tokens.ink : transparent;
+    }
+
+    label := Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: !root.enabled ? Tokens.ink-muted : root.primary ? Tokens.field : Tokens.ink;
+        font-size: Tokens.type-body;
+        font-weight: 650;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                if (root.enabled) {
+                    root.activated();
+                }
+                return accept;
+            }
+            reject
+        }
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            scope.focus();
+            if (root.enabled) {
+                root.activated();
+            }
+        }
+    }
+}
+
+component FactRow inherits VerticalLayout {
+    in property <Fact> fact;
+    spacing: 2px;
+    Text {
+        text: root.fact.label;
+        color: Tokens.ink-muted;
+        font-size: Tokens.type-small;
+    }
+    Text {
+        text: root.fact.value;
+        color: Tokens.ink;
+        font-size: Tokens.type-body;
+        wrap: root.fact.unbroken ? TextWrap.char-wrap : TextWrap.word-wrap;
+    }
+}
+
+component Section inherits VerticalLayout {
+    in property <string> heading;
+    alignment: start;
+    spacing: 10px;
+    Text {
+        text: root.heading;
+        color: Tokens.ink;
+        font-size: Tokens.type-head;
+        font-weight: 700;
+    }
+    Rectangle {
+        height: 1px;
+        background: Tokens.rule;
+    }
+    @children
+}
+
+component FactSection inherits Section {
+    in property <[Fact]> facts;
+    for item in root.facts: FactRow { fact: item; }
+}
+
+component ListSection inherits Section {
+    in property <string> summary;
+    in property <[string]> items;
+    Text {
+        text: root.summary;
+        color: Tokens.ink;
+        font-size: Tokens.type-body;
+        wrap: word-wrap;
+    }
+    for item in root.items: Text {
+        text: item;
+        color: Tokens.ink;
+        font-size: Tokens.type-body;
+        wrap: word-wrap;
+    }
+}
+
+export component InspectorWindow inherits Window {
+    title: "Korri diagnostics";
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    min-width: 300px;
+    min-height: 220px;
+    background: Tokens.field;
+
+    in property <Report> report;
+    // Spike-local: lets the self-test confirm which control holds focus.
+    out property <bool> refresh-focused: refresh.focused;
+    callback refresh();
+    callback close-window();
+    pure callback plan(length, length) -> Plan;
+
+    property <Plan> layout: root.plan(root.width, root.height);
+    property <length> pad: root.layout.compact ? 12px : 24px;
+    property <length> gap: root.layout.compact ? 12px : 24px;
+    property <length> actions-width: actions.preferred-width;
+    property <length> title-width: root.layout.header-inline
+        ? root.width - 2 * root.pad - root.actions-width - root.gap
+        : root.width - 2 * root.pad;
+    property <color> tone-color: root.report.tone == Tone.healthy ? Tokens.leaf
+        : root.report.tone == Tone.partial ? Tokens.warn
+        : root.report.tone == Tone.failed ? Tokens.fail
+        : Tokens.ink-muted;
+    // Every block below is placed explicitly: a layout without its own
+    // width and height would fill the whole window.
+    property <length> header-height: root.layout.header-inline
+        ? Tokens.target
+        : Tokens.target + root.gap / 2 + Tokens.target;
+    property <length> content-width: root.width - 2 * root.pad;
+    property <length> column-width: (root.content-width - (root.layout.columns - 1) * root.gap)
+        / root.layout.columns;
+
+    init => {
+        refresh.focus();
+    }
+
+    masthead := HorizontalLayout {
+        x: root.pad;
+        y: root.pad;
+        width: root.title-width;
+        height: Tokens.target;
+        spacing: 10px;
+        alignment: start;
+        Text {
+            text: "korri";
+            color: Tokens.leaf;
+            font-size: Tokens.type-title;
+            font-weight: 800;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "Native diagnostics";
+            color: Tokens.ink;
+            font-size: Tokens.type-title;
+            font-weight: 400;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    actions := HorizontalLayout {
+        x: root.layout.header-inline ? root.width - root.pad - root.actions-width : root.pad;
+        y: root.layout.header-inline ? root.pad : root.pad + Tokens.target + root.gap / 2;
+        width: root.actions-width;
+        height: Tokens.target;
+        spacing: 12px;
+        refresh := Action {
+            text: root.report.refreshing ? "Checking…" : "Refresh";
+            primary: true;
+            enabled: !root.report.refreshing;
+            activated => {
+                root.refresh();
+            }
+        }
+        Action {
+            text: "Close";
+            activated => {
+                root.close-window();
+            }
+        }
+    }
+
+    status := HorizontalLayout {
+        x: root.pad;
+        y: root.pad + root.header-height + root.gap;
+        width: root.content-width;
+        height: self.preferred-height;
+        spacing: 12px;
+        Rectangle {
+            width: 4px;
+            background: root.tone-color;
+        }
+        VerticalLayout {
+            spacing: 4px;
+            Text {
+                text: root.report.headline;
+                color: root.tone-color;
+                font-size: Tokens.type-head;
+                font-weight: 700;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.report.detail;
+                color: Tokens.ink;
+                font-size: Tokens.type-body;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    scroll := ScrollView {
+        x: root.pad;
+        y: status.y + status.preferred-height + root.gap;
+        width: root.content-width;
+        height: max(0px, root.height - self.y - root.pad);
+        content-width: self.visible-width;
+        content-height: columns.preferred-height;
+
+        columns := HorizontalLayout {
+            width: scroll.visible-width;
+            spacing: root.gap;
+            alignment: start;
+            VerticalLayout {
+                width: root.column-width;
+                alignment: start;
+                spacing: root.gap;
+                FactSection { heading: "Connection"; facts: root.report.connection; }
+                if root.layout.columns == 1: FactSection { heading: "Device identity"; facts: root.report.identity; }
+                if root.layout.columns == 1: ListSection { heading: "Catalog"; summary: root.report.catalog-summary; items: root.report.games; }
+                if root.layout.columns == 1: ListSection { heading: "Peers"; summary: root.report.peers-summary; items: root.report.peers; }
+                if root.layout.columns == 2: FactSection { heading: "Device identity"; facts: root.report.identity; }
+                FactSection { heading: "Build"; facts: root.report.build; }
+            }
+            if root.layout.columns >= 2: VerticalLayout {
+                width: root.column-width;
+                alignment: start;
+                spacing: root.gap;
+                if root.layout.columns == 3: FactSection { heading: "Device identity"; facts: root.report.identity; }
+                if root.layout.columns == 2: ListSection { heading: "Catalog"; summary: root.report.catalog-summary; items: root.report.games; }
+                ListSection { heading: "Peers"; summary: root.report.peers-summary; items: root.report.peers; }
+            }
+            if root.layout.columns == 3: VerticalLayout {
+                width: root.column-width;
+                alignment: start;
+                ListSection { heading: "Catalog"; summary: root.report.catalog-summary; items: root.report.games; }
+            }
+        }
+    }
+}
