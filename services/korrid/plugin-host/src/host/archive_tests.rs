@@ -50,9 +50,10 @@ fn slim_real_nix_publish_install_security_and_offline() {
     fs::write(
         &script,
         format!(
-            "#!/bin/sh\nexec {} --option trusted-public-keys '{}' \"$@\"\n",
+            "#!/bin/sh\nexec {} --option trusted-public-keys '{} {}' \"$@\"\n",
             nix.display(),
-            upstream_key
+            upstream_key,
+            publisher_key
         ),
     )
     .unwrap();
@@ -328,6 +329,139 @@ fn slim_real_nix_publish_install_security_and_offline() {
     );
     host.selection("@slim:native").remove().unwrap();
     drop(host);
+    // A config-bound publisher must not route an upstream forgery through a
+    // second plugin's RawCache provenance and the required-closure exception.
+    run(
+        &nix,
+        &[
+            "copy",
+            "--to",
+            &publisher_shared_uri,
+            package.to_str().unwrap(),
+        ],
+    );
+    let parent_source = root.path().join("parent-source");
+    fs::create_dir(&parent_source).unwrap();
+    fs::write(
+        parent_source.join("plugin.ts"),
+        "export const name = 'pack';",
+    )
+    .unwrap();
+    fs::write(parent_source.join("manifest.json"), serde_json::json!({"publisher":{"namespace":"@slim"},"entry":"plugin.ts","sources":["plugin.ts"],"requires":[package]}).to_string()).unwrap();
+    let parent_source_path = run(
+        &nix,
+        &["store", "add-path", parent_source.to_str().unwrap()],
+    );
+    let parent_expression = expression
+        .replace(&source_path, &parent_source_path)
+        .replace(&shared, package.to_str().unwrap());
+    let built = run(
+        &nix,
+        &[
+            "build",
+            "--impure",
+            "--option",
+            "sandbox",
+            "false",
+            "--no-link",
+            "--json",
+            "--expr",
+            &parent_expression,
+        ],
+    );
+    let built: serde_json::Value = serde_json::from_str(&built).unwrap();
+    let parent = PathBuf::from(built[0]["outputs"]["out"].as_str().unwrap());
+    let parent_derivation = built[0]["drvPath"].as_str().unwrap();
+    let parent_archive = publisher::publish_archive_with_upstream(
+        &PublishArgs {
+            nix: nix.clone(),
+            secret_key: Some(key.clone()),
+            self_contained: false,
+            input_store_path: parent.clone(),
+            release_version: "requires".into(),
+            platform: current_platform().into(),
+            archive_url: String::new(),
+            output_dir: output.clone(),
+        },
+        Some(&mut upstream),
+    )
+    .unwrap();
+    run(
+        &nix,
+        &[
+            "store",
+            "delete",
+            parent.to_str().unwrap(),
+            parent_derivation,
+        ],
+    );
+    let directory = root.path().join("bound-requirement-host");
+    fs::create_dir(&directory).unwrap();
+    let mut bound = Host::for_test(
+        &directory,
+        nix.clone(),
+        LifecyclePolicy::new(Vec::new()).unwrap(),
+        TestRuntime::default(),
+    )
+    .unwrap();
+    bound.test_runtime = None;
+    bound.archive_upstream = Some(upstream_cache.clone());
+    bound.units.systemctl = helper.clone();
+    bound.units.firewall.ipv4 = helper.clone();
+    bound.units.firewall.ipv6 = helper.clone();
+    bound.publishers.insert(
+        "@slim".into(),
+        package::PublisherBinding {
+            public_key: publisher_key.clone(),
+            cache_url: publisher_shared_uri.clone(),
+        },
+    );
+    let error = bound
+        .inspect_archive(&config, &parent_archive.archive_path)
+        .err()
+        .unwrap();
+    assert!(
+        error.contains("publisher-signed cache copy cannot supply an upstream path"),
+        "{error}"
+    );
+    assert!(!parent.exists(), "refuse before importing the parent");
+    assert!(bound.installed().unwrap().is_empty());
+    assert!(
+        !bound.paths.registry_path.exists(),
+        "refuse before native or selection effects"
+    );
+    package::verify_local_signature(
+        &nix,
+        None,
+        Path::new(&shared),
+        &upstream_key,
+        package::StoreContents::Rehash,
+    )
+    .unwrap();
+    // A requirement's legitimate private cache still works, keeps RawCache
+    // provenance, and can share separately verified upstream packages.
+    let good_uri = format!(
+        "file://{}",
+        root.path().join("good-required-cache").display()
+    );
+    run(
+        &nix,
+        &["copy", "--to", &good_uri, package.to_str().unwrap()],
+    );
+    bound.publishers.get_mut("@slim").unwrap().cache_url = good_uri.clone();
+    let review = bound
+        .inspect_archive(&config, &parent_archive.archive_path)
+        .unwrap();
+    assert!(
+        matches!(&review.brings[0].report.provenance, Provenance::RawCache { cache_url } if cache_url == &good_uri)
+    );
+    bound
+        .install_reviewed(review.clone(), &bound.review_approval(&review).unwrap())
+        .unwrap();
+    bound.selection("@slim:pack").remove().unwrap();
+    bound.selection("@slim:native").remove().unwrap();
+    drop(bound);
+    run(&nix, &["store", "delete", parent.to_str().unwrap()]);
     // A second publisher cannot adopt an existing input-addressed output,
     // even when its archive has a valid signature for those same bytes.
     let other_secret = run(

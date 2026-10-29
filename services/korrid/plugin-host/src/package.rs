@@ -503,6 +503,49 @@ pub(crate) fn path_info(nix: &Path, package: &str, cache: Option<&str>) -> Resul
         .ok_or_else(|| "Nix metadata names another output".into())
 }
 
+/// A binary cache can omit shared paths. Nix represents absence as a null
+/// value in its path-info JSON; transport or malformed responses fail closed.
+pub(crate) fn optional_path_info(
+    nix: &Path,
+    package: &str,
+    cache: &str,
+) -> Result<Option<NarInfo>, String> {
+    validate_store_path(Path::new(package))?;
+    let output = process::run(
+        nix,
+        [
+            "--extra-experimental-features",
+            "nix-command",
+            "path-info",
+            "--json",
+            "--store",
+            cache,
+            package,
+        ],
+        Duration::from_secs(30),
+    )?;
+    let mut infos: BTreeMap<String, Option<NarInfo>> = serde_json::from_str(&output.stdout)
+        .map_err(|_| {
+            format!(
+                "cannot read required-plugin cache metadata: {}{}",
+                output.stdout, output.stderr
+            )
+        })?;
+    if infos.len() != 1 {
+        return Err("Nix must describe exactly the selected package".into());
+    }
+    let info = infos
+        .remove(package)
+        .ok_or("Nix metadata names another output")?;
+    if info.is_some() && !output.success {
+        return Err(format!(
+            "cannot read required-plugin cache metadata: {}",
+            output.stderr
+        ));
+    }
+    Ok(info)
+}
+
 /// Nix's base-32 form of an SRI `sha256-` hash, as `nix hash convert --to
 /// nix32` prints it. Computed here because each `nix` call costs about 0.3 s
 /// on an RK3566.
