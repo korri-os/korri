@@ -1,5 +1,5 @@
-//! Build-side publication of a real declaration and complete content-addressed
-//! closure. The caller supplies a release label and intended HTTPS asset URL.
+//! Build-side publication of signed native slim archives and self-contained
+//! content-addressed closures. The caller supplies the release and HTTPS URL.
 
 use crate::{
     archive,

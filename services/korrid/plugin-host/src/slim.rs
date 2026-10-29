@@ -278,6 +278,14 @@ fn verify(nix: &Path, keys: &[String], paths: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn unavailable(missing: usize, error: &str) -> String {
+    if missing == 0 {
+        format!("cannot check shared package authority at {UPSTREAM}: {error}")
+    } else {
+        format!("{missing} shared packages need {UPSTREAM}; connect to the network or use a self-contained archive: {error}")
+    }
+}
+
 /// Resolve the closure from the archive and upstream metadata, check existing
 /// store authority before importing, then fetch shared paths before private ones.
 pub(crate) fn import(
@@ -310,8 +318,14 @@ pub(crate) fn import(
             None
         };
         let remote = upstream.info(&path).map_err(|error| {
-            let missing = paths.iter().filter_map(|p| package::path_info(nix, p, Some(&cache_uri)).ok()).flat_map(|i| i.references).filter(|p| !paths.contains(p) && !Path::new(p).exists()).collect::<BTreeSet<_>>().len().max(usize::from(local.is_none()));
-            format!("{missing} shared packages need {UPSTREAM}; connect to the network or use a self-contained archive: {error}")
+            let missing = paths
+                .iter()
+                .filter_map(|p| package::path_info(nix, p, Some(&cache_uri)).ok())
+                .flat_map(|i| i.references)
+                .filter(|p| !paths.contains(p) && !Path::new(p).exists())
+                .collect::<BTreeSet<_>>()
+                .len();
+            unavailable(missing, &error)
         })?;
         let (info, keys, is_shared) = if let Some(info) = remote {
             if paths.contains(&path) {
@@ -350,7 +364,12 @@ pub(crate) fn import(
         }
         queue.extend(info.references);
     }
-    invocation(nix, &upstream.uri()?, &trusted, &shared).map_err(|error| format!("{} shared packages need {UPSTREAM}; connect to the network or use a self-contained archive: {error}", shared.iter().filter(|p| !Path::new(p).exists()).count()))?;
+    invocation(nix, &upstream.uri()?, &trusted, &shared).map_err(|error| {
+        unavailable(
+            shared.iter().filter(|p| !Path::new(p).exists()).count(),
+            &error,
+        )
+    })?;
     invocation(nix, &cache_uri, &publisher, &private)?;
     // Nix's CA exemption must not stand in for an explicit signature in a slim
     // closure, even for a fixed-output dependency.

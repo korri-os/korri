@@ -18,7 +18,7 @@ identity. It signs retained paths with the publisher key, exports them with
 `nix copy --no-recursive`, then packs the confined Nix file-cache archive.
 Source-only packages (no references), packages published without a key, and
 `--self-contained` publications always convert the complete closure to
-content-addressed paths. This preserves source-only `any` identity and permits
+content-addressed paths. Already content-addressed inputs also stay self-contained. This preserves source-only `any` identity and permits
 offline installation. Signed exports carry standard `Sig:` lines; unsigned
 exports carry none. No catalog shape flag is needed: Nix metadata identifies CA
 and input-addressed roots.
@@ -177,7 +177,7 @@ Acquisition validates certificates and follows at most three HTTPS redirects. HT
 
 The archive itself supplies signing evidence. Repository admission has no bound-cache fallback. See **Publisher trust** for signed and unsigned namespace rules.
 
-The cost is temporary disk use: the whole archive plus its extracted compressed cache, in addition to imported store paths. Slim publication and cold installation also depend on upstream cache availability; self-contained publication duplicates shared packages but works offline. Plugins have no size limit. Archive download, cache path-info, Nix import and store verification have no deadline. Nix output that grows with a closure (recursive path-info, and per-path build, copy and verify lines) has no output cap; other helpers keep their 1 MiB cap. The boot store-metadata query and closure listing keep their local deadlines (60 and 30 seconds). Publisher content-address conversion and cache export have no deadline. The archive keeps its 100,000-entry bound. Catalogs, release evidence and plugin source manifests keep their bounds. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A large package holds that lock until it finishes. Stall detection ends a stalled archive transfer, so it releases the lock. A lost connection requires a new download; there is no partial resume.
+The cost is temporary disk use: the whole archive plus its extracted compressed cache, in addition to imported store paths. Slim publication and installation also need upstream metadata access, even when NARs are local; self-contained publication duplicates shared packages but works offline. Plugins have no size limit. Archive download, cache path-info, Nix import and store verification have no deadline. Nix output that grows with a closure (recursive path-info, and per-path build, copy and verify lines) has no output cap; other helpers keep their 1 MiB cap. The boot store-metadata query and closure listing keep their local deadlines (60 and 30 seconds). Publisher content-address conversion and cache export have no deadline. The archive keeps its 100,000-entry bound. Catalogs, release evidence and plugin source manifests keep their bounds. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A large package holds that lock until it finishes. Stall detection ends a stalled archive transfer, so it releases the lock. A lost connection requires a new download; there is no partial resume.
 
 ## korrid's admin socket
 

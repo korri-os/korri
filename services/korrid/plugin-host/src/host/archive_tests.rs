@@ -271,6 +271,28 @@ fn slim_real_nix_publish_install_security_and_offline() {
         package::StoreContents::TrustRegistered
     )
     .is_err());
+    let mut unavailable = slim::Upstream::new(
+        &nix,
+        &Configuration {
+            curl: helper.with_file_name("false"),
+            ca_bundle: None,
+            official: None,
+        },
+    )
+    .unwrap();
+    let error = slim::import(
+        &nix,
+        &cache,
+        &package,
+        &publisher_key,
+        &mut unavailable,
+        &BTreeSet::new(),
+    )
+    .unwrap_err();
+    assert!(
+        error.contains("cannot check shared package authority at https://cache.nixos.org"),
+        "{error}"
+    );
     let host_dir = root.path().join("slim-sideload-host");
     fs::create_dir(&host_dir).unwrap();
     let mut host = Host::for_test(
