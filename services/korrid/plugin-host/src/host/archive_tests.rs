@@ -22,6 +22,55 @@ fn run(nix: &Path, args: &[&str]) -> String {
     String::from_utf8(result.stdout).unwrap().trim().to_owned()
 }
 
+/// Publish different, valid NAR bytes under an input-addressed name, signed by
+/// the attacker. Nix still produces the NAR and parses the resulting metadata.
+fn forge_cache_path(nix: &Path, cache: &Path, target: &str, alternate: &str, secret: &Path) {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    run(
+        nix,
+        &[
+            "copy",
+            "--to",
+            &archive::path_to_file_uri(cache).unwrap(),
+            alternate,
+        ],
+    );
+    let name = |path: &str| {
+        format!(
+            "{}.narinfo",
+            &Path::new(path).file_name().unwrap().to_str().unwrap()[..32]
+        )
+    };
+    let original = cache.join(name(alternate));
+    let text = fs::read_to_string(&original).unwrap();
+    let info = package::path_info(nix, alternate, None).unwrap();
+    let secret = fs::read_to_string(secret).unwrap();
+    let (label, encoded) = secret.trim().split_once(':').unwrap();
+    let bytes = STANDARD.decode(encoded).unwrap();
+    let pair =
+        ring::signature::Ed25519KeyPair::from_seed_and_public_key(&bytes[..32], &bytes[32..])
+            .unwrap();
+    let signature = STANDARD.encode(
+        pair.sign(package::fingerprint(target, &info).unwrap().as_bytes())
+            .as_ref(),
+    );
+    let mut text = text
+        .lines()
+        .filter(|line| !line.starts_with("CA:") && !line.starts_with("Sig:"))
+        .map(|line| {
+            if line.starts_with("StorePath:") {
+                format!("StorePath: {target}")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    text.push_str(&format!("\nSig: {label}:{signature}\n"));
+    fs::write(cache.join(name(target)), text).unwrap();
+    fs::remove_file(original).unwrap();
+}
+
 #[test]
 #[ignore = "requires writable build-machine Nix; creates and removes only this test's unique outputs"]
 fn slim_real_nix_publish_install_security_and_offline() {
@@ -229,6 +278,43 @@ fn slim_real_nix_publish_install_security_and_offline() {
     }
     run(&nix, &["store", "delete", &shared]);
     run(&nix, &["copy", "--from", &publisher_shared_uri, &shared]);
+    // Rule (a)(2): a publisher signature is not authority, but the same
+    // NAR hash and size authenticated by the upstream key prove these bytes.
+    let mut upstream = slim::Upstream::file(&nix, &upstream_cache);
+    slim::import(
+        &nix,
+        &cache,
+        &package,
+        &publisher_key,
+        &mut upstream,
+        &BTreeSet::new(),
+    )
+    .unwrap();
+    assert!(package.exists());
+    run(
+        &nix,
+        &["store", "delete", package.to_str().unwrap(), &shared],
+    );
+    // The attack has different NAR bytes, not merely a different signature
+    // on the actual upstream bytes. Its signature is a valid publisher one.
+    let forged_source = root.path().join("forged-shared");
+    fs::write(&forged_source, "not the upstream shared package").unwrap();
+    let alternate = run(
+        &nix,
+        &["store", "add-path", forged_source.to_str().unwrap()],
+    );
+    let publisher_shared = root.path().join("publisher-poison");
+    let publisher_shared_uri = archive::path_to_file_uri(&publisher_shared).unwrap();
+    forge_cache_path(&nix, &publisher_shared, &shared, &alternate, &key);
+    run(&nix, &["copy", "--from", &publisher_shared_uri, &shared]);
+    package::verify_local_signature(
+        &nix,
+        None,
+        Path::new(&shared),
+        &publisher_key,
+        package::StoreContents::Rehash,
+    )
+    .unwrap();
     let mut upstream = slim::Upstream::file(&nix, &upstream_cache);
     let error = slim::import(
         &nix,
@@ -240,9 +326,12 @@ fn slim_real_nix_publish_install_security_and_offline() {
     )
     .unwrap_err();
     assert!(
-        error.contains("without a trusted NixOS cache signature"),
+        error.contains(
+            "is installed under another key and does not match https://cache.nixos.org; refusing"
+        ),
         "{error}"
     );
+    assert!(!package.exists());
     run(&nix, &["store", "delete", &shared]);
     let mut upstream = slim::Upstream::file(&nix, &upstream_cache);
     slim::import(
@@ -450,10 +539,7 @@ fn slim_real_nix_publish_install_security_and_offline() {
         .inspect_archive(&config, &parent_archive.archive_path)
         .err()
         .unwrap();
-    assert!(
-        error.contains("not signed by a normal trusted NixOS cache key"),
-        "{error}"
-    );
+    assert!(error.contains("cannot supply an upstream path"), "{error}");
     bound.publishers.remove("@other");
     // A requirement's legitimate private cache still works, keeps RawCache
     // provenance, and can share separately verified upstream packages.

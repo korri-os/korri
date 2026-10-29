@@ -223,20 +223,20 @@ pub(crate) fn signed(path: &str, info: &NarInfo, keys: &[String]) -> Result<bool
     Ok(false)
 }
 
-fn check_local(path: &str, info: &NarInfo, keys: &[String], shared: bool) -> Result<(), String> {
+fn check_private_local(path: &str, info: &NarInfo, keys: &[String]) -> Result<(), String> {
     if signed(path, info, keys)? {
         return Ok(());
     }
-    if shared {
-        Err(format!(
-            "{path} is already installed without a trusted NixOS cache signature"
-        ))
-    } else {
-        Err(format!("{path} is already installed from another publisher; remove that plugin or rebuild with a different output"))
-    }
+    Err(format!("{path} is already installed from another publisher; remove that plugin or rebuild with a different output"))
 }
 
-fn invocation(nix: &Path, source: &str, keys: &[String], paths: &[String]) -> Result<(), String> {
+fn invocation(
+    nix: &Path,
+    source: &str,
+    keys: &[String],
+    paths: &[String],
+    recursive: bool,
+) -> Result<(), String> {
     if paths.is_empty() {
         return Ok(());
     }
@@ -264,19 +264,22 @@ fn invocation(nix: &Path, source: &str, keys: &[String], paths: &[String]) -> Re
         "",
         "--option",
         "substituters",
-        source,
+        if recursive { source } else { "" },
         "--option",
         "extra-substituters",
         "",
-        "build",
-        "--no-link",
     ];
+    if recursive {
+        args.extend(["build", "--no-link"]);
+    } else {
+        args.extend(["copy", "--no-recursive", "--from", source]);
+    }
     args.extend(paths.iter().map(String::as_str));
     process::checked_uncapped(nix, args, None)?;
     Ok(())
 }
 
-fn verify(nix: &Path, keys: &[String], paths: &[String]) -> Result<(), String> {
+fn verify(nix: &Path, keys: &[String], paths: &[String], signatures: bool) -> Result<(), String> {
     if paths.is_empty() {
         return Ok(());
     }
@@ -295,12 +298,53 @@ fn verify(nix: &Path, keys: &[String], paths: &[String]) -> Result<(), String> {
         "",
         "store",
         "verify",
-        "--sigs-needed",
-        "1",
     ];
+    if signatures {
+        args.extend(["--sigs-needed", "1"]);
+    } else {
+        args.push("--no-trust");
+    }
     args.extend(paths.iter().map(String::as_str));
     process::checked_uncapped(nix, args, None)?;
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SharedAuthority {
+    LocalSignature,
+    UpstreamMatch,
+    RootRegistered,
+}
+
+fn upstream_match(
+    path: &str,
+    local: &NarInfo,
+    remote: &NarInfo,
+    keys: &[String],
+) -> Result<bool, String> {
+    Ok(local.nar_hash == remote.nar_hash
+        && local.nar_size == remote.nar_size
+        && signed(path, remote, keys)?)
+}
+
+fn shared_authority(
+    path: &str,
+    local: &NarInfo,
+    remote: &NarInfo,
+    keys: &[String],
+) -> Result<SharedAuthority, String> {
+    if signed(path, local, keys)? {
+        return Ok(SharedAuthority::LocalSignature);
+    }
+    if upstream_match(path, local, remote, keys)? {
+        return Ok(SharedAuthority::UpstreamMatch);
+    }
+    if local.signatures.is_empty() && local.ca.as_deref().is_none_or(str::is_empty) {
+        return Ok(SharedAuthority::RootRegistered);
+    }
+    Err(format!(
+        "{path} is installed under another key and does not match {UPSTREAM}; refusing"
+    ))
 }
 
 fn unavailable(missing: usize, error: &str) -> String {
@@ -407,6 +451,7 @@ fn acquire(
     let mut seen = BTreeSet::new();
     let mut shared = Vec::new();
     let mut private = Vec::new();
+    let mut expected = BTreeMap::new();
     while let Some(path) = queue.pop() {
         if forbidden.contains(Path::new(&path)) {
             return Err("required plugin closure contains its parent".into());
@@ -441,12 +486,7 @@ fn acquire(
             };
             unavailable(missing, &error)
         })?;
-        let (info, keys, is_shared) = if let Some(info) = remote {
-            if !signed(&path, &info, &trusted)? {
-                return Err(format!(
-                    "{path} is not signed by a normal trusted NixOS cache key"
-                ));
-            }
+        let info = if let Some(remote) = remote {
             if let Some(copy) = &supplied {
                 match source {
                     PrivateSource::Archive { .. } => {
@@ -456,16 +496,26 @@ fn acquire(
                     }
                     PrivateSource::Cache(_)
                         if !signed(&path, copy, &trusted)?
-                            || package::fingerprint(&path, copy)?
-                                != package::fingerprint(&path, &info)? =>
+                            && !upstream_match(&path, copy, &remote, &trusted)? =>
                     {
                         return Err(format!("{path} is served by {UPSTREAM}; a publisher-signed cache copy cannot supply an upstream path"));
                     }
                     _ => {}
                 }
             }
+            let info = if let Some(local) = local {
+                shared_authority(&path, &local, &remote, &trusted)?;
+                local
+            } else {
+                if !signed(&path, &remote, &trusted)? {
+                    return Err(format!(
+                        "{path} is not signed by a normal trusted NixOS cache key"
+                    ));
+                }
+                remote
+            };
             shared.push(path.clone());
-            (info, &trusted, true)
+            info
         } else {
             let info = supplied.or_else(|| local.clone()).ok_or_else(|| {
                 format!("archive plus {UPSTREAM} do not complete the closure: missing {path}")
@@ -473,20 +523,21 @@ fn acquire(
             if !signed(&path, &info, &publisher)? {
                 return Err(format!("{path} is not signed by the publisher key"));
             }
-            private.push(path.clone());
-            (info, &publisher, false)
-        };
-        if let Some(local) = local {
-            check_local(&path, &local, keys, is_shared)?;
-            if package::fingerprint(&path, &local)? != package::fingerprint(&path, &info)? {
-                return Err(format!(
-                    "{path} local NAR differs from its authorized cache"
-                ));
+            if let Some(local) = local {
+                check_private_local(&path, &local, &publisher)?;
+                if package::fingerprint(&path, &local)? != package::fingerprint(&path, &info)? {
+                    return Err(format!(
+                        "{path} local NAR differs from its authorized cache"
+                    ));
+                }
             }
-        }
+            private.push(path.clone());
+            info
+        };
+        expected.insert(path.clone(), package::fingerprint(&path, &info)?);
         queue.extend(info.references);
     }
-    invocation(nix, &upstream.uri()?, &trusted, &shared).map_err(|error| {
+    invocation(nix, &upstream.uri()?, &trusted, &shared, true).map_err(|error| {
         unavailable(
             shared.iter().filter(|p| !Path::new(p).exists()).count(),
             &error,
@@ -494,17 +545,131 @@ fn acquire(
     })?;
     match source {
         PrivateSource::Archive { uri, .. } | PrivateSource::Cache(uri) => {
-            invocation(nix, uri, &publisher, &private)?
+            // A mutable publisher cache must not cause Nix to import any path
+            // outside the exact set whose authority was checked above.
+            invocation(nix, uri, &publisher, &private, false)?;
         }
         PrivateSource::Local => {}
     }
-    // Nix's CA exemption must not stand in for an explicit signature in a slim
-    // closure, even for a fixed-output dependency.
-    for (paths, keys, shared) in [(&shared, &trusted, true), (&private, &publisher, false)] {
-        for path in paths {
-            check_local(path, &package::path_info(nix, path, None)?, keys, shared)?;
+    let mut signed_shared = Vec::new();
+    let mut content_shared = Vec::new();
+    for path in &shared {
+        let info = package::path_info(nix, path, None)?;
+        if expected[path] != package::fingerprint(path, &info)? {
+            return Err(format!(
+                "{path} changed while importing its verified closure"
+            ));
         }
-        verify(nix, keys, paths)?;
+        let remote = upstream
+            .info(path)?
+            .ok_or("shared package metadata disappeared")?;
+        match shared_authority(path, &info, &remote, &trusted)? {
+            SharedAuthority::LocalSignature => signed_shared.push(path.clone()),
+            SharedAuthority::UpstreamMatch | SharedAuthority::RootRegistered => {
+                content_shared.push(path.clone())
+            }
+        }
     }
+    for path in &private {
+        let info = package::path_info(nix, path, None)?;
+        if expected[path] != package::fingerprint(path, &info)? {
+            return Err(format!(
+                "{path} changed while importing its verified closure"
+            ));
+        }
+        check_private_local(path, &info, &publisher)?;
+    }
+    verify(nix, &trusted, &signed_shared, true)?;
+    // Authority for these paths comes from the verified upstream NAR identity
+    // or root registration. Nix still rehashes their actual contents.
+    verify(nix, &trusted, &content_shared, false)?;
+    verify(nix, &publisher, &private, true)?;
     package::sync_store()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use ring::signature::{Ed25519KeyPair, KeyPair};
+    use sha2::{Digest, Sha256};
+
+    const PATH: &str = "/nix/store/00000000000000000000000000000000-shared";
+
+    fn key(seed: u8, label: &str) -> (Ed25519KeyPair, String) {
+        let pair = Ed25519KeyPair::from_seed_unchecked(&[seed; 32]).unwrap();
+        let public = format!("{label}:{}", STANDARD.encode(pair.public_key().as_ref()));
+        (pair, public)
+    }
+
+    fn info(bytes: &[u8], ca: Option<&str>) -> NarInfo {
+        NarInfo {
+            ca: ca.map(str::to_owned),
+            nar_hash: format!("sha256-{}", STANDARD.encode(Sha256::digest(bytes))),
+            nar_size: bytes.len() as u64,
+            references: Vec::new(),
+            signatures: Vec::new(),
+        }
+    }
+
+    fn sign(info: &mut NarInfo, pair: &Ed25519KeyPair, label: &str) {
+        let signature = pair.sign(package::fingerprint(PATH, info).unwrap().as_bytes());
+        info.signatures
+            .push(format!("{label}:{}", STANDARD.encode(signature.as_ref())));
+    }
+
+    #[test]
+    fn shared_rule_a1_accepts_a_local_nixos_signature() {
+        let (pair, public) = key(1, "nixos");
+        let mut local = info(b"previous signed build", None);
+        sign(&mut local, &pair, "nixos");
+        let mut remote = info(b"current upstream build", None);
+        sign(&mut remote, &pair, "nixos");
+        assert_eq!(
+            shared_authority(PATH, &local, &remote, &[public]).unwrap(),
+            SharedAuthority::LocalSignature
+        );
+    }
+
+    #[test]
+    fn shared_rule_a2_accepts_a_matching_nar_only_with_an_upstream_signature() {
+        let (nixos, public) = key(1, "nixos");
+        let (publisher, _) = key(2, "publisher");
+        let mut local = info(b"same NAR", None);
+        sign(&mut local, &publisher, "publisher");
+        let mut remote = info(b"same NAR", None);
+        sign(&mut remote, &nixos, "nixos");
+        assert_eq!(
+            shared_authority(PATH, &local, &remote, std::slice::from_ref(&public)).unwrap(),
+            SharedAuthority::UpstreamMatch
+        );
+        remote.signatures.clear();
+        assert!(shared_authority(PATH, &local, &remote, &[public]).is_err());
+    }
+
+    #[test]
+    fn shared_rule_a3_accepts_unsigned_input_addressed_root_registration() {
+        let (pair, public) = key(1, "nixos");
+        let local = info(b"root's system build", None);
+        let mut remote = info(b"different upstream build", None);
+        sign(&mut remote, &pair, "nixos");
+        assert_eq!(
+            shared_authority(PATH, &local, &remote, std::slice::from_ref(&public)).unwrap(),
+            SharedAuthority::RootRegistered
+        );
+        let mut ca = local;
+        ca.ca = Some("fixed:r:sha256:example".into());
+        assert!(shared_authority(PATH, &ca, &remote, &[public]).is_err());
+    }
+
+    #[test]
+    fn shared_rule_a_refuses_publisher_signed_bytes_that_differ_from_upstream() {
+        let (nixos, public) = key(1, "nixos");
+        let (publisher, _) = key(2, "publisher");
+        let mut local = info(b"publisher's replacement", None);
+        sign(&mut local, &publisher, "publisher");
+        let mut remote = info(b"real upstream NAR", None);
+        sign(&mut remote, &nixos, "nixos");
+        assert_eq!(shared_authority(PATH, &local, &remote, &[public]).unwrap_err(), format!("{PATH} is installed under another key and does not match https://cache.nixos.org; refusing"));
+    }
 }

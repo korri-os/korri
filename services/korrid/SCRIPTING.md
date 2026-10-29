@@ -206,7 +206,8 @@ External daemon packages instead carry a generated `manifest.json` with
 `publisher.namespace`. The host verifies the selected NAR against the device's
 bound or pinned full public key before using that claim. Signed native archives
 normally omit shared packages supplied by `https://cache.nixos.org`; the host
-checks each path against its own cache or publisher key. Self-contained archives
+checks shared paths against NixOS cache authority or unsigned root registration,
+and private paths against their publisher key. Self-contained archives
 keep the complete content-addressed closure and work offline. See
 `plugin-host/README.md`.
 

@@ -1301,11 +1301,8 @@ pkgs.testers.runNixOSTest {
     cache.succeed("nix --extra-experimental-features nix-command copy --no-recursive --to 'file:///var/www/upstream?compression=xz' " + " ".join(shared_paths))
     cache.wait_for_unit("nginx.service")
     machine.succeed("curl --fail --silent https://cache.nixos.org/nix-cache-info")
-    # Image assembly can omit registered signatures. Rule (a) deliberately
-    # refuses those local copies; register only this fixture upstream's proof.
-    local_shared = sorted(set(machine.succeed("nix --extra-experimental-features nix-command path-info --all").split()) & set(shared_paths))
-    if local_shared:
-        machine.succeed("nix --extra-experimental-features nix-command store copy-sigs --substituter https://cache.nixos.org " + " ".join(local_shared))
+    # Keep the client's unsigned image paths unchanged. Admission must use the
+    # signed upstream NAR identity or the input-addressed root-registration rule.
 
     records = []
     for release, package in [("v1", "${tailscalePackage}"), ("v2", "${updated}"), ("broken", "${broken}"), ("pending", "${interrupted}")]:
