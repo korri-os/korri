@@ -117,6 +117,7 @@ def main():
     digest = hashlib.sha256(ipk.read_bytes()).hexdigest()
     (target / (ipk.name + '.sha256')).write_text(digest + '  ' + ipk.name + '\n')
     (target / 'SOURCE-SHA.txt').write_text(args.source_sha + '\n')
+    (target / 'appinfo.json').write_text(json.dumps(appinfo, indent=2) + '\n')
     (target / 'ELF-DEPENDENCIES.txt').write_text(dynamic)
     print(str(ipk))
     print('SHA256=' + digest)
