@@ -53,6 +53,29 @@ def verify_binary(binary):
     return dynamic
 
 
+def verify_build_record(binary, directory, expected_source):
+    # The fixed cross-build action emits these only after Cargo succeeds and
+    # after verifying that the clean source SHA did not change during the build.
+    if (directory / 'SOURCE-SHA.txt').read_text().strip() != expected_source:
+        raise ValueError('build record does not match the tested source SHA')
+    record = (directory / 'korri-slint-spike.sha256').read_text().strip()
+    digest, separator, filename = record.partition('  ')
+    if not separator or not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('invalid build checksum record')
+    if pathlib.Path(filename).resolve(strict=True) != binary.resolve(strict=True):
+        raise ValueError('build checksum record names a different binary')
+    if hashlib.sha256(binary.read_bytes()).hexdigest() != digest:
+        raise ValueError('binary changed after its recorded build')
+    return digest
+
+
+def app_info(version):
+    return {'id': APP_ID, 'version': version, 'vendor': 'Korri',
+            'type': 'native', 'main': 'bin/korri-slint-spike',
+            'title': 'Korri Slint spike', 'icon': 'icon.png',
+            'appDescription': 'Temporary native diagnostics over a real isolated korrid.'}
+
+
 def add_bytes(archive, name, data, mode=0o644):
     member = tarfile.TarInfo(name)
     member.size = len(data)
@@ -67,6 +90,8 @@ def main():
     parser.add_argument('binary', type=pathlib.Path)
     parser.add_argument('output', type=pathlib.Path)
     parser.add_argument('--source-sha', required=True)
+    parser.add_argument('--build-record', required=True, type=pathlib.Path,
+                        help='release directory containing the cross-build producer checksum and source SHA')
     args = parser.parse_args()
     if not re.fullmatch(r'[0-9a-f]{40}', args.source_sha):
         parser.error('--source-sha must be the full tested source SHA')
@@ -75,6 +100,7 @@ def main():
     if run('git', '-C', str(ROOT), 'status', '--porcelain').strip():
         parser.error('source checkout must be clean before packaging')
     binary = args.binary.resolve(strict=True)
+    verify_build_record(binary, args.build_record.resolve(strict=True), args.source_sha)
     dynamic = verify_binary(binary)
     with (ROOT / 'clients/slint-spike/Cargo.toml').open('rb') as source:
         version = tomllib.load(source)['package']['version']
@@ -84,10 +110,7 @@ def main():
     if ipk.exists():
         parser.error('output already exists; choose a fresh output directory')
     icon = ROOT / 'clients/portal/public/icon-192.png'
-    appinfo = {'id': APP_ID, 'version': version, 'vendor': 'Korri',
-               'type': 'native', 'main': 'bin/korri-slint-spike',
-               'title': 'Korri Slint spike', 'icon': 'icon.png',
-               'appDescription': 'Temporary native diagnostics over a real isolated korrid.'}
+    appinfo = app_info(version)
     packageinfo = {'id': APP_ID, 'version': version, 'app': APP_ID}
     app_base = 'usr/palm/applications/' + APP_ID + '/'
     package_base = 'usr/palm/packages/' + APP_ID + '/'

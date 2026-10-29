@@ -29,7 +29,7 @@ in
   };
   help = ''
 
-    nix run .#slint-spike-webos-package -- BINARY OUTPUT --source-sha SHA
-        Package the tested ARM native spike, enforcing the measured TV ABI.
+    nix run .#slint-spike-webos-package -- BINARY OUTPUT --source-sha SHA --build-record RELEASE_DIR
+        Package the ARM spike only when its source, build checksum and TV ABI match.
   '';
 }

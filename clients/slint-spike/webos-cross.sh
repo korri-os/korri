@@ -74,8 +74,25 @@ case "$action" in
       --lib --target armv7-unknown-linux-gnueabi "$@"
     ;;
   build)
+    # A receipt must describe this fixed application build, never a stale output
+    # left by another Cargo target/profile selection. Diagnostic actions above
+    # still accept Cargo arguments; the deployable application action does not.
+    if [[ "$#" != 0 || "$source_rev" == *-dirty ]]; then
+      echo "The deployable build requires a clean checkout and no extra Cargo arguments" >&2
+      exit 2
+    fi
     export CARGO_PROFILE_RELEASE_STRIP=symbols
-    exec cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/slint-spike/Cargo.toml" \
-      --no-default-features --features webos --target armv7-unknown-linux-gnueabi "$@"
+    cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/slint-spike/Cargo.toml" \
+      --bin korri-slint-spike --no-default-features --features webos --target armv7-unknown-linux-gnueabi
+    if [[ "$(git -C "$KORRI_ROOT" rev-parse HEAD)" != "$source_rev" || -n "$(git -C "$KORRI_ROOT" status --porcelain)" ]]; then
+      echo "Source changed during the build; refusing to record an artifact" >&2
+      exit 1
+    fi
+    binary="$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-slint-spike"
+    # Reuse SOURCE-SHA.txt and the standard sha256sum format already emitted by
+    # package.py, but bind them at the build producer rather than after labeling.
+    printf '%s\n' "$source_rev" > "${binary%/*}/SOURCE-SHA.txt"
+    sha256sum "$binary" > "$binary.sha256"
+    echo "Built and recorded $binary"
     ;;
 esac
