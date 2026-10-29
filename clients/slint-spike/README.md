@@ -91,21 +91,28 @@ Verified on the spike's build host (x86_64 NixOS, Xvfb, no window manager):
   check 2, a mouse click on Refresh ran check 3, and Tab + Return on Close
   exited and removed the scratch storage.
 
-Screenshots in `evidence/` are X11 captures (`import -window`) of the real
-winit window, rendered by Slint's software renderer on Xvfb. They are not an
-offscreen render and not an HTML stand-in. There is no compositor.
+Screenshots are X11 captures (`import -window`) of the real winit window,
+rendered by Slint's software renderer on Xvfb. They are not an offscreen
+render and not an HTML stand-in. There is no compositor. They were made by
+`nix run .#slint-spike-proof` from commit `14fa80689`, so the window shows
+`korri-slint-spike 0.0.0 (14fa8068907a)`. That stamp names the source commit
+of the build, not the later commit that added these images.
+
+Seven are committed in `evidence/`:
 
 | File | Shape | State |
 | --- | --- | --- |
 | `01-generous-1440x900-refresh-focused.png` | generous | healthy, Refresh focused |
 | `02-generous-after-tab-key.png` | generous | after Tab: Close focused |
-| `06-narrow-tall-390x844.png` | narrow-tall | one column, actions stacked under title |
+| `03-generous-return-key-refresh-check-2.png` | generous | Shift+Tab, Return: check 2 |
+| `06-narrow-tall-390x844.png` | narrow-tall | one column, actions under the title |
 | `07-wide-short-1280x300.png` | wide-short | three columns, compact, actions inline |
 | `09-unauthorized-1100x700.png` | medium | real korrid, wrong bearer: refused |
 | `12-offline-wide-short-1280x300.png` | wide-short | real korrid stopped: not reachable |
 
-The proof app also writes check 2 (keyboard), check 3 (mouse), 960x640,
-320x240 and further error shapes. They were reviewed but not committed.
+All twelve from that run, including check 3 (mouse click), 960x640, 320x240
+and the other error shapes, are kept outside the repository at
+`~/.cache/korri-slint-spike-evidence/14fa80689/` on the build host.
 
 ## Limitations
 
