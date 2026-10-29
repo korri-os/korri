@@ -48,7 +48,7 @@ For each path outside separately verified required-plugin closures:
 
 - A path served by the upstream cache must not appear in the archive. The host
   fetches it only from that cache with the device's normal trusted keys, with
-  the publisher's key excluded. A locally valid copy must already carry a
+  all known plugin publisher keys excluded. A locally valid copy must already carry a
   normal trusted cache signature.
 - Every other path must be in the archive and signed by the publisher, or
   already valid locally with that publisher's signature. A foreign local copy

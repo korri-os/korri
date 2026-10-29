@@ -454,6 +454,7 @@ pkgs.testers.runNixOSTest {
         imports = [ hostModule ];
         networking.hosts.${nodes.cache.networking.primaryIPAddress} = [ "cache.nixos.org" ];
         nix.settings.trusted-public-keys = [ upstreamPublicKey ];
+        environment.etc."korri-test/upstream.secret".source = upstreamKey;
         # This node now also installs the SSH plugin for the coexistence gate.
         # Like the cold client, it must use only the real isolated test cache.
         nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
@@ -1296,7 +1297,7 @@ pkgs.testers.runNixOSTest {
     cache.succeed("mkdir -p /var/www/upstream")
     repository_packages = ["${tailscalePackage}", "${updated}", "${broken}", "${interrupted}"]
     shared_paths = sorted(set(cache.succeed("nix --extra-experimental-features nix-command path-info --recursive " + " ".join(repository_packages)).split()) - set(repository_packages))
-    cache.succeed("nix --extra-experimental-features nix-command store sign --key-file ${upstreamKey} " + " ".join(shared_paths))
+    cache.succeed("nix --extra-experimental-features nix-command store sign --key-file /etc/korri-test/upstream.secret " + " ".join(shared_paths))
     cache.succeed("nix --extra-experimental-features nix-command copy --no-recursive --to 'file:///var/www/upstream?compression=xz' " + " ".join(shared_paths))
     cache.wait_for_unit("nginx.service")
     machine.succeed("curl --fail --silent https://cache.nixos.org/nix-cache-info")

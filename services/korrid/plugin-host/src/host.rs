@@ -601,11 +601,21 @@ impl Host {
     }
 
     fn shared_cache(&self, config: &Configuration) -> Result<crate::slim::Upstream, Refusal> {
+        let mut upstream = crate::slim::Upstream::new(&self.nix, config)?;
         #[cfg(test)]
         if let Some(cache) = &self.archive_upstream {
-            return Ok(crate::slim::Upstream::file(&self.nix, cache));
+            upstream = crate::slim::Upstream::file(&self.nix, cache);
         }
-        crate::slim::Upstream::new(&self.nix, config).map_err(Refusal::from)
+        // NixOS also registers bound plugin keys globally. Those are publisher
+        // authority, not upstream authority, including for another requirement.
+        let pins = self.pins()?;
+        upstream.exclude_publishers(
+            self.publishers
+                .values()
+                .map(|binding| binding.public_key.as_str())
+                .chain(pins.values().map(|pin| pin.public_key.as_str())),
+        )?;
+        Ok(upstream)
     }
 
     /// A required plugin establishes exactly the same per-path authority as
