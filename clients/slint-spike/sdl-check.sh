@@ -11,7 +11,56 @@ spike="$CARGO_TARGET_DIR/debug/korri-slint-spike"
 
 scratch_root="$(mktemp -d)"
 audit="$(mktemp -d)"
-trap 'rm -rf "$scratch_root" "$audit"' EXIT
+
+# X servers for the SDL runs. Not xvfb-run: it sleeps 3 s and then starts the
+# command whether or not its Xvfb came up (seen in its source), which turns a
+# lost display-number race into SDL's "No available video device". This
+# script starts Xvfb with -displayfd, which reports the display only when the
+# server accepts connections, and stops the app before the server.
+xvfb_pid=""
+app_pid=""
+stop_app() {
+  [[ -n "$app_pid" ]] || return 0
+  kill -TERM "$app_pid" 2>/dev/null || true
+  for _ in $(seq 300); do kill -0 "$app_pid" 2>/dev/null || break; sleep 0.05; done
+  wait "$app_pid" 2>/dev/null || true
+  app_pid=""
+}
+stop_xvfb() {
+  [[ -n "$xvfb_pid" ]] || return 0
+  kill "$xvfb_pid" 2>/dev/null || true
+  wait "$xvfb_pid" 2>/dev/null || true
+  xvfb_pid=""
+}
+cleanup() {
+  stop_app
+  stop_xvfb
+  rm -rf "$scratch_root" "$audit"
+}
+trap cleanup EXIT
+
+# start_xvfb WIDTHxHEIGHT: own Xvfb; exports DISPLAY once it accepts clients.
+start_xvfb() {
+  local number_file="$audit/display-number"
+  : >"$number_file"
+  exec 3<>"$number_file"
+  Xvfb -displayfd 3 -screen 0 "${1}x24" -nolisten tcp >"$audit/xvfb.log" 2>&1 &
+  xvfb_pid=$!
+  exec 3>&-
+  local display=""
+  for _ in $(seq 200); do
+    display="$(head -n1 "$number_file" 2>/dev/null || true)"
+    [[ -n "$display" ]] && break
+    if ! kill -0 "$xvfb_pid" 2>/dev/null; then
+      echo "FAIL: Xvfb exited before it reported a display" >&2
+      cat "$audit/xvfb.log" >&2
+      exit 1
+    fi
+    sleep 0.05
+  done
+  [[ -n "$display" ]] || { echo "FAIL: Xvfb reported no display in 10 s" >&2; exit 1; }
+  export DISPLAY=":$display"
+}
 
 echo "== fmt"
 cargo fmt --manifest-path "$manifest" --check
@@ -87,12 +136,17 @@ self_test() {
   local label="$1" library_dir="$2"
   echo "== Xvfb self-test over SDL ($label): real korrid, Refresh callback, auth probes"
   rm -f "$audit/families"
-  TMPDIR="$scratch_root" LD_LIBRARY_PATH="$library_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
+  start_xvfb 1920x1080
+  # Foreground and bounded: the app exits on its own before the server stops.
+  SDL_VIDEODRIVER=x11 TMPDIR="$scratch_root" \
+    LD_LIBRARY_PATH="$library_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    timeout -k 10 180 \
     strace -f -qq -s 0 -e trace=connect -o "|awk '$summarize' > '$audit/families'" \
     "$spike" --self-test --windowed=1920x1080 | tee "$audit/run.log"
+  stop_xvfb
   grep -q '^SELF-TEST PASS$' "$audit/run.log"
   grep -q '^sdl: runtime ' "$audit/run.log"
+  grep -q 'video driver x11;' "$audit/run.log"
   grep -q 'screen saver allowed: true' "$audit/run.log" \
     || { echo "FAIL: SDL suppressed the screen saver" >&2; exit 1; }
   sort "$audit/families" | sed 's/^/  /'
@@ -107,27 +161,18 @@ self_test "nixpkgs sdl2-compat" "$SDL_COMPAT_LIB"
 
 echo "== launch JSON object starts the normal window; SIGTERM shuts down cleanly"
 log="$audit/launch.log"
-# Own Xvfb with -displayfd: xvfb-run -a can race the previous server's exit.
-exec 3<>"$audit/displayfd"
-Xvfb -displayfd 3 -screen 0 1280x720x24 -nolisten tcp >"$audit/xvfb.log" 2>&1 &
-xvfb=$!
-display=""
-for _ in $(seq 100); do
-  display="$(head -n1 "$audit/displayfd" 2>/dev/null || true)"
-  [[ -n "$display" ]] && break
-  sleep 0.05
-done
-[[ -n "$display" ]] || { echo "FAIL: Xvfb did not start" >&2; exit 1; }
-DISPLAY=":$display" TMPDIR="$scratch_root" LD_LIBRARY_PATH="$SDL_204_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+start_xvfb 1280x720
+SDL_VIDEODRIVER=x11 TMPDIR="$scratch_root" \
+  LD_LIBRARY_PATH="$SDL_204_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   "$spike" '{"secretish":"never-printed"}' >"$log" 2>&1 &
-runner=$!
+app_pid=$!
 for _ in $(seq 400); do grep -q 'refresh 1 complete' "$log" && break; sleep 0.05; done
-grep -q 'refresh 1 complete' "$log" || { cat "$log" >&2; kill "$runner" "$xvfb"; echo "FAIL: no first refresh" >&2; exit 1; }
-kill -TERM "$runner"
-wait "$runner"
-kill "$xvfb"
+grep -q 'refresh 1 complete' "$log" || { cat "$log" >&2; echo "FAIL: no first refresh" >&2; exit 1; }
+stop_app
+stop_xvfb
 grep -q 'sdl: display 0 desktop mode 1280x720' "$log"
 grep -q 'launch parameter: JSON object with 1 field(s), ignored' "$log"
+grep -q 'signal 15: closing' "$log"
 grep -q 'korrid stopped; scratch storage removed' "$log"
 if grep -q never-printed "$log"; then echo "FAIL: launch parameter echoed" >&2; exit 1; fi
 echo "  ok   fullscreen window, first refresh, SIGTERM, scratch removed, value not printed"
