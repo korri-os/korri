@@ -327,7 +327,7 @@ fn slim_real_nix_publish_install_security_and_offline() {
     .unwrap_err();
     assert!(
         error.contains(
-            "is installed under another key and does not match https://cache.nixos.org; refusing"
+            "is installed under another key and does not match cache.nixos.org; refusing"
         ),
         "{error}"
     );
@@ -564,6 +564,49 @@ fn slim_real_nix_publish_install_security_and_offline() {
     bound.selection("@slim:pack").remove().unwrap();
     bound.selection("@slim:native").remove().unwrap();
     drop(bound);
+    // A self-contained pack keeps its existing offline route. Its rewritten
+    // CA requirement is in the archive, not necessarily in the bound raw cache.
+    let offline_parent = publisher::publish_archive(&PublishArgs {
+        nix: nix.clone(),
+        secret_key: Some(key.clone()),
+        self_contained: true,
+        input_store_path: parent.clone(),
+        release_version: "offline-pack".into(),
+        platform: current_platform().into(),
+        archive_url: String::new(),
+        output_dir: output.clone(),
+    })
+    .unwrap();
+    let directory = root.path().join("offline-pack-host");
+    fs::create_dir(&directory).unwrap();
+    let mut offline = Host::for_test(
+        &directory,
+        nix.clone(),
+        LifecyclePolicy::new(Vec::new()).unwrap(),
+        TestRuntime::default(),
+    )
+    .unwrap();
+    offline.test_runtime = None;
+    offline.units.systemctl = helper.clone();
+    offline.units.firewall.ipv4 = helper.clone();
+    offline.units.firewall.ipv6 = helper.clone();
+    offline.publishers.insert(
+        "@slim".into(),
+        package::PublisherBinding {
+            public_key: publisher_key.clone(),
+            cache_url: good_uri,
+        },
+    );
+    let review = offline
+        .inspect_archive(&config, &offline_parent.archive_path)
+        .unwrap();
+    assert_ne!(review.brings[0].report.package, package);
+    offline
+        .install_reviewed(review.clone(), &offline.review_approval(&review).unwrap())
+        .unwrap();
+    offline.selection("@slim:pack").remove().unwrap();
+    offline.selection("@slim:native").remove().unwrap();
+    drop(offline);
     run(&nix, &["store", "delete", parent.to_str().unwrap()]);
     // A second publisher cannot adopt an existing input-addressed output,
     // even when its archive has a valid signature for those same bytes.

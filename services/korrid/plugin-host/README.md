@@ -54,7 +54,7 @@ For each path outside separately verified required-plugin closures:
   case is a system image or root build: the plugin host never imports such a
   path. A path signed only by another key that does not match upstream is
   refused: `<path> is installed under another key and does not match
-  https://cache.nixos.org; refusing`.
+  cache.nixos.org; refusing`.
 - Every other path must be in the archive and signed by the publisher, or
   already valid locally with that publisher's signature. A foreign local copy
   is refused rather than adopted, even if the archive signs the same bytes.
