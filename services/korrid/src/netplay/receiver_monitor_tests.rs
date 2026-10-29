@@ -284,7 +284,7 @@ impl Fixture {
         .unwrap();
         assert!(
             matches!(&response, RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) if status.active.is_none())
-                || matches!(&response, RpcResponse::SessionStatus(SessionStatusOutcome::Err(error)) if error.code == "SessionCompleted"),
+                || matches!(&response, RpcResponse::SessionStatus(SessionStatusOutcome::Err(error)) if matches!(error.code.as_str(), "SessionCompleted" | "HostLaunchFailed")),
             "the receiver must no longer expose an active copy: {response:?}"
         );
         tokio::time::timeout(Duration::from_secs(2), async {
@@ -363,6 +363,50 @@ impl Fixture {
         assert!(status.netplay.is_none());
         assert!(status.stream_play_ended.is_some());
     }
+}
+
+#[tokio::test]
+async fn netplay_local_client_quit_leaves_and_restores_the_invite() {
+    let fixture = Fixture::new().await;
+    let client = fixture.connected_client().await;
+    // A native quit ends the unit and closes its TCP connection without a
+    // SessionLeave RPC. The transport close alone must not resurrect it.
+    fixture.backend.complete_live();
+    drop(client);
+    fixture.wait_until_left(1).await;
+    fixture.take_part_again_from_invite().await;
+}
+
+#[tokio::test]
+async fn netplay_quit_waits_for_native_teardown_before_leaving() {
+    let fixture = Fixture::new().await;
+    let client = fixture.connected_client().await;
+    // MAIN_DEINIT closes netplay before saves and drivers have shut down.
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(1250)).await;
+    assert_eq!(
+        fixture.backend.launch_count(),
+        1,
+        "a closing socket must allow the original copy to finish quitting"
+    );
+    fixture.backend.complete_live();
+    let completed_at = tokio::time::Instant::now();
+    fixture.wait_until_left(1).await;
+    assert!(
+        completed_at.elapsed() < Duration::from_secs(2),
+        "a completed quit must not wait out the grace deadline"
+    );
+    fixture.take_part_again_from_invite().await;
+}
+
+#[tokio::test]
+async fn netplay_crashed_client_leaves_without_a_relaunch_loop() {
+    let fixture = Fixture::new().await;
+    let client = fixture.connected_client().await;
+    fixture.backend.fail_live(7);
+    drop(client);
+    fixture.wait_until_left(1).await;
+    fixture.take_part_again_from_invite().await;
 }
 
 #[tokio::test]
@@ -480,7 +524,14 @@ async fn netplay_leave_uses_the_observed_identity_after_a_reconnect_relaunch() {
     let fixture = Fixture::new().await;
     let client = fixture.connected_client().await;
     let observed = fixture.status().await.active.unwrap().launch_id;
+    let lost_at = tokio::time::Instant::now();
     drop(client);
+    tokio::time::sleep(Duration::from_millis(1250)).await;
+    assert_eq!(
+        fixture.backend.launch_count(),
+        1,
+        "a live client must first get time to finish a local quit"
+    );
     tokio::time::timeout(Duration::from_secs(4), async {
         while fixture.backend.launch_count() < 2 {
             tokio::time::sleep(Duration::from_millis(25)).await;
@@ -488,6 +539,7 @@ async fn netplay_leave_uses_the_observed_identity_after_a_reconnect_relaunch() {
     })
     .await
     .expect("a lost bridge must relaunch the native client");
+    assert!(lost_at.elapsed() >= Duration::from_secs(3));
     let status = fixture.status().await;
     assert!(matches!(
         status.netplay.unwrap().phase,

@@ -614,6 +614,7 @@ type LaunchServiceProbe = Arc<dyn Fn() -> Result<(), LaunchUnitError> + Send + S
 #[derive(Default)]
 pub(crate) struct InMemoryLaunchUnitBackend {
     units: Mutex<BTreeMap<String, LaunchUnitState>>,
+    failed_units: Mutex<BTreeMap<String, i32>>,
     runners: Mutex<BTreeMap<String, String>>,
     placements: Mutex<BTreeMap<String, super::display_placement::Placement>>,
     window_pids: Mutex<BTreeMap<String, BTreeSet<i32>>>,
@@ -686,6 +687,19 @@ impl InMemoryLaunchUnitBackend {
             .map(|(launch_id, _)| launch_id.clone())
             .expect("one live test launch");
         units.insert(launch_id, LaunchUnitState::Completed);
+    }
+
+    pub(crate) fn fail_live(&self, exit_status: i32) {
+        let units = self.units.lock().unwrap();
+        let launch_id = units
+            .iter()
+            .find(|(_, state)| **state != LaunchUnitState::Completed)
+            .map(|(launch_id, _)| launch_id.clone())
+            .expect("one live test launch");
+        self.failed_units
+            .lock()
+            .unwrap()
+            .insert(launch_id, exit_status);
     }
 
     pub(crate) fn freeze_count(&self) -> usize {
@@ -773,6 +787,12 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
+        if let Some(status) = self.failed_units.lock().unwrap().get(launch_id) {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::UnitFailed,
+                format!("game unit failed with exit status {status}"),
+            ));
+        }
         if self
             .state_unavailable
             .load(std::sync::atomic::Ordering::SeqCst)
@@ -804,6 +824,7 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
         let behavior = self.stop_behavior.lock().unwrap().clone();
         if behavior.completes {
             units.insert(launch_id.into(), LaunchUnitState::Completed);
+            self.failed_units.lock().unwrap().remove(launch_id);
         }
         drop(units);
         if let Some(probe) = behavior.probe {

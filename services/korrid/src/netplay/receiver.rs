@@ -9,6 +9,11 @@ use tokio::sync::watch;
 
 const RECONNECT_WINDOW: Duration = Duration::from_secs(10);
 const MONITOR_INTERVAL: Duration = Duration::from_millis(500);
+// Odin, 2026-10-29: replacement-forward attempts preceded native deactivation
+// by 194 ms and 17 ms. TCP-close times were not logged; monitor sampling can
+// hide another 500 ms. Three seconds exceeds 3 * (194 + 500) ms, allowing
+// RetroArch's post-netplay save/driver teardown before we destroy that evidence.
+const CLIENT_EXIT_GRACE: Duration = Duration::from_secs(3);
 const STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 #[derive(Clone, Default)]
 pub(crate) struct Receiver(Arc<Mutex<State>>);
@@ -100,6 +105,15 @@ impl Receiver {
     }
     fn owns_copy(&self, id: &str, launch: &str) -> bool {
         matches!(&*self.0.lock().expect("netplay receiver"), State::Active { run, session } if run.id == id && session.launch_id == launch)
+    }
+    fn left(&self, id: &str) {
+        let mut local = self.0.lock().expect("netplay receiver");
+        if let State::Active { run, .. } = &*local {
+            if run.id == id {
+                let _ = run.cancel.send(true);
+                *local = State::Idle;
+            }
+        }
     }
     fn retarget(&self, id: &str, launch: &str) {
         let mut local = self.0.lock().expect("netplay receiver");
@@ -528,6 +542,7 @@ async fn monitor(
         return;
     };
     let mut holder_left = invite.session.phase.as_deref() == Some("frozen");
+    let mut native_exit_deadline = None;
     // Keep the in-flight poll across transport ticks. A loaded holder must not
     // delay bridge-loss detection or consume the reconnect window.
     let observations = futures::stream::unfold(&peer, |peer| async move {
@@ -573,6 +588,35 @@ async fn monitor(
             // Keep the last observed holder phase until a successful reply.
             _ => {}
         }
+        // A disconnected RetroArch client keeps emulating. A native copy
+        // which completes on its own has left, not lost its host.
+        match host.session_control_status().await {
+            Ok(host::control::HostSessionStatus::Completed { launch_id })
+                if launch_id == copy.launch_id =>
+            {
+                eprintln!("korrid: netplay receiving copy {launch_id} completed locally; leaving");
+                state.netplay_receiver.left(&copy.attempt_id);
+                return;
+            }
+            Ok(host::control::HostSessionStatus::NoActive) => {
+                state.netplay_receiver.left(&copy.attempt_id);
+                return;
+            }
+            Ok(host::control::HostSessionStatus::Failed { launch_id, message })
+                if launch_id == copy.launch_id =>
+            {
+                eprintln!("korrid: netplay receiving copy {launch_id} failed; leaving: {message}");
+                state.netplay_receiver.left(&copy.attempt_id);
+                return;
+            }
+            Ok(
+                host::control::HostSessionStatus::Running { launch_id, .. }
+                | host::control::HostSessionStatus::Frozen { launch_id, .. }
+                | host::control::HostSessionStatus::FocusFailed { launch_id, .. },
+            ) if launch_id == copy.launch_id => {}
+            // An unknown or stopping unit is not proof of a surviving client.
+            _ => continue,
+        }
         let route_alive = state
             .federation
             .as_ref()
@@ -608,6 +652,15 @@ async fn monitor(
                     return;
                 }
                 continue;
+            }
+            if copy.forward.lost() {
+                let deadline = native_exit_deadline
+                    .get_or_insert_with(|| tokio::time::Instant::now() + CLIENT_EXIT_GRACE);
+                if tokio::time::Instant::now() < *deadline {
+                    // Keep observing native completion at each tick. Only a
+                    // client which stays alive pays this grace before reconnect.
+                    continue;
+                }
             }
             if route_alive && copy.forward.lost() {
                 // RetroArch has no reconnect command. Start its client again;
@@ -658,6 +711,7 @@ async fn monitor(
                                     {
                                         copy.launch_id = started.session.launch_id;
                                         copy.forward = next;
+                                        native_exit_deadline = None;
                                         if *cancelled.borrow() {
                                             let _ = host.session_stop(&copy.launch_id).await;
                                             return;
@@ -906,12 +960,8 @@ async fn leave(
     if let ServerMode::Host(host) = &state.mode {
         stop_copy(host, &active.launch_id).await?;
     }
-    let mut local = state.netplay_receiver.0.lock().expect("netplay receiver");
-    if let State::Active { run, .. } = &*local {
-        // Cancellation is committed only after the native copy has stopped.
-        let _ = run.cancel.send(true);
-    }
-    *local = State::Idle;
+    // Cancellation is committed only after the native copy has stopped.
+    state.netplay_receiver.left(&status.launch_id);
     Ok(())
 }
 
