@@ -1392,7 +1392,7 @@ pkgs.testers.runNixOSTest {
 
     catalog = plugin_ok("system.plugins.catalog", {"url": source_a})["entries"]
     assert [entry["releaseVersion"] for entry in catalog] == [record["release_version"] for record in records], catalog
-    assert all(entry["pluginId"] == "@korri:tailscale" and entry["publisherTrusted"] and "installed" not in entry for entry in catalog), catalog
+    assert all(entry["pluginId"] == "@korri:tailscale" and entry["publisher"]["state"] == "Bound" and "installed" not in entry for entry in catalog), catalog
 
     inspection = plugin_ok("system.plugins.inspect", {"url": source_a, "pluginId": "@korri:tailscale", "releaseVersion": "v1"})
     assert inspection["approval"] == report["approval"], inspection
