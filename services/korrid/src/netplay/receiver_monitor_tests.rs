@@ -39,7 +39,7 @@ impl Fixture {
             std::fs::write(root.join("roms/Game.sfc"), b"game bytes").unwrap();
             std::fs::write(
                 root.join("device.yaml"),
-                format!("locations:\n  '{key}':\n    - storage: roms\n      path: Game.sfc\n"),
+                format!("host:\n  title: Device\nlocations:\n  '{key}':\n    - storage: roms\n      path: Game.sfc\n"),
             )
             .unwrap();
             std::fs::write(root.join("catalog/library.yaml"), format!("library:\n  game:\n    title: Game\n    releases:\n      - id: snes\n        system: snes\n        identity: {{kind: hash, value: '{key}'}}\n")).unwrap();
@@ -114,7 +114,38 @@ impl Fixture {
         state.federation = Some(route.directory.clone());
         let forward = route.forward.take().unwrap();
         let address = forward.address;
-        let (router, _) = plain_host_routers_for_tests(holder.clone());
+        let prepared = SessionNetplayPrepared {
+            seat: 2,
+            port: 55435,
+            password: "testpassword".into(),
+            release_key: facts.release_key.clone(),
+            release_bytes: facts.release_bytes,
+            runner: facts.runner.clone(),
+        };
+        let (holder_state, _) = app_states(holder.clone());
+        let reply = prepared.clone();
+        let router = axum::Router::new().route(
+            "/rpc",
+            axum::routing::post(move |axum::Json(request): axum::Json<RpcRequest>| {
+                let state = holder_state.clone();
+                let reply = reply.clone();
+                async move {
+                    // The holder's prepared seat and credential stay the same on rejoin.
+                    let response = if matches!(request, RpcRequest::SessionNetplay(_)) {
+                        RpcResponse::SessionNetplay(SessionNetplayOutcome::Ok(reply))
+                    } else {
+                        crate::dispatch(
+                            &state,
+                            &authorization::AuthorizationContext::LocalBrowser,
+                            request,
+                        )
+                        .await
+                        .unwrap()
+                    };
+                    axum::Json(response)
+                }
+            }),
+        );
         let status_delay_ms = Arc::new(AtomicU64::new(0));
         let status_fails = Arc::new(AtomicBool::new(false));
         let delay = status_delay_ms.clone();
@@ -139,6 +170,13 @@ impl Fixture {
         let http = tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         });
+        state.remote = Some(upstreams::UpstreamRegistry::new(vec![
+            upstreams::UpstreamHostConfig::native_secure(
+                "Holder",
+                url.clone(),
+                route.device.clone(),
+            ),
+        ]));
         let peer = upstream_native::NativeClient::new(url);
         let invite = invites::Invite {
             invite_id: "invite".into(), device_public_key: route.device.clone(),
@@ -157,14 +195,6 @@ impl Fixture {
         .unwrap();
         let (attempt, cancelled) = state.netplay_receiver.begin(status).unwrap();
         state.netplay_receiver.activate(&attempt, active).unwrap();
-        let prepared = SessionNetplayPrepared {
-            seat: 2,
-            port: 55435,
-            password: "testpassword".into(),
-            release_key: facts.release_key,
-            release_bytes: facts.release_bytes,
-            runner: facts.runner,
-        };
         let monitor = tokio::spawn(monitor(
             state.clone(),
             invite,
@@ -177,6 +207,7 @@ impl Fixture {
             prepared,
             cancelled,
         ));
+        invites::device::spawn_watch(state.clone());
         Self {
             state,
             holder,
@@ -226,8 +257,95 @@ impl Fixture {
         .unwrap();
         client
     }
+    async fn wait_until_left(&self, launches: usize) {
+        tokio::time::timeout(Duration::from_secs(4), async {
+            while self.state.netplay_receiver.busy() {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("deliberate quit must release the receiver instead of reconnecting");
+        assert!(invites::device::idle(&self.state).await);
+        assert_eq!(
+            self.backend.launch_count(),
+            launches,
+            "a quit must never relaunch the client"
+        );
+        assert!(matches!(
+            self.holder.session_status().await.unwrap(),
+            host::control::HostSessionStatus::Running { .. }
+        ));
+        let response = crate::dispatch(
+            &self.state,
+            &authorization::AuthorizationContext::LocalBrowser,
+            RpcRequest::SessionStatus(SessionStatusRequest {}),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(&response, RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) if status.active.is_none())
+                || matches!(&response, RpcResponse::SessionStatus(SessionStatusOutcome::Err(error)) if error.code == "SessionCompleted"),
+            "the receiver must no longer expose an active copy: {response:?}"
+        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !self.monitor.is_finished() {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("a deliberate Leave must retire its reconnect monitor");
+    }
+    async fn take_part_again_from_invite(&self) {
+        let invite = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let InvitesListOutcome::Ok(list) = invites::device::list(&self.state).await else {
+                    panic!("list failed")
+                };
+                if let Some(invite) = list.invites.into_iter().next() {
+                    break invite;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("the holder's invite must return after Leave");
+        assert_eq!(invite.session.launch_id, self.held);
+        assert_eq!(invite.netplay, Some(InviteNetplay::Ready));
+        let response = crate::dispatch(
+            &self.state,
+            &authorization::AuthorizationContext::LocalBrowser,
+            RpcRequest::InvitesNetplay(InviteRequest {
+                invite_id: invite.invite_id,
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(
+                response,
+                RpcResponse::InvitesNetplay(SessionStreamPlayOutcome::Ok(_))
+            ),
+            "explicit Play here must start another copy: {response:?}"
+        );
+        assert_eq!(self.backend.launch_count(), 2);
+        let status = self.status().await;
+        let response = crate::dispatch(
+            &self.state,
+            &authorization::AuthorizationContext::LocalBrowser,
+            RpcRequest::SessionLeave(SessionLeaveRequest {
+                expected_launch_id: Some(status.active.unwrap().launch_id),
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            response,
+            RpcResponse::SessionLeave(SessionTransitionOutcome::Ok(_))
+        ));
+    }
     async fn holder_ends_and_copy_follows(&self) {
-        assert!(self.holder.session_stop(&self.held).await.is_ok());
+        let (_, holder) = app_states(self.holder.clone());
+        stop_via_inputd(holder, self._roots[0].path()).await;
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if self.backend.state(&self.launch).unwrap() == LaunchUnitState::Completed
@@ -561,4 +679,86 @@ async fn netplay_lost_iroh_route_expires_even_while_waiting_for_the_holder() {
     .expect("losing the iroh route must still have a reconnect deadline");
     assert!(lost_at.elapsed() >= RECONNECT_WINDOW);
     assert_eq!(fixture.backend.launch_count(), 1);
+}
+
+#[tokio::test]
+async fn netplay_kill_chord_exact_end_leaves_only_the_receiver_and_can_rejoin() {
+    let fixture = Fixture::new().await;
+    let client = fixture.connected_client().await;
+    stop_via_inputd(fixture.state.clone(), fixture._roots[1].path()).await;
+    drop(client);
+    fixture.wait_until_left(1).await;
+    fixture.take_part_again_from_invite().await;
+}
+
+async fn stop_via_inputd(state: AppState, root: &std::path::Path) {
+    // Use inputd's real status -> exact End sequence over the private socket.
+    let path = root.join("control.sock");
+    let listener = tokio::net::UnixListener::bind(&path).unwrap();
+    let mut local = state;
+    local.rpc_surface = RpcSurface::LocalControl;
+    let router = axum::Router::new()
+        .route("/rpc", axum::routing::post(crate::rpc))
+        .with_state(local);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let inputd = korri_inputd::korrid_client::KorridClient::new(path);
+    let result = inputd.stop_active_exact().await;
+    server.abort();
+    assert!(
+        matches!(
+            result,
+            Ok(korri_inputd::korrid_client::ExactStopOutcome::Completed)
+        ),
+        "the exact stop must complete: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn netplay_holder_kill_chord_ends_the_session_and_the_receiving_copy() {
+    let fixture = Fixture::new().await;
+    let _client = fixture.connected_client().await;
+    fixture.holder_ends_and_copy_follows().await;
+}
+
+#[tokio::test]
+async fn netplay_receiver_kill_chord_after_reconnect_stops_the_replacement() {
+    let fixture = Fixture::new().await;
+    let client = fixture.connected_client().await;
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(4), async {
+        while fixture.backend.launch_count() < 2 {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("a broken link must still reconnect");
+    stop_via_inputd(fixture.state.clone(), fixture._roots[1].path()).await;
+    fixture.wait_until_left(2).await;
+}
+
+#[tokio::test]
+async fn netplay_receiver_exact_end_refuses_missing_or_stale_launch_identity() {
+    let fixture = Fixture::new().await;
+    let _client = fixture.connected_client().await;
+    for expected in [None, Some("another-run".into())] {
+        let response = crate::dispatch(
+            &fixture.state,
+            &authorization::AuthorizationContext::LocalUnixControl,
+            RpcRequest::SessionEnd(SessionEndRequest {
+                expected_launch_id: expected,
+                force: None,
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(response, RpcResponse::SessionEnd(SessionEndOutcome::Err(error))
+            if error.code == "StaleLaunchIdentity")
+        );
+    }
+    assert!(fixture.state.netplay_receiver.busy());
+    assert_eq!(fixture.backend.launch_count(), 1);
+    fixture.holder_ends_and_copy_follows().await;
 }

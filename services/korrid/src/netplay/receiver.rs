@@ -813,6 +813,25 @@ pub(crate) async fn dispatch(
                     .unwrap_or_else(SessionTransitionOutcome::Err),
             ))
         }
+        // The system-wide exact stop ends a receiving copy, not the held
+        // session. Leave also cancels the monitor before it can reconnect.
+        RpcRequest::SessionEnd(request)
+            if matches!(
+                authorization,
+                authorization::AuthorizationContext::LocalUnixControl
+            ) =>
+        {
+            let result = leave(state, &status, request.expected_launch_id.as_deref()).await;
+            Some(RpcResponse::SessionEnd(
+                result
+                    .map(|()| {
+                        SessionEndOutcome::Ok(SessionEndResult {
+                            phase: SessionEndPhase::Ended,
+                        })
+                    })
+                    .unwrap_or_else(SessionEndOutcome::Err),
+            ))
+        }
         RpcRequest::SessionCancel(request) => {
             let result = leave(state, &status, Some(&request.expected_launch_id)).await;
             Some(RpcResponse::SessionCancel(
