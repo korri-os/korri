@@ -297,8 +297,13 @@ export const LaunchablesState = {
     }
 
     if (korrid._tag === "Ok") {
-      for (const failure of korrid.payload.failures ?? []) {
-        failures.push(`${failure.host}: ${failure.code}: ${failure.message}`)
+      // Catalog notices replace the shelf on surfaces such as Pico. A partial
+      // peer read must not block healthy games; keep the notice only when no
+      // game source succeeded. Peer readiness changes still refresh the read.
+      if (localCatalog.length === 0 && remoteCatalog.length === 0) {
+        for (const failure of korrid.payload.failures ?? []) {
+          failures.push(`${failure.host}: ${failure.code}: ${failure.message}`)
+        }
       }
     } else {
       failures.push(`games: ${korrid.payload.code}: ${korrid.payload.message}`)
