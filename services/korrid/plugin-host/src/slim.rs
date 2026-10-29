@@ -343,7 +343,7 @@ fn shared_authority(
         return Ok(SharedAuthority::RootRegistered);
     }
     Err(format!(
-        "{path} is installed under another key and does not match {UPSTREAM}; refusing"
+        "{path} is installed under another key and does not match cache.nixos.org; refusing"
     ))
 }
 
@@ -670,6 +670,6 @@ mod tests {
         sign(&mut local, &publisher, "publisher");
         let mut remote = info(b"real upstream NAR", None);
         sign(&mut remote, &nixos, "nixos");
-        assert_eq!(shared_authority(PATH, &local, &remote, &[public]).unwrap_err(), format!("{PATH} is installed under another key and does not match https://cache.nixos.org; refusing"));
+        assert_eq!(shared_authority(PATH, &local, &remote, &[public]).unwrap_err(), format!("{PATH} is installed under another key and does not match cache.nixos.org; refusing"));
     }
 }
