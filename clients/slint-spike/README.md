@@ -141,3 +141,119 @@ of image 03 is at
 and drives DOM focus. This window does not implement or extend that treaty.
 It is a standalone host spike in `clients/`, not in `surfaces/`. A
 production native presentation needs its own contract decision first.
+
+## webOS SDL adapter (THROWAWAY experiment)
+
+Question: can the same view and the same real korrid run through the SDL2
+that the LG B7 already ships, instead of winit/X11? This section covers the
+adapter and its workstation proof only. Nothing here was run on the TV.
+
+### Build features
+
+| Feature | Window system | Build |
+| --- | --- | --- |
+| `desktop-x11` (default) | Slint winit X11 backend, as before | `cargo build` |
+| `webos` | Slint custom platform over the system `libSDL2-2.0.so.0`, loaded with `dlopen` (`src/sdl/`) | `cargo build --no-default-features --features webos` |
+
+The two features exclude each other (`compile_error!`). The `webos` build
+links no SDL, X11, Wayland, freetype or fontconfig library; on x86_64 its
+`NEEDED` list is libc, libm, libgcc_s and the loader. fontconfig is opened
+at run time when present (`fontique/fontconfig-dlopen`); the view embeds
+Slint's own Inter font (`ui/fonts/`, OFL), so text does not need a TV font.
+
+### What the adapter does
+
+- Binds 27 SDL functions, all in SDL 2.0.4's export list
+  (`src/dynapi/SDL_dynapi_procs.h` of the 2.0.4 release tarball). Struct
+  offsets and constants come from the 2.0.4 headers.
+- Sets `SDL_VIDEO_ALLOW_SCREENSAVER=1` before `SDL_Init`; calls
+  `SDL_EnableScreenSaver` after it; refuses to open the window if
+  `SDL_IsScreenSaverEnabled` is still false. SDL 2.0.4 otherwise disables the
+  screen saver in `SDL_VideoInit` (`src/video/SDL_video.c`). The loop draws
+  only when Slint asks; an idle window renders no frames.
+- Sets no webOS hints. Home, Exit and the coloured keys are not grabbed.
+- Software renderer into one buffer; dirty rectangle uploaded into one
+  `ABGR8888` streaming texture; `SDL_RenderCopy` and `SDL_RenderPresent`.
+  Accelerated renderer first, any renderer if that fails.
+- Scale: output height / 720 (1080 lines give 1.5, a 1280x720 logical view).
+  This is a guess for viewing distance. `SLINT_SCALE_FACTOR` overrides it.
+- Input at the host edge (`src/sdl/keys.rs`): Up/Left send Backtab, Down/Right
+  send Tab (the view is one focus chain: Refresh, Close); Return and keypad
+  Enter confirm; Escape or `SDL_SCANCODE_AC_BACK` close on key release.
+  Pointer and wheel events pass through. Every key press logs its scancode
+  and keycode (numbers only), so a TV run shows what the remote sends.
+- Lifecycle: `SDL_QUIT`, `SDL_APP_TERMINATING`, window close, SIGINT and
+  SIGTERM all take the normal shutdown, which stops korrid and removes the
+  scratch storage. Hidden or minimised windows stop drawing.
+- With no X11 `DISPLAY`, sets `EGL_PLATFORM=wayland` and
+  `XDG_RUNTIME_DIR=/tmp/xdg` when unset, as Moonlight TV's `main()` does on
+  webOS (`src/main.c` at `89221f66`).
+
+### Arguments (webos build)
+
+| Argument | Meaning |
+| --- | --- |
+| none | Fullscreen window over the desktop mode of display 0. |
+| one JSON object | webOS launch parameter (Moonlight TV `app_handle_launch` reads `argv[1]` as JSON). At most 16 KiB. Counted, dropped, never printed. Anything else that starts with `{` is refused. |
+| `--windowed=WxH` | Resizable window, for the workstation check. |
+| `--self-test`, `--proof-failure=unauthorized\|offline` | As in the desktop build. |
+
+The webos build exits with status 2 before korrid or SDL starts when the
+effective user is root, or when any `KORRID_*`/`KORRI_*` name other than
+`KORRI_ROOT` and `KORRI_BUILD_ID` is set. The port and capability stay in
+memory, as before.
+
+### Run and check (workstation)
+
+```sh
+nix run .#slint-spike-sdl -- --windowed=1920x1080   # upstream SDL 2.0.4, X11
+nix run .#slint-spike-sdl-build                      # build + test binaries
+nix run .#slint-spike-sdl-check                      # see below
+nix run .#slint-spike-sdl-proof -- OUTPUT_DIR        # screenshots, keys, click
+```
+
+`sdl204.nix` builds upstream SDL 2.0.4 (X11 only) as a test fixture. It is
+never shipped. LG's 2.0.4 carries webOS patches this build lacks.
+
+### Evidence (commit `34f3eb0c4`, x86_64 NixOS, Xvfb, no window manager)
+
+`nix run .#slint-spike-sdl-check` passed: fmt; clippy `-D warnings` and 12
+unit tests with `--features webos`; 27 of 27 bound functions in 2.0.4's
+export list; no window-system library in `NEEDED`; euid 0 refused (user
+namespace with uid 0 mapped); bad launch JSON and bad flags refused without
+echo; the self-test (real korrid, two Refresh callbacks, 401/401/200 auth
+probes) passed over upstream SDL 2.0.4 and over nixpkgs sdl2-compat 2.32.72,
+each reporting `screen saver allowed: true`; network audit
+`AF_INET loopback 1`, no IP outside loopback; a launch JSON object opened
+the fullscreen window, ran the first refresh and shut down on SIGTERM with
+the scratch storage removed.
+
+`nix run .#slint-spike-sdl-proof` over upstream SDL 2.0.4 (renderer
+`opengl`): Down moved focus to Close, Up and Return ran check 2, a mouse
+click on Refresh ran check 3, Escape closed the window and removed the
+scratch storage. Debug-build frame times on the workstation: first frame
+166 ms render + 103 ms upload/present at 1920x1080; 7 frames in the whole
+run. These are not TV numbers.
+
+Committed: `evidence/sdl-01-1920x1080-refresh-focused.png`,
+`sdl-02-down-focuses-close.png`, `sdl-04-mouse-click-check-3.png`. All five
+images and both logs are at
+`~/.cache/korri-slint-spike-evidence/34f3eb0c4-sdl/` on the build host.
+
+### Not known until the TV run
+
+- Whether LG's SDL 2.0.4 opens a Wayland window for a process that the
+  application manager starts, and whether it needs an app ID. Moonlight TV
+  does not use the system SDL: it ships SDL 2.30.12 (webOS backport) in
+  `lib/backports/` with an `RPATH`, and that build reads `APPID`.
+- Which key code the remote's Back key produces, and whether the compositor
+  delivers it to the app at all without a webOS key policy hint.
+- Whether the application manager expects the app to register over Luna
+  (the backport has `registerNativeApp` support; this adapter makes no Luna
+  calls).
+- Release-build frame time on the TV's ARMv7 CPU, and memory use: one
+  1920x1080 buffer and one texture are about 8 MiB each.
+
+The desktop build still passes `nix run .#slint-spike-check` at `34f3eb0c4`
+(fmt, clippy, 8 unit tests, X11 self-test, network audit `AF_INET loopback 1`).
+It now renders with the embedded Inter font as well.
