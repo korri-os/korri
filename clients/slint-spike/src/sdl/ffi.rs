@@ -114,19 +114,16 @@ impl Event {
     pub fn window(&self) -> (u8, i32, i32) {
         (self.0[12], self.i32_at(16), self.i32_at(20))
     }
-    /// SDL_KeyboardEvent. Upstream 2.0.4: repeat @13, keysym @16 = scancode,
-    /// sym @20, mod @24. LG's webOS build adds `Uint32 inputSource` after
-    /// `windowID` (webosbrew SDL-webOS `SDL_WEBOS_BROKEN_ABI`, the same
-    /// lineage), so every later field moves 4 bytes. The B7 confirmed it: the
-    /// remote's Right key read as scancode 1 (the `state` byte) and keycode 79
-    /// (the real scancode) at the upstream offsets.
-    pub fn key(&self, webos_abi: bool) -> Key {
-        let shift = if webos_abi { 4 } else { 0 };
+    /// SDL_KeyboardEvent: repeat @13, keysym @16 = scancode, sym @20, mod @24.
+    /// The TV loads webosbrew SDL-webOS built WITHOUT `SDL_WEBOS_BROKEN_ABI`,
+    /// so it has these upstream offsets. (LG's own 2.0.4 adds `inputSource`
+    /// after `windowID`; the B7 showed Right as scancode 1, keycode 79.)
+    pub fn key(&self) -> Key {
         Key {
-            repeat: self.0[13 + shift] != 0,
-            scancode: self.i32_at(16 + shift),
-            keycode: self.i32_at(20 + shift),
-            modifiers: self.u16_at(24 + shift),
+            repeat: self.0[13] != 0,
+            scancode: self.i32_at(16),
+            keycode: self.i32_at(20),
+            modifiers: self.u16_at(24),
         }
     }
     /// SDL_MouseMotionEvent: x @20, y @24.
@@ -164,19 +161,6 @@ pub struct Version {
     pub minor: u8,
     pub patch: u8,
 }
-
-/// `SDL_SysWMinfo` (SDL_syswm.h, 2.0.4): version, then the subsystem enum,
-/// then a union whose Wayland member starts with `struct wl_display *`.
-/// The union is at most 64 bytes (`Uint8 dummy[64]`) on 32-bit targets.
-#[repr(C)]
-pub struct SysWmInfo {
-    pub version: Version,
-    pub subsystem: c_int,
-    pub info: [*mut c_void; 16],
-}
-
-/// `SDL_SYSWM_WAYLAND` in SDL_syswm.h.
-pub const SDL_SYSWM_WAYLAND: c_int = 6;
 
 /// `SDL_DisplayMode` (SDL_video.h).
 #[repr(C)]
@@ -218,25 +202,33 @@ macro_rules! sdl_functions {
         /// pointers, so the table is `Send + Sync`.
         pub struct Sdl {
             $( pub $name: unsafe extern "C" fn( $( $arg ),* ) $( -> $ret )?, )*
+            /// webosbrew SDL-webOS `SDL_webOSCursorVisibility(SDL_bool)`,
+            /// which Moonlight TV calls on every D-pad press. Absent elsewhere.
+            pub SDL_webOSCursorVisibility: Option<unsafe extern "C" fn(c_int) -> c_int>,
         }
 
         impl Sdl {
-            /// Load `LIBRARY` and resolve every function, or say which one is
+            /// Load SDL and resolve every function, or say which one is
             /// missing. The library stays loaded for the life of the process.
-            pub fn load() -> Result<Self, String> {
-                let name = CString::new(LIBRARY).unwrap();
+            pub fn load(library: &str) -> Result<Self, String> {
+                let name = CString::new(library).map_err(|_| "SDL path contains NUL")?;
                 // SAFETY: dlopen with a valid C string; the handle is never closed.
                 let handle = unsafe { libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
                 if handle.is_null() {
-                    return Err(format!("{LIBRARY} could not be loaded: {}", dl_error()));
+                    return Err(format!("{library} could not be loaded: {}", dl_error()));
                 }
                 Ok(Self {
+                    // SAFETY: optional symbol; signature from SDL-webOS SDL_system.h.
+                    SDL_webOSCursorVisibility: unsafe {
+                        let pointer = libc::dlsym(handle, c"SDL_webOSCursorVisibility".as_ptr());
+                        (!pointer.is_null()).then(|| std::mem::transmute::<*mut c_void, unsafe extern "C" fn(c_int) -> c_int>(pointer))
+                    },
                     $( $name: {
                         let symbol = concat!(stringify!($name), "\0");
                         // SAFETY: dlsym with a NUL-terminated name on a live handle.
                         let pointer = unsafe { libc::dlsym(handle, symbol.as_ptr().cast()) };
                         if pointer.is_null() {
-                            return Err(format!("{LIBRARY} has no {}", stringify!($name)));
+                            return Err(format!("{library} has no {}", stringify!($name)));
                         }
                         // SAFETY: the signature matches the SDL 2.0.4 declaration.
                         unsafe { std::mem::transmute::<*mut c_void, unsafe extern "C" fn( $( $arg ),* ) $( -> $ret )?>(pointer) }
@@ -276,7 +268,27 @@ sdl_functions! {
     SDL_PollEvent(*mut Event) -> c_int;
     SDL_WaitEventTimeout(*mut Event, c_int) -> c_int;
     SDL_GetKeyboardFocus() -> *mut Window;
-    SDL_GetWindowWMInfo(*mut Window, *mut SysWmInfo) -> c_int;
+}
+
+/// webosbrew SDL-webOS release-2.30.12-webos.5 (`SDL2-2.30.12-webos.tar.gz`,
+/// not the `-webos-abi` variant), shipped in the package where Moonlight TV
+/// ships its own copy. Relative to the executable, as Moonlight's RUNPATH is.
+pub const WEBOS_BUNDLED: &str = "../lib/backports/libSDL2-2.0.so.0";
+
+/// The SDL to load: the bundled webOS build on the TV (no X11 display), the
+/// system library by SONAME on the workstation.
+pub fn library() -> Result<String, String> {
+    if std::env::var_os("DISPLAY").is_some() {
+        return Ok(LIBRARY.to_owned());
+    }
+    let executable =
+        std::fs::read_link("/proc/self/exe").map_err(|error| format!("own path: {error}"))?;
+    let directory = executable.parent().ok_or("own path has no directory")?;
+    directory
+        .join(WEBOS_BUNDLED)
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "bundled SDL path is not UTF-8".to_owned())
 }
 
 impl Sdl {
@@ -323,33 +335,25 @@ mod tests {
     }
 
     #[test]
-    fn upstream_and_lg_keyboard_layouts() {
+    fn keyboard_event_has_the_upstream_layout() {
         let right = 79i32;
         let sdlk_right = 79i32 | (1 << 30);
-        // Upstream: state @12, keysym @16.
-        let upstream = key_event(&[
+        let event = key_event(&[
             (12, &[1]),
             (16, &right.to_ne_bytes()),
             (20, &sdlk_right.to_ne_bytes()),
         ]);
-        let key = upstream.key(false);
+        let key = event.key();
         assert_eq!(
             (key.scancode, key.keycode, key.repeat),
             (right, sdlk_right, false)
         );
-        // LG: inputSource @12, state @16, keysym @20. The B7 run read these
-        // bytes as scancode 1 and keycode 79 at the upstream offsets.
-        let lg = key_event(&[
-            (16, &[1]),
-            (20, &right.to_ne_bytes()),
-            (24, &sdlk_right.to_ne_bytes()),
-        ]);
-        let wrong = lg.key(false);
-        assert_eq!((wrong.scancode, wrong.keycode), (1, right));
-        let key = lg.key(true);
-        assert_eq!(
-            (key.scancode, key.keycode, key.repeat),
-            (right, sdlk_right, false)
-        );
+    }
+
+    #[test]
+    fn workstation_loads_the_system_sdl() {
+        if std::env::var_os("DISPLAY").is_some() {
+            assert_eq!(library().unwrap(), LIBRARY);
+        }
     }
 }

@@ -15,7 +15,6 @@
 mod ffi;
 pub mod keys;
 mod probe;
-mod webos_cursor;
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -179,22 +178,18 @@ pub struct SdlPlatform {
     /// TV only: the pressed left button was turned into confirm, so its
     /// release must be too, whatever the mode is by then.
     click_confirming: Cell<bool>,
-    /// TV only: the compositor's cursor request, when available.
-    webos_cursor: Option<webos_cursor::WebosCursor>,
 }
 
 impl SdlPlatform {
     fn open(title: &str, placement: Placement) -> Result<Self, String> {
-        let sdl = Arc::new(Sdl::load()?);
+        let library = ffi::library()?;
+        let sdl = Arc::new(Sdl::load(&library)?);
         let mut version = ffi::Version::default();
         // SAFETY: fills a plain struct.
         unsafe { (sdl.SDL_GetVersion)(&mut version) };
         println!(
-            "sdl: runtime {}.{}.{} from {}",
-            version.major,
-            version.minor,
-            version.patch,
-            ffi::LIBRARY
+            "sdl: runtime {}.{}.{} from {library}",
+            version.major, version.minor, version.patch
         );
         if !sdl.set_hint(ffi::SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1") {
             return Err("SDL refused SDL_VIDEO_ALLOW_SCREENSAVER=1".into());
@@ -241,7 +236,7 @@ impl SdlPlatform {
             .ok()
             .and_then(|value| value.parse::<f32>().ok())
             .filter(|scale| *scale > 0.0);
-        let mut platform = Self {
+        let platform = Self {
             shared: Arc::new(Shared {
                 sdl,
                 wake_event,
@@ -261,24 +256,15 @@ impl SdlPlatform {
             webos_abi: std::env::var_os("DISPLAY").is_none(),
             mode: Cell::new(keys::Mode::Keys),
             click_confirming: Cell::new(false),
-            webos_cursor: None,
         };
         if platform.webos_abi {
-            let window = platform.screen.borrow().window;
-            let status = match webos_cursor::WebosCursor::open(wayland_display(
-                &platform.shared.sdl,
-                window,
-            )) {
-                Ok(cursor) => {
-                    // The view opens in D-pad mode, so LG's cursor starts
-                    // hidden; a shake shows it and switches to the pointer.
-                    cursor.set_visible(false);
-                    platform.webos_cursor = Some(cursor);
-                    probe::Record::Cursor(None)
-                }
-                Err(why) => probe::Record::Cursor(Some(why)),
-            };
-            platform.probe.borrow_mut().record(status);
+            let available = platform.shared.sdl.SDL_webOSCursorVisibility.is_some();
+            platform
+                .probe
+                .borrow_mut()
+                .record(probe::Record::Cursor(available));
+            // The view opens in D-pad mode, so LG's cursor starts hidden.
+            platform.hide_webos_cursor();
         }
         platform
             .probe
@@ -543,15 +529,15 @@ impl SdlPlatform {
     }
 
     fn key_event(&self, event: &ffi::Event, pressed: bool) {
-        let key = event.key(self.webos_abi);
+        let key = event.key();
         let action = keys::translate(key.keycode, key.scancode, key.modifiers);
         if self.webos_abi && pressed {
             if let Some(mode) = keys::mode_after_key(key.scancode, action) {
                 // Moonlight TV hides LG's cursor on every D-pad press
                 // (`lv_drv_sdl_key.c` `webos_key_input_mode`); LG shows it
                 // again when the remote is shaken and reports that as 484.
-                if let Some(cursor) = &self.webos_cursor {
-                    cursor.set_visible(mode == keys::Mode::Pointer);
+                if mode == keys::Mode::Keys {
+                    self.hide_webos_cursor();
                 }
                 match (self.mode.replace(mode), mode) {
                     // LG hid its cursor: drop the pointer's hover highlight.
@@ -672,6 +658,16 @@ impl Platform for SdlPlatform {
 }
 
 impl SdlPlatform {
+    /// Moonlight TV hides LG's cursor on every D-pad press with this call
+    /// (`lv_drv_sdl_key.c` `webos_key_input_mode`). LG shows it again when
+    /// the remote is shaken and reports that as scancode 484.
+    fn hide_webos_cursor(&self) {
+        if let Some(set_visibility) = self.sdl().SDL_webOSCursorVisibility {
+            // SAFETY: SDL video is initialised; SDL_FALSE hides the cursor.
+            unsafe { set_visibility(0) };
+        }
+    }
+
     /// TV: should this mouse button event confirm the focused control?
     fn click_is_confirm(&self, event: &ffi::Event, kind: u32) -> bool {
         let (button, _, _) = event.button();
@@ -729,26 +725,6 @@ impl SdlPlatform {
                 }
             }
         }
-    }
-}
-
-/// SDL's `wl_display`, or null when SDL is not on Wayland.
-fn wayland_display(sdl: &Sdl, window: *mut ffi::Window) -> *mut std::ffi::c_void {
-    let mut info = ffi::SysWmInfo {
-        version: ffi::Version {
-            major: 2,
-            minor: 0,
-            patch: 4,
-        },
-        subsystem: 0,
-        info: [std::ptr::null_mut(); 16],
-    };
-    // SAFETY: live window; `info` has the 2.0.4 layout and its version set.
-    let ok = unsafe { (sdl.SDL_GetWindowWMInfo)(window, &mut info) } != 0;
-    if ok && info.subsystem == ffi::SDL_SYSWM_WAYLAND {
-        info.info[0]
-    } else {
-        std::ptr::null_mut()
     }
 }
 
