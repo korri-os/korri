@@ -33,7 +33,8 @@ fn published_catalog_install_and_same_release_update() {
     // initially empty tables with a real, configured no-output subprocess;
     // never query or change the build machine's firewall. Unit control stays
     // unavailable, so this test cannot accidentally activate a native service.
-    let no_rules = PathBuf::from(std::env::var_os("KORRI_TEST_TRUE").expect("immutable empty-table command"));
+    let no_rules =
+        PathBuf::from(std::env::var_os("KORRI_TEST_TRUE").expect("immutable empty-table command"));
     host.units.firewall.ipv4 = no_rules.clone();
     host.units.firewall.ipv6 = no_rules;
     host.publishers = bindings;
