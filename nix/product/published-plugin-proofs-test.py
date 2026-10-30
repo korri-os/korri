@@ -21,7 +21,7 @@ def main():
     roots = sys.argv[3:]
     with tempfile.TemporaryDirectory() as temporary:
         work = Path(temporary)
-        env = {**os.environ, "NIX_REMOTE": f"local?state={work}/state"}
+        env = {**os.environ, "HOME": str(work), "NIX_REMOTE": f"local?state={work}/state"}
         with registration.open() as source:
             run("nix-store", "--load-db", stdin=source, env=env)
         nix = ["nix", "--offline", "--extra-experimental-features", "nix-command",

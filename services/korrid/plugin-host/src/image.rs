@@ -90,7 +90,9 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             PathBuf::from(&pair[1])
         };
         let uri = archive::path_to_file_uri(&cache)?;
-        if !package::archive_signature(nix, root, &uri, Some(key)).map_err(|e| e.to_string())? {
+        if !package::archive_signature(nix, root, &uri, Some(key))
+            .map_err(|error| format!("image archive proof for {}: {error}", root.display()))?
+        {
             return Err("image archive requires the bound publisher signature".into());
         }
         let info = package::path_info(nix, &record.store_path, Some(&uri))?;

@@ -28,6 +28,8 @@ pkgs.runCommand "korri-image-plugin-offline-metadata"
     ];
   }
   ''
+    # Native Nix's metadata cache belongs to this build, not /homeless-shelter.
+    export HOME="$TMPDIR"
     mkdir -p "$out"
     ${lib.concatMapStringsSep "\n" (name: ''
       ${hostPackage}/bin/korri-plugin image-extract ${published.archives.${name}} \

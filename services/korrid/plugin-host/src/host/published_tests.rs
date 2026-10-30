@@ -29,6 +29,13 @@ fn published_catalog_install_and_same_release_update() {
     // Use the production checks and file storage, not TestRuntime's authority
     // shortcut. New selections stay Disabled, so no native effect is requested.
     host.test_runtime = None;
+    // Disabled installation still removes old firewall rules. Represent the
+    // initially empty tables with a real, configured no-output subprocess;
+    // never query or change the build machine's firewall. Unit control stays
+    // unavailable, so this test cannot accidentally activate a native service.
+    let no_rules = PathBuf::from(std::env::var_os("KORRI_TEST_TRUE").expect("immutable empty-table command"));
+    host.units.firewall.ipv4 = no_rules.clone();
+    host.units.firewall.ipv6 = no_rules;
     host.publishers = bindings;
     let config = Configuration {
         curl,
