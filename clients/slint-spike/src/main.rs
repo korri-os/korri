@@ -145,6 +145,8 @@ fn main() -> ExitCode {
         eprintln!("refusing to start: effective user is root");
         return ExitCode::from(2);
     }
+    #[cfg(feature = "webos")]
+    startup::install_panic_hook();
     #[cfg(not(feature = "webos"))]
     let mode = match parse_mode() {
         Ok(mode) => mode,
