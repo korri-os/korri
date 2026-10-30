@@ -1,19 +1,25 @@
-//! LG's pointer cursor, through the compositor's own request.
+//! LG's Magic Remote cursor, through the compositor's own pointer timer.
 //!
-//! The LG menu and Moonlight TV hide the Magic Remote cursor on a D-pad
-//! press; the compositor shows it again when the remote is shaken and LG's
-//! SDL reports that as scancode 484. Moonlight TV does it with
-//! `SDL_webOSCursorVisibility`, which sends
-//! `wl_webos_input_manager.set_cursor_visibility`. The B7's SDL 2.0.4 exports
-//! no such call, and its `SDL_ShowCursor(0)` blanks the cursor so that the
-//! shake no longer brings it back. So this module sends the same request on
-//! SDL's own compositor connection. A separate connection was tried on the
-//! B7 first and had no visible effect.
+//! The LG menu hides the cursor on a D-pad press and shows it again when the
+//! remote is shaken; LG's SDL reports the changes as scancodes 484 (shown)
+//! and 485 (hidden). Moonlight TV hides it with `SDL_webOSCursorVisibility`,
+//! which sends `wl_webos_input_manager.set_cursor_visibility`. The B7
+//! (webOS 3.9) has no such request: its `libwayland-webos-client.so.1`
+//! interface carries only `get_webos_seat` and the `cursor_visibility` event,
+//! and the TV probe confirmed it (`cursor:no_method`).
 //!
-//! The opcode is looked up by name in the interface LG's
-//! `libwayland-webos-client.so.1` exports, as webosbrew SDL-webOS does
-//! (`SDL_waylandwebos_abifix.c`), so a different method order cannot send the
-//! wrong request. Anything missing leaves the cursor to LG.
+//! What webOS 3.9 does have is `wl_starfish_pointer.set_mrcu_standby_timer`,
+//! the idle time after which the compositor hides the cursor. LG's SDL sets it
+//! once from `SDL_WEBOS_CURSOR_SLEEP_TIME`; webosbrew SDL-webOS does the same
+//! (`SDL_waylandvideo.c`, default 300000 ms). This module sets it on SDL's own
+//! connection: almost zero on a D-pad press, so the cursor goes as soon as
+//! the remote is still, and back to the default when LG shows the cursor
+//! again, so a pointing hand keeps it.
+//!
+//! Opcodes are looked up by name in the interface LG's library exports, as
+//! webosbrew SDL-webOS does (`SDL_waylandwebos_abifix.c`), so a different
+//! method order cannot send the wrong request. Anything missing leaves the
+//! cursor to LG.
 
 use std::ffi::{c_char, c_int, c_void, CStr};
 
@@ -47,24 +53,28 @@ type Marshal = unsafe extern "C" fn(*mut Proxy, u32, ...);
 
 const WL_DISPLAY_GET_REGISTRY: u32 = 1;
 const WL_REGISTRY_BIND: u32 = 0;
-const INPUT_MANAGER: &CStr = c"wl_webos_input_manager";
+const STARFISH_POINTER: &CStr = c"wl_starfish_pointer";
+/// webosbrew SDL-webOS's default `webos_cursor_sleep_time`, in ms.
+const DEFAULT_STANDBY_MS: u32 = 300_000;
+/// Hide as soon as the remote is still. Not zero, which may mean "never".
+const DPAD_STANDBY_MS: u32 = 1;
 
 /// Why the request is not available, as a fixed label for the probe.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unavailable {
     /// A Wayland library or symbol is missing.
     Library,
-    /// The interface has no `set_cursor_visibility(uint)`.
+    /// The interface has no `set_mrcu_standby_timer(uint)`.
     Method,
     /// SDL gave no Wayland display, or the roundtrip failed.
     Display,
-    /// The compositor advertises no `wl_webos_input_manager`.
+    /// The compositor advertises no `wl_starfish_pointer`.
     Global,
 }
 
 pub struct WebosCursor {
     display: *mut Proxy,
-    manager: *mut Proxy,
+    pointer: *mut Proxy,
     opcode: u32,
     marshal: Marshal,
     flush: unsafe extern "C" fn(*mut Proxy) -> c_int,
@@ -73,7 +83,6 @@ pub struct WebosCursor {
 /// Filled by the registry listener during the one roundtrip.
 struct Found {
     name: u32,
-    version: u32,
 }
 
 unsafe extern "C" fn global(
@@ -81,10 +90,10 @@ unsafe extern "C" fn global(
     _registry: *mut Proxy,
     name: u32,
     interface: *const c_char,
-    version: u32,
+    _version: u32,
 ) {
-    if !interface.is_null() && CStr::from_ptr(interface) == INPUT_MANAGER {
-        *(data as *mut Option<Found>) = Some(Found { name, version });
+    if !interface.is_null() && CStr::from_ptr(interface) == STARFISH_POINTER {
+        *(data as *mut Option<Found>) = Some(Found { name });
     }
 }
 
@@ -105,7 +114,7 @@ unsafe fn symbol(handle: *mut c_void, name: &CStr) -> Result<*mut c_void, Unavai
 }
 
 impl WebosCursor {
-    /// Bind the input manager on `display`, SDL's `wl_display`.
+    /// Bind `wl_starfish_pointer` on `display`, SDL's `wl_display`.
     pub fn open(display: *mut c_void) -> Result<Self, Unavailable> {
         use Unavailable::*;
         if display.is_null() {
@@ -114,18 +123,18 @@ impl WebosCursor {
         // SAFETY: dlopen/dlsym with NUL-terminated names; handles are never
         // closed; every pointer is checked before use; the transmuted
         // signatures match wayland-client-core.h and the generated
-        // wl_webos_input_manager client header. `display` is SDL's live
+        // wl_starfish_pointer client header. `display` is SDL's live
         // wl_display, used from the thread that runs SDL's event loop.
         unsafe {
             let client = libc::dlopen(
                 c"libwayland-client.so.0".as_ptr(),
                 libc::RTLD_NOW | libc::RTLD_LOCAL,
             );
-            let webos = libc::dlopen(
-                c"libwayland-webos-client.so.1".as_ptr(),
+            let starfish = libc::dlopen(
+                c"libwayland-starfish-client.so.1".as_ptr(),
                 libc::RTLD_NOW | libc::RTLD_LOCAL,
             );
-            if client.is_null() || webos.is_null() {
+            if client.is_null() || starfish.is_null() {
                 return Err(Library);
             }
             let roundtrip: unsafe extern "C" fn(*mut Proxy) -> c_int =
@@ -143,16 +152,16 @@ impl WebosCursor {
                 std::mem::transmute(symbol(client, c"wl_proxy_marshal_constructor")?);
             let marshal: Marshal = std::mem::transmute(symbol(client, c"wl_proxy_marshal")?);
             let registry_interface = symbol(client, c"wl_registry_interface")? as *const Interface;
-            let manager_interface =
-                symbol(webos, c"wl_webos_input_manager_interface")? as *const Interface;
+            let pointer_interface =
+                symbol(starfish, c"wl_starfish_pointer_interface")? as *const Interface;
 
-            let interface = &*manager_interface;
+            let interface = &*pointer_interface;
             let count = usize::try_from(interface.method_count).map_err(|_| Method)?;
             let methods = std::slice::from_raw_parts(interface.methods, count);
             let opcode = methods
                 .iter()
                 .position(|method| {
-                    CStr::from_ptr(method.name) == c"set_cursor_visibility"
+                    CStr::from_ptr(method.name) == c"set_mrcu_standby_timer"
                         && CStr::from_ptr(method.signature).to_bytes().ends_with(b"u")
                 })
                 .ok_or(Method)?;
@@ -179,24 +188,24 @@ impl WebosCursor {
                 destroy(registry);
                 return Err(if ok { Global } else { Display });
             };
-            let version = found.version.min(interface.version.max(1) as u32);
-            let manager = construct(
+            // Version 1, as webosbrew SDL-webOS binds it.
+            let pointer = construct(
                 registry,
                 WL_REGISTRY_BIND,
-                manager_interface,
+                pointer_interface,
                 found.name,
                 interface.name,
-                version,
+                1u32,
                 std::ptr::null_mut::<c_void>(),
             );
             // No further registry events can reach the listener's `found`.
             destroy(registry);
-            if manager.is_null() {
+            if pointer.is_null() {
                 return Err(Global);
             }
             Ok(Self {
                 display,
-                manager,
+                pointer,
                 opcode: opcode as u32,
                 marshal,
                 flush,
@@ -204,12 +213,17 @@ impl WebosCursor {
         }
     }
 
-    /// Ask the compositor to show or hide its cursor. A shake shows it again
-    /// whatever was asked last; LG's SDL then reports scancode 484.
+    /// D-pad: let the cursor sleep as soon as the remote is still.
+    /// Pointer: restore the normal idle time, so a pointing hand keeps it.
     pub fn set_visible(&self, visible: bool) {
+        let standby = if visible {
+            DEFAULT_STANDBY_MS
+        } else {
+            DPAD_STANDBY_MS
+        };
         // SAFETY: live proxies from `open`; the request takes one uint.
         unsafe {
-            (self.marshal)(self.manager, self.opcode, u32::from(visible));
+            (self.marshal)(self.pointer, self.opcode, standby);
             (self.flush)(self.display);
         }
     }

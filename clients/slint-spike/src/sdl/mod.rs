@@ -550,10 +550,8 @@ impl SdlPlatform {
                 // Moonlight TV hides LG's cursor on every D-pad press
                 // (`lv_drv_sdl_key.c` `webos_key_input_mode`); LG shows it
                 // again when the remote is shaken and reports that as 484.
-                if mode == keys::Mode::Keys {
-                    if let Some(cursor) = &self.webos_cursor {
-                        cursor.set_visible(false);
-                    }
+                if let Some(cursor) = &self.webos_cursor {
+                    cursor.set_visible(mode == keys::Mode::Pointer);
                 }
                 match (self.mode.replace(mode), mode) {
                     // LG hid its cursor: drop the pointer's hover highlight.
