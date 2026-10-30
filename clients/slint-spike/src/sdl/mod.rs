@@ -15,6 +15,7 @@
 mod ffi;
 pub mod keys;
 mod probe;
+mod webos_cursor;
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -178,6 +179,8 @@ pub struct SdlPlatform {
     /// TV only: the pressed left button was turned into confirm, so its
     /// release must be too, whatever the mode is by then.
     click_confirming: Cell<bool>,
+    /// TV only: the compositor's cursor request, when available.
+    webos_cursor: Option<webos_cursor::WebosCursor>,
 }
 
 impl SdlPlatform {
@@ -258,6 +261,11 @@ impl SdlPlatform {
             webos_abi: std::env::var_os("DISPLAY").is_none(),
             mode: Cell::new(keys::Mode::Keys),
             click_confirming: Cell::new(false),
+            webos_cursor: if std::env::var_os("DISPLAY").is_none() {
+                webos_cursor::WebosCursor::open()
+            } else {
+                None
+            },
         };
         platform
             .probe
@@ -529,12 +537,10 @@ impl SdlPlatform {
                 // Moonlight TV hides LG's cursor on every D-pad press
                 // (`lv_drv_sdl_key.c` `webos_key_input_mode`); LG shows it
                 // again when the remote is shaken and reports that as 484.
-                // Its SDL has `SDL_webOSCursorVisibility`; LG's 2.0.4 exports
-                // no such call, so this uses SDL_ShowCursor. EXPERIMENT:
-                // whether LG's build maps that to the compositor's cursor.
-                // SAFETY: video is initialised; SDL_ShowCursor takes 0 or 1.
-                unsafe {
-                    (self.sdl().SDL_ShowCursor)(c_int::from(mode == keys::Mode::Pointer));
+                if mode == keys::Mode::Keys {
+                    if let Some(cursor) = &self.webos_cursor {
+                        cursor.set_visible(false);
+                    }
                 }
                 match (self.mode.replace(mode), mode) {
                     // LG hid its cursor: drop the pointer's hover highlight.
