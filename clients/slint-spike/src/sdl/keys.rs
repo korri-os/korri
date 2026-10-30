@@ -43,13 +43,16 @@ const KMOD_SHIFT: u16 = 0x0001 | 0x0002;
 const SDL_SCANCODE_WEBOS_CURSOR_SHOW: i32 = 484;
 const SDL_SCANCODE_WEBOS_CURSOR_HIDE: i32 = 485;
 
-/// TV only: which input drives the view. The Magic Remote has both a D-pad
-/// and a pointer, and LG sends OK as a click at the pointer.
-/// - `Keys`: OK confirms the focused control, wherever the pointer is.
-/// - `Pointer`: clicks aim at what is under the pointer, as on a desktop.
+/// TV only: which input drives the view. It mirrors LG's own cursor state,
+/// the same rule the LG menu uses: a D-pad press hides the cursor until the
+/// remote is shaken. LG's SDL reports both changes as keys (484 shown, 485
+/// hidden); the host follows them instead of guessing from motion.
+/// - `Keys` (cursor hidden): OK confirms the focused control; pointer motion
+///   neither hovers nor aims.
+/// - `Pointer` (cursor shown): hover and clicks aim, as on a desktop.
 ///
-/// Pointer motion, the wheel or LG's cursor-shown event enter `Pointer`; a
-/// D-pad, confirm or Back key, or LG's cursor-hidden event, enter `Keys`.
+/// A D-pad, confirm or Back key also enters `Keys`, so a press that LG does
+/// not pair with a cursor event still behaves like the LG menu.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     Keys,

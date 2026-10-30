@@ -423,14 +423,15 @@ impl SdlPlatform {
                     });
             }
             ffi::SDL_MOUSEMOTION => {
-                if self.webos_abi {
-                    self.mode.set(keys::Mode::Pointer);
-                }
                 let (x, y) = event.motion();
                 let position = self.logical(x, y);
                 self.pointer.set(position);
-                self.slint_window
-                    .dispatch_event(WindowEvent::PointerMoved { position });
+                // TV: LG's cursor state decides, not motion. A hidden cursor
+                // neither hovers nor aims; it can still report small motion.
+                if !self.webos_abi || self.mode.get() == keys::Mode::Pointer {
+                    self.slint_window
+                        .dispatch_event(WindowEvent::PointerMoved { position });
+                }
             }
             ffi::SDL_MOUSEBUTTONDOWN | ffi::SDL_MOUSEBUTTONUP => {
                 let (button, x, y) = event.button();
@@ -449,10 +450,8 @@ impl SdlPlatform {
                         WindowEvent::PointerReleased { position, button }
                     });
             }
+            ffi::SDL_MOUSEWHEEL if self.webos_abi && self.mode.get() == keys::Mode::Keys => {}
             ffi::SDL_MOUSEWHEEL => {
-                if self.webos_abi {
-                    self.mode.set(keys::Mode::Pointer);
-                }
                 let (x, y) = event.wheel();
                 self.slint_window
                     .dispatch_event(WindowEvent::PointerScrolled {
@@ -527,9 +526,18 @@ impl SdlPlatform {
         let action = keys::translate(key.keycode, key.scancode, key.modifiers);
         if self.webos_abi && pressed {
             if let Some(mode) = keys::mode_after_key(key.scancode, action) {
-                if self.mode.replace(mode) == keys::Mode::Pointer && mode == keys::Mode::Keys {
-                    // The pointer stops aiming: drop its hover highlight.
-                    self.slint_window.dispatch_event(WindowEvent::PointerExited);
+                match (self.mode.replace(mode), mode) {
+                    // LG hid its cursor: drop the pointer's hover highlight.
+                    (keys::Mode::Pointer, keys::Mode::Keys) => {
+                        self.slint_window.dispatch_event(WindowEvent::PointerExited);
+                    }
+                    // LG showed its cursor again: hover where it is.
+                    (keys::Mode::Keys, keys::Mode::Pointer) => {
+                        self.slint_window.dispatch_event(WindowEvent::PointerMoved {
+                            position: self.pointer.get(),
+                        });
+                    }
+                    _ => {}
                 }
             }
         }
