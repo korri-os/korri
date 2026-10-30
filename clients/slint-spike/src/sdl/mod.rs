@@ -169,6 +169,10 @@ pub struct SdlPlatform {
     stats: RefCell<FrameStats>,
     /// TEMPORARY: fixed-label focus and key-event evidence for the TV.
     probe: RefCell<probe::InputProbe>,
+    /// The loaded SDL is LG's webOS build, whose keyboard event carries an
+    /// extra field. Decided by the rule `prepare_environment` uses: no X11
+    /// display means the TV. The workstation check runs upstream SDL under X11.
+    webos_abi: bool,
 }
 
 impl SdlPlatform {
@@ -246,6 +250,7 @@ impl SdlPlatform {
             back_pressed: Cell::new(false),
             stats: RefCell::new(FrameStats::default()),
             probe: RefCell::new(probe::InputProbe::for_tv()),
+            webos_abi: std::env::var_os("DISPLAY").is_none(),
         };
         platform
             .probe
@@ -490,7 +495,7 @@ impl SdlPlatform {
     }
 
     fn key_event(&self, event: &ffi::Event, pressed: bool) {
-        let key = event.key();
+        let key = event.key(self.webos_abi);
         let action = keys::translate(key.keycode, key.scancode, key.modifiers);
         if pressed && !key.repeat {
             self.probe.borrow_mut().record(probe::Record::KeyPress {

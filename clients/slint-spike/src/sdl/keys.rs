@@ -32,6 +32,9 @@ const SDLK_KP_ENTER: i32 = 88 | SCANCODE_MASK;
 const SDLK_AC_BACK: i32 = 270 | SCANCODE_MASK;
 // SDL_scancode.h (2.0.4).
 const SDL_SCANCODE_AC_BACK: i32 = 270;
+/// webOS remote Back in webosbrew SDL-webOS (`SDL_SCANCODE_WEBOS_BACK`).
+/// Not yet seen from LG's 2.0.4 build on the B7; the probe records it.
+const SDL_SCANCODE_WEBOS_BACK: i32 = 482;
 // SDL_keycode.h KMOD_LSHIFT | KMOD_RSHIFT.
 const KMOD_SHIFT: u16 = 0x0001 | 0x0002;
 
@@ -56,7 +59,9 @@ pub fn translate(keycode: i32, scancode: i32, modifiers: u16) -> Action {
         SDLK_RETURN | SDLK_KP_ENTER => Action::Key(Key::Return.into()),
         SDLK_SPACE => Action::Key(' '),
         SDLK_ESCAPE | SDLK_AC_BACK => Action::Back,
-        _ if scancode == SDL_SCANCODE_AC_BACK => Action::Back,
+        _ if scancode == SDL_SCANCODE_AC_BACK || scancode == SDL_SCANCODE_WEBOS_BACK => {
+            Action::Back
+        }
         _ => Action::Unmapped,
     }
 }
@@ -92,6 +97,7 @@ mod tests {
         assert_eq!(translate(SDLK_AC_BACK, 270, 0), Action::Back);
         // A build that gives AC_BACK a different key code keeps the scancode.
         assert_eq!(translate(0, 270, 0), Action::Back);
+        assert_eq!(translate(0, 482, 0), Action::Back);
     }
 
     #[test]

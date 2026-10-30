@@ -114,13 +114,19 @@ impl Event {
     pub fn window(&self) -> (u8, i32, i32) {
         (self.0[12], self.i32_at(16), self.i32_at(20))
     }
-    /// SDL_KeyboardEvent: repeat @13, keysym @16 = scancode, sym @20, mod @24.
-    pub fn key(&self) -> Key {
+    /// SDL_KeyboardEvent. Upstream 2.0.4: repeat @13, keysym @16 = scancode,
+    /// sym @20, mod @24. LG's webOS build adds `Uint32 inputSource` after
+    /// `windowID` (webosbrew SDL-webOS `SDL_WEBOS_BROKEN_ABI`, the same
+    /// lineage), so every later field moves 4 bytes. The B7 confirmed it: the
+    /// remote's Right key read as scancode 1 (the `state` byte) and keycode 79
+    /// (the real scancode) at the upstream offsets.
+    pub fn key(&self, webos_abi: bool) -> Key {
+        let shift = if webos_abi { 4 } else { 0 };
         Key {
-            repeat: self.0[13] != 0,
-            scancode: self.i32_at(16),
-            keycode: self.i32_at(20),
-            modifiers: self.u16_at(24),
+            repeat: self.0[13 + shift] != 0,
+            scancode: self.i32_at(16 + shift),
+            keycode: self.i32_at(20 + shift),
+            modifiers: self.u16_at(24 + shift),
         }
     }
     /// SDL_MouseMotionEvent: x @20, y @24.
@@ -287,4 +293,49 @@ pub unsafe fn text(pointer: *const c_char) -> String {
 fn dl_error() -> String {
     // SAFETY: dlerror returns null or a valid C string.
     unsafe { text(libc::dlerror()) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key_event(fields: &[(usize, &[u8])]) -> Event {
+        let mut event = Event::zeroed();
+        event.set_kind(SDL_KEYDOWN);
+        for (offset, bytes) in fields {
+            event.0[*offset..*offset + bytes.len()].copy_from_slice(bytes);
+        }
+        event
+    }
+
+    #[test]
+    fn upstream_and_lg_keyboard_layouts() {
+        let right = 79i32;
+        let sdlk_right = 79i32 | (1 << 30);
+        // Upstream: state @12, keysym @16.
+        let upstream = key_event(&[
+            (12, &[1]),
+            (16, &right.to_ne_bytes()),
+            (20, &sdlk_right.to_ne_bytes()),
+        ]);
+        let key = upstream.key(false);
+        assert_eq!(
+            (key.scancode, key.keycode, key.repeat),
+            (right, sdlk_right, false)
+        );
+        // LG: inputSource @12, state @16, keysym @20. The B7 run read these
+        // bytes as scancode 1 and keycode 79 at the upstream offsets.
+        let lg = key_event(&[
+            (16, &[1]),
+            (20, &right.to_ne_bytes()),
+            (24, &sdlk_right.to_ne_bytes()),
+        ]);
+        let wrong = lg.key(false);
+        assert_eq!((wrong.scancode, wrong.keycode), (1, right));
+        let key = lg.key(true);
+        assert_eq!(
+            (key.scancode, key.keycode, key.repeat),
+            (right, sdlk_right, false)
+        );
+    }
 }
