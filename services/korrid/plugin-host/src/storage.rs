@@ -23,6 +23,14 @@ pub struct State {
     _lock: File,
 }
 
+impl Drop for State {
+    fn drop(&mut self) {
+        // A concurrent fork can retain this open file description until exec,
+        // even with CLOEXEC. End the operation's lock here, not at its last close.
+        let _ = unsafe { libc::flock(self._lock.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
 impl State {
     pub fn open(root: &Path) -> Result<Self, String> {
         directory(root)?;
