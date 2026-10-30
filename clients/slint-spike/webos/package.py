@@ -85,6 +85,23 @@ def add_bytes(archive, name, data, mode=0o644):
     archive.addfile(member, io.BytesIO(data))
 
 
+def write_payload(destination, files):
+    # Both inspected native/web reference producers emit explicit parent dirs.
+    # Derive only parents of our existing payload; do not add service paths.
+    directories = {str(parent) for name, _, _ in files
+                   for parent in pathlib.PurePosixPath(name).parents if str(parent) != '.'}
+    with tarfile.open(destination, 'w:gz', format=tarfile.GNU_FORMAT) as archive:
+        for name in sorted(directories):
+            member = tarfile.TarInfo(name + '/')
+            member.type = tarfile.DIRTYPE
+            member.mode = 0o755
+            member.uid = member.gid = 0
+            member.mtime = 0
+            archive.addfile(member)
+        for name, content, mode in files:
+            add_bytes(archive, name, content, mode)
+
+
 def write_ipk(destination, directory):
     # Moonlight and accepted Lightkeeper use System V headers without GNU's
     # trailing name slash, and include the regular-file bits in the mode.
@@ -142,9 +159,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='korri-webos-package-') as directory:
         work = pathlib.Path(directory)
         (work / 'debian-binary').write_bytes(b'2.0\n')
-        with tarfile.open(work / 'data.tar.gz', 'w:gz', format=tarfile.GNU_FORMAT) as data:
-            for name, content, mode in files:
-                add_bytes(data, name, content, mode)
+        write_payload(work / 'data.tar.gz', files)
         installed = sum(len(content) for _, content, _ in files)
         control = ('Package: ' + APP_ID + '\nVersion: ' + version +
                    '\nSection: misc\nPriority: optional\nArchitecture: arm\n' +

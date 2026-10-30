@@ -4,11 +4,12 @@
 import pathlib
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
 sys.dont_write_bytecode = True
-from package import write_ipk
+from package import APP_ID, write_ipk, write_payload
 
 NAMES = ('debian-binary', 'control.tar.gz', 'data.tar.gz')
 
@@ -44,6 +45,39 @@ class NativeArchiveTests(unittest.TestCase):
             self.assertEqual(subprocess.check_output(['ar', 't', str(destination)], text=True).splitlines(), list(NAMES))
             for name, content in zip(NAMES, contents):
                 self.assertEqual(subprocess.check_output(['ar', 'p', str(destination), name]), content)
+
+    def test_payload_preserves_files_and_includes_only_their_parent_directories(self):
+        app_base = 'usr/palm/applications/' + APP_ID + '/'
+        package_base = 'usr/palm/packages/' + APP_ID + '/'
+        files = [
+            (app_base + 'appinfo.json', b'app metadata', 0o644),
+            (app_base + 'icon.png', b'icon bytes', 0o644),
+            (app_base + 'bin/korri-slint-spike', b'executable bytes', 0o755),
+            (package_base + 'packageinfo.json', b'package metadata', 0o644),
+        ]
+        expected_directories = set()
+        for name, _, _ in files:
+            parts = name.split('/')
+            expected_directories.update('/'.join(parts[:depth]) for depth in range(1, len(parts)))
+        with tempfile.TemporaryDirectory() as folder:
+            destination = pathlib.Path(folder) / 'data.tar.gz'
+            write_payload(destination, files)
+            with tarfile.open(destination, 'r:gz') as archive:
+                members = archive.getmembers()
+                directories = [member for member in members if member.isdir()]
+                self.assertEqual({member.name.rstrip('/') for member in directories}, expected_directories)
+                self.assertEqual(len(members), len(expected_directories) + len(files))
+                self.assertEqual(members[:len(directories)], directories)
+                self.assertTrue(all(member.isdir() or member.isfile() for member in members))
+                for member in members:
+                    self.assertEqual((member.uid, member.gid, member.mtime), (0, 0, 0))
+                for member in directories:
+                    self.assertEqual((member.mode, member.size), (0o755, 0))
+                regular_files = [member for member in members if member.isfile()]
+                self.assertEqual([member.name for member in regular_files], [name for name, _, _ in files])
+                for name, content, mode in files:
+                    self.assertEqual(archive.extractfile(name).read(), content)
+                    self.assertEqual(archive.getmember(name).mode, mode)
 
     def test_existing_archive_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as folder:
