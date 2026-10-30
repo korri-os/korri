@@ -20,12 +20,6 @@ import tempfile
 import tomllib
 
 APP_ID = 'org.korri.slint-spike'
-# webosbrew SDL-webOS release-2.30.12-webos.5, SDL2-2.30.12-webos.tar.gz
-# (archive SHA-256 4ad566453d113bdd9ee96878176b97d28d9fa70503a62d83d55a351545abb334),
-# lib/libSDL2-2.0.so.0.3000.12. Moonlight TV 1.6.36 ships the same release at
-# this path on the B7; its webOS 3.9 cursor control works there.
-BUNDLED_SDL = 'lib/backports/libSDL2-2.0.so.0'
-BUNDLED_SDL_SHA256 = 'f564f7da624cec47168300d017f3ec822f41b5096f0ce1c96873eecd8614d446'
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 
@@ -134,12 +128,7 @@ def main():
     parser.add_argument('--source-sha', required=True)
     parser.add_argument('--build-record', required=True, type=pathlib.Path,
                         help='release directory containing the cross-build producer checksum and source SHA')
-    parser.add_argument('--webos-sdl', required=True, type=pathlib.Path,
-                        help='the pinned webosbrew SDL-webOS shared library')
     args = parser.parse_args()
-    sdl = args.webos_sdl.resolve(strict=True).read_bytes()
-    if hashlib.sha256(sdl).hexdigest() != BUNDLED_SDL_SHA256:
-        parser.error('--webos-sdl is not the pinned SDL-webOS release')
     if not re.fullmatch(r'[0-9a-f]{40}', args.source_sha):
         parser.error('--source-sha must be the full tested source SHA')
     if run('git', '-C', str(ROOT), 'rev-parse', 'HEAD').strip() != args.source_sha:
@@ -165,7 +154,6 @@ def main():
         (app_base + 'appinfo.json', json.dumps(appinfo).encode(), 0o644),
         (app_base + 'icon.png', icon.read_bytes(), 0o644),
         (app_base + 'bin/korri-slint-spike', binary.read_bytes(), 0o755),
-        (app_base + BUNDLED_SDL, sdl, 0o644),
         (package_base + 'packageinfo.json', json.dumps(packageinfo).encode(), 0o644),
     ]
     with tempfile.TemporaryDirectory(prefix='korri-webos-package-') as directory:
