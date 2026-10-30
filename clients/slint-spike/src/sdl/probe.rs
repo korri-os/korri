@@ -1,7 +1,9 @@
-//! TEMPORARY webOS input diagnostic. It records fixed labels only: whether SDL
-//! reports keyboard focus on our window, and which kinds of focus and key
-//! events SDL delivered. It never records key codes, text, pointers, errors,
-//! arguments, environment, RPC data, the port or the capability.
+//! TEMPORARY webOS input diagnostic. It records whether SDL reports keyboard
+//! focus on our window, which focus and key events SDL delivered, and for each
+//! key press its numeric SDL scancode and keycode with the host-edge action.
+//! Those two numbers name the remote button; they are not text. It never
+//! records text input, pointers, errors, arguments, environment, RPC data, the
+//! port or the capability.
 //!
 //! One private 0600 file per run, kept after exit for collection, at most
 //! `LIMIT` lines. Root never writes one. A write failure disables the probe and
@@ -23,10 +25,27 @@ pub enum Focus {
     Other,
 }
 
-/// Every line the probe can write. No variant carries runtime data.
+/// The host-edge meaning of one key press, as a fixed label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyAction {
+    Tab,
+    Backtab,
+    Return,
+    Space,
+    Back,
+    Unmapped,
+}
+
+/// Every line the probe can write. Only `KeyPress` carries runtime data, and
+/// only two integers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record {
     Focus(Focus),
+    KeyPress {
+        scancode: i32,
+        keycode: i32,
+        action: KeyAction,
+    },
     KeyDown,
     KeyUp,
     FocusGained,
@@ -35,12 +54,37 @@ pub enum Record {
     AppIdSupplied,
 }
 
+impl KeyAction {
+    fn label(self) -> &'static str {
+        match self {
+            KeyAction::Tab => "tab",
+            KeyAction::Backtab => "backtab",
+            KeyAction::Return => "return",
+            KeyAction::Space => "space",
+            KeyAction::Back => "back",
+            KeyAction::Unmapped => "unmapped",
+        }
+    }
+}
+
 impl Record {
+    fn line(self) -> String {
+        match self {
+            Record::KeyPress {
+                scancode,
+                keycode,
+                action,
+            } => format!("key:{scancode}:{keycode}:{}", action.label()),
+            other => other.label().to_owned(),
+        }
+    }
+
     fn label(self) -> &'static str {
         match self {
             Record::Focus(Focus::None) => "keyboard_focus:none",
             Record::Focus(Focus::Own) => "keyboard_focus:own",
             Record::Focus(Focus::Other) => "keyboard_focus:other",
+            Record::KeyPress { .. } => "key",
             Record::KeyDown => "event:key_down",
             Record::KeyUp => "event:key_up",
             Record::FocusGained => "event:focus_gained",
@@ -114,7 +158,7 @@ impl InputProbe {
         let Some(file) = self.file.as_mut() else {
             return;
         };
-        if writeln!(file, "{}", record.label()).is_err() {
+        if writeln!(file, "{}", record.line()).is_err() {
             self.file = None;
             return;
         }
@@ -219,6 +263,30 @@ mod tests {
         drop(probe);
         let text = std::fs::read_to_string(&files(directory.path())[0]).unwrap();
         assert_eq!(text.lines().count(), LIMIT);
+    }
+
+    #[test]
+    fn key_presses_record_two_numbers_and_a_fixed_action() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let mut probe = InputProbe::open_in(directory.path());
+        probe.record(Record::KeyPress {
+            scancode: 79,
+            keycode: 1_073_741_903,
+            action: KeyAction::Tab,
+        });
+        probe.record(Record::KeyPress {
+            scancode: -1,
+            keycode: 0,
+            action: KeyAction::Unmapped,
+        });
+        drop(probe);
+        assert_eq!(
+            std::fs::read_to_string(&files(directory.path())[0]).unwrap(),
+            "key:79:1073741903:tab\nkey:-1:0:unmapped\n"
+        );
     }
 
     #[test]

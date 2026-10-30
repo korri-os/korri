@@ -6,8 +6,8 @@
 //! SDL owns the window and the input; the adapter turns SDL events into Slint
 //! window events at the host edge (`keys.rs`).
 //!
-//! What it deliberately does not do: grab Home or Exit, set webOS access
-//! policy hints, keep the screen awake, redraw without a change, or talk to
+//! What it deliberately does not do: grab Home or Exit (it asks LG's SDL for
+//! Back only, so Back can close the inspector), keep the screen awake, redraw without a change, or talk to
 //! the compositor directly. `SDL_VIDEO_ALLOW_SCREENSAVER=1` is set before
 //! `SDL_Init`, and `SDL_EnableScreenSaver` runs after it, so SDL never holds
 //! off the TV's screen saver.
@@ -188,6 +188,10 @@ impl SdlPlatform {
             return Err("SDL refused SDL_VIDEO_ALLOW_SCREENSAVER=1".into());
         }
         sdl.set_hint(ffi::SDL_HINT_NO_SIGNAL_HANDLERS, "1");
+        // LG's SDL reads this when it creates the window. Without it the
+        // compositor keeps Back and shows its own overlay. Only Back: Home,
+        // Exit and the ribbon stay with LG.
+        sdl.set_hint(ffi::SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
         // SAFETY: first SDL call that starts subsystems, on the main thread.
         if unsafe { (sdl.SDL_Init)(ffi::SDL_INIT_VIDEO) } != 0 {
             return Err(format!("SDL_Init(VIDEO) failed: {}", sdl.error()));
@@ -489,6 +493,24 @@ impl SdlPlatform {
         let key = event.key();
         let action = keys::translate(key.keycode, key.scancode, key.modifiers);
         if pressed && !key.repeat {
+            self.probe.borrow_mut().record(probe::Record::KeyPress {
+                scancode: key.scancode,
+                keycode: key.keycode,
+                action: match action {
+                    keys::Action::Key(' ') => probe::KeyAction::Space,
+                    keys::Action::Key(text) if text == char::from(slint::platform::Key::Tab) => {
+                        probe::KeyAction::Tab
+                    }
+                    keys::Action::Key(text)
+                        if text == char::from(slint::platform::Key::Backtab) =>
+                    {
+                        probe::KeyAction::Backtab
+                    }
+                    keys::Action::Key(_) => probe::KeyAction::Return,
+                    keys::Action::Back => probe::KeyAction::Back,
+                    keys::Action::Unmapped => probe::KeyAction::Unmapped,
+                },
+            });
             // Key numbers only, never text: shows which code the TV remote sends.
             println!(
                 "sdl: key scancode={} keycode={:#x} -> {:?}",

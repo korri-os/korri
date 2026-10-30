@@ -80,6 +80,10 @@ pub const SDL_BUTTON_RIGHT: u8 = 3;
 pub const SDL_HINT_VIDEO_ALLOW_SCREENSAVER: &str = "SDL_VIDEO_ALLOW_SCREENSAVER";
 /// The process blocks SIGINT/SIGTERM itself and waits for them on one thread.
 pub const SDL_HINT_NO_SIGNAL_HANDLERS: &str = "SDL_NO_SIGNAL_HANDLERS";
+/// LG `libsdl2-webos` only (string present in the B7's library; webosbrew
+/// SDL-webOS sets the shell property `_WEBOS_ACCESS_POLICY_KEYS_BACK` from
+/// it). Upstream SDL ignores an unknown hint.
+pub const SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK: &str = "SDL_WEBOS_ACCESS_POLICY_KEYS_BACK";
 
 /// `SDL_Event` is a 56-byte union in SDL 2.0.4 (`Uint8 padding[56]`).
 /// Fields are read at the offsets of the 2.0.4 structs.
