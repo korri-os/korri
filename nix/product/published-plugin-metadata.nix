@@ -57,5 +57,8 @@ pkgs.runCommand "korri-image-plugin-offline-metadata"
       path-info --json --recursive ${lib.escapeShellArgs pluginPackages} > "$out/closure.json"
     # NAR payloads already exist in the registered image closure and the retained
     # pinned archives. copy-sigs needs only the original signed narinfos.
-    ${lib.concatMapStringsSep "\n" (name: ''rm -r "$out/${name}/nar"'') names}
+    # Nix opens a file cache read-only only when its native directory layout
+    # already exists. Keep the empty nar directory; never make it recreate one
+    # in the immutable store during boot proof registration.
+    ${lib.concatMapStringsSep "\n" (name: ''find "$out/${name}/nar" -type f -delete'') names}
   ''
