@@ -165,10 +165,8 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
     }
     roots.sort();
     roots.dedup();
-    let registered = package::StoreSnapshot::query(
-        nix,
-        &roots.iter().map(Path::new).collect::<Vec<_>>(),
-    )?;
+    let registered =
+        package::StoreSnapshot::query(nix, &roots.iter().map(Path::new).collect::<Vec<_>>())?;
     for (path, (fingerprint, key)) in expected {
         let path = Path::new(&path);
         if registered.fingerprint(path)? != fingerprint {
@@ -176,8 +174,13 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
         }
         // CA validity alone is not publisher trust. Require the bound key's
         // retained signature, including for every source-only any release.
-        package::verify_local_signature(nix, Some(&registered), path, &key,
-            package::StoreContents::TrustRegistered)?;
+        package::verify_local_signature(
+            nix,
+            Some(&registered),
+            path,
+            &key,
+            package::StoreContents::TrustRegistered,
+        )?;
     }
     let mut verify = vec![
         "--extra-experimental-features".into(),
