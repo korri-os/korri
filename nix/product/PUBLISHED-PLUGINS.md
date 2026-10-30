@@ -60,9 +60,15 @@ The other product targets are `rg353m`, `rgds`, `r36tmax`, `odin2portal`,
    the publisher's key does not become their authority. No network or
    compilation is needed for seed recovery, enable or reboot.
 
-Preparation is mandatory even with a warm store. Existing unsigned or
-foreign-signed publisher-private paths fail closed. It does not overwrite
-conflicting input-addressed bytes already present in the build store.
+Preparation is mandatory even with a warm store. On the build host only, an
+existing unsigned, input-addressed root-build path can receive its archive's
+bound signature after Nix rehashes its contents and its full StorePath/NarHash/
+NarSize/References fingerprint matches the signed archive. Preparation rereads
+and verifies the retained signature. This adds content-hashing and metadata
+lookup cost. It never grants publisher authority to an upstream path.
+Foreign-signed private paths and every NAR mismatch still fail closed; no path
+is overwritten or deleted. Runtime import rules are unchanged. A warm-builder
+pass is not the cold/offline image proof.
 
 ## Verification
 
