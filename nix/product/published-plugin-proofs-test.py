@@ -16,6 +16,35 @@ def run(*args, success=True, **kwargs):
     return result
 
 
+def incomplete_image(metadata, registration, roots, info, work, nix):
+    # A separate image has the original unsigned registration but lacks one
+    # upstream object's physical bytes. Never alter the successful build store.
+    image = work / "incomplete-image"
+    store = image / "nix/store"
+    store.mkdir(parents=True)
+    private = {
+        line.removeprefix("StorePath: ")
+        for narinfo in metadata.glob("*/*.narinfo")
+        for line in narinfo.read_text().splitlines()
+        if line.startswith("StorePath: ")
+    }
+    missing = sorted(set(info) - private)[0]
+    for path in info:
+        if path != missing:
+            run("cp", "-a", "--no-preserve=ownership", "--reflink=auto", path, str(store))
+    env = {**os.environ, "HOME": str(work), "NIX_REMOTE": f"local?root={image}"}
+    with registration.open() as source:
+        run("nix-store", "--load-db", stdin=source, env=env)
+    for _ in range(2):
+        failure = run(str(metadata / "verify"), success=False, env=env)
+        assert missing in failure.stderr and "does not exist" in failure.stderr, failure.stderr
+        current = json.loads(run(*nix, "path-info", "--recursive", "--json", *roots, env=env).stdout)
+        assert all(not entry.get("signatures") for entry in current.values()), "failed image verification retained trust"
+    run("cp", "-a", "--no-preserve=ownership", "--reflink=auto", missing, str(store))
+    run(str(metadata / "verify"), env=env)
+    print(f"PASS: missing image object {missing}; repeated named refusal; exact bytes restored; same shipped verification passed")
+
+
 def main():
     metadata, registration = map(Path, sys.argv[1:3])
     roots = sys.argv[3:]
@@ -29,6 +58,7 @@ def main():
         info = json.loads(run(*nix, "path-info", "--recursive", "--json", *roots, env=env).stdout)
         entries = info.values() if isinstance(info, dict) else info
         assert all(not value.get("signatures") and not value.get("ultimate") for value in entries)
+        incomplete_image(metadata, registration, roots, info, work, nix)
         run(str(metadata / "verify"), env=env)
         verified = json.loads(run(*nix, "path-info", "--recursive", "--json", *roots, env=env).stdout)
         if not isinstance(verified, dict):
