@@ -526,6 +526,16 @@ impl SdlPlatform {
         let action = keys::translate(key.keycode, key.scancode, key.modifiers);
         if self.webos_abi && pressed {
             if let Some(mode) = keys::mode_after_key(key.scancode, action) {
+                // Moonlight TV hides LG's cursor on every D-pad press
+                // (`lv_drv_sdl_key.c` `webos_key_input_mode`); LG shows it
+                // again when the remote is shaken and reports that as 484.
+                // Its SDL has `SDL_webOSCursorVisibility`; LG's 2.0.4 exports
+                // no such call, so this uses SDL_ShowCursor. EXPERIMENT:
+                // whether LG's build maps that to the compositor's cursor.
+                // SAFETY: video is initialised; SDL_ShowCursor takes 0 or 1.
+                unsafe {
+                    (self.sdl().SDL_ShowCursor)(c_int::from(mode == keys::Mode::Pointer));
+                }
                 match (self.mode.replace(mode), mode) {
                     // LG hid its cursor: drop the pointer's hover highlight.
                     (keys::Mode::Pointer, keys::Mode::Keys) => {
