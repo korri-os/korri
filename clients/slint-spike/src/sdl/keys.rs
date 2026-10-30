@@ -38,6 +38,34 @@ const SDL_SCANCODE_WEBOS_BACK: i32 = 482;
 // SDL_keycode.h KMOD_LSHIFT | KMOD_RSHIFT.
 const KMOD_SHIFT: u16 = 0x0001 | 0x0002;
 
+/// webOS cursor events, sent as keys (webosbrew SDL-webOS scancodes; 484 was
+/// seen from the B7 when the Magic Remote pointer appeared).
+const SDL_SCANCODE_WEBOS_CURSOR_SHOW: i32 = 484;
+const SDL_SCANCODE_WEBOS_CURSOR_HIDE: i32 = 485;
+
+/// TV only: which input drives the view. The Magic Remote has both a D-pad
+/// and a pointer, and LG sends OK as a click at the pointer.
+/// - `Keys`: OK confirms the focused control, wherever the pointer is.
+/// - `Pointer`: clicks aim at what is under the pointer, as on a desktop.
+///
+/// Pointer motion, the wheel or LG's cursor-shown event enter `Pointer`; a
+/// D-pad, confirm or Back key, or LG's cursor-hidden event, enter `Keys`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Keys,
+    Pointer,
+}
+
+/// The mode a key press leaves the TV in, if it changes it.
+pub fn mode_after_key(scancode: i32, action: Action) -> Option<Mode> {
+    match (scancode, action) {
+        (SDL_SCANCODE_WEBOS_CURSOR_SHOW, _) => Some(Mode::Pointer),
+        (SDL_SCANCODE_WEBOS_CURSOR_HIDE, _) => Some(Mode::Keys),
+        (_, Action::Key(_) | Action::Back) => Some(Mode::Keys),
+        (_, Action::Unmapped) => None,
+    }
+}
+
 /// What one SDL key means at the host edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -98,6 +126,23 @@ mod tests {
         // A build that gives AC_BACK a different key code keeps the scancode.
         assert_eq!(translate(0, 270, 0), Action::Back);
         assert_eq!(translate(0, 482, 0), Action::Back);
+    }
+
+    #[test]
+    fn d_pad_and_pointer_hand_over() {
+        assert_eq!(mode_after_key(484, Action::Unmapped), Some(Mode::Pointer));
+        assert_eq!(mode_after_key(485, Action::Unmapped), Some(Mode::Keys));
+        assert_eq!(
+            mode_after_key(79, translate(SDLK_RIGHT, 79, 0)),
+            Some(Mode::Keys)
+        );
+        assert_eq!(
+            mode_after_key(40, translate(SDLK_RETURN, 40, 0)),
+            Some(Mode::Keys)
+        );
+        assert_eq!(mode_after_key(482, Action::Back), Some(Mode::Keys));
+        // Red, Home and the rest leave the mode alone.
+        assert_eq!(mode_after_key(486, Action::Unmapped), None);
     }
 
     #[test]

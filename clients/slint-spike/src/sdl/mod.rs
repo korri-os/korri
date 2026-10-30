@@ -173,6 +173,11 @@ pub struct SdlPlatform {
     /// extra field. Decided by the rule `prepare_environment` uses: no X11
     /// display means the TV. The workstation check runs upstream SDL under X11.
     webos_abi: bool,
+    /// TV only: whether the D-pad or the pointer drives the view.
+    mode: Cell<keys::Mode>,
+    /// TV only: the pressed left button was turned into confirm, so its
+    /// release must be too, whatever the mode is by then.
+    click_confirming: Cell<bool>,
 }
 
 impl SdlPlatform {
@@ -251,6 +256,8 @@ impl SdlPlatform {
             stats: RefCell::new(FrameStats::default()),
             probe: RefCell::new(probe::InputProbe::for_tv()),
             webos_abi: std::env::var_os("DISPLAY").is_none(),
+            mode: Cell::new(keys::Mode::Keys),
+            click_confirming: Cell::new(false),
         };
         platform
             .probe
@@ -400,24 +407,25 @@ impl SdlPlatform {
                 });
                 self.key_event(event, kind == ffi::SDL_KEYDOWN)
             }
-            // TV: the Magic Remote pointer does not aim. OK on the remote
-            // arrives as a left click wherever the pointer is; the host turns
-            // it into confirm on the focused control. Motion and wheel are
-            // dropped so the pointer never moves focus.
-            ffi::SDL_MOUSEMOTION | ffi::SDL_MOUSEWHEEL if self.webos_abi => {}
-            ffi::SDL_MOUSEBUTTONDOWN | ffi::SDL_MOUSEBUTTONUP if self.webos_abi => {
-                let (button, _, _) = event.button();
-                if button == ffi::SDL_BUTTON_LEFT {
-                    let text = char::from(slint::platform::Key::Return).into();
-                    self.slint_window
-                        .dispatch_event(if kind == ffi::SDL_MOUSEBUTTONDOWN {
-                            WindowEvent::KeyPressed { text }
-                        } else {
-                            WindowEvent::KeyReleased { text }
-                        });
-                }
+            // TV: OK on the Magic Remote arrives as a left click wherever the
+            // LG pointer last was. While the user drives the D-pad, that click
+            // confirms the focused control instead; once the pointer moves,
+            // clicks aim again. See `keys::Mode`.
+            ffi::SDL_MOUSEBUTTONDOWN | ffi::SDL_MOUSEBUTTONUP
+                if self.webos_abi && self.click_is_confirm(event, kind) =>
+            {
+                let text = char::from(slint::platform::Key::Return).into();
+                self.slint_window
+                    .dispatch_event(if kind == ffi::SDL_MOUSEBUTTONDOWN {
+                        WindowEvent::KeyPressed { text }
+                    } else {
+                        WindowEvent::KeyReleased { text }
+                    });
             }
             ffi::SDL_MOUSEMOTION => {
+                if self.webos_abi {
+                    self.mode.set(keys::Mode::Pointer);
+                }
                 let (x, y) = event.motion();
                 let position = self.logical(x, y);
                 self.pointer.set(position);
@@ -442,6 +450,9 @@ impl SdlPlatform {
                     });
             }
             ffi::SDL_MOUSEWHEEL => {
+                if self.webos_abi {
+                    self.mode.set(keys::Mode::Pointer);
+                }
                 let (x, y) = event.wheel();
                 self.slint_window
                     .dispatch_event(WindowEvent::PointerScrolled {
@@ -514,6 +525,14 @@ impl SdlPlatform {
     fn key_event(&self, event: &ffi::Event, pressed: bool) {
         let key = event.key(self.webos_abi);
         let action = keys::translate(key.keycode, key.scancode, key.modifiers);
+        if self.webos_abi && pressed {
+            if let Some(mode) = keys::mode_after_key(key.scancode, action) {
+                if self.mode.replace(mode) == keys::Mode::Pointer && mode == keys::Mode::Keys {
+                    // The pointer stops aiming: drop its hover highlight.
+                    self.slint_window.dispatch_event(WindowEvent::PointerExited);
+                }
+            }
+        }
         if pressed && !key.repeat {
             self.probe.borrow_mut().record(probe::Record::KeyPress {
                 scancode: key.scancode,
@@ -618,6 +637,21 @@ impl Platform for SdlPlatform {
 }
 
 impl SdlPlatform {
+    /// TV: should this mouse button event confirm the focused control?
+    fn click_is_confirm(&self, event: &ffi::Event, kind: u32) -> bool {
+        let (button, _, _) = event.button();
+        if button != ffi::SDL_BUTTON_LEFT {
+            return false;
+        }
+        if kind == ffi::SDL_MOUSEBUTTONDOWN {
+            let confirm = self.mode.get() == keys::Mode::Keys;
+            self.click_confirming.set(confirm);
+            confirm
+        } else {
+            self.click_confirming.replace(false)
+        }
+    }
+
     /// Compare SDL's keyboard-focus window with ours. Only the category is
     /// recorded; the pointers never leave this function.
     fn sample_keyboard_focus(&self) {
