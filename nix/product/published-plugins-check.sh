@@ -26,7 +26,8 @@ trap 'rm -f "$KORRI_IMAGE_BINDINGS"' EXIT
 nix eval --impure --json --expr '(import ./nix/product/requirements.nix { korri = {}; }).constants.publishers' > "$KORRI_IMAGE_BINDINGS"
 KORRI_PUBLISH_NIX=$(readlink -f "$(command -v nix)")
 KORRI_IMAGE_CURL=$(readlink -f "$(command -v curl)")
-KORRI_TEST_TRUE=$(readlink -f "$(type -P true)")
+# Preserve argv[0] for Coreutils' multicall true entry point.
+KORRI_TEST_TRUE=$(type -P true)
 gate nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml \
   --lib published_catalog_install_and_same_release_update -- --ignored
 gate nix build --keep-going --no-link \
