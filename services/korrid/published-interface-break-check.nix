@@ -24,7 +24,9 @@ acceptance.overrideAttrs (old: {
     fi
     cat interface-rejection.log
     grep -F 'test published_mgba_route_and_launch_prepare ... FAILED' interface-rejection.log
-    grep -F 'native runner kind has no callable launch.prepare handler' interface-rejection.log
+    # ADR 0045 permits a default native launch. This fixture authors a config
+    # override, which that default must refuse when the named handler is lost.
+    grep -F 'runner @korri:mgba/mgba has no launch.prepare handler, so it takes no config override' interface-rejection.log
     runHook postCheck
   '';
   installPhase = ''
