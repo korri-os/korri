@@ -6,8 +6,9 @@ Status when work paused: the app is installed but does not start. The TV runs, L
 
 | Item | Value |
 |---|---|
-| Experiment worktree | `.worktrees/c-1c512a91…`, HEAD `39dee17a1622ef0024b85291f0990723a05a240c` (clean) |
-| Main | untouched (`6c0e5c702`) |
+| Source | landed on main. The installed build is source `39dee17a1` before the rebase; on main it is the commit before this brief |
+| Worktrees | the experiment, toolchain, SDL and focus-probe worktrees were removed after landing |
+| webOS SDK | the extracted SDK and ARM target cache lived in the removed toolchain worktree. Re-extract with `clients/slint-spike/webos-sdk.sh` from the pinned archive `readiness/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz` (SHA-256 `2230a635…`), then apply `webos-runtime-overlay.sh` with `readiness/tv-runtime-glibc-2.19/`. The first ARM build after that is cold (about 19 minutes) |
 | Installed app ELF | `729ac4b912d8fbc797ba83bf103093cee42e0ba4a4d83af2bb18714387fab254` (source `39dee17a1`) |
 | `prepare-owned-upgrade.sh` prior | `729ac4b9…` (matches the installed bytes) |
 | TV | power state `Active`; foreground `io.github.chiotas.lightkeeper`; our app stopped |
@@ -74,6 +75,10 @@ Status when work paused: the app is installed but does not start. The TV runs, L
 | `b94dc1c3a` | starfish standby timer attempt (no effect) |
 | `6dcd436dc` | Bundled SDL-webOS (froze the TV) |
 | `39dee17a1` | Revert of `6dcd436dc` (installed now) |
+
+## Landing note
+
+The full korrid gate passed on the rebased branch except one test that this workstation cannot pass: `config::settings::tests::player_count_is_read_without_the_plugin_registry` requires `/run/korri-plugin-host/enabled-packages.json` to be absent, and a plugin host on the workstation created it. The branch does not touch that code. The gate was re-run with only that test skipped, and passed, together with the slint-spike host and package checks.
 
 ## Key evidence files
 
