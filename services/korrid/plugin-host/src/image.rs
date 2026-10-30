@@ -68,6 +68,7 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
     let mut seen = BTreeSet::new();
     let mut roots = Vec::new();
     let mut expected = BTreeMap::new();
+    let mut proofs = Vec::new();
     // Preserve the image unit's first-registration content check and later
     // immutable-store fast path. Nix's bound signatures are the only cache.
     let mut rehash = mode == "prepare";
@@ -128,32 +129,8 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
                 ));
             }
         }
-        copy_proofs(nix, &uri, key, &paths)?;
-        let mut verify = vec![
-            "--extra-experimental-features".into(),
-            "nix-command".into(),
-            "--offline".into(),
-            "--option".into(),
-            "substituters".into(),
-            "".into(),
-            "--option".into(),
-            "extra-substituters".into(),
-            "".into(),
-            "--option".into(),
-            "trusted-public-keys".into(),
-            key.into(),
-            "--option".into(),
-            "extra-trusted-public-keys".into(),
-            "".into(),
-            "store".into(),
-            "verify".into(),
-            "--sigs-needed".into(),
-            "1".into(),
-            "--no-contents".into(),
-        ];
         roots.extend(paths.iter().cloned());
-        verify.extend(paths);
-        process::checked_uncapped(nix, verify, None)?;
+        proofs.push((uri, key.to_owned(), paths, temporary));
         let declaration = package::load_declaration(root)?;
         if declaration.id() != record.plugin_id {
             return Err("image catalog identity differs from declaration".into());
@@ -167,6 +144,55 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
     }
     roots.sort();
     roots.dedup();
+    // Retained signatures are the successful first-registration marker. Never
+    // publish that marker before checking the complete physical image closure:
+    // otherwise a failed first boot can make an incomplete image pass on retry.
+    if rehash {
+        let mut verify = vec![
+            "--extra-experimental-features".into(),
+            "nix-command".into(),
+            "--offline".into(),
+            "--option".into(),
+            "substituters".into(),
+            "".into(),
+            "--option".into(),
+            "extra-substituters".into(),
+            "".into(),
+            "store".into(),
+            "verify".into(),
+            "--recursive".into(),
+            "--no-trust".into(),
+        ];
+        verify.extend(roots.iter().cloned());
+        process::checked_uncapped(nix, verify, None)?;
+    }
+    for (uri, key, paths, _cache) in proofs {
+        copy_proofs(nix, &uri, &key, &paths)?;
+        let mut verify = vec![
+            "--extra-experimental-features".into(),
+            "nix-command".into(),
+            "--offline".into(),
+            "--option".into(),
+            "substituters".into(),
+            "".into(),
+            "--option".into(),
+            "extra-substituters".into(),
+            "".into(),
+            "--option".into(),
+            "trusted-public-keys".into(),
+            key,
+            "--option".into(),
+            "extra-trusted-public-keys".into(),
+            "".into(),
+            "store".into(),
+            "verify".into(),
+            "--sigs-needed".into(),
+            "1".into(),
+            "--no-contents".into(),
+        ];
+        verify.extend(paths);
+        process::checked_uncapped(nix, verify, None)?;
+    }
     let registered =
         package::StoreSnapshot::query(nix, &roots.iter().map(Path::new).collect::<Vec<_>>())?;
     for (path, (fingerprint, key)) in expected {
@@ -183,25 +209,6 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             &key,
             package::StoreContents::TrustRegistered,
         )?;
-    }
-    let mut verify = vec![
-        "--extra-experimental-features".into(),
-        "nix-command".into(),
-        "--offline".into(),
-        "--option".into(),
-        "substituters".into(),
-        "".into(),
-        "--option".into(),
-        "extra-substituters".into(),
-        "".into(),
-        "store".into(),
-        "verify".into(),
-        "--recursive".into(),
-        "--no-trust".into(),
-    ];
-    verify.extend(roots);
-    if rehash {
-        process::checked_uncapped(nix, verify, None)?;
     }
     // Make local proof registration durable before recovery can use it.
     package::sync_store()?;
