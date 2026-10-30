@@ -1,63 +1,46 @@
-# Current Core acceptance over immutable published packages. No plugin builder
-# or publisher source enters this derivation: roots are exact store references.
-{
-  pkgs,
-  system,
-  hostPackage,
-  publicKey,
-  cacheUrl,
-}:
+# Admission of actual catalog outputs, never recipes rebuilt with Core.
+{ pkgs, system, hostPackage, publicKey, cacheUrl }:
 let
-  published = import ./published-plugins.nix { inherit system; };
+  lib = pkgs.lib;
+  catalog = import ./catalog-plugins.nix { inherit pkgs system; };
+  published = catalog.plugins;
+  publishers = { "@korri" = { inherit publicKey cacheUrl; }; };
+  bindings = pkgs.writeText "published-plugin-publishers.json" (builtins.toJSON publishers);
   metadata = import ./published-plugin-metadata.nix {
-    inherit pkgs system publicKey;
+    inherit pkgs system hostPackage publishers;
     pluginPackages = builtins.attrValues published;
   };
   proofCheck = import ./published-plugin-metadata-check.nix {
-    inherit
-      pkgs
-      system
-      publicKey
-      published
-      metadata
-      ;
+    inherit pkgs system metadata;
+    pluginPackages = builtins.attrValues published;
   };
-  publishers = pkgs.writeText "published-plugin-publishers.json" (
-    builtins.toJSON { "@korri" = { inherit publicKey cacheUrl; }; }
-  );
-  identityChecks = pkgs.lib.concatStringsSep "\n" (
-    pkgs.lib.mapAttrsToList (name: package: ''
-      jq -e --arg id ${
-        pkgs.lib.escapeShellArg ("@korri:" + pkgs.lib.removePrefix "korri-plugin-" name)
-      } --arg path ${pkgs.lib.escapeShellArg package} \
-        '.[] | select(.id == $id) | .package == $path and .desired.state == "${
-          if name == "korri-plugin-starter-pack" then "Disabled" else "Enabled"
-        }" and .previous == null' \
-        receipts.json >/dev/null
-    '') published
-  );
+  identityChecks = lib.concatStringsSep "\n" (lib.mapAttrsToList (name: record: ''
+    jq -e --argjson record ${lib.escapeShellArg (builtins.toJSON record)} \
+      --arg source ${lib.escapeShellArg catalog.catalogUrl} \
+      '.[] | select(.id == $record.plugin_id) |
+        .package == $record.store_path and .previous == null and
+        .desired.state == "${if name == "korri-plugin-starter-pack" then "Disabled" else "Enabled"}" and
+        .provenance == {kind: "Repository", source_url: $source,
+          plugin_id: $record.plugin_id, release_version: $record.release_version,
+          platform: $record.platform, archive_sha256: $record.archive_sha256, signed: true}' \
+      receipts.json >/dev/null
+  '') catalog.records);
 in
-assert pkgs.lib.all (
-  package:
-  builtins.getContext package == {
-    "${builtins.unsafeDiscardStringContext package}".path = true;
-  }
-) (builtins.attrValues published);
-pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInputs = [ pkgs.jq ]; }
-  ''
-    set -euo pipefail
-    test -f ${metadata}/nix-cache-info
-    test -e ${proofCheck}
-    ${hostPackage}/bin/korri-plugin seed-graph --disabled '@korri:starter-pack' ${publishers} \
-      ${pkgs.lib.escapeShellArgs (builtins.attrValues published)} > receipts.json
-    jq -e 'length == ${toString (builtins.length (builtins.attrNames published))}' receipts.json >/dev/null
-    ${identityChecks}
-    # Image selection must approve the exact dependencies the pack names.
-    # Keeping another FAKE-08, Solarus or ZQuest version in the store is not sufficient.
-    jq -e --arg fake08 ${pkgs.lib.escapeShellArg published.korri-plugin-fake08} \
-      --arg solarus ${pkgs.lib.escapeShellArg published.korri-plugin-solarus} \
-      --arg zquest ${pkgs.lib.escapeShellArg published.korri-plugin-zquest-classic} \
-      '.publisher.namespace == "@korri" and .requires == [$fake08, $solarus, $zquest]' \
-      ${published.korri-plugin-starter-pack}/manifest.json >/dev/null
-    touch "$out"
-  ''
+assert lib.all (package: builtins.getContext package == {
+  "${builtins.unsafeDiscardStringContext package}".path = true;
+}) (builtins.attrValues published);
+pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInputs = [ pkgs.jq ]; } ''
+  set -euo pipefail
+  test -e ${proofCheck}
+  ${hostPackage}/bin/korri-plugin seed-catalog --disabled '@korri:starter-pack' ${bindings} \
+    ${catalog.catalog} ${lib.escapeShellArg catalog.catalogUrl} \
+    ${lib.escapeShellArgs (builtins.attrValues published)} > receipts.json
+  jq -e 'length == 33' receipts.json >/dev/null
+  ${identityChecks}
+  jq -e --arg fake08 ${lib.escapeShellArg published.korri-plugin-fake08} \
+    --arg solarus ${lib.escapeShellArg published.korri-plugin-solarus} \
+    --arg zquest ${lib.escapeShellArg published.korri-plugin-zquest-classic} \
+    '.publisher.namespace == "@korri" and .requires == [$fake08, $solarus, $zquest]' \
+    ${published.korri-plugin-starter-pack}/manifest.json >/dev/null
+  touch "$out"
+''

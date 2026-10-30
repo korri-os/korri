@@ -169,12 +169,13 @@ let
       '';
     };
     korri-published-plugins-check = {
-      description = "Check current Core against exact published plugins, signed offline closures, and a host-interface break.";
+      description = "Check actual pinned catalog archives, image receipts, offline recovery, and published install/update.";
       runtimeInputs = [
         pkgs.nix
         pkgs.jq
         pkgs.python3
         pkgs.git
+        pkgs.curl
       ];
       script = ''
         exec bash "$KORRI_ROOT/nix/product/published-plugins-check.sh"

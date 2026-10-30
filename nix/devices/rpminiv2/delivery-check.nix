@@ -5,6 +5,7 @@ let
   cacheWorkflowPath = ../../../.github/workflows/nix-cache.yml;
   trustScriptPath = ../../../.github/workflows/trust-korri-cache.sh;
   fetchScriptPath = ../../../.github/workflows/fetch-image-plugins.sh;
+  catalog = (import ../../product/catalog-plugins.nix { inherit pkgs; system = "aarch64-linux"; withContext = false; }).catalog;
   imageWorkflow = builtins.readFile imageWorkflowPath;
   cacheWorkflow = builtins.readFile cacheWorkflowPath;
   trustScript = builtins.readFile trustScriptPath;
@@ -49,6 +50,6 @@ pkgs.runCommand "rpminiv2-delivery-check"
     shellcheck --shell=bash ${trustScriptPath} ${fetchScriptPath}
     python3 ${./delivery-workflow-check.py} ${cacheWorkflowPath}
     python3 ${./delivery-build-once.test.py} ${cacheWorkflowPath} ${../../cache/build-with-read-retry.py}
-    python3 ${../../cache/fetch-image-plugins.test.py} ${fetchScriptPath} ${../../cache/plugin-read-failure.py}
+    python3 ${../../cache/fetch-image-plugins.test.py} ${fetchScriptPath} ${catalog}
     touch "$out"
   ''

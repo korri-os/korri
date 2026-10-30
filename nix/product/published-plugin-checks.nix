@@ -12,7 +12,10 @@ builtins.listToAttrs (
     (system: {
       name = "korri-published-plugins-${system}";
       value = import ./published-plugin-check.nix {
-        inherit pkgs system hostPackage;
+        inherit system;
+        pkgs = if system == pkgs.stdenv.hostPlatform.system then pkgs
+          else import korri.inputs.nixpkgs { inherit system; };
+        hostPackage = korri.packages.${system}.korri-plugin-host;
         inherit (binding) publicKey cacheUrl;
       };
     })
@@ -25,10 +28,11 @@ builtins.listToAttrs (
   korri-published-plugin-lifecycle =
     let
       system = "x86_64-linux";
-      published = import ./published-plugins.nix { inherit system; };
+      catalog = import ./catalog-plugins.nix { inherit pkgs system; };
+      published = catalog.plugins;
     in
     import ../../services/korrid/plugin-host/published-vm-test.nix {
-      inherit pkgs hostPackage korridPackage;
+      inherit pkgs hostPackage korridPackage catalog;
       hostModule = korri.nixosModules.korri-plugin-host;
       publishedPaths = {
         ssh = published.korri-plugin-ssh;
@@ -39,9 +43,11 @@ builtins.listToAttrs (
         starterPack = published.korri-plugin-starter-pack;
       };
       metadata = import ./published-plugin-metadata.nix {
-        inherit pkgs system;
-        pluginPackages = builtins.attrValues published;
-        inherit (binding) publicKey;
+        inherit pkgs system hostPackage;
+        pluginPackages = [ published.korri-plugin-ssh published.korri-plugin-mgba
+          published.korri-plugin-fake08 published.korri-plugin-solarus
+          published.korri-plugin-zquest-classic published.korri-plugin-starter-pack ];
+        publishers."@korri" = binding;
       };
     };
 }

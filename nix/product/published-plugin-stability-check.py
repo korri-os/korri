@@ -34,17 +34,13 @@ def evaluate(root: Path) -> list:
           }};
           binding = (import (korri.outPath + "/nix/product/requirements.nix") {{ inherit korri; }}).constants.publishers."@korri";
       in (map (system: let
-        published = import (korri.outPath + "/nix/product/published-plugins.nix") {{ inherit system; }};
-        metadata = import (korri.outPath + "/nix/product/published-plugin-metadata.nix") {{
-          inherit pkgs system;
-          pluginPackages = builtins.attrValues published;
-          inherit (binding) publicKey;
-        }};
+        catalog = import (korri.outPath + "/nix/product/catalog-plugins.nix") {{ inherit pkgs system; }};
+        published = catalog.plugins;
+        archives = builtins.mapAttrs (_: archive: archive.drvPath) catalog.archives;
       in [
         (builtins.mapAttrs (_: builtins.unsafeDiscardStringContext) published)
         (builtins.mapAttrs (_: builtins.getContext) published)
-        metadata.drvPath
-        korri.checks.x86_64-linux."korri-published-plugins-${{system}}".drvPath
+        archives
       ]) [ "aarch64-linux" "x86_64-linux" ])
         ++ [ korri.packages.x86_64-linux.korrid.drvPath ]
     """
@@ -84,7 +80,7 @@ def main() -> None:
         expected = evaluate(before)
         actual = evaluate(after)
         assert expected[:-1] == actual[:-1], (
-            "unrelated Core update changed published outputs, proofs, or admission checks"
+            "unrelated Core update changed catalog outputs or archive fetches"
         )
         assert expected[-1] != actual[-1], "the Core runtime derivation did not change"
         for packages, contexts, *_ in actual[:-1]:
@@ -94,7 +90,7 @@ def main() -> None:
                     "plugin recipes entered image dependencies"
                 )
         print(
-            "Both architectures: 33 exact outputs, proof derivations, and admission checks unchanged while the Core runtime derivation changes."
+            "Both architectures: 33 catalog outputs and archive fetches unchanged while the Core runtime derivation changes."
         )
 
 

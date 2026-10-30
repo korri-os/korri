@@ -1,245 +1,97 @@
-# Published plugins in installation images
+# Catalog-pinned Linux images
 
-Core updates do not recalculate plugin packages. Images select the exact
-published outputs in `published-plugins.nix`, through the existing device
-choices in `plugin-selection.nix`. No publisher flake or plugin recipe enters
-this image dependency graph. Native Nix path contexts retain each complete
-closure without a plugin derivation that can rebuild it.
+ADR 0043 and approved schema-sheet row 13 define the pin in
+`published-plugins.nix`: `{ catalogUrl, catalogSha256 }`. No per-path pin list,
+raw-cache fallback, receipt migration, or outside repository is in this lane.
 
-Plugin approval still binds exact package permissions. Image assembly
-uses the host `seed-graph` producer and `image-seed.sh` to create each
-receipt and active GC root. The selection includes every exact required plugin;
-closure retention alone does not install or approve that dependency. Offline recovery rechecks that approval and the
-full key bound to the publisher namespace. Inclusion in the default bundle
-does not make a plugin required.
+## Published input
 
-## Current producer evidence
+- Plugins source: `72627749471e4cd8089c292dc2f0f0245cd50481`.
+- Immutable tag: `build-72627749471e-plugin-direction`.
+- Publication dry run: `41000811619`; live publication: `41011369204`.
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-72627749471e-plugin-direction/catalog.json>.
+- Actual catalog SHA-256: `e9a642a2271c78dc9aa4c32ec7d5ad6c9c24dcb6fa5cdb9be1bac079bba9075b`.
+- SRI: `sha256-6aZCoicceNyapMMux9WtbJwk3Lb6XNub4brAebupB1s=`.
+- 33 plugin IDs, 63 records. Homebrew Hub, PICO-8 and RetroBrews use `any`.
+- Bound key remains
+  `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
 
-The pins come from the immutable publisher batches `build-9514b1b382d3` and
-`build-9514b1b382d3-solarus`. Each batch supplies `revision.txt`, architecture-specific path lists, and
-`offline-metadata-SYSTEM.tar.gz`. Current host seed reports establish the
-declaration IDs of the selected packages. Path names and lists alone establish
-no identity or trust.
+These identify the actual live bytes. They do not establish dry/live payload
+reproducibility. The Pages catalog is a moving discovery address, not an image
+pin.
 
-Both architecture maps contain 33 outputs. The initial 24 outputs came from source
-`9514b1b382d3b963674628308d6a5770987a4bc0`: the first batch republished 23
-selected plugins for the discovery v2 plugin contract (system content rules,
-groups and `controls`; no `discovery` export), which the current host requires.
-The second batch adds `@korri:solarus`, which the Starter pack requires next to
-`@korri:fake08`; `plugin-selection.nix` selects it on every product device.
-Source `ac8fae593e42dda3cf4beda0b26f190a28d6b942` supplied batch
-`build-ac8fae593e42-zquest`, which replaced the Starter pack (adding Lantern Hollow)
-and added `@korri:zquest-classic`, which the pack now also requires; batch
-`build-ac8fae593e42` added `@korri:gamescope`, selected on every product device.
-Batch `build-dea5fd453fc6` (source `dea5fd453fc64d65edcdad1171cec85fb68be1f7`)
-replaces it with the build that skips fully clipped planes and waits for the
-host's configure after an unmap, so nested Gamescope no longer aborts when a
-window moves off screen or is hidden and shown again.
-Steam adds three outputs, selected on the RP Mini V2 only. `@korri:fex`,
-`@korri:proton` and `@korri:steam` come from batch `build-365ce4e054d5` (source
-`365ce4e054d56b0607a8d67a2bc42a0fc262e9e1`): the ADR 0012 builds, in which FEX
-and Proton declare their pinned payloads as artifacts with unpack programs and
-Steam lists both artifacts. Steam's manifest `requires` exactly those FEX and
-Proton outputs of the same architecture. They replace the prepare-program
-builds of batches `build-e479fd55b3aa` and `build-96a06b0a82ef`; with no pinned
-output left in those batches, their offline archives are no longer pinned (the
-metadata check builds and verifies both architectures without them).
-Batch `build-75eb41b75907` (source
-`75eb41b759074b92a4dac54e8ef6d302463d1ba0`) replaces only the Starter pack.
-Its 27 declared games use `packageFile` releases from its own installed files
-(ADR 0016). The public release's `revision.txt` matches that source, and its
-`paths-SYSTEM.txt` assets name the pinned ARM and x86 outputs. FAKE-08,
-Solarus and ZQuest Classic retain their existing exact pins. The matching
-`offline-metadata-SYSTEM.tar.gz` archives are pinned with their SHA-256 hashes.
-Batch `build-824050bfa4c3` (source `824050bfa4c3139ce3df9ee034a81e4f779e7fd9`,
-publisher `main` `d6d0cf4` plus the three plugins and a Core input lock at
-`bf1e59f3f`) adds `@korri:pico8`, `@korri:homebrewhub` and `@korri:retrobrews`,
-selected Enabled on all seven product devices (owner decision 2026-10-21).
-They are source-only packages (`plugin.ts` and the generated manifest, no
-references); pico8's manifest declares the host `www.lexaloffle.com`. The
-batch lists three paths per architecture. They were fetched into an empty store
-from the publisher cache with only the `korri-plugins-1` key trusted and
-verified, and its offline archives hold one signed record per output.
-Batch `build-30594ae66c81` (source `30594ae66c81222f5d56a5e6d1b8c282c2b7fdf3`,
-Core input `7f37bd48f`) republishes 23 outputs per architecture: the RetroArch
-runner declaring per-game save locations under `saveRoot` (#126), its libretro
-cores, FAKE-08, Solarus, ZQuest Classic and the Starter pack, whose fixtures now
-run through `korrid plugin-run`. Each pin was evaluated at that source and found
-in the batch's `paths-SYSTEM.txt`. Gamescope keeps its earlier pin.
-Batch `build-adaccd5610ce` (source `adaccd5610ce5b997670251eb4a117c83d93ce8f`,
-Core input `eab74c96134abed6453ff74c6c80bf4ebca5c52f`) replaces only Sunshine
-on both architectures. It scopes capture FIFO to guarded RAM-KMS and bounds
-vblank waits to 100 ms. Its native unit requests `LimitRTPRIO=5`, accepted by
-the current Core plugin host. The public `revision.txt` matches that source,
-and both expected outputs appear in the batch's `paths-SYSTEM.txt`. The matching
-offline metadata archives are pinned by SHA-256. Every other plugin pin stays
-unchanged. This pin update does not establish physical-device acceptance.
-Batches `build-bd4bfcfe4e9a` and `build-bd4bfcfe4e9a-starter-pack` (source
-`bd4bfcfe4e9a449b8a0525ba527ba19e98564b99`) replace only FAKE-08 and the
-Starter pack for both architectures. FAKE-08 includes upstream PR #288 and
-Korri's auto-load patch for save states. Each pin was evaluated at that source
-and found in its batch's `paths-SYSTEM.txt`; both `revision.txt` assets match
-that source. Each Starter pack manifest requires the new FAKE-08 and the
-existing exact Solarus and ZQuest Classic pins of its architecture. The matching
-`offline-metadata-SYSTEM.tar.gz` archives are pinned with their SHA-256 hashes.
-Batch `build-e40a4300533b-stream-play` (source
-`e40a4300533baf714ff4de71f5e4da6bbc562b96`) adds Moonlight and replaces Sunshine
-on both architectures for stream play. The public `revision.txt` matches that
-source, and each `paths-SYSTEM.txt` contains exactly the two selected outputs.
-Current host seed reports identify them as `@korri:moonlight` and
-`@korri:sunshine`. The matching offline metadata archives are pinned by SHA-256.
-Every other plugin pin stays unchanged. This pin does not establish
-physical-device acceptance.
-Batch `build-57de061520cc-settings-vocabulary` (source
-`57de061520cc010cbc5ebe9b978f4799d159affa`, Core pin `5f4f89e2b`) replaces 26
-outputs on both architectures for the nested settings vocabulary (ADR 0037,
-ADR 0038): RetroArch, its 18 libretro cores and FAKE-08 (the shared nested
-RetroArch runner), Gamescope (`settings.describe`), Moonlight (the settings-only
-runner with `settings.render`), Sunshine (service settings), and the Starter
-pack with the Solarus and ZQuest Classic outputs it requires. Each
-`paths-SYSTEM.txt` lists exactly those 26 outputs, each evaluated from the
-source; `revision.txt` matches the source. The matching offline metadata
-archives are pinned by SHA-256. FEX, Homebrew Hub, PICO-8, Proton, RetroBrews,
-SSH and Steam keep their pins. This pin does not establish physical-device
-acceptance.
-Batch `build-b65ce7b266b4-moonlight-v4l2request` (source
-`b65ce7b266b4f85c1d8d860e229168a1267f6313`, Core pin `5f4f89e2b`) replaces only
-Moonlight on both architectures. It adds FFmpeg's V4L2 Request hwaccel and the
-`v4l2request` platform for stateless decoders. The source is `57de061` plus
-the Moonlight commit (`e21e55a` on publisher `main`) and a Pyxel test-timing
-fix, because publisher `main` at `9824648` failed its own Sunshine derivation
-guard and the Pyxel native check timed out on CI runners. Both pins were
-evaluated from the source and appear in the batch's `paths-SYSTEM.txt`. The
-matching offline metadata archives are pinned by SHA-256. Device acceptance is
-`docs/acceptance/rg353m-moonlight-v4l2request-2026-10-27.md`.
-Batch `build-dbb0917a5b58-moonlight-h700-gl` (source
-`dbb0917a5b585861257bcd02fc0affa5abd58e17`, Core pin `3047c2af1`) replaces only
-Moonlight on both architectures. Its patch 0022 makes the `v4l2request`
-platform import decoder buffers into GLES without a CPU copy and create its
-window off the stream's setup path, which the H700 needs. It was published from
-zao with the publisher key, not by CI: two CI runs failed on unrelated timing
-and rate limits. The same CI check list passed on Unzen (x86_64) and on Fuji and
-Yari (aarch64), except the aarch64 Sunshine input-seat VM check, whose
-unchanged derivation passed CI on `eb9fc27`. Both pins appear in the batch's
-`paths-SYSTEM.txt`. The matching offline metadata archives are pinned by
-SHA-256. The archives also carry a zao and a Fuji signature on some build-host
-paths; the Pages index carries only the publisher signature. Device acceptance
-is `docs/acceptance/h700-moonlight-v4l2request-2026-10-27.md`.
-Batch `build-39fad980be48-moonlight-perf` (source
-`39fad980be4814d9685e836c912f182cfad9678f`) replaces only Moonlight on both
-architectures. It builds Moonlight's Opus without custom modes, the upstream
-default. With custom modes, every audio packet made libopus read
-`/proc/cpuinfo`; Moonlight's audio thread on the RG353M fell from 16.6 % to
-5.3 % of one core. It was published from zao with the publisher key, not by CI:
-the CI run stopped on a Pyxel window timeout. The same CI check list passed on
-Unzen (x86_64) and on Fuji and Yari (aarch64), except the Pyxel checks, which
-this batch does not touch, and the aarch64 Sunshine input-seat VM check, which
-passed on x86_64. The lifecycle checks passed in CI on the same commit. Both
-pins appear in the batch's `paths-SYSTEM.txt`. The matching offline metadata
-archives are pinned by SHA-256. The archives also carry zao and Fuji
-signatures on some build-host paths; the Pages index carries only the
-publisher signature.
-Each pinned path is grounded in its batch's `paths-SYSTEM.txt` and
-`revision.txt`. The new Starter pack pins were checked against those public
-release assets directly. Earlier batches remain published even when their
-plugin outputs are no longer selected. `published-plugin-metadata.nix` pins the
-matching ARM and x86 archive hashes. It checks every path in the actual
-closure, not only top-level packages. It rejects conflicting proof metadata.
-Equivalent records can differ in optional `Deriver` provenance and signature
-lines. The merger keeps the first record's provenance and combines signatures.
-All other metadata must match exactly. This handles the three observed shared
-proof differences per architecture in the new batch. Neither the optional
-provenance nor a signature label grants trust.
-A private Nix database starts without signatures, loads image-style store
-registration, then imports only the pinned local proofs. Recursive Nix
-verification checks contents and signatures with the bound full public key.
-It uses no remote substituter and changes no build-host signature database.
+## Build and recovery path
 
-All seven product devices preinstall Moonlight as a removable stream viewer.
-They ship Starter pack Disabled and its FAKE-08, Solarus and ZQuest Classic
-runners Enabled:
-`rg353m`, `rgds`, `r36tmax`, `rpminiv2`, `odin2portal`, `rg35xxsp` and `rg35xxpro`.
-Their product images register offline proofs before plugin recovery.
-The pack retains its games, original cartridges, credits, notices and
-noncommercial CC BY-NC-SA 4.0. First-boot setup offers to install the pack;
-installation means enabling its approved local package, with no network.
-Declared `packageFile` releases then enter the library without saved locations
-(ADR 0016). The current pins contain all 27 package-file game declarations.
-Into Ruins remains a known FAKE-08 failure.
-This change does not install software or write firmware on existing devices.
-Recovery images keep their existing no-default-plugin behavior. R36T Max
-retains its hardware-owned root-population command and now uses the same
-proof prerequisite as the other product images.
+Run on a Linux **build host**, not a device:
 
-## Build-host acceptance
+```sh
+bash .github/workflows/fetch-image-plugins.sh rpminiv2
+nix build .#rpminiv2-sd-image
+```
 
-Run from a Core checkout on a build host, never on a handheld:
+The other product targets are `rg353m`, `rgds`, `r36tmax`, `odin2portal`,
+`rg35xxsp` and `rg35xxpro`. `--inputd` prepares the native Sunshine record;
+`--all` prepares both architectures for combined acceptance.
+
+1. `catalog-plugins.nix` fetches the exact catalog by hash. The existing
+   `plugin-selection.nix` still chooses each device's plugins. A matching
+   native record or its `any` record comes from the catalog's latest mark.
+2. Preparation fetches selected archives by `archive_sha256`. The build-host
+   `image prepare` command reuses the repository archive extractor, signature
+   checker, slim importer and native Nix. It never installs receipts, runs
+   plugin programs, activates services, or builds plugin software.
+3. Signed native archives omit cache.nixos.org paths. The existing slim
+   importer checks per-path authority and asks Nix to download these upstream
+   paths with upstream keys only. It imports archive paths with the bound
+   publisher key only. Source-only `any` archives remain full CA closures.
+4. Existing Nix path contexts and `closureInfo` carry the **complete** runtime
+   closure into the image. Original selected archives also stay in the system
+   generation. Small original narinfo caches stay unpacked; duplicate NARs do
+   not.
+5. `seed-catalog` uses the existing graph approval and receipt producers, with
+   `Provenance::Repository` taken from each selected catalog record. The
+   Starter pack stays Disabled; its FAKE-08, Solarus and ZQuest Classic
+   dependencies stay independently selected. Image `officialCatalogUrl`
+   names the pinned catalog. Gamescope's initial modifier remains unchanged.
+6. Before `restore-all`, the offline proof unit compares each archive proof
+   with Nix's registered bytes and requires the full bound key. Nix copies
+   those signatures and rehashes the complete closure without a substituter.
+   Omitted upstream paths keep system-image/root-registration authority;
+   the publisher's key does not become their authority. No network or
+   compilation is needed for seed recovery, enable or reboot.
+
+Preparation is mandatory even with a warm store. Existing unsigned or
+foreign-signed publisher-private paths fail closed. It does not overwrite
+conflicting input-addressed bytes already present in the build store.
+
+## Verification
 
 ```sh
 nix run .#korri-published-plugins-check
 ```
 
-The task adds the existing publisher cache and full key only to its process
-configuration. It downloads exact paths with local and remote builds disabled.
-A missing output or cache failure stops the task; it never evaluates a plugin
-recipe instead. Current Core and the test harness can build on that host.
+This checks both architectures' actual catalog archives, signatures, closure
+registration and exact Repository receipts; unchanged plugin selection;
+missing-proof refusal; published mGBA route/launch dispatch and its interface
+negative control; product/delivery checks; and a cold, network-blocked Linux
+VM using the real SSH, mGBA and Starter pack outputs. The VM tests approval
+tampering, SSH access, dependency approvals, 27 Starter pack games and reboot
+recovery.
 
-The task checks both architectures. It changes the real Core runtime source
-and requires its derivation to change, while all published output paths,
-proof derivations and host admission checks remain unchanged.
-It checks each package ID through the current host. Proof tests remove or
-alter a transitive dependency proof and test invalid signatures and a wrong
-key against unsigned private databases. Archive tests use the actual pinned
-release archives, including their shared-proofs differences. The current callback test uses the
-unchanged published mGBA source graph, named native files and launch treaty.
-A separate negative control changes only Core's `LAUNCH_PREPARE` operation
-name and requires that same acceptance test to fail at the named-operation
-interface.
+The real-repository test installs the published `any` and native outputs and
+updates them through the same release. This is **not** a changed-output
+upgrade. No direction-compatible predecessor has been published. That upgrade
+acceptance check remains unmet; tests must not invent a predecessor or count
+same-release update as an upgrade.
 
-On x86, the disposable VM tests offline image receipts, invalid approval
-refusal, incomplete proof refusal, actual key-only SSH login, disable,
-re-enable, reboot recovery, and the published mGBA registry consumed by
-korrid. It also seeds the pack's exact required FAKE-08, Solarus and ZQuest
-Classic runtimes. With networking blocked and mGBA disabled, enabling the
-image-seeded Disabled pack and rescanning must list exactly its 27 declared
-games through korrid. The VM also checks tampered graph approval refusal,
-required-runtime disable refusal and dependency-aware re-enable.
-It uses the production publisher key and the exact published packages. It
-creates no test-signed replacement packages. ARM image proofs run on the
-build host; native ARM lifecycle and handheld behavior remain separate tests.
+## Existing devices and rollback
 
-The game test checks route construction and callback output. It does not
-claim emulator gameplay with a valid ROM. Raw-cache `inspect` and `install`
-can initialize their bound network cache even when package bytes are local.
-That existing availability requirement remains unchanged. Offline image
-installation uses seeded approved receipts and `restore-all`, not those
-raw-cache acquisition commands.
+This is a fresh-image cutover, not an operational migration. Do not rewrite or
+infer provenance from existing device receipts. Existing user data requires an
+explicit, separately agreed operational cutover before deployment. No device
+write or deployment is part of this change.
 
-`.github/workflows/published-plugin-checks.yml` runs this task for current
-Core without publishing plugins. CI results do not qualify a supported image
-or approve a device deployment.
-
-## Updating a plugin selection
-
-1. Obtain the actual published batch evidence and exact outputs on a build host.
-2. Make sure that the current host reports each selected declaration ID.
-3. Change the native output pins and matching offline archive hashes explicitly.
-4. Run the complete acceptance task before image delivery.
-5. Obtain separate approval for publication or handheld deployment.
-
-Keep the publisher's Core input pin for unrelated changes. Adopt a new pin
-only when a consumed builder, contract, native package or toolchain needs an
-update. Compare actual output paths before selecting affected packages for
-publication. Publisher `PUBLICATION.md` owns that operation.
-
-Independent closures can retain different dependency versions and use more
-disk. A Core dependency update does not update a plugin's dependencies.
-Security updates to those dependencies still require explicit plugin updates.
-
-An inherited image limit also remains: the boot proof service and its metadata
-retain the default closures in the system generation. Uninstall removes a
-plugin's selection and effects, but does not make those bytes collectible
-while that generation remains. The earlier 21-output checks measured 445 x86
-and 446 ARM direct references in the metadata outputs. Adding Starter pack and
-FAKE-08 does not change that retention rule. This change does not discard
-references or introduce a new proof-storage schema.
+The plugins repository's existing raw signed-cache publication remains
+available to old devices. Neither preparation nor image recovery reads it.
+Rollback is an existing image/generation with its original receipts, not a
+fallback from Repository to RawCache.

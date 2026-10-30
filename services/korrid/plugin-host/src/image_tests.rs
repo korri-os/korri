@@ -35,6 +35,6 @@ fn image_extract_checks_digest_before_creating_output() {
     let input = directory.path().join("archive");
     let output = directory.path().join("output");
     fs::write(&input, b"not an archive").unwrap();
-    assert!(extract(&input, &"a".repeat(64), &output).unwrap_err().contains("SHA-256"));
+    assert!(extract(&input, &"a".repeat(64), &output).unwrap_err().contains("SHA256"));
     assert!(!output.exists());
 }

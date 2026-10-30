@@ -10,6 +10,7 @@
   korridPackage,
   publishedPaths,
   metadata,
+  catalog,
 }:
 let
   lib = pkgs.lib;
@@ -34,7 +35,7 @@ let
   closure = pkgs.closureInfo { rootPaths = paths; };
   image = import ./image-seed.nix {
     disabled = [ "@korri:starter-pack" ];
-    inherit pkgs hostPackage;
+    inherit pkgs hostPackage catalog;
     publishers."@korri" = binding;
     pluginPackages = paths;
   };
@@ -113,9 +114,7 @@ pkgs.testers.runNixOSTest {
         systemd.services.korri-plugin-offline-proofs =
           import ../../../nix/product/published-plugin-offline-unit.nix
             {
-              inherit pkgs metadata;
-              pluginPackages = paths;
-              publicKey = binding.publicKey;
+              inherit metadata;
             };
         # Install egress refusal at every boot, before either proof import or
         # receipt recovery. A post-boot test command cannot prove this order.
@@ -205,6 +204,7 @@ pkgs.testers.runNixOSTest {
         # These are prebuilt path references, not plugin .drv dependencies.
         virtualisation.additionalPaths = paths ++ [
           metadata
+          ../../../nix/product/published-plugin-proofs-test.py
           closure
         ];
         virtualisation.memorySize = 3072;
@@ -224,6 +224,8 @@ pkgs.testers.runNixOSTest {
     ssh_path, mgba_path, fake08_path, solarus_path, zquest_path, pack_path = paths
     expected_packages = {"@korri:ssh": ssh_path, "@korri:mgba": mgba_path, "@korri:fake08": fake08_path, "@korri:solarus": solarus_path, "@korri:zquest-classic": zquest_path, "@korri:starter-pack": pack_path}
     cache_url = ${builtins.toJSON binding.cacheUrl}
+    catalog_url = ${builtins.toJSON catalog.catalogUrl}
+    records = {record['plugin_id']: record for record in json.loads(machine.succeed('cat ${catalog.catalog}'))['records'] if record['platform'] in ['any', 'x86_64-linux']}
     package_args = " ".join(shlex.quote(path) for path in paths)
     generation = machine.succeed("readlink -f /run/current-system").strip()
     nix = 'nix --extra-experimental-features nix-command --option substituters "" '
@@ -262,42 +264,16 @@ pkgs.testers.runNixOSTest {
     closure_paths = machine.succeed("cat ${closure}/store-paths").splitlines()
     assert all(not path.endswith(".drv") for path in closure_paths)
 
-    # An independent local database starts with zero signatures, even if VM
-    # system paths overlap the payload closure. closureInfo registration carries
-    # only hashes/references; no source-store signatures or ultimate bit. Content
-    # verification reads the actual canonical store bytes, not another copy.
-    isolated = nix + "--store 'local?state=/var/lib/unsigned' "
-    machine.succeed("nix-store --store 'local?state=/var/lib/unsigned' --load-db < ${closure}/registration")
-    unsigned_info = json.loads(machine.succeed(isolated + "path-info --json --recursive " + package_args))
-    entries = unsigned_info.values() if isinstance(unsigned_info, dict) else unsigned_info
-    assert all(not info.get("signatures") and not info.get("ultimate", False) for info in entries)
-    mgba_info = json.loads(machine.succeed(nix + "path-info --json " + shlex.quote(mgba_path)))
-    info = mgba_info[mgba_path] if isinstance(mgba_info, dict) else mgba_info[0]
-    dependency = next(path for path in info["references"] if path not in paths)
-    machine.succeed("cp -a ${metadata} /run/incomplete-proofs; chmod -R u+w /run/incomplete-proofs")
-    proof = dependency.split("/")[-1].split("-")[0] + ".narinfo"
-    machine.succeed("test -f /run/incomplete-proofs/" + proof + "; rm /run/incomplete-proofs/" + proof)
-    # Nix versions differ on whether copy-sigs itself fails on a missing proof;
-    # the required terminal gate is recursive signature AND content verification.
-    machine.execute(isolated + "store copy-sigs --recursive --substituter file:///run/incomplete-proofs " + package_args)
-    failure = machine.fail(isolated + "store verify --recursive --sigs-needed 1 " + package_args + " 2>&1", timeout=300)
-    assert dependency in failure, failure
-    assert "untrusted" in failure.lower() or "signature" in failure.lower(), failure
+    # Reproduce unsigned image registration in an independent Nix database.
+    # Pinned archive proofs cover private paths; omitted upstream paths keep
+    # system-image authority, never the publisher's key.
+    machine.succeed("python3 ${../../../nix/product/published-plugin-proofs-test.py} ${metadata} ${closure}/registration " + package_args, timeout=600)
     machine.fail("korri-plugin status @korri:mgba")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == []
+    machine.succeed("${metadata}/verify", timeout=600)
 
-    # Repair only the omitted proof, not bytes or publisher bindings, and
-    # verify this exact formerly unsigned closure with actual content hashing.
-    machine.succeed(isolated + "store copy-sigs --recursive --substituter file://${metadata} " + package_args, timeout=300)
-    machine.succeed(isolated + "store verify --recursive --sigs-needed 1 " + package_args, timeout=300)
-    # The real host uses the VM's canonical store. Register the same original
-    # offline proofs there and require full closure/byte verification again.
-    machine.succeed(nix + "store copy-sigs --recursive --substituter file://${metadata} " + package_args, timeout=300)
-    machine.succeed(nix + "store verify --recursive --sigs-needed 1 " + package_args, timeout=300)
-
-    # Raw-cache inspect/install initializes the bound cache even for local
-    # roots. It is unavailable offline. This tests the actual image installation
-    # path instead: existing seed producer -> approved receipts/roots -> restore.
+    # Actual image installation: catalog seed -> exact approvals -> restore.
+    # No raw-cache source inference or fallback participates.
     machine.succeed("systemctl stop korrid.service korri-plugin-host.service; mkdir -p /run/published-image-stage; cd /run/published-image-stage; published-image-seed")
     machine.succeed("cp -a /run/published-image-stage/files/var/lib/korri-plugin-host/. /var/lib/korri-plugin-host/; cp -a /run/published-image-stage/files/nix/var/nix/gcroots/korri-plugin-host/. /nix/var/nix/gcroots/korri-plugin-host/")
     # First boot applies the real host tmpfiles policy before recovery. Copying
@@ -311,7 +287,8 @@ pkgs.testers.runNixOSTest {
         receipt = json.loads(machine.succeed("cat " + receipt_path))
         assert receipt["id"] == id and receipt["package"] == package, receipt
         assert receipt["desired"] == {"state": desired} and receipt["previous"] is None, receipt
-        assert receipt["provenance"] == {"kind": "RawCache", "cache_url": cache_url}, receipt
+        record = records[id]
+        assert receipt["provenance"] == {"kind": "Repository", "source_url": catalog_url, "plugin_id": id, "release_version": record['release_version'], "platform": record['platform'], "archive_sha256": record['archive_sha256'], "signed": True}, receipt
         assert machine.succeed("stat -c '%U:%a' " + receipt_path).strip() == "root:600"
         assert machine.succeed("stat -c '%U:%a' /var/lib/korri-plugin-host/" + name).strip() == "root:700"
         root = "/nix/var/nix/gcroots/korri-plugin-host/" + name
@@ -481,6 +458,6 @@ pkgs.testers.runNixOSTest {
     assert games() == []
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == []
     assert machine.succeed("readlink -f /run/current-system").strip() == generation
-    machine.succeed(nix + "store verify --recursive --sigs-needed 1 " + package_args, timeout=300)
+    machine.succeed(nix + "store verify --recursive --no-trust " + package_args, timeout=300)
   '';
 }
