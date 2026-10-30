@@ -4,7 +4,10 @@
 }:
 let
   lib = pkgs.lib;
-  catalog = import ./catalog-plugins.nix { inherit pkgs; system = "aarch64-linux"; };
+  catalog = import ./catalog-plugins.nix {
+    inherit pkgs;
+    system = "aarch64-linux";
+  };
   published = catalog.plugins;
   selected = import ./plugin-selection.nix {
     plugins = published;

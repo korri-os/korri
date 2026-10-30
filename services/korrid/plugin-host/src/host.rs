@@ -1,9 +1,9 @@
 use crate::plugin_admin::{PluginRefusal as Refusal, PluginRefusalCategory as Category};
 #[cfg(test)]
 mod archive_tests;
+mod graph_update;
 #[cfg(test)]
 mod published_tests;
-mod graph_update;
 
 use crate::{
     archive,

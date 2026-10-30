@@ -5,7 +5,12 @@ let
   cacheWorkflowPath = ../../../.github/workflows/nix-cache.yml;
   trustScriptPath = ../../../.github/workflows/trust-korri-cache.sh;
   fetchScriptPath = ../../../.github/workflows/fetch-image-plugins.sh;
-  catalog = (import ../../product/catalog-plugins.nix { inherit pkgs; system = "aarch64-linux"; withContext = false; }).catalog;
+  catalog =
+    (import ../../product/catalog-plugins.nix {
+      inherit pkgs;
+      system = "aarch64-linux";
+      withContext = false;
+    }).catalog;
   imageWorkflow = builtins.readFile imageWorkflowPath;
   cacheWorkflow = builtins.readFile cacheWorkflowPath;
   trustScript = builtins.readFile trustScriptPath;

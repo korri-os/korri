@@ -33,7 +33,15 @@ in
         )
       } \
       ${bindings} \
-      ${pkgs.lib.optionalString (catalog != null) ("--catalog " + pkgs.lib.escapeShellArgs [ catalog.catalog catalog.catalogUrl ])} \
+      ${
+        pkgs.lib.optionalString (catalog != null) (
+          "--catalog "
+          + pkgs.lib.escapeShellArgs [
+            catalog.catalog
+            catalog.catalogUrl
+          ]
+        )
+      } \
       ${pkgs.lib.escapeShellArgs (map toString pluginPackages)}
   '';
 }

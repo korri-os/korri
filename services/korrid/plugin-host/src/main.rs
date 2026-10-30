@@ -57,28 +57,47 @@ fn main() -> ExitCode {
             let [catalog, source, packages @ ..] = words else {
                 return Err("seed-catalog requires CATALOG SOURCE_URL PACKAGE...".into());
             };
-            if packages.is_empty() { return Err("seed-catalog requires selected packages".into()); }
+            if packages.is_empty() {
+                return Err("seed-catalog requires selected packages".into());
+            }
             let bindings = package::publisher_bindings(Path::new(bindings))?;
             let catalog = korri_plugin_host::catalog::Catalog::from_json(
-                &std::fs::read(catalog).map_err(|e| e.to_string())?)?;
+                &std::fs::read(catalog).map_err(|e| e.to_string())?,
+            )?;
             let source = SourceUrl::parse(source)?;
             let reports = package::load_catalog_graph_for_seed(
-                &packages.iter().map(std::path::PathBuf::from).collect::<Vec<_>>(),
-                &bindings, &catalog, &source)?;
+                &packages
+                    .iter()
+                    .map(std::path::PathBuf::from)
+                    .collect::<Vec<_>>(),
+                &bindings,
+                &catalog,
+                &source,
+            )?;
             print_json(&seed_selections(&reports, &disabled)?)
         })();
         return image_result(result);
     }
     if let [command, input, sha256, output] = args.as_slice() {
         if command == "image-extract" {
-            return image_result(korri_plugin_host::image::extract(Path::new(input), sha256, Path::new(output)));
+            return image_result(korri_plugin_host::image::extract(
+                Path::new(input),
+                sha256,
+                Path::new(output),
+            ));
         }
     }
     if args.first().is_some_and(|word| word == "image") {
         let result = (|| {
-            let nix = env::var("KORRI_PLUGIN_NIX").map_err(|_| "host package must supply KORRI_PLUGIN_NIX")?;
-            let curl = env::var("KORRI_PLUGIN_CURL").map_err(|_| "host package must supply KORRI_PLUGIN_CURL")?;
-            let config = Configuration { curl: curl.into(), official: None, ca_bundle: None };
+            let nix = env::var("KORRI_PLUGIN_NIX")
+                .map_err(|_| "host package must supply KORRI_PLUGIN_NIX")?;
+            let curl = env::var("KORRI_PLUGIN_CURL")
+                .map_err(|_| "host package must supply KORRI_PLUGIN_CURL")?;
+            let config = Configuration {
+                curl: curl.into(),
+                official: None,
+                ca_bundle: None,
+            };
             korri_plugin_host::image::run(Path::new(&nix), &config, &args[1..])
         })();
         return image_result(result);
@@ -114,7 +133,10 @@ fn main() -> ExitCode {
 fn image_result(result: Result<(), String>) -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
-        Err(error) => { eprintln!("korri-plugin: {}", error.escape_default()); ExitCode::FAILURE }
+        Err(error) => {
+            eprintln!("korri-plugin: {}", error.escape_default());
+            ExitCode::FAILURE
+        }
     }
 }
 

@@ -30,11 +30,12 @@ in
   # enabled modifier without its plugin refuses every launch. korrid writes
   # this into a new device.yaml only; the person turns it off there, or per
   # system, runner or game.
-  services.korridLinuxDevice.initialModifiers = lib.mkIf (lib.elem (toString
-    catalog.plugins.korri-plugin-gamescope
-  ) (map toString selection.${device})) {
-    "@korri:gamescope/gamescope".enabled = true;
-  };
+  services.korridLinuxDevice.initialModifiers =
+    lib.mkIf
+      (lib.elem (toString catalog.plugins.korri-plugin-gamescope) (map toString selection.${device}))
+      {
+        "@korri:gamescope/gamescope".enabled = true;
+      };
   services.korri.pluginHost.officialCatalogUrl = catalog.catalogUrl;
   sdImage.storePaths = seeded.storePaths;
   sdImage.populateRootCommands = lib.mkAfter seeded.populateRootCommands;

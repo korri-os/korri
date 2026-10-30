@@ -22,7 +22,8 @@ let
   kernel = pkgs.callPackage ./dts/kernel-trimmed.nix { };
   productImage = config.services.korriProduct.installed or false;
   catalog = import ../../product/catalog-plugins.nix {
-    inherit pkgs; system = pkgs.stdenv.hostPlatform.system;
+    inherit pkgs;
+    system = pkgs.stdenv.hostPlatform.system;
   };
   selected = (import ../../product/plugin-selection.nix { plugins = catalog.plugins; }).r36tmax;
   seeded = import ../../../services/korrid/plugin-host/image-seed.nix {

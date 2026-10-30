@@ -1097,7 +1097,9 @@ pub fn load_graph_for_seed(
             .ok_or_else(|| format!("publisher {namespace} is not bound on this device"))?;
         validate_cache_source(&binding.cache_url)?;
         public_key_bytes(&binding.public_key)?;
-        Ok(Provenance::RawCache { cache_url: binding.cache_url.clone() })
+        Ok(Provenance::RawCache {
+            cache_url: binding.cache_url.clone(),
+        })
     })
 }
 
@@ -1112,7 +1114,12 @@ pub fn load_catalog_graph_for_seed(
 ) -> Result<Vec<Report>, String> {
     load_selected_for_seed(packages, |path| {
         let declaration = load_declaration(path)?;
-        let record = crate::image::record(catalog, &declaration.id(), crate::provenance::current_platform(), bindings)?;
+        let record = crate::image::record(
+            catalog,
+            &declaration.id(),
+            crate::provenance::current_platform(),
+            bindings,
+        )?;
         if path != Path::new(&record.store_path) {
             return Err("selected image output differs from the pinned catalog".into());
         }
