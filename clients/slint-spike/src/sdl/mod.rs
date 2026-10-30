@@ -55,17 +55,34 @@ const IDLE_WAIT: Duration = Duration::from_secs(1);
 /// `XDG_RUNTIME_DIR=/tmp/xdg`, each only when unset). They apply only when
 /// there is no X11 display, so the workstation check keeps its own values.
 ///
+/// Also set `APPID` when unset. The B7's own SDL (LG `libsdl2-webos`
+/// 2.0.4) carries the string `APPID` beside its `wl_webos_shell` and
+/// `registerNativeApp` code. EXPERIMENT: the window gains and then loses
+/// keyboard focus on the TV, and no key reaches SDL; this tests whether that
+/// SDL needs the app id to bind the surface to the app. The value is the
+/// package id from `webos/package.py`, never an inherited value.
+///
 /// Call before any thread starts: it changes the process environment.
 pub fn prepare_environment() {
     if std::env::var_os("DISPLAY").is_some() {
         return;
     }
-    for (name, value) in [("EGL_PLATFORM", "wayland"), ("XDG_RUNTIME_DIR", "/tmp/xdg")] {
+    APPID_INHERITED.store(std::env::var_os("APPID").is_some(), Ordering::SeqCst);
+    for (name, value) in [
+        ("EGL_PLATFORM", "wayland"),
+        ("XDG_RUNTIME_DIR", "/tmp/xdg"),
+        ("APPID", APP_ID),
+    ] {
         if std::env::var_os(name).is_none() {
             std::env::set_var(name, value);
         }
     }
 }
+
+/// The webOS package id (`webos/package.py` `APP_ID`).
+const APP_ID: &str = "org.korri.slint-spike";
+/// Whether the launcher already supplied `APPID`, for the input probe.
+static APPID_INHERITED: AtomicBool = AtomicBool::new(false);
 
 /// Load SDL, open the window and install the platform. After this,
 /// `InspectorWindow::new()` gets the SDL-backed window.
@@ -226,6 +243,14 @@ impl SdlPlatform {
             stats: RefCell::new(FrameStats::default()),
             probe: RefCell::new(probe::InputProbe::for_tv()),
         };
+        platform
+            .probe
+            .borrow_mut()
+            .record(if APPID_INHERITED.load(Ordering::SeqCst) {
+                probe::Record::AppIdInherited
+            } else {
+                probe::Record::AppIdSupplied
+            });
         platform.apply_size();
         Ok(platform)
     }

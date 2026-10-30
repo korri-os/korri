@@ -31,6 +31,8 @@ pub enum Record {
     KeyUp,
     FocusGained,
     FocusLost,
+    AppIdInherited,
+    AppIdSupplied,
 }
 
 impl Record {
@@ -43,6 +45,8 @@ impl Record {
             Record::KeyUp => "event:key_up",
             Record::FocusGained => "event:focus_gained",
             Record::FocusLost => "event:focus_lost",
+            Record::AppIdInherited => "env:appid_inherited",
+            Record::AppIdSupplied => "env:appid_supplied",
         }
     }
 }
@@ -123,7 +127,7 @@ mod tests {
     use super::*;
     use std::os::unix::fs::MetadataExt;
 
-    const ALLOWED: [&str; 7] = [
+    const ALLOWED: [&str; 9] = [
         "keyboard_focus:none",
         "keyboard_focus:own",
         "keyboard_focus:other",
@@ -131,6 +135,8 @@ mod tests {
         "event:key_up",
         "event:focus_gained",
         "event:focus_lost",
+        "env:appid_inherited",
+        "env:appid_supplied",
     ];
 
     fn files(directory: &Path) -> Vec<std::path::PathBuf> {
@@ -186,6 +192,8 @@ mod tests {
                 Record::KeyUp,
                 Record::FocusGained,
                 Record::FocusLost,
+                Record::AppIdInherited,
+                Record::AppIdSupplied,
             ] {
                 probe.record(record);
             }
