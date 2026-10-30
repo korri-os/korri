@@ -192,3 +192,81 @@ pub fn sync_parent(path: &Path) -> Result<(), String> {
         .and_then(|f| f.sync_all())
         .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixStream;
+
+    struct ForkChild(libc::pid_t);
+
+    impl ForkChild {
+        fn wait(&mut self) -> i32 {
+            let mut status = 0;
+            loop {
+                if unsafe { libc::waitpid(self.0, &mut status, 0) } == self.0 {
+                    self.0 = 0;
+                    return status;
+                }
+                assert_eq!(
+                    std::io::Error::last_os_error().kind(),
+                    std::io::ErrorKind::Interrupted
+                );
+            }
+        }
+    }
+
+    impl Drop for ForkChild {
+        fn drop(&mut self) {
+            if self.0 > 0 {
+                unsafe { libc::kill(self.0, libc::SIGKILL) };
+                self.wait();
+            }
+        }
+    }
+
+    #[test]
+    fn state_drop_releases_the_lock_while_a_fork_child_retains_its_descriptor() {
+        let root = tempfile::tempdir().unwrap();
+        let state = State::open(&root.path().join("state")).unwrap();
+        assert_ne!(
+            unsafe { libc::fcntl(state._lock.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
+            0
+        );
+        let (mut parent, child) = UnixStream::pair().unwrap();
+        let parent_fd = parent.as_raw_fd();
+        let child_fd = child.as_raw_fd();
+        // Command::spawn can fork concurrently with another thread's State.
+        // Hold that real inherited descriptor before exec/exit, without timing.
+        // The post-fork child uses only async-signal-safe calls, never Rust Drop.
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "{}", std::io::Error::last_os_error());
+        if pid == 0 {
+            unsafe {
+                libc::close(parent_fd);
+                let mut byte = 0_u8;
+                loop {
+                    let read = libc::read(child_fd, (&mut byte as *mut u8).cast(), 1);
+                    if read >= 0 {
+                        libc::_exit(if read == 1 { 0 } else { 1 });
+                    }
+                    if *libc::__errno_location() != libc::EINTR {
+                        libc::_exit(2);
+                    }
+                }
+            }
+        }
+        let mut process = ForkChild(pid);
+        drop(child);
+        assert!(State::open(state.root()).is_err());
+        drop(state);
+        let successor = State::open(&root.path().join("state")).unwrap();
+        assert!(State::open(successor.root()).is_err());
+        parent.write_all(&[1]).unwrap();
+        assert_eq!(process.wait(), 0);
+        // A child's later descriptor close must not release its successor.
+        assert!(State::open(successor.root()).is_err());
+        drop(successor);
+        State::open(&root.path().join("state")).unwrap();
+    }
+}
