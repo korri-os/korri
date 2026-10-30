@@ -223,6 +223,41 @@ pub(crate) fn signed(path: &str, info: &NarInfo, keys: &[String]) -> Result<bool
     Ok(false)
 }
 
+/// Copy only the publisher's signature for paths whose local fingerprint was
+/// already checked against that signed metadata. Nix verifies it again.
+fn copy_publisher_signatures(
+    nix: &Path,
+    uri: &str,
+    key: &str,
+    paths: &[String],
+) -> Result<(), String> {
+    let mut args: Vec<String> = [
+        "--extra-experimental-features",
+        "nix-command",
+        "--option",
+        "substituters",
+        "",
+        "--option",
+        "extra-substituters",
+        "",
+        "--option",
+        "trusted-public-keys",
+        key,
+        "--option",
+        "extra-trusted-public-keys",
+        "",
+        "store",
+        "copy-sigs",
+        "--substituter",
+        uri,
+    ]
+    .map(String::from)
+    .to_vec();
+    args.extend(paths.iter().cloned());
+    process::checked_uncapped(nix, args, None)?;
+    Ok(())
+}
+
 fn check_private_local(path: &str, info: &NarInfo, keys: &[String]) -> Result<(), String> {
     if signed(path, info, keys)? {
         return Ok(());
@@ -451,6 +486,7 @@ fn acquire(
     let mut seen = BTreeSet::new();
     let mut shared = Vec::new();
     let mut private = Vec::new();
+    let mut adopt = Vec::new();
     let mut expected = BTreeMap::new();
     while let Some(path) = queue.pop() {
         if forbidden.contains(Path::new(&path)) {
@@ -524,11 +560,16 @@ fn acquire(
                 return Err(format!("{path} is not signed by the publisher key"));
             }
             if let Some(local) = local {
-                check_private_local(&path, &local, &publisher)?;
                 if package::fingerprint(&path, &local)? != package::fingerprint(&path, &info)? {
                     return Err(format!(
                         "{path} local NAR differs from its authorized cache"
                     ));
+                }
+                // The same bytes may already exist under another signer, for
+                // example a local build. The publisher signed this exact
+                // fingerprint, so retain its signature instead of refusing.
+                if !signed(&path, &local, &publisher)? {
+                    adopt.push(path.clone());
                 }
             }
             private.push(path.clone());
@@ -548,6 +589,9 @@ fn acquire(
             // A mutable publisher cache must not cause Nix to import any path
             // outside the exact set whose authority was checked above.
             invocation(nix, uri, &publisher, &private, false)?;
+            if !adopt.is_empty() {
+                copy_publisher_signatures(nix, uri, key, &adopt)?;
+            }
         }
         PrivateSource::Local => {}
     }

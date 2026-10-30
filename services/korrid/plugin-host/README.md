@@ -56,8 +56,12 @@ For each path outside separately verified required-plugin closures:
   refused: `<path> is installed under another key and does not match
   cache.nixos.org; refusing`.
 - Every other path must be in the archive and signed by the publisher, or
-  already valid locally with that publisher's signature. A foreign local copy
-  is refused rather than adopted, even if the archive signs the same bytes.
+  already valid locally with that publisher's signature. A local copy under
+  another signer, such as a build host's own local build, is accepted only when
+  its NAR hash, size and references equal the archive's publisher-signed
+  narinfo. The host then copies that publisher signature onto the local path.
+  A local copy with different bytes is refused: `<path> local NAR differs from
+  its authorized cache`.
 - The host fetches shared paths first, imports private paths with only the
   publisher key for that invocation, then verifies the whole closure with the
   correct authority per path. Shared paths accepted by NAR identity or root

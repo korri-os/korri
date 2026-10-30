@@ -723,8 +723,9 @@ fn slim_real_nix_publish_install_security_and_offline() {
     // this run's pack first, even when none of its selection roots remain.
     cleanup_fixture_paths(&nix, run_id, &[offline_parent.ca_store_path]);
     run(&nix, &["store", "delete", parent.to_str().unwrap()]);
-    // A second publisher cannot adopt an existing input-addressed output,
-    // even when its archive has a valid signature for those same bytes.
+    // The same bytes may already be valid under another signer, such as a
+    // build host's own local build. The publisher's archive signs that exact
+    // fingerprint, so import retains the publisher signature, not refuses.
     let other_secret = run(
         &nix,
         &["key", "generate-secret", "--key-name", "other-publisher"],
@@ -777,7 +778,7 @@ fn slim_real_nix_publish_install_security_and_offline() {
             package.to_str().unwrap(),
         ],
     );
-    let error = slim::import(
+    slim::import(
         &nix,
         &cache,
         &package,
@@ -785,8 +786,19 @@ fn slim_real_nix_publish_install_security_and_offline() {
         &mut upstream,
         &BTreeSet::new(),
     )
-    .unwrap_err();
-    assert!(error.contains("already installed from another publisher; remove that plugin or rebuild with a different output"), "{error}");
+    .unwrap();
+    let adopted = package::path_info(&nix, package.to_str().unwrap(), None).unwrap();
+    let fingerprint = package::fingerprint(package.to_str().unwrap(), &adopted).unwrap();
+    assert!(package::signed_by(
+        &adopted,
+        &fingerprint,
+        &package::public_key_bytes(&publisher_key).unwrap()
+    ));
+    assert!(package::signed_by(
+        &adopted,
+        &fingerprint,
+        &package::public_key_bytes(&other_key).unwrap()
+    ));
     run(
         &nix,
         &[
