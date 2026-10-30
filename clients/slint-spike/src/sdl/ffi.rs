@@ -165,6 +165,19 @@ pub struct Version {
     pub patch: u8,
 }
 
+/// `SDL_SysWMinfo` (SDL_syswm.h, 2.0.4): version, then the subsystem enum,
+/// then a union whose Wayland member starts with `struct wl_display *`.
+/// The union is at most 64 bytes (`Uint8 dummy[64]`) on 32-bit targets.
+#[repr(C)]
+pub struct SysWmInfo {
+    pub version: Version,
+    pub subsystem: c_int,
+    pub info: [*mut c_void; 16],
+}
+
+/// `SDL_SYSWM_WAYLAND` in SDL_syswm.h.
+pub const SDL_SYSWM_WAYLAND: c_int = 6;
+
 /// `SDL_DisplayMode` (SDL_video.h).
 #[repr(C)]
 pub struct DisplayMode {
@@ -263,6 +276,7 @@ sdl_functions! {
     SDL_PollEvent(*mut Event) -> c_int;
     SDL_WaitEventTimeout(*mut Event, c_int) -> c_int;
     SDL_GetKeyboardFocus() -> *mut Window;
+    SDL_GetWindowWMInfo(*mut Window, *mut SysWmInfo) -> c_int;
 }
 
 impl Sdl {

@@ -241,7 +241,7 @@ impl SdlPlatform {
             .ok()
             .and_then(|value| value.parse::<f32>().ok())
             .filter(|scale| *scale > 0.0);
-        let platform = Self {
+        let mut platform = Self {
             shared: Arc::new(Shared {
                 sdl,
                 wake_event,
@@ -261,12 +261,25 @@ impl SdlPlatform {
             webos_abi: std::env::var_os("DISPLAY").is_none(),
             mode: Cell::new(keys::Mode::Keys),
             click_confirming: Cell::new(false),
-            webos_cursor: if std::env::var_os("DISPLAY").is_none() {
-                webos_cursor::WebosCursor::open()
-            } else {
-                None
-            },
+            webos_cursor: None,
         };
+        if platform.webos_abi {
+            let window = platform.screen.borrow().window;
+            let status = match webos_cursor::WebosCursor::open(wayland_display(
+                &platform.shared.sdl,
+                window,
+            )) {
+                Ok(cursor) => {
+                    // The view opens in D-pad mode, so LG's cursor starts
+                    // hidden; a shake shows it and switches to the pointer.
+                    cursor.set_visible(false);
+                    platform.webos_cursor = Some(cursor);
+                    probe::Record::Cursor(None)
+                }
+                Err(why) => probe::Record::Cursor(Some(why)),
+            };
+            platform.probe.borrow_mut().record(status);
+        }
         platform
             .probe
             .borrow_mut()
@@ -718,6 +731,26 @@ impl SdlPlatform {
                 }
             }
         }
+    }
+}
+
+/// SDL's `wl_display`, or null when SDL is not on Wayland.
+fn wayland_display(sdl: &Sdl, window: *mut ffi::Window) -> *mut std::ffi::c_void {
+    let mut info = ffi::SysWmInfo {
+        version: ffi::Version {
+            major: 2,
+            minor: 0,
+            patch: 4,
+        },
+        subsystem: 0,
+        info: [std::ptr::null_mut(); 16],
+    };
+    // SAFETY: live window; `info` has the 2.0.4 layout and its version set.
+    let ok = unsafe { (sdl.SDL_GetWindowWMInfo)(window, &mut info) } != 0;
+    if ok && info.subsystem == ffi::SDL_SYSWM_WAYLAND {
+        info.info[0]
+    } else {
+        std::ptr::null_mut()
     }
 }
 

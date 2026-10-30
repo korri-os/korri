@@ -7,7 +7,8 @@
 //! `wl_webos_input_manager.set_cursor_visibility`. The B7's SDL 2.0.4 exports
 //! no such call, and its `SDL_ShowCursor(0)` blanks the cursor so that the
 //! shake no longer brings it back. So this module sends the same request on
-//! its own connection to the compositor.
+//! SDL's own compositor connection. A separate connection was tried on the
+//! B7 first and had no visible effect.
 //!
 //! The opcode is looked up by name in the interface LG's
 //! `libwayland-webos-client.so.1` exports, as webosbrew SDL-webOS does
@@ -48,6 +49,19 @@ const WL_DISPLAY_GET_REGISTRY: u32 = 1;
 const WL_REGISTRY_BIND: u32 = 0;
 const INPUT_MANAGER: &CStr = c"wl_webos_input_manager";
 
+/// Why the request is not available, as a fixed label for the probe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unavailable {
+    /// A Wayland library or symbol is missing.
+    Library,
+    /// The interface has no `set_cursor_visibility(uint)`.
+    Method,
+    /// SDL gave no Wayland display, or the roundtrip failed.
+    Display,
+    /// The compositor advertises no `wl_webos_input_manager`.
+    Global,
+}
+
 pub struct WebosCursor {
     display: *mut Proxy,
     manager: *mut Proxy,
@@ -81,19 +95,27 @@ static LISTENER: RegistryListener = RegistryListener {
     global_remove,
 };
 
-unsafe fn symbol(handle: *mut c_void, name: &CStr) -> Option<*mut c_void> {
+unsafe fn symbol(handle: *mut c_void, name: &CStr) -> Result<*mut c_void, Unavailable> {
     let pointer = libc::dlsym(handle, name.as_ptr());
-    (!pointer.is_null()).then_some(pointer)
+    if pointer.is_null() {
+        Err(Unavailable::Library)
+    } else {
+        Ok(pointer)
+    }
 }
 
 impl WebosCursor {
-    /// Connect and bind the input manager, or `None` when this is not
-    /// webOS or anything is missing.
-    pub fn open() -> Option<Self> {
+    /// Bind the input manager on `display`, SDL's `wl_display`.
+    pub fn open(display: *mut c_void) -> Result<Self, Unavailable> {
+        use Unavailable::*;
+        if display.is_null() {
+            return Err(Display);
+        }
         // SAFETY: dlopen/dlsym with NUL-terminated names; handles are never
         // closed; every pointer is checked before use; the transmuted
         // signatures match wayland-client-core.h and the generated
-        // wl_webos_input_manager client header.
+        // wl_webos_input_manager client header. `display` is SDL's live
+        // wl_display, used from the thread that runs SDL's event loop.
         unsafe {
             let client = libc::dlopen(
                 c"libwayland-client.so.0".as_ptr(),
@@ -104,10 +126,8 @@ impl WebosCursor {
                 libc::RTLD_NOW | libc::RTLD_LOCAL,
             );
             if client.is_null() || webos.is_null() {
-                return None;
+                return Err(Library);
             }
-            let connect: unsafe extern "C" fn(*const c_char) -> *mut Proxy =
-                std::mem::transmute(symbol(client, c"wl_display_connect")?);
             let roundtrip: unsafe extern "C" fn(*mut Proxy) -> c_int =
                 std::mem::transmute(symbol(client, c"wl_display_roundtrip")?);
             let flush: unsafe extern "C" fn(*mut Proxy) -> c_int =
@@ -127,19 +147,16 @@ impl WebosCursor {
                 symbol(webos, c"wl_webos_input_manager_interface")? as *const Interface;
 
             let interface = &*manager_interface;
-            let methods = std::slice::from_raw_parts(
-                interface.methods,
-                usize::try_from(interface.method_count).ok()?,
-            );
-            let opcode = methods.iter().position(|method| {
-                CStr::from_ptr(method.name) == c"set_cursor_visibility"
-                    && CStr::from_ptr(method.signature).to_bytes().ends_with(b"u")
-            })?;
+            let count = usize::try_from(interface.method_count).map_err(|_| Method)?;
+            let methods = std::slice::from_raw_parts(interface.methods, count);
+            let opcode = methods
+                .iter()
+                .position(|method| {
+                    CStr::from_ptr(method.name) == c"set_cursor_visibility"
+                        && CStr::from_ptr(method.signature).to_bytes().ends_with(b"u")
+                })
+                .ok_or(Method)?;
 
-            let display = connect(std::ptr::null());
-            if display.is_null() {
-                return None;
-            }
             let registry = construct(
                 display,
                 WL_DISPLAY_GET_REGISTRY,
@@ -147,7 +164,7 @@ impl WebosCursor {
                 std::ptr::null_mut::<c_void>(),
             );
             if registry.is_null() {
-                return None;
+                return Err(Display);
             }
             let mut found: Option<Found> = None;
             add_listener(
@@ -155,11 +172,14 @@ impl WebosCursor {
                 &LISTENER,
                 (&mut found as *mut Option<Found>).cast(),
             );
-            if roundtrip(display) < 0 {
-                return None;
-            }
-            let found = found?;
-            let version = found.version.min(u32::try_from(interface.version).ok()?);
+            // Also dispatches SDL's pending events; its listeners only queue
+            // SDL events, which the next SDL_PollEvent delivers.
+            let ok = roundtrip(display) >= 0;
+            let Some(found) = found.filter(|_| ok) else {
+                destroy(registry);
+                return Err(if ok { Global } else { Display });
+            };
+            let version = found.version.min(interface.version.max(1) as u32);
             let manager = construct(
                 registry,
                 WL_REGISTRY_BIND,
@@ -169,15 +189,15 @@ impl WebosCursor {
                 version,
                 std::ptr::null_mut::<c_void>(),
             );
-            // The listener's `found` dies here; no further registry events.
+            // No further registry events can reach the listener's `found`.
             destroy(registry);
             if manager.is_null() {
-                return None;
+                return Err(Global);
             }
-            Some(Self {
+            Ok(Self {
                 display,
                 manager,
-                opcode: u32::try_from(opcode).ok()?,
+                opcode: opcode as u32,
                 marshal,
                 flush,
             })
