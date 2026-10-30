@@ -8,21 +8,20 @@
 { pkgs, lib, ... }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  binding = (import ./requirements.nix { inherit korri; }).constants.publishers."@korri";
-  selection = import ./plugin-selection.nix {
-    plugins = import ./published-plugins.nix { inherit system; };
-  };
+  catalog = import ./catalog-plugins.nix { inherit pkgs system; };
+  selection = import ./plugin-selection.nix { plugins = catalog.plugins; };
   seeded = import ../../services/korrid/plugin-host/image-seed.nix {
     disabled = [ "@korri:starter-pack" ];
-    inherit pkgs;
+    inherit pkgs catalog;
     hostPackage = korri.packages.${system}.korri-plugin-host;
     publishers = (import ./requirements.nix { inherit korri; }).constants.publishers;
     pluginPackages = selection.${device};
   };
   checkedMetadata = import ./published-plugin-metadata.nix {
     inherit pkgs system;
+    hostPackage = korri.packages.${system}.korri-plugin-host;
+    publishers = (import ./requirements.nix { inherit korri; }).constants.publishers;
     pluginPackages = selection.${device};
-    publicKey = binding.publicKey;
   };
 in
 {
@@ -32,18 +31,16 @@ in
   # this into a new device.yaml only; the person turns it off there, or per
   # system, runner or game.
   services.korridLinuxDevice.initialModifiers = lib.mkIf (lib.elem (toString
-    (import ./published-plugins.nix { inherit system; }).korri-plugin-gamescope
+    catalog.plugins.korri-plugin-gamescope
   ) (map toString selection.${device})) {
     "@korri:gamescope/gamescope".enabled = true;
   };
+  services.korri.pluginHost.officialCatalogUrl = catalog.catalogUrl;
   sdImage.storePaths = seeded.storePaths;
   sdImage.populateRootCommands = lib.mkAfter seeded.populateRootCommands;
   # This image-owned prerequisite leaves the shared product host unit intact.
   # RequiredBy makes recovery fail closed if local proof registration fails.
   systemd.services.korri-plugin-offline-proofs = import ./published-plugin-offline-unit.nix {
-    inherit pkgs;
-    pluginPackages = selection.${device};
     metadata = checkedMetadata;
-    publicKey = binding.publicKey;
   };
 }

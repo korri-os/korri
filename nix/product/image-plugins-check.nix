@@ -4,7 +4,8 @@
 }:
 let
   lib = pkgs.lib;
-  published = import ./published-plugins.nix { system = "aarch64-linux"; };
+  catalog = import ./catalog-plugins.nix { inherit pkgs; system = "aarch64-linux"; };
+  published = catalog.plugins;
   selected = import ./plugin-selection.nix {
     plugins = published;
   };
@@ -31,11 +32,9 @@ let
     && lib.hasInfix "korri-image-seed" image.populateRootCommands
     && proofs.requiredBy == [ "korri-plugin-host.service" ]
     && lib.elem "korri-plugin-host.service" proofs.before
-    && lib.hasInfix "korri-image-plugin-offline-metadata/." proofs.script
-    && lib.hasInfix "--offline" proofs.script
-    && lib.hasInfix "--option extra-substituters ''" proofs.script
-    && lib.hasInfix "--option extra-trusted-public-keys ''" proofs.script
-    && lib.hasInfix "store copy-sigs --recursive --substituter \"file://$cache\"" proofs.script
+    && config.services.korri.pluginHost.officialCatalogUrl == catalog.catalogUrl
+    && lib.hasInfix "korri-image-plugin-offline-metadata/verify" proofs.script
+    && lib.hasInfix "--catalog" image.populateRootCommands
     && lib.all (
       package: !(lib.elem (toString package) (map toString config.environment.systemPackages))
     ) selected.${name};

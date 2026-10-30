@@ -2,9 +2,9 @@
 # Only Core and the test harness can build; the plugin is an exact path input.
 { pkgs, korridPackage }:
 let
-  published = import ../../nix/product/published-plugins.nix {
-    system = pkgs.stdenv.hostPlatform.system;
-  };
+  published = (import ../../nix/product/catalog-plugins.nix {
+    inherit pkgs; system = pkgs.stdenv.hostPlatform.system;
+  }).plugins;
 in
 korridPackage.overrideAttrs (old: {
   pname = "korrid-published-game-launch-check";

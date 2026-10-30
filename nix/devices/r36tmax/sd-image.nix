@@ -21,13 +21,13 @@ let
   bootFiles = recovery.bootFiles { system = config.system.build.toplevel; };
   kernel = pkgs.callPackage ./dts/kernel-trimmed.nix { };
   productImage = config.services.korriProduct.installed or false;
-  selected =
-    (import ../../product/plugin-selection.nix {
-      plugins = import ../../product/published-plugins.nix { system = pkgs.stdenv.hostPlatform.system; };
-    }).r36tmax;
+  catalog = import ../../product/catalog-plugins.nix {
+    inherit pkgs; system = pkgs.stdenv.hostPlatform.system;
+  };
+  selected = (import ../../product/plugin-selection.nix { plugins = catalog.plugins; }).r36tmax;
   seeded = import ../../../services/korrid/plugin-host/image-seed.nix {
     disabled = [ "@korri:starter-pack" ];
-    inherit pkgs;
+    inherit pkgs catalog;
     hostPackage = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host;
     publishers = (import ../../product/requirements.nix { inherit korri; }).constants.publishers;
     pluginPackages = selected;

@@ -7,6 +7,7 @@
   publishers,
   pluginPackages,
   disabled ? [ ],
+  catalog ? null,
 }:
 let
   bindings = pkgs.writeText "korri-image-publishers.json" (builtins.toJSON publishers);
@@ -32,6 +33,7 @@ in
         )
       } \
       ${bindings} \
+      ${pkgs.lib.optionalString (catalog != null) ("--catalog " + pkgs.lib.escapeShellArgs [ catalog.catalog catalog.catalogUrl ])} \
       ${pkgs.lib.escapeShellArgs (map toString pluginPackages)}
   '';
 }

@@ -1090,6 +1090,47 @@ pub fn load_graph_for_seed(
     packages: &[PathBuf],
     bindings: &PublisherBindings,
 ) -> Result<Vec<Report>, String> {
+    load_selected_for_seed(packages, |path| {
+        let namespace = manifest_namespace(path)?;
+        let binding = bindings
+            .get(&namespace)
+            .ok_or_else(|| format!("publisher {namespace} is not bound on this device"))?;
+        validate_cache_source(&binding.cache_url)?;
+        public_key_bytes(&binding.public_key)?;
+        Ok(Provenance::RawCache { cache_url: binding.cache_url.clone() })
+    })
+}
+
+/// Row 13: image receipts bind the catalog's exact release and archive digest.
+/// This is digest-only, like the raw-cache seed producer. Import/proof checking
+/// happens before seeding; runtime recovery independently rechecks authority.
+pub fn load_catalog_graph_for_seed(
+    packages: &[PathBuf],
+    bindings: &PublisherBindings,
+    catalog: &crate::catalog::Catalog,
+    source: &crate::repository::SourceUrl,
+) -> Result<Vec<Report>, String> {
+    load_selected_for_seed(packages, |path| {
+        let declaration = load_declaration(path)?;
+        let record = crate::image::record(catalog, &declaration.id(), crate::provenance::current_platform(), bindings)?;
+        if path != Path::new(&record.store_path) {
+            return Err("selected image output differs from the pinned catalog".into());
+        }
+        Ok(Provenance::Repository {
+            source_url: source.to_string(),
+            plugin_id: record.plugin_id.clone(),
+            release_version: record.release_version.clone(),
+            platform: record.platform.clone(),
+            archive_sha256: record.archive_sha256.clone(),
+            signed: true,
+        })
+    })
+}
+
+fn load_selected_for_seed(
+    packages: &[PathBuf],
+    mut origin: impl FnMut(&Path) -> Result<Provenance, String>,
+) -> Result<Vec<Report>, String> {
     for package in packages {
         validate_store_path(package)?;
     }
@@ -1109,19 +1150,7 @@ pub fn load_graph_for_seed(
         if !manifest_releases(path)?.is_empty() {
             return Err("image seeding requires exact output requirements".into());
         }
-        let namespace = manifest_namespace(path)?;
-        let binding = bindings
-            .get(&namespace)
-            .ok_or_else(|| format!("publisher {namespace} is not bound on this device"))?;
-        validate_cache_source(&binding.cache_url)?;
-        public_key_bytes(&binding.public_key)?;
-        build_report(
-            path,
-            Provenance::RawCache {
-                cache_url: binding.cache_url.clone(),
-            },
-            None,
-        )
+        build_report(path, origin(path)?, None)
     })?;
     Ok(order
         .iter()

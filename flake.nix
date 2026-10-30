@@ -119,7 +119,7 @@
         korridPackage = import ./services/korrid/package.nix {
           inherit pkgs proseql crane;
         };
-        publishedPlugins = import ./nix/product/published-plugins.nix { inherit system; };
+        publishedPlugins = (import ./nix/product/catalog-plugins.nix { inherit pkgs system; }).plugins;
         inputplumber = import ./services/inputd/nix {
           inherit
             pkgs

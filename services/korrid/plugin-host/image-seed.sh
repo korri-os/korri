@@ -13,7 +13,21 @@ shift 2
 
 # Validate the whole exact selection before writing any receipt. The plugin
 # host owns dependency ordering, approvals, receipts and unit-name policy.
-receipts="$("$host" seed-graph "$@")"
+disabled=()
+while [[ ${1:-} == --disabled ]]; do
+  disabled+=("$1" "$2")
+  shift 2
+done
+bindings=$1
+shift
+if [[ ${1:-} == --catalog ]]; then
+  shift
+  catalog=$1 source=$2
+  shift 2
+  receipts="$("$host" seed-catalog "${disabled[@]}" "$bindings" "$catalog" "$source" "$@")"
+else
+  receipts="$("$host" seed-graph "${disabled[@]}" "$bindings" "$@")"
+fi
 # Check every directory component inside the image root without following
 # symlinks. A later blocked parent must not leave earlier selections written.
 preflight_directories() {

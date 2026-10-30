@@ -5,6 +5,7 @@ pub mod declaration;
 pub mod dependencies;
 pub mod firewall;
 pub mod host;
+pub mod image;
 mod https_url;
 pub mod lifecycle;
 pub mod native_unit;
