@@ -7,6 +7,19 @@ case "$action" in probe|korrid|build) ;; *) echo "Unknown action: $action" >&2; 
 : "${KORRI_ROOT:?run via webos.nix}"
 : "${WEBOS_HOST_LOADER:?run via webos.nix}"
 : "${WEBOS_HOST_LIBRARIES:?run via webos.nix}"
+if [[ "$action" != probe ]]; then
+  # glibc 2.19 has no getrandom wrapper. The unchanged webOS app jail also
+  # omits /dev/random, which getrandom's libc fallback requires. Use the
+  # dependency's supported direct kernel CSPRNG backend, never a weak seed.
+  # Cargo gives these inherited values precedence over target flags.
+  for flags in RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS; do
+    if [[ -v "$flags" ]]; then
+      echo "Inherited $flags is forbidden for the fixed webOS entropy backend" >&2
+      exit 2
+    fi
+  done
+  export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS='--cfg getrandom_backend="linux_raw"'
+fi
 sdk="${WEBOS_SDK:-$KORRI_ROOT/.cache/webos-sdk}"
 sdk="$(realpath "$sdk")"
 prefix="$sdk/bin/arm-webos-linux-gnueabi"
