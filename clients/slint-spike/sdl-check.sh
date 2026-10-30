@@ -17,7 +17,19 @@ audit="$(mktemp -d)"
 # lost display-number race into SDL's "No available video device". This
 # script starts Xvfb with -displayfd, which reports the display only when the
 # server accepts connections, and stops the app before the server.
+#
+# -noreset: SDL 2.0.4's X11_Available opens and closes a display, then
+# X11_CreateDevice opens another. Closing the only client makes a default
+# Xvfb reset (dix CloseDownClient -> DE_RESET), and the reset's
+# KillAllClients drops a connection that arrived in the same dispatch turn,
+# so SDL_Init fails with "x11 not available". Seen in 30 of 30 failed
+# fixture runs (one completed connection, two disconnects in the -audit
+# log); 0 of 60 failed with -noreset under the same interleaved load.
+# -audit 4 logs each client connect and disconnect.
+#
+# A failed run keeps its logs under $KORRI_ROOT/.cache/slint-spike-sdl-check-failures/.
 xvfb_pid=""
+xvfb_count=0
 app_pid=""
 stop_app() {
   [[ -n "$app_pid" ]] || return 0
@@ -33,18 +45,28 @@ stop_xvfb() {
   xvfb_pid=""
 }
 cleanup() {
+  local status=$?
   stop_app
   stop_xvfb
+  if [[ $status -ne 0 ]]; then
+    local kept
+    kept="$KORRI_ROOT/.cache/slint-spike-sdl-check-failures/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    mkdir -p "$kept"
+    cp -R "$audit"/. "$kept"/
+    echo "failed run: logs kept in $kept" >&2
+  fi
   rm -rf "$scratch_root" "$audit"
 }
 trap cleanup EXIT
 
 # start_xvfb WIDTHxHEIGHT: own Xvfb; exports DISPLAY once it accepts clients.
 start_xvfb() {
+  xvfb_count=$((xvfb_count + 1))
   local number_file="$audit/display-number"
+  xvfb_log="$audit/xvfb-$xvfb_count.log"
   : >"$number_file"
   exec 3<>"$number_file"
-  Xvfb -displayfd 3 -screen 0 "${1}x24" -nolisten tcp >"$audit/xvfb.log" 2>&1 &
+  Xvfb -displayfd 3 -screen 0 "${1}x24" -nolisten tcp -noreset -audit 4 >"$xvfb_log" 2>&1 &
   xvfb_pid=$!
   exec 3>&-
   local display=""
@@ -53,7 +75,7 @@ start_xvfb() {
     [[ -n "$display" ]] && break
     if ! kill -0 "$xvfb_pid" 2>/dev/null; then
       echo "FAIL: Xvfb exited before it reported a display" >&2
-      cat "$audit/xvfb.log" >&2
+      cat "$xvfb_log" >&2
       exit 1
     fi
     sleep 0.05
@@ -137,17 +159,18 @@ self_test() {
   echo "== Xvfb self-test over SDL ($label): real korrid, Refresh callback, auth probes"
   rm -f "$audit/families"
   start_xvfb 1920x1080
+  local run_log="$audit/self-test-$xvfb_count.log"
   # Foreground and bounded: the app exits on its own before the server stops.
   SDL_VIDEODRIVER=x11 TMPDIR="$scratch_root" \
     LD_LIBRARY_PATH="$library_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     timeout -k 10 180 \
     strace -f -qq -s 0 -e trace=connect -o "|awk '$summarize' > '$audit/families'" \
-    "$spike" --self-test --windowed=1920x1080 | tee "$audit/run.log"
+    "$spike" --self-test --windowed=1920x1080 | tee "$run_log"
   stop_xvfb
-  grep -q '^SELF-TEST PASS$' "$audit/run.log"
-  grep -q '^sdl: runtime ' "$audit/run.log"
-  grep -q 'video driver x11;' "$audit/run.log"
-  grep -q 'screen saver allowed: true' "$audit/run.log" \
+  grep -q '^SELF-TEST PASS$' "$run_log"
+  grep -q '^sdl: runtime ' "$run_log"
+  grep -q 'video driver x11;' "$run_log"
+  grep -q 'screen saver allowed: true' "$run_log" \
     || { echo "FAIL: SDL suppressed the screen saver" >&2; exit 1; }
   sort "$audit/families" | sed 's/^/  /'
   if grep -q OUTSIDE "$audit/families"; then
