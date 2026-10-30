@@ -72,7 +72,7 @@ fn staging_cleanup_is_locked_and_only_removes_owned_directories() {
 }
 
 #[test]
-fn imports_accept_only_exact_output_paths() {
+fn store_paths_accept_only_exact_outputs() {
     package::validate_store_path(Path::new(
         "/nix/store/00000000000000000000000000000000-package",
     ))
@@ -88,18 +88,13 @@ fn imports_accept_only_exact_output_paths() {
         "/nix/store/00000000000000000000000000000000-package^out",
         "/nix/store/00000000000000000000000000000000-package#attr",
     ] {
-        let error = package::import(
-            Path::new("/unavailable-nix-must-not-run"),
-            "https://cache.example",
-            Path::new(path),
-        )
-        .unwrap_err();
+        let error = package::validate_store_path(Path::new(path)).unwrap_err();
         assert!(error.contains("exact /nix/store output"), "{path}: {error}");
     }
 }
 
 #[test]
-fn imports_reject_whitespace_in_cache_sources_before_running_nix() {
+fn cache_sources_reject_whitespace() {
     for source in [
         "https://cache.example ssh://127.0.0.1",
         "https://cache.example\tssh://127.0.0.1",
@@ -111,12 +106,7 @@ fn imports_reject_whitespace_in_cache_sources_before_running_nix() {
         "https://cache.example ",
         "file:///cache directory",
     ] {
-        let error = package::import(
-            Path::new("/unavailable-nix-must-not-run"),
-            source,
-            Path::new("/nix/store/00000000000000000000000000000000-package"),
-        )
-        .unwrap_err();
+        let error = package::validate_cache_source(source).unwrap_err();
         assert_eq!(
             error, "source must be an HTTP(S) or local file binary cache",
             "{source:?}"

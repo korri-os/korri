@@ -628,6 +628,18 @@ fn slim_real_nix_publish_install_security_and_offline() {
         !bound.paths.registry_path.exists(),
         "refuse before native or selection effects"
     );
+    // The explicit raw-cache route applies the same per-path rule (#349): the
+    // bound publisher's cache cannot supply a path that the upstream serves,
+    // although Nix's global key list trusts that publisher.
+    let error = bound
+        .inspect(&config, &publisher_shared_uri, &package)
+        .err()
+        .unwrap();
+    assert!(
+        error.contains("publisher-signed cache copy cannot supply an upstream path"),
+        "{error}"
+    );
+    assert!(bound.installed().unwrap().is_empty());
     package::verify_local_signature(
         &nix,
         None,
@@ -672,6 +684,16 @@ fn slim_real_nix_publish_install_security_and_offline() {
         .unwrap();
     bound.selection("@slim:pack").remove().unwrap();
     bound.selection("@slim:native").remove().unwrap();
+    // A legitimate raw cache keeps working, but only at the bound address.
+    let error = bound
+        .inspect(&config, &publisher_shared_uri, &package)
+        .err()
+        .unwrap();
+    assert!(error.contains("is bound to cache"), "{error}");
+    let raw = bound.inspect(&config, &good_uri, &package).unwrap();
+    assert!(
+        matches!(&raw.provenance, Provenance::RawCache { cache_url } if cache_url == &good_uri)
+    );
     drop(bound);
     // A self-contained pack keeps its existing offline route. Its rewritten
     // CA requirement is in the archive, not necessarily in the bound raw cache.

@@ -360,12 +360,11 @@ fn run(args: Vec<String>) -> Result<(), Refusal> {
             repository_command(&host, &repository_configuration()?, commands)
         }
         ["inspect", source, path] => {
-            print_review(&host, &host.inspect(source, Path::new(path))?)?;
+            print_review(&host, &host.inspect(&repository_configuration()?, source, Path::new(path))?)?;
             host.release_download()
         }
         ["install", source, id, "--release", revision] => {
-            let curl = env::var("KORRI_PLUGIN_CURL").map_err(|_| "host package must supply KORRI_PLUGIN_CURL")?;
-            let report = host.inspect_release(Path::new(&curl), source, id, revision)?;
+            let report = host.inspect_release(&repository_configuration()?, source, id, revision)?;
             print_review(&host, &report)?;
             eprintln!(
                 "Release {revision}: not installed. Review this exact package and approval report, then run:\nsudo korri-plugin install '{}' '{}' '{}'\nEnable the plugin separately after installation.",
@@ -374,12 +373,12 @@ fn run(args: Vec<String>) -> Result<(), Refusal> {
             host.release_download()
         }
         ["install", source, path, approval] => {
-            let report = host.inspect(source, Path::new(path))?;
+            let report = host.inspect(&repository_configuration()?, source, Path::new(path))?;
             print_review(&host, &report)?;
             host.install(report, approval, SelectionIntent::Install)
         }
         ["update", id, source, path, approval] => {
-            let report = host.inspect(source, Path::new(path))?;
+            let report = host.inspect(&repository_configuration()?, source, Path::new(path))?;
             print_review(&host, &report)?;
             host.install(report, approval, SelectionIntent::Update { id })
         }

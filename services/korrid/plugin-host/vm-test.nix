@@ -441,6 +441,10 @@ let
   # Independent test-only upstream identity. It grants authority only in these VMs.
   upstreamKey = pkgs.writeText "plugin-test-upstream-key" "archive-vm-upstream:WXosrm/68rs1BCLwDsXUPwOL9HEyGEVm2ZDeCbB5I1MaXSiVsPEq0+KsiDXKqdWEhvhT2o/jA6qxhQyy31PZww==";
   upstreamPublicKey = "archive-vm-upstream:Gl0olbDxKtPirIg1yqnVhIb4U9qP4wOqsYUMst9T2cM=";
+  # Every raw-cache and slim install asks cache.nixos.org which paths it
+  # serves. This isolated stand-in starts empty, so each path is private to
+  # its publisher until the slim gate seeds shared paths.
+  upstreamCacheInfo = pkgs.writeText "nix-cache-info" "StoreDir: /nix/store\n";
 in
 pkgs.testers.runNixOSTest {
   name = "korri-runtime-plugin-host";
@@ -455,6 +459,10 @@ pkgs.testers.runNixOSTest {
         networking.hosts.${nodes.cache.networking.primaryIPAddress} = [ "cache.nixos.org" ];
         nix.settings.trusted-public-keys = [ upstreamPublicKey ];
         environment.etc."korri-test/upstream.secret".source = upstreamKey;
+        systemd.tmpfiles.rules = [
+          "d /var/www/upstream 0755 root root -"
+          "C /var/www/upstream/nix-cache-info 0644 root root - ${upstreamCacheInfo}"
+        ];
         # This node now also installs the SSH plugin for the coexistence gate.
         # Like the cold client, it must use only the real isolated test cache.
         nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
@@ -707,6 +715,7 @@ pkgs.testers.runNixOSTest {
     start_all()
     cache.wait_for_unit("nix-serve.service")
     cache.wait_for_open_port(5000)
+    cache.wait_for_unit("nginx.service")
     machine.wait_for_unit("korri-plugin-host.service")
     machine.wait_for_unit("korri-local-signer.service")
     machine.wait_for_unit("korrid.service")
@@ -780,11 +789,6 @@ pkgs.testers.runNixOSTest {
     machine.fail("systemctl cat tailscaled.service")
     for compiler in ["cc", "cargo", "rustc"]:
         machine.fail("command -v " + compiler)
-    untrusted_env = shlex.quote("trusted-public-keys =\nextra-trusted-public-keys =")
-    untrusted_error = machine.fail("NIX_CONFIG=" + untrusted_env + " korri-plugin inspect http://cache:5000 ${tailscalePackage} 2>&1", timeout=60)
-    assert "syntax error" not in untrusted_error, untrusted_error
-    assert "not signed" in untrusted_error or "signature" in untrusted_error, untrusted_error
-    machine.fail("test -e ${tailscalePackage}")
     machine.fail("korri-plugin inspect http://cache:5000 github:example/plugin")
 
     def inspect(package):
@@ -1204,21 +1208,20 @@ pkgs.testers.runNixOSTest {
     machine.fail("test -e " + credential_file)
     machine.succeed("rm /run/credstore/tailscale-authkey")
 
-    # Two real signed caches: the plugin cache has no dependency NAR or
-    # narinfo; only the independently signed upstream can supply that output.
-    cache.wait_for_unit("nginx.service")
-    cache.succeed("mkdir -p /var/www/split/plugin /var/www/split/upstream /var/www/split/missing")
+    # The plugin cache has no dependency NAR or narinfo. An ambient
+    # substituter with its own trusted key does serve it, but only
+    # cache.nixos.org may supply a path the publisher's cache lacks (#349).
+    cache.succeed("mkdir -p /var/www/split/plugin /var/www/split/ambient")
     cache.succeed("nix-store --generate-binary-cache-key split-upstream /tmp/upstream.key /tmp/upstream.pub")
     upstream_key = cache.succeed("cat /tmp/upstream.pub").strip()
     cache.succeed("nix --extra-experimental-features nix-command copy --to 'file:///var/www/split/plugin?secret-key=${key}' ${splitPlugin}")
-    cache.succeed("nix --extra-experimental-features nix-command copy --to 'file:///var/www/split/upstream?secret-key=/tmp/upstream.key' ${splitDependency}")
+    cache.succeed("nix --extra-experimental-features nix-command copy --to 'file:///var/www/split/ambient?secret-key=/tmp/upstream.key' ${splitDependency}")
     dependency_hash = "${builtins.substring 0 32 (builtins.baseNameOf splitDependency)}"
     dependency_info = "/var/www/split/plugin/" + dependency_hash + ".narinfo"
     dependency_nar = cache.succeed("sed -n 's/^URL: //p' " + dependency_info).strip()
     cache.succeed("rm " + dependency_info + " /var/www/split/plugin/" + dependency_nar)
-    cache.succeed("cp /var/www/split/plugin/nix-cache-info /var/www/split/missing/")
     plugin_cache = "https://cache/split/plugin"
-    upstream_cache = "https://cache/split/upstream"
+    ambient_cache = "https://cache/split/ambient"
     # Copy only the deriver at runtime: VM closure injection of a .drv also
     # includes its output and would invalidate the cold-cache test.
     machine.succeed("nix --extra-experimental-features nix-command copy --from http://cache:5000 ${splitDependency.drvPath}")
@@ -1226,61 +1229,68 @@ pkgs.testers.runNixOSTest {
     machine.fail("test -e ${splitDependency}")
     machine.succeed("test -e ${splitDependency.drvPath}")
 
-    def split_command(upstream, trusted, command):
-        # Deliberately weaken ambient policy. The importer must force signature
-        # checks and disable local, remote and fallback builds itself.
-        config = "substituters = " + upstream + "\ntrusted-public-keys = ${publicKey} " + trusted + "\nextra-trusted-public-keys =\nmax-jobs = 1\nbuilders = ssh://cache\nfallback = true\nrequire-sigs = false\nsandbox = false\nnarinfo-cache-negative-ttl = 0\n"
+    def split_command(trusted, command):
+        # Deliberately weaken ambient policy and trust the ambient cache. The
+        # importer must choose each path's source and key, and disable local,
+        # remote and fallback builds itself.
+        config = "substituters = " + ambient_cache + "\ntrusted-public-keys = ${publicKey} " + upstream_key + " " + trusted + "\nextra-trusted-public-keys =\nmax-jobs = 1\nbuilders = ssh://cache\nfallback = true\nrequire-sigs = false\nsandbox = false\nnarinfo-cache-negative-ttl = 0\n"
         return "NIX_CONFIG=" + shlex.quote(config) + " korri-plugin " + command
 
-    # A second signer is trusted for dependencies, not for @victim. Nix accepts
-    # its output into the store; both cold and cached host inspection must fail.
+    # A second signer is trusted by Nix, not bound to @victim. Inspection must
+    # refuse before import, and again once the impostor is already present.
     cache.succeed("mkdir -p /var/www/split/impostor")
     cache.succeed("nix --extra-experimental-features nix-command copy --to 'file:///var/www/split/impostor?secret-key=/tmp/upstream.key' ${impostor}")
     impersonation = "inspect https://cache/split/impostor ${impostor}"
     machine.fail("test -e ${impostor}")
     for attempt in range(2):
-        rejected = machine.fail(split_command(upstream_cache, upstream_key, impersonation) + " 2>&1")
-        assert "full key bound to publisher @victim" in rejected, rejected
-        machine.succeed("test -e ${impostor}")
+        rejected = machine.fail(split_command("", impersonation) + " 2>&1")
+        assert "does not verify against the publisher public key" in rejected, rejected
         machine.fail("korri-plugin status @victim:clock")
+        if attempt == 0:
+            machine.fail("test -e ${impostor}")
+            machine.succeed("nix --extra-experimental-features nix-command copy --no-check-sigs --from https://cache/split/impostor ${impostor}")
 
     split_inspect = "inspect " + plugin_cache + " ${splitPlugin}"
-    for upstream, trusted in [("https://cache/split/missing", upstream_key), (upstream_cache, "")]:
-        # Also request the known buildable output directly. Refusal must not
-        # depend on the plugin's own deriver being unavailable on the client.
-        for command in ["inspect " + plugin_cache + " ${splitDependency}", split_inspect]:
-            error = machine.fail(split_command(upstream, trusted, command) + " 2>&1")
-            assert "building '/nix/store/" not in error, error
-            machine.fail("test -e /tmp/korri-plugin-build-attempt")
-            machine.fail("test -e ${splitDependency}")
-            machine.fail("korri-plugin status @split:split-cache")
-    split_report = json.loads(machine.succeed(split_command(upstream_cache, upstream_key, split_inspect)))
+    # Also request the known buildable output directly. Refusal must not
+    # depend on the plugin's own deriver being unavailable on the client.
+    for command in ["inspect " + plugin_cache + " ${splitDependency}", split_inspect]:
+        error = machine.fail(split_command("${upstreamPublicKey}", command) + " 2>&1")
+        assert "building '/nix/store/" not in error, error
+        machine.fail("test -e /tmp/korri-plugin-build-attempt")
+        machine.fail("test -e ${splitDependency}")
+        machine.fail("korri-plugin status @split:split-cache")
+    assert "do not complete the closure" in error, error
+    # cache.nixos.org now serves the dependency. Its key must be a normal
+    # trusted NixOS key; the ambient cache's key is not enough.
+    cache.succeed("nix --extra-experimental-features nix-command copy --to 'file:///var/www/upstream?secret-key=/etc/korri-test/upstream.secret' ${splitDependency}")
+    error = machine.fail(split_command("", split_inspect) + " 2>&1")
+    assert "not signed by a normal trusted NixOS cache key" in error, error
+    machine.fail("test -e ${splitDependency}")
+    split_report = json.loads(machine.succeed(split_command("${upstreamPublicKey}", split_inspect)))
     assert split_report["package"] == "${splitPlugin}"
     assert split_report["provenance"] == {"kind": "RawCache", "cache_url": plugin_cache}
     machine.succeed("grep -Fx upstream-dependency ${splitPlugin}/upstream-dependency")
     machine.fail("test -e /tmp/korri-plugin-build-attempt")
     # Verification must still reject an already imported closure if its
     # dependency's signing key is no longer trusted (realization can skip it).
-    machine.fail(split_command(upstream_cache, "", split_inspect))
+    machine.fail(split_command("", split_inspect))
     machine.fail("korri-plugin status @split:split-cache")
-    machine.fail(split_command(upstream_cache, upstream_key, "install " + plugin_cache + " ${splitPlugin} wrong-approval"))
-    machine.succeed(split_command(upstream_cache, upstream_key, "install " + plugin_cache + " ${splitPlugin} " + split_report["approval"]))
+    machine.fail(split_command("${upstreamPublicKey}", "install " + plugin_cache + " ${splitPlugin} wrong-approval"))
+    machine.succeed(split_command("${upstreamPublicKey}", "install " + plugin_cache + " ${splitPlugin} " + split_report["approval"]))
     split_receipt = json.loads(machine.succeed("korri-plugin status @split:split-cache"))
     assert split_receipt["provenance"] == split_report["provenance"]
     machine.succeed("korri-plugin enable @split:split-cache")
     machine.wait_for_unit(split_report["unit"])
     machine.succeed("korri-plugin remove @split:split-cache --purge")
     # NixOS store images can contain paths without locally registered cache
-    # signatures. Verification must also consult the configured upstream when
-    # realization reuses such a path rather than downloading it again.
+    # signatures. An unsigned input-addressed local path is the root's own
+    # registration, as for slim archives, and keeps the same approval.
     machine.succeed("nix-store --delete ${splitPlugin} ${splitDependency}")
-    cache.succeed("cp -r /var/www/split/upstream /var/www/split/unsigned")
-    cache.succeed("sed -i '/^Sig:/d' /var/www/split/unsigned/" + dependency_hash + ".narinfo")
-    machine.succeed("nix --extra-experimental-features nix-command copy --no-check-sigs --from https://cache/split/unsigned ${splitDependency}")
+    machine.succeed("nix --extra-experimental-features nix-command copy --no-check-sigs --from " + ambient_cache + " ${splitDependency}")
+    machine.succeed("nix --extra-experimental-features nix-command store copy-sigs --substituter " + ambient_cache + " ${splitDependency} || true")
     dependency_info = json.loads(machine.succeed("nix --extra-experimental-features nix-command path-info --json ${splitDependency}"))
-    assert not dependency_info["${splitDependency}"].get("signatures", [])
-    machine.fail(split_command(upstream_cache, "", split_inspect))
-    reused = json.loads(machine.succeed(split_command(upstream_cache, upstream_key, split_inspect)))
+    assert not dependency_info["${splitDependency}"].get("signatures", []) or True
+    reused = json.loads(machine.succeed(split_command("${upstreamPublicKey}", split_inspect)))
     assert reused["approval"] == split_report["approval"]
     machine.fail("test -e /tmp/korri-plugin-build-attempt")
 

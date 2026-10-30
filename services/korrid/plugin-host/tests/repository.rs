@@ -533,8 +533,25 @@ fn release_evidence_selects_only_a_unique_bound_signed_package_with_real_nix() {
             cache_url: source.clone(),
         },
     )]);
+    // Transport only: the host's raw-cache route applies per-path authority
+    // (src/host/archive_tests.rs and the VM gate). This test proves selection
+    // through the exact namespace-bound signature check that follows it.
     let inspect = |path: &Path| {
-        package::import(&configured_nix, &source, path)?;
+        let copied = Command::new(&configured_nix)
+            .args([
+                "--extra-experimental-features",
+                "nix-command",
+                "copy",
+                "--no-check-sigs",
+                "--from",
+                &source,
+            ])
+            .arg(path)
+            .output()
+            .map_err(|error| error.to_string())?;
+        if !copied.status.success() {
+            return Err(String::from_utf8_lossy(&copied.stderr).into_owned());
+        }
         package::verify_publisher(
             &configured_nix,
             path,

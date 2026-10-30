@@ -214,12 +214,18 @@ impl Host {
         })
     }
 
-    pub fn inspect(&self, source: &str, package: &Path) -> Result<Report, Refusal> {
+    pub fn inspect(
+        &self,
+        config: &Configuration,
+        source: &str,
+        package: &Path,
+    ) -> Result<Report, Refusal> {
         self.graph_update_pending()?;
         package::validate_store_path(package)?;
+        package::validate_cache_source(source)?;
         let download = self.paths.roots.join("download");
         storage::root_link(&download, package)?;
-        package::import(&self.nix, source, package)?;
+        self.import_raw_cache(config, source, package)?;
         let mut releases = false;
         crate::dependencies::dependency_order_with::<Refusal>([package.to_path_buf()], |path| {
             releases |= !package::manifest_releases(path)?.is_empty();
@@ -228,10 +234,7 @@ impl Host {
         if releases {
             self.state.cleanup_staging()?;
             self.pin_candidate(package)?;
-            let curl = std::env::var_os("KORRI_PLUGIN_CURL")
-                .ok_or("release requirements need the packaged KORRI_PLUGIN_CURL")?;
-            let config = Configuration::from_host(Path::new(&curl))?;
-            self.resolve_candidates(&config, package)?;
+            self.resolve_candidates(config, package)?;
         }
         self.load(
             package,
@@ -245,7 +248,7 @@ impl Host {
     /// inspection boundary. This grants neither installation nor activation.
     pub fn inspect_release(
         &self,
-        curl: &Path,
+        config: &Configuration,
         source: &str,
         id: &str,
         revision: &str,
@@ -266,20 +269,20 @@ impl Host {
             .into());
         }
         let paths = crate::release::fetch_paths(
-            &package::tools(curl)?,
+            &package::tools(&config.curl)?,
             &batch,
             revision,
             current_platform(),
             None,
         )?;
         let selected = crate::release::select_output(&paths, id, |path| {
-            self.inspect(source, path)
+            self.inspect(config, source, path)
                 .map(|report| report.id)
                 .map_err(|error| error.to_string())
         })?;
         // Each candidate replaces the temporary download root. Reinspect the
         // selected output to retain its root, even if GC ran during the scan.
-        let report = self.inspect(source, &selected)?;
+        let report = self.inspect(config, source, &selected)?;
         if report.id != id {
             return Err("selected release package changed identity".into());
         }
@@ -688,7 +691,7 @@ impl Host {
                     required,
                     key.ok_or("required plugin publisher is not trusted")?,
                     None,
-                    parent,
+                    Some(parent),
                 )?;
             }
             provenance
@@ -699,7 +702,7 @@ impl Host {
                 required,
                 &binding.public_key,
                 Some(&binding.cache_url),
-                parent,
+                Some(parent),
             )?;
             Provenance::RawCache {
                 cache_url: binding.cache_url.clone(),
@@ -731,6 +734,44 @@ impl Host {
         Ok(())
     }
 
+    /// An explicit raw-cache root gets the same per-path authority as an
+    /// archive: a path that cache.nixos.org serves comes only from there under
+    /// a normal NixOS key, and every other path must carry the bound
+    /// publisher's own signature. Nix's global key list, which also holds
+    /// every bound publisher key, never decides a path.
+    fn import_raw_cache(
+        &self,
+        config: &Configuration,
+        source: &str,
+        package: &Path,
+    ) -> Result<(), Refusal> {
+        let namespace = if package.exists() {
+            package::manifest_namespace(package)?
+        } else {
+            package::archive_manifest(&self.nix, source, package)?.0
+        };
+        let binding = self
+            .publishers
+            .get(&namespace)
+            .ok_or_else(|| format!("publisher {namespace} is not bound on this device"))?;
+        if binding.cache_url != source {
+            return Err(format!(
+                "publisher {namespace} is bound to cache {}",
+                binding.cache_url
+            )
+            .into());
+        }
+        self.verify_required_closure(
+            config,
+            None,
+            package,
+            &binding.public_key,
+            Some(source),
+            None,
+        )
+    }
+
+    /// `parent` is absent only for an explicit raw-cache root.
     fn verify_required_closure(
         &self,
         config: &Configuration,
@@ -738,7 +779,7 @@ impl Host {
         required: &Path,
         key: &str,
         cache: Option<&str>,
-        parent: &Path,
+        parent: Option<&Path>,
     ) -> Result<(), Refusal> {
         if !self.acquiring.borrow_mut().insert(required.to_path_buf()) {
             return Err("required plugin acquisition cycle".into());
@@ -749,7 +790,9 @@ impl Host {
             }
             let children = if let Some(cache) = cache {
                 if !package::archive_signature(&self.nix, required, cache, Some(key))? {
-                    return Err("required plugin is not signed by its bound publisher".into());
+                    return Err(
+                        "plugin is not signed by the full key bound to its publisher".into(),
+                    );
                 }
                 package::archive_manifest(&self.nix, cache, required)?.1
             } else {
@@ -766,7 +809,7 @@ impl Host {
             }
             let mut forbidden = self.acquiring.borrow().clone();
             forbidden.remove(required);
-            forbidden.insert(parent.to_path_buf());
+            forbidden.extend(parent.map(Path::to_path_buf));
             storage::root_link(&self.paths.roots.join("download"), required)?;
             let mut upstream = self.shared_cache(config)?;
             crate::slim::import_required(
