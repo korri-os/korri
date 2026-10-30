@@ -252,6 +252,7 @@ sdl_functions! {
     SDL_PushEvent(*mut Event) -> c_int;
     SDL_PollEvent(*mut Event) -> c_int;
     SDL_WaitEventTimeout(*mut Event, c_int) -> c_int;
+    SDL_GetKeyboardFocus() -> *mut Window;
 }
 
 impl Sdl {

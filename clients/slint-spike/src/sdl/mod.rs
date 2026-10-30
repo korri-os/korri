@@ -14,6 +14,7 @@
 
 mod ffi;
 pub mod keys;
+mod probe;
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -149,6 +150,8 @@ pub struct SdlPlatform {
     /// reach whatever LG shows next.
     back_pressed: Cell<bool>,
     stats: RefCell<FrameStats>,
+    /// TEMPORARY: fixed-label focus and key-event evidence for the TV.
+    probe: RefCell<probe::InputProbe>,
 }
 
 impl SdlPlatform {
@@ -221,6 +224,7 @@ impl SdlPlatform {
             visible: Cell::new(true),
             back_pressed: Cell::new(false),
             stats: RefCell::new(FrameStats::default()),
+            probe: RefCell::new(probe::InputProbe::for_tv()),
         };
         platform.apply_size();
         Ok(platform)
@@ -354,7 +358,14 @@ impl SdlPlatform {
                 println!("sdl: application lifecycle event {kind:#x}");
             }
             ffi::SDL_WINDOWEVENT => self.window_event(event)?,
-            ffi::SDL_KEYDOWN | ffi::SDL_KEYUP => self.key_event(event, kind == ffi::SDL_KEYDOWN),
+            ffi::SDL_KEYDOWN | ffi::SDL_KEYUP => {
+                self.probe.borrow_mut().record(if kind == ffi::SDL_KEYDOWN {
+                    probe::Record::KeyDown
+                } else {
+                    probe::Record::KeyUp
+                });
+                self.key_event(event, kind == ffi::SDL_KEYDOWN)
+            }
             ffi::SDL_MOUSEMOTION => {
                 let (x, y) = event.motion();
                 let position = self.logical(x, y);
@@ -424,6 +435,11 @@ impl SdlPlatform {
             ffi::SDL_WINDOWEVENT_SIZE_CHANGED => self.resized()?,
             ffi::SDL_WINDOWEVENT_FOCUS_GAINED | ffi::SDL_WINDOWEVENT_FOCUS_LOST => {
                 let active = id == ffi::SDL_WINDOWEVENT_FOCUS_GAINED;
+                self.probe.borrow_mut().record(if active {
+                    probe::Record::FocusGained
+                } else {
+                    probe::Record::FocusLost
+                });
                 println!(
                     "sdl: window {} input focus",
                     if active { "has" } else { "lost" }
@@ -533,8 +549,24 @@ impl Platform for SdlPlatform {
 }
 
 impl SdlPlatform {
+    /// Compare SDL's keyboard-focus window with ours. Only the category is
+    /// recorded; the pointers never leave this function.
+    fn sample_keyboard_focus(&self) {
+        // SAFETY: video is initialised; the call only reads SDL state.
+        let focused = unsafe { (self.sdl().SDL_GetKeyboardFocus)() };
+        let focus = if focused.is_null() {
+            probe::Focus::None
+        } else if focused == self.screen.borrow().window {
+            probe::Focus::Own
+        } else {
+            probe::Focus::Other
+        };
+        self.probe.borrow_mut().focus(focus);
+    }
+
     fn event_loop(&self) -> Result<(), PlatformError> {
         loop {
+            self.sample_keyboard_focus();
             slint::platform::update_timers_and_animations();
             self.run_jobs();
             if self.shared.quit.load(Ordering::SeqCst) {
