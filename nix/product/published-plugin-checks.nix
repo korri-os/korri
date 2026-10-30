@@ -13,12 +13,12 @@ builtins.listToAttrs (
       name = "korri-published-plugins-${system}";
       value = import ./published-plugin-check.nix {
         inherit system;
-        pkgs =
-          if system == pkgs.stdenv.hostPlatform.system then
-            pkgs
-          else
-            import korri.inputs.nixpkgs { inherit system; };
-        hostPackage = korri.packages.${system}.korri-plugin-host;
+        inherit pkgs hostPackage;
+        seedPackage =
+          if system == pkgs.stdenv.hostPlatform.system then hostPackage
+          else pkgs.writeShellScriptBin "korri-plugin" ''
+            exec ${pkgs.qemu}/bin/${if system == "aarch64-linux" then "qemu-aarch64" else "qemu-x86_64"} ${korri.packages.${system}.korri-plugin-host}/bin/.korri-plugin-wrapped "$@"
+          '';
         inherit (binding) publicKey cacheUrl;
       };
     })

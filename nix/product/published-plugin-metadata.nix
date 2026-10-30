@@ -52,6 +52,9 @@ pkgs.runCommand "korri-image-plugin-offline-metadata"
     export NIX_REMOTE="local?state=$TMPDIR/image-state"
     nix-store --load-db < ${closure}/registration
     "$out/verify"
+    nix --offline --extra-experimental-features nix-command \
+      --option substituters "" --option extra-substituters "" \
+      path-info --json --recursive ${lib.escapeShellArgs pluginPackages} > "$out/closure.json"
     # NAR payloads already exist in the registered image closure and the retained
     # pinned archives. copy-sigs needs only the original signed narinfos.
     ${lib.concatMapStringsSep "\n" (name: ''rm -r "$out/${name}/nar"'') names}

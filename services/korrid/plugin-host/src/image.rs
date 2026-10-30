@@ -67,6 +67,9 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
     upstream.exclude_publishers(bindings.values().map(|b| b.public_key.as_str()))?;
     let mut seen = BTreeSet::new();
     let mut roots = Vec::new();
+    // Preserve the image unit's first-registration content check and later
+    // immutable-store fast path. Nix's bound signatures are the only cache.
+    let mut rehash = mode == "prepare";
     for pair in rest.chunks_exact(2) {
         if !seen.insert(&pair[0]) {
             return Err("duplicate selected image plugin".into());
@@ -101,7 +104,6 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             if ca {
                 package::import_archive(nix, &uri, root)?;
             } else {
-                retain_root_build_proofs(nix, &cache, &paths, key, &mut upstream)?;
                 slim::import(nix, &cache, root, key, &mut upstream, &BTreeSet::new())?;
             }
         }
@@ -113,6 +115,7 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             let supplied = package::path_info(nix, path, Some(&uri))?;
             let actual = package::path_info(nix, path, None)?;
             let fingerprint = package::fingerprint(path, &actual)?;
+            rehash |= !package::signed_by(&actual, &fingerprint, &key_bytes);
             if package::fingerprint(path, &supplied)? != fingerprint
                 || !package::signed_by(&supplied, &fingerprint, &key_bytes)
             {
@@ -142,7 +145,9 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             "verify".into(),
             "--sigs-needed".into(),
             "1".into(),
+            "--no-contents".into(),
         ];
+        roots.extend(paths.iter().cloned());
         verify.extend(paths);
         process::checked_uncapped(nix, verify, None)?;
         let declaration = package::load_declaration(root)?;
@@ -172,59 +177,36 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
         "--no-trust".into(),
     ];
     verify.extend(roots);
-    process::checked_uncapped(nix, verify, None)?;
+    if rehash {
+        process::checked_uncapped(nix, verify, None)?;
+    }
     // Make local proof registration durable before recovery can use it.
     package::sync_store()?;
     Ok(())
 }
 
-/// Build-host-only equivalent of the existing image signature registration
-/// policy (package::verify_publisher_in). A root build may already have produced
-/// these exact bytes unsigned. This is NOT used by runtime repository import.
-fn retain_root_build_proofs(
-    nix: &Path,
-    cache: &Path,
-    paths: &[String],
-    key: &str,
-    upstream: &mut slim::Upstream,
-) -> Result<(), String> {
-    let uri = archive::path_to_file_uri(cache)?;
-    let key_bytes = package::public_key_bytes(key)?;
-    for path in paths {
-        if !Path::new(path).exists() { continue; }
-        let local = package::path_info(nix, path, None)?;
-        // Foreign-signed and CA paths go through the unchanged strict importer.
-        if !local.signatures.is_empty() || local.ca.as_deref().is_some_and(|ca| !ca.is_empty()) { continue; }
-        if upstream.info(path)?.is_some() {
-            return Err(format!("{path} is served by https://cache.nixos.org; the archive must not supply it"));
-        }
-        let supplied = package::path_info(nix, path, Some(&uri))?;
-        let fingerprint = package::fingerprint(path, &local)?;
-        if package::fingerprint(path, &supplied)? != fingerprint
-            || !package::signed_by(&supplied, &fingerprint, &key_bytes) {
-            return Err(format!("{path} root-build bytes differ from the bound signed archive; refusing"));
-        }
-        // Hash the physical bytes, not just Nix's registered identity. Keep the
-        // full-key proof and reread it just as the existing image path does.
-        process::checked_uncapped(nix, ["--extra-experimental-features", "nix-command", "--offline",
-            "store", "verify", "--no-trust", path], None)?;
-        copy_proofs(nix, &uri, key, std::slice::from_ref(path))?;
-        let retained = package::path_info(nix, path, None)?;
-        if package::fingerprint(path, &retained)? != fingerprint
-            || !package::signed_by(&retained, &fingerprint, &key_bytes) {
-            return Err(format!("cannot retain verified root-build signature for {path}"));
-        }
-    }
-    Ok(())
-}
-
 fn copy_proofs(nix: &Path, uri: &str, key: &str, paths: &[String]) -> Result<(), String> {
-    let mut args = vec!["--extra-experimental-features".into(), "nix-command".into(),
-        "--offline".into(), "--option".into(), "substituters".into(), "".into(),
-        "--option".into(), "extra-substituters".into(), "".into(),
-        "--option".into(), "trusted-public-keys".into(), key.into(),
-        "--option".into(), "extra-trusted-public-keys".into(), "".into(),
-        "store".into(), "copy-sigs".into(), "--substituter".into(), uri.into()];
+    let mut args = vec![
+        "--extra-experimental-features".into(),
+        "nix-command".into(),
+        "--offline".into(),
+        "--option".into(),
+        "substituters".into(),
+        "".into(),
+        "--option".into(),
+        "extra-substituters".into(),
+        "".into(),
+        "--option".into(),
+        "trusted-public-keys".into(),
+        key.into(),
+        "--option".into(),
+        "extra-trusted-public-keys".into(),
+        "".into(),
+        "store".into(),
+        "copy-sigs".into(),
+        "--substituter".into(),
+        uri.into(),
+    ];
     args.extend(paths.iter().cloned());
     process::checked_uncapped(nix, args, None)?;
     Ok(())

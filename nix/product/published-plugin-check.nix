@@ -3,6 +3,7 @@
   pkgs,
   system,
   hostPackage,
+  seedPackage,
   publicKey,
   cacheUrl,
 }:
@@ -13,7 +14,12 @@ let
   publishers = {
     "@korri" = { inherit publicKey cacheUrl; };
   };
-  bindings = pkgs.writeText "published-plugin-publishers.json" (builtins.toJSON publishers);
+  image = import ../../services/korrid/plugin-host/image-seed.nix {
+    inherit pkgs publishers catalog;
+    hostPackage = seedPackage;
+    pluginPackages = builtins.attrValues published;
+    disabled = [ "@korri:starter-pack" ];
+  };
   metadata = import ./published-plugin-metadata.nix {
     inherit
       pkgs
@@ -51,9 +57,13 @@ pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInput
   ''
     set -euo pipefail
     test -e ${proofCheck}
-    ${hostPackage}/bin/korri-plugin seed-catalog --disabled '@korri:starter-pack' ${bindings} \
-      ${catalog.catalog} ${lib.escapeShellArg catalog.catalogUrl} \
-      ${lib.escapeShellArgs (builtins.attrValues published)} > receipts.json
+    ${image.populateRootCommands}
+    jq -s . files/var/lib/korri-plugin-host/*/selection.json > receipts.json
+    for receipt in files/var/lib/korri-plugin-host/*/selection.json; do
+      test "$(stat -c %a "$receipt")" = 600
+      test "$(stat -c %a "$(dirname "$receipt")")" = 700
+    done
+    test "$(find files/nix/var/nix/gcroots/korri-plugin-host -name active -type l | wc -l)" = 33
     jq -e 'length == 33' receipts.json >/dev/null
     ${identityChecks}
     jq -e --arg fake08 ${lib.escapeShellArg published.korri-plugin-fake08} \
@@ -61,5 +71,6 @@ pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInput
       --arg zquest ${lib.escapeShellArg published.korri-plugin-zquest-classic} \
       '.publisher.namespace == "@korri" and .requires == [$fake08, $solarus, $zquest]' \
       ${published.korri-plugin-starter-pack}/manifest.json >/dev/null
-    touch "$out"
+    mkdir -p "$out"
+    cp receipts.json "$out/receipts.json"
   ''

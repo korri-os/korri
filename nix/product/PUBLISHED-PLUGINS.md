@@ -55,20 +55,23 @@ The other product targets are `rg353m`, `rgds`, `r36tmax`, `odin2portal`,
    names the pinned catalog. Gamescope's initial modifier remains unchanged.
 6. Before `restore-all`, the offline proof unit compares each archive proof
    with Nix's registered bytes and requires the full bound key. Nix copies
-   those signatures and rehashes the complete closure without a substituter.
+   those signatures and rehashes the complete closure without a substituter
+   on first registration. Later boots reuse Nix's verified bound signatures,
+   as the previous image unit did; there is no second proof state file.
    Omitted upstream paths keep system-image/root-registration authority;
    the publisher's key does not become their authority. No network or
    compilation is needed for seed recovery, enable or reboot.
 
-Preparation is mandatory even with a warm store. On the build host only, an
-existing unsigned, input-addressed root-build path can receive its archive's
-bound signature after Nix rehashes its contents and its full StorePath/NarHash/
-NarSize/References fingerprint matches the signed archive. Preparation rereads
-and verifies the retained signature. This adds content-hashing and metadata
-lookup cost. It never grants publisher authority to an upstream path.
-Foreign-signed private paths and every NAR mismatch still fail closed; no path
-is overwritten or deleted. Runtime import rules are unchanged. A warm-builder
-pass is not the cold/offline image proof.
+Preparation requires a clean builder store, or an already verified selection
+of these exact archives. Unsigned/foreign-signed private paths and NAR
+mismatches fail closed; no path is overwritten, deleted or re-signed to make a
+warm build pass. Runtime import rules are unchanged. When a builder contains
+conflicting local outputs, use a fresh native Nix store under an isolated
+`/nix` mount. Copy only prebuilt tools and sources with native Nix, not plugin
+payloads. Record that initial inventory before acquiring archives. Isolation
+costs another store and upstream closure transfer; it is not a fallback lane.
+Steam's known FHS nondeterminism is tracked in #351. The live bytes remain the
+image pin; a store-path match alone cannot establish its NAR fingerprint.
 
 ## Verification
 
@@ -78,6 +81,8 @@ nix run .#korri-published-plugins-check
 
 This checks both architectures' actual catalog archives, signatures, closure
 registration and exact Repository receipts; unchanged plugin selection;
+ARM seed checks execute the actual ARM host binary under QEMU user emulation,
+not a cross-platform validation bypass or an ARM hardware/lifecycle claim;
 missing-proof refusal; published mGBA route/launch dispatch and its interface
 negative control; product/delivery checks; and a cold, network-blocked Linux
 VM using the real SSH, mGBA and Starter pack outputs. The VM tests approval
