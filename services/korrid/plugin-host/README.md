@@ -77,7 +77,11 @@ Fresh config-bound exact requirements keep RawCache provenance, but acquisition
 on behalf of an archive uses the requirement's own key and the upstream-only
 shared path route. A cache copy signed only by the publisher cannot stand in for
 upstream authority.
-Ordinary explicit raw-cache commands are unchanged by this archive rule.
+Explicit raw-cache commands (`inspect`, `install` and `update` with a CACHE)
+use the same rule (#349). The CACHE must be the namespace's bound cache. It
+supplies only paths that cache.nixos.org does not serve, each signed by that
+publisher's full key. Nix's global key list, which the NixOS module also fills
+with every bound publisher key, decides no path.
 
 Measured archive hashes, NAR hashes and sizes, immutable source, native policy
 and exact owner approval remain mandatory.
@@ -224,7 +228,7 @@ Raw-cache install, update, switch, remove, purge, restore and `enabled-packages`
 
 ## Raw-cache installation and approval
 
-The existing explicit raw-cache route is separate from repository selection. Use the exact output published for this device architecture. The plugin cache can host only custom outputs; the rest of the closure must already exist locally or be available from configured trusted substituters. Every path requires a trusted signature for ordinary input-addressed paths or a verified content-addressed identity. A missing or untrusted dependency fails installation without a build. Adding the plugin cache does not add signing keys or change source identity or approval. The cost is dependence on configured cache availability: Nix can fail an import when it cannot initialize a cache, even if another cache has the needed output. Repository and sideload archives use the slim or self-contained preflight and signature rules above.
+The existing explicit raw-cache route is separate from repository selection. Use the exact output published for this device architecture and the namespace's bound cache. Each path has one authority, as for slim archives: a path that cache.nixos.org serves comes only from cache.nixos.org under a normal trusted NixOS key, and every other path comes from the bound cache under the publisher's full key. Configured substituters and their keys supply nothing. A missing or untrusted dependency fails installation without a build. The cost: inspection needs cache.nixos.org, even when every path is already local, and a dependency that only a third cache serves must also be in the publisher's cache. Repository and sideload archives use the slim or self-contained preflight and signature rules above.
 
 ```sh
 sudo korri-plugin inspect "$CACHE_URL" "$PACKAGE"
@@ -373,7 +377,7 @@ The lookup is grounded in the approved authoring brief's Versions section and th
 | Batch `build-<first 12 commit characters>` | Derive its location in the same GitHub repository, separate from the metadata cache tag. Never infer trust from that name. |
 | Batch `revision.txt` | Fetch at most 41 bytes. Require the exact requested full commit followed by one newline, before requesting paths. A shared 12-character prefix is insufficient. |
 | Batch `paths-x86_64-linux.txt` or `paths-aarch64-linux.txt` | Fetch only the running host's architecture, at most 64 KiB. Require nonempty, unique, newline-terminated exact store outputs. Reject derivations, expressions, malformed paths and duplicate lines. |
-| Each listed candidate | Use the existing download-only Nix importer, full namespace-bound signature verification, declaration and native artifact validation. Select by the verified declaration ID, never by the store-path name. |
+| Each listed candidate | Use the raw-cache route's per-path import, full namespace-bound signature verification, declaration and native artifact validation. Select by the verified declaration ID, never by the store-path name. |
 
 Lookup refuses missing IDs, multiple outputs for the requested ID, and any invalid, unavailable or untrusted candidate, even after finding a match. It re-inspects the selected output to retain its download GC root after scanning other candidates. HTTPS transfers use the existing certificate, redirect, size and timeout policy. Cache and build failures remain errors; lookup never evaluates a flake, instantiates a derivation, compiles, or changes Nix trust.
 
@@ -386,7 +390,7 @@ nix develop .#plugin-host --command cargo test --locked --manifest-path services
 KORRI_PUBLISH_NIX="$(command -v nix)" nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --test repository release_evidence_selects_only_a_unique_bound_signed_package_with_real_nix -- --ignored --exact
 ```
 
-The second check runs on a build machine. It creates unique test outputs with `nix store add-path`, exports them with real Nix signatures, serves evidence and cache files over local HTTPS, deletes one test output, and downloads its NAR through the real importer. It checks identity, ambiguity, wrong bound keys, malformed declarations, a missing output, an instantiated-but-never-built derivation, and damaged NAR bytes. It does not change host publisher configuration or activate a plugin. Live GitHub lookup, privileged CLI lifecycle, physical ARM installation and cold-store multi-cache closure acceptance are separate gates.
+The second check runs on a build machine. It creates unique test outputs with `nix store add-path`, exports them with real Nix signatures, serves evidence and cache files over local HTTPS, deletes one test output, and downloads its NAR with a plain `nix copy`. The host's per-path import is covered by the slim real-Nix test and the VM gate instead. It checks identity, ambiguity, wrong bound keys, malformed declarations, a missing output, an instantiated-but-never-built derivation, and damaged NAR bytes. It does not change host publisher configuration or activate a plugin. Live GitHub lookup, privileged CLI lifecycle, physical ARM installation and cold-store multi-cache closure acceptance are separate gates.
 
 ## Lifecycle commands
 
@@ -601,7 +605,7 @@ The current/previous verification record is in `LIFECYCLE-VALIDATION.md`. The cu
 
 The revocation VM gates remove a publisher binding and rotate its full key. Both deny enable, permit disable and removal with real Tailscale cleanup, retain data on disable, and purge it on removal. They reject a changed receipt approval, cover pending-operation and persisted-disable recovery boundaries, stop a revoked healthy daemon during restore, refuse revoked restarts, and retain receipts and roots after native cleanup failure.
 
-The split-cache VM gate removes a dependency's NAR and narinfo from the plugin cache. An independently signed, configured upstream supplies it through the real `inspect` and `install` commands. Missing and untrusted upstream cases fail without running an available build canary, even with permissive ambient Nix settings. A later inspection without the dependency's trusted key also fails after the output is already present. A separately seeded unsigned local dependency requires a trusted upstream signature before inspection succeeds. The gate checks unchanged raw-cache provenance, explicit approval, activation and removal. It uses local fixture caches, not a live `cache.nixos.org` connection.
+The split-cache VM gate removes a dependency's NAR and narinfo from the plugin cache. An ambient substituter with its own trusted key serves the dependency, and the real `inspect` command still refuses it. After the isolated stand-in for cache.nixos.org serves the dependency, inspection fails without the normal upstream key and succeeds with it. No case runs the available build canary, even with permissive ambient Nix settings. A later inspection without the dependency's trusted key also fails after the output is already present. A separately seeded unsigned local dependency is accepted as the root's own registration, with the same approval. The impostor case refuses a package that a trusted but unbound key signed, both before and after it is present. The gate checks unchanged raw-cache provenance, explicit approval, activation and removal. It uses local fixture caches, not a live `cache.nixos.org` connection.
 
 The Nix devshell and package check both supply `KORRI_TEST_CURL`. The real local TLS tests fail if it is absent; none silently return. One explicitly ignored test is a subprocess entrypoint invoked by the ambient-credentials test. Regular package and HTTPS tests remain sandboxed.
 
