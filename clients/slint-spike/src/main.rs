@@ -5,6 +5,8 @@ mod brain;
 mod report;
 #[cfg(feature = "webos")]
 mod sdl;
+#[cfg(feature = "webos")]
+mod startup;
 
 #[cfg(all(feature = "webos", feature = "desktop-x11"))]
 compile_error!(
@@ -135,6 +137,14 @@ fn main() -> ExitCode {
         eprintln!("refusing to start: could not disable core dumps");
         return ExitCode::from(2);
     }
+    // The TV build must not run Korri with root privileges, whatever user
+    // the launcher picks. Fail closed before parsing or recording a failure.
+    #[cfg(feature = "webos")]
+    // SAFETY: geteuid has no preconditions.
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("refusing to start: effective user is root");
+        return ExitCode::from(2);
+    }
     #[cfg(not(feature = "webos"))]
     let mode = match parse_mode() {
         Ok(mode) => mode,
@@ -144,23 +154,17 @@ fn main() -> ExitCode {
         }
     };
     #[cfg(feature = "webos")]
-    let (mode, placement) = match parse_mode() {
+    let (mode, placement) = match startup::record(parse_mode(), startup::Stage::CliParse) {
         Ok(parsed) => parsed,
         Err(usage) => {
             eprintln!("{usage}");
             return ExitCode::from(2);
         }
     };
-    // The TV build must not run Korri with root privileges, whatever user
-    // the launcher picks. Fail closed before korrid or SDL starts.
-    #[cfg(feature = "webos")]
-    // SAFETY: geteuid has no preconditions.
-    if unsafe { libc::geteuid() } == 0 {
-        eprintln!("refusing to start: effective user is root");
-        return ExitCode::from(2);
-    }
     let inherited = brain::inherited_korri_environment();
     if !inherited.is_empty() {
+        #[cfg(feature = "webos")]
+        startup::report_failure(startup::Stage::InheritedEnvironment, None);
         eprintln!(
             "refusing to start: inherited korrid configuration could reach real peers: {}. \
              Unset these names and run again.",
@@ -170,12 +174,18 @@ fn main() -> ExitCode {
     }
 
     #[cfg(feature = "webos")]
-    if let Err(error) = sdl::install("Korri diagnostics", placement) {
+    if let Err(error) = startup::record(
+        sdl::install("Korri diagnostics", placement),
+        startup::Stage::SdlInstall,
+    ) {
         eprintln!("could not open the SDL window: {error}");
         return ExitCode::FAILURE;
     }
 
-    let mut brain = match Brain::start() {
+    let brain_start = Brain::start();
+    #[cfg(feature = "webos")]
+    let brain_start = startup::record(brain_start, startup::Stage::BrainInit);
+    let mut brain = match brain_start {
         Ok(brain) => brain,
         Err(error) => {
             eprintln!("korrid did not start: {error}");
