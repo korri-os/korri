@@ -400,6 +400,23 @@ impl SdlPlatform {
                 });
                 self.key_event(event, kind == ffi::SDL_KEYDOWN)
             }
+            // TV: the Magic Remote pointer does not aim. OK on the remote
+            // arrives as a left click wherever the pointer is; the host turns
+            // it into confirm on the focused control. Motion and wheel are
+            // dropped so the pointer never moves focus.
+            ffi::SDL_MOUSEMOTION | ffi::SDL_MOUSEWHEEL if self.webos_abi => {}
+            ffi::SDL_MOUSEBUTTONDOWN | ffi::SDL_MOUSEBUTTONUP if self.webos_abi => {
+                let (button, _, _) = event.button();
+                if button == ffi::SDL_BUTTON_LEFT {
+                    let text = char::from(slint::platform::Key::Return).into();
+                    self.slint_window
+                        .dispatch_event(if kind == ffi::SDL_MOUSEBUTTONDOWN {
+                            WindowEvent::KeyPressed { text }
+                        } else {
+                            WindowEvent::KeyReleased { text }
+                        });
+                }
+            }
             ffi::SDL_MOUSEMOTION => {
                 let (x, y) = event.motion();
                 let position = self.logical(x, y);
