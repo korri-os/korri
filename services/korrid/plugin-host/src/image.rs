@@ -9,7 +9,7 @@ use crate::{
     slim,
 };
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -67,6 +67,7 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
     upstream.exclude_publishers(bindings.values().map(|b| b.public_key.as_str()))?;
     let mut seen = BTreeSet::new();
     let mut roots = Vec::new();
+    let mut expected = BTreeMap::new();
     // Preserve the image unit's first-registration content check and later
     // immutable-store fast path. Nix's bound signatures are the only cache.
     let mut rehash = mode == "prepare";
@@ -116,6 +117,7 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             let actual = package::path_info(nix, path, None)?;
             let fingerprint = package::fingerprint(path, &actual)?;
             rehash |= !package::signed_by(&actual, &fingerprint, &key_bytes);
+            expected.insert(path.clone(), (fingerprint.clone(), key.to_owned()));
             if package::fingerprint(path, &supplied)? != fingerprint
                 || !package::signed_by(&supplied, &fingerprint, &key_bytes)
             {
@@ -160,6 +162,22 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             return Err("any-architecture image package has references or manifest paths".into());
         }
         roots.push(record.store_path.clone());
+    }
+    roots.sort();
+    roots.dedup();
+    let registered = package::StoreSnapshot::query(
+        nix,
+        &roots.iter().map(Path::new).collect::<Vec<_>>(),
+    )?;
+    for (path, (fingerprint, key)) in expected {
+        let path = Path::new(&path);
+        if registered.fingerprint(path)? != fingerprint {
+            return Err("image path changed during proof registration".into());
+        }
+        // CA validity alone is not publisher trust. Require the bound key's
+        // retained signature, including for every source-only any release.
+        package::verify_local_signature(nix, Some(&registered), path, &key,
+            package::StoreContents::TrustRegistered)?;
     }
     let mut verify = vec![
         "--extra-experimental-features".into(),
