@@ -1,0 +1,23 @@
+Observed on 2026-10-30 workstation time (device clock reads 2026-10-31 UTC).
+Device: rg35xxsp, root@10.42.5.1, SSH port 2222 (port 22 times out).
+No fallback to Pro used. Both devices answer ping.
+System: /nix/store/r2jgp9i35k0qfg3v9kqs4fip7wf53wa6-nixos-system-rg35xxsp-sd-card-26.11.20260923.4975466
+Kiosk: korri-chromium-kiosk.service
+User/group: korri-portal
+Cgroup: /system.slice/korri-chromium-kiosk.service
+Initial MainPID: 91965
+Kiosk WAYLAND_DISPLAY=korri-wayland
+Kiosk XDG_RUNTIME_DIR=/run/korri-portal
+Kiosk private bind: /run/user/1000/korri-wayland -> /run/korri-portal/korri-wayland
+Real socket: /run/user/1000/wayland-1; korri-wayland is a symlink to it.
+Sway IPC: /run/korri-compositor/sway-ipc.sock
+Sway user: korri. DRM backend, WLR_RENDERER=gles2. Chromium uses --disable-gpu.
+grim is not on PATH but exists at /nix/store/8svfyws68lbybhhf1466wsakqnk74bxz-grim-1.5.0/bin/grim
+Initial MemAvailable: 274488 kB
+Initial surface: pico; running KORRI_WEB_SURFACE_URL=http://127.0.0.1:8099/?surface=pico
+Initial screenshot: original.png (catalog peer unreachable error dialog already present).
+Panel was powered off. Powered it on through existing sway IPC; no settings or permissions changed.
+No zone.look record was found in the browser's local-storage LevelDB files (read into workstation memory only, not persisted).
+Zone look for baseline: Blend (default). Did not change zone.look.
+Temporary surface selection: /run/systemd/system/korri-chromium-kiosk.service.d/zone-spike.conf overrides KORRI_WEB_SURFACE_URL to http://127.0.0.1:8099/?surface=zone.
+Portal's existing surface-preference.ts documents this query selector and that it persists korri.surface. Original pico URL restores that preference when restarted.

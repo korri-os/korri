@@ -1,0 +1,59 @@
+Changes made on the SP during this experiment:
+
+Units:
+- Stopped/restarted korri-chromium-kiosk.service at runtime only.
+- Created transient zone-spike-native.service with --collect, User/Group
+  korri-portal, RuntimeDirectory=zone-spike-native (0700), a private read-only
+  bind of /run/user/1000/korri-wayland to its own runtime directory, and
+  NoNewPrivileges/ProtectHome/ProtectSystem/LimitCORE/UMask restrictions.
+- Stopped that transient unit. No native-window scope was created.
+- Tested the sampler with a transient zone-spike-measure-scope.scope holding
+  an 8-second sleep, then waited for it to finish. Zero experiment units
+  remained. It did not display a window or change Sway state.
+- No persistent unit was edited, disabled, or masked.
+
+Runtime files:
+- Created /run/systemd/system/korri-chromium-kiosk.service.d/zone-spike.conf
+  to select ?surface=zone. Removed that file and its directory, then ran
+  systemctl daemon-reload. DropInPaths is now empty.
+- systemd created /run/zone-spike-native and its private bind target.
+  It removed that runtime directory when the native unit stopped.
+- Unpacked public native/wtype bundles and wrote non-secret screenshots,
+  measurement scripts, and raw samples under /tmp/zone-spike-*. After copying
+  evidence back, removed every file/directory with this experiment prefix.
+  cleanup.txt records the names and verifies none remain.
+- No credential, token, key, browser profile, or full environment dump was
+  written to /tmp. The profile's local-storage files were read into
+  workstation memory to check display preferences; they were not copied
+  into a persistent evidence file or modified offline.
+
+Browser preferences:
+- The portal's existing ?surface=zone selector remembered korri.surface=zone.
+  Restarting with the original ?surface=pico restores korri.surface=pico.
+- zone.look was not changed. The baseline used Blend, the default.
+
+Wayland/Sway:
+- Read output state with get_outputs; the display was initially powered off.
+  Sent `output "*" power on` once so screenshots and a visible kiosk worked.
+- Hello requested fullscreen through Slint/winit. No Sway fullscreen command,
+  output mode, scale, transform, workspace, or compositor config was changed.
+- No direct files were written under /run/user/1000.
+- No chmod, chown, or setfacl was run on the device by this experiment. The existing kiosk
+  ExecStartPre runs its unchanged socket ACL setup when the kiosk starts.
+  The observed socket ACL remains owner/group korri, user korri-portal:rw-,
+  mask rwx, other ---; /run/user/1000 remains mode 0700.
+
+Recovery:
+- Chromium repeatedly exited with SIGSEGV in exploration. The first recovery
+  used one reboot with the same generation. Final baselines ran after it.
+- After the final native measurement, the native unit stopped successfully,
+  but starting Chromium failed again with SIGSEGV/private pipe closure.
+- Confirmed zero zone-spike units and no native executable running; the
+  runtime directory was absent. Stopped the kiosk, restarted the unchanged
+  korri-compositor.service, and started the kiosk. It became active at once
+  with MainPID=9065 and NRestarts=0. A second reboot was not needed.
+- The immediate failure was Chromium SIGSEGV. The underlying crash cause is
+  unknown. A stale compositor/client interaction is an inference, not proven.
+  Similar crashes had occurred before the first successful native window,
+  so this experiment does not establish that Slint caused them.
+- See restored-60s.txt for the mandatory 60-second PID/liveness verification.

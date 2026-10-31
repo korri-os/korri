@@ -1,0 +1,12 @@
+MainPID=2510
+NRestarts=0
+samples=60
+median_pss_kib=446618.5
+max_pss_kib=451110
+elapsed_seconds=60.41
+cpu_one_core_percent=134.104
+memavailable_start_kib=359440
+memavailable_end_kib=353268
+raw_samples=/tmp/zone-spike-attract-stable.csv
+MainPID=2510
+NRestarts=0

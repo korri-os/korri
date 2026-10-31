@@ -1,0 +1,8 @@
+samples=60
+median_pss_kib=388889.0
+max_pss_kib=393655
+elapsed_seconds=60.43
+cpu_one_core_percent=131.544
+memavailable_start_kib=288584
+memavailable_end_kib=272260
+raw_samples=/tmp/zone-spike-games-baseline.csv

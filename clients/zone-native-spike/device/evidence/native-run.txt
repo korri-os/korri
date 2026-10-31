@@ -1,0 +1,9 @@
+ActiveState=active
+MainPID=2198
+ControlGroup=/system.slice/zone-spike-native.service
+User=korri-portal
+Oct 31 00:41:12 rg35xxsp run.sh[2198]: Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 18: invalid constant used : sans-serif
+Oct 31 00:41:12 rg35xxsp run.sh[2198]: Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 26: invalid constant used : monospace
+Oct 31 00:41:12 rg35xxsp run.sh[2198]: Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 34: invalid constant used : emoji
+Oct 31 00:41:12 rg35xxsp run.sh[2198]: Fontconfig warning: "/etc/fonts/conf.d/49-sansserif.conf", line 42: invalid constant used : math
+Oct 31 00:41:12 rg35xxsp run.sh[2198]: Error watching for xdg desktop settings: Failed to connect to address `unix:path=/run/zone-spike-native/bus`: No such file or directory (os error 2)

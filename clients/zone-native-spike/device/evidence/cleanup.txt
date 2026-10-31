@@ -1,0 +1,68 @@
+Removing only this experiment prefix:
+/tmp/zone-spike-games-clean-2.csv
+/tmp/zone-spike-chromium-baseline-final.csv
+/tmp/zone-spike-zone-games.png
+/tmp/zone-spike-chromium-baseline.csv
+/tmp/zone-spike-native-frame-b.png
+/tmp/zone-spike-hello.tar.gz
+/tmp/zone-spike-wtype
+/tmp/zone-spike-games-start.png
+/tmp/zone-spike-options2.png
+/tmp/zone-spike-tab.png
+/tmp/zone-spike-original.png
+/tmp/zone-spike-scope.log
+/tmp/zone-spike-newgames-loaded.png
+/tmp/zone-spike-attract-start.png
+/tmp/zone-spike-chromium-baseline-60s.csv
+/tmp/zone-spike-hello
+/tmp/zone-spike-games-window-1.png
+/tmp/zone-spike-wtype.tar.gz
+/tmp/zone-spike-native-frame-a.png
+/tmp/zone-spike-games-window-1.csv
+/tmp/zone-spike-scope-samples.csv
+/tmp/zone-spike-games-window-2.csv
+/tmp/zone-spike-zone-initial.png
+/tmp/zone-spike-games-window-3.png
+/tmp/zone-spike-hello-xkb
+/tmp/zone-spike-measure.sh
+/tmp/zone-spike-games-window-2.png
+/tmp/zone-spike-native.png
+/tmp/zone-spike-hello-xkb.tar.gz
+/tmp/zone-spike-baseline-final.png
+/tmp/zone-spike-focus.png
+/tmp/zone-spike-games-window-3.csv
+/tmp/zone-spike-games-clean-3.csv
+/tmp/zone-spike-attract-end.png
+/tmp/zone-spike-newgames-start.png
+/tmp/zone-spike-games-clean-1.png
+/tmp/zone-spike-restored.png
+/tmp/zone-spike-games-end.png
+/tmp/zone-spike-games-baseline.csv
+/tmp/zone-spike-games-clean-2.png
+/tmp/zone-spike-hello-proof2
+/tmp/zone-spike-games-clean-3.png
+/tmp/zone-spike-focus2.png
+/tmp/zone-spike-hello-proof2.tar.gz
+/tmp/zone-spike-options.png
+/tmp/zone-spike-native-24s.csv
+/tmp/zone-spike-games-clean-1.csv
+/tmp/zone-spike-attract-stable.csv
+Remaining experiment temporary files:
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.
+To show all installed unit files use 'systemctl list-unit-files'.
+ActiveState=active
+DropInPaths=
+MainPID=9065
+NRestarts=0
+700 korri korri /run/user/1000
+# file: run/user/1000/wayland-1
+# owner: korri
+# group: korri
+user::rwx
+user:korri-portal:rw-
+group::rwx
+mask::rwx
+other::---
+

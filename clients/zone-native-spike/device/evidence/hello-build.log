@@ -1,0 +1,409 @@
+warning: Nix search path entry '/nix/var/nix/profiles/per-user/root/channels' does not exist, ignoring
+this derivation will be built:
+  /nix/store/2naq95wv84hr805rmrjzizppj0v2n8l1-zone-spike-hello-0.0.0.drv
+building '/nix/store/2naq95wv84hr805rmrjzizppj0v2n8l1-zone-spike-hello-0.0.0.drv' on 'ssh-ng://simon@fuji'...
+copying 1 paths...
+copying path '/nix/store/sc0g1nfapxmy4mn11khrgas517v80231-source' to 'ssh-ng://simon@fuji'...
+building '/nix/store/2naq95wv84hr805rmrjzizppj0v2n8l1-zone-spike-hello-0.0.0.drv'...
+zone-spike-hello> Running phase: unpackPhase
+zone-spike-hello> unpacking source archive /nix/store/sc0g1nfapxmy4mn11khrgas517v80231-source
+zone-spike-hello> source root is source
+zone-spike-hello> Executing cargoSetupPostUnpackHook
+zone-spike-hello> Finished cargoSetupPostUnpackHook
+zone-spike-hello> Running phase: patchPhase
+zone-spike-hello> Executing cargoSetupPostPatchHook
+zone-spike-hello> Validating consistency between /build/source/Cargo.lock and /build/cargo-vendor-dir/Cargo.lock
+zone-spike-hello> Finished cargoSetupPostPatchHook
+zone-spike-hello> Running phase: updateAutotoolsGnuConfigScriptsPhase
+zone-spike-hello> Running phase: configurePhase
+zone-spike-hello> Running phase: buildPhase
+zone-spike-hello> Executing cargoBuildHook
+zone-spike-hello> cargoBuildHook flags: -j 4 --target aarch64-unknown-linux-gnu --offline --profile release
+zone-spike-hello>    Compiling proc-macro2 v1.0.107
+zone-spike-hello>    Compiling quote v1.0.47
+zone-spike-hello>    Compiling unicode-ident v1.0.27
+zone-spike-hello>    Compiling cfg-if v1.0.5
+zone-spike-hello>    Compiling autocfg v1.5.1
+zone-spike-hello>    Compiling portable-atomic v1.15.0
+zone-spike-hello>    Compiling bitflags v2.13.2
+zone-spike-hello>    Compiling critical-section v1.2.0
+zone-spike-hello>    Compiling smallvec v1.16.4
+zone-spike-hello>    Compiling log v0.4.35
+zone-spike-hello>    Compiling pkg-config v0.3.34
+zone-spike-hello>    Compiling rustix v1.1.6
+zone-spike-hello>    Compiling serde_core v1.0.229
+zone-spike-hello>    Compiling once_cell v1.21.4
+zone-spike-hello>    Compiling memchr v2.8.3
+zone-spike-hello>    Compiling syn v3.0.9
+zone-spike-hello>    Compiling syn v2.0.119
+zone-spike-hello>    Compiling libc v0.2.191
+zone-spike-hello>    Compiling libloading v0.8.9
+zone-spike-hello>    Compiling linux-raw-sys v0.12.1
+zone-spike-hello>    Compiling stable_deref_trait v1.2.1
+zone-spike-hello>    Compiling dlib v0.5.3
+zone-spike-hello>    Compiling libm v0.2.16
+zone-spike-hello>    Compiling pin-project-lite v0.2.17
+zone-spike-hello>    Compiling icu_properties_data v2.4.0
+zone-spike-hello>    Compiling writeable v0.6.4
+zone-spike-hello>    Compiling icu_normalizer_data v2.4.0
+zone-spike-hello>    Compiling shlex v2.0.1
+zone-spike-hello>    Compiling find-msvc-tools v0.1.15
+zone-spike-hello>    Compiling serde v1.0.229
+zone-spike-hello>    Compiling arrayvec v0.7.8
+zone-spike-hello>    Compiling cc v1.10.0
+zone-spike-hello>    Compiling synstructure v0.14.0
+zone-spike-hello>    Compiling wayland-sys v0.31.11
+zone-spike-hello>    Compiling litemap v0.8.3
+zone-spike-hello>    Compiling zerovec-derive v0.11.7
+zone-spike-hello>    Compiling zerofrom-derive v0.1.8
+zone-spike-hello>    Compiling yoke-derive v0.8.4
+zone-spike-hello>    Compiling displaydoc v0.2.7
+zone-spike-hello>    Compiling bytemuck_derive v1.12.1
+zone-spike-hello>    Compiling zerofrom v0.1.8
+zone-spike-hello>    Compiling yoke v0.8.4
+zone-spike-hello>    Compiling zerovec v0.11.9
+zone-spike-hello>    Compiling zerotrie v0.2.5
+zone-spike-hello>    Compiling bytemuck v1.25.2
+zone-spike-hello>    Compiling serde_derive v1.0.229
+zone-spike-hello>    Compiling tinystr v0.8.5
+zone-spike-hello>    Compiling icu_locale_core v2.4.0
+zone-spike-hello>    Compiling potential_utf v0.1.6
+zone-spike-hello>    Compiling wayland-backend v0.3.17
+zone-spike-hello>    Compiling slab v0.4.12
+zone-spike-hello>    Compiling winnow v1.0.4
+zone-spike-hello>    Compiling icu_provider v2.4.0
+zone-spike-hello>    Compiling futures-core v0.3.34
+zone-spike-hello>    Compiling scoped-tls v1.0.1
+zone-spike-hello>    Compiling downcast-rs v1.2.1
+zone-spike-hello>    Compiling version_check v0.9.5
+zone-spike-hello>    Compiling hashbrown v0.17.1
+zone-spike-hello>    Compiling equivalent v1.0.3
+zone-spike-hello>    Compiling indexmap v2.14.2
+zone-spike-hello>    Compiling toml_parser v1.1.5+spec-1.1.0
+zone-spike-hello>    Compiling quick-xml v0.41.0
+zone-spike-hello>    Compiling utf_types v1.0.0
+zone-spike-hello>    Compiling toml_datetime v1.1.2+spec-1.1.0
+zone-spike-hello>    Compiling foldhash v0.2.0
+zone-spike-hello>    Compiling wayland-client v0.31.15
+zone-spike-hello>    Compiling toml_edit v0.25.17+spec-1.1.0
+zone-spike-hello>    Compiling wayland-scanner v0.31.11
+zone-spike-hello>    Compiling utf8_iter v1.1.0
+zone-spike-hello>    Compiling num-traits v0.2.19
+zone-spike-hello>    Compiling memoffset v0.9.1
+zone-spike-hello>    Compiling simd-adler32 v0.3.10
+zone-spike-hello>    Compiling pulldown-cmark v0.13.6
+zone-spike-hello>    Compiling unicode-segmentation v1.13.3
+zone-spike-hello>    Compiling parking v2.2.1
+zone-spike-hello>    Compiling float-cmp v0.9.0
+zone-spike-hello>    Compiling convert_case v0.10.0
+zone-spike-hello>    Compiling proc-macro-crate v3.5.0
+zone-spike-hello>    Compiling strict-num v0.1.1
+zone-spike-hello>    Compiling icu_collections v2.4.0
+zone-spike-hello>    Compiling font-types v0.12.7
+zone-spike-hello>    Compiling crc32fast v1.5.3
+zone-spike-hello>    Compiling adler2 v2.0.1
+zone-spike-hello>    Compiling futures-io v0.3.34
+zone-spike-hello>    Compiling arrayref v0.3.9
+zone-spike-hello>    Compiling unicode-xid v0.2.6
+zone-spike-hello>    Compiling derive_more-impl v2.1.1
+zone-spike-hello>    Compiling read-fonts v0.41.0
+zone-spike-hello>    Compiling thiserror-impl v2.0.21
+zone-spike-hello>    Compiling crossbeam-utils v0.8.23
+zone-spike-hello>    Compiling miniz_oxide v0.9.1
+zone-spike-hello>    Compiling slotmap v1.1.1
+zone-spike-hello>    Compiling polling v3.11.0
+zone-spike-hello>    Compiling memmap2 v0.9.12
+zone-spike-hello>    Compiling icu_locale_fallback_data v2.4.0
+zone-spike-hello>    Compiling fastrand v2.5.0
+zone-spike-hello>    Compiling flate2 v1.1.10
+zone-spike-hello>    Compiling icu_properties v2.4.0
+zone-spike-hello>    Compiling enumflags2_derive v0.7.12
+zone-spike-hello>    Compiling semver v1.0.28
+zone-spike-hello>    Compiling rustc_version v0.4.1
+zone-spike-hello>    Compiling concurrent-queue v2.5.0
+zone-spike-hello>    Compiling icu_normalizer v2.4.0
+zone-spike-hello>    Compiling zvariant_utils v4.2.0
+zone-spike-hello>    Compiling wayland-protocols v0.32.13
+zone-spike-hello>    Compiling skrifa v0.44.0
+zone-spike-hello>    Compiling miniz_oxide v0.8.9
+zone-spike-hello>    Compiling event-listener v5.4.2
+zone-spike-hello>    Compiling fdeflate v0.3.7
+zone-spike-hello>    Compiling polycool v0.4.0
+zone-spike-hello>    Compiling yeslogic-fontconfig-sys v6.0.1
+zone-spike-hello>    Compiling rustix v0.38.44
+zone-spike-hello>    Compiling thiserror v1.0.69
+zone-spike-hello>    Compiling heck v0.5.0
+zone-spike-hello>    Compiling cfg_aliases v0.2.2
+zone-spike-hello>    Compiling thiserror v2.0.21
+zone-spike-hello>    Compiling strum_macros v0.28.0
+zone-spike-hello>    Compiling kurbo v0.13.1
+zone-spike-hello>    Compiling png v0.18.1
+zone-spike-hello>    Compiling event-listener-strategy v0.5.4
+zone-spike-hello>    Compiling zvariant_derive v5.15.1
+zone-spike-hello>    Compiling harfrust v0.12.0
+zone-spike-hello>    Compiling icu_locale_fallback v2.4.0
+zone-spike-hello>    Compiling field-offset v0.3.6
+zone-spike-hello>    Compiling futures-lite v2.6.1
+zone-spike-hello>    Compiling euclid v0.22.14
+zone-spike-hello>    Compiling tiny-skia-path v0.12.0
+zone-spike-hello>    Compiling thiserror-impl v1.0.69
+zone-spike-hello>    Compiling icu_decimal_data v2.4.0
+zone-spike-hello>    Compiling siphasher v1.0.4
+zone-spike-hello>    Compiling byteorder-lite v0.1.0
+zone-spike-hello>    Compiling tinyvec v1.13.3
+zone-spike-hello>    Compiling linux-raw-sys v0.4.15
+zone-spike-hello>    Compiling zune-core v0.5.3
+zone-spike-hello>    Compiling zmij v1.0.23
+zone-spike-hello>    Compiling icu_segmenter_data v2.4.0
+zone-spike-hello>    Compiling zune-jpeg v0.5.15
+zone-spike-hello>    Compiling fontdb v0.24.0
+zone-spike-hello>    Compiling svgtypes v0.16.1
+zone-spike-hello>    Compiling lyon_geom v1.0.20
+zone-spike-hello>    Compiling wayland-protocols-wlr v0.3.12
+zone-spike-hello>    Compiling roxmltree v0.21.2
+zone-spike-hello>    Compiling simplecss v0.2.2
+zone-spike-hello>    Compiling async-io v2.6.0
+zone-spike-hello>    Compiling weezl v0.1.12
+zone-spike-hello>    Compiling quick-error v2.0.1
+zone-spike-hello>    Compiling unicode-script v0.5.8
+zone-spike-hello>    Compiling pico-args v0.5.0
+zone-spike-hello>    Compiling linebender_resource_handle v0.1.1
+zone-spike-hello>    Compiling unicase v2.10.0
+zone-spike-hello>    Compiling data-url v0.3.2
+zone-spike-hello>    Compiling parlance v0.1.1
+zone-spike-hello>    Compiling imagesize v0.15.0
+zone-spike-hello>    Compiling foldhash v0.1.5
+zone-spike-hello>    Compiling scopeguard v1.2.0
+zone-spike-hello>    Compiling base64 v0.23.1
+zone-spike-hello>    Compiling unicode-vo v0.1.0
+zone-spike-hello>    Compiling serde_json v1.0.154
+zone-spike-hello>    Compiling color_quant v1.1.0
+zone-spike-hello>    Compiling xmlwriter v0.1.0
+zone-spike-hello>    Compiling unicode-bidi v0.3.18
+zone-spike-hello>    Compiling gif v0.14.2
+zone-spike-hello>    Compiling hashbrown v0.15.5
+zone-spike-hello>    Compiling usvg v0.48.1
+zone-spike-hello>    Compiling fontique v0.11.1
+zone-spike-hello>    Compiling image-webp v0.2.4
+zone-spike-hello>    Compiling calloop v0.13.0
+zone-spike-hello>    Compiling lyon_path v1.0.19
+zone-spike-hello>    Compiling tiny-skia v0.12.0
+zone-spike-hello>    Compiling enumflags2 v0.7.12
+zone-spike-hello>    Compiling derive_more v2.1.1
+zone-spike-hello>    Compiling zcheapstr v1.2.0
+zone-spike-hello>    Compiling rgb v0.8.53
+zone-spike-hello>    Compiling fixed_decimal v0.7.3
+zone-spike-hello>    Compiling const-field-offset-macro v0.2.1
+zone-spike-hello>    Compiling tracing-attributes v0.1.31
+zone-spike-hello>    Compiling errno v0.3.14
+zone-spike-hello>    Compiling tracing-core v0.1.36
+zone-spike-hello>    Compiling smithay-client-toolkit v0.19.2
+zone-spike-hello>    Compiling futures-sink v0.3.34
+zone-spike-hello>    Compiling allocator-api2 v0.2.21
+zone-spike-hello>    Compiling endi v1.1.1
+zone-spike-hello>    Compiling getrandom v0.3.4
+zone-spike-hello>    Compiling fixedbitset v0.5.7
+zone-spike-hello>    Compiling htmlparser v0.2.1
+zone-spike-hello>    Compiling percent-encoding v2.3.2
+zone-spike-hello>    Compiling zerocopy v0.8.63
+zone-spike-hello>    Compiling itoa v1.0.18
+zone-spike-hello>    Compiling pxfm v0.1.30
+zone-spike-hello>    Compiling async-task v4.7.1
+zone-spike-hello>    Compiling xcursor v0.3.11
+zone-spike-hello>    Compiling ttf-parser v0.25.1
+zone-spike-hello>    Compiling parking_lot_core v0.9.12
+zone-spike-hello>    Compiling cursor-icon v1.2.0
+zone-spike-hello>    Compiling xkeysym v0.2.1
+zone-spike-hello>    Compiling wayland-csd-frame v0.3.0
+zone-spike-hello>    Compiling owned_ttf_parser v0.25.1
+zone-spike-hello>    Compiling moxcms v0.8.1
+zone-spike-hello>    Compiling wayland-cursor v0.31.14
+zone-spike-hello>    Compiling i-slint-common v1.18.1
+zone-spike-hello>    Compiling petgraph v0.8.3
+zone-spike-hello>    Compiling zvariant v5.15.1
+zone-spike-hello>    Compiling hashbrown v0.16.1
+zone-spike-hello>    Compiling futures-channel v0.3.34
+zone-spike-hello>    Compiling tracing v0.1.44
+zone-spike-hello>    Compiling signal-hook-registry v1.4.8
+zone-spike-hello>    Compiling const-field-offset v0.2.1
+zone-spike-hello>    Compiling icu_decimal v2.4.0
+zone-spike-hello>    Compiling resvg v0.48.1
+zone-spike-hello>    Compiling icu_segmenter v2.4.0
+zone-spike-hello>    Compiling calloop-wayland-source v0.3.0
+zone-spike-hello>    Compiling async-channel v2.5.0
+zone-spike-hello>    Compiling idna_adapter v1.2.2
+zone-spike-hello>    Compiling parley_data v0.11.1
+zone-spike-hello>    Compiling tiny-skia-path v0.11.4
+zone-spike-hello>    Compiling nom v8.0.0
+zone-spike-hello>    Compiling ahash v0.8.12
+zone-spike-hello>    Compiling futures-macro v0.3.34
+zone-spike-hello>    Compiling vtable-macro v0.5.0
+zone-spike-hello>    Compiling pin-project-internal v1.1.13
+zone-spike-hello>    Compiling futures-task v0.3.34
+zone-spike-hello>    Compiling rustversion v1.0.23
+zone-spike-hello>    Compiling atomic-waker v1.1.2
+zone-spike-hello>    Compiling yazi v0.2.1
+zone-spike-hello>    Compiling zeno v0.3.3
+zone-spike-hello>    Compiling ab_glyph_rasterizer v0.1.10
+zone-spike-hello>    Compiling iana-time-zone v0.1.65
+zone-spike-hello>    Compiling chrono v0.4.45
+zone-spike-hello>    Compiling swash v0.2.10
+zone-spike-hello>    Compiling ab_glyph v0.2.32
+zone-spike-hello>    Compiling pin-project v1.1.13
+zone-spike-hello>    Compiling tree_magic_mini v3.2.2
+zone-spike-hello>    Compiling piper v0.2.5
+zone-spike-hello>    Compiling futures-util v0.3.34
+zone-spike-hello>    Compiling vtable v0.5.0
+zone-spike-hello>    Compiling tiny-skia v0.11.4
+zone-spike-hello>    Compiling parley v0.11.1
+zone-spike-hello>    Compiling idna v1.1.0
+zone-spike-hello>    Compiling async-signal v0.2.14
+zone-spike-hello>    Compiling clru v0.6.3
+zone-spike-hello>    Compiling zbus_names v4.3.5
+zone-spike-hello>    Compiling image v0.25.10
+zone-spike-hello>    Compiling i-slint-core-macros v1.18.1
+zone-spike-hello>    Compiling form_urlencoded v1.2.2
+zone-spike-hello>    Compiling lyon_algorithms v1.0.22
+zone-spike-hello>    Compiling lyon_extra v1.1.0
+zone-spike-hello>    Compiling lock_api v0.4.14
+zone-spike-hello>    Compiling async-lock v3.4.2
+zone-spike-hello>    Compiling strum v0.28.0
+zone-spike-hello>    Compiling winit v0.30.13
+zone-spike-hello>    Compiling taffy v0.10.1
+zone-spike-hello>    Compiling gethostname v1.1.0
+zone-spike-hello>    Compiling os_pipe v1.2.3
+zone-spike-hello>    Compiling x11rb-protocol v0.13.2
+zone-spike-hello>    Compiling raw-window-handle v0.6.2
+zone-spike-hello>    Compiling sys-locale v0.3.2
+zone-spike-hello>    Compiling pin-weak v1.1.0
+zone-spike-hello>    Compiling unicode-linebreak v0.1.5
+zone-spike-hello>    Compiling i-slint-core v1.18.1
+zone-spike-hello>    Compiling wl-clipboard-rs v0.9.5
+zone-spike-hello>    Compiling x11rb v0.13.2
+zone-spike-hello>    Compiling async-process v2.5.0
+zone-spike-hello>    Compiling parking_lot v0.12.5
+zone-spike-hello>    Compiling url v2.5.8
+zone-spike-hello>    Compiling sctk-adwaita v0.10.1
+zone-spike-hello>    Compiling zbus_macros v5.19.0
+zone-spike-hello>    Compiling futures-executor v0.3.34
+zone-spike-hello>    Compiling blocking v1.7.0
+zone-spike-hello>    Compiling xkbcommon-dl v0.4.2
+zone-spike-hello>    Compiling async-executor v1.14.0
+zone-spike-hello>    Compiling async-broadcast v0.7.2
+zone-spike-hello>    Compiling i-slint-backend-winit v1.18.1
+zone-spike-hello>    Compiling wayland-protocols-plasma v0.3.12
+zone-spike-hello>    Compiling uuid v1.29.0
+zone-spike-hello>    Compiling num_enum_derive v0.7.6
+zone-spike-hello>    Compiling ordered-stream v0.2.0
+zone-spike-hello>    Compiling serde_repr v0.1.21
+zone-spike-hello>    Compiling async-trait v0.1.92
+zone-spike-hello>    Compiling async-recursion v1.2.0
+zone-spike-hello>    Compiling text-size v1.1.1
+zone-spike-hello>    Compiling i-slint-compiler v1.18.1
+zone-spike-hello>    Compiling unicode-width v0.2.3
+zone-spike-hello>    Compiling anstyle v1.0.14
+zone-spike-hello>    Compiling dpi v0.1.2
+zone-spike-hello>    Compiling smol_str v0.2.2
+zone-spike-hello>    Compiling countme v3.0.1
+zone-spike-hello>    Compiling hashbrown v0.14.5
+zone-spike-hello>    Compiling either v1.19.0
+zone-spike-hello>    Compiling hex v0.4.3
+zone-spike-hello>    Compiling rustc-hash v1.1.0
+zone-spike-hello>    Compiling zbus v5.19.0
+zone-spike-hello>    Compiling rowan v0.17.0
+zone-spike-hello>    Compiling itertools v0.15.0
+zone-spike-hello>    Compiling annotate-snippets v0.12.17
+zone-spike-hello>    Compiling num_enum v0.7.6
+zone-spike-hello>    Compiling futures v0.3.34
+zone-spike-hello>    Compiling webbrowser v1.2.5
+zone-spike-hello>    Compiling arboard v3.7.0
+zone-spike-hello>    Compiling i-slint-renderer-software v1.18.1
+zone-spike-hello>    Compiling softbuffer v0.4.8
+zone-spike-hello>    Compiling i-slint-backend-selector v1.18.1
+zone-spike-hello>    Compiling imgref v1.12.3
+zone-spike-hello>    Compiling by_address v1.2.1
+zone-spike-hello>    Compiling smol_str v0.3.7
+zone-spike-hello>    Compiling pin-utils v0.1.1
+zone-spike-hello>    Compiling typed-index-collections v3.5.0
+zone-spike-hello>    Compiling scoped-tls-hkt v0.1.5
+zone-spike-hello>    Compiling spin_on v0.1.1
+zone-spike-hello>    Compiling slint-macros v1.18.1
+zone-spike-hello>    Compiling slint v1.18.1
+zone-spike-hello>    Compiling zone-spike-hello v0.0.0 (/build/source)
+zone-spike-hello> warning: use of deprecated constant `_::WARNING`: The binding for the property 'font-size' is part of a binding loop (root.layoutinfo-h -> font-size -> root.layoutinfo-h).
+zone-spike-hello>          This was allowed in previous version of Slint, but is deprecated and may cause panic at runtime
+zone-spike-hello>   --> src/main.rs:19:24
+zone-spike-hello>    |
+zone-spike-hello> 19 |             font-size: min(parent.width / 24, parent.height / 12);
+zone-spike-hello>    |                        ^^^
+zone-spike-hello>    |
+zone-spike-hello>    = note: `#[warn(deprecated)]` on by default
+zone-spike-hello> 
+zone-spike-hello> warning: use of deprecated constant `_::WARNING`: The binding for the property 'layoutinfo-h' is part of a binding loop (root.layoutinfo-h -> font-size -> root.layoutinfo-h).
+zone-spike-hello>          This was allowed in previous version of Slint, but is deprecated and may cause panic at runtime
+zone-spike-hello>   --> src/main.rs:11:37
+zone-spike-hello>    |
+zone-spike-hello> 11 |     export component Hello inherits Window {
+zone-spike-hello>    |                                     ^^^^^^
+zone-spike-hello> 
+zone-spike-hello> warning: use of deprecated constant `_::WARNING`: The binding for the property 'layoutinfo-v' is part of a binding loop (font-size -> root.layoutinfo-v -> font-size).
+zone-spike-hello>          This was allowed in previous version of Slint, but is deprecated and may cause panic at runtime
+zone-spike-hello>   --> src/main.rs:11:37
+zone-spike-hello>    |
+zone-spike-hello> 11 |     export component Hello inherits Window {
+zone-spike-hello>    |                                     ^^^^^^
+zone-spike-hello> 
+zone-spike-hello> warning: `zone-spike-hello` (bin "zone-spike-hello") generated 3 warnings
+zone-spike-hello>     Finished `release` profile [optimized] target(s) in 4m 54s
+zone-spike-hello> Executing cargoInstallPostBuildHook
+zone-spike-hello> Finished cargoInstallPostBuildHook
+zone-spike-hello> Finished cargoBuildHook
+zone-spike-hello> buildPhase completed in 4 minutes 54 seconds
+zone-spike-hello> Running phase: checkPhase
+zone-spike-hello> Executing cargoCheckHook
+zone-spike-hello> cargoCheckHook flags: -j 4 --profile release --target aarch64-unknown-linux-gnu --offline --
+zone-spike-hello>    Compiling zone-spike-hello v0.0.0 (/build/source)
+zone-spike-hello> warning: use of deprecated constant `_::WARNING`: The binding for the property 'font-size' is part of a binding loop (root.layoutinfo-h -> font-size -> root.layoutinfo-h).
+zone-spike-hello>          This was allowed in previous version of Slint, but is deprecated and may cause panic at runtime
+zone-spike-hello>   --> src/main.rs:19:24
+zone-spike-hello>    |
+zone-spike-hello> 19 |             font-size: min(parent.width / 24, parent.height / 12);
+zone-spike-hello>    |                        ^^^
+zone-spike-hello>    |
+zone-spike-hello>    = note: `#[warn(deprecated)]` on by default
+zone-spike-hello> 
+zone-spike-hello> warning: use of deprecated constant `_::WARNING`: The binding for the property 'layoutinfo-h' is part of a binding loop (root.layoutinfo-h -> font-size -> root.layoutinfo-h).
+zone-spike-hello>          This was allowed in previous version of Slint, but is deprecated and may cause panic at runtime
+zone-spike-hello>   --> src/main.rs:11:37
+zone-spike-hello>    |
+zone-spike-hello> 11 |     export component Hello inherits Window {
+zone-spike-hello>    |                                     ^^^^^^
+zone-spike-hello> 
+zone-spike-hello> warning: use of deprecated constant `_::WARNING`: The binding for the property 'layoutinfo-v' is part of a binding loop (font-size -> root.layoutinfo-v -> font-size).
+zone-spike-hello>          This was allowed in previous version of Slint, but is deprecated and may cause panic at runtime
+zone-spike-hello>   --> src/main.rs:11:37
+zone-spike-hello>    |
+zone-spike-hello> 11 |     export component Hello inherits Window {
+zone-spike-hello>    |                                     ^^^^^^
+zone-spike-hello> 
+zone-spike-hello> warning: `zone-spike-hello` (bin "zone-spike-hello" test) generated 3 warnings
+zone-spike-hello>     Finished `release` profile [optimized] target(s) in 1.38s
+zone-spike-hello>      Running unittests src/main.rs (target/aarch64-unknown-linux-gnu/release/deps/zone_spike_hello-c8c125a58082d3fc)
+zone-spike-hello> 
+zone-spike-hello> running 0 tests
+zone-spike-hello> 
+zone-spike-hello> test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+zone-spike-hello> 
+zone-spike-hello> Finished cargoCheckHook
+zone-spike-hello> Running phase: installPhase
+zone-spike-hello> Executing cargoInstallHook
+zone-spike-hello> Finished cargoInstallHook
+zone-spike-hello> Running phase: fixupPhase
+zone-spike-hello> shrinking RPATHs of ELF executables and libraries in /nix/store/3ijn8xinr1hspl685fa6d92dmqvs1xvn-zone-spike-hello-0.0.0
+zone-spike-hello> shrinking /nix/store/3ijn8xinr1hspl685fa6d92dmqvs1xvn-zone-spike-hello-0.0.0/bin/zone-spike-hello
+zone-spike-hello> checking for references to /build/ in /nix/store/3ijn8xinr1hspl685fa6d92dmqvs1xvn-zone-spike-hello-0.0.0...
+zone-spike-hello> patching script interpreter paths in /nix/store/3ijn8xinr1hspl685fa6d92dmqvs1xvn-zone-spike-hello-0.0.0
+zone-spike-hello> stripping (with command strip and flags -S -p) in  /nix/store/3ijn8xinr1hspl685fa6d92dmqvs1xvn-zone-spike-hello-0.0.0/bin
+copying 1 paths...
+copying path '/nix/store/3ijn8xinr1hspl685fa6d92dmqvs1xvn-zone-spike-hello-0.0.0' from 'ssh-ng://simon@fuji'...
+/nix/store/3ijn8xinr1hspl685fa6d92dmqvs1xvn-zone-spike-hello-0.0.0

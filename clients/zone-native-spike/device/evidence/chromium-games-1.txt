@@ -1,0 +1,12 @@
+MainPID=2510
+NRestarts=0
+samples=24
+median_pss_kib=447028.0
+max_pss_kib=448812
+elapsed_seconds=24.42
+cpu_one_core_percent=82.032
+memavailable_start_kib=366348
+memavailable_end_kib=371372
+raw_samples=/tmp/zone-spike-games-clean-1.csv
+MainPID=2510
+NRestarts=0

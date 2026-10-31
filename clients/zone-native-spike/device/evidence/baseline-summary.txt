@@ -1,0 +1,17 @@
+Verified final baseline, 2026-10-30, RG35XX SP.
+Look: Blend. All final GAMES end screenshots were inspected.
+All final traces retained kiosk PID 2510, NRestarts=0.
+
+capture,samples,median_pss_kib,max_pss_kib,cpu_one_core_percent,memavailable_start_kib,memavailable_end_kib,elapsed_seconds
+games-1,24,447028.0,448812,82.032,366348,371372,24.42
+games-2,24,442515.0,450528,83.046,367732,365908,24.46
+games-3,24,448323.0,450977,82.766,361948,367516,24.45
+attract-60s,60,446618.5,451110,134.104,359440,353268,60.41
+
+GAMES median of three window medians: 447028.0 KiB
+GAMES maximum over three windows: 450977 KiB
+GAMES median of three CPU percentages: 82.766% of one core
+
+Each GAMES window: 24 samples after 5 seconds without input.
+Attract: 60 samples after >35 seconds without input.
+No 60-second all-GAMES claim: the unmodified idle timeout is 30 seconds.

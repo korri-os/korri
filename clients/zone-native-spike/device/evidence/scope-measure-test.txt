@@ -1,0 +1,14 @@
+scope_cgroup=/system.slice/zone-spike-measure-scope.scope
+samples=3
+median_pss_kib=2257.0
+max_pss_kib=2257
+elapsed_seconds=3.12
+cpu_one_core_percent=0.000
+memavailable_start_kib=411412
+memavailable_end_kib=407644
+raw_samples=/tmp/zone-spike-scope-samples.csv
+active
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.
+To show all installed unit files use 'systemctl list-unit-files'.

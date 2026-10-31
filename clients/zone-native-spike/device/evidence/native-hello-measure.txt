@@ -1,0 +1,12 @@
+ActiveState=active
+MainPID=7425
+ControlGroup=/system.slice/zone-spike-native.service
+User=korri-portal
+samples=24
+median_pss_kib=12849.0
+max_pss_kib=12849
+elapsed_seconds=24.12
+cpu_one_core_percent=4.148
+memavailable_start_kib=608720
+memavailable_end_kib=607940
+raw_samples=/tmp/zone-spike-native-24s.csv

@@ -1,0 +1,8 @@
+	linux-vdso.so.1 (0x0000e43e3a58f000)
+	libgcc_s.so.1 => ./lib/libgcc_s.so.1 (0x0000e43e393e0000)
+	libm.so.6 => ./lib/libm.so.6 (0x0000e43e39320000)
+	libc.so.6 => ./lib/libc.so.6 (0x0000e43e39140000)
+	/nix/store/99al6q9wd3jg1qs43fvmllx7vakazm8x-glibc-2.42-51/lib/ld-linux-aarch64.so.1 => ./lib/ld-linux-aarch64.so.1 (0x0000e43e3a540000)
+ActiveState=active
+MainPID=1808
+NRestarts=1

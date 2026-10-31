@@ -1,0 +1,8 @@
+samples=60
+median_pss_kib=394729.5
+max_pss_kib=403144
+elapsed_seconds=83.85
+cpu_one_core_percent=140.547
+memavailable_start_kib=277864
+memavailable_end_kib=271328
+raw_samples=/tmp/zone-spike-chromium-baseline.csv

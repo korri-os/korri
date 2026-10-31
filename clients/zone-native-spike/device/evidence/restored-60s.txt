@@ -1,0 +1,15 @@
+initial_main_pid=9065
+ActiveState=active
+DropInPaths=
+NRestarts=0
+initial_child_pids=9085
+final_main_pid=9065
+active
+chromium_children_survived_60s=yes
+NRestarts=0
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.
+To show all installed unit files use 'systemctl list-unit-files'.
+/nix/store/r2jgp9i35k0qfg3v9kqs4fip7wf53wa6-nixos-system-rg35xxsp-sd-card-26.11.20260923.4975466
+KORRI_WEB_SURFACE_URL=http://127.0.0.1:8099/?surface=pico

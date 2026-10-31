@@ -1,0 +1,13 @@
+[package]
+name = "zone-spike-hello"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "renderer-software", "backend-winit-wayland"] }
+# Same optional runtime fontconfig pattern as clients/slint-spike.
+fontique = { version = "=0.11.1", features = ["fontconfig-dlopen"] }
+
+[profile.release]
+strip = true
