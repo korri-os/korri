@@ -36,7 +36,20 @@ shot() {
   XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 "$GRIM" "$OUT/$1.png"
 }
 kiosk_stopped=0
+input_stopped=0
+CONTROL=/run/surface-shell-control
 INVOCATION=''
+# THROWAWAY (owner decision 2026-10-31): InputPlumber holds the H700 gamepad
+# exclusively, so it is stopped at runtime for the test and korri-inputd
+# (Requires=inputplumber.service) stops with it. restore() starts both again.
+restore_input() {
+  [ "$input_stopped" = 1 ] || return 0
+  systemctl start inputplumber.service || echo 'inputplumber start failed' >>"$OUT/notes.txt"
+  systemctl start korri-inputd.service || echo 'korri-inputd start failed' >>"$OUT/notes.txt"
+  sleep 3
+  systemctl is-active inputplumber.service korri-inputd.service >"$OUT/input-after.txt" 2>&1 || echo 'input stack not active after restore' >>"$OUT/notes.txt"
+  input_stopped=0
+}
 journal() {
   if [ -n "$INVOCATION" ]; then
     journalctl "_SYSTEMD_INVOCATION_ID=$INVOCATION" --no-pager -o short-monotonic
@@ -46,9 +59,11 @@ journal() {
 }
 restore() {
   trap - EXIT HUP INT TERM
-  [ "$kiosk_stopped" = 1 ] || return 0
+  [ "$kiosk_stopped" = 1 ] || { restore_input; return 0; }
   journal >"$OUT/shell-journal.txt" 2>&1 || :
   systemctl stop surface-shell-spike.service 2>/dev/null || :
+  rm -f "$CONTROL"
+  restore_input
   systemctl start korri-chromium-kiosk.service || :
   sleep 20
   if ! systemctl is-active -q korri-chromium-kiosk.service || [ "$(systemctl show -p NRestarts --value korri-chromium-kiosk.service)" != 0 ]; then
@@ -89,7 +104,7 @@ restore() {
   shot kiosk-after || :
 }
 trap restore EXIT
-trap 'exit 1' HUP INT TERM
+trap 'exit 1' HUP INT TERM PIPE
 "$SWAYMSG" output '*' power on >/dev/null
 shot kiosk-before
 # A failed prior run can leave this exact extraction path. No shell service
@@ -105,6 +120,11 @@ tar xf "$BUNDLE.tar.gz" -C /tmp
 if grep -q 'not found' "$OUT/loader.txt"; then exit 1; fi
 kiosk_stopped=1
 systemctl stop korri-chromium-kiosk.service
+input_stopped=1
+systemctl is-active inputplumber.service korri-inputd.service >"$OUT/input-before.txt" 2>&1 || :
+systemctl stop korri-inputd.service inputplumber.service
+rm -f "$CONTROL"
+mkfifo -m 0600 "$CONTROL"
 sleep 2
 systemd-run --unit=surface-shell-spike --collect \
   -p User=root -p Group=root \
@@ -117,14 +137,20 @@ systemd-run --unit=surface-shell-spike --collect \
   --setenv=SLINT_BACKEND=winit-software \
   --setenv=SHELL_FULLSCREEN=1 --setenv=SHELL_STATS=1 \
   --setenv=SHELL_SURFACES="$PACKAGES" \
+  --setenv=SHELL_CONTROL="$CONTROL" \
+  -p ReadWritePaths="$CONTROL" \
   "$BUNDLE/run.sh"
 sleep 5
 systemctl is-active -q surface-shell-spike.service
 INVOCATION=$(systemctl show -p InvocationID --value surface-shell-spike.service)
 printf '%s\n' "$INVOCATION" >"$OUT/invocation-id.txt"
 shot surface-start
+# Scripted presses go through the shell's control FIFO; Wayland key injection
+# (wtype) did not reach the window under korri-compositor on 2026-10-31.
+exec 9>"$CONTROL"
 key() {
-  XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 "$BUNDLE/tools/wtype/run.sh" -k "$1"
+  case "$1" in Right) a=right ;; Left) a=left ;; F2) a=switch ;; *) a=$1 ;; esac
+  printf '%s\n' "$a" >&9
 }
 key Right
 sleep 1
@@ -143,7 +169,7 @@ sh /tmp/surface-shell-measure.sh "$CG" "$OUT/phase-1.csv" 24 >"$OUT/phase-1.txt"
 key F2
 sleep 3
 shot back-to-first
-printf 'Interactive observation: %s seconds. L1+R1 switches surfaces.\n' "$HOLD_SECONDS"
+printf 'Interactive observation: %s seconds. L1+R1 switches surfaces. InputPlumber is stopped; the shell reads the H700 Gamepad directly.\n' "$HOLD_SECONDS"
 sleep "$HOLD_SECONDS"
 "$SWAYMSG" -t get_tree -r >"$OUT/tree-shell.json"
 systemctl show -p User -p Group -p MainPID -p ActiveState surface-shell-spike.service >"$OUT/shell-unit.txt"

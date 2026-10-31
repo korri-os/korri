@@ -32,6 +32,45 @@ impl Action {
         }
     }
 }
+impl Action {
+    /// One line of the SHELL_CONTROL FIFO: an action name as in `name()`.
+    pub fn parse(word: &str) -> Option<Self> {
+        [
+            Self::Up,
+            Self::Down,
+            Self::Left,
+            Self::Right,
+            Self::Confirm,
+            Self::Back,
+            Self::Menu,
+            Self::Options,
+            Self::Switch,
+        ]
+        .into_iter()
+        .find(|a| a.name() == word.trim())
+    }
+}
+
+/// THROWAWAY: a named pipe for scripted presses on devices where Wayland key
+/// injection does not reach the window. Each line is one action name.
+pub fn control(path: std::path::PathBuf, tx: Sender<Input>) {
+    std::thread::spawn(move || loop {
+        let Ok(file) = std::fs::File::open(&path) else {
+            eprintln!("shell: control {} unavailable", path.display());
+            return;
+        };
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+            match Action::parse(&line) {
+                Some(action) => {
+                    let _ = tx.send(Input::Press("control".into(), action));
+                }
+                None => eprintln!("shell: control ignored {line:?}"),
+            }
+        }
+    });
+}
+
 #[derive(Debug)]
 pub enum Input {
     Direction(String, Option<Action>),

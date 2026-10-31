@@ -215,6 +215,9 @@ fn main() -> Result<()> {
     let _: serde_json::Value = serde_json::from_str(&model)?;
     let (tx, rx) = mpsc::channel();
     input::gamepads(tx.clone());
+    if let Some(path) = std::env::var_os("SHELL_CONTROL") {
+        input::control(path.into(), tx.clone());
+    }
     let frames = Rc::new(Cell::new(0));
     let mut shell = Shell {
         root,
