@@ -1,0 +1,19 @@
+# THROWAWAY BENCHMARK: Zone's TypeScript `update` inside QuickJS (the same
+# rquickjs korrid uses), timed on the device. See README.md.
+[package]
+name = "zone-logic-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# korrid's version (services/korrid/Cargo.toml). No bindgen: rquickjs-sys
+# ships bindings for aarch64 and x86_64 Linux.
+rquickjs = { version = "=0.14.0" }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+
+# Standalone: not part of the zone-native-spike package.
+[workspace]

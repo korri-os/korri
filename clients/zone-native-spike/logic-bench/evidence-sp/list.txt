@@ -1,0 +1,5 @@
+	linux-vdso.so.1 (0x0000f92a3b187000)
+	libgcc_s.so.1 => /tmp/zone-logic-bench/lib/libgcc_s.so.1 (0x0000f92a3af20000)
+	libm.so.6 => /tmp/zone-logic-bench/lib/libm.so.6 (0x0000f92a3ae60000)
+	libc.so.6 => /tmp/zone-logic-bench/lib/libc.so.6 (0x0000f92a3ac80000)
+	/nix/store/m54cs0m994hc3n9lax7sg98sgy729qsa-glibc-2.42-84/lib/ld-linux-aarch64.so.1 => /tmp/zone-logic-bench/lib/ld-linux-aarch64.so.1 (0x0000f92a3b140000)
