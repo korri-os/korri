@@ -1,0 +1,1 @@
+Pico load, right/left selection, F2 round trip/reset, missing art, null cart: PASS

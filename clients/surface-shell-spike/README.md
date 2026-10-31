@@ -68,3 +68,8 @@ assert that movement changes the frame and Left restores the initial frame.
 See `device/README.md` for aarch64 build, self-contained bundle, the reusable
 `drive.sh` package-list command and kiosk recovery. Device runs use root only
 for the existing gamepad read permissions; no permissions are changed.
+
+The real Pico package has also passed `proof-pico.sh BINARY OUT_DIRECTORY`
+under the same Xvfb/tool environment (add `nixpkgs#python3`). This covers absent
+art fields and `stage.cart: null`, as well as arrow selection and an F2 round
+trip. Measured times and build/device status: `evidence/STATUS.md`.

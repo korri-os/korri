@@ -58,8 +58,11 @@ Results: `surface-start.png`, `surface-right.png`, `surface-left.png`,
 `switch-{1,2,3}.png`, the Sway tree, loader list, service identity, journal with
 `SHELL_STATS` compile/logic-load/first-frame times, and `kiosk-after.png`.
 Every device run has an EXIT/HUP/INT/TERM recovery trap. Evidence and bundles
-remain in `/tmp` so a failed run can be inspected. Before another run, move
-`/tmp/surface-shell-results` aside and use a fresh bundle name.
+remain in `/tmp` so a failed run can be inspected. Each run uses a fresh `/tmp/surface-shell-results-<time>-<pid>` directory.
+Use a fresh bundle name for each successful extraction. The driver checks
+locally that the archive contains every requested package before it copies.
+An absent `korri-games.slice` cgroup means no processes in that slice; unknown
+Sway clients still block the run.
 
 ## Manual run and recovery (device)
 

@@ -4,17 +4,25 @@
 set -eu
 BUNDLE=/tmp/$1
 PACKAGES=$2
-OUT=/tmp/surface-shell-results
+OUT=$3
+case "$OUT" in /tmp/surface-shell-results-*) ;; *) echo 'invalid result path' >&2; exit 2 ;; esac
 GRIM=/nix/store/8svfyws68lbybhhf1466wsakqnk74bxz-grim-1.5.0/bin/grim
 SWAYMSG=/nix/store/8fx1mm7z1nv7vrj65qzp4077s2a2x8i4-sway-1.12/bin/swaymsg
 export SWAYSOCK=/run/korri-compositor/sway-ipc.sock
 case "$1" in surface-shell-*) ;; *) echo 'invalid bundle name' >&2; exit 2 ;; esac
-[ ! -e "$OUT" ] || { echo 'remove or move previous /tmp/surface-shell-results before rerunning' >&2; exit 2; }
+[ ! -e "$OUT" ] || { echo 'result path already exists' >&2; exit 2; }
 mkdir -p "$OUT"
 "$SWAYMSG" -t get_tree -r >"$OUT/tree-before.json"
 ps -eo pid,user,args >"$OUT/processes-before.txt"
 # Stop rather than interrupt a game or an unknown foreground client.
-find /sys/fs/cgroup/korri-games.slice -name cgroup.procs -exec cat {} \; >"$OUT/game-pids.txt"
+# systemd removes an empty inactive slice from cgroupfs. Its absence means
+# there are no processes in that slice; unknown Sway clients still block below.
+: >"$OUT/game-pids.txt"
+if [ -d /sys/fs/cgroup/korri-games.slice ]; then
+  find /sys/fs/cgroup/korri-games.slice -name cgroup.procs -exec cat {} \; >"$OUT/game-pids.txt"
+else
+  echo 'korri-games.slice absent (no Korri game processes)' >>"$OUT/notes.txt"
+fi
 if [ -s "$OUT/game-pids.txt" ] || grep '"app_id":' "$OUT/tree-before.json" | grep -v 'chrome-' >"$OUT/unknown-clients.txt"; then
   echo 'BLOCKED: game or unknown client exists; kiosk not stopped' | tee "$OUT/notes.txt"
   exit 3
@@ -24,8 +32,10 @@ systemctl is-active -q korri-chromium-kiosk.service || { echo 'kiosk not active;
 shot() {
   XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 "$GRIM" "$OUT/$1.png"
 }
+kiosk_stopped=0
 restore() {
   trap - EXIT HUP INT TERM
+  [ "$kiosk_stopped" = 1 ] || return 0
   journalctl -u surface-shell-spike.service --no-pager -o short-monotonic >"$OUT/shell-journal.txt" 2>&1 || :
   systemctl stop surface-shell-spike.service 2>/dev/null || :
   systemctl start korri-chromium-kiosk.service || :
@@ -60,6 +70,7 @@ tar xf "$BUNDLE.tar.gz" -C /tmp
 [ -x "$BUNDLE/tools/wtype/run.sh" ] || { echo 'bundle must include prebuilt wtype for automated drive' >&2; exit 2; }
 "$BUNDLE/lib/ld-linux-aarch64.so.1" --inhibit-cache --library-path "$BUNDLE/lib" --list "$BUNDLE/bin/surface-shell-spike" >"$OUT/loader.txt"
 if grep -q 'not found' "$OUT/loader.txt"; then exit 1; fi
+kiosk_stopped=1
 systemctl stop korri-chromium-kiosk.service
 sleep 2
 systemd-run --unit=surface-shell-spike --collect \
