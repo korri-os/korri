@@ -30,6 +30,32 @@ export struct HintView {
     label: string,
 }
 
+// One line of text in a line box, as Chrome sets it: the glyphs sit half the
+// leading below the box's top, that half floored to a whole pixel, and the
+// result rounded to the pixel grid. Keeps every glyph on Chrome's row.
+component Line {
+    in property <string> text;
+    in property <length> font-size;
+    in property <color> color;
+    in property <length> line-height: font-size * 1.5;
+    in property <TextOverflow> overflow: clip;
+    in property <TextHorizontalAlignment> horizontal-alignment: left;
+    height: line-height;
+    preferred-width: t.preferred-width;
+    min-width: overflow == TextOverflow.elide ? 0px : t.preferred-width;
+    t := Text {
+        x: 0;
+        y: round((root.absolute-position.y + floor((line-height - font-size) / 2 / 1px) * 1px) / 1px) * 1px - root.absolute-position.y;
+        width: root.width;
+        height: font-size;
+        text: root.text;
+        font-size: root.font-size;
+        color: root.color;
+        overflow: root.overflow;
+        horizontal-alignment: root.horizontal-alignment;
+    }
+}
+
 // A face button drawn on an 8x8 pixel disc, and what it does (PicoHint).
 component Hint inherits HorizontalLayout {
     in property <HintView> hint;
@@ -38,6 +64,9 @@ component Hint inherits HorizontalLayout {
     spacing: 2 * p;
     alignment: start;
     Rectangle {
+      width: 8 * p;
+      Rectangle {
+        y: Snap.px((parent.height - self.height) / 2);
         width: 8 * p;
         height: 8 * p;
         property <color> disc: hint.key == "a" ? P8.key-a : P8.key-b;
@@ -46,16 +75,17 @@ component Hint inherits HorizontalLayout {
         Rectangle { x: 0; y: 2 * p; width: 8 * p; height: 4 * p; background: disc; }
         Rectangle { x: p; y: 6 * p; width: 6 * p; height: p; background: disc; }
         Rectangle { x: 2 * p; y: 7 * p; width: 4 * p; height: p; background: disc; }
-        Text {
+        Line {
+            y: (8 * p - small-text) / 2;
+            line-height: small-text;
             text: hint.key == "a" ? "A" : "B";
             font-size: small-text;
             color: P8.key-ink;
             horizontal-alignment: center;
-            vertical-alignment: center;
         }
+      }
     }
-    Text {
-        vertical-alignment: center;
+    Line {
         text: hint.label;
         font-size: small-text;
         color: P8.ink-dim;
@@ -78,14 +108,14 @@ component Chip {
         padding-left: 3 * p;
         padding-right: 3 * p;
         spacing: 2 * p;
-        Text {
-            vertical-alignment: center;
+        Line {
+            line-height: 10 * p;
             text: root.text;
             font-size: small-text;
             color: kind == "ok" ? P8.ink-dark : kind == "stat" ? P8.ink : kind == "empty" ? P8.ink-quiet : P8.plate-ink;
         }
-        if kind == "stat" : Text {
-            vertical-alignment: center;
+        if kind == "stat" : Line {
+            line-height: 10 * p;
             text: caption;
             font-size: small-text;
             color: P8.ink-quiet;
@@ -158,10 +188,10 @@ export component Surface inherits Window {
     property <length> ch: text-sm * 4 / 7;
 
     // ---- The frame: header, body, floor row (PicoScreenShell) ----
-    property <length> head-line: Snap.px(text-lg * 1.1);
+    property <length> head-line: text-lg * 1.1;
     property <length> head-h: u + head-line + 2 * p + 3 * p;
-    property <length> foot-line: Snap.px(text-sm * 1.5);
-    property <length> foot-h: u + foot-line + Snap.px(u * 1.5);
+    property <length> foot-line: text-sm * 1.5;
+    property <length> foot-h: u + foot-line + u * 1.5;
     property <length> body-y: head-h;
     property <length> body-h: root.height - head-h - foot-h;
     // A short body steps the largest title down a size.
@@ -173,7 +203,7 @@ export component Surface inherits Window {
     property <length> art-h: short-shelf ? 36 * p : 56 * p;
     property <length> rack-gap: short-shelf ? 3 * p : 4 * p;
     // Every slot is as tall as the tallest cart; the narrowest art makes it.
-    property <length> tallest-art: Snap.px(narrowest-art <= 0 ? art-h : min(art-h, art-w / narrowest-art));
+    property <length> tallest-art: narrowest-art <= 0 ? art-h : min(art-h, art-w / narrowest-art);
     property <length> slot-h: 4 * p + tallest-art + 6 * p + p;
     property <length> slot-w: art-w + 6 * p + 3 * p;
     property <length> pitch: slot-w + rack-gap;
@@ -194,8 +224,8 @@ export component Surface inherits Window {
     property <length> title-size: short-body || stage-very-short ? text-lg : text-xl;
     property <length> facts-gap: stage-very-short ? u : 3 * u;
     property <length> facts-inner-gap: stage-h < 16 * text-sm ? p : u;
-    property <length> still-box-w: Snap.px(min(root.width * 42%, 190 * p));
-    property <length> still-box-h: Snap.px(min(stage-h - 38 * p, 190 * p));
+    property <length> still-box-w: min(root.width * 42%, 190 * p);
+    property <length> still-box-h: min(stage-h - 38 * p, 190 * p);
     property <length> still-block-w: stage-no-art ? 0px : still.shell-w + 8 * p;
     property <length> still-block-h: still.shell-h + 8 * p;
     property <length> facts-x: 2 * u + (stage-no-art ? 0px : still-block-w + 3 * u);
@@ -216,6 +246,9 @@ export component Surface inherits Window {
         scroll = max(0px, min(scroll, rack-content-w - rack-w));
     }
 
+    init => {
+        reveal();
+    }
     changed selected-index => {
         land-step = 0;
         reveal();
@@ -242,7 +275,7 @@ export component Surface inherits Window {
     // ---- Header (PicoStatusBar): where you are, the clock, the palette ----
     // The way back yields to where you are when the bar is under 75 glyphs wide.
     property <bool> show-place: root.width - 4 * u >= 75 * ch;
-    property <length> head-baseline: u + Snap.px((head-line - text-lg) / 2) + text-lg * 6 / 7;
+    property <length> head-baseline: u + floor((head-line - text-lg) / 2 / 1px) * 1px + text-lg * 6 / 7;
     place-text := Text {
         x: 2 * u;
         y: head-baseline - text-lg * 6 / 7;
@@ -283,7 +316,7 @@ export component Surface inherits Window {
     // ---- The stage: the chosen cart large, and what Korri said about it ----
     if has-shelf && !stage-no-art : Rectangle {
         x: 2 * u;
-        y: Snap.px(body-y + stage-pad-v + (stage-h - 2 * stage-pad-v - still-block-h) / 2) - 3 * p * (4 - land-step);
+        y: body-y + stage-pad-v + (stage-h - 2 * stage-pad-v - still-block-h) / 2 - 3 * p * (4 - land-step);
         width: still.shell-w + 8 * p;
         height: still.shell-h + 8 * p;
         Rectangle {
@@ -303,7 +336,7 @@ export component Surface inherits Window {
     }
     still := Cart {
         x: 2 * u;
-        y: Snap.px(body-y + stage-pad-v + (stage-h - 2 * stage-pad-v - still-block-h) / 2) - 3 * p * (4 - land-step);
+        y: body-y + stage-pad-v + (stage-h - 2 * stage-pad-v - still-block-h) / 2 - 3 * p * (4 - land-step);
         visible: has-shelf && !stage-no-art;
         cart: stage.cart;
         p: p;
@@ -327,30 +360,30 @@ export component Surface inherits Window {
         padding-bottom: 3 * p;
         VerticalLayout {
             spacing: facts-inner-gap;
-            if stage.kicker != "" && stage-h >= 16 * text-sm : Text {
-                height: foot-line;
-                vertical-alignment: center;
+            if stage.kicker != "" && stage-h >= 16 * text-sm : Line {
                 text: stage.kicker;
                 font-size: text-sm;
                 color: P8.go;
             }
-            VerticalLayout {
-                padding-top: Snap.px(title-size * 0.05);
-                padding-bottom: Snap.px(title-size * 0.05);
-                Text {
+            // The title: line-height 1.1, wrapping. Slint spaces wrapped
+            // lines at the face's own 1.0.
+            Rectangle {
+                min-height: title.preferred-height + title-size * 0.1;
+                title := Text {
+                    x: 0;
+                    y: round((parent.absolute-position.y + floor(title-size * 0.05 / 1px) * 1px) / 1px) * 1px - parent.absolute-position.y;
+                    width: parent.width;
                     text: stage.title;
                     font-size: title-size;
                     color: P8.ink;
                     wrap: word-wrap;
                 }
             }
-            if stage.subtitle != "" : Text {
-                height: Snap.px(text-md * 1.5);
-                vertical-alignment: center;
+            if stage.subtitle != "" : Line {
                 text: stage.subtitle;
                 font-size: text-md;
                 color: P8.accent;
-                wrap: word-wrap;
+                overflow: elide;
             }
             if stage-h >= 16 * text-sm : Rectangle {
                 height: u + chips-h;
@@ -420,9 +453,9 @@ export component Surface inherits Window {
             alignment: start;
             height: foot-line;
             spacing: p;
-            Text { vertical-alignment: center; text: selected-index + 1; font-size: text-sm; color: P8.ink-quiet; }
-            Text { vertical-alignment: center; text: "/"; font-size: text-sm; color: P8.ink-quiet; }
-            Text { vertical-alignment: center; text: total; font-size: text-sm; color: P8.ink-quiet; }
+            Line { text: selected-index + 1; font-size: text-sm; color: P8.ink-quiet; }
+            Line { text: "/"; font-size: text-sm; color: P8.ink-quiet; }
+            Line { text: total; font-size: text-sm; color: P8.ink-quiet; }
         }
     }
 
@@ -486,8 +519,8 @@ export component Surface inherits Window {
                 Rectangle { x: p; y: 3 * p; width: 6 * p; height: p; background: P8.plate-ink; }
                 Rectangle { x: p; y: 5 * p; width: 6 * p; height: p; background: P8.plate-ink; }
             }
-            Text {
-                vertical-alignment: center;
+            Line {
+                line-height: 8 * p;
                 text: menu-label;
                 font-size: text-sm;
                 color: P8.plate-ink;
@@ -506,12 +539,10 @@ export component Surface inherits Window {
             small-text: text-sm;
         }
     }
-    Text {
+    Line {
         x: 2 * u + menu-key.width + 2 * p + 2 * u;
         y: foot-y + u;
         width: max(0px, hints-row.x - 2 * u - self.x);
-        height: foot-line;
-        vertical-alignment: center;
         text: readout;
         font-size: text-sm;
         color: P8.ink-quiet;

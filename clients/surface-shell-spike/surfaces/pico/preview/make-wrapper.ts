@@ -2,26 +2,25 @@
  * Preview only: writes a throwaway wrapper around main.slint with the values
  * logic.js produces, so slint-viewer can draw a state without the shell.
  *
- *   bun preview/make-wrapper.ts <start|afterTwoRights> <width> <height> <out.slint>
+ *   bun preview/make-wrapper.ts <start|afterTwoRights|rights:N> <width> <height> <out.slint>
  *
  * Cover art is decoded to PNG files beside the wrapper (the shell decodes
  * `{ "$image": url }` itself). The wrapper and the PNGs go in preview/gen/,
- * which Git ignores.
+ * which Git ignores. MODEL=<path> draws another SurfaceModel (preview/pico-fixture-model.ts).
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
 
 const [which = "start", width = "640", height = "480", out = join(import.meta.dir, "gen", "preview.slint")] = process.argv.slice(2)
 const here = import.meta.dir
-const model = JSON.parse(readFileSync(join(here, "../../../fixtures/model.json"), "utf8"))
+const model = JSON.parse(readFileSync(process.env.MODEL ?? join(here, "../../../fixtures/model.json"), "utf8"))
 new Function(readFileSync(join(here, "../logic.js"), "utf8"))()
 const surface = (globalThis as { surface?: any }).surface
 
 let state = surface.init(model)
-if (which === "afterTwoRights") {
-  state = surface.update(state, { _tag: "Pressed", action: "right" }, model)
-  state = surface.update(state, { _tag: "Pressed", action: "right" }, model)
-}
+// "afterTwoRights" is two presses of right; "rights:N" is N of them.
+const rights = which === "afterTwoRights" ? 2 : which.startsWith("rights:") ? Number(which.slice(7)) : 0
+for (let press = 0; press < rights; press += 1) state = surface.update(state, { _tag: "Pressed", action: "right" }, model)
 const view = surface.view(state, model)
 
 const outDir = dirname(out)

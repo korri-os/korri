@@ -1475,6 +1475,7 @@
       title: game.title,
       ...art === undefined ? {} : { art: { $image: art } },
       hasArt: art !== undefined,
+      artRatio: artRatio(art),
       initials: picoInitials(game.title),
       system: look.system,
       shell: look.shell,
@@ -1485,7 +1486,7 @@
     };
   }
   var BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  function pngRatio(url) {
+  function pngSize(url) {
     const comma = url.indexOf(",");
     if (!url.startsWith("data:image/png;base64,") || comma === -1)
       return;
@@ -1496,7 +1497,7 @@
       const digit = BASE64.indexOf(char);
       if (digit === -1)
         break;
-      value = value << 6 | digit;
+      value = (value << 6 | digit) & 16777215;
       bits += 6;
       if (bits >= 8) {
         bits -= 8;
@@ -1508,13 +1509,19 @@
     const word = (at) => ((bytes[at] ?? 0) << 24 | (bytes[at + 1] ?? 0) << 16 | (bytes[at + 2] ?? 0) << 8 | (bytes[at + 3] ?? 0)) >>> 0;
     const width = word(16);
     const height = word(20);
-    return width > 0 && height > 0 ? width / height : undefined;
+    return width > 0 && height > 0 ? { width, height } : undefined;
+  }
+  function artRatio(url) {
+    if (url === undefined || url === "")
+      return 1;
+    const size = pngSize(url);
+    if (size === undefined)
+      return 0;
+    const shape = size.width / size.height;
+    return Math.max(1, Math.round(64 * Math.sqrt(shape))) / Math.max(1, Math.round(64 / Math.sqrt(shape)));
   }
   function narrowestArt(games) {
-    return games.reduce((narrowest, game) => {
-      const ratio = game.artUrl === undefined || game.artUrl === "" ? 1 : pngRatio(game.artUrl) ?? 0;
-      return Math.min(narrowest, ratio);
-    }, games.length === 0 ? 1 : Number.POSITIVE_INFINITY);
+    return games.reduce((narrowest, game) => Math.min(narrowest, artRatio(game.artUrl)), games.length === 0 ? 1 : Number.POSITIVE_INFINITY);
   }
   function view(state, model) {
     const games = shelfGames(state.nav, model);

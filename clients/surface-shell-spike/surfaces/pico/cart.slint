@@ -15,6 +15,8 @@ export struct CartView {
     shell: int,
     sticker: int,
     sticker-ink-light: bool,
+    // Width over height of the art as Pico samples it; 0 reads the image.
+    art-ratio: float,
     progress: string,
     hero: bool,
 }
@@ -49,9 +51,9 @@ export component Cart {
 
     // The art at its own ratio, fitted in the box and never cropped. Missing
     // art is a square sticker.
-    property <float> ratio: cart.has-art && cart.art.height > 0 ? cart.art.width / cart.art.height : 1;
-    property <length> art-w: Snap.px(cart.has-art ? min(box-w, box-h * ratio) : min(box-w, box-h));
-    property <length> art-h: Snap.px(cart.has-art ? art-w / ratio : art-w);
+    property <float> ratio: !cart.has-art ? 1 : cart.art-ratio > 0 ? cart.art-ratio : cart.art.height > 0 ? cart.art.width / cart.art.height : 1;
+    property <length> art-w: cart.has-art ? min(box-w, box-h * ratio) : min(box-w, box-h);
+    property <length> art-h: cart.has-art ? art-w / ratio : art-w;
 
     out property <length> shell-w: art-w + 2 * pad;
     out property <length> shell-h: band + top-pad + art-h + foot;

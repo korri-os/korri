@@ -102,6 +102,7 @@ function cartView(game: PicoShelfGame, hero: boolean) {
     title: game.title,
     ...(art === undefined ? {} : { art: { $image: art } }),
     hasArt: art !== undefined,
+    artRatio: artRatio(art),
     initials: picoInitials(game.title),
     system: look.system,
     shell: look.shell,
@@ -114,9 +115,9 @@ function cartView(game: PicoShelfGame, hero: boolean) {
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
-/** Width over height of a PNG data URL, read from its IHDR; undefined for
+/** Width and height of a PNG data URL, read from its IHDR; undefined for
  * anything else. Bytes 16 to 23 of a PNG are its width and height. */
-function pngRatio(url: string): number | undefined {
+function pngSize(url: string): { readonly width: number; readonly height: number } | undefined {
   const comma = url.indexOf(",")
   if (!url.startsWith("data:image/png;base64,") || comma === -1) return undefined
   const bytes: number[] = []
@@ -125,7 +126,7 @@ function pngRatio(url: string): number | undefined {
   for (const char of url.slice(comma + 1, comma + 1 + 32)) {
     const digit = BASE64.indexOf(char)
     if (digit === -1) break
-    value = (value << 6) | digit
+    value = ((value << 6) | digit) & 0xffffff
     bits += 6
     if (bits >= 8) {
       bits -= 8
@@ -136,7 +137,22 @@ function pngRatio(url: string): number | undefined {
   const word = (at: number) => (((bytes[at] ?? 0) << 24) | ((bytes[at + 1] ?? 0) << 16) | ((bytes[at + 2] ?? 0) << 8) | (bytes[at + 3] ?? 0)) >>> 0
   const width = word(16)
   const height = word(20)
-  return width > 0 && height > 0 ? width / height : undefined
+  return width > 0 && height > 0 ? { width, height } : undefined
+}
+
+/**
+ * The shape Pico draws a cover at, as width over height. Pico samples a cover
+ * onto 64 cells by area at its own shape (use-pico-quantized-art.ts), and the
+ * cart takes the shape of that small canvas, so the canvas's rounded size,
+ * not the file's, sets the ratio. 0 when the shape cannot be read here; then
+ * main.slint reads it from the decoded image.
+ */
+function artRatio(url: string | undefined): number {
+  if (url === undefined || url === "") return 1
+  const size = pngSize(url)
+  if (size === undefined) return 0
+  const shape = size.width / size.height
+  return Math.max(1, Math.round(64 * Math.sqrt(shape))) / Math.max(1, Math.round(64 / Math.sqrt(shape)))
 }
 
 /**
@@ -147,10 +163,7 @@ function pngRatio(url: string): number | undefined {
  * can be (0).
  */
 function narrowestArt(games: readonly PicoShelfGame[]): number {
-  return games.reduce((narrowest, game) => {
-    const ratio = game.artUrl === undefined || game.artUrl === "" ? 1 : pngRatio(game.artUrl) ?? 0
-    return Math.min(narrowest, ratio)
-  }, games.length === 0 ? 1 : Number.POSITIVE_INFINITY)
+  return games.reduce((narrowest, game) => Math.min(narrowest, artRatio(game.artUrl)), games.length === 0 ? 1 : Number.POSITIVE_INFINITY)
 }
 
 function view(state: State, model: SurfaceModel) {
