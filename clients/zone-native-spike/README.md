@@ -55,6 +55,19 @@ The same with this repo's pinned nixpkgs (`flake.lock`, nixpkgs `4975466`):
 nix build --impure --expr 'let pkgs = import (builtins.getFlake (toString ./.)).inputs.nixpkgs { system = "aarch64-linux"; }; in pkgs.callPackage ./clients/zone-native-spike/package.nix {}'
 ```
 
+Results at commit `f326a7501` (the package source is unchanged since;
+`package.nix` takes only `Cargo.*`, `build.rs`, `src/` and `ui/`):
+
+| nixpkgs | System | Store path |
+| --- | --- | --- |
+| `<nixpkgs>` (26.05pre) | x86_64-linux | `/nix/store/rv9xbawllgpasb4mn31nr2kbrx68m8ik-zone-native-spike-0.0.0` |
+| `<nixpkgs>` (26.05pre) | aarch64-linux (built on fuji) | `/nix/store/ywsiyr7sd8jvlx91l3n1hdravp6l2601-zone-native-spike-0.0.0` |
+| pinned `4975466` | x86_64-linux | `/nix/store/b6iq6laphrl97gz8xpadf04lsb5k0q59-zone-native-spike-0.0.0` |
+| pinned `4975466` | aarch64-linux (built on fuji) | `/nix/store/3nhi697xgs0hbikcvyxby5jflabb8r8i-zone-native-spike-0.0.0` |
+
+The aarch64 binary is an AArch64 ELF of about 20 MB; its closure is 32
+paths, about 103 MB (glibc, Wayland, X11 and fontconfig libraries).
+
 The binary links only libc, libm and libgcc_s. winit, xkbcommon and
 fontique open Wayland, X11, xkbcommon and fontconfig with `dlopen`;
 `package.nix` puts those libraries on the binary's RUNPATH, so the store
