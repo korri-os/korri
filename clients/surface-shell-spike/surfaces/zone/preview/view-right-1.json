@@ -1,0 +1,324 @@
+{
+  "page": "games",
+  "zone": "cards",
+  "tabs": [
+    {
+      "label": "Games",
+      "active": true,
+      "focused": false
+    },
+    {
+      "label": "Options",
+      "active": false,
+      "focused": false
+    },
+    {
+      "label": "Save data",
+      "active": false,
+      "focused": false
+    }
+  ],
+  "findLabel": "Find",
+  "findShown": true,
+  "hints": {
+    "back": "Back",
+    "confirm": "Confirm"
+  },
+  "cards": [
+    {
+      "title": "Celeste Classic",
+      "art": {
+        "$image": "art/0.png"
+      },
+      "hasArt": true,
+      "initials": "CC",
+      "stripes": 1,
+      "tags": [
+        {
+          "label": "PICO-8",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        },
+        {
+          "label": "Continue",
+          "kind": "continue",
+          "korri": false
+        }
+      ]
+    },
+    {
+      "title": "Hollow Knight",
+      "art": {
+        "$image": "art/1.png"
+      },
+      "hasArt": true,
+      "initials": "HK",
+      "stripes": 2,
+      "tags": [
+        {
+          "label": "Switch",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        }
+      ]
+    },
+    {
+      "title": "Tetris",
+      "art": {
+        "$image": "art/2.png"
+      },
+      "hasArt": true,
+      "initials": "T",
+      "stripes": 5,
+      "tags": [
+        {
+          "label": "GB",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "zao",
+          "kind": "remote",
+          "korri": true
+        }
+      ]
+    },
+    {
+      "title": "Spelunky",
+      "art": {
+        "$image": "art/3.png"
+      },
+      "hasArt": true,
+      "initials": "S",
+      "stripes": 1,
+      "tags": [
+        {
+          "label": "PC",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        },
+        {
+          "label": "zao",
+          "kind": "remote",
+          "korri": true
+        }
+      ]
+    },
+    {
+      "title": "Lantern Keep",
+      "art": {
+        "$image": "art/4.png"
+      },
+      "hasArt": true,
+      "initials": "LK",
+      "stripes": 5,
+      "tags": [
+        {
+          "label": "PC",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        }
+      ]
+    },
+    {
+      "title": "Tide Pool",
+      "art": {
+        "$image": "art/5.png"
+      },
+      "hasArt": true,
+      "initials": "TP",
+      "stripes": 4,
+      "tags": [
+        {
+          "label": "Mega Drive",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "zao",
+          "kind": "remote",
+          "korri": true
+        }
+      ]
+    },
+    {
+      "title": "Comet Courier",
+      "art": {
+        "$image": "art/6.png"
+      },
+      "hasArt": true,
+      "initials": "CC",
+      "stripes": 5,
+      "tags": [
+        {
+          "label": "PC",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        }
+      ]
+    },
+    {
+      "title": "Bramble Run",
+      "art": {
+        "$image": "art/7.png"
+      },
+      "hasArt": true,
+      "initials": "BR",
+      "stripes": 2,
+      "tags": [
+        {
+          "label": "GBA",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        }
+      ]
+    },
+    {
+      "title": "Petal Quest",
+      "hasArt": false,
+      "initials": "PQ",
+      "stripes": 2,
+      "tags": [
+        {
+          "label": "PICO-8",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        }
+      ]
+    },
+    {
+      "title": "The Legend of Zelda: Oracle of Seasons",
+      "hasArt": false,
+      "initials": "LZ",
+      "stripes": 4,
+      "tags": [
+        {
+          "label": "GBC",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        }
+      ]
+    },
+    {
+      "title": "Wario Land 4",
+      "hasArt": false,
+      "initials": "WL",
+      "stripes": 5,
+      "tags": [
+        {
+          "label": "GBA",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        },
+        {
+          "label": "zao",
+          "kind": "remote",
+          "korri": true
+        }
+      ]
+    },
+    {
+      "title": "Super Metroid",
+      "hasArt": false,
+      "initials": "SM",
+      "stripes": 5,
+      "tags": [
+        {
+          "label": "SNES",
+          "kind": "system",
+          "korri": true
+        },
+        {
+          "label": "Here",
+          "kind": "here",
+          "korri": false
+        }
+      ]
+    }
+  ],
+  "focusedCard": 2,
+  "facts": [
+    {
+      "label": "Last played",
+      "value": "--",
+      "known": false
+    },
+    {
+      "label": "Plays",
+      "value": "--",
+      "known": false
+    },
+    {
+      "label": "Time",
+      "value": "--'--\"--",
+      "known": false
+    }
+  ],
+  "actions": [
+    {
+      "label": "Play",
+      "lit": true,
+      "focused": false
+    },
+    {
+      "label": "Opts.",
+      "lit": false,
+      "focused": false
+    }
+  ],
+  "timeLabel": "Time",
+  "clock": "21:47",
+  "signal": {
+    "shown": true,
+    "name": "hummingbird-lake",
+    "korri": true,
+    "bars": 3,
+    "strength": "72%"
+  },
+  "build": "korri 0.4.1 · 9a1fb22"
+}

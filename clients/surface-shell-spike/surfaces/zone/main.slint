@@ -1,0 +1,1848 @@
+// THROWAWAY SPIKE: Zone's GAMES page, Modern look, as a surface package
+// the shell loads at run time (../../CONTRACT.md). Pure .slint: no Rust, no
+// callbacks, no keys. Every value it shows arrives as a property from
+// logic.ts's view(); every size, colour and motion is decided here.
+//
+// The plan is a function of the window's width and height alone, ported
+// from clients/zone-native-spike/src/plan.rs (itself from Zone's
+// src/plan/art-px.ts, zone-select.ts, top-strip.ts and the stylesheets).
+// The ground's rings and dots follow surfaces/zone/src/plan/ground.ts.
+//
+// Frame cost (README.md): the rings are two bordered Rectangles that never
+// move. Each frame only the three dots (small disc Paths) and the cursor
+// triangles move, so the software renderer redraws only small rectangles
+// around them. Everything else changes only when a property changes.
+
+import "fonts/Anton-latin.ttf";
+
+// ---- Zone's palette (src/zone-tokens.css) ----
+global Z {
+    out property <color> mint: #4ad39c;
+    out property <color> black: #000000;
+    out property <color> white: #f7f3f7;
+    out property <color> yellow: #f7db08;
+    out property <color> hud-edge: #3151ad;
+    out property <color> blue: #5a71e7;
+    out property <color> orange: #f78e18;
+    out property <color> red: #e70000;
+    out property <color> pink: #ce6584;
+    out property <color> shade: #2e9e72;
+    out property <color> track: #3a313a;
+    out property <color> banner-blue: #0020b5;
+    out property <color> banner-yellow: #f7db00;
+    out property <color> banner-white: #e7e3e7;
+    out property <color> green: #18a800;
+    out property <color> key-disc: #292029;
+    out property <color> key-b: #ef285a;
+    out property <color> key-a: #639f3d;
+    out property <color> ring-a: #39b2ce;
+    out property <color> ring-b: #f78e18;
+    out property <color> stripe-light: #9ce7c6;
+    out property <color> stripe-teal: #5aa2b5;
+    out property <color> inert: #84a2b5;
+
+    // An SVG point from two lengths, for Path commands in local px.
+    public pure function pt(x: length, y: length) -> string {
+        return (x / 1px) + " " + (y / 1px);
+    }
+}
+
+// ---- What logic.ts's view() hands over ----
+
+export struct Tab {
+    label: string,
+    active: bool,
+    focused: bool,
+}
+
+export struct Hints {
+    back: string,
+    confirm: string,
+}
+
+export struct Tag {
+    label: string,
+    // system, here, remote, continue, download
+    kind: string,
+    // Korri's names keep their own case; Zone's words are capitals.
+    korri: bool,
+}
+
+export struct Card {
+    title: string,
+    art: image,
+    has-art: bool,
+    initials: string,
+    stripes: int,
+    tags: [Tag],
+}
+
+export struct Fact {
+    label: string,
+    value: string,
+    known: bool,
+}
+
+export struct Act {
+    label: string,
+    lit: bool,
+    focused: bool,
+}
+
+export struct Signal {
+    shown: bool,
+    name: string,
+    korri: bool,
+    bars: int,
+    strength: string,
+}
+
+// ---- Drawing pieces ----
+
+// One copy of a run of words, `dx`, `dy` from the face.
+component Layer inherits Text {
+    font-family: "Anton";
+    vertical-alignment: top;
+}
+
+// Measures words at a cap height, without drawing them.
+component Measure inherits Text {
+    in property <length> cap;
+    visible: false;
+    width: 0;
+    height: 0;
+    font-family: "Anton";
+    font-size: cap * 2048 / 1760;
+}
+
+// Words as Zone's caps draw them in the Modern look. y is the top of the
+// cap, x its left (or the box's left). Anton is sized so its cap (1760 of
+// 2048 units) is `cap` tall (zone-fonts.css size-adjust). Each ink is its
+// own component, its copies written out: a frame walks every item, so a
+// word carries no wrapper or repeater it does not draw.
+//   Caps      white face (or HUD: yellow), ring and one-step drop
+//   TagCaps   white face, one-art-px black ring
+//   FlatCaps  one flat ink, no edge
+//   BannerCaps  yellow face, black ring, orange two-step drop, white band
+component Words {
+    in property <string> text;
+    in property <length> cap: 20px;
+    in property <length> a: 2px;
+    // The box the words stand in: their natural width (0) or this width.
+    in property <length> box: 0px;
+    in property <bool> centre: false;
+    in property <bool> elide: false;
+    in property <bool> wrap: false;
+    out property <length> natural: measure.preferred-width;
+    out property <length> size: cap * 2048 / 1760;
+    out property <length> above: cap * 649 / 1760;
+    out property <length> line: size * 3083 / 2048;
+    out property <length> text-w: box > 0 ? box : natural + cap;
+    out property <length> text-h: wrap ? line * 8 : line;
+    out property <TextHorizontalAlignment> align: centre ? TextHorizontalAlignment.center : TextHorizontalAlignment.left;
+    out property <TextOverflow> cut: elide ? TextOverflow.elide : TextOverflow.clip;
+    out property <TextWrap> wrapping: wrap ? TextWrap.word-wrap : TextWrap.no-wrap;
+    out property <float> spacing: wrap ? 0.8 : 1;
+    width: box > 0 ? box : natural;
+    height: cap;
+    measure := Measure {
+        text: root.text;
+        cap: root.cap;
+    }
+    @children
+}
+
+component Caps inherits Words {
+    in property <bool> hud: false;
+    property <color> edge: hud ? Z.hud-edge : Z.black;
+    // The one-step drop, then the ring: all eight neighbours, one art px out.
+    Layer {
+        x: 2 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 2 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 2 * root.a;
+        y: 2 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 2 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: 2 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: -1 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: -1 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: -1 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.edge;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.hud ? Z.yellow : Z.white;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+}
+
+component TagCaps inherits Words {
+    Layer {
+        x: -1 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: -1 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: -1 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.white;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+}
+
+component FlatCaps inherits Words {
+    in property <color> ink: Z.black;
+    Layer {
+        x: 0 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: root.ink;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+}
+
+component BannerCaps inherits Words {
+    Layer {
+        x: 3 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 3 * root.a;
+        y: 2 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 3 * root.a;
+        y: 3 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 2 * root.a;
+        y: 3 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 3 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 2 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 2 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 2 * root.a;
+        y: 2 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 2 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: 2 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.orange;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: -1 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: -1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: -1 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: -1 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 1 * root.a;
+        y: 1 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.black;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    Layer {
+        x: 0 * root.a;
+        y: 0 * root.a - root.above;
+        width: root.text-w;
+        height: root.text-h;
+        text: root.text;
+        font-size: root.size;
+        color: Z.banner-yellow;
+        horizontal-alignment: root.align;
+        overflow: root.cut;
+        wrap: root.wrapping;
+        line-height-factor: root.spacing;
+    }
+    // The white band through rows 4 to 6 of the cap
+    // (ZoneCaps.css: inset(0.3em, 0, 0.4em)).
+    Rectangle {
+        x: 0;
+        y: root.cap * 0.3;
+        height: root.cap * 0.3;
+        width: root.text-w;
+        clip: true;
+        Layer {
+            x: 0;
+            y: -root.above - root.cap * 0.3;
+            width: root.text-w;
+            height: root.text-h;
+            text: root.text;
+            font-size: root.size;
+            color: Z.banner-white;
+        }
+    }
+}
+
+// A filled polygon; `commands` in this element's own px.
+component Poly inherits Path {
+    in property <color> ink;
+    fill: ink;
+    viewbox-x: 0;
+    viewbox-y: 0;
+    viewbox-width: Math.max(0.01, self.width / 1px);
+    viewbox-height: Math.max(0.01, self.height / 1px);
+}
+
+// A parallelogram leaning right by `run` (ZonePanel.css's shape).
+component Panel inherits Poly {
+    in property <length> run;
+    commands: "M " + Z.pt(run, 0) + " L " + Z.pt(self.width, 0) + " L " + Z.pt(self.width - run, self.height)
+        + " L " + Z.pt(0, self.height) + " Z";
+}
+
+// A solid triangle; `left` points left.
+component Tri inherits Poly {
+    in property <bool> left;
+    commands: left ? "M 1 0 L 0 0.5 L 1 1 Z" : "M 0 0 L 1 0.5 L 0 1 Z";
+    viewbox-width: 1;
+    viewbox-height: 1;
+}
+
+// A planet dot: a disc at a sub-pixel position (Paths draw where they
+// stand; a Rectangle would land on whole px).
+component Planet inherits Path {
+    in property <length> r;
+    in property <length> cx;
+    in property <length> cy;
+    x: cx - r;
+    y: cy - r;
+    width: r * 2;
+    height: r * 2;
+    viewbox-x: 0;
+    viewbox-y: 0;
+    viewbox-width: 2;
+    viewbox-height: 2;
+    commands: "M 0 1 A 1 1 0 1 0 2 1 A 1 1 0 1 0 0 1 Z";
+}
+
+// A ring of the ground: an antialiased annulus, `t` thick, centred on its
+// circle's line. Drawn once; it never moves.
+component Ring inherits Rectangle {
+    in property <length> cx;
+    in property <length> cy;
+    in property <length> r;
+    in property <length> t;
+    in property <color> ink;
+    x: cx - r - t / 2;
+    y: cy - r - t / 2;
+    width: 2 * r + t;
+    height: 2 * r + t;
+    border-radius: self.width / 2;
+    border-width: t;
+    border-color: ink;
+}
+
+// A button (ZoneButton.css): black panel, white caps, the pink underline
+// when lit (2 art px) or focused (3 art px), red inline triangles either
+// side when focused, breathing 2 to 4 art px every 600 ms.
+component Button {
+    in property <string> label;
+    in property <length> a;
+    in property <bool> lit;
+    in property <bool> focused;
+    in property <float> nudge;
+    property <length> cap: 10 * a;
+    property <length> run: 2 * cap - a;
+    out property <length> span: words.preferred-width + 2 * (run + 5 * a);
+    width: span;
+    height: 2 * cap;
+    property <length> depth: focused ? 3 * a : 2 * a;
+    words := Measure {
+        text: root.label.to-uppercase();
+        cap: root.cap;
+    }
+    // An empty slot (a row of fewer buttons) draws nothing and holds no items.
+    if root.label != "": Rectangle {
+      x: 0;
+      y: 0;
+      width: root.width;
+      height: root.height;
+    if root.lit || root.focused: Panel {
+        x: -root.depth;
+        y: root.depth;
+        width: root.width;
+        height: root.height;
+        run: root.run;
+        ink: Z.pink;
+    }
+    Panel {
+        width: root.width;
+        height: root.height;
+        run: root.run;
+        ink: Z.black;
+    }
+    Caps {
+        x: root.run + 5 * root.a;
+        y: (root.height - root.cap) / 2;
+        text: root.label.to-uppercase();
+        cap: root.cap;
+        a: root.a;
+    }
+    }
+    // The inline cursor: 0.7 em wide, 1.1 times as tall.
+    property <length> tw: 7 * a;
+    property <length> gap: 2 * a + 2 * a * nudge;
+    if root.focused: Tri {
+        x: -root.gap - root.tw;
+        y: (root.height - root.tw * 1.1) / 2;
+        width: root.tw;
+        height: root.tw * 1.1;
+        ink: Z.red;
+    }
+    if root.focused: Tri {
+        x: root.width + root.gap;
+        y: (root.height - root.tw * 1.1) / 2;
+        width: root.tw;
+        height: root.tw * 1.1;
+        left: true;
+        ink: Z.red;
+    }
+}
+
+// A nudge's breath at `clock` ms: 0 to 1 and back, `leg` ms each way, on
+// CSS's ease-in-out, cubic-bezier(0.42, 0, 0.58, 1). The curve's x is
+// inverted with four Newton steps, each its own property: nesting the
+// steps as function calls copied the curve into itself at every level and
+// cost more than the drawing (a whole core at 60 frames a second).
+component Breath {
+    in property <float> clock;
+    in property <float> leg: 480;
+    // The curve's y at s4: 3 s^2 (1 - s) + s^3.
+    out property <float> value: 3 * s4 * s4 * (1 - s4) + s4 * s4 * s4;
+    width: 0;
+    height: 0;
+    // Where the leg stands, 0 to 1 and back.
+    property <float> t: 1 - Math.abs(Math.mod(clock, 2 * leg) / leg - 1);
+    // Newton steps on the curve's x: 1.26 s (1-s)^2 + 1.74 s^2 (1-s) + s^3,
+    // written out (no function calls: the interpreter pays for each call
+    // with a fresh scope every frame).
+    property <float> s1: Math.clamp(t - (1.26 * t * (1 - t) * (1 - t) + 1.74 * t * t * (1 - t) + t * t * t - t) / Math.max(0.001, 1.26 * (1 - t) * (1 - t) + 0.96 * t * (1 - t) + 1.26 * t * t), 0, 1);
+    property <float> s2: Math.clamp(s1 - (1.26 * s1 * (1 - s1) * (1 - s1) + 1.74 * s1 * s1 * (1 - s1) + s1 * s1 * s1 - t) / Math.max(0.001, 1.26 * (1 - s1) * (1 - s1) + 0.96 * s1 * (1 - s1) + 1.26 * s1 * s1), 0, 1);
+    property <float> s3: Math.clamp(s2 - (1.26 * s2 * (1 - s2) * (1 - s2) + 1.74 * s2 * s2 * (1 - s2) + s2 * s2 * s2 - t) / Math.max(0.001, 1.26 * (1 - s2) * (1 - s2) + 0.96 * s2 * (1 - s2) + 1.26 * s2 * s2), 0, 1);
+    property <float> s4: Math.clamp(s3 - (1.26 * s3 * (1 - s3) * (1 - s3) + 1.74 * s3 * s3 * (1 - s3) + s3 * s3 * s3 - t) / Math.max(0.001, 1.26 * (1 - s3) * (1 - s3) + 0.96 * s3 * (1 - s3) + 1.26 * s3 * s3), 0, 1);
+}
+
+// One tab of the top strip: the active one is the blue banner with its
+// lip, the others black panels (ZoneTab.css, ZoneBanner.css). A focused
+// tab lifts 2 art px with the snap and wears the pink underline 3 art px
+// down. `span` is its width; y is the strip's centre line.
+component TabSlot {
+    in property <Tab> tab;
+    in property <length> a;
+    in property <length> pad-y;
+    property <length> c1: 10 * a;
+    property <length> c2: 20 * a;
+    // The banner.
+    property <length> bh: 2 * c1;
+    property <length> point: 0.45 * bh;
+    property <length> mid: bh / 2;
+    property <length> banner-w: big-measure.preferred-width + 2 * (point + 6 * a);
+    // A panel.
+    property <length> th: c1 + 2 * pad-y;
+    property <length> run: th - a;
+    property <length> tab-w: small-measure.preferred-width + 2 * (run + 2 * a);
+    big-measure := Measure { text: root.tab.label.to-uppercase(); cap: root.c2; }
+    small-measure := Measure { text: root.tab.label.to-uppercase(); cap: root.c1; }
+    out property <length> span: tab.active ? banner-w : tab-w;
+    width: span;
+    height: 0;
+
+    property <length> lift: tab.focused ? -2 * a : 0;
+    animate lift {
+        duration: 180ms;
+        easing: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    property <string> hexagon: "M " + Z.pt(point, 0) + " L " + Z.pt(0, mid - a / 2) + " L " + Z.pt(0, mid + a / 2)
+        + " L " + Z.pt(point, bh) + " L " + Z.pt(banner-w - point, bh) + " L " + Z.pt(banner-w, mid + a / 2)
+        + " L " + Z.pt(banner-w, mid - a / 2) + " L " + Z.pt(banner-w - point, 0) + " Z";
+
+    if root.tab.active: Rectangle {
+        y: -root.bh / 2 + root.lift;
+        width: root.banner-w;
+        height: root.bh;
+        if root.tab.focused: Poly {
+            x: -3 * root.a;
+            y: 3 * root.a;
+            width: root.banner-w;
+            height: root.bh;
+            commands: root.hexagon;
+            ink: Z.pink;
+        }
+        Poly {
+            width: root.banner-w;
+            height: root.bh;
+            commands: root.hexagon;
+            ink: Z.banner-blue;
+        }
+        BannerCaps {
+            x: root.point + 6 * root.a;
+            y: -0.5 * root.a;
+            text: root.tab.label.to-uppercase();
+            cap: root.c2;
+            a: root.a;
+        }
+        // The lip (Modern): 2 art px, notched at 45 degrees at its centre,
+        // red on the left half and green on the right.
+        property <length> lx0: root.point;
+        property <length> lx1: root.banner-w - root.point;
+        property <length> half: (lx0 + lx1) / 2;
+        property <length> t: 2 * root.a;
+        property <length> d: 4 * root.a;
+        Poly {
+            x: 0;
+            y: root.bh;
+            width: root.banner-w;
+            height: d;
+            ink: Z.red;
+            commands: "M " + Z.pt(lx0, 0) + " L " + Z.pt(half, 0) + " L " + Z.pt(half, t) + " L " + Z.pt(half - 2 * root.a, d)
+                + " L " + Z.pt(half - 4 * root.a, t) + " L " + Z.pt(half - 6 * root.a, d) + " L " + Z.pt(half - 8 * root.a, t)
+                + " L " + Z.pt(lx0, t) + " Z";
+        }
+        Poly {
+            x: 0;
+            y: root.bh;
+            width: root.banner-w;
+            height: d;
+            ink: Z.green;
+            commands: "M " + Z.pt(half, 0) + " L " + Z.pt(lx1, 0) + " L " + Z.pt(lx1, t) + " L " + Z.pt(half + 8 * root.a, t)
+                + " L " + Z.pt(half + 6 * root.a, d) + " L " + Z.pt(half + 4 * root.a, t) + " L " + Z.pt(half + 2 * root.a, d)
+                + " L " + Z.pt(half, t) + " Z";
+        }
+    }
+    if !root.tab.active: Rectangle {
+        y: -root.th / 2 + root.lift;
+        width: root.tab-w;
+        height: root.th;
+        if root.tab.focused: Panel {
+            x: -3 * root.a;
+            y: 3 * root.a;
+            width: root.tab-w;
+            height: root.th;
+            run: root.run;
+            ink: Z.pink;
+        }
+        Panel {
+            width: root.tab-w;
+            height: root.th;
+            run: root.run;
+            ink: Z.black;
+        }
+        Caps {
+            x: root.run + 2 * root.a;
+            y: root.pad-y;
+            text: root.tab.label.to-uppercase();
+            cap: root.c1;
+            a: root.a;
+        }
+    }
+}
+
+// A keycap hint (ZoneKeycap.css): the disc, its letter, and at wide
+// enough strips the word on a black tail behind it. `span` is its width.
+component Hint {
+    in property <string> key;
+    in property <string> word;
+    in property <color> key-ink;
+    in property <length> a;
+    in property <bool> words;
+    in property <length> pad;
+    property <length> c1: 10 * a;
+    property <length> d: 1.5 * c1;
+    out property <length> span: words ? d + pad + label.natural + 14 * a : d;
+    width: span;
+    height: d;
+    // The word's black tail, behind the keycap, its words cut to it.
+    property <length> wx: d / 2;
+    property <length> ww: span - d / 2;
+    property <length> wy: d / 2 - 6 * a;
+    if root.words: Poly {
+        x: root.wx;
+        y: root.wy;
+        width: root.ww;
+        height: 12 * root.a;
+        ink: Z.black;
+        commands: "M 0 0 L " + Z.pt(0, 12 * root.a) + " L " + Z.pt(root.ww - 11 * root.a, 12 * root.a)
+            + " L " + Z.pt(root.ww - 11 * root.a, 11 * root.a) + " L " + Z.pt(root.ww, 0) + " Z";
+    }
+    Rectangle {
+        x: root.wx;
+        y: root.wy;
+        width: root.ww;
+        height: 12 * root.a;
+        clip: true;
+        visible: root.words;
+        label := Caps {
+            x: root.d / 2 + root.pad;
+            y: root.a;
+            text: root.word.to-uppercase();
+            cap: root.c1;
+            a: root.a;
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.d;
+        height: root.d;
+        border-radius: root.d / 2;
+        background: Z.black;
+    }
+    Rectangle {
+        x: root.a;
+        y: root.a;
+        width: root.d - 2 * root.a;
+        height: root.d - 2 * root.a;
+        border-radius: self.width / 2;
+        background: Z.key-disc;
+    }
+    letter := FlatCaps {
+        x: (root.d - self.natural) / 2;
+        y: 2 * root.a;
+        text: root.key;
+        cap: root.c1;
+        a: root.a;
+        ink: root.key-ink;
+    }
+}
+
+// One tag of a card's row (ZoneTag.css), its words cut to its own shape's box.
+component TagSlot inherits Rectangle {
+    in property <Tag> tag;
+    in property <length> a;
+    in property <length> cap;
+    in property <length> lp;
+    in property <length> rp;
+    in property <length> l-top;
+    in property <length> r-bottom;
+    in property <length> tw;
+    property <color> bg: tag.kind == "here" ? Z.yellow : tag.kind == "remote" ? Z.red : tag.kind == "continue" ? Z.black
+        : tag.kind == "download" ? Z.orange : Z.blue;
+    property <bool> dark: tag.kind == "here" || tag.kind == "download";
+    clip: true;
+    Poly {
+        width: root.width;
+        height: root.height;
+        ink: root.bg;
+        commands: "M " + Z.pt(root.l-top, 0) + " L " + Z.pt(root.width, 0) + " L " + Z.pt(root.width - root.r-bottom, root.height)
+            + " L " + Z.pt(0, root.height) + " Z";
+    }
+    if root.dark: FlatCaps {
+        x: root.lp + (root.width - root.lp - root.rp - root.tw) / 2;
+        y: (root.height - root.cap) / 2;
+        text: root.tag.korri ? root.tag.label : root.tag.label.to-uppercase();
+        cap: root.cap;
+        a: root.a;
+        ink: Z.black;
+    }
+    if !root.dark: TagCaps {
+        x: root.lp + (root.width - root.lp - root.rp - root.tw) / 2;
+        y: (root.height - root.cap) / 2;
+        text: root.tag.korri ? root.tag.label : root.tag.label.to-uppercase();
+        cap: root.cap;
+        a: root.a;
+    }
+}
+
+// The tag row (ZoneTagRow.tsx, ZoneTag.css): tags joined on their slants,
+// sharing the row; the last ones drop when the row cannot hold them all.
+// Up to five tags.
+component TagRow {
+    in property <[Tag]> tags;
+    in property <length> a;
+    property <length> cap: 10 * a;
+    property <int> count: Math.min(5, tags.length);
+    property <length> slant: Math.min(6 * a, 0.55 * cap);
+    property <length> sp: slant / 2 + a;
+    // Word widths.
+    property <length> w0: m0.preferred-width;
+    property <length> w1: m1.preferred-width;
+    property <length> w2: m2.preferred-width;
+    property <length> w3: m3.preferred-width;
+    property <length> w4: m4.preferred-width;
+    m0 := Measure { text: root.label(0); cap: root.cap; }
+    m1 := Measure { text: root.label(1); cap: root.cap; }
+    m2 := Measure { text: root.label(2); cap: root.cap; }
+    m3 := Measure { text: root.label(3); cap: root.cap; }
+    m4 := Measure { text: root.label(4); cap: root.cap; }
+    pure function label(i: int) -> string {
+        return i >= root.count ? "" : root.tags[i].korri ? root.tags[i].label : root.tags[i].label.to-uppercase();
+    }
+    pure function tw(i: int) -> length {
+        return i == 0 ? w0 : i == 1 ? w1 : i == 2 ? w2 : i == 3 ? w3 : w4;
+    }
+    // The joins come from the whole set: a hidden tag keeps its neighbour's cut.
+    pure function lp(i: int) -> length {
+        return i == 0 ? a : sp;
+    }
+    pure function rp(i: int) -> length {
+        return i == count - 1 ? a : sp;
+    }
+    pure function base(i: int) -> length {
+        return i >= count ? 0 : lp(i) + tw(i) + rp(i);
+    }
+    pure function total(k: int) -> length {
+        return (k > 0 ? base(0) : 0) + (k > 1 ? base(1) : 0) + (k > 2 ? base(2) : 0) + (k > 3 ? base(3) : 0) + (k > 4 ? base(4) : 0);
+    }
+    pure function widest(k: int) -> length {
+        return Math.max(k > 0 ? base(0) : 0, k > 1 ? base(1) : 0, k > 2 ? base(2) : 0, k > 3 ? base(3) : 0, k > 4 ? base(4) : 0);
+    }
+    pure function row-w(k: int) -> length {
+        return total(k) - slant * Math.max(0, k - 1);
+    }
+    // Chromium shrinks tags in proportion and calls one cut past about 1.5 px.
+    pure function cut(k: int) -> bool {
+        return row-w(k) > root.width && (row-w(k) - root.width) * widest(k) / Math.max(0.001px, total(k)) > 1.5px;
+    }
+    property <int> shown: !cut(count) ? count : !cut(count - 1) ? count - 1 : !cut(count - 2) ? count - 2
+        : !cut(count - 3) ? count - 3 : !cut(count - 4) ? count - 4 : 0;
+    property <length> extra: shown > 0 ? (root.width - row-w(shown)) / shown : 0;
+    pure function tag-x(i: int) -> length {
+        return (i > 0 ? base(0) + extra - slant : 0) + (i > 1 ? base(1) + extra - slant : 0) + (i > 2 ? base(2) + extra - slant : 0)
+            + (i > 3 ? base(3) + extra - slant : 0);
+    }
+    for t[i] in root.tags: TagSlot {
+        visible: i < root.shown;
+        x: root.tag-x(i);
+        width: root.base(i) + root.extra;
+        height: root.height;
+        tag: t;
+        a: root.a;
+        cap: root.cap;
+        lp: root.lp(i);
+        rp: root.rp(i);
+        tw: root.tw(i);
+        l-top: i == 0 ? 0 : root.slant;
+        r-bottom: i == root.count - 1 ? 0 : root.slant;
+    }
+}
+
+// The zone card (ZoneCard.css): black body, the cover in its blue-edged
+// well, the title, TIME ATTACK's stripe, the tag row; the drop, and when
+// focused the pink edge. x, y, width and height are the card's body.
+component CardView {
+    in property <Card> card;
+    in property <bool> focused;
+    in property <length> a;
+    property <length> c1: 10 * a;
+    property <length> frame: focused ? 4 * a : 2 * a;
+    property <length> stripe: focused ? 6 * a : 4 * a;
+    property <length> ix: frame;
+    property <length> iw: self.width - 2 * frame;
+    // The title: caps-2 on the focused card while it fits on one line, else
+    // caps-1, on one line while it fits, then wrapped between words.
+    property <bool> big: focused && big-measure.preferred-width <= iw + 0.5px;
+    property <length> cap: big ? 2 * c1 : c1;
+    property <bool> one-line: big || small-measure.preferred-width <= iw + 0.5px;
+    property <int> lines: one-line ? 1 : Math.max(1, Math.round(wrap-measure.preferred-height / (c1 * 3083 / 1760 * 0.8)));
+    property <length> title-h: lines * 1.4 * cap - 0.4 * cap;
+    property <length> tag-h: 1.55 * c1;
+    property <length> body-h: 2 * a + title-h + 2 * a + stripe + 2 * a + tag-h;
+    property <length> body-y: self.height - frame - body-h;
+    property <length> well-y: frame;
+    property <length> well-h: Math.max(0, body-y - well-y);
+
+    big-measure := Measure { text: root.card.title; cap: 2 * root.c1; }
+    small-measure := Measure { text: root.card.title; cap: root.c1; }
+    // The wrapped title's height, for its line count (caps-1, 1.4 caps a line).
+    wrap-measure := Text {
+        visible: false;
+        width: root.iw;
+        height: 0;
+        text: root.one-line ? "" : root.card.title;
+        font-family: "Anton";
+        font-size: root.c1 * 2048 / 1760;
+        wrap: word-wrap;
+        line-height-factor: 0.8;
+    }
+
+    // The drop, the focus edge, the body.
+    Rectangle {
+        x: root.focused ? 3 * root.a : 2 * root.a;
+        y: self.x;
+        width: root.width;
+        height: root.height;
+        background: Z.shade;
+    }
+    if root.focused: Rectangle {
+        x: -2 * root.a;
+        y: -2 * root.a;
+        width: root.width + 4 * root.a;
+        height: root.height + 4 * root.a;
+        background: Z.pink;
+    }
+    Rectangle {
+        background: Z.black;
+    }
+    // The cover well: one art px blue edge, black inside, the art filling
+    // its width from the top (cut at the bottom when taller; letterboxed
+    // and centred when wider). With no art: three stripe bands and the
+    // title's initials.
+    if root.well-h > 0: Rectangle {
+        x: root.ix;
+        y: root.well-y;
+        width: root.iw;
+        height: root.well-h;
+        background: Z.blue;
+        Rectangle {
+            x: root.a;
+            y: root.a;
+            width: parent.width - 2 * root.a;
+            height: parent.height - 2 * root.a;
+            background: Z.black;
+            clip: true;
+            property <float> ratio: root.card.art.width / Math.max(1, root.card.art.height);
+            property <length> art-h: self.width / Math.max(0.01, ratio);
+            if root.card.has-art: Image {
+                x: 0;
+                y: parent.art-h > parent.height ? 0 : (parent.height - parent.art-h) / 2;
+                width: parent.width;
+                height: parent.art-h;
+                source: root.card.art;
+                image-fit: fill;
+                image-rendering: pixelated;
+            }
+            if !root.card.has-art: Rectangle {
+                property <color> s1: root.card.stripes == 0 ? Z.red : root.card.stripes == 1 ? Z.pink : root.card.stripes == 2 ? Z.mint
+                    : root.card.stripes == 3 ? Z.yellow : root.card.stripes == 4 ? Z.blue : Z.orange;
+                property <color> s2: root.card.stripes == 0 ? Z.orange : root.card.stripes == 1 ? Z.mint : root.card.stripes == 2 ? Z.yellow
+                    : root.card.stripes == 3 ? Z.red : root.card.stripes == 4 ? Z.orange : Z.pink;
+                property <color> s3: root.card.stripes == 0 ? Z.blue : root.card.stripes == 1 ? Z.yellow : root.card.stripes == 2 ? Z.orange
+                    : root.card.stripes == 3 ? Z.pink : root.card.stripes == 4 ? Z.mint : Z.blue;
+                background: @linear-gradient(-28deg, s1 0%, s1 22%, s2 22%, s2 40%, Z.black 40%, Z.black 46%, s3 46%, s3 64%, s1 64%, s1 100%);
+                TagCaps {
+                    property <length> initials-cap: Math.min(parent.width * 0.38, parent.height * 0.6) * 1760 / 2048;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.cap) / 2;
+                    text: root.card.initials;
+                    cap: initials-cap;
+                    a: root.a;
+                }
+            }
+        }
+    }
+    title := Caps {
+        x: root.ix;
+        y: root.body-y + 2 * root.a;
+        box: root.iw;
+        centre: true;
+        wrap: !root.one-line;
+        text: root.card.title;
+        cap: root.cap;
+        a: root.a;
+    }
+    // TIME ATTACK's stripe (ZoneCard.css): linear-gradient(-62deg, light 0
+    // 56%, blue 56% 80%, teal 80% 100%) on hard stops, as two polygons cut
+    // along CSS's gradient line over the light (the renderer's own gradient
+    // draws a seam at a hard stop).
+    Rectangle {
+        x: root.ix;
+        y: root.body-y + 2 * root.a + root.title-h + 2 * root.a;
+        width: root.iw;
+        height: root.stripe;
+        background: Z.stripe-light;
+        // The gradient's direction at -62 degrees, and its length over the box.
+        property <float> gx: -0.882948;
+        property <float> gy: -0.469472;
+        property <length> span: self.width * 0.882948 + self.height * 0.469472;
+        // Where the share `s` crosses row `y`; the share grows to the left.
+        pure function cross(s: float, y: length) -> length {
+            return Math.clamp(self.width / 2 + ((s - 0.5) * span - (y - self.height / 2) * gy) / gx, 0, self.width);
+        }
+        for band in [{ s: 0.56, ink: Z.blue }, { s: 0.8, ink: Z.stripe-teal }]: Poly {
+            ink: band.ink;
+            commands: "M 0 0 L " + Z.pt(parent.cross(band.s, 0), 0) + " L " + Z.pt(parent.cross(band.s, parent.height), parent.height)
+                + " L " + Z.pt(0, parent.height) + " Z";
+        }
+    }
+    TagRow {
+        x: root.ix;
+        y: root.body-y + 2 * root.a + root.title-h + 2 * root.a + root.stripe + 2 * root.a;
+        width: root.iw;
+        height: root.tag-h;
+        tags: root.card.tags;
+        a: root.a;
+    }
+}
+
+// One fact on the facts line: its HUD label, then its value. `span` is its width.
+component FactSlot {
+    in property <Fact> fact;
+    in property <length> a;
+    property <length> c1: 10 * a;
+    out property <length> span: fact.label == "" ? 0 : label.preferred-width + 3 * a + value.preferred-width;
+    label := Measure {
+        text: root.fact.label.to-uppercase();
+        cap: root.c1;
+    }
+    value := Measure {
+        text: root.fact.value;
+        cap: root.c1;
+    }
+    // An empty slot draws nothing and holds no items.
+    if root.fact.label != "": Caps {
+        x: 0;
+        y: 0;
+        text: root.fact.label.to-uppercase();
+        cap: root.c1;
+        a: root.a;
+        hud: true;
+    }
+    if root.fact.label != "": Caps {
+        x: label.preferred-width + 3 * root.a;
+        y: 0;
+        text: root.fact.value;
+        cap: root.c1;
+        a: root.a;
+    }
+}
+
+export component Surface inherits Window {
+    title: "Zone";
+    background: Z.mint;
+
+    // ---- From logic.ts's view() ----
+    in property <string> page: "games";
+    in property <string> zone: "cards";
+    in property <[Tab]> tabs;
+    in property <string> find-label;
+    in property <bool> find-shown: true;
+    in property <Hints> hints;
+    in property <[Card]> cards;
+    in property <int> focused-card;
+    in property <[Fact]> facts;
+    in property <[Act]> actions;
+    in property <string> time-label;
+    in property <string> clock;
+    in property <Signal> signal;
+    in property <string> build;
+
+    // ---- The plan: a pure function of the window's size ----
+    property <float> W: root.width / 1px;
+    property <float> H: root.height / 1px;
+    // The art pixel (art-px.ts): max(1, floor(min(w, h) / 240)).
+    property <length> a: Math.max(1, Math.floor(Math.min(W, H) / 240)) * 1px;
+    property <float> w-art: Math.floor(root.width / a);
+    property <float> h-art: Math.floor(root.height / a);
+    property <bool> wide: w-art >= 333;
+    property <bool> tall: h-art >= 320;
+    property <int> visible-cards: wide ? 5 : 3;
+    property <int> reach: wide ? 2 : 1;
+    // The top strip's level (top-strip.ts): 0 inline, 1 tight, 2 keys.
+    property <int> level: w-art >= 476 ? 0 : w-art >= 420 ? 1 : 2;
+    property <bool> least: level != 0;
+    property <bool> words: level != 2;
+    property <length> c1: 10 * a;
+    property <length> margin: least ? 4 * a : Math.clamp(0.016 * root.width, 4 * a, 11 * a);
+    property <length> strip-gap: least ? 2 * a : 5 * a;
+    property <length> strip-pad: least ? 2 * a : 5 * a;
+    property <length> top-h: (tall ? 40 : 36) * a;
+    property <length> foot-h: (tall ? 24 : 22) * a;
+    property <length> act-h: (tall ? 30 : 26) * a;
+    property <length> facts-h: 18 * a;
+    property <length> body-y: top-h;
+    property <length> body-h: Math.max(0, root.height - top-h - foot-h);
+    property <length> band-h: Math.max(0, body-h - facts-h - acts-h);
+
+    // ---- The band (ZoneCardBand.css's sums) ----
+    property <length> gap: (wide ? 10 : 7) * a;
+    property <length> tri: (wide ? 14 : 12) * a;
+    property <length> room: tri + 8 * a;
+    property <length> fixed: (visible-cards - 1) * gap + 2 * room + 24 * a;
+    property <length> fit: (root.width - fixed) / (0.78 * (1 + (visible-cards - 1) * 0.68));
+    property <length> card-h: Math.max(0, Math.min(133 * a, band-h - 26 * a, fit));
+    property <length> focus-w: card-h * 0.78;
+    property <length> side-h: card-h * 0.68;
+    property <length> side-w: side-h * 0.78;
+    property <length> band-cy: body-y + band-h / 2;
+
+    // The snap (M1, zone-motion.css): the band travels to the new focus in
+    // 220 ms with one overshoot, and the two cards trade sizes on the same
+    // curve. `f` is the travelling focus; `lin`, linear over the same time,
+    // tells which way it travels.
+    property <float> f: focused-card;
+    animate f {
+        duration: 220ms;
+        easing: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    property <float> lin: focused-card;
+    animate lin {
+        duration: 220ms;
+        easing: linear;
+    }
+    property <int> dir: lin < focused-card - 0.0001 ? 1 : lin > focused-card + 0.0001 ? -1 : 0;
+    // Progress from the card before (1 at the new focused-card, past 1 overshooting).
+    property <float> p: 1 - (focused-card - f) * dir;
+    property <bool> adjacent: dir != 0 && p >= 0;
+    // Each card's share of the focused size: CSS's two transitions for a
+    // move of one card; further away, a share of the travelling focused-card.
+    pure function share(i: int) -> float {
+        return adjacent ? (i == focused-card ? p : i == focused-card - dir ? 1 - p : 0) : Math.max(0, 1 - Math.abs(i - f));
+    }
+    // The shares of the cards before card i.
+    pure function before(i: int) -> float {
+        return adjacent
+            ? (i <= Math.min(focused-card, focused-card - dir) ? 0 : i > Math.max(focused-card, focused-card - dir) ? 1 : dir > 0 ? 1 - p : p)
+            : Math.clamp(i - f, 0, 1);
+    }
+    // Modern: the travel rounds to a layout unit (1/64 px), not an art px.
+    property <length> track-x: Math.round((root.width / 2 - (f * (side-w + gap) + room + focus-w / 2)) / 1px * 64) / 64 * 1px;
+    pure function card-w(i: int) -> length {
+        return side-w + share(i) * (focus-w - side-w);
+    }
+    pure function card-x(i: int) -> length {
+        return track-x + i * (side-w + gap) + before(i) * (focus-w - side-w + 2 * room) + share(i) * room;
+    }
+
+    // ---- The two clocks ----
+    // The drift, in ms, wrapped well inside f32's whole numbers (14 000 s
+    // holds a whole number of both turns).
+    property <float> clock-ms: Math.mod(animation-tick() / 1ms, 14000000);
+    // The nudges: there and back, eased in and out (Modern's alternate rule).
+    // The band's triangles take 480 ms a leg (--zone-games-nudge-time), the
+    // buttons' 600 ms (--zone-nudge-time).
+    nudge-band := Breath {
+        clock: root.clock-ms;
+        leg: 480;
+    }
+    nudge-buttons := Breath {
+        clock: root.clock-ms;
+        leg: 600;
+    }
+    property <float> nudge: nudge-band.value;
+    property <float> nudge-button: nudge-buttons.value;
+
+    // ---- The ground (ground.ts zoneGroundRings, renderZoneGroundSmooth) ----
+    property <float> short: Math.min(w-art, h-art);
+    property <float> ra-cx: Math.round(w-art * 0.5);
+    property <float> ra-cy: Math.round(h-art * 0.56);
+    property <float> ra-r: Math.round(short * 0.46);
+    property <float> rb-cx: Math.round(w-art * 0.8);
+    property <float> rb-cy: Math.round(h-art * 0.36);
+    property <float> rb-r: Math.round(short * 0.34);
+    // One turn of ring A's dots in 140 s clockwise, ring B's in 200 s the
+    // other way (--zone-drift-big, --zone-drift-small).
+    // The dots' clock steps at the ground's frame rate (ground.ts
+    // zoneGroundFrame; Modern's --zone-ground-fps is 60, so the dots glide).
+    // A lower rate redraws the page under the dots less often; see README.md.
+    property <float> ground-fps: 60;
+    property <float> ground-ms: Math.floor(clock-ms * ground-fps / 1000) * 1000 / ground-fps;
+    property <angle> a-turn: ground-ms / 140000 * 360deg;
+    property <angle> b-turn: -ground-ms / 200000 * 360deg;
+
+    Ring {
+        cx: root.rb-cx * root.a;
+        cy: root.rb-cy * root.a;
+        r: root.rb-r * root.a;
+        t: 6 * root.a;
+        ink: Z.ring-b;
+    }
+    // Each dot stands half an art px in from its orbit point, as Zone's canvas draws it.
+    Planet {
+        r: 8 * root.a;
+        cx: (root.rb-cx + root.rb-r * Math.cos(0.5 * 360deg + root.b-turn) + 0.5) * root.a;
+        cy: (root.rb-cy + root.rb-r * Math.sin(0.5 * 360deg + root.b-turn) + 0.5) * root.a;
+        fill: Z.ring-b;
+    }
+    Ring {
+        cx: root.ra-cx * root.a;
+        cy: root.ra-cy * root.a;
+        r: root.ra-r * root.a;
+        t: 6 * root.a;
+        ink: Z.ring-a;
+    }
+    Planet {
+        r: 10 * root.a;
+        cx: (root.ra-cx + root.ra-r * Math.cos(0.75 * 360deg + root.a-turn) + 0.5) * root.a;
+        cy: (root.ra-cy + root.ra-r * Math.sin(0.75 * 360deg + root.a-turn) + 0.5) * root.a;
+        fill: Z.ring-a;
+    }
+    Planet {
+        r: 6 * root.a;
+        cx: (root.ra-cx + root.ra-r * Math.cos(0.08 * 360deg + root.a-turn) + 0.5) * root.a;
+        cy: (root.ra-cy + root.ra-r * Math.sin(0.08 * 360deg + root.a-turn) + 0.5) * root.a;
+        fill: Z.ring-a;
+    }
+
+    // ---- The top strip: B, the tabs, A ----
+    property <length> strip-cy: top-h / 2;
+    property <length> tabs-w: t0.span + t1.span + t2.span + 2 * strip-gap;
+    t0 := TabSlot {
+        x: (root.width - root.tabs-w) / 2;
+        y: root.strip-cy;
+        tab: root.tabs[0];
+        a: root.a;
+        pad-y: root.least ? root.a : 5 * root.a;
+    }
+    t1 := TabSlot {
+        x: t0.x + t0.span + root.strip-gap;
+        y: root.strip-cy;
+        tab: root.tabs[1];
+        a: root.a;
+        pad-y: root.least ? root.a : 5 * root.a;
+    }
+    t2 := TabSlot {
+        x: t1.x + t1.span + root.strip-gap;
+        y: root.strip-cy;
+        tab: root.tabs[2];
+        a: root.a;
+        pad-y: root.least ? root.a : 5 * root.a;
+    }
+    Hint {
+        x: root.margin;
+        y: root.strip-cy - self.height / 2;
+        key: "B";
+        word: root.hints.back;
+        key-ink: Z.key-b;
+        a: root.a;
+        words: root.words;
+        pad: root.least ? 2 * root.a : 5 * root.a;
+    }
+    Hint {
+        x: root.width - root.margin - self.span;
+        y: root.strip-cy - self.height / 2;
+        key: "A";
+        word: root.hints.confirm;
+        key-ink: Z.key-a;
+        a: root.a;
+        words: root.words;
+        pad: root.least ? 2 * root.a : 5 * root.a;
+    }
+
+    // ---- The band ----
+    // Only the cards in view exist (a card beyond the count is not drawn:
+    // ZoneCardBand.css data-beyond), so the frame's walk stays short.
+    for c[i] in root.cards: Rectangle {
+      x: 0;
+      y: 0;
+      width: 0;
+      height: 0;
+      if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0: CardView {
+        x: root.card-x(i);
+        width: root.card-w(i);
+        height: root.side-h + root.share(i) * (root.card-h - root.side-h);
+        y: root.band-cy - self.height / 2;
+        card: c;
+        focused: i == root.focused-card;
+        a: root.a;
+      }
+    }
+    // The cursor: two triangles beside the focused card, breathing toward
+    // it; at an end of the band the one with nothing beyond it is the
+    // inert steel and stands still.
+    property <length> focused-x: card-x(focused-card);
+    property <length> focused-w: card-w(focused-card);
+    property <bool> first: focused-card <= 0;
+    property <bool> last: focused-card >= cards.length - 1;
+    if root.cards.length > 0 && root.card-h > 0: Tri {
+        x: root.focused-x - (2 * root.a + (root.first ? 0 : 2 * root.a * root.nudge)) - root.tri;
+        y: root.band-cy - self.height / 2;
+        width: root.tri;
+        height: root.tri * 1.1;
+        ink: root.first ? Z.inert : Z.red;
+    }
+    if root.cards.length > 0 && root.card-h > 0: Tri {
+        x: root.focused-x + root.focused-w + 2 * root.a + (root.last ? 0 : 2 * root.a * root.nudge);
+        y: root.band-cy - self.height / 2;
+        width: root.tri;
+        height: root.tri * 1.1;
+        left: true;
+        ink: root.last ? Z.inert : Z.red;
+    }
+
+    // ---- FIND: the body's top right corner ----
+    if root.find-shown: Button {
+        x: root.width - 12 * root.a - self.span;
+        y: root.body-y + 4 * root.a;
+        label: root.find-label;
+        a: root.a;
+        focused: root.zone == "find";
+        nudge: root.nudge-button;
+    }
+
+    // ---- The facts line: Korri's facts on one black 45 degree strip ----
+    property <length> facts-y: body-y + band-h;
+    property <length> fact-between: 7 * a;
+    property <int> fact-count: Math.min(5, facts.length);
+    property <length> facts-run: f0.span + f1.span + f2.span + f3.span + f4.span + fact-between * Math.max(0, fact-count - 1);
+    property <length> facts-lean: 14 * a;
+    property <length> facts-panel-w: facts-run + 2 * (facts-lean + 2 * a);
+    property <length> facts-x: (root.width - facts-panel-w) / 2;
+    if root.fact-count > 0: Panel {
+        x: root.facts-x;
+        y: root.facts-y;
+        width: root.facts-panel-w;
+        height: root.facts-h;
+        run: root.facts-lean;
+        ink: Z.black;
+    }
+    f0 := FactSlot {
+        x: root.facts-x + root.facts-lean + 2 * root.a;
+        y: root.facts-y + 4 * root.a;
+        fact: root.facts[0];
+        a: root.a;
+    }
+    f1 := FactSlot {
+        x: f0.x + f0.span + root.fact-between;
+        y: f0.y;
+        fact: root.facts[1];
+        a: root.a;
+    }
+    f2 := FactSlot {
+        x: f1.x + f1.span + root.fact-between;
+        y: f0.y;
+        fact: root.facts[2];
+        a: root.a;
+    }
+    f3 := FactSlot {
+        x: f2.x + f2.span + root.fact-between;
+        y: f0.y;
+        fact: root.facts[3];
+        a: root.a;
+    }
+    f4 := FactSlot {
+        x: f3.x + f3.span + root.fact-between;
+        y: f0.y;
+        fact: root.facts[4];
+        a: root.a;
+    }
+
+    // ---- The action row: the launch buttons, then OPTS. ----
+    // The row wraps when its buttons do not fit (ZoneActionRow.css: the
+    // row's sides keep a triangle and its nudge, the strip keeps the band's
+    // margin); the strip grows by the second line and the band gives the room.
+    property <length> acts-y: facts-y + facts-h;
+    property <length> act-gap: 14 * a + 8 * a + 5 * a;
+    property <int> act-count: Math.min(4, actions.length);
+    property <length> acts-room: root.width - 2 * 12 * a - 2 * (7 * a + 4 * a);
+    pure function act-span(i: int) -> length {
+        return i >= act-count ? 0 : i == 0 ? b0.span : i == 1 ? b1.span : i == 2 ? b2.span : b3.span;
+    }
+    // The width of buttons from..to-1 on one line.
+    pure function act-run(from: int, to: int) -> length {
+        return (from <= 0 && to > 0 ? act-span(0) : 0) + (from <= 1 && to > 1 ? act-span(1) : 0)
+            + (from <= 2 && to > 2 ? act-span(2) : 0) + (from <= 3 && to > 3 ? act-span(3) : 0)
+            + act-gap * Math.max(0, to - from - 1);
+    }
+    // How many buttons the first line holds (at least one).
+    property <int> line-1: act-run(0, act-count) <= acts-room ? act-count : act-run(0, 3) <= acts-room && act-count > 3 ? 3
+        : act-run(0, 2) <= acts-room && act-count > 2 ? 2 : 1;
+    property <int> act-lines: act-count > line-1 ? 2 : 1;
+    property <length> acts-content: act-lines * 2 * c1 + (act-lines - 1) * 4 * a;
+    property <length> acts-h: Math.max(act-h, acts-content);
+    property <length> acts-top: acts-y + (acts-h - acts-content) / 2;
+    pure function act-x(i: int) -> length {
+        return i < line-1 ? (root.width - act-run(0, line-1)) / 2 + act-run(0, i) + (i > 0 ? act-gap : 0)
+            : (root.width - act-run(line-1, act-count)) / 2 + act-run(line-1, i) + (i > line-1 ? act-gap : 0);
+    }
+    pure function act-y(i: int) -> length {
+        return acts-top + (i < line-1 ? 0 : 2 * c1 + 4 * a);
+    }
+    b0 := Button {
+        visible: root.act-count > 0;
+        x: root.act-x(0);
+        y: root.act-y(0);
+        label: root.actions[0].label;
+        lit: root.actions[0].lit;
+        focused: root.actions[0].focused;
+        a: root.a;
+        nudge: root.nudge-button;
+    }
+    b1 := Button {
+        visible: root.act-count > 1;
+        x: root.act-x(1);
+        y: root.act-y(1);
+        label: root.actions[1].label;
+        lit: root.actions[1].lit;
+        focused: root.actions[1].focused;
+        a: root.a;
+        nudge: root.nudge-button;
+    }
+    b2 := Button {
+        visible: root.act-count > 2;
+        x: root.act-x(2);
+        y: root.act-y(2);
+        label: root.actions[2].label;
+        lit: root.actions[2].lit;
+        focused: root.actions[2].focused;
+        a: root.a;
+        nudge: root.nudge-button;
+    }
+    b3 := Button {
+        visible: root.act-count > 3;
+        x: root.act-x(3);
+        y: root.act-y(3);
+        label: root.actions[3].label;
+        lit: root.actions[3].lit;
+        focused: root.actions[3].focused;
+        a: root.a;
+        nudge: root.nudge-button;
+    }
+
+    // ---- The foot (ZoneFoot.css): TIME and the clock, the Wi-Fi badge,
+    // the build. With no room left the badge and the build shrink in
+    // proportion and their words elide. ----
+    property <length> foot-y: root.height - foot-h;
+    property <length> foot-gap: Math.clamp(0.016 * root.width, 4 * a, 5 * a);
+    property <length> ph: foot-h - 8 * a;
+    property <length> py: foot-y + 4 * a;
+    property <length> foot-run: ph - a;
+    property <length> foot-side: foot-run + strip-pad;
+    property <length> foot-cap-top: py + (ph - c1) / 2;
+    property <length> timer-w: 2 * foot-side + time-word.natural + 3 * a + clock-word.natural;
+    property <length> fixed-signal: 2 * foot-side + 5 * a + 11 * a + 5 * a + strength-word.natural;
+    property <length> signal-natural: signal.shown ? fixed-signal + ssid-word.natural : 0;
+    property <length> build-natural: build-word.natural;
+    property <length> foot-room: root.width - 2 * margin - 3 * foot-gap - timer-w;
+    property <length> both: signal-natural + build-natural;
+    property <length> over: Math.max(0, both - foot-room);
+    property <length> signal-w: signal-natural - (both > 0 ? over * signal-natural / both : 0);
+    property <length> build-w: build-natural - (both > 0 ? over * build-natural / both : 0);
+    property <length> build-x: root.width - margin - build-w;
+    property <length> signal-x: build-x - foot-gap - signal-w;
+    property <length> name-w: Math.max(0, signal-w - fixed-signal);
+
+    if root.clock != "": Panel {
+        x: root.margin;
+        y: root.py;
+        width: root.timer-w;
+        height: root.ph;
+        run: root.foot-run;
+        ink: Z.black;
+    }
+    time-word := Caps {
+        visible: root.clock != "";
+        x: root.margin + root.foot-side;
+        y: root.foot-cap-top;
+        text: root.time-label.to-uppercase();
+        cap: root.c1;
+        a: root.a;
+        hud: true;
+    }
+    clock-word := Caps {
+        visible: root.clock != "";
+        x: root.margin + root.foot-side + time-word.natural + 3 * root.a;
+        y: root.foot-cap-top;
+        text: root.clock;
+        cap: root.c1;
+        a: root.a;
+    }
+    if root.signal.shown: Panel {
+        x: root.signal-x;
+        y: root.py;
+        width: root.signal-w;
+        height: root.ph;
+        run: root.foot-run;
+        ink: Z.black;
+    }
+    ssid-word := Caps {
+        visible: root.signal.shown;
+        x: root.signal-x + root.foot-side;
+        y: root.foot-cap-top;
+        box: Math.max(1px, root.name-w);
+        elide: root.name-w < ssid-word.natural;
+        text: root.signal.name;
+        cap: root.c1;
+        a: root.a;
+    }
+    property <length> bars-x: signal-x + foot-side + name-w + 5 * a;
+    property <length> bars-y: py + (ph - 8 * a) / 2;
+    for n[i] in [1, 2, 3, 4]: Rectangle {
+        visible: root.signal.shown;
+        x: root.bars-x + 3 * root.a * i;
+        y: root.bars-y + 8 * root.a - 2 * root.a * n;
+        width: 2 * root.a;
+        height: 2 * root.a * n;
+        background: i < root.signal.bars ? Z.white : Z.track;
+    }
+    strength-word := Caps {
+        visible: root.signal.shown;
+        x: root.bars-x + 16 * root.a;
+        y: root.foot-cap-top;
+        text: root.signal.strength;
+        cap: root.c1;
+        a: root.a;
+    }
+    build-word := FlatCaps {
+        x: root.build-x;
+        y: root.foot-cap-top;
+        box: Math.max(1px, root.build-w);
+        elide: root.build-w < root.build-natural;
+        text: root.build;
+        cap: root.c1;
+        a: root.a;
+        ink: Z.black;
+    }
+}
