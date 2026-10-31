@@ -1,0 +1,18 @@
+// THROWAWAY conversion/input proof, not a product surface.
+export component Surface inherits Window {
+    min-width: 0px;
+    min-height: 0px;
+    in property <int> position;
+    in property <image> cover-image;
+    title: "Shell test B";
+    background: #802040; // Test identity B.
+    Rectangle {
+        x: max(0px, min(parent.width - self.width, parent.width / 2 + root.position * parent.width / 10));
+        y: parent.height / 3;
+        width: parent.width / 8;
+        height: parent.height / 3;
+        background: #ffcc00; // Test movement marker.
+        Image { source: root.cover-image; width: parent.width; height: parent.height; image-fit: contain; }
+    }
+    Text { text: "B: " + root.position; color: white; font-size: 32px; /* Fixed test readout avoids an intrinsic font-size/layout loop. */ }
+}
