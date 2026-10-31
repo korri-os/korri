@@ -1,0 +1,85 @@
+[1m[92m   Compiling[0m smol_str v0.3.7
+[1m[92m   Compiling[0m wyz v0.5.1
+[1m[92m   Compiling[0m spin_on v0.1.1
+[1m[92m   Compiling[0m crypto-common v0.1.7
+[1m[92m   Compiling[0m block-buffer v0.10.4
+[1m[92m   Compiling[0m blake3 v1.8.7
+[1m[92m   Compiling[0m anyhow v1.0.104
+[1m[92m   Compiling[0m funty v2.0.0
+[1m[92m   Compiling[0m slint-macros v1.18.1
+[1m[92m   Compiling[0m bitvec v1.1.1
+[1m[92m   Compiling[0m rquickjs-core v0.14.0
+[1m[92m   Compiling[0m digest v0.10.7
+[1m[92m   Compiling[0m cpufeatures v0.2.17
+[1m[92m   Compiling[0m constant_time_eq v0.4.2
+[1m[92m   Compiling[0m sha2 v0.10.9
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m evdev v0.13.2
+[1m[92m   Compiling[0m rquickjs v0.14.0
+[1m[92m   Compiling[0m slint v1.18.1
+[1m[92m   Compiling[0m slint-interpreter v1.18.1
+[1m[92m   Compiling[0m pollster v0.4.0
+[1m[92m   Compiling[0m base64 v0.22.1
+[1m[92m   Compiling[0m surface-shell-spike v0.0.0 (/build/source)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 6m 50s
+Executing cargoInstallPostBuildHook
+Finished cargoInstallPostBuildHook
+Finished cargoBuildHook
+buildPhase completed in 6 minutes 50 seconds
+Running phase: checkPhase
+@nix {"action":"setPhase","phase":"checkPhase"}
+Executing cargoCheckHook
+cargoCheckHook flags: -j 4 --profile release --target aarch64-unknown-linux-gnu --offline --
+[1m[92m   Compiling[0m surface-shell-spike v0.0.0 (/build/source)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 11.57s
+[1m[92m     Running[0m unittests src/main.rs (target/aarch64-unknown-linux-gnu/release/deps/surface_shell_spike-6bbeaa194da76311)
+
+running 10 tests
+test input::tests::normalizes_stick_and_prioritizes_dpad ... ok
+test input::tests::dedupes_only_other_sources_inside_40ms ... ok
+test input::tests::repeats_at_400_then_100_and_release_cancels ... ok
+test input::tests::mirrors_do_not_double_repeat ... ok
+test view::tests::converts_nested_structs_models_and_preserves_null ... ok
+test view::tests::decodes_data_url_once_and_rejects_invalid_images ... ok
+test view::tests::caches_file_images_after_the_first_decode ... ok
+test logic::tests::state_retains_non_json_values_and_contexts_are_fresh ... ok
+test view::tests::decodes_percent_encoded_svg_data_urls ... ok
+test view::tests::uses_declared_int_float_and_nested_model_types ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+[1m[92m     Running[0m unittests verify/main.rs (target/aarch64-unknown-linux-gnu/release/deps/surface_verify-5c4ca9d6787ad7d6)
+
+running 15 tests
+test allocation::tests::retains_peak_after_free_and_rejects_limit ... ok
+Error decoding embedded image: The image format could not be determined
+test conformance::tests::image_decode ... ok
+test conformance::tests::memory_blow_up ... ok
+test conformance::tests::recursive_type ... ok
+test conformance::tests::throws ... ok
+test conformance::tests::accepts_null_and_partial_structs ... ok
+test conformance::tests::unknown_property ... ok
+test index::tests::digest_changes_with_bytes_not_summary ... ok
+test view::tests::converts_nested_structs_models_and_preserves_null ... ok
+test view::tests::decodes_data_url_once_and_rejects_invalid_images ... ok
+test view::tests::caches_file_images_after_the_first_decode ... ok
+test view::tests::decodes_percent_encoded_svg_data_urls ... ok
+test conformance::tests::wrong_type ... ok
+test view::tests::uses_declared_int_float_and_nested_model_types ... ok
+test conformance::tests::infinite_loop ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+Finished cargoCheckHook
+Running phase: installPhase
+@nix {"action":"setPhase","phase":"installPhase"}
+Executing cargoInstallHook
+Finished cargoInstallHook
+Running phase: fixupPhase
+@nix {"action":"setPhase","phase":"fixupPhase"}
+shrinking RPATHs of ELF executables and libraries in /nix/store/ry7vhnb1w51ncvdid414nl9bbg9z2c08-surface-shell-spike-0.0.0
+shrinking /nix/store/ry7vhnb1w51ncvdid414nl9bbg9z2c08-surface-shell-spike-0.0.0/bin/surface-shell-spike
+shrinking /nix/store/ry7vhnb1w51ncvdid414nl9bbg9z2c08-surface-shell-spike-0.0.0/bin/surface-verify
+checking for references to /build/ in /nix/store/ry7vhnb1w51ncvdid414nl9bbg9z2c08-surface-shell-spike-0.0.0...
+patching script interpreter paths in /nix/store/ry7vhnb1w51ncvdid414nl9bbg9z2c08-surface-shell-spike-0.0.0
+stripping (with command strip and flags -S -p) in  /nix/store/ry7vhnb1w51ncvdid414nl9bbg9z2c08-surface-shell-spike-0.0.0/bin

@@ -1,0 +1,23 @@
+  23491   23489   0 bash -c   set -eu  cd '/tmp/surface-verify-1793458262-502354/surface-verify-sp-installed'  mkdir -p '/tmp/surface-verify-1793458262-502354/tmp' '/tmp/surface-verify-1793458262-502354/home' '/tmp/surface-verify-1793458262-502354/cache' '/tmp/surface-verify-1793458262-502354/config'  export TMPDIR='/tmp/surface-verify-1793458262-502354/tmp' HOME='/tmp/surface-verify-1793458262-502354/home' XDG_CACHE_HOME='/tmp/surface-verify-1793458262-502354/cache' XDG_CONFIG_HOME='/tmp/surface-verify-1793458262-502354/config'  printf '<fontconfig><cachedir>%s/cache/fontconfig</cachedir></fontconfig>\n' '/tmp/surface-verify-1793458262-502354' > '/tmp/surface-verify-1793458262-502354/config/fonts.conf'  export FONTCONFIG_FILE='/tmp/surface-verify-1793458262-502354/config/fonts.conf'  export SURFACE_VERIFY_JOBS=4  export SURFACE_VERIFY_LAUNCHER="$PWD/run.sh"  if test -d /sys/fs/cgroup/korri-games.slice; then    test -z "$(find /sys/fs/cgroup/korri-games.slice -name cgroup.procs -exec cat {} \;)"  fi  if test 'installed' != large; then  for n in 10 100 1000 5000; do    nice -n 10 ./run.sh many "$PWD/bin" "$n" > '/tmp/surface-verify-1793458262-502354/many-'"$n"'.jsonl' 2> '/tmp/surface-verify-1793458262-502354/many-'"$n"'.log'  done  fi  if test 'installed' != installed; then  nice -n 10 ./run.sh large "$PWD/bin" '/tmp/surface-verify-1793458262-502354/fixtures' > '/tmp/surface-verify-1793458262-502354/large.jsonl' 2> '/tmp/surface-verify-1793458262-502354/large.log'  fi
+  24920   23491  10 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/surface-verify many /tmp/surface-verify-1793458262-502354/surface-verify-sp-installed/bin 5000
+  25101   24920  10 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/surface-verify phase verify /tmp/surface-verify-1793458262-502354/tmp/.tmpUGPxmD /tmp/surface-verify-1793458262-502354/surface-verify-sp-installed/bin/fixtures/model.json
+  36390   25101  10 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/surface-verify verify /tmp/surface-verify-1793458262-502354/tmp/.tmpUGPxmD/surface-02574 /tmp/surface-verify-1793458262-502354/surface-verify-sp-installed/bin/fixtures/model.json
+  36391   25101  10 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/surface-verify verify /tmp/surface-verify-1793458262-502354/tmp/.tmpUGPxmD/surface-02299 /tmp/surface-verify-1793458262-502354/surface-verify-sp-installed/bin/fixtures/model.json
+  36392   25101  10 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/surface-verify verify /tmp/surface-verify-1793458262-502354/tmp/.tmpUGPxmD/surface-02293 /tmp/surface-verify-1793458262-502354/surface-verify-sp-installed/bin/fixtures/model.json
+  36394   25101  10 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/surface-verify verify /tmp/surface-verify-1793458262-502354/tmp/.tmpUGPxmD/surface-02572 /tmp/surface-verify-1793458262-502354/surface-verify-sp-installed/bin/fixtures/model.json
+  36442   36440   0 bash -c ps -eo pid,ppid,ni,args | grep -E "surface-verify|24920|25101"; systemctl show korri-chromium-kiosk.service korri-compositor.service inputplumber.service -p Id -p ActiveState -p MainPID -p NRestarts
+  36445   36442   0 grep -E surface-verify|24920|25101
+Id=korri-chromium-kiosk.service
+ActiveState=inactive
+MainPID=0
+NRestarts=0
+
+Id=korri-compositor.service
+ActiveState=active
+MainPID=18798
+NRestarts=0
+
+Id=inputplumber.service
+ActiveState=active
+MainPID=22326
+NRestarts=0

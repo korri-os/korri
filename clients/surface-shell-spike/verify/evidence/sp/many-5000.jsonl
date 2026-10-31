@@ -1,0 +1,4 @@
+{"failed_packages":0,"hwm_kib":5056,"method":"sha256","ms_per_item":131.4403853008,"n":5000,"peak_worker_hwm_kib":0,"rss_kib":2324,"total_s":657.201926504,"verification_jobs":0,"worker_rss_upper_bound_kib":0}
+{"failed_packages":0,"hwm_kib":5092,"method":"blake3","ms_per_item":105.2686624702,"n":5000,"peak_worker_hwm_kib":0,"rss_kib":2332,"total_s":526.343312351,"verification_jobs":0,"worker_rss_upper_bound_kib":0}
+{"failed_packages":0,"hwm_kib":4988,"method":"identity","ms_per_item":3.5127977698,"n":5000,"peak_worker_hwm_kib":0,"rss_kib":4988,"total_s":17.563988849,"verification_jobs":0,"worker_rss_upper_bound_kib":0}
+{"failed_packages":0,"hwm_kib":5080,"method":"summaries","ms_per_item":1.3950494678,"n":5000,"peak_worker_hwm_kib":0,"rss_kib":5080,"total_s":6.975247339,"verification_jobs":0,"worker_rss_upper_bound_kib":0}

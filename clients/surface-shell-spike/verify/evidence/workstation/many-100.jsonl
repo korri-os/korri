@@ -1,0 +1,5 @@
+{"failed_packages":0,"hwm_kib":4964,"method":"sha256","ms_per_item":5.49900726,"n":100,"peak_worker_hwm_kib":0,"rss_kib":4964,"total_s":0.549900726,"verification_jobs":0,"worker_rss_upper_bound_kib":0}
+{"failed_packages":0,"hwm_kib":5056,"method":"blake3","ms_per_item":0.64532928,"n":100,"peak_worker_hwm_kib":0,"rss_kib":5056,"total_s":0.064532928,"verification_jobs":0,"worker_rss_upper_bound_kib":0}
+{"failed_packages":0,"hwm_kib":4752,"method":"identity","ms_per_item":0.06000136,"n":100,"peak_worker_hwm_kib":0,"rss_kib":4752,"total_s":0.006000136,"verification_jobs":0,"worker_rss_upper_bound_kib":0}
+{"failed_packages":0,"hwm_kib":4772,"method":"summaries","ms_per_item":0.02236053,"n":100,"peak_worker_hwm_kib":0,"rss_kib":4772,"total_s":0.002236053,"verification_jobs":0,"worker_rss_upper_bound_kib":0}
+{"failed_packages":0,"hwm_kib":5132,"method":"verify","ms_per_item":104.81920801,"n":100,"peak_worker_hwm_kib":24188,"rss_kib":5132,"total_s":10.481920801,"verification_jobs":8,"worker_rss_upper_bound_kib":193504}
