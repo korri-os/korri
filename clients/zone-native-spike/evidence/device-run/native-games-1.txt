@@ -1,0 +1,8 @@
+samples=24
+median_pss_kib=20887.0
+max_pss_kib=20887
+elapsed_seconds=24.11
+cpu_one_core_percent=44.568
+memavailable_start_kib=591628
+memavailable_end_kib=592664
+raw_samples=/tmp/zone-native-results/native-games-1.csv

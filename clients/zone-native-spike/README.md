@@ -14,10 +14,36 @@ Anbernic RG35XX SP (640x480, 4x Cortex-A53, 1 GB)?
 The state: Zone's GAMES page, state Ready (the default export of
 `surfaces/zone/src/pages/ZoneGames.page.part.tsx`), Modern look.
 
-## The answer (workstation only)
+## The answer
 
-Yes on an x86_64 workstation, under X11 (Xvfb) and Wayland (headless sway).
-See "Evidence". Nothing here was measured on the device.
+Yes, on the device. On 2026-10-31 the aarch64 build ran full screen on the
+RG35XX SP (system `r2jgp9i35k0qfg3v9kqs4fip7wf53wa6`) inside its sway, as
+`korri-portal`, from a `/tmp` bundle, in place of the stopped Chromium kiosk.
+It held 60 frames a second for the whole 2.5-minute run.
+
+| Same device, same sway | Median PSS | CPU (one core) | Frames/s |
+| --- | ---: | ---: | ---: |
+| Chromium kiosk, Zone GAMES, **Blend** look (3 x 24 s) | 447,028 KiB | 82.8 % | not measured |
+| Native port, Zone GAMES, **Modern** look (3 x 24 s) | 20,887 KiB | 44.6 / 58.9 / 56.4 % | 60.0 |
+| Native port, 60 s | 20,887 KiB | 48.2 % | 60.0 |
+
+- Memory: the native process is 4.7 % of the kiosk's PSS. MemAvailable was
+  406,108 KiB with the kiosk and about 592,000 KiB with the native port.
+- First frame: 548 ms after the process started.
+- The looks differ. Chromium was measured in Blend (pixel rings at 15 fps),
+  the port draws Modern (smooth rings, dots at 60 fps), so the CPU row is
+  not like for like. A Chromium Modern run is still missing.
+- CPU counts only the measured cgroup. sway's own compositing is in neither
+  row.
+- Method and raw samples: `device/README.md`, `device/measure.sh`,
+  `device/zone-native-run.sh` (device side) and `device/drive.sh`
+  (workstation side), results in `evidence/device-run/`. The Chromium
+  baseline is in `device/evidence/`.
+- A first native run on 2026-10-31 is void: a live game covered the native
+  window, and sway stopped sending it frames.
+
+Workstation proof (x86_64, X11 under Xvfb and Wayland under headless sway)
+is in "Evidence".
 
 ## Run
 
