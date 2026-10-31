@@ -49,6 +49,7 @@ let
         device = "odin2portal";
       })
       ./sd-image.nix
+      ./memory.nix
       ./web-session.nix
       ./owner-publisher.nix
     ];
