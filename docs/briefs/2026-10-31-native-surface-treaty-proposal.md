@@ -1,6 +1,8 @@
 # Native surface treaty: proposal (2026-10-31)
 
-Status: **proposal, waiting for owner decisions** (see "Decisions"). Nothing
+Status: **core accepted by the owner on 2026-10-31** (C1–C3, C6, C7), with
+D1 to D6 decided as recorded under "Decisions". D1 and D2 follow the owner's
+own answers, interpreted as written there. Nothing
 here is built in product code. It turns the spikes of 2026-10-30 and 31 into
 one contract that parallel surface conversions can follow.
 
@@ -159,16 +161,42 @@ new schema, grounded in those two existing producers. **Decision D1.**
 | Combined summary index instead of N files | Reading 5,000 separate summaries took 7 s at startup |
 | Layer-shell window for notices over a running game | #179 |
 
-## Decisions
+## Decisions (owner, 2026-10-31)
 
-- **D1.** May a surface store small values of its own (C8)? If yes, which:
-  only strings under its own id, limited in size, or something richer?
-- **D2.** The shape of the windowed game list (C4).
-- **D3.** `gameActions(gameId)`: put each game's actions in the model, or add
-  a request whose answer arrives in the next model.
-- **D4.** Which shell-provided image operations exist at first. Pico's
-  palette recolour is the one real case so far.
-- **D5.** Overlays: only the gameplay overlay now, or notices over a running
-  game too.
-- **D6.** Whether the verifier's summary becomes product schema stored by
-  plugin-host, or stays derived and rebuilt on demand.
+- **D1. Preferences must be able to travel across devices.** Owner: "Sometimes
+  the preferences must travel across devices."
+  - Interpretation: a surface preference follows ADR 0018's rule for launch
+    settings. Each preference kind is marked either shared (it follows the
+    person) or device-only. The mark belongs to the kind.
+  - Shared preferences are records (`CONTEXT.md`, "Record"), stored by korrid
+    and copied between the person's devices.
+  - The package declares each preference kind and its mark next to its logic.
+    The verifier copies the declaration into the summary.
+  - Record sync is not built yet (ADR 0018). Until it is, shared preferences
+    are stored on the device and marked shared, so they travel once sync
+    lands.
+  - The declaration's exact form is still schema to draft and approve.
+- **D2. The game list uses a cursor.** Owner: "Can we use a cursor approach?"
+  - The model carries the total, one window of games, and opaque cursors
+    before and after it.
+  - A surface asks for games after or before a cursor, or from the start or
+    the end, with a count.
+  - Cursors stay valid when games are added elsewhere in the list. Index
+    windows do not.
+  - Consequence: anything a surface does over the whole list moves into
+    Korri's query. Today that is Zone's FIND filter (`state/navigation.ts`,
+    the band filtered through the find draft) and any sort or section split.
+    Filter, sort and section become parameters of the cursor request, and
+    the result arrives as a new window.
+  - Jumping far, such as "first game starting with M", is a seek by key. It
+    is a parameter of the same request, not an index.
+  - Field names are still schema to draft and approve.
+- **D3. Actions for the focused game.** The surface tells Korri which game is
+  focused; Korri adds that game's actions to the model. `gameActions(gameId)`
+  goes away.
+- **D4. Image operations.** At first only Pico's palette recolour exists as a
+  shell operation. Others are added when a real surface needs them.
+- **D5. Overlays.** Only the gameplay overlay is in this contract. Notices
+  over a running game (#179) come later, as shell work.
+- **D6. The verifier's summary stays derived.** The shell rebuilds it when it
+  is missing. It is not stored as plugin-host schema yet.
