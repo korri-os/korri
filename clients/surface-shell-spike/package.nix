@@ -22,6 +22,7 @@ pkgs.rustPlatform.buildRustPackage {
       ./Cargo.toml
       ./Cargo.lock
       ./src
+      (lib.fileset.fileFilter (file: file.hasExt "rs") ./verify)
       ./fixtures/model.json
       ./surfaces/_test
     ];
@@ -30,7 +31,9 @@ pkgs.rustPlatform.buildRustPackage {
   nativeBuildInputs = [ pkgs.patchelf ];
   # winit / fontique open these libraries at runtime.
   postFixup = ''
-    patchelf --add-rpath "${lib.makeLibraryPath runtimeLibraries}" "$out/bin/surface-shell-spike"
+    for executable in "$out"/bin/*; do
+      patchelf --add-rpath "${lib.makeLibraryPath runtimeLibraries}" "$executable"
+    done
   '';
   meta = {
     description = "THROWAWAY SPIKE: runtime Slint + QuickJS surface shell";
