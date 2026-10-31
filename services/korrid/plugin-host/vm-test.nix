@@ -1648,6 +1648,8 @@ pkgs.testers.runNixOSTest {
     assert json.loads(machine.succeed("korri-plugin status @korri:tailscale")) == offline_current
     machine.succeed("test $(find " + lifecycle_root + " -type l | wc -l) = 2")
     cache.succeed("systemctl start nix-serve.service")
+    # Raw-cache installs below ask cache.nixos.org about every path (#349).
+    cache.succeed("systemctl start nginx.service")
     assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["provenance"]["source_url"] == source_a
     machine.succeed("korri-plugin enable @korri:tailscale")
     machine.succeed("korri-plugin restore-all")
