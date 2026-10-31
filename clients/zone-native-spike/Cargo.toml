@@ -1,0 +1,38 @@
+# THROWAWAY SPIKE. Not a product client, not a surface and not a treaty.
+# One state of Zone (GAMES, Ready, Modern look) drawn natively with Slint.
+# See README.md for the question it answers and its limits.
+[package]
+name = "zone-native-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Standalone: not a member of any workspace.
+[workspace]
+
+[dependencies]
+# Software renderer only; winit for Wayland (sway on the device) and X11
+# (Xvfb proofs). `unstable-winit-030` gives the winit event hook the stats
+# use (README, "Stats"); it adds no crate the winit backend does not
+# already build.
+slint = { version = "=1.18.1", default-features = false, features = [
+  "std",
+  "compat-1-2",
+  "renderer-software",
+  "backend-winit-wayland",
+  "backend-winit-x11",
+  "unstable-winit-030",
+] }
+# Not used directly. `fontconfig-dlopen` makes libfontconfig optional at
+# run time; the embedded Anton font covers its absence.
+fontique = { version = "=0.11.1", features = ["fontconfig-dlopen"] }
+# The shaper Slint's text stack already builds (through parley). The plan
+# measures words with it, kerning included, as Chromium's HarfBuzz does.
+harfrust = "=0.12.0"
+
+[build-dependencies]
+slint-build = "=1.18.1"
+
+[profile.release]
+opt-level = 3
+codegen-units = 4

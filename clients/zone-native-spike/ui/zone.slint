@@ -1,0 +1,378 @@
+// THROWAWAY SPIKE: Zone's GAMES page, state Ready, Modern look.
+//
+// Rust plans every static shape (src/plan.rs) as a flat list of
+// primitives, in paint order; this file only draws them. The two
+// animations live here, so the software renderer redraws only the small
+// rectangles they touch:
+//  - the drift: three dots, each a small Path whose x and y follow
+//    animation-tick(); the rings are two images painted once by Rust;
+//  - the nudge: the two red triangles, small Paths moved by one eased,
+//    alternating property animation.
+
+// Anton, converted from Zone's woff2 (README, "Fonts"). Embedded.
+import "fonts/Anton-latin.ttf";
+
+export struct Prim {
+    // 0 rect, 1 path, 2 text, 3 cover
+    kind: int,
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+    color: color,
+    radius: length,
+    // path: SVG commands in screen coordinates, inside x, y, w, h
+    path: string,
+    // text: Slint font size, elision, outline
+    text: string,
+    size: length,
+    elide: bool,
+    // 0 plain, 1 ring, 2 ring and one-step drop, 3 ring, two-step drop and band
+    fx: int,
+    r: length,
+    ring: color,
+    drop: color,
+    band: color,
+    band-y: length,
+    band-h: length,
+    // cover: which art, and where it stands inside the clip
+    art: int,
+    ix: length,
+    iy: length,
+    iw: length,
+    ih: length,
+    // text: the box the words may draw in, and whether it cuts them
+    clip: bool,
+    cx: length,
+    cy: length,
+    cw: length,
+    ch: length,
+}
+
+export struct Dot {
+    // the dot's radius, in logical px
+    r: length,
+    // the orbit (its centre already half an art px in, as Zone's canvas
+    // draws it), its start share of a turn, its sense, its turn in ms
+    ring-r: length,
+    ring-cx: length,
+    ring-cy: length,
+    phase: float,
+    turn: float,
+    drift: float,
+}
+
+export struct Tri {
+    // the card the triangle points at: its edge and its vertical centre
+    edge: length,
+    cy: length,
+    w: length,
+    h: length,
+    near: length,
+    far: length,
+    // -1: stands left of the edge, points right; 1: stands right, points left
+    side: int,
+}
+
+component Outline inherits Rectangle {
+    in property <Prim> p;
+    in property <length> dx;
+    in property <length> dy;
+    in property <color> ink;
+    Text {
+        x: root.dx;
+        y: root.dy;
+        width: root.p.w;
+        height: root.p.h;
+        text: root.p.text;
+        font-family: "Anton";
+        font-size: root.p.size;
+        color: root.ink;
+        overflow: root.p.elide ? elide : clip;
+        wrap: no-wrap;
+        vertical-alignment: top;
+        horizontal-alignment: left;
+    }
+}
+
+component Words inherits Rectangle {
+    in property <Prim> p;
+    x: p.cx;
+    y: p.cy;
+    width: p.cw;
+    height: p.ch;
+    clip: p.clip;
+    Rectangle {
+        x: root.p.x - root.p.cx;
+        y: root.p.y - root.p.cy;
+        width: root.p.w;
+        height: root.p.h;
+        // The two-step drop (the banner's), under everything.
+        if root.p.fx == 3: Rectangle {
+            for o in [{ x: 3, y: 1 }, { x: 3, y: 2 }, { x: 3, y: 3 }, { x: 2, y: 3 }, { x: 1, y: 3 }]: Outline {
+                p: root.p;
+                dx: o.x * root.p.r;
+                dy: o.y * root.p.r;
+                ink: root.p.drop;
+            }
+        }
+        // The one-step drop.
+        if root.p.fx >= 2: Rectangle {
+            for o in [{ x: 2, y: 0 }, { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 1, y: 2 }, { x: 0, y: 2 }]: Outline {
+                p: root.p;
+                dx: o.x * root.p.r;
+                dy: o.y * root.p.r;
+                ink: root.p.drop;
+            }
+        }
+        // The ring: all eight neighbours, one art px out.
+        if root.p.fx >= 1: Rectangle {
+            for o in [
+                { x: -1, y: -1 }, { x: 0, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 0 },
+                { x: 1, y: 0 }, { x: -1, y: 1 }, { x: 0, y: 1 }, { x: 1, y: 1 }
+            ]: Outline {
+                p: root.p;
+                dx: o.x * root.p.r;
+                dy: o.y * root.p.r;
+                ink: root.p.ring;
+            }
+        }
+        Outline {
+            p: root.p;
+            dx: 0;
+            dy: 0;
+            ink: root.p.color;
+        }
+        // The banner's white band through rows 4 to 6 of the cap.
+        if root.p.fx == 3: Rectangle {
+            y: root.p.band-y;
+            height: root.p.band-h;
+            clip: true;
+            Outline {
+                p: root.p;
+                dx: 0;
+                dy: -root.p.band-y;
+                ink: root.p.band;
+            }
+        }
+    }
+}
+
+component Cover inherits Rectangle {
+    in property <Prim> p;
+    x: p.x;
+    y: p.y;
+    width: p.w;
+    height: p.h;
+    clip: true;
+    Image {
+        x: root.p.ix;
+        y: root.p.iy;
+        width: root.p.iw;
+        height: root.p.ih;
+        image-rendering: pixelated;
+        image-fit: fill;
+        source: root.p.art == 0 ? @image-url("art/summit.png")
+            : root.p.art == 1 ? @image-url("art/knight.png")
+            : root.p.art == 2 ? @image-url("art/blocks.png")
+            : @image-url("art/cavern.png");
+    }
+}
+
+component Shape inherits Path {
+    in property <Prim> p;
+    x: p.x;
+    y: p.y;
+    width: p.w;
+    height: p.h;
+    viewbox-x: p.x / 1px;
+    viewbox-y: p.y / 1px;
+    viewbox-width: p.w / 1px;
+    viewbox-height: p.h / 1px;
+    commands: p.path;
+    fill: p.color;
+}
+
+component Prims inherits Rectangle {
+    in property <[Prim]> prims;
+    for p in root.prims: Rectangle {
+        if p.kind == 0: Rectangle {
+            x: p.x;
+            y: p.y;
+            width: p.w;
+            height: p.h;
+            background: p.color;
+            border-radius: p.radius;
+        }
+        if p.kind == 1: Shape {
+            p: p;
+        }
+        if p.kind == 2: Words {
+            p: p;
+        }
+        if p.kind == 3: Cover {
+            p: p;
+        }
+    }
+}
+
+// A planet dot: a disc Path at a sub-pixel position on its orbit.
+component Planet inherits Path {
+    in property <Dot> d;
+    in property <float> clock-ms;
+    property <angle> at: (d.phase + d.turn * Math.mod(clock-ms, d.drift) / d.drift) * 360deg;
+    x: d.ring-cx + d.ring-r * Math.cos(at) - d.r;
+    y: d.ring-cy + d.ring-r * Math.sin(at) - d.r;
+    width: d.r * 2;
+    height: d.r * 2;
+    viewbox-x: 0;
+    viewbox-y: 0;
+    viewbox-width: 2;
+    viewbox-height: 2;
+    commands: "M 0 1 A 1 1 0 1 0 2 1 A 1 1 0 1 0 0 1 Z";
+}
+
+// A cursor triangle, breathing toward its card.
+component Cursor inherits Path {
+    in property <Tri> t;
+    in property <float> nudge;
+    property <length> gap: t.near + (t.far - t.near) * nudge;
+    x: t.side < 0 ? t.edge - gap - t.w : t.edge + gap;
+    y: t.cy - t.h / 2;
+    width: t.w;
+    height: t.h;
+    viewbox-x: 0;
+    viewbox-y: 0;
+    viewbox-width: 2;
+    viewbox-height: 2;
+    commands: t.side < 0 ? "M 0 0 L 2 1 L 0 2 Z" : "M 2 0 L 0 1 L 2 2 Z";
+    fill: #e70000;
+}
+
+export component ZoneWindow inherits Window {
+    title: "Zone (native spike)";
+    // While baking, the window draws only the still page, on nothing, so
+    // the snapshot is that page with alpha (README, "Cost").
+    background: root.baking ? transparent : #4ad39c;
+    forward-focus: keys;
+
+    in property <image> ground;
+    in property <image> ring-a;
+    in property <length> ring-a-x;
+    in property <length> ring-a-y;
+    in property <length> ring-a-w;
+    in property <length> ring-a-h;
+    in property <color> ring-a-colour: #39b2ce;
+    in property <color> ring-b-colour: #f78e18;
+    in property <[Dot]> dots-b;
+    in property <[Dot]> dots-a;
+    in property <[Prim]> prims;
+    in property <[Tri]> tris;
+    // The still page, painted once from `prims` (see `baking`).
+    in property <image> page;
+    in property <bool> baking;
+    // The drift's clock multiplier (ZONE_SPIKE_TIME_SCALE); 1 is real time.
+    in property <float> time-scale: 1;
+
+    callback resized(length, length);
+    callback quit();
+
+    changed width => {
+        root.resized(self.width, self.height);
+    }
+    changed height => {
+        root.resized(self.width, self.height);
+    }
+
+    // The drift's clock, in ms, wrapped well inside f32's whole numbers.
+    property <float> clock-ms: Math.mod(animation-tick() / 1ms, 14000000) * root.time-scale;
+
+    // The nudge: near to far and back, eased, one leg per 480 ms
+    // (--zone-games-nudge-time; Modern's alternate rule, ZoneCard.css).
+    property <float> nudge: 0;
+    animate nudge {
+        duration: 480ms;
+        easing: ease-in-out;
+        iteration-count: -1;
+        direction: alternate;
+    }
+    init => {
+        root.nudge = 1;
+    }
+
+    // Ground and ring B, painted once.
+    if !root.baking: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: root.ground;
+        image-fit: fill;
+    }
+
+    if !root.baking: Rectangle {
+      for d in root.dots-b: Planet {
+        d: d;
+        clock-ms: root.clock-ms;
+        fill: root.ring-b-colour;
+      }
+    }
+
+    // Ring A over ring B and its dot, painted once.
+    if !root.baking: Image {
+        x: root.ring-a-x;
+        y: root.ring-a-y;
+        width: root.ring-a-w;
+        height: root.ring-a-h;
+        source: root.ring-a;
+        image-fit: fill;
+    }
+
+    if !root.baking: Rectangle {
+      for d in root.dots-a: Planet {
+        d: d;
+        clock-ms: root.clock-ms;
+        fill: root.ring-a-colour;
+      }
+    }
+
+    // The still page: live while baking (or with ZONE_SPIKE_LIVE=1), then
+    // one image.
+    Prims {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        prims: root.prims;
+    }
+
+    if !root.baking: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: root.page;
+        image-fit: fill;
+    }
+
+    if !root.baking: Rectangle {
+      for t in root.tris: Cursor {
+        t: t;
+        nudge: root.nudge;
+      }
+    }
+
+    keys := FocusScope {
+        x: 0;
+        y: 0;
+        width: 0;
+        height: 0;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.quit();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
