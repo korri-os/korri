@@ -5,6 +5,9 @@ set -eu
 BUNDLE=/tmp/$1
 PACKAGES=$2
 OUT=$3
+HOLD_SECONDS=$4
+case "$HOLD_SECONDS" in ''|*[!0-9]*|?????*) echo 'invalid hold seconds' >&2; exit 2 ;; esac
+[ "$HOLD_SECONDS" -le 3600 ] || exit 2
 case "$OUT" in /tmp/surface-shell-results-*) ;; *) echo 'invalid result path' >&2; exit 2 ;; esac
 GRIM=/nix/store/8svfyws68lbybhhf1466wsakqnk74bxz-grim-1.5.0/bin/grim
 SWAYMSG=/nix/store/8fx1mm7z1nv7vrj65qzp4077s2a2x8i4-sway-1.12/bin/swaymsg
@@ -33,10 +36,18 @@ shot() {
   XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 "$GRIM" "$OUT/$1.png"
 }
 kiosk_stopped=0
+INVOCATION=''
+journal() {
+  if [ -n "$INVOCATION" ]; then
+    journalctl "_SYSTEMD_INVOCATION_ID=$INVOCATION" --no-pager -o short-monotonic
+  else
+    journalctl -u surface-shell-spike.service --no-pager -o short-monotonic
+  fi
+}
 restore() {
   trap - EXIT HUP INT TERM
   [ "$kiosk_stopped" = 1 ] || return 0
-  journalctl -u surface-shell-spike.service --no-pager -o short-monotonic >"$OUT/shell-journal.txt" 2>&1 || :
+  journal >"$OUT/shell-journal.txt" 2>&1 || :
   systemctl stop surface-shell-spike.service 2>/dev/null || :
   systemctl start korri-chromium-kiosk.service || :
   sleep 20
@@ -51,21 +62,43 @@ restore() {
   systemctl show -p ActiveState -p SubState -p NRestarts -p MainPID korri-chromium-kiosk.service >"$OUT/kiosk-after.txt"
   "$SWAYMSG" output '*' power on >/dev/null || :
   shot kiosk-after || :
-  pid=$(systemctl show -p MainPID --value korri-chromium-kiosk.service)
-  sleep 10
-  systemctl show -p ActiveState -p SubState -p NRestarts -p MainPID korri-chromium-kiosk.service >"$OUT/kiosk-stability.txt"
-  if ! systemctl is-active -q korri-chromium-kiosk.service ||
-     [ "$(systemctl show -p NRestarts --value korri-chromium-kiosk.service)" != 0 ] ||
-     [ "$pid" != "$(systemctl show -p MainPID --value korri-chromium-kiosk.service)" ]; then
-    echo 'RECOVERY FAILED: kiosk is not stable' >>"$OUT/notes.txt"
-    exit 1
+  stable() {
+    pid=$(systemctl show -p MainPID --value korri-chromium-kiosk.service)
+    chrome=$(ps -C chromium -o pid=,args= | awk '/--app=data:/ {print $1}')
+    [ -n "$chrome" ] || return 1
+    for n in 0 1 2 3 4 5 6; do
+      date -u +%FT%TZ >>"$OUT/kiosk-stability.txt"
+      systemctl show -p ActiveState -p SubState -p NRestarts -p MainPID korri-chromium-kiosk.service >>"$OUT/kiosk-stability.txt"
+      ps -C chromium -o pid=,args= | awk '/--app=data:/ {print; found=1} END {exit !found}' >>"$OUT/kiosk-stability.txt" || return 1
+      if ! systemctl is-active -q korri-chromium-kiosk.service ||
+         [ "$(systemctl show -p NRestarts --value korri-chromium-kiosk.service)" != 0 ] ||
+         [ "$pid" != "$(systemctl show -p MainPID --value korri-chromium-kiosk.service)" ] ||
+         [ "$chrome" != "$(ps -C chromium -o pid=,args= | awk '/--app=data:/ {print $1}')" ]; then return 1; fi
+      [ "$n" = 6 ] || sleep 10
+    done
+  }
+  if ! stable; then
+    echo 'kiosk failed 60-second check; recovering unchanged compositor' >>"$OUT/notes.txt"
+    systemctl stop korri-chromium-kiosk.service || :
+    systemctl restart korri-compositor.service || :
+    sleep 3
+    systemctl start korri-chromium-kiosk.service || :
+    sleep 20
+    stable || { echo 'RECOVERY FAILED' >>"$OUT/notes.txt"; exit 1; }
   fi
+  shot kiosk-after || :
 }
 trap restore EXIT
 trap 'exit 1' HUP INT TERM
 "$SWAYMSG" output '*' power on >/dev/null
 shot kiosk-before
-[ ! -e "$BUNDLE" ] || { echo 'bundle already extracted; choose a fresh name' >&2; exit 2; }
+# A failed prior run can leave this exact extraction path. No shell service
+# or unknown window is active (checked above), and earlier evidence is local.
+# Keep the freshly copied archive/runner and this run's output until collection.
+rm -rf -- /tmp/surface-shell-sp "$BUNDLE"
+for previous in /tmp/surface-shell-results*; do
+  [ "$previous" = "$OUT" ] || rm -rf -- "$previous"
+done
 tar xf "$BUNDLE.tar.gz" -C /tmp
 [ -x "$BUNDLE/tools/wtype/run.sh" ] || { echo 'bundle must include prebuilt wtype for automated drive' >&2; exit 2; }
 "$BUNDLE/lib/ld-linux-aarch64.so.1" --inhibit-cache --library-path "$BUNDLE/lib" --list "$BUNDLE/bin/surface-shell-spike" >"$OUT/loader.txt"
@@ -87,6 +120,8 @@ systemd-run --unit=surface-shell-spike --collect \
   "$BUNDLE/run.sh"
 sleep 5
 systemctl is-active -q surface-shell-spike.service
+INVOCATION=$(systemctl show -p InvocationID --value surface-shell-spike.service)
+printf '%s\n' "$INVOCATION" >"$OUT/invocation-id.txt"
 shot surface-start
 key() {
   XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 "$BUNDLE/tools/wtype/run.sh" -k "$1"
@@ -97,12 +132,21 @@ shot surface-right
 key Left
 sleep 1
 shot surface-left
-for i in 1 2 3; do
-  key F2
-  sleep 3
-  shot "switch-$i"
-done
+CG=$(systemctl show -p ControlGroup --value surface-shell-spike.service)
+printf '%s\n' "$PACKAGES" >"$OUT/packages.txt"
+shot phase-0
+sh /tmp/surface-shell-measure.sh "$CG" "$OUT/phase-0.csv" 24 >"$OUT/phase-0.txt"
+key F2
 sleep 5
+shot phase-1
+sh /tmp/surface-shell-measure.sh "$CG" "$OUT/phase-1.csv" 24 >"$OUT/phase-1.txt"
+key F2
+sleep 3
+shot back-to-first
+printf 'Interactive observation: %s seconds. L1+R1 switches surfaces.\n' "$HOLD_SECONDS"
+sleep "$HOLD_SECONDS"
 "$SWAYMSG" -t get_tree -r >"$OUT/tree-shell.json"
 systemctl show -p User -p Group -p MainPID -p ActiveState surface-shell-spike.service >"$OUT/shell-unit.txt"
+journal >"$OUT/shell-journal.txt"
+grep 'SHELL_STATS.*package=' "$OUT/shell-journal.txt" >"$OUT/switch-timings.txt" || :
 echo 'done; root used for gamepad read only, no device permission changes' >>"$OUT/notes.txt"

@@ -1,0 +1,1 @@
+Exact unpacked run.sh, caller cwd=/, SHELL_ROOT unset, QEMU/PRoot + Xvfb: PASS

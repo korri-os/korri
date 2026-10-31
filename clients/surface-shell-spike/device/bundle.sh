@@ -92,6 +92,8 @@ if "libxkbcommon.so.0" in seen:
 (out / "run.sh").write_text(
     '#!/bin/sh\nset -eu\ncase $0 in */*) cd -- "${0%/*}" ;; *) echo "invoke run.sh with a path" >&2; exit 2 ;; esac\n'
     + xkb_setup
+    # Explicit ld-linux execution can make current_exe() identify the loader.
+    + 'SHELL_ROOT="${SHELL_ROOT:-$PWD/bin}"; export SHELL_ROOT\n'
     + f'exec ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/{app} "$@"\n'
 )
 (out / "run.sh").chmod(0o755)

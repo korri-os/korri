@@ -73,3 +73,10 @@ The real Pico package has also passed `proof-pico.sh BINARY OUT_DIRECTORY`
 under the same Xvfb/tool environment (add `nixpkgs#python3`). This covers absent
 art fields and `stage.cart: null`, as well as arrow selection and an F2 round
 trip. Measured times and build/device status: `evidence/STATUS.md`.
+
+`proof-surfaces.sh` checks both real packages, arrows, F2 and 20 switches.
+`proof-bundle.sh` executes the exact aarch64 archive's unchanged launcher under
+QEMU/PRoot on the workstation. See `evidence/STATUS.md` for hashes and results.
+The 20-switch RSS trace grows by 104 KiB/switch on x86_64; it is not flat.
+Slint's imported-font registration is a remaining spike limit. Zone's declared
+initial band snap is retained.

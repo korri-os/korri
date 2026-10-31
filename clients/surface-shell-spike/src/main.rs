@@ -74,6 +74,9 @@ fn install_events(
                     });
                 }
             }
+            // X11 replays held keys as synthetic presses when a new window
+            // gains focus. Replaying held F2 would immediately switch again.
+            WindowEvent::KeyboardInput { is_synthetic: true, .. } => return EventResult::PreventDefault,
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.repeat { return EventResult::PreventDefault; }
                 if let PhysicalKey::Code(code) = event.physical_key {
