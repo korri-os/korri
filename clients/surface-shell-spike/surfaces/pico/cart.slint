@@ -1,0 +1,222 @@
+// One game drawn as a cartridge (surfaces/pico/src/ui/molecules/PicoCart.css):
+// plastic shell, a notch or the system's silhouette at the top, grip ridges
+// at the foot, and the cover as the sticker in its window. The shell takes
+// the art's shape. Every size is whole virtual pixels.
+
+import { P8 } from "palette.slint";
+
+export struct CartView {
+    id: string,
+    title: string,
+    art: image,
+    has-art: bool,
+    initials: string,
+    system: string,
+    shell: int,
+    sticker: int,
+    sticker-ink-light: bool,
+    progress: string,
+    hero: bool,
+}
+
+// A length rounded to a whole pixel, as the browser snaps boxes (scale factor 1).
+export global Snap {
+    public pure function px(value: length) -> length {
+        round(value / 1px) * 1px
+    }
+}
+
+export component Cart {
+    in property <CartView> cart;
+    // The virtual pixel.
+    in property <length> p: 2px;
+    // `still` is the large cartridge on the stage; otherwise a shelf cart.
+    in property <bool> still;
+    // The box the art fits in (--pico-art-w, --pico-art-h).
+    in property <length> box-w;
+    in property <length> box-h;
+    in property <length> initials-size;
+    in property <length> small-text;
+    in property <length> body-text;
+
+    // Shell metrics: still and shelf placements, then the systems that change them.
+    property <length> pad: still ? 5 * p : 3 * p;
+    property <length> top-pad: cart.system == "nes" ? 8 * p : still ? 6 * p : 4 * p;
+    property <length> foot: cart.system == "gba" ? 4 * p : still ? 8 * p : 6 * p;
+    property <length> notch: still ? 3 * p : 2 * p;
+    property <length> ridge: still ? 3 * p : 2 * p;
+    property <length> band: cart.system == "gbc" ? p : cart.system == "md" ? 3 * p : 0px;
+
+    // The art at its own ratio, fitted in the box and never cropped. Missing
+    // art is a square sticker.
+    property <float> ratio: cart.has-art && cart.art.height > 0 ? cart.art.width / cart.art.height : 1;
+    property <length> art-w: Snap.px(cart.has-art ? min(box-w, box-h * ratio) : min(box-w, box-h));
+    property <length> art-h: Snap.px(cart.has-art ? art-w / ratio : art-w);
+
+    out property <length> shell-w: art-w + 2 * pad;
+    out property <length> shell-h: band + top-pad + art-h + foot;
+    width: shell-w;
+    height: shell-h;
+
+    // The plastic.
+    Rectangle {
+        background: P8.shell(cart.shell);
+    }
+
+    // GBC's stripe and Mega Drive's dark top band.
+    if band > 0 : Rectangle {
+        y: 0;
+        height: band;
+        background: P8.ink-dark;
+    }
+
+    // The label slot, cut in background colour. Its shape is the system's.
+    if cart.system == "pico8" : Rectangle {
+        x: Snap.px(shell-w * 20%);
+        y: band;
+        width: Snap.px(shell-w * 60%);
+        height: notch;
+        background: P8.bg;
+    }
+    if cart.system == "gb" || cart.system == "gbc" : Rectangle {
+        x: shell-w - Snap.px(shell-w * 22%);
+        y: band;
+        width: Snap.px(shell-w * 22%);
+        height: notch * 2;
+        background: P8.bg;
+    }
+    if cart.system == "gba" : Rectangle {
+        x: 0;
+        y: band;
+        width: 3 * p;
+        height: notch * 2;
+        background: P8.bg;
+    }
+    if cart.system == "gba" : Rectangle {
+        x: shell-w - 3 * p;
+        y: band;
+        width: 3 * p;
+        height: notch * 2;
+        background: P8.bg;
+    }
+    if cart.system == "snes" : Rectangle {
+        x: Snap.px(shell-w * 12%);
+        y: band;
+        width: Snap.px(shell-w * 19%);
+        height: notch;
+        background: P8.bg;
+    }
+    if cart.system == "snes" : Rectangle {
+        x: shell-w - Snap.px(shell-w * 12%) - Snap.px(shell-w * 19%);
+        y: band;
+        width: Snap.px(shell-w * 19%);
+        height: notch;
+        background: P8.bg;
+    }
+    if cart.system == "other" : Rectangle {
+        x: Snap.px(shell-w * 30%);
+        y: band;
+        width: Snap.px(shell-w * 40%);
+        height: notch;
+        background: P8.bg;
+    }
+    // NES: ridges across the top instead of a slot.
+    if cart.system == "nes" : Rectangle {
+        x: pad;
+        y: band + 2 * p;
+        width: shell-w - 2 * pad;
+        height: 3 * p;
+        Rectangle { y: 0; height: p; background: P8.ink-dark; }
+        Rectangle { y: 2 * p; height: p; background: P8.ink-dark; }
+    }
+
+    // The window: a one-pixel dark outline, then the art or the sticker.
+    Rectangle {
+        x: pad - p;
+        y: band + top-pad - p;
+        width: art-w + 2 * p;
+        height: art-h + 2 * p;
+        background: P8.ink-dark;
+    }
+    if cart.has-art : Image {
+        x: pad;
+        y: band + top-pad;
+        width: art-w;
+        height: art-h;
+        source: cart.art;
+        image-fit: fill;
+        image-rendering: pixelated;
+    }
+    if !cart.has-art : Rectangle {
+        x: pad;
+        y: band + top-pad;
+        width: art-w;
+        height: art-h;
+        background: P8.shell(cart.sticker);
+        clip: true;
+        Text {
+            text: cart.initials;
+            font-size: initials-size;
+            color: cart.sticker-ink-light ? P8.ink : P8.ink-dark;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    // Grip ridges along the foot: one dark pixel every three. GBA has none.
+    if cart.system != "gba" : Rectangle {
+        x: pad;
+        y: shell-h - 2 * p - ridge;
+        width: shell-w - 2 * pad;
+        height: ridge;
+        clip: true;
+        for index in ceil((shell-w - 2 * pad) / (3 * p)) : Rectangle {
+            x: index * 3 * p;
+            width: p;
+            background: P8.ink-dark;
+        }
+    }
+
+    // Never played: a plate band across the window's foot with NEW on it.
+    if cart.progress == "new" && !still : Rectangle {
+        y: shell-h - (foot - p) - (p + small-text);
+        height: p + small-text;
+        background: P8.plate;
+        Text {
+            y: p;
+            height: small-text;
+            text: "NEW";
+            font-size: small-text;
+            color: P8.go;
+            horizontal-alignment: center;
+        }
+    }
+
+    // A save waiting: a green tab off the top-right corner.
+    if cart.progress == "resume" : Rectangle {
+        property <length> pad-x: still ? 2 * p : p;
+        property <length> pad-top: still ? 2 * p : p;
+        property <length> pad-bottom: still ? p : 0px;
+        property <length> size: still ? body-text : small-text;
+        x: shell-w + (still ? 4 * p : 3 * p) - self.width;
+        y: still ? -4 * p : -3 * p;
+        width: glyph.preferred-width + 2 * pad-x;
+        height: pad-top + size + pad-bottom;
+        Rectangle {
+            x: p;
+            y: p;
+            background: P8.ink-dark;
+        }
+        Rectangle {
+            background: P8.ok;
+        }
+        glyph := Text {
+            x: pad-x;
+            y: pad-top;
+            height: size;
+            text: "▶";
+            font-size: size;
+            color: P8.ink-dark;
+        }
+    }
+}

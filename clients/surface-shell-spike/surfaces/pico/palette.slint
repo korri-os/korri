@@ -1,0 +1,60 @@
+// PICO-8's sixteen and Pico's roles, from surfaces/pico/src/pico-tokens.css.
+// Nothing else is ever painted: no blend, no fractional opacity, no gradient.
+
+export global P8 {
+    out property <color> black: #000000;
+    out property <color> navy: #1d2b53;
+    out property <color> maroon: #7e2553;
+    out property <color> green: #008751;
+    out property <color> brown: #ab5236;
+    out property <color> slate: #5f574f;
+    out property <color> silver: #c2c3c7;
+    out property <color> white: #fff1e8;
+    out property <color> red: #ff004d;
+    out property <color> orange: #ffa300;
+    out property <color> yellow: #ffec27;
+    out property <color> lime: #00e436;
+    out property <color> blue: #29adff;
+    out property <color> lilac: #83769c;
+    out property <color> pink: #ff77a8;
+    out property <color> peach: #ffccaa;
+
+    // Roles (pico-tokens.css). Components name these.
+    out property <color> bg: black;
+    out property <color> accent: pink;
+    out property <color> ink: white;
+    out property <color> ink-dim: silver;
+    out property <color> ink-quiet: lilac;
+    out property <color> ink-dark: black;
+    out property <color> plate: navy;
+    out property <color> plate-ink: peach;
+    out property <color> plate-shadow: maroon;
+    out property <color> go: yellow;
+    out property <color> ok: lime;
+    out property <color> floor: navy;
+    out property <color> cast-near: navy;
+    out property <color> cast-far: maroon;
+    out property <color> key-a: orange;
+    out property <color> key-b: blue;
+    out property <color> key-ink: navy;
+
+    // The fifteen non-black colours, in PICO-8 order, for the palette bar.
+    public pure function palette(index: int) -> color {
+        index == 0 ? navy : index == 1 ? maroon : index == 2 ? green : index == 3 ? brown
+            : index == 4 ? slate : index == 5 ? silver : index == 6 ? white : index == 7 ? red
+            : index == 8 ? orange : index == 9 ? yellow : index == 10 ? lime : index == 11 ? blue
+            : index == 12 ? lilac : index == 13 ? pink : peach
+    }
+
+    // Cartridge plastics: PICO_SHELL_COLORS in pico-palette.ts, by index.
+    public pure function shell(index: int) -> color {
+        index == 0 ? blue : index == 1 ? pink : index == 2 ? orange : index == 3 ? lime
+            : index == 4 ? peach : index == 5 ? silver : index == 6 ? red : index == 7 ? yellow
+            : index == 8 ? green : lilac
+    }
+
+    // The focus cycle: PICO-8's own menu cursor flashes through three hot colours.
+    public pure function cycle(phase: int) -> color {
+        phase == 0 ? red : phase == 1 ? orange : pink
+    }
+}
