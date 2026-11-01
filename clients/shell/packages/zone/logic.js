@@ -2510,5 +2510,6 @@
     };
   }
   var preferences = { [LOOK_KEY]: { mark: "device", initial: ZONE_DEFAULT_LOOK } };
-  globalThis.surface = { preferences, init, update: update6, view };
+  var displays = "main";
+  globalThis.surface = { displays, preferences, init, update: update6, view };
 })();

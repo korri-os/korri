@@ -34,7 +34,7 @@ use std::{
 };
 
 /// Changes whenever the checks change; older summaries are re-derived.
-pub const VERIFIER: &str = "korri-shell-verify-1";
+pub const VERIFIER: &str = "korri-shell-verify-2";
 pub const SLINT: &str = "1.18.1";
 pub const FIXTURE_GAMES: [usize; 3] = [0, 12, 10_000];
 pub const SEEDED_PRESSES: usize = 500;
@@ -57,6 +57,8 @@ pub fn fixture() -> (Value, Vec<Value>) {
 pub struct FixtureRun {
     pub games: usize,
     pub overlay: bool,
+    /// Displays in `model.displays`; 0 when the model has none.
+    pub displays: usize,
     pub views: usize,
     pub updates: usize,
     pub requests: usize,
@@ -71,6 +73,9 @@ pub struct Summary {
     pub package_sha256: String,
     pub diagnostics: Vec<String>,
     pub preferences: engine::Declaration,
+    /// `globalThis.surface.displays`; absent when the package left it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub displays: Option<engine::Displays>,
     pub has_overlay: bool,
     pub runs: Vec<FixtureRun>,
     pub max_call_ms: f64,
@@ -131,11 +136,24 @@ struct Sweep<'a> {
     count: usize,
     focused: Option<String>,
     overlay: bool,
+    displays: Option<Value>,
+}
+
+/// Two 640x480 touch displays, the main one above: the Anbernic RG DS as
+/// Pico's own fixture states it (`surfaces/pico/src/fixtures/displays.ts`).
+fn two_displays() -> Value {
+    json!([
+        {"id": "top", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": true},
+        {"id": "bottom", "main": false, "x": 0, "y": 480, "width": 640, "height": 480, "touch": true},
+    ])
 }
 
 impl Sweep<'_> {
     fn model(&self) -> Value {
         let mut model = self.base.clone();
+        if let Some(displays) = &self.displays {
+            model["displays"] = displays.clone();
+        }
         model["catalog"] = catalog::window(self.games, &self.query, &self.from, self.count);
         if let Some(id) = &self.focused {
             model["focusedGame"] = json!({"gameId": id, "actions": []});
@@ -260,6 +278,7 @@ fn sweep_one(
     plan: &Plan,
     games: &[Value],
     gameplay_overlay: bool,
+    displays: Option<Value>,
     peaks: &mut Peaks,
 ) -> Result<FixtureRun> {
     let Plan {
@@ -270,6 +289,10 @@ fn sweep_one(
         limits,
     } = *plan;
     let (base, _) = fixture();
+    let display_count = displays
+        .as_ref()
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
     let mut sweep = Sweep {
         base,
         games,
@@ -278,6 +301,7 @@ fn sweep_one(
         count: catalog::DEFAULT_COUNT,
         focused: None,
         overlay: gameplay_overlay,
+        displays,
     };
     let engine = Engine::load(source, limits)?;
     let mut checker = Checker {
@@ -288,6 +312,7 @@ fn sweep_one(
         run: FixtureRun {
             games: games.len(),
             overlay: gameplay_overlay,
+            displays: display_count,
             views: 0,
             updates: 0,
             requests: 0,
@@ -343,6 +368,7 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         package_sha256: String::new(),
         diagnostics: Vec::new(),
         preferences: engine::Declaration::new(),
+        displays: None,
         has_overlay: false,
         runs: Vec::new(),
         max_call_ms: 0.0,
@@ -360,10 +386,12 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         let source = package.logic_source()?;
         let probe = Engine::load(&source, limits)?;
         summary.preferences = probe.declaration().clone();
+        summary.displays = probe.displays();
         summary.has_overlay = probe.has_overlay();
         if probe.has_overlay() != views.overlay.is_some() {
             bail!("surface.overlay and the exported Overlay component must come together");
         }
+        let displays = probe.displays();
         drop(probe);
         let (_, examples) = fixture();
         let plan = Plan {
@@ -377,13 +405,24 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
             let games = catalog::games(&examples, count);
             summary
                 .runs
-                .push(sweep_one(&plan, &games, false, &mut peaks)?);
+                .push(sweep_one(&plan, &games, false, None, &mut peaks)?);
+        }
+        if displays == Some(engine::Displays::All) {
+            // korrid publishes `model.displays` only to an "all" surface.
+            let games = catalog::games(&examples, 12);
+            summary.runs.push(sweep_one(
+                &plan,
+                &games,
+                false,
+                Some(two_displays()),
+                &mut peaks,
+            )?);
         }
         if overlay.is_some() {
             let games = catalog::games(&examples, 12);
             summary
                 .runs
-                .push(sweep_one(&plan, &games, true, &mut peaks)?);
+                .push(sweep_one(&plan, &games, true, None, &mut peaks)?);
         }
         Ok(())
     })();
@@ -569,6 +608,7 @@ mod tests {
                     count: catalog::DEFAULT_COUNT,
                     focused: Some("celeste".into()),
                     overlay,
+                    displays: None,
                 };
                 let model = sweep.model();
                 if let Err(error) =
@@ -596,6 +636,42 @@ mod tests {
             .all(|r| r.updates >= 9 + 1 + 1 + SEEDED_PRESSES));
         assert!(summary.runs.iter().all(|r| r.requests > 0));
         assert_eq!(summary.preferences["demo.size"].initial, "m");
+    }
+
+    #[test]
+    fn displays_must_be_main_all_or_absent_and_all_is_swept_with_two_displays() {
+        let body = "return { count: (model.displays ?? []).length }";
+        let with = |displays: &str| {
+            let root = tempfile::tempdir().unwrap();
+            let source = logic(body).replacen(
+                "globalThis.surface = {",
+                &format!("globalThis.surface = {{ displays: {displays},"),
+                1,
+            );
+            verify(
+                &planted(&root.path().join("demo"), VIEW, &source),
+                Limits::default(),
+            )
+        };
+        let all = with("'all'");
+        assert!(all.pass, "{:?}", all.reasons);
+        assert_eq!(all.displays, Some(engine::Displays::All));
+        assert_eq!(
+            all.runs.iter().map(|r| r.displays).collect::<Vec<_>>(),
+            vec![0, 0, 0, 2]
+        );
+        let main = with("'main'");
+        assert!(main.pass && main.displays == Some(engine::Displays::Main));
+        assert_eq!(main.runs.len(), 3);
+        for wrong in ["'both'", "true", "null"] {
+            let summary = with(wrong);
+            assert!(!summary.pass, "{wrong}");
+            assert!(
+                summary.reasons.join(" ").contains("displays"),
+                "{wrong}: {:?}",
+                summary.reasons
+            );
+        }
     }
 
     #[test]

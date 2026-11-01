@@ -90,11 +90,19 @@ impl Korrid {
         &self.connection
     }
 
-    pub fn declare(&self, surface: &str, preferences: &Value) -> Result<()> {
-        self.call(
-            "app.surface.declare",
-            json!({"surfaceId": surface, "preferences": preferences}),
-        )?;
+    /// `{surfaceId, preferences, displays?}`; `displays` only when the
+    /// package declared it.
+    pub fn declare(
+        &self,
+        surface: &str,
+        preferences: &Value,
+        displays: Option<crate::engine::Displays>,
+    ) -> Result<()> {
+        let mut payload = json!({"surfaceId": surface, "preferences": preferences});
+        if let Some(displays) = displays {
+            payload["displays"] = json!(displays);
+        }
+        self.call("app.surface.declare", payload)?;
         Ok(())
     }
 

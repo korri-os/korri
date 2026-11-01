@@ -112,6 +112,9 @@ struct Loaded {
     watch: Option<crate::korrid::Watch>,
     drawn: Rc<Cell<bool>>,
     gameplay_overlay: bool,
+    /// Whether the Surface window is mapped. Only one of Surface and Overlay
+    /// is mapped at a time: korrid places the one window its kiosk unit owns.
+    surface_shown: bool,
     started: Instant,
     timing: LoadTiming,
 }
@@ -508,7 +511,7 @@ impl Shell {
         let declaration =
             serde_json::to_value(engine.declaration()).expect("declaration serialises");
         self.korrid
-            .declare(&package.id, &declaration)
+            .declare(&package.id, &declaration, engine.displays())
             .context("app.surface.declare")?;
         let stored = self
             .korrid
@@ -543,7 +546,6 @@ impl Shell {
             return Err(error.context("view"));
         }
         self.backend.place(surface.window(), self.options.placement);
-        surface.show()?;
         let post = self.post.clone();
         let watch = self.korrid.watch(
             &package.id,
@@ -570,6 +572,7 @@ impl Shell {
             watch: Some(watch),
             drawn,
             gameplay_overlay,
+            surface_shown: false,
             started,
             timing: LoadTiming {
                 compile: compiled,
@@ -601,7 +604,8 @@ impl Shell {
         );
     }
 
-    /// Show, refresh or remove the Overlay to match the presentation.
+    /// Show, refresh or remove the Overlay to match the presentation, and
+    /// map exactly one of Surface and Overlay.
     fn render_overlay(&mut self, loaded: &mut Loaded) -> Result<()> {
         let wanted = loaded.gameplay_overlay
             && loaded.overlay_definition.is_some()
@@ -613,9 +617,13 @@ impl Shell {
                 }
                 if !self.backend.shared_window() {
                     overlay.hide()?;
-                } else {
-                    loaded.surface.show()?;
                 }
+                // A shared window shows whichever component showed last.
+                loaded.surface_shown = false;
+            }
+            if !loaded.surface_shown {
+                loaded.surface.show()?;
+                loaded.surface_shown = true;
             }
             return Ok(());
         }
@@ -636,6 +644,15 @@ impl Shell {
         let (component, binder) = loaded.overlay.as_mut().expect("just created");
         binder.apply(component, &view, &mut loaded.images)?;
         component.show()?;
+        if loaded.surface_shown {
+            if !self.backend.shared_window() {
+                loaded.surface.hide()?;
+                if let Some(windows) = &mut self.focused {
+                    windows.remove(&(loaded.generation, 0));
+                }
+            }
+            loaded.surface_shown = false;
+        }
         Ok(())
     }
 

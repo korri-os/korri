@@ -325,6 +325,9 @@ function overlay(state: State, model: Model) {
 }
 
 ;(globalThis as { surface?: unknown }).surface = {
+  // As the portal registers Pico (clients/portal/src/surface/surface-registry.tsx).
+  // The native views draw one screen; model.displays is not read yet.
+  displays: "all",
   preferences: { [FONT_KEY]: { mark: "device", initial: PICO_DEFAULT_FONT } },
   init: (_model: Model, preferences: Readonly<Record<string, string>>): State => {
     const stored = preferences[FONT_KEY]

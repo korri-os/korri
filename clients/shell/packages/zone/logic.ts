@@ -368,7 +368,10 @@ export function view(outer: State, model: Model) {
 
 const preferences = { [LOOK_KEY]: { mark: "device", initial: ZONE_DEFAULT_LOOK } } as const
 
-globalThis.surface = { preferences, init, update, view }
+// As the portal registers Zone (clients/portal/src/surface/surface-registry.tsx).
+const displays = "main"
+
+globalThis.surface = { displays, preferences, init, update, view }
 
 declare global {
   // The one global the contract allows.

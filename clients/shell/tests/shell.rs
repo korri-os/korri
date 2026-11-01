@@ -298,6 +298,37 @@ fn model_pushes_run_korri_published_and_are_acked_in_order() {
 }
 
 #[test]
+fn declare_carries_the_declared_displays_and_only_all_gets_model_displays() {
+    let mut rig = rig(&["pico", "zone", "probe"], 12, Behaviour::default());
+    rig.key(Key::F2);
+    rig.until("zone", |r| r.shell.current_id() == Some("zone"));
+    rig.key(Key::F2);
+    rig.until("probe", |r| r.shell.current_id() == Some("probe"));
+    let displays: Vec<(String, Option<Value>)> = rig
+        .fixture
+        .declarations()
+        .iter()
+        .map(|d| {
+            (
+                d["surfaceId"].as_str().unwrap().to_owned(),
+                d.get("displays").cloned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        displays,
+        vec![
+            ("pico".into(), Some(json!("all"))),
+            ("zone".into(), Some(json!("main"))),
+            ("probe".into(), None),
+        ]
+    );
+    assert!(rig.fixture.model("pico").get("displays").is_some());
+    assert!(rig.fixture.model("zone").get("displays").is_none());
+    assert!(rig.fixture.model("probe").get("displays").is_none());
+}
+
+#[test]
 fn the_overlay_follows_the_presentation() {
     let mut rig = rig(&["probe"], 12, Behaviour::default());
     assert!(!rig.shell.overlay_shown());
@@ -306,7 +337,8 @@ fn the_overlay_follows_the_presentation() {
     assert!(
         matches!(rig.shell.overlay_property("heading"), Some(SlintValue::String(s)) if s.as_str() == "Paused")
     );
-    assert_eq!(Headless::live_windows(), 2);
+    // One mapped window: korrid places the one window its kiosk unit owns.
+    assert_eq!(Headless::live_windows(), 1);
     rig.key(Key::Escape); // back: DismissGameplayOverlay
     rig.until("overlay gone", |r| !r.shell.overlay_shown());
     assert_eq!(rig.requests("DismissGameplayOverlay").len(), 1);

@@ -1640,6 +1640,7 @@
     };
   }
   globalThis.surface = {
+    displays: "all",
     preferences: { [FONT_KEY]: { mark: "device", initial: PICO_DEFAULT_FONT } },
     init: (_model, preferences) => {
       const stored = preferences[FONT_KEY];

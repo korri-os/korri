@@ -33,6 +33,9 @@ pub struct Behaviour {
 #[derive(Default)]
 struct Surface {
     declared: Option<engine::Declaration>,
+    /// `displays` from the last declare; korrid publishes `model.displays`
+    /// only for `"all"`.
+    displays: Option<engine::Displays>,
     stored: BTreeMap<String, String>,
     query: Option<Value>,
     from: Option<Value>,
@@ -56,6 +59,7 @@ struct State {
     devices: Vec<String>,
     input_subscribers: usize,
     calls: Vec<String>,
+    declarations: Vec<Value>,
     generation: u64,
 }
 
@@ -90,6 +94,7 @@ impl Fixture {
                 devices: Vec::new(),
                 input_subscribers: 0,
                 calls: Vec::new(),
+                declarations: Vec::new(),
                 generation: 0,
             }),
             Condvar::new(),
@@ -147,6 +152,16 @@ impl Fixture {
 
     pub fn calls(&self) -> Vec<String> {
         self.shared.0.lock().unwrap().calls.clone()
+    }
+
+    /// Every `app.surface.declare` payload received, in order.
+    pub fn declarations(&self) -> Vec<Value> {
+        self.shared.0.lock().unwrap().declarations.clone()
+    }
+
+    /// The model the fixture would publish to `surface` now.
+    pub fn model(&self, surface: &str) -> Value {
+        model_for(&self.shared.0.lock().unwrap(), surface)
     }
 
     pub fn stored(&self, surface: &str) -> BTreeMap<String, String> {
@@ -258,6 +273,10 @@ fn model_for(state: &State, surface_id: &str) -> Value {
         }
     });
     model["catalog"] = catalog::window(&state.games, &query, &from, count);
+    if surface.and_then(|s| s.displays) == Some(engine::Displays::All) {
+        // One main display; the fixture has no compositor to read outputs from.
+        model["displays"] = json!([{"id": "fixture", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false}]);
+    }
     if let Some(id) = surface.and_then(|s| s.focused.as_deref()) {
         model["focusedGame"] = json!({"gameId": id, "actions": []});
     }
@@ -395,12 +414,25 @@ fn rpc(shared: &Arc<(Mutex<State>, Condvar)>, request: &Value) -> Value {
     };
     match method.as_str() {
         "app.surface.declare" => {
+            state.declarations.push(payload.clone());
             if state.behaviour.refuse_declare.contains(&surface_id) {
                 return err(&method, "declaration refused");
             }
+            if let Some(key) = payload.as_object().and_then(|o| {
+                o.keys()
+                    .find(|k| !["surfaceId", "preferences", "displays"].contains(&k.as_str()))
+            }) {
+                return err(&method, &format!("unknown field {key}"));
+            }
+            let displays = match engine::check_displays(payload.get("displays")) {
+                Ok(displays) => displays,
+                Err(message) => return err(&method, &message),
+            };
             match engine::check_declaration(payload.get("preferences").unwrap_or(&Value::Null)) {
                 Ok(declaration) => {
-                    state.surfaces.entry(surface_id).or_default().declared = Some(declaration);
+                    let surface = state.surfaces.entry(surface_id).or_default();
+                    surface.declared = Some(declaration);
+                    surface.displays = displays;
                     ok(&method, Value::Null)
                 }
                 Err(message) => err(&method, &message),

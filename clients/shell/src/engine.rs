@@ -189,6 +189,7 @@ const BOOTSTRAP: &str = r#"(() => {
   };
   return {
     preferences: () => text(s.preferences ?? {}, "preferences"),
+    displays: () => (s.displays === undefined ? "[]" : text([s.displays], "displays")),
     hasOverlay: () => typeof s.overlay === "function",
     setModel: (json) => { model = JSON.parse(json); },
     init: (preferences) => { state = s.init(model, JSON.parse(preferences)); },
@@ -209,6 +210,27 @@ const BOOTSTRAP: &str = r#"(() => {
 /// Explicit `new Date(ms)` stays available for formatting model timestamps.
 const SANDBOX: &str = "Date.now = () => { throw new Error('Date.now is not available to surfaces'); };\nMath.random = () => { throw new Error('Math.random is not available to surfaces'); };";
 
+/// Which displays a surface asks Korri to give it (`globalThis.surface.displays`).
+/// Absent means [`Displays::Main`]; korrid publishes `model.displays` only for
+/// [`Displays::All`]. Grounding: the portal registry's `displays` field
+/// (`clients/portal/src/surface/surface-registry.tsx`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Displays {
+    Main,
+    All,
+}
+
+/// Check a `displays` declaration: `"main"`, `"all"` or absent (`None`).
+pub fn check_displays(value: Option<&Value>) -> Result<Option<Displays>, String> {
+    match value.map(|v| v.as_str()) {
+        None => Ok(None),
+        Some(Some("main")) => Ok(Some(Displays::Main)),
+        Some(Some("all")) => Ok(Some(Displays::All)),
+        Some(_) => Err("displays must be \"main\", \"all\" or absent".into()),
+    }
+}
+
 pub struct Engine {
     // Field order: the persistent handle and context drop before the runtime.
     dispatch: Persistent<Object<'static>>,
@@ -217,6 +239,7 @@ pub struct Engine {
     deadline: Rc<Cell<Instant>>,
     limits: Limits,
     declaration: Declaration,
+    displays: Option<Displays>,
     has_overlay: bool,
     max_call: Duration,
 }
@@ -255,6 +278,7 @@ impl Engine {
             deadline,
             limits,
             declaration: Declaration::new(),
+            displays: None,
             has_overlay: false,
             max_call: Duration::ZERO,
         };
@@ -270,12 +294,27 @@ impl Engine {
                 call: "preferences",
                 message,
             })?;
+        let displays = engine.call_string("displays", &[])?;
+        let displays: Value = serde_json::from_str(&displays).map_err(|e| Violation::Contract {
+            call: "displays",
+            message: e.to_string(),
+        })?;
+        engine.displays =
+            check_displays(displays.get(0)).map_err(|message| Violation::Contract {
+                call: "displays",
+                message,
+            })?;
         engine.has_overlay = engine.call_bool("hasOverlay")?;
         Ok(engine)
     }
 
     pub fn declaration(&self) -> &Declaration {
         &self.declaration
+    }
+
+    /// The package's `displays`, exactly as declared (`None` when absent).
+    pub fn displays(&self) -> Option<Displays> {
+        self.displays
     }
 
     pub fn has_overlay(&self) -> bool {
@@ -545,6 +584,40 @@ mod tests {
             engine.init(&BTreeMap::new()).unwrap_err().kind(),
             "exception"
         );
+    }
+
+    #[test]
+    fn displays_is_main_all_or_absent() {
+        let load = |line: &str| {
+            Engine::load(
+                &format!("globalThis.surface = {{ {line} init: () => 0, update: (s) => ({{ state: s, requests: [] }}), view: () => ({{}}) }};"),
+                Limits::default(),
+            )
+        };
+        assert_eq!(load("").unwrap().displays(), None);
+        assert_eq!(
+            load("displays: \"main\",").unwrap().displays(),
+            Some(Displays::Main)
+        );
+        assert_eq!(
+            load("displays: \"all\",").unwrap().displays(),
+            Some(Displays::All)
+        );
+        for wrong in ["\"both\"", "\"Main\"", "1", "[\"main\"]", "null"] {
+            let error = load(&format!("displays: {wrong},"))
+                .err()
+                .unwrap_or_else(|| panic!("{wrong} accepted"));
+            assert!(
+                matches!(
+                    error,
+                    Violation::Contract {
+                        call: "displays",
+                        ..
+                    }
+                ),
+                "{wrong}: {error}"
+            );
+        }
     }
 
     #[test]
