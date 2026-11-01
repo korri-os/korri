@@ -1,0 +1,106 @@
+// ZoneOnboarding: first boot, COMPETITION's register: CONTROLLERS (a seat
+// per controller, WAITING for none, VS between exactly two heard, the
+// focused seat's name whole under them), WI-FI and NAME (rows), IDENTITY
+// (the NEW save card and START), NEXT or FINISH under every step, the step's
+// banner and pips in the strip. First boot stands on the GAMES ground.
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZoneCaps } from "../ui/atoms/ZoneCaps.slint";
+import { ZoneButton } from "../ui/atoms/ZoneButton.slint";
+import { ZoneVersus } from "../ui/atoms/ZoneVersus.slint";
+import { ZoneSaveCard } from "../ui/molecules/ZoneSaveCard.slint";
+import { ZoneControllerCard } from "../ui/organisms/ZoneControllerCard.slint";
+import { ZoneRowList } from "../ui/organisms/ZoneRowList.slint";
+import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry.slint";
+import { ZoneShell } from "../ui/templates/ZoneShell.slint";
+import { Hints, Foot, Row, Seat, Btn, NewSave, Keyboard } from "../ui/types.slint";
+
+export component ZoneOnboarding {
+    in property <Hints> hints;
+    in property <string> banner;
+    in property <int> pips: 4;
+    in property <int> pip;
+    in property <[Row]> rows;
+    in property <[Seat]> seats;
+    in property <string> seat-name;
+    in property <bool> versus;
+    in property <Btn> next;
+    in property <NewSave> new-save;
+    in property <Keyboard> keyboard;
+    property <length> a: Tokens.a;
+    shell := ZoneShell {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        tabs-shown: false;
+        banner: root.banner;
+        pips: root.pips;
+        pip: root.pip;
+        hints: root.hints;
+        foot: { shown: false };
+        property <length> next-h: 2 * Tokens.c1 + 12 * root.a;
+        property <length> name-h: root.seat-name != "" ? 18 * root.a : 0;
+        property <length> stage-h: self.body-h - self.next-h - self.name-h;
+        property <int> n: root.seats.length;
+        property <length> vs-w: root.versus ? 60 * root.a : 0;
+        property <length> seat-h: Math.min(self.stage-h - 12 * root.a, 140 * root.a);
+        property <length> seat-w: Math.min(self.seat-h * 0.82, (root.width - 24 * root.a - self.vs-w - (self.n - 1) * 8 * root.a) / Math.max(1, self.n));
+        property <length> row-w: self.n * self.seat-w + (self.n - 1) * 8 * root.a + self.vs-w;
+        if root.rows.length > 0: ZoneRowList {
+            x: 12 * root.a;
+            y: 4 * root.a;
+            width: root.width - 24 * root.a;
+            height: shell.stage-h - 4 * root.a;
+            rows: root.rows;
+        }
+        for s[i] in root.seats: ZoneControllerCard {
+            cache-rendering-hint: true;
+            x: (root.width - shell.row-w) / 2 + i * (shell.seat-w + 8 * root.a) + (root.versus && i > 0 ? shell.vs-w : 0);
+            y: (shell.stage-h - self.height) / 2;
+            width: shell.seat-w;
+            height: Math.min(shell.seat-h, shell.seat-w / 0.82);
+            seat: s;
+        }
+        if root.versus: ZoneVersus {
+            x: (root.width - shell.vs-w) / 2;
+            y: shell.stage-h / 2 - 14 * root.a;
+            width: shell.vs-w;
+            height: 28 * root.a;
+        }
+        if root.seat-name != "": Rectangle {
+            x: (root.width - self.width) / 2;
+            y: shell.stage-h + 2 * root.a;
+            width: seat-word.natural + 12 * root.a;
+            height: 14 * root.a;
+            background: Tokens.black;
+            seat-word := ZoneCaps {
+                x: 6 * root.a;
+                y: 2 * root.a;
+                text: root.seat-name;
+                face: "fact";
+            }
+        }
+        if root.new-save.shown: ZoneSaveCard {
+            height: Math.min(shell.stage-h - 16 * root.a, Tokens.card-most * root.a);
+            width: Math.floor(self.height * 0.7 / root.a) * root.a;
+            x: (root.width - self.width) / 2;
+            y: (shell.stage-h - self.height) / 2;
+            card: { header: "New", word: "Start", emblem: "key", foot: root.new-save.started ? "Ready" : "", foot-kind: "saved" };
+            focused: root.new-save.focused;
+        }
+        ZoneButton {
+            x: (root.width - self.span) / 2;
+            y: shell.body-h - shell.next-h + 6 * root.a;
+            btn: root.next;
+        }
+    }
+    if root.keyboard.shown: ZoneOptionsEntry {
+        x: 0;
+        y: Tokens.top-h;
+        width: root.width;
+        height: root.height - Tokens.top-h;
+        board: root.keyboard;
+        veiled: false;
+    }
+}

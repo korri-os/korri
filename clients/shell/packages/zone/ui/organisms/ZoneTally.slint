@@ -1,0 +1,87 @@
+// ZoneTally
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { Tally } from "../types.slint";
+
+// The results tally (ZoneTally): the tally ground, the game at caps-2, each
+// row's label, its bar and its value counting up over 1.2 s, 300 ms apart.
+export component ZoneTally {
+    property <length> a: Tokens.a;
+    in property <Tally> tally;
+    property <float> opened-ms: 0;
+    property <float> since-ms: Tokens.clock-ms - opened-ms;
+    init => {
+        self.opened-ms = Tokens.clock-ms;
+    }
+    property <length> c1: 10 * a;
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.ground-tally;
+    }
+    ZonePanel {
+        x: (root.width - self.width) / 2;
+        y: root.height * 0.18;
+        width: Math.min(root.width - 16 * root.a, head.natural + 44 * root.a);
+        height: 24 * root.a;
+        run: 23 * root.a;
+        ink: Tokens.black;
+    }
+    head := ZoneCaps {
+        x: (root.width - self.width) / 2;
+        y: root.height * 0.18 + 2 * root.a;
+        box: Math.min(self.natural, root.width - 60 * root.a);
+        elide: true;
+        text: root.tally.title;
+        cap: 2 * root.c1;
+        face: "korri";
+    }
+    for r[i] in root.tally.rows: row-box := Rectangle {
+        property <float> count: root.tally.counted ? 1 : Math.clamp((root.since-ms - 300 * i) / 1200, 0, 1);
+        property <float> stepped: Math.floor(self.count * 60) / 60;
+        x: root.width * 0.12;
+        y: root.height * 0.38 + i * 30 * root.a;
+        width: root.width * 0.76;
+        height: 22 * root.a;
+        ZonePanel {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            run: 21 * root.a;
+            ink: Tokens.black;
+        }
+        ZoneCaps {
+            x: 22 * root.a;
+            y: 6 * root.a;
+            text: r.label;
+            cap: root.c1;
+            ink: "hud";
+        }
+        Rectangle {
+            x: 80 * root.a;
+            y: 9 * root.a;
+            width: parent.width - 180 * root.a;
+            height: 4 * root.a;
+            background: Tokens.track;
+            Rectangle {
+                x: 0;
+                y: 0;
+                height: parent.height;
+                width: parent.width * r.share * row-box.stepped;
+                background: Tokens.danger-shade;
+            }
+        }
+        ZoneCaps {
+            x: parent.width - 22 * root.a - self.natural;
+            y: 6 * root.a;
+            text: r.value;
+            cap: root.c1;
+            face: "fact";
+        }
+    }
+}

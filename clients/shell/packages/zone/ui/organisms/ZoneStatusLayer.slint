@@ -1,0 +1,92 @@
+// ZoneStatusLayer: Korri's status over whichever page shows. Busy veils the
+// page and stands its strip at the page's foot (the game's title in yellow
+// on its tab, Korri's actions, the meter); Problem, Confirm and the stream's
+// questions are the sky dialog with Korri's own actions; Running is the HUD
+// at the top left under the page's header (kicker, the game, OPEN) and
+// leaves the page usable. A stage (the launch title card) stands under the
+// strip unveiled: `veil-busy` off.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneVeil } from "../atoms/ZoneVeil.slint";
+import { ZoneBusyStrip } from "../molecules/ZoneBusyStrip.slint";
+import { ZoneDialog } from "../molecules/ZoneDialog.slint";
+import { Busy, Dialog, Hud } from "../types.slint";
+
+export component ZoneStatusLayer {
+    in property <Busy> busy;
+    in property <Dialog> dialog;
+    in property <Hud> hud;
+    in property <bool> veil-busy: true;
+    // Where the page's header ends and its foot begins.
+    in property <length> header-h: Tokens.top-h;
+    in property <length> foot-h: Tokens.foot-h;
+    property <length> a: Tokens.a;
+    if root.hud.shown: Rectangle {
+        x: 0;
+        y: root.header-h + 4 * root.a;
+        width: root.width;
+        height: 30 * root.a;
+        kicker := ZoneCaps {
+            x: 8 * root.a;
+            y: 0;
+            text: root.hud.kicker;
+            ink: "hud";
+            face: "korri";
+        }
+        ZonePanel {
+            x: 4 * root.a;
+            y: 14 * root.a;
+            width: title.natural + 28 * root.a;
+            height: 14 * root.a;
+            run: 13 * root.a;
+            ink: Tokens.black;
+        }
+        title := ZoneCaps {
+            x: 12 * root.a;
+            y: 16 * root.a;
+            text: root.hud.title;
+            face: "korri";
+        }
+        Rectangle {
+            x: title.x + title.natural + 18 * root.a;
+            y: 15 * root.a;
+            width: open.natural + 12 * root.a;
+            height: 12 * root.a;
+            background: Tokens.orange;
+            open := ZoneCaps {
+                x: 6 * root.a;
+                y: root.a;
+                text: "Open";
+                ink: "ink";
+            }
+        }
+    }
+    if root.busy.shown && !root.dialog.shown: Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        if root.veil-busy: ZoneVeil {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+        }
+        strip := ZoneBusyStrip {
+            x: 8 * root.a;
+            width: root.width - 16 * root.a;
+            y: root.height - root.foot-h - self.needed - 6 * root.a;
+            height: self.needed;
+            busy: root.busy;
+        }
+    }
+    if root.dialog.shown: ZoneDialog {
+        x: 0;
+        y: root.header-h;
+        width: root.width;
+        height: root.height - root.header-h - root.foot-h;
+        dialog: root.dialog;
+    }
+}

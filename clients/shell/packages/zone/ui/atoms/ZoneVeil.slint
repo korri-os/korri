@@ -1,0 +1,27 @@
+// ZoneVeil: the veil under a layer.
+
+import { Tokens } from "../../ui/tokens.slint";
+
+// The veil under a layer (ZoneVeil): a one-art-px black checker in the
+// pixel looks (half the page's pixels black, none blended), a see-through
+// black in Modern.
+export component ZoneVeil {
+    property <length> a: Tokens.a;
+    if Tokens.modern: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.veil-see-through;
+    }
+    if !Tokens.modern: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: a >= (4 * Tokens.unit) ? @image-url("../../art/veil-4.png") : a >= (3 * Tokens.unit) ? @image-url("../../art/veil-3.png") : a >= (2 * Tokens.unit) ? @image-url("../../art/veil-2.png") : @image-url("../../art/veil-1.png");
+        horizontal-tiling: repeat;
+        vertical-tiling: repeat;
+        image-rendering: pixelated;
+    }
+}

@@ -1,0 +1,17 @@
+// Measures words at a cap height in one face, without drawing them (the DOM measured its own boxes).
+
+import { Tokens } from "../../ui/tokens.slint";
+
+// Measures words at a cap height in one face, without drawing them.
+export component ZoneMeasure inherits Text {
+    in property <length> cap;
+    in property <string> face: "caps";
+    visible: false;
+    // Fixed constraints: a measure never feeds its holder's layout.
+    min-width: 0;
+    max-width: 0;
+    min-height: 0;
+    max-height: 0;
+    font-family: face == "fact" ? Tokens.fact-family : face == "korri" ? Tokens.korri-family : Tokens.caps-family;
+    font-size: cap * (face == "fact" ? Tokens.fact-size : face == "korri" ? Tokens.korri-size : Tokens.caps-size);
+}

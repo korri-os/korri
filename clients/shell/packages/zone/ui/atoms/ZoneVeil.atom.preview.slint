@@ -1,0 +1,16 @@
+// ZoneVeil's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneVeil } from "./ZoneVeil.slint";
+
+export component Default inherits ZonePreview {
+    ZoneVeil { x: 0; y: 0; width: parent.width; height: parent.height; }
+}
+
+export component Modern inherits ZonePreview {
+    look: "modern";
+    Rectangle { x: 0; y: 0; width: parent.width / 2; height: parent.height; background: Tokens.white; }
+    ZoneVeil { x: 0; y: 0; width: parent.width; height: parent.height; }
+}

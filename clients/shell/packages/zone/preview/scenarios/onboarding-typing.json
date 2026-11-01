@@ -1,0 +1,194 @@
+{
+ "name": "onboarding-typing",
+ "ref": [
+  "ZoneOnboarding",
+  "NameTyping"
+ ],
+ "models": [
+  {
+   "presentation": {
+    "kind": "catalog"
+   },
+   "catalog": {
+    "_tag": "Ready",
+    "games": [
+     {
+      "id": "celeste",
+      "title": "Celeste Classic",
+      "subtitle": "PICO-8",
+      "resumable": true
+     },
+     {
+      "id": "hollow-knight",
+      "title": "Hollow Knight",
+      "subtitle": "Switch"
+     },
+     {
+      "id": "tetris",
+      "title": "Tetris",
+      "subtitle": "GB",
+      "launchLocations": [
+       {
+        "id": "zao",
+        "label": "zao"
+       }
+      ]
+     },
+     {
+      "id": "spelunky",
+      "title": "Spelunky",
+      "subtitle": "PC",
+      "launchLocations": [
+       {
+        "id": "here",
+        "label": "This device"
+       },
+       {
+        "id": "zao",
+        "label": "zao"
+       }
+      ]
+     },
+     {
+      "id": "lantern-keep",
+      "title": "Lantern Keep",
+      "subtitle": "PC"
+     },
+     {
+      "id": "tide-pool",
+      "title": "Tide Pool",
+      "subtitle": "Mega Drive",
+      "launchLocations": [
+       {
+        "id": "zao",
+        "label": "zao"
+       }
+      ]
+     },
+     {
+      "id": "comet-courier",
+      "title": "Comet Courier",
+      "subtitle": "PC"
+     },
+     {
+      "id": "bramble-run",
+      "title": "Bramble Run",
+      "subtitle": "GBA"
+     },
+     {
+      "id": "petal-quest",
+      "title": "Petal Quest",
+      "subtitle": "PICO-8"
+     },
+     {
+      "id": "oracle-of-seasons",
+      "title": "The Legend of Zelda: Oracle of Seasons",
+      "subtitle": "GBC"
+     },
+     {
+      "id": "wario-land-4",
+      "title": "Wario Land 4",
+      "subtitle": "GBA",
+      "launchLocations": [
+       {
+        "id": "here",
+        "label": "This device"
+       },
+       {
+        "id": "zao",
+        "label": "zao"
+       }
+      ]
+     },
+     {
+      "id": "super-metroid",
+      "title": "Super Metroid",
+      "subtitle": "SNES"
+     }
+    ]
+   },
+   "status": {
+    "_tag": "Browsing"
+   },
+   "clockLabel": "21:47",
+   "actions": [],
+   "settings": [
+    {
+     "title": "Device",
+     "items": [
+      {
+       "id": "device-name",
+       "label": "Name",
+       "value": "mini",
+       "description": "What other devices call this one",
+       "interaction": {
+        "kind": "text",
+        "placeholder": "This device",
+        "maxLength": 24
+       }
+      }
+     ]
+    }
+   ],
+   "settingsStatus": {
+    "_tag": "Idle"
+   },
+   "buildLabel": "korri 0.4.1 · 9a1fb22",
+   "network": {
+    "connection": {
+     "_tag": "Wifi",
+     "ssid": "hummingbird-lake",
+     "strengthPercent": 82
+    },
+    "wifi": {
+     "_tag": "Available",
+     "scanning": false,
+     "networks": [
+      {
+       "id": "net-home",
+       "ssid": "hummingbird-lake",
+       "strengthPercent": 82,
+       "secured": true,
+       "known": true
+      },
+      {
+       "id": "net-cafe",
+       "ssid": "Cafe Guest",
+       "strengthPercent": 54,
+       "secured": false,
+       "known": false
+      },
+      {
+       "id": "net-neighbour",
+       "ssid": "NETGEAR-5G-supercalifragilistic-extension",
+       "strengthPercent": 21,
+       "secured": true,
+       "known": false
+      }
+     ],
+     "attempt": {
+      "_tag": "Idle"
+     }
+    }
+   },
+   "onboarding": {
+    "controllers": [
+     {
+      "id": "pad-1",
+      "name": "Xbox Wireless Controller",
+      "heard": true
+     }
+    ]
+   }
+  }
+ ],
+ "steps": [
+  "confirm",
+  "down",
+  "down",
+  "down",
+  "down",
+  "confirm",
+  "confirm"
+ ]
+}

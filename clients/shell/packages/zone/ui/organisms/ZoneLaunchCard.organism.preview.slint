@@ -1,0 +1,11 @@
+// ZoneLaunchCard's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneLaunchCard } from "./ZoneLaunchCard.slint";
+
+export component Default inherits ZonePreview {
+    ground: "titlecard";
+    ZoneLaunchCard { x: 0; y: 0; width: parent.width; height: parent.height; card: { shown: true, title: "Hollow Knight", system: "Switch", act: 8 }; }
+}

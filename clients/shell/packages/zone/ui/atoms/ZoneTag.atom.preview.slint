@@ -1,0 +1,26 @@
+// ZoneTag's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneTag } from "./ZoneTag.slint";
+
+export component System inherits ZonePreview {
+    ZoneTag { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; tag: { label: "Switch", kind: "system", korri: true }; }
+}
+
+export component Here inherits ZonePreview {
+    ZoneTag { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; tag: { label: "Here", kind: "here" }; }
+}
+
+export component Remote inherits ZonePreview {
+    ZoneTag { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; tag: { label: "zao", kind: "remote", korri: true }; }
+}
+
+export component Continue inherits ZonePreview {
+    ZoneTag { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; tag: { label: "Continue", kind: "continue" }; }
+}
+
+export component Download inherits ZonePreview {
+    ZoneTag { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; tag: { label: "Download 1.5 GB", kind: "download" }; }
+}

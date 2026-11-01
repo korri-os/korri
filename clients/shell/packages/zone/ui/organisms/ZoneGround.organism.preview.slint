@@ -1,0 +1,31 @@
+// ZoneGround's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneGround } from "./ZoneGround.slint";
+
+export component Games inherits ZonePreview {
+    ground: "games";
+    ZoneGround { x: 0; y: 0; width: parent.width; height: parent.height; }
+}
+
+export component Options inherits ZonePreview {
+    ground: "options";
+    ZoneGround { x: 0; y: 0; width: parent.width; height: parent.height; }
+}
+
+export component Savedata inherits ZonePreview {
+    ground: "savedata";
+    ZoneGround { x: 0; y: 0; width: parent.width; height: parent.height; }
+}
+
+export component Paused inherits ZonePreview {
+    ground: "paused";
+    ZoneGround { x: 0; y: 0; width: parent.width; height: parent.height; }
+}
+
+export component Titlecard inherits ZonePreview {
+    ground: "titlecard";
+    ZoneGround { x: 0; y: 0; width: parent.width; height: parent.height; }
+}

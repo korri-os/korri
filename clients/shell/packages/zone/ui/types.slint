@@ -1,0 +1,187 @@
+// The view's shapes: the structs logic.ts's view() and overlay() fill
+// (src/view.ts, src/rows.ts). Types only: no component lives here.
+
+export struct Tab {
+    label: string,
+    active: bool,
+    focused: bool,
+}
+
+export struct Hints {
+    back: string,
+    confirm: string,
+}
+
+export struct Signal {
+    shown: bool,
+    name: string,
+    korri: bool,
+    bars: int,
+    strength: string,
+}
+
+export struct Foot {
+    shown: bool,
+    time-label: string,
+    clock: string,
+    device: string,
+    signal: Signal,
+    build: string,
+}
+
+export struct Btn {
+    label: string,
+    focused: bool,
+    lit: bool,
+    disabled: bool,
+    danger: bool,
+}
+
+export struct Tag {
+    label: string,
+    kind: string,
+    korri: bool,
+}
+
+export struct Row {
+    kind: string,
+    label: string,
+    label-fact: bool,
+    value: string,
+    value-fact: bool,
+    focused: bool,
+    disabled: bool,
+    danger: bool,
+    choice: bool,
+    saving: bool,
+    bars: int,
+    buttons: [Btn],
+    tags: [Tag],
+}
+
+export struct Key {
+    label: string,
+    fact: bool,
+    row: int,
+    at: float,
+    units: float,
+    focused: bool,
+    current: bool,
+}
+
+export struct Keyboard {
+    shown: bool,
+    title: string,
+    name: string,
+    draft: string,
+    caret: int,
+    secret: bool,
+    count: string,
+    placeholder: string,
+    danger: string,
+    rows: int,
+    keys: [Key],
+}
+
+export struct Dialog {
+    shown: bool,
+    headline: string,
+    korri: bool,
+    lines: [string],
+    title: string,
+    buttons: [Btn],
+}
+
+export struct Busy {
+    shown: bool,
+    kicker: string,
+    detail: string,
+    game: string,
+    buttons: [Btn],
+    meter: bool,
+    share: float,
+    sweep: bool,
+    figures: string,
+    foot: bool,
+}
+
+export struct Card {
+    title: string,
+    art: image,
+    has-art: bool,
+    initials: string,
+    stripes: int,
+    tags: [Tag],
+    section: string,
+}
+
+export struct Fact {
+    label: string,
+    value: string,
+    known: bool,
+}
+
+export struct Act {
+    label: string,
+    lit: bool,
+    focused: bool,
+}
+
+export struct Head {
+    shown: bool,
+    title: string,
+    tags: [Tag],
+}
+
+export struct WellInfo {
+    shown: bool,
+    initials: string,
+    stripes: int,
+}
+
+export struct SaveCard {
+    header: string,
+    word: string,
+    emblem: string,
+    foot: string,
+    foot-kind: string,
+}
+
+export struct Seat {
+    seat: string,
+    name: string,
+    heard: bool,
+    focused: bool,
+}
+
+export struct NewSave {
+    shown: bool,
+    focused: bool,
+    started: bool,
+}
+
+export struct LaunchCard {
+    shown: bool,
+    title: string,
+    system: string,
+    act: int,
+}
+
+export struct TallyRow {
+    label: string,
+    value: string,
+    share: float,
+}
+
+export struct Tally {
+    shown: bool,
+    title: string,
+    counted: bool,
+    rows: [TallyRow],
+}
+
+export struct Hud {
+    shown: bool,
+    kicker: string,
+    title: string,
+}

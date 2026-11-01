@@ -1,0 +1,43 @@
+// ZoneQrWell: Korri's backup as a QR code on its paper, on the blue and
+// white checker of 8-art-px squares (earned only by Korri's BackupReady).
+// The code arrives as an image (logic.ts draws the modules, one pixel each).
+
+import { Tokens } from "../../ui/tokens.slint";
+
+export component ZoneQrWell inherits Rectangle {
+    in property <image> code;
+    property <length> a: Tokens.a;
+    background: Tokens.qr-blue;
+    clip: true;
+    Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: @image-url("../../art/veil-4.png");
+        colorize: Tokens.white;
+        horizontal-tiling: repeat;
+        vertical-tiling: repeat;
+        image-rendering: pixelated;
+    }
+    // The paper: a whole number of px a module, at least one square in from every side.
+    property <length> room: Math.min(root.width, root.height) - 16 * a;
+    property <float> modules: Math.max(1, root.code.width);
+    property <length> side: Math.max(modules * Tokens.unit, Math.floor(room / Tokens.unit / modules) * modules * Tokens.unit);
+    Rectangle {
+        x: (root.width - root.side) / 2;
+        y: (root.height - root.side) / 2;
+        width: root.side;
+        height: root.side;
+        background: Tokens.white;
+        Image {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            source: root.code;
+            image-fit: fill;
+            image-rendering: pixelated;
+        }
+    }
+}

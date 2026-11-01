@@ -1,0 +1,10 @@
+// ZoneWords: caps that wrap between words, lines 1.4 caps apart, every word
+// in its ink's ring and drop (ZoneWords.tsx drew each word as a ZoneCaps;
+// one wrapped ZoneCaps draws the same).
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneCaps } from "./ZoneCaps.slint";
+
+export component ZoneWords inherits ZoneCaps {
+    wrap: true;
+}

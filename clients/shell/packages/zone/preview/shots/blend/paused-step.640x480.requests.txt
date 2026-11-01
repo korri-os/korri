@@ -1,0 +1,2 @@
+{"request":{"_tag":"FocusGame","gameId":"celeste"},"surface":"zone"}
+{"request":{"_tag":"InvokeGameplayControl","controlId":"fill-screen","value":{"kind":"toggle","value":true}},"surface":"zone"}

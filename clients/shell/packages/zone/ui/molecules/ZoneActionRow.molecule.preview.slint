@@ -1,0 +1,14 @@
+// ZoneActionRow's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneActionRow } from "./ZoneActionRow.slint";
+
+export component Two inherits ZonePreview {
+    ZoneActionRow { x: 0; y: (parent.height - self.height) / 2; width: parent.width; buttons: [{ label: "Play", lit: true }, { label: "Opts." }]; }
+}
+
+export component Wraps inherits ZonePreview {
+    ZoneActionRow { x: 0; y: (parent.height - self.height) / 2; width: parent.width; buttons: [{ label: "Play here", focused: true }, { label: "Play on zao" }, { label: "Play on the-living-room-tv" }, { label: "Opts." }]; }
+}

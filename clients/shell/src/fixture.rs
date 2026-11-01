@@ -315,12 +315,23 @@ fn model_for(state: &State, surface_id: &str) -> Value {
             || json!([{"id": "fixture", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false}]),
         );
     }
+    // A model that names actions in `focusedGame` lends them to whichever
+    // game the surface focuses (the fixture has no per-game actions).
+    let actions = state
+        .base
+        .pointer("/focusedGame/actions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    model
+        .as_object_mut()
+        .map(|fields| fields.remove("focusedGame"));
     if let Some(id) = surface.and_then(|s| s.focused.as_deref()) {
         // A base model may carry the actions of games (`fixtureGameActions`,
-        // keyed by game id), as korrid publishes them for the focused game.
-        let actions = state.base["fixtureGameActions"][id].clone();
-        model["focusedGame"] =
-            json!({"gameId": id, "actions": if actions.is_array() { actions } else { json!([]) }});
+        // keyed by game id), as korrid publishes them for the focused game;
+        // else a base `focusedGame` lends its actions to whichever game is focused.
+        let keyed = state.base["fixtureGameActions"][id].clone();
+        let actions = if keyed.is_array() { keyed } else { actions };
+        model["focusedGame"] = json!({"gameId": id, "actions": actions});
     }
     if let Some(object) = model.as_object_mut() {
         object.remove("fixtureGameActions");

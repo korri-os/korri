@@ -1,0 +1,114 @@
+// ZoneControllerCard
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneEmblem } from "../atoms/ZoneEmblem.slint";
+import { Seat } from "../types.slint";
+
+// A controller seat (ZoneControllerCard, COMPETITION): its colour bands,
+// the pad emblem, the black corner tab with its seat, the name bar; a seat
+// not heard yet reads WAITING.
+export component ZoneControllerCard {
+    in property <Seat> seat;
+    property <length> a: Tokens.a;
+    in property <float> nudge: Tokens.nudge-button;
+    property <length> c1: 10 * a;
+    if root.seat.focused: Rectangle {
+        x: -2 * root.a;
+        y: -2 * root.a;
+        width: root.width + 4 * root.a;
+        height: root.height + 4 * root.a;
+        background: Tokens.pink;
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: root.seat.heard ? Tokens.red : Tokens.black;
+    }
+    Rectangle {
+        x: 4 * root.a;
+        y: 4 * root.a;
+        width: root.width - 8 * root.a;
+        height: root.height - 8 * root.a - 16 * root.a;
+        background: root.seat.heard ? Tokens.stripe-light : Tokens.white;
+        clip: true;
+        if !root.seat.heard: Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            background: @linear-gradient(-28deg, Tokens.orange 0%, Tokens.orange 30%, Tokens.blue 30%, Tokens.blue 52%, Tokens.red 52%, Tokens.red 66%, Tokens.white 66%, Tokens.white 100%);
+            Rectangle {
+                x: 0;
+                width: parent.width;
+                y: parent.height * 0.32;
+                height: root.c1 * 2;
+                background: Tokens.white;
+                ZoneCaps {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.cap) / 2;
+                    box: Math.min(self.natural, parent.width);
+                    text: "Waiting";
+                    cap: parent.width > 70 * root.a ? 2 * root.c1 : root.c1;
+                    ink: "ink";
+                }
+            }
+        }
+        if root.seat.heard: Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            ZoneShape {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                ink: Tokens.key-b;
+                commands: "M 0 0 L " + Tokens.pt(parent.width * 0.6, 0) + " L 0 " + (parent.height * 0.5 / (1 * Tokens.unit)) + " Z";
+            }
+            ZoneShape {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                ink: Tokens.blue;
+                commands: "M " + Tokens.pt(parent.width, parent.height * 0.5) + " L " + Tokens.pt(parent.width, parent.height) + " L " + Tokens.pt(parent.width * 0.55, parent.height) + " Z";
+            }
+            ZoneEmblem {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: Math.min(parent.width * 0.45, 32 * root.a);
+                height: self.width * 0.6;
+                kind: "pad";
+            }
+            ZoneShape {
+                y: 0;
+                x: parent.width - 24 * root.a;
+                width: 24 * root.a;
+                height: 14 * root.a;
+                ink: Tokens.black;
+                commands: "M 0 0 L " + Tokens.pt(self.width, 0) + " L " + Tokens.pt(self.width, self.height) + " L " + Tokens.pt(self.height, self.height) + " Z";
+            }
+            ZoneCaps {
+                x: parent.width - 4 * root.a - self.natural;
+                y: 2 * root.a;
+                text: root.seat.seat;
+                cap: root.c1;
+            }
+        }
+    }
+    if root.seat.heard: ZoneCaps {
+        x: 6 * root.a;
+        y: root.height - 4 * root.a - 13 * root.a;
+        box: root.width - 12 * root.a;
+        centre: true;
+        elide: true;
+        text: root.seat.name;
+        cap: root.c1;
+        face: "fact";
+    }
+}

@@ -1,0 +1,53 @@
+{
+  "verifier": "korri-shell-verify-2",
+  "slint": "1.18.1",
+  "surfaceId": "zone",
+  "packageSha256": "eec203b8bc954e9dab0ce25d20ab44577c9e351ef4307a1568bdc3e75c7e1960",
+  "diagnostics": [],
+  "preferences": {
+    "zone.look": {
+      "mark": "shared",
+      "initial": "blend"
+    }
+  },
+  "displays": "main",
+  "hasOverlay": true,
+  "runs": [
+    {
+      "games": 0,
+      "overlay": false,
+      "displays": 0,
+      "views": 538,
+      "updates": 537,
+      "requests": 26
+    },
+    {
+      "games": 12,
+      "overlay": false,
+      "displays": 0,
+      "views": 547,
+      "updates": 546,
+      "requests": 46
+    },
+    {
+      "games": 10000,
+      "overlay": false,
+      "displays": 0,
+      "views": 547,
+      "updates": 546,
+      "requests": 46
+    },
+    {
+      "games": 12,
+      "overlay": true,
+      "displays": 0,
+      "views": 554,
+      "updates": 545,
+      "requests": 44
+    }
+  ],
+  "maxCallMs": 3.5827839999999997,
+  "peakHeapBytes": 588507,
+  "pass": true,
+  "reasons": []
+}

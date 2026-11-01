@@ -1,0 +1,14 @@
+// ZoneFoot's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneFoot } from "./ZoneFoot.slint";
+
+export component Wifi inherits ZonePreview {
+    ZoneFoot { x: 0; y: parent.height - Tokens.foot-h; width: parent.width; height: Tokens.foot-h; foot: { shown: true, time-label: "Time", clock: "21:47", device: "mini", signal: { shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }, build: "korri 0.4.1 · 9a1fb22" }; }
+}
+
+export component Offline inherits ZonePreview {
+    ZoneFoot { x: 0; y: parent.height - Tokens.foot-h; width: parent.width; height: Tokens.foot-h; foot: { shown: true, time-label: "Time", clock: "21:47", signal: { shown: true, name: "Offline", bars: 0 }, build: "korri 0.4.1 · 9a1fb22" }; }
+}

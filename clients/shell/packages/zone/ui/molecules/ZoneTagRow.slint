@@ -1,0 +1,78 @@
+// ZoneTagRow: tags joined on their slants. With `fill` they share the
+// row's width and the last ones drop when the row cannot hold them all
+// (a card's tags, ZoneTagRow.tsx); without it they stand at their words'
+// widths (a head's tags). Up to five.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTag } from "../atoms/ZoneTag.slint";
+import { ZoneMeasure } from "../atoms/ZoneMeasure.slint";
+import { Tag } from "../types.slint";
+
+export component ZoneTagRow {
+    in property <[Tag]> tags;
+    in property <bool> fill: true;
+    property <length> a: Tokens.a;
+    property <length> cap: Tokens.c1;
+    property <int> count: Math.min(5, tags.length);
+    property <length> slant: Math.min(6 * a, 0.55 * cap);
+    property <length> sp: slant / 2 + a;
+    m0 := ZoneMeasure { text: root.label(0); cap: root.cap; face: root.face(0); }
+    m1 := ZoneMeasure { text: root.label(1); cap: root.cap; face: root.face(1); }
+    m2 := ZoneMeasure { text: root.label(2); cap: root.cap; face: root.face(2); }
+    m3 := ZoneMeasure { text: root.label(3); cap: root.cap; face: root.face(3); }
+    m4 := ZoneMeasure { text: root.label(4); cap: root.cap; face: root.face(4); }
+    pure function face(i: int) -> string {
+        return i < root.count && root.tags[i].korri ? "korri" : "caps";
+    }
+    pure function label(i: int) -> string {
+        return i >= root.count ? "" : root.tags[i].korri && !Tokens.retro ? root.tags[i].label : root.tags[i].label.to-uppercase();
+    }
+    pure function tw(i: int) -> length {
+        return i == 0 ? m0.preferred-width : i == 1 ? m1.preferred-width : i == 2 ? m2.preferred-width : i == 3 ? m3.preferred-width : m4.preferred-width;
+    }
+    pure function lp(i: int) -> length {
+        return i == 0 ? a : sp;
+    }
+    pure function rp(i: int) -> length {
+        return i == count - 1 ? a : sp;
+    }
+    pure function base(i: int) -> length {
+        return i >= count ? 0 : lp(i) + tw(i) + rp(i);
+    }
+    pure function total(k: int) -> length {
+        return (k > 0 ? base(0) : 0) + (k > 1 ? base(1) : 0) + (k > 2 ? base(2) : 0) + (k > 3 ? base(3) : 0) + (k > 4 ? base(4) : 0);
+    }
+    pure function widest(k: int) -> length {
+        return Math.max(k > 0 ? base(0) : 0, k > 1 ? base(1) : 0, k > 2 ? base(2) : 0, k > 3 ? base(3) : 0, k > 4 ? base(4) : 0);
+    }
+    pure function row-w(k: int) -> length {
+        return total(k) - slant * Math.max(0, k - 1);
+    }
+    // Chromium shrinks tags in proportion and calls one cut past about 1.5 px.
+    pure function cut(k: int) -> bool {
+        return fill && row-w(k) > root.width && (row-w(k) - root.width) * widest(k) / Math.max(0.001 * Tokens.unit, total(k)) > 1.5 * Tokens.unit;
+    }
+    out property <length> natural: row-w(count);
+    property <int> shown: !cut(count) ? count : !cut(count - 1) ? count - 1 : !cut(count - 2) ? count - 2
+        : !cut(count - 3) ? count - 3 : !cut(count - 4) ? count - 4 : 0;
+    property <length> extra: fill && shown > 0 ? (root.width - row-w(shown)) / shown : 0;
+    pure function tag-x(i: int) -> length {
+        return (i > 0 ? base(0) + extra - slant : 0) + (i > 1 ? base(1) + extra - slant : 0) + (i > 2 ? base(2) + extra - slant : 0)
+            + (i > 3 ? base(3) + extra - slant : 0);
+    }
+    height: 1.55 * cap;
+    for t[i] in root.tags: ZoneTag {
+        visible: i < root.shown;
+        x: root.tag-x(i);
+        y: 0;
+        width: root.base(i) + root.extra;
+        height: root.height;
+        tag: t;
+        cap: root.cap;
+        slant: root.slant;
+        pad-start: root.lp(i);
+        pad-end: root.rp(i);
+        cut-start: i != 0 || !root.fill;
+        cut-end: i != root.count - 1 || !root.fill;
+    }
+}

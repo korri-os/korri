@@ -1,0 +1,116 @@
+// ZoneCardBand: the zone select's band (src/plan/zone-select.ts): three
+// cards, or five from Tokens.wide-at art px; the focused one centred and
+// larger; the red triangles pointing at it, breathing (steel and still at
+// an end of the catalog); a section's spine in the gap where a section
+// starts. The band snaps to a new focus in 220 ms with one overshoot (M1).
+// The cards travel in the catalog's absolute places (the cursor window's
+// first index plus the card's), so a new window round the same game does
+// not move the band. Only the cards in view exist.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
+import { ZoneCard } from "ZoneCard.slint";
+import { ZoneSectionCard } from "ZoneSectionCard.slint";
+import { Card } from "../types.slint";
+
+export component ZoneCardBand {
+    in property <[Card]> cards;
+    in property <int> focused-card;
+    in property <bool> card-focused;
+    in property <int> first-index;
+    in property <int> total;
+    in property <float> nudge: Tokens.nudge-band;
+    property <length> a: Tokens.a;
+    property <int> focus-index: first-index + focused-card;
+    property <int> visible-cards: Tokens.wide ? 5 : 3;
+    property <int> reach: Tokens.wide ? 2 : 1;
+    property <length> gap: (Tokens.wide ? 10 : 7) * a;
+    property <length> tri: (Tokens.wide ? 14 : 12) * a;
+    property <length> room: tri + 8 * a;
+    property <length> fixed: (visible-cards - 1) * gap + 2 * room + 24 * a;
+    property <length> fit: (root.width - fixed) / (Tokens.card-aspect * (1 + (visible-cards - 1) * Tokens.side-share));
+    out property <length> card-h: Math.max(0, Math.min(Tokens.card-most * a, root.height - 12 * a, fit));
+    property <length> focus-w: card-h * Tokens.card-aspect;
+    property <length> side-h: card-h * Tokens.side-share;
+    property <length> side-w: side-h * Tokens.card-aspect;
+    property <length> cy: root.height / 2;
+    property <float> f: focus-index;
+    animate f {
+        duration: 220ms;
+        easing: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    property <float> lin: focus-index;
+    animate lin {
+        duration: 220ms;
+        easing: linear;
+    }
+    property <int> dir: lin < focus-index - 0.0001 ? 1 : lin > focus-index + 0.0001 ? -1 : 0;
+    property <float> p: 1 - (focus-index - f) * dir;
+    property <bool> adjacent: dir != 0 && p >= 0;
+    pure function share(i: int) -> float {
+        return adjacent ? (i == focus-index ? p : i == focus-index - dir ? 1 - p : 0) : Math.max(0, 1 - Math.abs(i - f));
+    }
+    pure function before(i: int) -> float {
+        return adjacent
+            ? (i <= Math.min(focus-index, focus-index - dir) ? 0 : i > Math.max(focus-index, focus-index - dir) ? 1 : dir > 0 ? 1 - p : p)
+            : Math.clamp(i - f, 0, 1);
+    }
+    // Modern travels to a layout unit (1/64 px); the pixel looks to whole art px.
+    property <length> raw-x: root.width / 2 - (f * (side-w + gap) + room + focus-w / 2);
+    property <length> track-x: Tokens.modern ? Math.round(raw-x / Tokens.unit * 64) / 64 * Tokens.unit : Math.round(raw-x / a) * a;
+    pure function card-w(i: int) -> length {
+        return side-w + share(i) * (focus-w - side-w);
+    }
+    pure function card-x(i: int) -> length {
+        return track-x + i * (side-w + gap) + before(i) * (focus-w - side-w + 2 * room) + share(i) * room;
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        cache-rendering-hint: true;
+        for c[i] in root.cards: Rectangle {
+            x: 0;
+            y: 0;
+            width: 0;
+            height: 0;
+            if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0: ZoneCard {
+                cache-rendering-hint: true;
+                x: root.card-x(i + root.first-index);
+                width: root.card-w(i + root.first-index);
+                height: root.side-h + root.share(i + root.first-index) * (root.card-h - root.side-h);
+                y: root.cy - self.height / 2;
+                card: c;
+                focused: i == root.focused-card;
+                lit: root.card-focused;
+            }
+            if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0 && c.section != "" && (i == 0 || root.cards[i - 1].section != c.section): ZoneSectionCard {
+                x: root.card-x(i + root.first-index) - root.gap + root.a;
+                y: root.cy - root.side-h / 2;
+                width: root.gap - 2 * root.a;
+                height: root.side-h;
+                caption: c.section;
+            }
+        }
+    }
+    property <length> focused-x: card-x(focus-index);
+    property <length> focused-w: card-w(focus-index);
+    property <bool> first: focus-index <= 0;
+    property <bool> last: focus-index >= total - 1;
+    if root.cards.length > 0 && root.card-h > 0 && root.card-focused: ZoneTriangle {
+        x: root.focused-x - (2 * root.a + (root.first ? 0 : 2 * root.a * root.nudge)) - root.tri;
+        y: root.cy - self.height / 2;
+        width: root.tri;
+        height: root.tri * 1.1;
+        ink: root.first ? Tokens.steel : Tokens.red;
+    }
+    if root.cards.length > 0 && root.card-h > 0 && root.card-focused: ZoneTriangle {
+        x: root.focused-x + root.focused-w + 2 * root.a + (root.last ? 0 : 2 * root.a * root.nudge);
+        y: root.cy - self.height / 2;
+        width: root.tri;
+        height: root.tri * 1.1;
+        left: true;
+        ink: root.last ? Tokens.steel : Tokens.red;
+    }
+}

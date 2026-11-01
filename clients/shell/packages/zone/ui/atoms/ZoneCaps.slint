@@ -1,0 +1,148 @@
+// ZoneCaps: words as Zone's caps draw them (ZoneCaps.css).
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneMeasure } from "./ZoneMeasure.slint";
+
+// Words as Zone's caps draw them (ZoneCaps.css): the ring on all eight
+// neighbours one art px out, the drop one step down and right (two for the
+// banner), the face, and in the pixel faces the shade on the cap's lower
+// three rows (the banner's white band on rows 4 to 6). y is the top of the
+// cap; x the left of the words or of `box`.
+//
+//   ink    white (default), hud, danger, ink (flat black), flat (one colour: `colour`), banner
+//   face   caps (Zone's words: capitals), fact (Korri's facts, own case),
+//          korri (Korri's names at the caps' size)
+//
+// Each copy is written out: a frame walks every item, so no repeater.
+export component ZoneCaps {
+    in property <string> text;
+    in property <length> cap: Tokens.c1;
+    in property <length> a: Tokens.a;
+    in property <string> ink: "white";
+    in property <string> face: "caps";
+    in property <color> colour: Tokens.white;
+    in property <length> box: (0 * Tokens.unit);
+    in property <bool> centre: false;
+    in property <bool> right: false;
+    in property <bool> elide: false;
+    in property <bool> wrap: false;
+    // Lines 1.4 caps apart when wrapped (ZoneWords).
+    property <bool> upper: face == "caps" || (face == "korri" && Tokens.retro);
+    out property <string> shown: upper ? text.to-uppercase() : text;
+    property <string> family: face == "fact" ? Tokens.fact-family : face == "korri" ? Tokens.korri-family : Tokens.caps-family;
+    property <float> scale: face == "fact" ? Tokens.fact-size : face == "korri" ? Tokens.korri-size : Tokens.caps-size;
+    property <float> above-share: face == "fact" ? Tokens.fact-above : face == "korri" ? Tokens.korri-above : Tokens.caps-above;
+    property <bool> pixel: family == "Zone Caps";
+    out property <length> size: cap * scale;
+    out property <length> above: cap * above-share;
+    out property <length> natural: measure.preferred-width;
+    property <length> text-w: box > 0 ? box : natural + 2 * a;
+    out property <length> line: measure.preferred-height;
+    // Wrapped: the lines' height, laid out in the box.
+    out property <length> wrapped: wrap ? wrap-measure.preferred-height : line;
+    out property <int> lines: wrap ? Math.max(1, Math.round(wrap-measure.preferred-height / Math.max((1 * Tokens.unit), line * spacing))) : 1;
+    property <float> spacing: wrap ? 1.4 * cap / Math.max((1 * Tokens.unit), line) : 1;
+    out property <length> drawn-h: wrap ? (lines - 1) * 1.4 * cap + cap : cap;
+    property <TextHorizontalAlignment> align: centre ? TextHorizontalAlignment.center : right ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+    property <TextOverflow> cut: elide ? TextOverflow.elide : TextOverflow.clip;
+    property <TextWrap> wrapping: wrap ? TextWrap.word-wrap : TextWrap.no-wrap;
+    // With the line shortened to 1.4 caps, the renderer centres each line's
+    // glyphs: the first cap moves down by half the cut.
+    property <length> lead: wrap ? (line * spacing - line) / 2 : 0;
+    property <length> ty: -above + lead;
+    property <bool> edged: ink != "ink" && ink != "flat";
+    property <color> edge: ink == "hud" ? Tokens.hud-edge : Tokens.black;
+    property <color> drop-ink: ink == "banner" ? Tokens.orange : edge;
+    property <color> face-ink: ink == "hud" ? Tokens.yellow : ink == "danger" ? Tokens.danger : ink == "ink" ? Tokens.black : ink == "flat" ? colour
+        : ink == "banner" ? Tokens.banner-yellow : Tokens.white;
+    property <color> shade-ink: ink == "danger" ? Tokens.danger-shade : ink == "white" ? Tokens.white-shade : face-ink;
+    width: box > 0 ? box : natural;
+    height: drawn-h;
+    measure := ZoneMeasure {
+        text: root.shown;
+        cap: root.cap;
+        face: root.face;
+    }
+    wrap-measure := Text {
+        x: 0;
+        y: 0;
+        visible: false;
+        width: root.box > 0 ? root.box : (1000 * Tokens.unit);
+        height: 0;
+        text: root.wrap ? root.shown : "";
+        font-family: root.family;
+        font-size: root.size;
+        wrap: word-wrap;
+        line-height-factor: root.spacing;
+    }
+    if root.edged: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        // The drop, then the ring.
+        Text { vertical-alignment: top; x: 2 * root.a; y: root.ty; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: 2 * root.a; y: root.ty + root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: 2 * root.a; y: root.ty + 2 * root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: root.a; y: root.ty + 2 * root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: 0; y: root.ty + 2 * root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        if root.ink == "banner": Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            Text { vertical-alignment: top; x: 3 * root.a; y: root.ty + root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+            Text { vertical-alignment: top; x: 3 * root.a; y: root.ty + 2 * root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+            Text { vertical-alignment: top; x: 3 * root.a; y: root.ty + 3 * root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+            Text { vertical-alignment: top; x: 2 * root.a; y: root.ty + 3 * root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+            Text { vertical-alignment: top; x: root.a; y: root.ty + 3 * root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.drop-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        }
+        Text { vertical-alignment: top; x: -root.a; y: root.ty - root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.edge; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: 0; y: root.ty - root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.edge; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: root.a; y: root.ty - root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.edge; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: -root.a; y: root.ty; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.edge; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: root.a; y: root.ty; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.edge; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: -root.a; y: root.ty + root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.edge; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: 0; y: root.ty + root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.edge; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+        Text { vertical-alignment: top; x: root.a; y: root.ty + root.a; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.edge; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+    }
+    Text { vertical-alignment: top; x: 0; y: root.ty; width: root.text-w; text: root.shown; font-family: root.family; font-size: root.size; color: root.face-ink; horizontal-alignment: root.align; overflow: root.cut; wrap: root.wrapping; line-height-factor: root.spacing; }
+    // The two-tone face: the cap's lower three rows in the shade (the
+    // banner: its white band through rows 4 to 6). One line only.
+    if root.pixel && !root.wrap && root.edged && root.shade-ink != root.face-ink: Rectangle {
+        x: -root.a;
+        y: root.ink == "banner" ? 0.3 * root.cap : 0.7 * root.cap;
+        width: root.text-w + 2 * root.a;
+        height: root.ink == "banner" ? 0.3 * root.cap : 0.3 * root.cap + 0.2 * root.cap;
+        clip: true;
+        Text { vertical-alignment: top;
+            x: root.a;
+            y: root.ty - parent.y;
+            width: root.text-w;
+            text: root.shown;
+            font-family: root.family;
+            font-size: root.size;
+            color: root.ink == "banner" ? Tokens.banner-white : root.shade-ink;
+            horizontal-alignment: root.align;
+            overflow: root.cut;
+        }
+    }
+    if root.ink == "banner" && !root.pixel: Rectangle {
+        x: -root.a;
+        y: 0.3 * root.cap;
+        width: root.text-w + 2 * root.a;
+        height: 0.3 * root.cap;
+        clip: true;
+        Text { vertical-alignment: top;
+            x: root.a;
+            y: root.ty - parent.y;
+            width: root.text-w;
+            text: root.shown;
+            font-family: root.family;
+            font-size: root.size;
+            color: Tokens.banner-white;
+            horizontal-alignment: root.align;
+            overflow: root.cut;
+        }
+    }
+}

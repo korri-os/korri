@@ -1,0 +1,22 @@
+// ZoneStatusLayer's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneStatusLayer } from "./ZoneStatusLayer.slint";
+
+export component Busy inherits ZonePreview {
+    ZoneStatusLayer { x: 0; y: 0; width: parent.width; height: parent.height; busy: { shown: true, kicker: "Starting", detail: "Waiting for zao to answer", game: "Spelunky", buttons: [{ label: "Cancel", focused: true, lit: true }] }; }
+}
+
+export component Problem inherits ZonePreview {
+    ZoneStatusLayer { x: 0; y: 0; width: parent.width; height: parent.height; dialog: { shown: true, headline: "Couldn't start", korri: true, lines: ["The emulator exited before the game loaded."], title: "Spelunky", buttons: [{ label: "Dismiss", focused: true }, { label: "Retry" }] }; }
+}
+
+export component Running inherits ZonePreview {
+    ZoneStatusLayer { x: 0; y: 0; width: parent.width; height: parent.height; hud: { shown: true, kicker: "Playing on zao", title: "The Legend of Zelda: Oracle of Seasons" }; }
+}
+
+export component Progress inherits ZonePreview {
+    ZoneStatusLayer { x: 0; y: 0; width: parent.width; height: parent.height; busy: { shown: true, kicker: "Downloading FEX rootfs", game: "Hollow Knight", buttons: [{ label: "Cancel", focused: true, lit: true }], meter: true, share: 0.5, figures: "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left" }; }
+}

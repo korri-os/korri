@@ -1,0 +1,107 @@
+// ZoneFoot: TIME and Korri's clock, the device's name, the Wi-Fi badge, the build. With no room left the name, the badge and the build shrink in proportion and their words end in "…".
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneSignal } from "../atoms/ZoneSignal.slint";
+import { Foot } from "../types.slint";
+
+// The foot (ZoneFoot): TIME and Korri's clock, the device's name, the Wi-Fi
+// badge, the build. With no room left the name, the badge and the build
+// shrink in proportion and their words end in "…".
+export component ZoneFoot {
+    property <length> a: Tokens.a;
+    in property <Foot> foot;
+    property <length> c1: 10 * a;
+    property <float> w-art: Math.floor(root.width / a);
+    property <bool> least: w-art < 476;
+    property <length> margin: least ? 4 * a : Math.clamp(0.016 * root.width, 4 * a, 11 * a);
+    property <length> pad: least ? 2 * a : 5 * a;
+    property <length> foot-gap: Math.clamp(0.016 * root.width, 4 * a, 5 * a);
+    property <length> ph: root.height - 8 * a;
+    property <length> py: 4 * a;
+    property <length> run: ph - a;
+    property <length> side: run + pad;
+    property <length> cap-top: py + (ph - c1) / 2;
+    property <length> timer-w: foot.clock == "" ? 0 : 2 * side + time-word.natural + 3 * a + clock-word.natural;
+    property <length> device-natural: foot.device == "" ? 0 : 2 * side + device-word.natural;
+    property <length> signal-natural: foot.signal.shown ? sig.natural : 0;
+    property <length> build-natural: build-word.natural;
+    property <length> room: root.width - 2 * margin - 3 * foot-gap - timer-w;
+    property <length> all: device-natural + signal-natural + build-natural;
+    property <length> over: Math.max(0, all - room);
+    property <length> device-w: device-natural - (all > 0 ? over * device-natural / all : 0);
+    property <length> signal-w: signal-natural - (all > 0 ? over * signal-natural / all : 0);
+    property <length> build-w: build-natural - (all > 0 ? over * build-natural / all : 0);
+    property <length> build-x: root.width - margin - build-w;
+    property <length> signal-x: build-x - foot-gap - signal-w;
+    property <length> device-x: (foot.signal.shown ? signal-x : build-x) - foot-gap - device-w;
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        cache-rendering-hint: true;
+        if root.foot.clock != "": ZonePanel {
+            x: root.margin;
+            y: root.py;
+            width: root.timer-w;
+            height: root.ph;
+            run: root.run;
+            ink: Tokens.black;
+        }
+        time-word := ZoneCaps {
+            visible: root.foot.clock != "";
+            x: root.margin + root.side;
+            y: root.cap-top;
+            text: root.foot.time-label;
+            cap: root.c1;
+            ink: "hud";
+        }
+        clock-word := ZoneCaps {
+            visible: root.foot.clock != "";
+            x: root.margin + root.side + time-word.natural + 3 * root.a;
+            y: root.cap-top;
+            text: root.foot.clock;
+            cap: root.c1;
+            face: "korri";
+        }
+        if root.foot.device != "": ZonePanel {
+            x: root.device-x;
+            y: root.py;
+            width: root.device-w;
+            height: root.ph;
+            run: root.run;
+            ink: Tokens.black;
+        }
+        device-word := ZoneCaps {
+            visible: root.foot.device != "";
+            x: root.device-x + root.side;
+            y: root.cap-top;
+            box: Math.max((1 * Tokens.unit), root.device-w - 2 * root.side);
+            elide: root.device-w < root.device-natural;
+            text: root.foot.device;
+            cap: root.c1;
+            face: "fact";
+        }
+        sig := ZoneSignal {
+            visible: root.foot.signal.shown;
+            x: root.signal-x;
+            y: root.py;
+            width: root.signal-w;
+            height: root.ph;
+            signal: root.foot.signal;
+            pad: root.pad;
+        }
+        build-word := ZoneCaps {
+            x: root.build-x;
+            y: root.cap-top;
+            box: Math.max((1 * Tokens.unit), root.build-w);
+            elide: root.build-w < root.build-natural;
+            text: root.foot.build;
+            cap: root.c1;
+            ink: "ink";
+            face: "fact";
+        }
+    }
+}

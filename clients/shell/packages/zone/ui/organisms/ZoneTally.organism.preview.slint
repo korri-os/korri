@@ -1,0 +1,11 @@
+// ZoneTally's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneTally } from "./ZoneTally.slint";
+
+export component Counted inherits ZonePreview {
+    ground: "tally";
+    ZoneTally { x: 0; y: 0; width: parent.width; height: parent.height; tally: { shown: true, title: "Hollow Knight", counted: true, rows: [{ label: "Time", value: "33'05\"", share: 0.15 }, { label: "Plays", value: "8", share: 1 }, { label: "Total", value: "3H 45M", share: 1 }] }; }
+}

@@ -1,0 +1,19 @@
+// ZoneShell's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneShell } from "./ZoneShell.slint";
+
+export component Tabs inherits ZonePreview {
+    ZoneShell { x: 0; y: 0; width: parent.width; height: parent.height; tabs: [{ label: "Games", active: true }, { label: "Options" }, { label: "Save data" }]; foot: { shown: true, time-label: "Time", clock: "21:47", device: "mini", signal: { shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }, build: "korri 0.4.1 · 9a1fb22" }; }
+}
+
+export component Banner inherits ZonePreview {
+    ground: "options";
+    ZoneShell { x: 0; y: 0; width: parent.width; height: parent.height; tabs-shown: false; banner: "Get games"; foot: { shown: true, time-label: "Time", clock: "21:47", device: "mini", signal: { shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }, build: "korri 0.4.1 · 9a1fb22" }; }
+}
+
+export component Steps inherits ZonePreview {
+    ZoneShell { x: 0; y: 0; width: parent.width; height: parent.height; tabs-shown: false; banner: "Controllers"; pips: 4; pip: 0; }
+}

@@ -1,0 +1,118 @@
+// ZoneTitleCard
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneMeasure } from "../atoms/ZoneMeasure.slint";
+
+// The title card (ZoneTitleCard): the yellow ground, the red, blue and green
+// bands sweeping in from the left, the game's name at caps-3 rising over its
+// black slab, the system's tag, and the act's disc. `t` runs from 0 (the
+// card arriving) to 1 (at rest).
+export component ZoneTitleCard {
+    property <length> a: Tokens.a;
+    in property <string> title;
+    in property <string> system;
+    in property <int> act;
+    in property <float> t: 1;
+    property <length> c1: 10 * a;
+    property <float> ease: Tokens.modern ? 1 - (1 - t) * (1 - t) * (1 - t) : Math.round(t * 4) / 4;
+    property <length> off: (1 - ease) * root.width;
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.ground-titlecard;
+    }
+    ZoneShape {
+        y: 0;
+        x: -root.off;
+        width: root.width;
+        height: root.height;
+        ink: Tokens.title-red;
+        commands: "M 0 0 L " + Tokens.pt(root.width * 0.42, 0) + " L " + Tokens.pt(root.width * 0.18, root.height) + " L 0 " + (root.height / (1 * Tokens.unit)) + " Z";
+    }
+    ZoneShape {
+        y: 0;
+        x: -root.off * 1.2;
+        width: root.width;
+        height: root.height;
+        ink: Tokens.title-blue;
+        commands: "M " + Tokens.pt(root.width * 0.42, 0) + " L " + Tokens.pt(root.width * 0.52, 0) + " L " + Tokens.pt(root.width * 0.28, root.height) + " L " + Tokens.pt(root.width * 0.18, root.height) + " Z";
+    }
+    ZoneShape {
+        y: 0;
+        x: -root.off * 1.4;
+        width: root.width;
+        height: root.height;
+        ink: Tokens.title-green;
+        commands: "M " + Tokens.pt(root.width * 0.52, 0) + " L " + Tokens.pt(root.width * 0.56, 0) + " L " + Tokens.pt(root.width * 0.32, root.height) + " L " + Tokens.pt(root.width * 0.28, root.height) + " Z";
+    }
+    title-measure := ZoneMeasure {
+        text: Tokens.retro ? root.title.to-uppercase() : root.title;
+        cap: 3 * root.c1;
+        face: "korri";
+    }
+    property <length> title-cap: title-measure.preferred-width > root.width * 0.62 ? 2 * c1 : 3 * c1;
+    property <length> name-y: root.height * 0.42;
+    ZonePanel {
+        x: root.width * 0.36 + root.off;
+        y: root.name-y + 0.4 * root.title-cap;
+        width: root.width * 0.64;
+        height: root.title-cap;
+        run: root.title-cap;
+        right-straight: true;
+        ink: Tokens.black;
+    }
+    name := ZoneCaps {
+        x: Math.max(4 * root.a, root.width - 12 * root.a - self.width) + root.off;
+        y: root.name-y;
+        box: Math.min(self.natural, root.width - 16 * root.a);
+        wrap: false;
+        elide: true;
+        text: root.title;
+        cap: root.title-cap;
+        face: "korri";
+    }
+    if root.system != "": Rectangle {
+        x: root.width - 12 * root.a - sys.natural - 16 * root.a + root.off;
+        y: root.name-y + root.title-cap * 1.6;
+        width: sys.natural + 16 * root.a;
+        height: 14 * root.a;
+        background: Tokens.blue;
+        sys := ZoneCaps {
+            x: 8 * root.a;
+            y: 2 * root.a;
+            text: root.system;
+            cap: root.c1;
+            face: "korri";
+        }
+    }
+    if root.act > 0: Rectangle {
+        property <length> d: 40 * root.a * Math.clamp(root.ease * 1.3 - 0.3, 0, 1);
+        x: root.width - 60 * root.a - self.d / 2;
+        y: root.height * 0.2 - self.d / 2;
+        width: self.d;
+        height: self.d;
+        border-radius: self.d / 2;
+        background: Tokens.white;
+        border-width: 2 * root.a;
+        border-color: Tokens.black;
+        ZoneCaps {
+            x: (parent.width - self.natural) / 2;
+            y: parent.height / 2 - 1.5 * root.c1;
+            text: "Act";
+            cap: root.c1;
+            ink: "ink";
+        }
+        ZoneCaps {
+            x: (parent.width - self.natural) / 2;
+            y: parent.height / 2;
+            text: root.act;
+            cap: 2 * root.c1;
+            ink: "ink";
+        }
+    }
+}

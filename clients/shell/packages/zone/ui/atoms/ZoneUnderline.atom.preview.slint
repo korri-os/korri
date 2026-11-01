@@ -1,0 +1,10 @@
+// ZoneUnderline's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneUnderline } from "./ZoneUnderline.slint";
+
+export component Default inherits ZonePreview {
+    ZoneUnderline { x: (parent.width - 80 * Tokens.a) / 2; y: (parent.height - 20 * Tokens.a) / 2; width: 80 * Tokens.a; height: 20 * Tokens.a; run: 19 * Tokens.a; }
+}

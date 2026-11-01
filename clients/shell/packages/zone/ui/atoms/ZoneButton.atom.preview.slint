@@ -1,0 +1,26 @@
+// ZoneButton's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneButton } from "./ZoneButton.slint";
+
+export component Default inherits ZonePreview {
+    ZoneButton { x: (parent.width - self.span) / 2; y: (parent.height - self.height) / 2; btn: { label: "Play" }; }
+}
+
+export component Lit inherits ZonePreview {
+    ZoneButton { x: (parent.width - self.span) / 2; y: (parent.height - self.height) / 2; btn: { label: "Play", lit: true }; }
+}
+
+export component Focused inherits ZonePreview {
+    ZoneButton { x: (parent.width - self.span) / 2; y: (parent.height - self.height) / 2; btn: { label: "Play on zao", focused: true }; }
+}
+
+export component Disabled inherits ZonePreview {
+    ZoneButton { x: (parent.width - self.span) / 2; y: (parent.height - self.height) / 2; btn: { label: "Copy to zao", disabled: true }; }
+}
+
+export component Destructive inherits ZonePreview {
+    ZoneButton { x: (parent.width - self.span) / 2; y: (parent.height - self.height) / 2; btn: { label: "Delete", danger: true, focused: true }; }
+}

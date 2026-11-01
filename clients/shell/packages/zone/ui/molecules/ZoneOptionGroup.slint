@@ -1,0 +1,39 @@
+// ZoneOptionGroup: a group's head over its rows: the black wedge flush with
+// the band's left edge, its title at caps-2 (caps-1 when it must). As a
+// caption (LAUNCH SETTINGS' plugin sections) it is the title in HUD ink at
+// caps-1. The plan hands the rows flat (src/plan/options.ts), so the group's
+// rows stand under it in ZoneRowList rather than inside it.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneMeasure } from "../atoms/ZoneMeasure.slint";
+
+export component ZoneOptionGroup {
+    in property <string> title;
+    in property <bool> caption: false;
+    property <length> a: Tokens.a;
+    // Caps-2 while the title fits beside its wedge's slant, else caps-1.
+    big := ZoneMeasure { text: root.title.to-uppercase(); cap: Tokens.c2; }
+    property <length> cap: big.preferred-width + 30 * a <= root.width ? Tokens.c2 : Tokens.c1;
+    out property <length> need: caption ? 14 * a : cap + 6 * a;
+    height: need;
+    if !root.caption: ZoneShape {
+        x: -8 * root.a;
+        y: 2 * root.a;
+        width: Math.min(root.width + 8 * root.a, words.natural + 8 * root.a + 2 * (root.cap + 2 * root.a));
+        height: root.cap + 2 * root.a;
+        ink: Tokens.black;
+        commands: "M 0 0 L " + Tokens.pt(self.width, 0) + " L " + Tokens.pt(self.width - self.height + root.a, self.height) + " L " + Tokens.pt(0, self.height) + " Z";
+    }
+    words := ZoneCaps {
+        x: root.caption ? 4 * root.a : 2 * root.a;
+        y: root.caption ? 2 * root.a : 3 * root.a;
+        box: Math.min(self.natural, root.width - 4 * root.a);
+        elide: true;
+        text: root.title;
+        cap: root.caption ? Tokens.c1 : root.cap;
+        ink: root.caption ? "hud" : "white";
+        face: root.caption ? "fact" : "caps";
+    }
+}

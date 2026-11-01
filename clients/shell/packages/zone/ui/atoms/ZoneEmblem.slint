@@ -1,0 +1,125 @@
+// ZoneEmblem: Zone's own small drawings: the key, the arrow into a card, the linked rings, the greyed key, the pad.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTriangle } from "./ZoneTriangle.slint";
+
+// Zone's emblems (ZoneEmblem), drawn as small shapes: the key, the arrow
+// into a card, the linked rings, the greyed key, the pad.
+export component ZoneEmblem {
+    in property <string> kind;
+    property <length> a: Tokens.a;
+    property <color> metal: kind == "retired" ? Tokens.grey-light : kind == "link" ? Tokens.metal-silver : Tokens.metal-gold;
+    property <color> edge: Tokens.black;
+    if root.kind == "key" || root.kind == "retired": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        Rectangle {
+            x: 0;
+            y: root.height * 0.25;
+            width: root.height * 0.5;
+            height: root.height * 0.5;
+            border-radius: self.width / 2;
+            border-width: root.a * 2;
+            border-color: root.metal;
+            background: transparent;
+        }
+        Rectangle {
+            x: root.height * 0.45;
+            y: root.height * 0.43;
+            width: root.width - root.height * 0.45;
+            height: root.height * 0.14;
+            background: root.metal;
+        }
+        Rectangle {
+            x: root.width - root.height * 0.3;
+            y: root.height * 0.55;
+            width: root.height * 0.12;
+            height: root.height * 0.2;
+            background: root.metal;
+        }
+    }
+    if root.kind == "restore": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        Rectangle {
+            y: 0;
+            x: root.width * 0.35;
+            width: root.width * 0.6;
+            height: root.height;
+            background: Tokens.white;
+            border-width: root.a;
+            border-color: Tokens.black;
+        }
+        ZoneTriangle {
+            x: 0;
+            y: root.height * 0.25;
+            width: root.width * 0.6;
+            height: root.height * 0.5;
+            ink: Tokens.red;
+        }
+    }
+    if root.kind == "link": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        Rectangle {
+            x: 0;
+            y: root.height * 0.2;
+            width: root.height * 0.6;
+            height: root.height * 0.6;
+            border-radius: self.width / 2;
+            border-width: 2 * root.a;
+            border-color: Tokens.metal-gold;
+        }
+        Rectangle {
+            x: root.width - root.height * 0.6;
+            y: root.height * 0.2;
+            width: root.height * 0.6;
+            height: root.height * 0.6;
+            border-radius: self.width / 2;
+            border-width: 2 * root.a;
+            border-color: Tokens.metal-silver;
+        }
+    }
+    if root.kind == "pad": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        Rectangle {
+            x: 0;
+            width: parent.width;
+            y: root.height * 0.2;
+            height: root.height * 0.6;
+            border-radius: root.height * 0.3;
+            background: Tokens.black;
+        }
+        Rectangle {
+            x: root.width * 0.18;
+            y: root.height * 0.42;
+            width: root.width * 0.2;
+            height: root.height * 0.16;
+            background: Tokens.white;
+        }
+        Rectangle {
+            x: root.width * 0.24;
+            y: root.height * 0.36;
+            width: root.width * 0.08;
+            height: root.height * 0.28;
+            background: Tokens.white;
+        }
+        Rectangle {
+            x: root.width * 0.66;
+            y: root.height * 0.38;
+            width: root.width * 0.1;
+            height: root.width * 0.1;
+            border-radius: self.width / 2;
+            background: Tokens.red;
+        }
+    }
+}

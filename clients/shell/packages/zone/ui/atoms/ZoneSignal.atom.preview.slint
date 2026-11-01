@@ -1,0 +1,14 @@
+// ZoneSignal's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneSignal } from "./ZoneSignal.slint";
+
+export component Wifi inherits ZonePreview {
+    ZoneSignal { x: (parent.width - self.natural) / 2; y: (parent.height - 14 * Tokens.a) / 2; width: self.natural; height: 14 * Tokens.a; signal: { shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }; }
+}
+
+export component Cut inherits ZonePreview {
+    ZoneSignal { x: (parent.width - 80 * Tokens.a) / 2; y: (parent.height - 14 * Tokens.a) / 2; width: 80 * Tokens.a; height: 14 * Tokens.a; signal: { shown: true, name: "NETGEAR-5G-supercalifragilistic", korri: true, bars: 1, strength: "21%" }; }
+}

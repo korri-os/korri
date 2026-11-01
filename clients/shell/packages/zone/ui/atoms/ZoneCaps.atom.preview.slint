@@ -1,0 +1,36 @@
+// ZoneCaps's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneCaps } from "./ZoneCaps.slint";
+
+export component White inherits ZonePreview {
+    ZoneCaps { x: (parent.width - self.width) / 2; y: (parent.height - Tokens.c2) / 2; text: "Save data"; cap: Tokens.c2; }
+}
+
+export component Hud inherits ZonePreview {
+    ZoneCaps { x: (parent.width - self.width) / 2; y: (parent.height - Tokens.c1) / 2; text: "Last played"; ink: "hud"; }
+}
+
+export component Danger inherits ZonePreview {
+    ZoneCaps { x: (parent.width - self.width) / 2; y: (parent.height - Tokens.c2) / 2; text: "Run"; ink: "danger"; cap: Tokens.c2; }
+}
+
+export component Fact inherits ZonePreview {
+    ZoneCaps { x: (parent.width - self.width) / 2; y: (parent.height - Tokens.c1) / 2; text: "hummingbird-lake 72%"; face: "fact"; }
+}
+
+export component KorriName inherits ZonePreview {
+    ZoneCaps { x: (parent.width - self.width) / 2; y: (parent.height - Tokens.c2) / 2; text: "The Legend of Zelda: Oracle of Seasons"; face: "korri"; cap: Tokens.c2; }
+}
+
+export component Modern inherits ZonePreview {
+    look: "modern";
+    ZoneCaps { x: (parent.width - self.width) / 2; y: (parent.height - Tokens.c2) / 2; text: "Save data"; cap: Tokens.c2; }
+}
+
+export component Retro inherits ZonePreview {
+    look: "retro";
+    ZoneCaps { x: (parent.width - self.width) / 2; y: (parent.height - Tokens.c1) / 2; text: "korri 0.4.1 · 9a1fb22"; face: "fact"; }
+}

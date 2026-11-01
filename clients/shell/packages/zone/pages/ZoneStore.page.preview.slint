@@ -1,0 +1,11 @@
+// ZoneStore's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZonePreview } from "../ui/preview-frame.slint";
+import { ZoneStore } from "./ZoneStore.slint";
+
+export component Results inherits ZonePreview {
+    ground: "options";
+    ZoneStore { x: 0; y: 0; width: parent.width; height: parent.height; hints: { back: "Back", confirm: "Confirm" }; foot: { shown: true, time-label: "Time", clock: "21:47", device: "mini", signal: { shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }, build: "korri 0.4.1 · 9a1fb22" }; head: { shown: true, title: "PICO-8 BBS" }; rows: [{ kind: "title", label: "Search" }, { kind: "item", label: "Search for", value: "cel", value-fact: true, bars: -1 }, { kind: "title", label: "Results" }, { kind: "item", label: "Celeste Classic 2", label-fact: true, value: "PICO-8", value-fact: true, focused: true, bars: -1 }]; }
+}

@@ -1,0 +1,14 @@
+// ZoneAttract's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneAttract } from "./ZoneAttract.slint";
+
+export component TitleTurn inherits ZonePreview {
+    ZoneAttract { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ title: "Celeste Classic", initials: "CC", stripes: 1, tags: [{ label: "PICO-8", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "Continue", kind: "continue" }] }, { title: "Hollow Knight", initials: "HK", stripes: 3, tags: [{ label: "Switch", kind: "system", korri: true }, { label: "Here", kind: "here" }] }, { title: "Tetris", initials: "T", stripes: 4, tags: [{ label: "GB", kind: "system", korri: true }, { label: "zao", kind: "remote", korri: true }] }, { title: "Spelunky", initials: "S", stripes: 2, tags: [{ label: "PC", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "zao", kind: "remote", korri: true }] }, { title: "The Legend of Zelda: Oracle of Seasons", initials: "LZ", stripes: 5, section: "On zao", tags: [{ label: "GBC", kind: "system", korri: true }] }]; start: 1; idle-ms: 30200; }
+}
+
+export component Stage inherits ZonePreview {
+    ZoneAttract { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ title: "Celeste Classic", initials: "CC", stripes: 1, tags: [{ label: "PICO-8", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "Continue", kind: "continue" }] }, { title: "Hollow Knight", initials: "HK", stripes: 3, tags: [{ label: "Switch", kind: "system", korri: true }, { label: "Here", kind: "here" }] }, { title: "Tetris", initials: "T", stripes: 4, tags: [{ label: "GB", kind: "system", korri: true }, { label: "zao", kind: "remote", korri: true }] }, { title: "Spelunky", initials: "S", stripes: 2, tags: [{ label: "PC", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "zao", kind: "remote", korri: true }] }, { title: "The Legend of Zelda: Oracle of Seasons", initials: "LZ", stripes: 5, section: "On zao", tags: [{ label: "GBC", kind: "system", korri: true }] }]; start: 1; idle-ms: 34000; }
+}

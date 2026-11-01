@@ -1,0 +1,125 @@
+// ZoneBusyStrip
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneActionRow } from "./ZoneActionRow.slint";
+import { Busy } from "../types.slint";
+
+// The busy strip (ZoneBusyStrip): a black panel at the page's foot with
+// Korri's kicker at caps-2, its detail, Korri's actions, and SPECIAL STAGE's
+// meter (red fill on the track, its figures at the right end; without a
+// total, red stripes sweeping); the game in yellow on a tab over it.
+export component ZoneBusyStrip {
+    in property <Busy> busy;
+    property <length> a: Tokens.a;
+    in property <float> nudge: Tokens.nudge-button;
+    in property <float> clock;
+    property <length> c1: 10 * a;
+    property <length> pad: 6 * a;
+    property <length> cut: 16 * a;
+    property <length> buttons-w: row.width;
+    property <length> words-w: root.width - 2 * pad - cut - (busy.buttons.length > 0 ? buttons-w + 6 * a : 0);
+    out property <length> needed: pad + 2 * c1 + (busy.detail != "" ? 6 * a + detail.drawn-h : 0) + (busy.meter ? 8 * a + 4 * a + c1 : 0) + pad;
+    if root.busy.game != "": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        ZonePanel {
+            x: 8 * root.a;
+            y: -game.height - 6 * root.a;
+            width: game.width + 2 * 12 * root.a;
+            height: game.height + 4 * root.a;
+            run: 11 * root.a;
+            ink: Tokens.black;
+        }
+        game := ZoneCaps {
+            x: 8 * root.a + 12 * root.a;
+            y: -self.height - 4 * root.a;
+            text: root.busy.game;
+            cap: root.c1;
+            ink: "hud";
+            face: "korri";
+        }
+    }
+    ZoneShape {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.needed;
+        ink: Tokens.black;
+        commands: "M " + Tokens.pt(root.cut, 0) + " L " + Tokens.pt(root.width, 0) + " L " + Tokens.pt(root.width, root.needed - root.cut)
+            + " L " + Tokens.pt(root.width - root.cut, root.needed) + " L 0 " + (root.needed / (1 * Tokens.unit)) + " L 0 " + (root.cut / (1 * Tokens.unit)) + " Z";
+    }
+    kicker := ZoneCaps {
+        x: root.cut + root.pad;
+        y: root.pad;
+        box: root.words-w;
+        elide: true;
+        text: root.busy.kicker;
+        cap: 2 * root.c1;
+        face: "korri";
+    }
+    detail := ZoneCaps {
+        visible: root.busy.detail != "";
+        x: root.cut + root.pad;
+        y: root.pad + 2 * root.c1 + 6 * root.a;
+        box: root.words-w;
+        wrap: true;
+        text: root.busy.detail;
+        cap: root.c1;
+        face: "fact";
+    }
+    row := ZoneActionRow {
+        x: root.width - self.width - root.cut / 2 - root.pad;
+        y: root.pad;
+        width: Math.max((1 * Tokens.unit), (root.busy.buttons.length > 0 ? 160 * root.a : (1 * Tokens.unit)));
+        buttons: root.busy.buttons;
+    }
+    if root.busy.meter: Rectangle {
+        x: root.cut + root.pad;
+        y: root.needed - root.pad - root.c1 - 4 * root.a;
+        width: root.words-w - figures.natural - 8 * root.a;
+        height: 4 * root.a;
+        background: Tokens.track;
+        clip: true;
+        if !root.busy.sweep: Rectangle {
+            y: 0;
+            height: parent.height;
+            x: 0;
+            width: parent.width * Math.clamp(root.busy.share, 0, 1);
+            background: Tokens.danger-shade;
+            Rectangle {
+                x: 0;
+                width: parent.width;
+                height: root.a;
+                y: 0;
+                background: Tokens.danger;
+            }
+        }
+        if root.busy.sweep: Rectangle {
+            y: 0;
+            height: parent.height;
+            x: -16 * root.a + Math.mod(root.clock / 40, 16) * root.a;
+            width: parent.width + 32 * root.a;
+            for i in 40: ZoneShape {
+                y: 0;
+                x: i * 8 * root.a;
+                width: 8 * root.a;
+                height: 4 * root.a;
+                ink: Tokens.danger-shade;
+                commands: "M " + Tokens.pt(4 * root.a, 0) + " L " + Tokens.pt(8 * root.a, 0) + " L " + Tokens.pt(4 * root.a, 4 * root.a) + " L 0 " + (4 * root.a / (1 * Tokens.unit)) + " Z";
+            }
+        }
+    }
+    figures := ZoneCaps {
+        visible: root.busy.meter;
+        x: root.width - root.cut - root.pad - self.natural;
+        y: root.needed - root.pad - root.c1 - 2 * root.a;
+        text: root.busy.figures;
+        cap: root.c1;
+        face: "fact";
+    }
+}

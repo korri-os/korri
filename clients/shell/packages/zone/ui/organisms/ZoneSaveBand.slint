@@ -1,0 +1,64 @@
+// ZoneSaveBand: MANIA MODE's save select: BACK UP, SWITCH (FROM BACKUP),
+// SWITCH (BUNKER), then one card per retired key; the focused one centred
+// as far as the band allows, a red triangle at each edge where more cards
+// lie (steel where none do); a retired key's BACK UP and DELETE under the
+// band while it has the cursor. One cursor on screen: `marked` off leaves
+// the band unmarked while a keyboard, a dialog or the slab holds it.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
+import { ZoneSaveCard } from "../molecules/ZoneSaveCard.slint";
+import { ZoneActionRow } from "../molecules/ZoneActionRow.slint";
+import { SaveCard, Btn } from "../types.slint";
+
+export component ZoneSaveBand {
+    in property <[SaveCard]> cards;
+    in property <int> at;
+    in property <bool> marked;
+    in property <[Btn]> retired;
+    property <length> a: Tokens.a;
+    property <length> row-h: retired.length > 0 ? 2 * Tokens.c1 + 12 * a : 0;
+    property <length> band-h: root.height - row-h;
+    property <length> card-h: Math.max(0, Math.min(Tokens.card-most * a, band-h - 12 * a, (root.width - 40 * a) / 0.7));
+    property <length> card-w: Math.floor(card-h * 0.7 / a) * a;
+    property <length> gap: 8 * a;
+    property <length> track: root.width / 2 - at * (card-w + gap) - card-w / 2;
+    property <length> shift: Math.max(Math.min(track, 20 * a), Math.min(20 * a, root.width - cards.length * (card-w + gap) - 20 * a + gap));
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.band-h;
+        clip: true;
+        for c[i] in root.cards: ZoneSaveCard {
+            cache-rendering-hint: true;
+            x: root.shift + i * (root.card-w + root.gap);
+            y: (root.band-h - root.card-h) / 2;
+            width: root.card-w;
+            height: root.card-h;
+            card: c;
+            focused: root.marked && i == root.at;
+        }
+    }
+    if root.marked: ZoneTriangle {
+        x: 4 * root.a;
+        y: root.band-h / 2 - 6 * root.a;
+        width: 10 * root.a;
+        height: 12 * root.a;
+        left: true;
+        ink: root.at > 0 ? Tokens.red : Tokens.steel;
+    }
+    if root.marked: ZoneTriangle {
+        x: root.width - 14 * root.a;
+        y: root.band-h / 2 - 6 * root.a;
+        width: 10 * root.a;
+        height: 12 * root.a;
+        ink: root.at < root.cards.length - 1 ? Tokens.red : Tokens.steel;
+    }
+    if root.retired.length > 0: ZoneActionRow {
+        x: 0;
+        y: root.band-h + 4 * root.a;
+        width: root.width;
+        buttons: root.retired;
+    }
+}

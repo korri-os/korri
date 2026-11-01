@@ -16,6 +16,7 @@
 //! | `overlay on` / `overlay off` | switch the presentation |
 //! | `requests` | print every request received so far, one JSON line each |
 //! | `stored ID` | print the preferences stored for a surface |
+//! | `store ID KEY VALUE` | store a preference for a surface, as a remembered one |
 //! | `model FILE` | publish the `SurfaceModel` in FILE (a Ready catalog's `games` become the window's games) |
 //! | `displays JSON` | publish these `model.displays` to a surface that draws on all; `displays none` for the default |
 //!
@@ -102,6 +103,7 @@ fn main() -> std::io::Result<()> {
                 }
             }
             ["stored", id] => println!("{}", json!(fixture.stored(id))),
+            ["store", id, key, value] => fixture.store(id, key, value),
             [] => {}
             _ => eprintln!("fixture-korrid: unknown command {line:?}"),
         }

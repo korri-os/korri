@@ -1,0 +1,10 @@
+// ZoneStepStrip's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneStepStrip } from "./ZoneStepStrip.slint";
+
+export component Second inherits ZonePreview {
+    ZoneStepStrip { x: 0; y: (parent.height - self.height) / 2; width: parent.width; pip: 1; }
+}

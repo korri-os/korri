@@ -1,0 +1,16 @@
+// ZonePaused's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZonePreview } from "../ui/preview-frame.slint";
+import { ZonePaused } from "./ZonePaused.slint";
+
+export component Default inherits ZonePreview {
+    ground: "paused";
+    ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1 }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: "Back", confirm: "Confirm" }; }
+}
+
+export component Question inherits ZonePreview {
+    ground: "paused";
+    ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1 }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: "Back", confirm: "Confirm" }; dialog: { shown: true, headline: "Restart", buttons: [{ label: "No", focused: true }, { label: "Yes" }] }; }
+}

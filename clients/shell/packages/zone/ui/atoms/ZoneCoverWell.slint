@@ -1,0 +1,54 @@
+// ZoneCoverWell: one art px blue edge, the art filling its width (letterboxed when wider), else three stripe bands and the initials.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneCaps } from "./ZoneCaps.slint";
+
+// The cover well: one art px blue edge, black inside, the art filling its
+// width from the top (cut at the bottom when taller; letterboxed when
+// wider); with no art three stripe bands and the title's initials.
+export component ZoneCoverWell inherits Rectangle {
+    in property <image> art;
+    in property <bool> has-art;
+    in property <int> stripes;
+    in property <string> initials;
+    property <length> a: Tokens.a;
+    background: Tokens.blue;
+    Rectangle {
+        x: root.a;
+        y: root.a;
+        width: root.width - 2 * root.a;
+        height: root.height - 2 * root.a;
+        background: Tokens.black;
+        clip: true;
+        property <float> ratio: root.art.width / Math.max(1, root.art.height);
+        property <length> art-h: self.width / Math.max(0.01, ratio);
+        if root.has-art: Image {
+            x: 0;
+            y: parent.art-h > parent.height ? 0 : (parent.height - parent.art-h) / 2;
+            width: parent.width;
+            height: parent.art-h;
+            source: root.art;
+            image-fit: fill;
+            image-rendering: pixelated;
+        }
+        if !root.has-art: Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            property <color> s1: root.stripes == 0 ? Tokens.red : root.stripes == 1 ? Tokens.pink : root.stripes == 2 ? Tokens.mint
+                : root.stripes == 3 ? Tokens.yellow : root.stripes == 4 ? Tokens.blue : Tokens.orange;
+            property <color> s2: root.stripes == 0 ? Tokens.orange : root.stripes == 1 ? Tokens.mint : root.stripes == 2 ? Tokens.yellow
+                : root.stripes == 3 ? Tokens.red : root.stripes == 4 ? Tokens.orange : Tokens.pink;
+            property <color> s3: root.stripes == 0 ? Tokens.blue : root.stripes == 1 ? Tokens.yellow : root.stripes == 2 ? Tokens.orange
+                : root.stripes == 3 ? Tokens.pink : root.stripes == 4 ? Tokens.mint : Tokens.blue;
+            background: @linear-gradient(-28deg, s1 0%, s1 22%, s2 22%, s2 40%, Tokens.black 40%, Tokens.black 46%, s3 46%, s3 64%, s1 64%, s1 100%);
+            ZoneCaps {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.cap) / 2;
+                text: root.initials;
+                cap: Math.max(10 * root.a, Math.floor(Math.min(parent.width * 0.38, parent.height * 0.6) / (10 * root.a)) * 10 * root.a);
+            }
+        }
+    }
+}

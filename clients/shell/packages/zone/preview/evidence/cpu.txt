@@ -1,0 +1,12 @@
+ 11:58:50  up 5 days 17:33,  0 users,  load average: 11.26, 10.85, 11.35
+zone-idle-640x480-modern cpu_one_core_percent=6.0 pss_kib=71520 rss_kib=75016
+ 11:59:20  up 5 days 17:33,  0 users,  load average: 12.16, 11.10, 11.42
+zone-idle-640x480-blend cpu_one_core_percent=4.8 pss_kib=71760 rss_kib=75288
+ 11:59:50  up 5 days 17:34,  0 users,  load average: 10.00, 10.67, 11.26
+zone-idle-640x480-retro cpu_one_core_percent=4.7 pss_kib=71895 rss_kib=75396
+ 12:00:20  up 5 days 17:34,  0 users,  load average: 10.26, 10.67, 11.25
+zone-idle-640x480-modern cpu_one_core_percent=6.0 pss_kib=71474 rss_kib=75012
+ 12:00:50  up 5 days 17:35,  0 users,  load average: 8.43, 10.20, 11.07
+zone-idle-640x480-blend cpu_one_core_percent=4.4 pss_kib=71951 rss_kib=75464
+ 12:01:20  up 5 days 17:35,  0 users,  load average: 9.64, 10.27, 11.06
+zone-idle-640x480-retro cpu_one_core_percent=4.7 pss_kib=71920 rss_kib=75464

@@ -1,0 +1,2 @@
+{"request":{"_tag":"FocusGame","gameId":"celeste"},"surface":"zone"}
+{"request":{"_tag":"RememberPreference","key":"zone.look","value":"blend"},"surface":"zone"}

@@ -1,0 +1,31 @@
+// ZoneEmblem's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneEmblem } from "./ZoneEmblem.slint";
+
+export component Key inherits ZonePreview {
+    ground: "savedata";
+    ZoneEmblem { x: (parent.width - 42 * Tokens.a) / 2; y: (parent.height - 32 * Tokens.a) / 2; width: 42 * Tokens.a; height: 32 * Tokens.a; kind: "key"; }
+}
+
+export component Restore inherits ZonePreview {
+    ground: "savedata";
+    ZoneEmblem { x: (parent.width - 42 * Tokens.a) / 2; y: (parent.height - 32 * Tokens.a) / 2; width: 42 * Tokens.a; height: 32 * Tokens.a; kind: "restore"; }
+}
+
+export component Link inherits ZonePreview {
+    ground: "savedata";
+    ZoneEmblem { x: (parent.width - 42 * Tokens.a) / 2; y: (parent.height - 32 * Tokens.a) / 2; width: 42 * Tokens.a; height: 32 * Tokens.a; kind: "link"; }
+}
+
+export component Retired inherits ZonePreview {
+    ground: "savedata";
+    ZoneEmblem { x: (parent.width - 42 * Tokens.a) / 2; y: (parent.height - 32 * Tokens.a) / 2; width: 42 * Tokens.a; height: 32 * Tokens.a; kind: "retired"; }
+}
+
+export component Pad inherits ZonePreview {
+    ground: "savedata";
+    ZoneEmblem { x: (parent.width - 42 * Tokens.a) / 2; y: (parent.height - 32 * Tokens.a) / 2; width: 42 * Tokens.a; height: 32 * Tokens.a; kind: "pad"; }
+}

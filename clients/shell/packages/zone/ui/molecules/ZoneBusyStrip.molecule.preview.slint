@@ -1,0 +1,14 @@
+// ZoneBusyStrip's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneBusyStrip } from "./ZoneBusyStrip.slint";
+
+export component Default inherits ZonePreview {
+    ZoneBusyStrip { x: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; y: parent.height - self.needed - 8 * Tokens.a; height: self.needed; busy: { shown: true, kicker: "Starting", detail: "Waiting for zao to answer", game: "Spelunky", buttons: [{ label: "Cancel", focused: true, lit: true }] }; }
+}
+
+export component Progress inherits ZonePreview {
+    ZoneBusyStrip { x: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; y: parent.height - self.needed - 8 * Tokens.a; height: self.needed; busy: { shown: true, kicker: "Downloading FEX rootfs", game: "Hollow Knight", buttons: [{ label: "Cancel", focused: true, lit: true }], meter: true, share: 0.5, figures: "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left" }; }
+}

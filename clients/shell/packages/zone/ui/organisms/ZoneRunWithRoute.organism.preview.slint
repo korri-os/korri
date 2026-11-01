@@ -1,0 +1,11 @@
+// ZoneRunWithRoute's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneRunWithRoute } from "./ZoneRunWithRoute.slint";
+
+export component Saved inherits ZonePreview {
+    ground: "options";
+    ZoneRunWithRoute { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; route: { kind: "route", label: "RetroArch mGBA", value: "/nix/store/8n1x2-retroarch-1.19.1", value-fact: true, focused: true, tags: [{ label: "Saved", kind: "here" }, { label: "This game", kind: "system", korri: true }] }; }
+}

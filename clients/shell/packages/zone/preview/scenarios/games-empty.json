@@ -1,0 +1,43 @@
+{
+ "name": "games-empty",
+ "ref": [
+  "ZoneGames",
+  "Empty"
+ ],
+ "models": [
+  {
+   "presentation": {
+    "kind": "catalog"
+   },
+   "catalog": {
+    "_tag": "Empty"
+   },
+   "status": {
+    "_tag": "Browsing"
+   },
+   "clockLabel": "21:47",
+   "actions": [],
+   "settings": [],
+   "settingsStatus": {
+    "_tag": "Idle"
+   },
+   "buildLabel": "korri 0.4.1 · 9a1fb22",
+   "network": {
+    "connection": {
+     "_tag": "Wifi",
+     "ssid": "hummingbird-lake",
+     "strengthPercent": 72
+    },
+    "wifi": {
+     "_tag": "Available",
+     "scanning": false,
+     "networks": [],
+     "attempt": {
+      "_tag": "Idle"
+     }
+    }
+   }
+  }
+ ],
+ "steps": []
+}

@@ -1,0 +1,134 @@
+// ZoneOptionRow: one row of OPTIONS (and of every list page): the label on its black panel, the value on its own (bars before a network's words, a range's bar), the pink drop when focused, the red triangles inside the value panel's ends on a choice, the red caret blinking while Korri saves.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
+import { ZoneBars } from "../atoms/ZoneBars.slint";
+import { ZoneUnderline } from "../atoms/ZoneUnderline.slint";
+import { Row } from "../types.slint";
+
+export component ZoneOptionRow {
+    in property <Row> it;
+    property <length> a: Tokens.a;
+    in property <float> nudge: Tokens.nudge-button;
+    in property <bool> blink-on: Tokens.blink-on;
+    in property <float> label-share: 0.55;
+    property <length> c1: 10 * a;
+    property <length> cell: 14 * a;
+    property <length> run: 13 * a;
+    property <length> label-w: Math.floor(root.width * label-share / a) * a;
+    property <length> value-x: label-w + 4 * a;
+    property <length> value-w: root.width - value-x;
+    out property <length> need: cell + 4 * a;
+    height: need;
+    property <bool> lit: it.focused;
+    // ---- item: label panel, value panel ----
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        if root.it.focused: ZoneUnderline {
+            x: 0;
+            y: 0;
+            width: root.label-w;
+            height: root.cell;
+            run: root.run;
+            left-straight: true;
+        }
+        ZonePanel {
+            x: 0;
+            y: 0;
+            width: root.label-w;
+            height: root.cell;
+            run: root.run;
+            left-straight: true;
+            ink: Tokens.black;
+        }
+        ZoneCaps {
+            x: 4 * root.a;
+            y: 2 * root.a;
+            box: root.label-w - root.run - 6 * root.a;
+            elide: true;
+            text: root.it.label;
+            cap: root.c1;
+            ink: root.it.disabled ? "flat" : "white";
+            colour: Tokens.steel;
+            face: root.it.label-fact ? "fact" : "caps";
+        }
+        ZonePanel {
+            y: 0;
+            x: root.value-x;
+            width: root.value-w;
+            height: root.cell;
+            run: root.run;
+            right-straight: true;
+            ink: Tokens.black;
+        }
+        property <length> bars-w: root.it.bars >= 0 && root.it.kind == "item" ? 14 * root.a : 0;
+        if root.it.kind == "item" && root.it.bars >= 0: ZoneBars {
+            x: root.value-x + root.run + 2 * root.a;
+            y: (root.cell - 8 * root.a) / 2;
+            lit: root.it.bars;
+        }
+        // A range: the bar, the danger orange on the track.
+        if root.it.kind == "range": Rectangle {
+            x: root.value-x + root.value-w - root.run - 50 * root.a;
+            y: (root.cell - 4 * root.a) / 2;
+            width: 44 * root.a;
+            height: 4 * root.a;
+            background: Tokens.track;
+            Rectangle {
+                y: 0;
+                height: parent.height;
+                x: 0;
+                width: parent.width * Math.clamp(root.it.bars / 100, 0, 1);
+                background: Tokens.danger-shade;
+            }
+        }
+        value := ZoneCaps {
+            x: root.value-x + root.run + parent.bars-w;
+            y: 2 * root.a;
+            box: Math.max((1 * Tokens.unit), root.value-w - 2 * root.run - parent.bars-w - (root.it.kind == "range" ? 50 * root.a : 0));
+            centre: root.it.kind == "item";
+            elide: true;
+            text: root.it.value;
+            cap: root.c1;
+            ink: root.it.disabled ? "flat" : root.it.danger ? "danger" : root.it.saving && root.it.kind == "range" ? "hud" : "white";
+            colour: Tokens.steel;
+            face: root.it.value-fact ? "fact" : "caps";
+        }
+        // Choice triangles inside the value panel's ends, nudging.
+        if root.it.focused && root.it.choice: Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            ZoneTriangle {
+                x: root.value-x + root.run - 2 * root.a - 2 * root.a * root.nudge;
+                y: (root.cell - 7 * root.a) / 2;
+                width: 4 * root.a;
+                height: 7 * root.a;
+                left: true;
+                ink: Tokens.red;
+            }
+            ZoneTriangle {
+                x: root.width - root.run - 2 * root.a + 2 * root.a * root.nudge;
+                y: (root.cell - 7 * root.a) / 2;
+                width: 4 * root.a;
+                height: 7 * root.a;
+                ink: Tokens.red;
+            }
+        }
+        // Saving: a red pixel caret blinking at the value panel's end.
+        if root.it.saving && root.it.kind == "item" && root.blink-on: Rectangle {
+            x: root.width - root.run - 6 * root.a;
+            y: 3 * root.a;
+            width: 2 * root.a;
+            height: root.cell - 6 * root.a;
+            background: Tokens.red;
+        }
+    }
+}

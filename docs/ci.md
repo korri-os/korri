@@ -167,7 +167,7 @@ the deterministic TrueType/WOFF2 byte comparisons and timeouts are unchanged.
 A focused native-builder replay, including Zone typecheck and lint, is:
 
 ```sh
-NIX_PATH= nix run .#zone-check -- test/zone-caps-font.test.ts
+NIX_PATH= nix run .#zone-check -- --test-name-pattern contrast
 ```
 
 Without Bun test arguments, the normal Zone lane still runs every Zone test.

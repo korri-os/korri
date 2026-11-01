@@ -23,6 +23,11 @@ Nix: `nix run .#shell-check` (fmt, clippy, tests), `nix run .#shell-run`,
 
 ## Package
 
+Zone's package (`packages/zone`, its README) is built from TypeScript:
+`bun install && bun run zone:build` here (`package.json`); its gates run
+with `bun test packages/zone/test`, and `tests/zone_package.rs` draws its
+previews and walks its focus at five sizes.
+
 `globalThis.surface = { displays?, preferences, init, update, view, overlay? }`.
 `displays` is `"main"` (the default when absent) or `"all"`; the shell passes
 it in `app.surface.declare` and korrid publishes `model.displays` only for

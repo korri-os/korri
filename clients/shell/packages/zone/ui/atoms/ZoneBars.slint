@@ -1,0 +1,18 @@
+// ZoneBars: Wi-Fi bars 2, 4, 6, 8 art px, lit white, unlit the track.
+
+import { Tokens } from "../../ui/tokens.slint";
+
+// Wi-Fi bars (ZoneBars): 2, 4, 6, 8 art px, lit white, unlit the track.
+export component ZoneBars {
+    property <length> a: Tokens.a;
+    in property <int> lit;
+    width: 11 * a;
+    height: 8 * a;
+    for n[i] in [1, 2, 3, 4]: Rectangle {
+        x: 3 * root.a * i;
+        y: 8 * root.a - 2 * root.a * n;
+        width: 2 * root.a;
+        height: 2 * root.a * n;
+        background: i < root.lit ? Tokens.white : Tokens.track;
+    }
+}

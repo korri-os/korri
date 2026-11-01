@@ -1,0 +1,173 @@
+// Zone's tokens (src/zone-tokens.css, zone-fonts.css, src/plan/), as one
+// global. The design inputs are literals; everything else is derived from
+// them and from the window: its width and height, the look and the screen
+// group's ground (main.slint and the preview frame set those four, nothing
+// else writes here), and the clock.
+//
+// Lengths are art px: `a` is max(1, floor(min(w, h) / 240)) CSS px
+// (src/plan/art-px.ts), and a component writes `12 * Tokens.a`.
+//
+// The looks (src/plan/look.ts) change only how finely Zone is drawn:
+//
+//                 Zone's words       Korri's facts     edges, motion
+//   modern        Anton caps, flat   Anton             smooth
+//   blend         Zone Caps          Anton             whole art px
+//   retro         Zone Caps          Jersey 10         whole art px
+//
+// Each face is sized so its cap is the caps' cap (zone-fonts.css): Zone
+// Caps' em is its cap; Anton's cap is 1760 of 2048 units; Jersey 10's 750 of
+// 1400. A look changes the face and never a length.
+
+import "../fonts/ZoneCaps.ttf";
+import "../fonts/Jersey10-latin.ttf";
+import "../fonts/Anton-latin.ttf";
+
+export global Tokens {
+    // ---- Inputs: the window, the look, the ground ----
+    in-out property <length> width: 640px;
+    in-out property <length> height: 480px;
+    in-out property <string> look: "blend";
+    in-out property <string> ground: "games";
+
+    // ---- Design inputs: the grid and the plan's thresholds (art px) ----
+    /** Art rows the short side holds (art-px.ts ZONE_ART_ROWS). */
+    out property <float> art-rows: 240;
+    /** Five cards from this many art px wide (zone-select.ts). */
+    out property <float> wide-at: 333;
+    /** Taller strips from this many art rows (zone-select.ts). */
+    out property <float> tall-at: 320;
+    /** The top strip's ladder (top-strip.ts): inline, tight, keys, stacked. */
+    out property <float> strip-inline-at: 476;
+    out property <float> strip-tight-at: 420;
+    out property <float> strip-keys-at: 312;
+    /** The tallest a card grows (--zone-card-max). */
+    out property <float> card-most: 133;
+    /** A card's width to its height, and a side card's share of the focused one. */
+    out property <float> card-aspect: 0.78;
+    out property <float> side-share: 0.68;
+    /** Strip heights, short then tall. */
+    out property <float> top-short: 36;
+    out property <float> top-tall: 40;
+    out property <float> foot-short: 22;
+    out property <float> foot-tall: 24;
+    /** The caps steps and the fact size (--zone-caps-1/2/3, --zone-fact). */
+    out property <float> caps-1: 10;
+    out property <float> caps-2: 20;
+    out property <float> caps-3: 30;
+    /** One art px the ring and the drop stand out (--zone-cap-outline). */
+    out property <float> outline: 1;
+    /** The FIND keyboard's widest (keyboard.ts ZONE_FIND_KEYS_MOST) and its key heights. */
+    out property <float> keys-most: 450;
+    out property <float> key-tall: 20;
+    out property <float> key-least: 16;
+    /** The idle attract (navigation.ts): after 30 s, a game every 6 s. */
+    out property <float> idle-after-ms: 30000;
+    out property <float> idle-cycle-ms: 6000;
+    /** PAUSED (paused.ts): the band's share and bounds, the wedge's top, the rows' least width. */
+    out property <float> paused-band-share: 0.25;
+    out property <float> paused-band-least: 40;
+    out property <float> paused-band-most: 72;
+    out property <float> paused-wedge-top: 8;
+    out property <float> paused-rows-least: 200;
+
+    // ---- Derived: the grid and the plan ----
+    out property <length> unit: 1px;
+    out property <length> a: Math.max(1, Math.floor(Math.min(width / 1px, height / 1px) / art-rows)) * 1px;
+    out property <float> w-art: Math.floor(width / a);
+    out property <float> h-art: Math.floor(height / a);
+    out property <bool> wide: w-art >= wide-at;
+    out property <bool> tall: h-art >= tall-at;
+    out property <int> strip-level: w-art >= strip-inline-at ? 0 : w-art >= strip-tight-at ? 1 : w-art >= strip-keys-at ? 2 : 3;
+    out property <length> top-h: (tall ? top-tall : top-short) * a + (strip-level == 3 ? 30 * a : 0);
+    out property <length> foot-h: (tall ? foot-tall : foot-short) * a;
+    out property <length> c1: caps-1 * a;
+    out property <length> c2: caps-2 * a;
+    out property <length> c3: caps-3 * a;
+
+    // ---- The clock and Zone's motion ----
+    out property <float> clock-ms: Math.mod(animation-tick() / 1ms, 14000000);
+    /** The band's triangles breathe 480 ms each way, the buttons' 600 ms; Modern eases, the pixel looks step. */
+    out property <float> nudge-band: modern ? 0.5 - 0.5 * Math.cos(Math.mod(clock-ms, 960) / 960 * 360deg) : (Math.mod(clock-ms, 960) < 480 ? 0 : 1);
+    out property <float> nudge-button: modern ? 0.5 - 0.5 * Math.cos(Math.mod(clock-ms, 1200) / 1200 * 360deg) : (Math.mod(clock-ms, 1200) < 600 ? 0 : 1);
+    /** A caret blinks once a second. */
+    out property <bool> blink-on: Math.mod(clock-ms, 1000) < 500;
+
+    // ---- The palette (zone-tokens.css) ----
+    out property <color> mint: #4ad39c;
+    out property <color> black: #000000;
+    out property <color> white: #f7f3f7;
+    out property <color> white-shade: #b5bee7;
+    out property <color> yellow: #f7db08;
+    out property <color> hud-edge: #3151ad;
+    out property <color> blue: #5a71e7;
+    out property <color> orange: #f78e18;
+    out property <color> red: #e70000;
+    out property <color> pink: #ce6584;
+    out property <color> danger: #f75131;
+    out property <color> danger-shade: #c64100;
+    out property <color> track: #3a313a;
+    out property <color> sky: #31a2f7;
+    out property <color> banner-blue: #0020b5;
+    out property <color> banner-yellow: #f7db00;
+    out property <color> banner-white: #e7e3e7;
+    out property <color> green: #18a800;
+    out property <color> key-disc: #292029;
+    out property <color> key-b: #ef285a;
+    out property <color> key-a: #639f3d;
+    out property <color> stripe-light: #9ce7c6;
+    out property <color> stripe-teal: #5aa2b5;
+    out property <color> steel: #84a2b5;
+    out property <color> title-red: #f75131;
+    out property <color> title-blue: #4261b5;
+    out property <color> title-green: #63c3a5;
+    out property <color> grey-dark: #5a5a5a;
+    out property <color> grey-light: #8c8c8c;
+    out property <color> qr-blue: #2e4bd6;
+    out property <color> metal-gold: #f7cb00;
+    out property <color> metal-silver: #c0c0c0;
+    out property <color> paused-band: #ef285a;
+    /** Modern's veil: the one see-through colour (the pixel looks dither instead). */
+    out property <color> veil-see-through: #00000080;
+
+    // ---- The grounds, one per screen group ----
+    out property <color> ground-games: #4ad39c;
+    out property <color> ground-options: #efc300;
+    out property <color> ground-savedata: #31aac6;
+    out property <color> ground-gameopts: #33acc7;
+    out property <color> ground-paused: #8c8c8c;
+    out property <color> ground-titlecard: #f7cb00;
+    out property <color> ground-tally: #efc300;
+    out property <color> ring-games: #39b2ce;
+    out property <color> ring-options: #84a2b5;
+    out property <color> ring-savedata: #f57128;
+    out property <color> ring-savedata-b: #4ab8ac;
+    out property <color> shade-games: #2e9e72;
+    out property <color> shade-options: #b58f00;
+    out property <color> shade-savedata: #23809a;
+    out property <color> ground-fill: ground == "options" ? ground-options : ground == "tally" ? ground-tally : ground == "savedata" ? ground-savedata
+        : ground == "gameopts" ? ground-gameopts : ground == "paused" ? ground-paused : ground == "titlecard" ? ground-titlecard : ground-games;
+    out property <color> ring-a: ground == "options" || ground == "tally" ? ring-options : ground == "savedata" || ground == "gameopts" ? ring-savedata
+        : ground == "paused" ? grey-dark : ground == "titlecard" ? title-blue : ring-games;
+    out property <color> ring-b: ground == "savedata" || ground == "gameopts" ? ring-savedata-b : ground == "paused" ? grey-dark : orange;
+    out property <color> shade: ground == "options" || ground == "tally" || ground == "titlecard" ? shade-options
+        : ground == "savedata" || ground == "gameopts" ? shade-savedata : ground == "paused" ? black : shade-games;
+
+    // ---- The looks ----
+    out property <bool> modern: look == "modern";
+    out property <bool> retro: look == "retro";
+    out property <string> caps-family: modern ? "Anton" : "Zone Caps";
+    out property <float> caps-size: modern ? 2048 / 1760 : 1;
+    /** From the top of the line box to the top of the cap, in caps. */
+    out property <float> caps-above: modern ? (2409 - 1760) / 1760 : 0.3;
+    out property <string> fact-family: retro ? "Jersey 10" : "Anton";
+    out property <float> fact-size: retro ? 1400 / 750 : 2048 / 1760;
+    out property <float> fact-above: retro ? (1125 - 750) / 750 : (2409 - 1760) / 1760;
+    out property <string> korri-family: retro ? "Zone Caps" : "Anton";
+    out property <float> korri-size: retro ? 1 : 2048 / 1760;
+    out property <float> korri-above: retro ? 0.3 : (2409 - 1760) / 1760;
+
+    /** An SVG point from two lengths, for path commands in local px. */
+    public pure function pt(x: length, y: length) -> string {
+        return (x / 1px) + " " + (y / 1px);
+    }
+}

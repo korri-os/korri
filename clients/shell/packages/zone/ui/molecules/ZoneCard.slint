@@ -1,0 +1,107 @@
+// ZoneCard: black body, the cover in its well, the title, TIME ATTACK's stripe, the tag row; the drop, and when focused the pink edge.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneMeasure } from "../atoms/ZoneMeasure.slint";
+import { ZoneCoverWell } from "../atoms/ZoneCoverWell.slint";
+import { ZoneTagRow } from "./ZoneTagRow.slint";
+import { Card } from "../types.slint";
+
+// The zone card (ZoneCard.css): black body, the cover in its well, the
+// title, TIME ATTACK's stripe, the tag row; the drop, and when focused the
+// pink edge.
+export component ZoneCard {
+    in property <Card> card;
+    in property <bool> focused;
+    in property <bool> lit;
+    property <length> a: Tokens.a;
+    property <length> c1: 10 * a;
+    property <length> frame: focused ? 4 * a : 2 * a;
+    property <length> stripe: focused ? 6 * a : 4 * a;
+    property <length> ix: frame;
+    property <length> iw: self.width - 2 * frame;
+    property <bool> big: focused && big-measure.preferred-width <= iw + (0.5 * Tokens.unit);
+    property <length> cap: big ? 2 * c1 : c1;
+    property <bool> one-line: big || small-measure.preferred-width <= iw + (0.5 * Tokens.unit);
+    property <int> lines: one-line ? 1 : title.lines;
+    // A card never lets its title out: lines taller than a third of the card
+    // draw no title (its cover and its tags still say which game it is).
+    property <length> wrapped-h: lines * 1.4 * cap - 0.4 * cap;
+    property <bool> title-shown: wrapped-h <= root.height / 3;
+    property <length> title-h: title-shown ? wrapped-h : 0;
+    property <length> tag-h: 1.55 * c1;
+    property <length> body-h: 2 * a + title-h + 2 * a + stripe + 2 * a + tag-h;
+    property <length> body-y: self.height - frame - body-h;
+    property <length> well-y: frame;
+    property <length> well-h: Math.max(0, body-y - well-y);
+    big-measure := ZoneMeasure { text: title.shown; cap: 2 * root.c1; face: "korri"; }
+    small-measure := ZoneMeasure { text: title.shown; cap: root.c1; face: "korri"; }
+    Rectangle {
+        x: root.focused ? 3 * root.a : 2 * root.a;
+        y: self.x;
+        width: root.width;
+        height: root.height;
+        background: Tokens.shade;
+    }
+    if root.focused && root.lit: Rectangle {
+        x: -2 * root.a;
+        y: -2 * root.a;
+        width: root.width + 4 * root.a;
+        height: root.height + 4 * root.a;
+        background: Tokens.pink;
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.black;
+    }
+    if root.well-h > 0: ZoneCoverWell {
+        x: root.ix;
+        y: root.well-y;
+        width: root.iw;
+        height: root.well-h;
+        art: root.card.art;
+        has-art: root.card.has-art;
+        stripes: root.card.stripes;
+        initials: root.card.initials;
+    }
+    title := ZoneCaps {
+        visible: root.title-shown;
+        x: root.ix;
+        y: root.body-y + 2 * root.a;
+        box: root.iw;
+        centre: true;
+        wrap: !root.one-line;
+        text: root.card.title;
+        cap: root.cap;
+        face: "korri";
+    }
+    Rectangle {
+        x: root.ix;
+        y: root.body-y + 2 * root.a + root.title-h + 2 * root.a;
+        width: root.iw;
+        height: root.stripe;
+        background: Tokens.stripe-light;
+        property <float> gx: -0.882948;
+        property <float> gy: -0.469472;
+        property <length> span: self.width * 0.882948 + self.height * 0.469472;
+        pure function cross(s: float, y: length) -> length {
+            return Math.clamp(self.width / 2 + ((s - 0.5) * span - (y - self.height / 2) * gy) / gx, 0, self.width);
+        }
+        for band in [{ s: 0.56, ink: Tokens.blue }, { s: 0.8, ink: Tokens.stripe-teal }]: ZoneShape {
+            ink: band.ink;
+            commands: "M 0 0 L " + Tokens.pt(parent.cross(band.s, 0), 0) + " L " + Tokens.pt(parent.cross(band.s, parent.height), parent.height)
+                + " L " + Tokens.pt(0, parent.height) + " Z";
+        }
+    }
+    ZoneTagRow {
+        x: root.ix;
+        y: root.body-y + 2 * root.a + root.title-h + 2 * root.a + root.stripe + 2 * root.a;
+        width: root.iw;
+        height: root.tag-h;
+        tags: root.card.tags;
+    }
+}

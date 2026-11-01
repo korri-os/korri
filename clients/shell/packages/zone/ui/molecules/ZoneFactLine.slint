@@ -1,0 +1,62 @@
+// ZoneFactLine: GAMES' facts line: one black 45 degree strip, each fact's
+// HUD label then Korri's value (Zone's dashes in caps when it has none).
+// Up to five facts; a narrow screen cuts the line at its end.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { Fact } from "../types.slint";
+
+export component ZoneFactLine {
+    in property <[Fact]> facts;
+    property <length> a: Tokens.a;
+    property <int> count: Math.min(5, facts.length);
+    property <length> between: 7 * a;
+    property <length> lean: 14 * a;
+    pure function fact(i: int) -> Fact {
+        return i < count ? facts[i] : { label: "" };
+    }
+    pure function span(i: int) -> length {
+        return i >= count ? 0 : (i == 0 ? l0.natural + v0.natural : i == 1 ? l1.natural + v1.natural : i == 2 ? l2.natural + v2.natural
+            : i == 3 ? l3.natural + v3.natural : l4.natural + v4.natural) + 3 * a;
+    }
+    property <length> run: span(0) + span(1) + span(2) + span(3) + span(4) + between * Math.max(0, count - 1);
+    property <length> panel-w: Math.min(root.width, run + 2 * (lean + 2 * a));
+    property <length> left: (root.width - panel-w) / 2 + lean + 2 * a;
+    pure function at(i: int) -> length {
+        return left + (i > 0 ? span(0) + between : 0) + (i > 1 ? span(1) + between : 0) + (i > 2 ? span(2) + between : 0) + (i > 3 ? span(3) + between : 0);
+    }
+    // The whole line is one still layer: it changes only with the focused game.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        cache-rendering-hint: true;
+    if root.count > 0: ZonePanel {
+        x: (root.width - root.panel-w) / 2;
+        y: 0;
+        width: root.panel-w;
+        height: root.height;
+        run: root.lean;
+        ink: Tokens.black;
+    }
+    Rectangle {
+        x: (root.width - root.panel-w) / 2 + root.lean;
+        y: 0;
+        width: Math.max(0, root.panel-w - 2 * root.lean);
+        height: root.height;
+        clip: true;
+        l0 := ZoneCaps { x: root.at(0) - parent.x; y: (root.height - Tokens.c1) / 2; text: root.fact(0).label; ink: "hud"; }
+        v0 := ZoneCaps { x: root.at(0) - parent.x + l0.natural + 3 * root.a; y: l0.y; text: root.fact(0).value; face: root.fact(0).known ? "fact" : "caps"; }
+        l1 := ZoneCaps { x: root.at(1) - parent.x; y: l0.y; text: root.fact(1).label; ink: "hud"; }
+        v1 := ZoneCaps { x: root.at(1) - parent.x + l1.natural + 3 * root.a; y: l0.y; text: root.fact(1).value; face: root.fact(1).known ? "fact" : "caps"; }
+        l2 := ZoneCaps { x: root.at(2) - parent.x; y: l0.y; text: root.fact(2).label; ink: "hud"; }
+        v2 := ZoneCaps { x: root.at(2) - parent.x + l2.natural + 3 * root.a; y: l0.y; text: root.fact(2).value; face: root.fact(2).known ? "fact" : "caps"; }
+        l3 := ZoneCaps { x: root.at(3) - parent.x; y: l0.y; text: root.fact(3).label; ink: "hud"; }
+        v3 := ZoneCaps { x: root.at(3) - parent.x + l3.natural + 3 * root.a; y: l0.y; text: root.fact(3).value; face: root.fact(3).known ? "fact" : "caps"; }
+        l4 := ZoneCaps { x: root.at(4) - parent.x; y: l0.y; text: root.fact(4).label; ink: "hud"; }
+        v4 := ZoneCaps { x: root.at(4) - parent.x + l4.natural + 3 * root.a; y: l0.y; text: root.fact(4).value; face: root.fact(4).known ? "fact" : "caps"; }
+    }
+    }
+}
