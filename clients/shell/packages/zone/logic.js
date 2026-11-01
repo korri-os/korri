@@ -428,6 +428,10 @@
 
   // ../../../../surfaces/zone/src/plan/look.ts
   var ZONE_LOOKS = ["modern", "blend", "retro"];
+  var ZONE_DEFAULT_LOOK = "blend";
+  function isZoneLook(value) {
+    return ZONE_LOOKS.includes(value);
+  }
   var ZONE_LOOK_WORDS = {
     modern: "MODERN",
     blend: "BLEND",
@@ -2248,21 +2252,91 @@
   }
 
   // logic.ts
-  function init(model) {
-    const start = zoneSurfaceStart(model, "modern");
-    return games2(start, { _tag: "FocusedCard", index: 1 }, model);
+  var LOOK_KEY = "zone.look";
+  var EDGE = 8;
+  var WINDOW = 50;
+  var cachedModel;
+  var cachedLegacy;
+  function legacy(model) {
+    if (model === cachedModel && cachedLegacy !== undefined)
+      return cachedLegacy;
+    const catalog = model.catalog._tag === "Ready" ? { _tag: "Ready", games: model.catalog.window } : model.catalog;
+    cachedModel = model;
+    cachedLegacy = { ...model, catalog };
+    return cachedLegacy;
   }
-  var games2 = (state, message, model) => run(state, { _tag: "Games", message }, model);
-  var run = (state, message, model) => update5(state, message, model).model;
+  var focusedId = (state, model) => bandGames(state.nav, legacy(model))[state.nav.card]?.id ?? null;
+  function treaty(request) {
+    switch (request._tag) {
+      case "LaunchGame":
+        return request.locationId === undefined ? { _tag: "LaunchGame", gameId: request.gameId } : { _tag: "LaunchGame", gameId: request.gameId, launchLocationId: request.locationId };
+      case "DismissProblem":
+        return { _tag: "Dismiss" };
+      case "RememberLook":
+        return { _tag: "RememberPreference", key: LOOK_KEY, value: request.look };
+      default:
+        return request;
+    }
+  }
+  function init(model, preferences) {
+    const stored = preferences[LOOK_KEY];
+    const start = zoneSurfaceStart(legacy(model), isZoneLook(stored) ? stored : ZONE_DEFAULT_LOOK);
+    const zone = run(start, { _tag: "Games", message: { _tag: "FocusedCard", index: 1 } }, model, []).zone;
+    return { zone, reported: null, moving: false };
+  }
+  function run(state, message, model, out) {
+    const step7 = update5(state, message, legacy(model));
+    for (const request of step7.requests) {
+      const sent = treaty(request);
+      if (sent !== undefined)
+        out.push(sent);
+    }
+    return { zone: step7.model };
+  }
+  var games2 = (state, message, model, out) => run(state, { _tag: "Games", message }, model, out).zone;
   function update6(state, message, model) {
-    if (message._tag !== "Pressed")
-      return state;
+    const out = [];
+    let zone = state.zone;
+    let moving = state.moving;
+    switch (message._tag) {
+      case "KorriPublished": {
+        moving = false;
+        zone = run(zone, { _tag: "KorriPublished" }, model, out).zone;
+        if (state.reported !== null && model.catalog._tag === "Ready") {
+          const index = bandGames(zone.nav, legacy(model)).findIndex((game) => game.id === state.reported);
+          if (index !== -1 && index !== zone.nav.card)
+            zone = games2(zone, { _tag: "FocusedCard", index }, model, out);
+        }
+        break;
+      }
+      case "PreferenceStored":
+        break;
+      case "Pressed":
+        zone = pressed(zone, message.button, model, out);
+        break;
+    }
+    const focused = focusedId(zone, model);
+    if (focused !== state.reported)
+      out.push({ _tag: "FocusGame", gameId: focused });
+    const catalog = model.catalog;
+    if (!moving && focused !== null && catalog._tag === "Ready" && zone.nav.zone === "cards") {
+      const card = zone.nav.card;
+      if (catalog.after !== undefined && card >= catalog.window.length - EDGE || catalog.before !== undefined && card < EDGE) {
+        out.push({ _tag: "MoveCatalog", query: catalog.query, from: { _tag: "Around", gameId: focused }, count: WINDOW });
+        moving = true;
+      }
+    }
+    return { state: { zone, reported: focused, moving }, requests: out };
+  }
+  function pressed(state, button, model, out) {
     const nav = state.nav;
-    switch (message.action) {
+    switch (button) {
       case "back":
-        return run(state, { _tag: "PressedBack" }, model);
+        return run(state, { _tag: "PressedBack" }, model, out).zone;
       case "menu":
-        return run(state, { _tag: "PressedMenu" }, model);
+        return run(state, { _tag: "PressedMenu" }, model, out).zone;
+      case "system":
+        return run(state, { _tag: "PressedSystem" }, model, out).zone;
       case "options":
       case "up":
       case "down":
@@ -2271,59 +2345,54 @@
       case "confirm":
         break;
     }
-    if (zoneShown(state, model) !== "games" || nav.layers.length > 0)
+    if (zoneShown(state, legacy(model)) !== "games" || nav.layers.length > 0)
       return state;
-    const action = message.action;
+    const band = () => bandGames(nav, legacy(model));
+    const go2 = (message) => games2(state, message, model, out);
     switch (nav.zone) {
       case "tabs": {
         const at = ZONE_TABS.indexOf(nav.tabCursor);
-        if (action === "left" || action === "right") {
-          const next = ZONE_TABS[clamp(at + (action === "left" ? -1 : 1), 0, ZONE_TABS.length - 1)];
-          return next === nav.tabCursor ? state : games2(state, { _tag: "FocusedTab", tab: next }, model);
+        if (button === "left" || button === "right") {
+          const next = ZONE_TABS[clamp(at + (button === "left" ? -1 : 1), 0, ZONE_TABS.length - 1)];
+          return next === nav.tabCursor ? state : go2({ _tag: "FocusedTab", tab: next });
         }
-        if (action === "down" && nav.tab === "games")
-          return games2(state, { _tag: "FocusedCard", index: nav.card }, model);
-        if (action === "confirm" && nav.tabCursor === "games")
-          return games2(state, { _tag: "ChoseTab", tab: "games" }, model);
+        if (button === "down" && nav.tab === "games")
+          return go2({ _tag: "FocusedCard", index: nav.card });
+        if (button === "confirm" && nav.tabCursor === "games")
+          return go2({ _tag: "ChoseTab", tab: "games" });
         return state;
       }
       case "find":
-        if (action === "left" || action === "up")
-          return games2(state, { _tag: "FocusedTab", tab: "savedata" }, model);
-        if (action === "down")
-          return games2(state, { _tag: "FocusedCard", index: nav.card }, model);
+        if (button === "left" || button === "up")
+          return go2({ _tag: "FocusedTab", tab: "savedata" });
+        if (button === "down")
+          return go2({ _tag: "FocusedCard", index: nav.card });
         return state;
       case "get":
-        if (action === "down")
-          return games2(state, { _tag: "FocusedCard", index: nav.card }, model);
+        if (button === "down")
+          return go2({ _tag: "FocusedCard", index: nav.card });
         return state;
       case "cards": {
-        if (action === "left" || action === "right") {
-          const count = bandGames(nav, model).length;
-          const next = clamp(nav.card + (action === "left" ? -1 : 1), 0, Math.max(0, count - 1));
-          return next === nav.card ? state : games2(state, { _tag: "FocusedCard", index: next }, model);
+        if (button === "left" || button === "right") {
+          const next = clamp(nav.card + (button === "left" ? -1 : 1), 0, Math.max(0, band().length - 1));
+          return next === nav.card ? state : go2({ _tag: "FocusedCard", index: next });
         }
-        if (action === "up")
-          return games2(state, { _tag: "FocusedTab", tab: nav.tab }, model);
-        if (action === "down") {
-          const game = bandGames(nav, model)[nav.card];
-          if (game === undefined)
-            return state;
-          return games2(state, { _tag: "FocusedAction", index: 0 }, model);
-        }
+        if (button === "up")
+          return go2({ _tag: "FocusedTab", tab: nav.tab });
+        if (button === "down")
+          return band()[nav.card] === undefined ? state : go2({ _tag: "FocusedAction", index: 0 });
         return state;
       }
       case "actions": {
-        if (action === "left" || action === "right") {
-          const game = bandGames(nav, model)[nav.card];
+        if (button === "left" || button === "right") {
+          const game = band()[nav.card];
           if (game === undefined)
             return state;
-          const last = launchChoices(game).length;
-          const next = clamp(nav.action + (action === "left" ? -1 : 1), 0, last);
-          return next === nav.action ? state : games2(state, { _tag: "FocusedAction", index: next }, model);
+          const next = clamp(nav.action + (button === "left" ? -1 : 1), 0, launchChoices(game).length);
+          return next === nav.action ? state : go2({ _tag: "FocusedAction", index: next });
         }
-        if (action === "up")
-          return games2(state, { _tag: "FocusedCard", index: nav.card }, model);
+        if (button === "up")
+          return go2({ _tag: "FocusedCard", index: nav.card });
         return state;
       }
     }
@@ -2387,9 +2456,11 @@
       strength: connection._tag === "Wifi" && connection.strengthPercent !== undefined ? `${connection.strengthPercent}%` : ""
     };
   }
-  function view(state, model) {
+  function view(outer, model) {
+    const state = outer.zone;
+    const korri = legacy(model);
     const nav = state.nav;
-    const band = bandGames(nav, model);
+    const band = bandGames(nav, korri);
     const game = band[nav.card];
     const launches = game === undefined ? [] : launchChoices(game);
     const choice = launches.length > 1;
@@ -2413,7 +2484,7 @@
     ];
     const signal = signalOf(model.network?.connection);
     return {
-      page: zoneShown(state, model),
+      page: zoneShown(state, korri),
       zone: nav.zone,
       tabs: ZONE_TABS.map((tab) => ({ label: TAB_WORDS[tab], active: tab === nav.tab, focused: nav.zone === "tabs" && tab === nav.tabCursor })),
       findLabel: "Find",
@@ -2428,6 +2499,8 @@
         tags: tagsOf(entry)
       })),
       focusedCard: nav.card,
+      firstIndex: model.catalog._tag === "Ready" ? model.catalog.firstIndex : 0,
+      total: model.catalog._tag === "Ready" ? model.catalog.total : band.length,
       facts,
       actions: actions.map((entry, index) => ({ label: entry.label, lit: index === lit, focused: index === focusedAction })),
       timeLabel: "Time",
@@ -2436,5 +2509,6 @@
       build: model.buildLabel ?? ""
     };
   }
-  globalThis.surface = { init, update: update6, view };
+  var preferences = { [LOOK_KEY]: { mark: "device", initial: ZONE_DEFAULT_LOOK } };
+  globalThis.surface = { preferences, init, update: update6, view };
 })();

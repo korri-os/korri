@@ -163,7 +163,12 @@ export component Surface inherits Window {
     in property <string> menu-label: "MENU";
     in property <bool> has-shelf;
     in property <int> selected-index;
+    // The cursor catalog (contract 3.4): carts[0]'s place among all `total`
+    // carts. The rack places carts by that, so a new window around the same
+    // cart does not move the rack.
+    in property <int> first-index;
     in property <int> total;
+    property <int> place-index: first-index + selected-index;
     in property <bool> cursor-on-shelf;
     in property <float> narrowest-art: 1;
     in property <[CartView]> carts;
@@ -210,7 +215,7 @@ export component Surface inherits Window {
     property <length> rack-h: has-shelf ? 8 * p + slot-h + u + 3 * p : 0px;
     property <length> rack-y: body-y + body-h - rack-h;
     property <length> rack-w: root.width - 4 * u;
-    property <length> rack-content-w: carts.length * slot-w + max(0, carts.length - 1) * rack-gap;
+    property <length> rack-content-w: total * slot-w + max(0, total - 1) * rack-gap;
     // How far the rack is scrolled. It moves only as far as it must to keep the
     // chosen cart in view, with one cart of margin either side, so the
     // neighbour shows there is more (PicoCartShelf's reveal).
@@ -238,10 +243,10 @@ export component Surface inherits Window {
     property <int> land-step: 4;
 
     function reveal() {
-        if (pitch * selected-index - scroll + slot-w > rack-w - slot-w) {
-            scroll = pitch * selected-index + slot-w - (rack-w - slot-w);
-        } else if (pitch * selected-index - scroll < slot-w) {
-            scroll = pitch * selected-index - slot-w;
+        if (pitch * place-index - scroll + slot-w > rack-w - slot-w) {
+            scroll = pitch * place-index + slot-w - (rack-w - slot-w);
+        } else if (pitch * place-index - scroll < slot-w) {
+            scroll = pitch * place-index - slot-w;
         }
         scroll = max(0px, min(scroll, rack-content-w - rack-w));
     }
@@ -249,7 +254,7 @@ export component Surface inherits Window {
     init => {
         reveal();
     }
-    changed selected-index => {
+    changed place-index => {
         land-step = 0;
         reveal();
     }
@@ -453,7 +458,7 @@ export component Surface inherits Window {
             alignment: start;
             height: foot-line;
             spacing: p;
-            Line { text: selected-index + 1; font-size: text-sm; color: P8.ink-quiet; }
+            Line { text: place-index + 1; font-size: text-sm; color: P8.ink-quiet; }
             Line { text: "/"; font-size: text-sm; color: P8.ink-quiet; }
             Line { text: total; font-size: text-sm; color: P8.ink-quiet; }
         }
@@ -470,7 +475,7 @@ export component Surface inherits Window {
             x: -scroll;
             width: rack-content-w;
             for cart[index] in carts : ShelfCart {
-                x: index * pitch;
+                x: (first-index + index) * pitch;
                 y: 8 * p + slot-h - p - self.shell-h - (cart.hero ? 4 * p : 0px);
                 cart: cart;
                 p: p;
@@ -547,5 +552,73 @@ export component Surface inherits Window {
         font-size: text-sm;
         color: P8.ink-quiet;
         overflow: elide;
+    }
+}
+
+export struct OverlayControlView {
+    label: string,
+    focused: bool,
+    enabled: bool,
+}
+
+// The pause menu over a running game (contract 3.7), from logic.js overlay():
+// Korri's controls in its order, the focused one marked as the shelf marks
+// the chosen cart. It reuses Pico's palette, face and hints; its layout is a
+// plain list and has not been designed yet.
+export component Overlay inherits Window {
+    in property <string> heading: "PAUSED";
+    in property <[OverlayControlView]> controls;
+    in property <[HintView]> hints;
+
+    title: "Pico overlay";
+    background: P8.bg;
+    default-font-family: "Pico Tiny5";
+    preferred-width: 640px;
+    preferred-height: 480px;
+
+    property <length> p: max(2px, floor(min(root.width, root.height) / 360px) * 1px);
+    property <length> u: 4 * p;
+    property <length> text-sm: 7 * p;
+    property <length> text-md: round(p / 1px * 1.5) * 7px;
+    property <length> text-lg: round(p / 1px * 2.5) * 7px;
+    property <length> row-h: text-md * 1.5 + 2 * p;
+
+    Line {
+        x: 2 * u;
+        y: 2 * u;
+        text: heading;
+        font-size: text-lg;
+        color: P8.ink;
+    }
+    for control[i] in controls : Rectangle {
+        x: 2 * u;
+        y: 2 * u + text-lg * 1.5 + u + i * (row-h + p);
+        width: root.width - 4 * u;
+        height: row-h;
+        background: control.focused ? P8.plate : P8.bg;
+        Rectangle {
+            x: 0;
+            width: 2 * p;
+            background: control.focused ? P8.ok : P8.bg;
+        }
+        Line {
+            x: 3 * u;
+            y: (parent.height - self.height) / 2;
+            text: control.label;
+            font-size: text-md;
+            color: control.enabled ? P8.ink : P8.ink-quiet;
+        }
+    }
+    HorizontalLayout {
+        x: root.width - 2 * u - self.preferred-width;
+        y: root.height - 2 * u - text-sm * 1.5;
+        width: self.preferred-width;
+        height: text-sm * 1.5;
+        spacing: u;
+        for hint in hints : Hint {
+            hint: hint;
+            p: p;
+            small-text: text-sm;
+        }
     }
 }

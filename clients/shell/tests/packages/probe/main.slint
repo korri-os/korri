@@ -1,0 +1,28 @@
+// A test package: shows what the shell delivered, and misbehaves on demand.
+import "fonts/tiny5.ttf";
+export component Surface inherits Window {
+    in property <string> word;
+    in property <int> count;
+    in property <int> total;
+    in property <bool> stored;
+    in property <string> focused-game;
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: #102030;
+    default-font-family: "Pico Tiny5";
+    Text {
+        text: root.word + " " + root.count + "/" + root.total;
+        color: white;
+        font-size: 24px;
+    }
+}
+
+export component Overlay inherits Window {
+    in property <string> heading;
+    in property <int> controls;
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: #301020;
+    default-font-family: "Pico Tiny5";
+    Text { text: root.heading; color: white; font-size: 24px; }
+}

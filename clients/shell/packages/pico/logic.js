@@ -52,6 +52,125 @@
     return rest === 0 ? `${hours}H` : `${hours}H ${rest}M`;
   }
 
+  // ../../../../surfaces/pico/src/pico-fonts.ts
+  var PICO_FONT_IDS = [
+    "tiny5",
+    "tom-thumb",
+    "x11-4x6",
+    "kenney-mini",
+    "m3x6",
+    "x11-5x7",
+    "spleen-5x8",
+    "m5x7",
+    "monogram",
+    "kenney-pixel"
+  ];
+  var PICO_FONTS = [
+    {
+      id: "tiny5",
+      name: "Tiny5",
+      family: "Pico Tiny5",
+      rows: 7,
+      capHeight: 5,
+      xHeight: 4,
+      by: "The Tiny5 Project Authors (Gissio)",
+      license: "SIL Open Font License 1.1",
+      licenseFile: "tiny5-OFL.txt"
+    },
+    {
+      id: "tom-thumb",
+      name: "Tom Thumb",
+      family: "Pico Tom Thumb",
+      rows: 6,
+      capHeight: 5,
+      xHeight: 4,
+      by: "Brian Swetland and Robey Pointer",
+      license: "CC0 1.0 (also offered under MIT and CC BY 3.0)"
+    },
+    {
+      id: "x11-4x6",
+      name: "X11 fixed 4x6",
+      family: "Pico X11 fixed 4x6",
+      rows: 6,
+      capHeight: 5,
+      xHeight: 4,
+      by: "the X Consortium fixed fonts",
+      license: "Public domain"
+    },
+    {
+      id: "kenney-mini",
+      name: "Kenney Mini",
+      family: "Pico Kenney Mini",
+      rows: 7,
+      capHeight: 5,
+      xHeight: 4,
+      by: "Kenney (www.kenney.nl)",
+      license: "CC0 1.0"
+    },
+    {
+      id: "m3x6",
+      name: "m3x6",
+      family: "Pico m3x6",
+      rows: 8,
+      capHeight: 6,
+      xHeight: 5,
+      by: "Daniel Linssen",
+      license: "Free to use with attribution"
+    },
+    {
+      id: "x11-5x7",
+      name: "X11 fixed 5x7",
+      family: "Pico X11 fixed 5x7",
+      rows: 7,
+      capHeight: 6,
+      xHeight: 4,
+      by: "the X Consortium fixed fonts",
+      license: "Public domain"
+    },
+    {
+      id: "spleen-5x8",
+      name: "Spleen 5x8",
+      family: "Pico Spleen 5x8",
+      rows: 8,
+      capHeight: 6,
+      xHeight: 5,
+      by: "Frederic Cambus",
+      license: "BSD 2-Clause",
+      licenseFile: "spleen-LICENSE.txt"
+    },
+    {
+      id: "m5x7",
+      name: "m5x7",
+      family: "Pico m5x7",
+      rows: 9,
+      capHeight: 7,
+      xHeight: 5,
+      by: "Daniel Linssen",
+      license: "CC0 1.0 (attribution appreciated)"
+    },
+    {
+      id: "monogram",
+      name: "monogram",
+      family: "Pico monogram",
+      rows: 9,
+      capHeight: 7,
+      xHeight: 5,
+      by: "datagoblin",
+      license: "CC0 1.0"
+    },
+    {
+      id: "kenney-pixel",
+      name: "Kenney Pixel",
+      family: "Pico Kenney Pixel",
+      rows: 9,
+      capHeight: 7,
+      xHeight: 6,
+      by: "Kenney (www.kenney.nl)",
+      license: "CC0 1.0"
+    }
+  ];
+  var PICO_DEFAULT_FONT = "tiny5";
+
   // ../../../../surfaces/pico/src/pico-initials.ts
   function picoInitials(title) {
     const words = title.trim().split(/\s+/).filter(Boolean);
@@ -249,124 +368,6 @@
       invites: INVITE_NOTICES
     };
   }
-
-  // ../../../../surfaces/pico/src/pico-fonts.ts
-  var PICO_FONT_IDS = [
-    "tiny5",
-    "tom-thumb",
-    "x11-4x6",
-    "kenney-mini",
-    "m3x6",
-    "x11-5x7",
-    "spleen-5x8",
-    "m5x7",
-    "monogram",
-    "kenney-pixel"
-  ];
-  var PICO_FONTS = [
-    {
-      id: "tiny5",
-      name: "Tiny5",
-      family: "Pico Tiny5",
-      rows: 7,
-      capHeight: 5,
-      xHeight: 4,
-      by: "The Tiny5 Project Authors (Gissio)",
-      license: "SIL Open Font License 1.1",
-      licenseFile: "tiny5-OFL.txt"
-    },
-    {
-      id: "tom-thumb",
-      name: "Tom Thumb",
-      family: "Pico Tom Thumb",
-      rows: 6,
-      capHeight: 5,
-      xHeight: 4,
-      by: "Brian Swetland and Robey Pointer",
-      license: "CC0 1.0 (also offered under MIT and CC BY 3.0)"
-    },
-    {
-      id: "x11-4x6",
-      name: "X11 fixed 4x6",
-      family: "Pico X11 fixed 4x6",
-      rows: 6,
-      capHeight: 5,
-      xHeight: 4,
-      by: "the X Consortium fixed fonts",
-      license: "Public domain"
-    },
-    {
-      id: "kenney-mini",
-      name: "Kenney Mini",
-      family: "Pico Kenney Mini",
-      rows: 7,
-      capHeight: 5,
-      xHeight: 4,
-      by: "Kenney (www.kenney.nl)",
-      license: "CC0 1.0"
-    },
-    {
-      id: "m3x6",
-      name: "m3x6",
-      family: "Pico m3x6",
-      rows: 8,
-      capHeight: 6,
-      xHeight: 5,
-      by: "Daniel Linssen",
-      license: "Free to use with attribution"
-    },
-    {
-      id: "x11-5x7",
-      name: "X11 fixed 5x7",
-      family: "Pico X11 fixed 5x7",
-      rows: 7,
-      capHeight: 6,
-      xHeight: 4,
-      by: "the X Consortium fixed fonts",
-      license: "Public domain"
-    },
-    {
-      id: "spleen-5x8",
-      name: "Spleen 5x8",
-      family: "Pico Spleen 5x8",
-      rows: 8,
-      capHeight: 6,
-      xHeight: 5,
-      by: "Frederic Cambus",
-      license: "BSD 2-Clause",
-      licenseFile: "spleen-LICENSE.txt"
-    },
-    {
-      id: "m5x7",
-      name: "m5x7",
-      family: "Pico m5x7",
-      rows: 9,
-      capHeight: 7,
-      xHeight: 5,
-      by: "Daniel Linssen",
-      license: "CC0 1.0 (attribution appreciated)"
-    },
-    {
-      id: "monogram",
-      name: "monogram",
-      family: "Pico monogram",
-      rows: 9,
-      capHeight: 7,
-      xHeight: 5,
-      by: "datagoblin",
-      license: "CC0 1.0"
-    },
-    {
-      id: "kenney-pixel",
-      name: "Kenney Pixel",
-      family: "Pico Kenney Pixel",
-      rows: 9,
-      capHeight: 7,
-      xHeight: 6,
-      by: "Kenney (www.kenney.nl)",
-      license: "CC0 1.0"
-    }
-  ];
 
   // ../../../../surfaces/pico/src/pico-text-draft.ts
   var picoTextDraft = (text) => ({ text, capitals: false, symbols: false });
@@ -1422,17 +1423,31 @@
   });
 
   // logic.ts
+  var FONT_KEY = "pico.font";
+  var EDGE = 8;
+  var WINDOW = 50;
+  var isFont = (value) => PICO_FONT_IDS.includes(value);
+  var cachedModel;
+  var cachedLegacy;
+  function legacy(model) {
+    if (model === cachedModel && cachedLegacy !== undefined)
+      return cachedLegacy;
+    const catalog = model.catalog._tag === "Ready" ? { _tag: "Ready", games: model.catalog.window } : model.catalog;
+    cachedModel = model;
+    cachedLegacy = { ...model, catalog };
+    return cachedLegacy;
+  }
   var SHELF_HINTS = [
     { hintKey: "a", label: "PLAY" },
     { hintKey: "b", label: "BACK" }
   ];
-  function shelfReadout(games) {
+  function shelfReadout(games, total) {
     const resumable = games.filter((game) => game.resumable === true).length;
-    const carts = `${games.length} ${games.length === 1 ? "CART" : "CARTS"}`;
+    const carts = `${total} ${total === 1 ? "CART" : "CARTS"}`;
     return resumable === 0 ? carts : `${carts} · ${resumable} RESUMABLE`;
   }
   function shelfGames(nav, model) {
-    const shown = shownScreen(nav, model);
+    const shown = shownScreen(nav, legacy(model));
     return shown._tag === "Home" && shown.view._tag === "Shelf" ? shown.view.games : [];
   }
   function chosenIndex(nav, games) {
@@ -1440,31 +1455,87 @@
     return found === -1 ? 0 : found;
   }
   function step2(nav, message, model) {
-    return update(nav, message, model).model;
+    return update(nav, message, legacy(model)).model;
+  }
+  function overlayControls(model) {
+    const presentation = model.presentation;
+    if (presentation.kind !== "gameplay-overlay")
+      return [];
+    return [...presentation.controls, ...presentation.groups.flatMap((group) => group.controls)];
   }
   function update2(state, message, model) {
-    if (message._tag !== "Pressed")
-      return state;
-    const nav = state.nav;
-    switch (message.action) {
-      case "left":
-      case "right": {
-        const games = shelfGames(nav, model);
-        if (games.length === 0)
-          return state;
-        const from = chosenIndex(nav, games);
-        const to = Math.max(0, Math.min(games.length - 1, from + (message.action === "left" ? -1 : 1)));
-        const moved = step2(nav, { _tag: "MovedFocus" }, model);
-        const target = games[to];
-        if (to === from || target === undefined)
-          return { nav: moved, cursorOnShelf: true };
-        return { nav: step2(moved, { _tag: "SelectedCart", gameId: target.id }, model), cursorOnShelf: true };
+    const requests = [];
+    let next = state;
+    if (message._tag === "KorriPublished") {
+      next = { ...state, nav: step2(state.nav, { _tag: "KorriPublished" }, model), moving: false };
+      const controls = overlayControls(model).length;
+      if (next.overlayFocus >= controls)
+        next = { ...next, overlayFocus: Math.max(0, controls - 1) };
+    } else if (message._tag === "Pressed" && model.presentation.kind === "gameplay-overlay") {
+      const controls = overlayControls(model);
+      switch (message.button) {
+        case "up":
+        case "down": {
+          const to = Math.max(0, Math.min(controls.length - 1, state.overlayFocus + (message.button === "up" ? -1 : 1)));
+          next = { ...state, overlayFocus: to };
+          break;
+        }
+        case "confirm": {
+          const control = controls[state.overlayFocus];
+          if (control !== undefined && control.enabled && control.interaction.kind === "command")
+            requests.push({ _tag: "InvokeGameplayControl", controlId: control.id });
+          break;
+        }
+        case "back":
+        case "menu":
+        case "system":
+          requests.push({ _tag: "DismissGameplayOverlay" });
+          break;
+        default:
+          break;
       }
-      case "back":
-        return { ...state, nav: step2(nav, { _tag: "PressedBack" }, model) };
-      default:
-        return state;
+      return { state: next, requests };
+    } else if (message._tag === "Pressed") {
+      const nav = state.nav;
+      switch (message.button) {
+        case "left":
+        case "right": {
+          const games2 = shelfGames(nav, model);
+          if (games2.length === 0)
+            break;
+          const from = chosenIndex(nav, games2);
+          const to = Math.max(0, Math.min(games2.length - 1, from + (message.button === "left" ? -1 : 1)));
+          const moved = step2(nav, { _tag: "MovedFocus" }, model);
+          const target = games2[to];
+          next = to === from || target === undefined ? { ...state, nav: moved, cursorOnShelf: true } : { ...state, nav: step2(moved, { _tag: "SelectedCart", gameId: target.id }, model), cursorOnShelf: true };
+          break;
+        }
+        case "back":
+          next = { ...state, nav: step2(nav, { _tag: "PressedBack" }, model) };
+          break;
+        case "options": {
+          const font = PICO_FONT_IDS[(PICO_FONT_IDS.indexOf(state.font) + 1) % PICO_FONT_IDS.length] ?? PICO_DEFAULT_FONT;
+          next = { ...state, font };
+          requests.push({ _tag: "RememberPreference", key: FONT_KEY, value: font });
+          break;
+        }
+        default:
+          break;
+      }
     }
+    const games = shelfGames(next.nav, model);
+    const index = chosenIndex(next.nav, games);
+    const chosen = games[index]?.id ?? null;
+    if (chosen !== next.reported) {
+      requests.push({ _tag: "FocusGame", gameId: chosen });
+      next = { ...next, reported: chosen };
+    }
+    const catalog = model.catalog;
+    if (!next.moving && chosen !== null && catalog._tag === "Ready" && (catalog.after !== undefined && index >= games.length - EDGE || catalog.before !== undefined && index < EDGE)) {
+      requests.push({ _tag: "MoveCatalog", query: catalog.query, from: { _tag: "Around", gameId: chosen }, count: WINDOW });
+      next = { ...next, moving: true };
+    }
+    return { state: next, requests };
   }
   function cartView(game, hero) {
     const look = picoCartLookFor(game.id, game.subtitle);
@@ -1473,7 +1544,7 @@
     return {
       id: game.id,
       title: game.title,
-      ...art === undefined ? {} : { art: { $image: art } },
+      ...art === undefined ? {} : { art: { $image: art, pico8: "vivid" } },
       hasArt: art !== undefined,
       artRatio: artRatio(art),
       initials: picoInitials(game.title),
@@ -1525,6 +1596,7 @@
   }
   function view(state, model) {
     const games = shelfGames(state.nav, model);
+    const catalog = model.catalog;
     const index = chosenIndex(state.nav, games);
     const chosen = games[index];
     const stats = chosen === undefined ? [] : picoStatsFor(chosen);
@@ -1533,12 +1605,13 @@
       label: "LIBRARY",
       clockLabel: model.clockLabel ?? "",
       showClock: model.clockLabel !== undefined,
-      readout: shelfReadout(games),
+      readout: shelfReadout(games, catalog._tag === "Ready" ? catalog.total : games.length),
       hints: SHELF_HINTS.map((hint) => ({ key: hint.hintKey, label: hint.label })),
       menuLabel: "MENU",
       hasShelf: chosen !== undefined,
       selectedIndex: index,
-      total: games.length,
+      firstIndex: catalog._tag === "Ready" ? catalog.firstIndex : 0,
+      total: catalog._tag === "Ready" ? catalog.total : games.length,
       cursorOnShelf: state.cursorOnShelf,
       narrowestArt: narrowestArt(games),
       carts: games.map((game, at) => cartView(game, at === index)),
@@ -1553,9 +1626,34 @@
       }
     };
   }
+  function overlay(state, model) {
+    const presentation = model.presentation;
+    const controls = overlayControls(model);
+    return {
+      heading: presentation.kind === "gameplay-overlay" ? (presentation.title ?? "PAUSED").toUpperCase() : "",
+      controls: controls.map((control, at) => ({
+        label: control.label.toUpperCase(),
+        focused: at === state.overlayFocus,
+        enabled: control.enabled
+      })),
+      hints: [{ key: "a", label: "CHOOSE" }, { key: "b", label: "RESUME" }]
+    };
+  }
   globalThis.surface = {
-    init: (_model) => ({ nav: initialNavigation(), cursorOnShelf: false }),
+    preferences: { [FONT_KEY]: { mark: "device", initial: PICO_DEFAULT_FONT } },
+    init: (_model, preferences) => {
+      const stored = preferences[FONT_KEY];
+      return {
+        nav: initialNavigation(),
+        cursorOnShelf: false,
+        font: isFont(stored) ? stored : PICO_DEFAULT_FONT,
+        reported: null,
+        moving: false,
+        overlayFocus: 0
+      };
+    },
     update: update2,
-    view
+    view,
+    overlay
   };
 })();

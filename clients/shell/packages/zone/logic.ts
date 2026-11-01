@@ -1,10 +1,11 @@
 /**
- * THROWAWAY SPIKE: Zone's logic for the surface shell (../../CONTRACT.md).
+ * Zone's logic for the native shell (docs/briefs/2026-10-31-native-surfaces-contract.md,
+ * section 3.1). Adapted from the surface-shell spike's Zone package.
  *
  * Zone's real program (surfaces/zone/src/state/surface.ts) runs unchanged.
  * In the browser the host moves DOM focus and the page reports `Focused…`
  * facts; here no DOM exists, so a thin adapter turns the shell's
- * `{ _tag: "Pressed", action }` into the same facts, by where the cursor is:
+ * `{ _tag: "Pressed", button }` into the same facts, by where the cursor is:
  *
  *     tabs     left, right    FocusedTab on the next tab
  *              down           FocusedCard on the band's focused card
@@ -16,55 +17,164 @@
  *              down           FocusedAction on the lit button, or the first
  *     actions  left, right    FocusedAction one step along the row
  *              up             FocusedCard
- *     back, menu              Zone's own PressedBack and PressedMenu
+ *     back, menu, system      Zone's own PressedBack, PressedMenu, PressedSystem
  *
- * Confirm on a card or a button, and options (GAME OPTS.), do nothing: the
- * launch title card, GAME OPTS. and the other pages are not drawn by this
- * package, and the shell performs no requests.
- *
- * `view` is plain JSON for main.slint: every word, game, fact and readout it
- * shows, in Zone's own case (main.slint sets Zone's words in capitals, as
- * Zone's caps do). Sizes, colours and motion stay in main.slint.
+ * The catalog is a cursor window (contract 3.4). Zone's state code reads
+ * `catalog.games`, so the adapter hands it the window as that list. Near an
+ * edge of the window the adapter asks for a window around the focused game
+ * (`MoveCatalog`, `Around`), and after Korri publishes it, focuses the same
+ * game again. Every change of focused game is reported (`FocusGame`).
+ * Requests Zone's update makes are forwarded in the treaty's words.
  *
  * Pure: no timers, no Date, no randomness. The facts line's day is computed
- * from Korri's epoch milliseconds in UTC (Zone uses the person's time zone;
- * the fixture's instants are the same day in every zone from -11 to +11).
+ * from Korri's epoch milliseconds in UTC.
  */
 import type { SurfaceGame, SurfaceModel, SurfaceNetworkConnection } from "../../../../contracts/surface/korri-surface"
 import { launchChoices, playtime, type ZoneLaunchChoice } from "../../../../surfaces/zone/src/state/games"
 import { bandGames, ZONE_TABS, type ZoneNavMessage, type ZoneTab } from "../../../../surfaces/zone/src/state/navigation"
+import type { ZoneRequest } from "../../../../surfaces/zone/src/state/requests"
 import { update as zoneUpdate, zoneShown, zoneSurfaceStart, type ZoneSurfaceMessage, type ZoneSurfaceState } from "../../../../surfaces/zone/src/state/surface"
+import { isZoneLook, ZONE_DEFAULT_LOOK } from "../../../../surfaces/zone/src/plan/look"
 
-export type Action = "up" | "down" | "left" | "right" | "confirm" | "back" | "menu" | "options"
-export type Message = { readonly _tag: "Pressed"; readonly action: Action }
-export type State = ZoneSurfaceState
+// The treaty pieces this adapter reads that the TypeScript treaty file does
+// not have yet (contract 3.2 to 3.5). Replace with contracts/generated/surface.ts.
+type Button = "up" | "down" | "left" | "right" | "confirm" | "back" | "options" | "menu" | "system"
+type Message =
+  | { readonly _tag: "Pressed"; readonly button: Button }
+  | { readonly _tag: "KorriPublished" }
+  | { readonly _tag: "PreferenceStored"; readonly key: string }
+type CatalogQuery = { readonly text: string; readonly section: string | null; readonly order: string }
+type Catalog =
+  | { readonly _tag: "Loading" }
+  | { readonly _tag: "Error"; readonly message: string }
+  | { readonly _tag: "Empty" }
+  | {
+      readonly _tag: "Ready"
+      readonly total: number
+      readonly window: readonly SurfaceGame[]
+      readonly firstIndex: number
+      readonly before?: string
+      readonly after?: string
+      readonly query: CatalogQuery
+    }
+export type Model = Omit<SurfaceModel, "catalog"> & { readonly catalog: Catalog }
+type Request = { readonly _tag: string; readonly [key: string]: unknown }
+
+export interface State {
+  readonly zone: ZoneSurfaceState
+  /** The focused game Korri last heard of (FocusGame). */
+  readonly reported: string | null
+  /** A MoveCatalog is out; no second one until Korri publishes. */
+  readonly moving: boolean
+}
+
+const LOOK_KEY = "zone.look"
+/** Cards from a window edge at which Zone asks for a window around the focus. */
+const EDGE = 8
+const WINDOW = 50
+
+// ---- the adapter between the cursor catalog and Zone's state code ----
+
+let cachedModel: Model | undefined
+let cachedLegacy: SurfaceModel | undefined
+/** Zone's state code reads `catalog.games`: give it the window. */
+function legacy(model: Model): SurfaceModel {
+  if (model === cachedModel && cachedLegacy !== undefined) return cachedLegacy
+  const catalog = model.catalog._tag === "Ready" ? { _tag: "Ready" as const, games: model.catalog.window } : model.catalog
+  cachedModel = model
+  cachedLegacy = { ...model, catalog } as unknown as SurfaceModel
+  return cachedLegacy
+}
+
+const focusedId = (state: ZoneSurfaceState, model: Model): string | null =>
+  bandGames(state.nav, legacy(model))[state.nav.card]?.id ?? null
+
+/** Zone's request in the treaty's words, or nothing for Zone's own. */
+function treaty(request: ZoneRequest): Request | undefined {
+  switch (request._tag) {
+    case "LaunchGame":
+      return request.locationId === undefined
+        ? { _tag: "LaunchGame", gameId: request.gameId }
+        : { _tag: "LaunchGame", gameId: request.gameId, launchLocationId: request.locationId }
+    case "DismissProblem":
+      return { _tag: "Dismiss" }
+    case "RememberLook":
+      return { _tag: "RememberPreference", key: LOOK_KEY, value: request.look }
+    default:
+      return request as Request
+  }
+}
 
 // ---- init and update ----
 
 /**
- * Zone's start in the Modern look, then the Caliper part's opening
+ * Zone's start in the stored look, then the Caliper part's opening
  * (ZoneGames.page.part.tsx, `Ready`: FocusedCard 1), so the first frame is
  * the reference state: Hollow Knight focused.
  */
-export function init(model: SurfaceModel): State {
-  const start = zoneSurfaceStart(model, "modern")
-  return games(start, { _tag: "FocusedCard", index: 1 }, model)
+export function init(model: Model, preferences: Readonly<Record<string, string>>): State {
+  const stored = preferences[LOOK_KEY]
+  const start = zoneSurfaceStart(legacy(model), isZoneLook(stored) ? stored : ZONE_DEFAULT_LOOK)
+  const zone = run(start, { _tag: "Games", message: { _tag: "FocusedCard", index: 1 } }, model, []).zone
+  return { zone, reported: null, moving: false }
 }
 
-const games = (state: State, message: ZoneNavMessage, model: SurfaceModel): State =>
-  run(state, { _tag: "Games", message }, model)
+/** One step of Zone's own program; its requests are added to `out`. */
+function run(state: ZoneSurfaceState, message: ZoneSurfaceMessage, model: Model, out: Request[]): { zone: ZoneSurfaceState } {
+  const step = zoneUpdate(state, message, legacy(model))
+  for (const request of step.requests) {
+    const sent = treaty(request)
+    if (sent !== undefined) out.push(sent)
+  }
+  return { zone: step.model }
+}
 
-const run = (state: State, message: ZoneSurfaceMessage, model: SurfaceModel): State =>
-  zoneUpdate(state, message, model).model
+const games = (state: ZoneSurfaceState, message: ZoneNavMessage, model: Model, out: Request[]): ZoneSurfaceState =>
+  run(state, { _tag: "Games", message }, model, out).zone
 
-export function update(state: State, message: Message, model: SurfaceModel): State {
-  if (message._tag !== "Pressed") return state
+export function update(state: State, message: Message, model: Model): { state: State; requests: Request[] } {
+  const out: Request[] = []
+  let zone = state.zone
+  let moving = state.moving
+  switch (message._tag) {
+    case "KorriPublished": {
+      moving = false
+      zone = run(zone, { _tag: "KorriPublished" }, model, out).zone
+      // A new window: keep the focus on the same game.
+      if (state.reported !== null && model.catalog._tag === "Ready") {
+        const index = bandGames(zone.nav, legacy(model)).findIndex(game => game.id === state.reported)
+        if (index !== -1 && index !== zone.nav.card) zone = games(zone, { _tag: "FocusedCard", index }, model, out)
+      }
+      break
+    }
+    case "PreferenceStored":
+      break
+    case "Pressed":
+      zone = pressed(zone, message.button, model, out)
+      break
+  }
+  const focused = focusedId(zone, model)
+  if (focused !== state.reported) out.push({ _tag: "FocusGame", gameId: focused })
+  const catalog = model.catalog
+  if (!moving && focused !== null && catalog._tag === "Ready" && zone.nav.zone === "cards") {
+    const card = zone.nav.card
+    if ((catalog.after !== undefined && card >= catalog.window.length - EDGE) || (catalog.before !== undefined && card < EDGE)) {
+      out.push({ _tag: "MoveCatalog", query: catalog.query, from: { _tag: "Around", gameId: focused }, count: WINDOW })
+      moving = true
+    }
+  }
+  return { state: { zone, reported: focused, moving }, requests: out }
+}
+
+function pressed(state: ZoneSurfaceState, button: Button, model: Model, out: Request[]): ZoneSurfaceState {
   const nav = state.nav
-  switch (message.action) {
+  switch (button) {
     case "back":
-      return run(state, { _tag: "PressedBack" }, model)
+      return run(state, { _tag: "PressedBack" }, model, out).zone
     case "menu":
-      return run(state, { _tag: "PressedMenu" }, model)
+      return run(state, { _tag: "PressedMenu" }, model, out).zone
+    case "system":
+      return run(state, { _tag: "PressedSystem" }, model, out).zone
     case "options":
     case "up":
     case "down":
@@ -74,50 +184,45 @@ export function update(state: State, message: Message, model: SurfaceModel): Sta
       break
   }
   // Directions and confirm move Zone's cursor only on GAMES with nothing over it.
-  if (zoneShown(state, model) !== "games" || nav.layers.length > 0) return state
-  const action = message.action
+  if (zoneShown(state, legacy(model)) !== "games" || nav.layers.length > 0) return state
+  const band = () => bandGames(nav, legacy(model))
+  const go = (message: ZoneNavMessage) => games(state, message, model, out)
   switch (nav.zone) {
     case "tabs": {
       const at = ZONE_TABS.indexOf(nav.tabCursor)
-      if (action === "left" || action === "right") {
-        const next = ZONE_TABS[clamp(at + (action === "left" ? -1 : 1), 0, ZONE_TABS.length - 1)]!
-        return next === nav.tabCursor ? state : games(state, { _tag: "FocusedTab", tab: next }, model)
+      if (button === "left" || button === "right") {
+        const next = ZONE_TABS[clamp(at + (button === "left" ? -1 : 1), 0, ZONE_TABS.length - 1)]!
+        return next === nav.tabCursor ? state : go({ _tag: "FocusedTab", tab: next })
       }
-      if (action === "down" && nav.tab === "games") return games(state, { _tag: "FocusedCard", index: nav.card }, model)
-      if (action === "confirm" && nav.tabCursor === "games") return games(state, { _tag: "ChoseTab", tab: "games" }, model)
+      if (button === "down" && nav.tab === "games") return go({ _tag: "FocusedCard", index: nav.card })
+      if (button === "confirm" && nav.tabCursor === "games") return go({ _tag: "ChoseTab", tab: "games" })
       return state
     }
     case "find":
-      if (action === "left" || action === "up") return games(state, { _tag: "FocusedTab", tab: "savedata" }, model)
-      if (action === "down") return games(state, { _tag: "FocusedCard", index: nav.card }, model)
+      if (button === "left" || button === "up") return go({ _tag: "FocusedTab", tab: "savedata" })
+      if (button === "down") return go({ _tag: "FocusedCard", index: nav.card })
       return state
     case "get":
-      if (action === "down") return games(state, { _tag: "FocusedCard", index: nav.card }, model)
+      if (button === "down") return go({ _tag: "FocusedCard", index: nav.card })
       return state
     case "cards": {
-      if (action === "left" || action === "right") {
-        const count = bandGames(nav, model).length
-        const next = clamp(nav.card + (action === "left" ? -1 : 1), 0, Math.max(0, count - 1))
-        return next === nav.card ? state : games(state, { _tag: "FocusedCard", index: next }, model)
+      if (button === "left" || button === "right") {
+        const next = clamp(nav.card + (button === "left" ? -1 : 1), 0, Math.max(0, band().length - 1))
+        return next === nav.card ? state : go({ _tag: "FocusedCard", index: next })
       }
-      if (action === "up") return games(state, { _tag: "FocusedTab", tab: nav.tab }, model)
-      if (action === "down") {
-        const game = bandGames(nav, model)[nav.card]
-        if (game === undefined) return state
-        return games(state, { _tag: "FocusedAction", index: 0 }, model)
-      }
+      if (button === "up") return go({ _tag: "FocusedTab", tab: nav.tab })
+      if (button === "down") return band()[nav.card] === undefined ? state : go({ _tag: "FocusedAction", index: 0 })
       return state
     }
     case "actions": {
-      if (action === "left" || action === "right") {
-        const game = bandGames(nav, model)[nav.card]
+      if (button === "left" || button === "right") {
+        const game = band()[nav.card]
         if (game === undefined) return state
         // The launch buttons, then OPTS.
-        const last = launchChoices(game).length
-        const next = clamp(nav.action + (action === "left" ? -1 : 1), 0, last)
-        return next === nav.action ? state : games(state, { _tag: "FocusedAction", index: next }, model)
+        const next = clamp(nav.action + (button === "left" ? -1 : 1), 0, launchChoices(game).length)
+        return next === nav.action ? state : go({ _tag: "FocusedAction", index: next })
       }
-      if (action === "up") return games(state, { _tag: "FocusedCard", index: nav.card }, model)
+      if (button === "up") return go({ _tag: "FocusedCard", index: nav.card })
       return state
     }
   }
@@ -220,9 +325,11 @@ function signalOf(connection: SurfaceNetworkConnection | undefined) {
   }
 }
 
-export function view(state: State, model: SurfaceModel) {
+export function view(outer: State, model: Model) {
+  const state = outer.zone
+  const korri = legacy(model)
   const nav = state.nav
-  const band = bandGames(nav, model)
+  const band = bandGames(nav, korri)
   const game = band[nav.card]
   const launches = game === undefined ? [] : launchChoices(game)
   const choice = launches.length > 1
@@ -247,7 +354,7 @@ export function view(state: State, model: SurfaceModel) {
   ]
   const signal = signalOf(model.network?.connection)
   return {
-    page: zoneShown(state, model),
+    page: zoneShown(state, korri),
     zone: nav.zone,
     tabs: ZONE_TABS.map(tab => ({ label: TAB_WORDS[tab], active: tab === nav.tab, focused: nav.zone === "tabs" && tab === nav.tabCursor })),
     findLabel: "Find",
@@ -263,6 +370,8 @@ export function view(state: State, model: SurfaceModel) {
       tags: tagsOf(entry),
     })),
     focusedCard: nav.card,
+    firstIndex: model.catalog._tag === "Ready" ? model.catalog.firstIndex : 0,
+    total: model.catalog._tag === "Ready" ? model.catalog.total : band.length,
     facts,
     actions: actions.map((entry, index) => ({ label: entry.label, lit: index === lit, focused: index === focusedAction })),
     timeLabel: "Time",
@@ -272,9 +381,11 @@ export function view(state: State, model: SurfaceModel) {
   }
 }
 
-globalThis.surface = { init, update, view }
+const preferences = { [LOOK_KEY]: { mark: "device", initial: ZONE_DEFAULT_LOOK } } as const
+
+globalThis.surface = { preferences, init, update, view }
 
 declare global {
   // The one global the contract allows.
-  var surface: { init: typeof init; update: typeof update; view: typeof view }
+  var surface: { preferences: typeof preferences; init: typeof init; update: typeof update; view: typeof view }
 }

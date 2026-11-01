@@ -1385,6 +1385,12 @@ export component Surface inherits Window {
     in property <Hints> hints;
     in property <[Card]> cards;
     in property <int> focused-card;
+    // The cursor catalog (contract 3.4): cards[0]'s place among all `total`
+    // games. The band travels in these absolute places, so a new window
+    // around the same game does not move it.
+    in property <int> first-index;
+    in property <int> total;
+    property <int> focus-index: first-index + focused-card;
     in property <[Fact]> facts;
     in property <[Act]> actions;
     in property <string> time-label;
@@ -1435,29 +1441,29 @@ export component Surface inherits Window {
     // 220 ms with one overshoot, and the two cards trade sizes on the same
     // curve. `f` is the travelling focus; `lin`, linear over the same time,
     // tells which way it travels.
-    property <float> f: focused-card;
+    property <float> f: focus-index;
     animate f {
         duration: 220ms;
         easing: cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    property <float> lin: focused-card;
+    property <float> lin: focus-index;
     animate lin {
         duration: 220ms;
         easing: linear;
     }
-    property <int> dir: lin < focused-card - 0.0001 ? 1 : lin > focused-card + 0.0001 ? -1 : 0;
-    // Progress from the card before (1 at the new focused-card, past 1 overshooting).
-    property <float> p: 1 - (focused-card - f) * dir;
+    property <int> dir: lin < focus-index - 0.0001 ? 1 : lin > focus-index + 0.0001 ? -1 : 0;
+    // Progress from the card before (1 at the new focus, past 1 overshooting).
+    property <float> p: 1 - (focus-index - f) * dir;
     property <bool> adjacent: dir != 0 && p >= 0;
     // Each card's share of the focused size: CSS's two transitions for a
-    // move of one card; further away, a share of the travelling focused-card.
+    // move of one card; further away, a share of the travelling focus.
     pure function share(i: int) -> float {
-        return adjacent ? (i == focused-card ? p : i == focused-card - dir ? 1 - p : 0) : Math.max(0, 1 - Math.abs(i - f));
+        return adjacent ? (i == focus-index ? p : i == focus-index - dir ? 1 - p : 0) : Math.max(0, 1 - Math.abs(i - f));
     }
     // The shares of the cards before card i.
     pure function before(i: int) -> float {
         return adjacent
-            ? (i <= Math.min(focused-card, focused-card - dir) ? 0 : i > Math.max(focused-card, focused-card - dir) ? 1 : dir > 0 ? 1 - p : p)
+            ? (i <= Math.min(focus-index, focus-index - dir) ? 0 : i > Math.max(focus-index, focus-index - dir) ? 1 : dir > 0 ? 1 - p : p)
             : Math.clamp(i - f, 0, 1);
     }
     // Modern: the travel rounds to a layout unit (1/64 px), not an art px.
@@ -1593,9 +1599,9 @@ export component Surface inherits Window {
       width: 0;
       height: 0;
       if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0: CardView {
-        x: root.card-x(i);
-        width: root.card-w(i);
-        height: root.side-h + root.share(i) * (root.card-h - root.side-h);
+        x: root.card-x(i + root.first-index);
+        width: root.card-w(i + root.first-index);
+        height: root.side-h + root.share(i + root.first-index) * (root.card-h - root.side-h);
         y: root.band-cy - self.height / 2;
         card: c;
         focused: i == root.focused-card;
@@ -1605,10 +1611,10 @@ export component Surface inherits Window {
     // The cursor: two triangles beside the focused card, breathing toward
     // it; at an end of the band the one with nothing beyond it is the
     // inert steel and stands still.
-    property <length> focused-x: card-x(focused-card);
-    property <length> focused-w: card-w(focused-card);
-    property <bool> first: focused-card <= 0;
-    property <bool> last: focused-card >= cards.length - 1;
+    property <length> focused-x: card-x(focus-index);
+    property <length> focused-w: card-w(focus-index);
+    property <bool> first: focus-index <= 0;
+    property <bool> last: focus-index >= total - 1;
     if root.cards.length > 0 && root.card-h > 0: Tri {
         x: root.focused-x - (2 * root.a + (root.first ? 0 : 2 * root.a * root.nudge)) - root.tri;
         y: root.band-cy - self.height / 2;

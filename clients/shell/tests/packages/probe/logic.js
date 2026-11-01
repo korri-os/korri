@@ -1,0 +1,31 @@
+// A test package for the shell's integration tests. Plain JavaScript, no bundle.
+globalThis.surface = {
+  preferences: { "probe.word": { mark: "device", initial: "first" } },
+  init: (model, preferences) => ({ word: preferences["probe.word"], count: 0, stored: false }),
+  update: (state, message, model) => {
+    if (message._tag === "PreferenceStored") return { state: { ...state, stored: message.key === "probe.word" }, requests: [] };
+    if (message._tag !== "Pressed") return { state, requests: [] };
+    switch (message.button) {
+      case "right": return { state: { ...state, count: state.count + 1 }, requests: [] };
+      case "left": return { state: { ...state, count: state.count - 1 }, requests: [] };
+      case "options": return { state: { ...state, word: "second" }, requests: [{ _tag: "RememberPreference", key: "probe.word", value: "second" }] };
+      case "down": return { state, requests: [{ _tag: "MoveCatalog", query: { text: "", section: null, order: "korri" }, from: { _tag: "End" }, count: 50 }] };
+      case "back": return { state, requests: [{ _tag: "DismissGameplayOverlay" }] };
+      case "confirm": while (true) {}
+      case "menu": { const a = []; while (true) a.push(new Uint8Array(1 << 20)); }
+      case "system": return { state, requests: [{ _tag: "Teleport" }] };
+      default: return { state, requests: [] };
+    }
+  },
+  view: (state, model) => ({
+    word: state.word,
+    count: state.count,
+    total: model.catalog._tag === "Ready" ? model.catalog.total : 0,
+    stored: state.stored,
+    focusedGame: model.focusedGame ? model.focusedGame.gameId : "",
+  }),
+  overlay: (state, model) => ({
+    heading: model.presentation.kind === "gameplay-overlay" ? (model.presentation.title || "") : "",
+    controls: model.presentation.kind === "gameplay-overlay" ? model.presentation.controls.length : 0,
+  }),
+};

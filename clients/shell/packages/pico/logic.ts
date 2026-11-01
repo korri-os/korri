@@ -1,16 +1,31 @@
 /**
- * Pico's home shelf as a runtime-loaded package (spike, see ../../CONTRACT.md).
+ * Pico's home shelf and pause menu for the native shell
+ * (docs/briefs/2026-10-31-native-surfaces-contract.md, section 3.1).
+ * Adapted from the surface-shell spike's Pico package.
  *
  * The rules are Pico's own: `update` from surfaces/pico/src/state/update.ts
  * keeps the chosen cart, `shownScreen` decides what is drawn, and the cart's
  * plastics, initials and stats come from Pico's own view helpers. This file
- * only turns the shell's `Pressed` messages into Pico's messages, and Pico's
- * shelf into one plain view object for main.slint.
+ * turns the shell's messages into Pico's, and Pico's shelf into one plain
+ * view object for main.slint.
+ *
+ * The catalog is a cursor window (contract 3.4). Pico's code reads
+ * `catalog.games`, so the window is handed over as that list; Pico keeps the
+ * chosen cart by id, so a new window keeps it. Near a window edge the adapter
+ * asks for a window around the chosen cart. Each change of chosen cart is
+ * reported (`FocusGame`). Options cycles Pico's face and remembers it
+ * (`RememberPreference pico.font`). Covers are quantised to the PICO-8
+ * palette by the shell (`pico8: "vivid"`, contract 3.8).
+ *
+ * While Korri presents the gameplay overlay, the Overlay component shows its
+ * controls: up and down move, confirm invokes, back, menu and system resume
+ * (Pico's own bindings, src/state/overlay.ts).
  *
  * Pure: no timers, no Date, no randomness, no globals but `surface`.
  */
-import type { SurfaceModel } from "../../../../contracts/surface/korri-surface"
+import type { SurfaceGame, SurfaceGameplayControl, SurfaceModel } from "../../../../contracts/surface/korri-surface"
 import { picoDownloadLabel, picoStatsFor } from "../../../../surfaces/pico/src/pico-detail-view"
+import { PICO_DEFAULT_FONT, PICO_FONT_IDS, type PicoFontId } from "../../../../surfaces/pico/src/pico-fonts"
 import { picoInitials } from "../../../../surfaces/pico/src/pico-initials"
 import { picoCartLookFor } from "../../../../surfaces/pico/src/pico-label"
 import type { PicoShelfGame } from "../../../../surfaces/pico/src/pico-shelf-game"
@@ -19,8 +34,28 @@ import { initialNavigation, type PicoNavigation } from "../../../../surfaces/pic
 import { shownScreen } from "../../../../surfaces/pico/src/state/shown"
 import { update as picoUpdate } from "../../../../surfaces/pico/src/state/update"
 
-type Action = "up" | "down" | "left" | "right" | "confirm" | "back" | "menu" | "options"
-type Message = { readonly _tag: "Pressed"; readonly action: Action }
+// The treaty pieces read here that the TypeScript treaty file does not have
+// yet (contract 3.2 to 3.4). Replace with contracts/generated/surface.ts.
+type Button = "up" | "down" | "left" | "right" | "confirm" | "back" | "options" | "menu" | "system"
+type Message =
+  | { readonly _tag: "Pressed"; readonly button: Button }
+  | { readonly _tag: "KorriPublished" }
+  | { readonly _tag: "PreferenceStored"; readonly key: string }
+type Catalog =
+  | { readonly _tag: "Loading" }
+  | { readonly _tag: "Error"; readonly message: string }
+  | { readonly _tag: "Empty" }
+  | {
+      readonly _tag: "Ready"
+      readonly total: number
+      readonly window: readonly SurfaceGame[]
+      readonly firstIndex: number
+      readonly before?: string
+      readonly after?: string
+      readonly query: unknown
+    }
+type Model = Omit<SurfaceModel, "catalog"> & { readonly catalog: Catalog }
+type Request = { readonly _tag: string; readonly [key: string]: unknown }
 
 interface State {
   readonly nav: PicoNavigation
@@ -28,6 +63,31 @@ interface State {
    * puts it there and the chosen cart starts its focus cycle; Pico's own model
    * leaves focus to the DOM, so the adapter keeps this one fact. */
   readonly cursorOnShelf: boolean
+  readonly font: PicoFontId
+  /** The chosen cart Korri last heard of (FocusGame). */
+  readonly reported: string | null
+  /** A MoveCatalog is out; no second one until Korri publishes. */
+  readonly moving: boolean
+  /** The focused control of the gameplay overlay. */
+  readonly overlayFocus: number
+}
+
+const FONT_KEY = "pico.font"
+const EDGE = 8
+const WINDOW = 50
+
+const isFont = (value: string | undefined): value is PicoFontId =>
+  (PICO_FONT_IDS as readonly (string | undefined)[]).includes(value)
+
+let cachedModel: Model | undefined
+let cachedLegacy: SurfaceModel | undefined
+/** Pico's code reads `catalog.games`: give it the window. */
+function legacy(model: Model): SurfaceModel {
+  if (model === cachedModel && cachedLegacy !== undefined) return cachedLegacy
+  const catalog = model.catalog._tag === "Ready" ? { _tag: "Ready" as const, games: model.catalog.window } : model.catalog
+  cachedModel = model
+  cachedLegacy = { ...model, catalog } as unknown as SurfaceModel
+  return cachedLegacy
 }
 
 /* Home's hints and the shelf readout, as PicoHome.tsx words them. */
@@ -36,15 +96,16 @@ const SHELF_HINTS = [
   { hintKey: "b", label: "BACK" },
 ] as const
 
-function shelfReadout(games: readonly PicoShelfGame[]): string {
+/** The readout counts every cart Korri has; RESUMABLE counts the window's. */
+function shelfReadout(games: readonly PicoShelfGame[], total: number): string {
   const resumable = games.filter((game) => game.resumable === true).length
-  const carts = `${games.length} ${games.length === 1 ? "CART" : "CARTS"}`
+  const carts = `${total} ${total === 1 ? "CART" : "CARTS"}`
   return resumable === 0 ? carts : `${carts} · ${resumable} RESUMABLE`
 }
 
 /** The shelf's games, when home shows the shelf. */
-function shelfGames(nav: PicoNavigation, model: SurfaceModel): readonly PicoShelfGame[] {
-  const shown = shownScreen(nav, model)
+function shelfGames(nav: PicoNavigation, model: Model): readonly PicoShelfGame[] {
+  const shown = shownScreen(nav, legacy(model))
   return shown._tag === "Home" && shown.view._tag === "Shelf" ? shown.view.games : []
 }
 
@@ -54,9 +115,17 @@ function chosenIndex(nav: PicoNavigation, games: readonly PicoShelfGame[]): numb
   return found === -1 ? 0 : found
 }
 
-function step(nav: PicoNavigation, message: PicoMessage, model: SurfaceModel): PicoNavigation {
-  // Requests (waits, Korri actions) have no door in this spike; only the next model counts.
-  return picoUpdate(nav, message, model).model
+function step(nav: PicoNavigation, message: PicoMessage, model: Model): PicoNavigation {
+  // Pico's own requests (waits, QR codes, its face) have no door in this
+  // package: only the next model counts. Korri's requests are made below.
+  return picoUpdate(nav, message, legacy(model)).model
+}
+
+/** Every control of the gameplay overlay, overlay-owned first. */
+function overlayControls(model: Model): readonly SurfaceGameplayControl[] {
+  const presentation = model.presentation
+  if (presentation.kind !== "gameplay-overlay") return []
+  return [...presentation.controls, ...presentation.groups.flatMap((group) => group.controls)]
 }
 
 /**
@@ -65,31 +134,84 @@ function step(nav: PicoNavigation, message: PicoMessage, model: SurfaceModel): P
  * reports `MovedFocus` and then `SelectedCart`. Left and right do that here.
  * The shelf does not wrap, as the host's focus mover does not.
  *
- * This package draws the shelf only, so Confirm (a game's own screen), Menu
- * (the layout cycle), Options (Find) and Up and Down (MENU, PLAYING NOW) are
- * not passed on: Pico would change to a screen this package cannot draw.
- * Back is Pico's own, and on a bare shelf it changes nothing.
+ * This package draws the shelf and the pause menu only, so Confirm (a game's
+ * own screen), Menu (the layout cycle) and Up and Down (MENU, PLAYING NOW)
+ * are not passed on to the shelf.
  */
-function update(state: State, message: Message, model: SurfaceModel): State {
-  if (message._tag !== "Pressed") return state
-  const nav = state.nav
-  switch (message.action) {
-    case "left":
-    case "right": {
-      const games = shelfGames(nav, model)
-      if (games.length === 0) return state
-      const from = chosenIndex(nav, games)
-      const to = Math.max(0, Math.min(games.length - 1, from + (message.action === "left" ? -1 : 1)))
-      const moved = step(nav, { _tag: "MovedFocus" }, model)
-      const target = games[to]
-      if (to === from || target === undefined) return { nav: moved, cursorOnShelf: true }
-      return { nav: step(moved, { _tag: "SelectedCart", gameId: target.id }, model), cursorOnShelf: true }
+function update(state: State, message: Message, model: Model): { state: State; requests: Request[] } {
+  const requests: Request[] = []
+  let next = state
+  if (message._tag === "KorriPublished") {
+    next = { ...state, nav: step(state.nav, { _tag: "KorriPublished" }, model), moving: false }
+    const controls = overlayControls(model).length
+    if (next.overlayFocus >= controls) next = { ...next, overlayFocus: Math.max(0, controls - 1) }
+  } else if (message._tag === "Pressed" && model.presentation.kind === "gameplay-overlay") {
+    const controls = overlayControls(model)
+    switch (message.button) {
+      case "up":
+      case "down": {
+        const to = Math.max(0, Math.min(controls.length - 1, state.overlayFocus + (message.button === "up" ? -1 : 1)))
+        next = { ...state, overlayFocus: to }
+        break
+      }
+      case "confirm": {
+        const control = controls[state.overlayFocus]
+        if (control !== undefined && control.enabled && control.interaction.kind === "command")
+          requests.push({ _tag: "InvokeGameplayControl", controlId: control.id })
+        break
+      }
+      case "back":
+      case "menu":
+      case "system":
+        requests.push({ _tag: "DismissGameplayOverlay" })
+        break
+      default:
+        break
     }
-    case "back":
-      return { ...state, nav: step(nav, { _tag: "PressedBack" }, model) }
-    default:
-      return state
+    return { state: next, requests }
+  } else if (message._tag === "Pressed") {
+    const nav = state.nav
+    switch (message.button) {
+      case "left":
+      case "right": {
+        const games = shelfGames(nav, model)
+        if (games.length === 0) break
+        const from = chosenIndex(nav, games)
+        const to = Math.max(0, Math.min(games.length - 1, from + (message.button === "left" ? -1 : 1)))
+        const moved = step(nav, { _tag: "MovedFocus" }, model)
+        const target = games[to]
+        next = to === from || target === undefined
+          ? { ...state, nav: moved, cursorOnShelf: true }
+          : { ...state, nav: step(moved, { _tag: "SelectedCart", gameId: target.id }, model), cursorOnShelf: true }
+        break
+      }
+      case "back":
+        next = { ...state, nav: step(nav, { _tag: "PressedBack" }, model) }
+        break
+      case "options": {
+        const font = PICO_FONT_IDS[(PICO_FONT_IDS.indexOf(state.font) + 1) % PICO_FONT_IDS.length] ?? PICO_DEFAULT_FONT
+        next = { ...state, font }
+        requests.push({ _tag: "RememberPreference", key: FONT_KEY, value: font })
+        break
+      }
+      default:
+        break
+    }
   }
+  const games = shelfGames(next.nav, model)
+  const index = chosenIndex(next.nav, games)
+  const chosen = games[index]?.id ?? null
+  if (chosen !== next.reported) {
+    requests.push({ _tag: "FocusGame", gameId: chosen })
+    next = { ...next, reported: chosen }
+  }
+  const catalog = model.catalog
+  if (!next.moving && chosen !== null && catalog._tag === "Ready"
+    && ((catalog.after !== undefined && index >= games.length - EDGE) || (catalog.before !== undefined && index < EDGE))) {
+    requests.push({ _tag: "MoveCatalog", query: catalog.query, from: { _tag: "Around", gameId: chosen }, count: WINDOW })
+    next = { ...next, moving: true }
+  }
+  return { state: next, requests }
 }
 
 /** One cart as main.slint draws it: plastics, silhouette and sticker by index. */
@@ -100,7 +222,7 @@ function cartView(game: PicoShelfGame, hero: boolean) {
   return {
     id: game.id,
     title: game.title,
-    ...(art === undefined ? {} : { art: { $image: art } }),
+    ...(art === undefined ? {} : { art: { $image: art, pico8: "vivid" } }),
     hasArt: art !== undefined,
     artRatio: artRatio(art),
     initials: picoInitials(game.title),
@@ -166,8 +288,9 @@ function narrowestArt(games: readonly PicoShelfGame[]): number {
   return games.reduce((narrowest, game) => Math.min(narrowest, artRatio(game.artUrl)), games.length === 0 ? 1 : Number.POSITIVE_INFINITY)
 }
 
-function view(state: State, model: SurfaceModel) {
+function view(state: State, model: Model) {
   const games = shelfGames(state.nav, model)
+  const catalog = model.catalog
   const index = chosenIndex(state.nav, games)
   const chosen = games[index]
   const stats = chosen === undefined ? [] : picoStatsFor(chosen)
@@ -176,12 +299,13 @@ function view(state: State, model: SurfaceModel) {
     label: "LIBRARY",
     clockLabel: model.clockLabel ?? "",
     showClock: model.clockLabel !== undefined,
-    readout: shelfReadout(games),
+    readout: shelfReadout(games, catalog._tag === "Ready" ? catalog.total : games.length),
     hints: SHELF_HINTS.map((hint) => ({ key: hint.hintKey, label: hint.label })),
     menuLabel: "MENU",
     hasShelf: chosen !== undefined,
     selectedIndex: index,
-    total: games.length,
+    firstIndex: catalog._tag === "Ready" ? catalog.firstIndex : 0,
+    total: catalog._tag === "Ready" ? catalog.total : games.length,
     cursorOnShelf: state.cursorOnShelf,
     narrowestArt: narrowestArt(games),
     carts: games.map((game, at) => cartView(game, at === index)),
@@ -199,8 +323,35 @@ function view(state: State, model: SurfaceModel) {
   }
 }
 
+/** The pause menu: Korri's controls, in its order. */
+function overlay(state: State, model: Model) {
+  const presentation = model.presentation
+  const controls = overlayControls(model)
+  return {
+    heading: presentation.kind === "gameplay-overlay" ? (presentation.title ?? "PAUSED").toUpperCase() : "",
+    controls: controls.map((control, at) => ({
+      label: control.label.toUpperCase(),
+      focused: at === state.overlayFocus,
+      enabled: control.enabled,
+    })),
+    hints: [{ key: "a", label: "CHOOSE" }, { key: "b", label: "RESUME" }],
+  }
+}
+
 ;(globalThis as { surface?: unknown }).surface = {
-  init: (_model: SurfaceModel): State => ({ nav: initialNavigation(), cursorOnShelf: false }),
+  preferences: { [FONT_KEY]: { mark: "device", initial: PICO_DEFAULT_FONT } },
+  init: (_model: Model, preferences: Readonly<Record<string, string>>): State => {
+    const stored = preferences[FONT_KEY]
+    return {
+      nav: initialNavigation(),
+      cursorOnShelf: false,
+      font: isFont(stored) ? stored : PICO_DEFAULT_FONT,
+      reported: null,
+      moving: false,
+      overlayFocus: 0,
+    }
+  },
   update,
   view,
+  overlay,
 }
