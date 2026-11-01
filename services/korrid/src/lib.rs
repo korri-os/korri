@@ -53,6 +53,7 @@ pub mod local_signer;
 pub mod native_input;
 pub mod network;
 pub mod onboarding;
+pub mod overlay_intent;
 pub mod owner_binding;
 pub mod peer_listener;
 mod peer_rpc;
@@ -1793,7 +1794,7 @@ struct AppState {
     rpc_surface: RpcSurface,
     /// Exact Home freeze waiting for the browser handoff. This is deliberately
     /// process-local and is never written to the active-session journal.
-    overlay_intent: Arc<Mutex<Option<String>>>,
+    overlay_intent: Arc<overlay_intent::OverlayIntent>,
     /// The native surface host of this portal router (`surface/`). Only the
     /// browser state a portal router serves carries one.
     surfaces: Option<Arc<surface::SurfaceHub>>,
@@ -1922,7 +1923,7 @@ impl AppState {
 }
 
 fn restore_recovered_overlay_intent(
-    overlay_intent: &Mutex<Option<String>>,
+    overlay_intent: &overlay_intent::OverlayIntent,
     recovered: Option<String>,
 ) {
     let Some(recovered) = recovered else {
@@ -1969,7 +1970,7 @@ fn stop_invalidates_overlay_intent(outcome: &SessionEndOutcome) -> bool {
 }
 
 fn reconcile_stop_overlay_intent(
-    overlay_intent: &Mutex<Option<String>>,
+    overlay_intent: &overlay_intent::OverlayIntent,
     expected_launch_id: Option<&str>,
     outcome: &SessionEndOutcome,
 ) {
@@ -1985,7 +1986,7 @@ fn reconcile_stop_overlay_intent(
 }
 
 fn correlate_overlay_status(
-    overlay_intent: &Mutex<Option<String>>,
+    overlay_intent: &overlay_intent::OverlayIntent,
     mut outcome: SessionStatusOutcome,
 ) -> SessionStatusOutcome {
     let mut intent = overlay_intent
@@ -3710,7 +3711,13 @@ async fn dispatch(
                 .surfaces
                 .as_ref()
                 .ok_or_else(surface::surface_unavailable)
-                .and_then(|hub| hub.declare(&request.surface_id, request.preferences)),
+                .and_then(|hub| {
+                    hub.declare(
+                        &request.surface_id,
+                        request.preferences,
+                        request.displays.unwrap_or_default(),
+                    )
+                }),
         )),
         RpcRequest::SurfacePreferences(request) => RpcResponse::SurfacePreferences(
             match state
@@ -4601,7 +4608,10 @@ fn surface_accepted(result: Result<(), RpcFailure>) -> surface::SurfaceAcceptedO
 /// The native surface host for one portal router. It reaches korrid the way
 /// the portal did: the same typed requests, under the same capability and
 /// permission, handed to `dispatch` in process.
-fn surface_hub_for(browser: &AppState) -> Arc<surface::SurfaceHub> {
+fn surface_hub_for(
+    browser: &AppState,
+    controllers: Arc<surface::controllers::Controllers>,
+) -> Arc<surface::SurfaceHub> {
     let base = browser.clone();
     let send: surface::korrid::Send_ = Arc::new(move |request| {
         let state = base.clone();
@@ -4620,6 +4630,8 @@ fn surface_hub_for(browser: &AppState) -> Arc<surface::SurfaceHub> {
     surface::SurfaceHub::new(
         surface::korrid::Korrid::new(send),
         browser.private_state_root().to_path_buf(),
+        browser.overlay_intent.subscribe(),
+        controllers,
     )
 }
 
@@ -4892,7 +4904,7 @@ fn brain_app_state(
         }),
         portal_access: Some(portal_access),
         rpc_surface: RpcSurface::Lan,
-        overlay_intent: Arc::new(Mutex::new(None)),
+        overlay_intent: Arc::new(overlay_intent::OverlayIntent::default()),
         surfaces: None,
     };
     state.recover_acquisition();
@@ -4905,9 +4917,14 @@ fn portal_router_from_state(state: AppState) -> Router {
 
 fn portal_router_with_surfaces(mut state: AppState, slot: Option<surface::SurfaceSlot>) -> Router {
     if state.surfaces.is_none() {
-        let hub = surface_hub_for(&state);
-        if let Some(slot) = slot {
-            let _ = slot.set(Arc::clone(&hub));
+        // Without a native-input router there are no controllers to report.
+        let controllers = slot
+            .as_ref()
+            .map(|link| Arc::clone(&link.controllers))
+            .unwrap_or_default();
+        let hub = surface_hub_for(&state, controllers);
+        if let Some(link) = slot {
+            let _ = link.hub.set(Arc::clone(&hub));
         }
         state.surfaces = Some(hub);
     }
@@ -5016,7 +5033,7 @@ pub fn host_routers_with_federation(
     portal_access: Option<PortalAccess>,
 ) -> (Router, Router, Router, host::HostRuntime) {
     let private_state_root = private_state_root.into();
-    let surfaces: surface::SurfaceSlot = Arc::new(std::sync::OnceLock::new());
+    let surfaces: surface::SurfaceSlot = Arc::default();
     let native = portal_access.clone().map(|access| {
         portal_input::router_with_surfaces(
             access,
@@ -5101,7 +5118,7 @@ fn app_states_with(
 ) -> (AppState, AppState) {
     // ADR 0017: one korrid finds, downloads and launches on its library.
     let runtime = runtime.with_library_discovery();
-    let overlay_intent = Arc::new(Mutex::new(None));
+    let overlay_intent = Arc::new(overlay_intent::OverlayIntent::default());
     let network = network::NetworkService::default();
     let lan = AppState {
         person_names: stream_play::person_name::device::PersonNames::default(),
@@ -6190,7 +6207,7 @@ mod tests {
 
     #[test]
     fn restart_portal_focus_reconstructs_exact_intent_for_browser_poll() {
-        let intent = Mutex::new(None);
+        let intent = overlay_intent::OverlayIntent::default();
         restore_recovered_overlay_intent(&intent, Some("a".into()));
         let outcome = correlate_overlay_status(
             &intent,
@@ -6220,7 +6237,8 @@ mod tests {
         };
         assert_eq!(status.overlay.expect("recovered overlay").launch_id, "a");
 
-        let existing = Mutex::new(Some("a".into()));
+        let existing = overlay_intent::OverlayIntent::default();
+        *existing.lock().unwrap() = Some("a".into());
         restore_recovered_overlay_intent(&existing, Some("b".into()));
         assert_eq!(existing.lock().unwrap().as_deref(), Some("a"));
     }
@@ -6240,7 +6258,8 @@ mod tests {
             phase: Some("frozen".into()),
         };
 
-        let replaced_intent = Mutex::new(Some("a".into()));
+        let replaced_intent = overlay_intent::OverlayIntent::default();
+        *replaced_intent.lock().unwrap() = Some("a".into());
         let replaced = correlate_overlay_status(
             &replaced_intent,
             SessionStatusOutcome::Ok(SessionStatus {
@@ -6259,7 +6278,8 @@ mod tests {
         assert!(replaced.overlay.is_none());
         assert_eq!(*replaced_intent.lock().unwrap(), None);
 
-        let exited_intent = Mutex::new(Some("a".into()));
+        let exited_intent = overlay_intent::OverlayIntent::default();
+        *exited_intent.lock().unwrap() = Some("a".into());
         let exited = correlate_overlay_status(
             &exited_intent,
             SessionStatusOutcome::Err(RpcFailure {
@@ -6270,7 +6290,8 @@ mod tests {
         assert!(matches!(exited, SessionStatusOutcome::Err(_)));
         assert_eq!(*exited_intent.lock().unwrap(), None);
 
-        let remote_replaced_intent = Mutex::new(Some("a".into()));
+        let remote_replaced_intent = overlay_intent::OverlayIntent::default();
+        *remote_replaced_intent.lock().unwrap() = Some("a".into());
         let remote_replaced = correlate_overlay_status(
             &remote_replaced_intent,
             session_status_outcome(Err(upstreams::UpstreamError::SelectedRemoteSessionReplaced)),
@@ -6306,7 +6327,8 @@ mod tests {
             brain_confirmation,
             brain_unavailable,
         ] {
-            let intent = Mutex::new(Some("a".into()));
+            let intent = overlay_intent::OverlayIntent::default();
+            *intent.lock().unwrap() = Some("a".into());
             reconcile_stop_overlay_intent(&intent, Some("a"), &retryable_or_refused);
             assert_eq!(intent.lock().unwrap().as_deref(), Some("a"));
         }
@@ -6320,12 +6342,14 @@ mod tests {
             session_stop_outcome(Err(upstreams::UpstreamError::StaleLaunchIdentity)),
             session_stop_outcome(Err(upstreams::UpstreamError::SelectedRemoteSessionReplaced)),
         ] {
-            let intent = Mutex::new(Some("a".into()));
+            let intent = overlay_intent::OverlayIntent::default();
+            *intent.lock().unwrap() = Some("a".into());
             reconcile_stop_overlay_intent(&intent, Some("a"), &stopped_or_absent);
             assert_eq!(*intent.lock().unwrap(), None);
         }
 
-        let unrelated = Mutex::new(Some("a".into()));
+        let unrelated = overlay_intent::OverlayIntent::default();
+        *unrelated.lock().unwrap() = Some("a".into());
         reconcile_stop_overlay_intent(
             &unrelated,
             Some("b"),
@@ -6338,7 +6362,8 @@ mod tests {
 
     #[test]
     fn pending_exact_stop_hides_the_overlay_without_discarding_its_intent() {
-        let intent = Mutex::new(Some("a".into()));
+        let intent = overlay_intent::OverlayIntent::default();
+        *intent.lock().unwrap() = Some("a".into());
         let stopping = correlate_overlay_status(
             &intent,
             SessionStatusOutcome::Ok(SessionStatus {
@@ -6432,7 +6457,8 @@ mod tests {
     #[test]
     fn overlay_intent_publishes_only_the_same_frozen_or_focus_failed_launch() {
         for phase in ["frozen", "focus-failed"] {
-            let intent = Mutex::new(Some("a".into()));
+            let intent = overlay_intent::OverlayIntent::default();
+            *intent.lock().unwrap() = Some("a".into());
             let active = ActiveSession {
                 netplay: None,
                 person_public_key: None,

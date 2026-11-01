@@ -13,18 +13,25 @@
 
 pub mod acquisition_gate;
 pub mod catalog;
+pub mod controllers;
 pub mod downloads;
 pub mod korrid;
+pub mod launch_model;
+pub mod launch_settings;
 pub mod launchables;
 pub mod model;
 pub mod network_onboarding;
 pub mod overlay;
 pub mod owner_binding;
+pub mod plugins;
 pub mod preferences;
 pub mod root;
+pub mod runner;
+pub mod saves;
 pub mod settings_model;
 pub mod shared_play;
 pub mod starter_pack;
+pub mod store;
 #[cfg(test)]
 mod tests;
 pub mod watch;
@@ -113,6 +120,9 @@ pub enum SurfacePreferencesOutcome {
 pub struct SurfaceDeclareRequest {
     pub surface_id: String,
     pub preferences: SurfacePreferenceDeclarations,
+    /// Absent: `main`, as in the portal's surface registry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub displays: Option<korri_surface_treaty::SurfacePackageDisplays>,
 }
 
 /// The second frame on the native-input WebSocket that selects a model watch
@@ -171,6 +181,9 @@ impl Default for Session {
 
 pub struct SurfaceHub {
     korrid: korrid::Korrid,
+    /// Announces every change of korrid's Home intent.
+    overlay_intent: tokio_watch::Receiver<u64>,
+    controllers: Arc<controllers::Controllers>,
     root: OnceLock<Arc<Root>>,
     /// Bumped by every controller publish.
     host_revision: Arc<AtomicU64>,
@@ -181,13 +194,28 @@ pub struct SurfaceHub {
     preferences: PreferenceStore,
 }
 
-/// Where the native-input router finds the hub its portal router made.
-pub type SurfaceSlot = Arc<OnceLock<Arc<SurfaceHub>>>;
+/// What a portal router and its native-input router share: the hub the
+/// portal router makes (the watch finds it here), and the controllers the
+/// native input feeds (the hub reads them).
+#[derive(Default)]
+pub struct SurfaceLink {
+    pub hub: OnceLock<Arc<SurfaceHub>>,
+    pub controllers: Arc<controllers::Controllers>,
+}
+
+pub type SurfaceSlot = Arc<SurfaceLink>;
 
 impl SurfaceHub {
-    pub fn new(korrid: korrid::Korrid, private_state_root: PathBuf) -> Arc<Self> {
+    pub fn new(
+        korrid: korrid::Korrid,
+        private_state_root: PathBuf,
+        overlay_intent: tokio_watch::Receiver<u64>,
+        controllers: Arc<controllers::Controllers>,
+    ) -> Arc<Self> {
         let (revision, _) = tokio_watch::channel(0);
         Arc::new(Self {
+            controllers,
+            overlay_intent,
             korrid,
             root: OnceLock::new(),
             host_revision: Arc::new(AtomicU64::new(0)),
@@ -212,8 +240,18 @@ impl SurfaceHub {
                 host_revision.fetch_add(1, Ordering::SeqCst);
                 revision.send_modify(|revision| *revision += 1);
             });
-            let root = Root::new(self.korrid.clone(), notify);
-            root.start();
+            let root = Root::new(
+                self.korrid.clone(),
+                notify.clone(),
+                Arc::clone(&self.controllers),
+            );
+            let mut controller_changes = self.controllers.subscribe();
+            tokio::spawn(async move {
+                while controller_changes.changed().await.is_ok() {
+                    notify();
+                }
+            });
+            root.start(self.overlay_intent.clone());
             // Effects the portal ran when its state changed.
             let reacting = Arc::downgrade(&root);
             let mut changes = self.revision.subscribe();
@@ -263,12 +301,15 @@ impl SurfaceHub {
         check_surface_id(surface_id)?;
         let root = self.root();
         if let Some(overlay) = root.overlay() {
-            return Ok(overlay.model());
+            let mut model = overlay.model();
+            model.displays = root.display_facts();
+            return Ok(model);
         }
         let host_revision = self.host_revision.load(Ordering::SeqCst);
         let facts = root.facts();
         let games = self.games(host_revision, facts.games);
         let mut model = facts.base;
+        model.displays = root.display_facts();
         let mut sessions = self.sessions.lock().expect("sessions poisoned");
         let session = sessions.entry(surface_id.to_owned()).or_default();
         model.catalog = match games {
@@ -330,13 +371,18 @@ impl SurfaceHub {
         Ok(())
     }
 
+    /// The shell loaded this package: its preferences and its displays. The
+    /// last package declared is the one the window shows.
     pub fn declare(
-        &self,
+        self: &Arc<Self>,
         surface_id: &str,
         preferences: SurfacePreferenceDeclarations,
+        displays: korri_surface_treaty::SurfacePackageDisplays,
     ) -> Result<(), RpcFailure> {
         check_surface_id(surface_id)?;
-        self.preferences.declare(surface_id, preferences)
+        self.preferences.declare(surface_id, preferences)?;
+        self.root().show_package(displays);
+        Ok(())
     }
 
     pub fn preferences(&self, surface_id: &str) -> Result<SurfacePreferenceValues, RpcFailure> {

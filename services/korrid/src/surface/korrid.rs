@@ -41,7 +41,7 @@ pub struct Korrid {
 
 /// How a refusal reads for one method, as the portal client mapped it.
 #[derive(Clone, Copy)]
-enum Mapping {
+pub enum Mapping {
     /// `unreachable`: always `BrainUnreachable`.
     Unreachable,
     /// `routeUnavailable`: HTTP 403 is `PermissionDenied`.
@@ -86,9 +86,43 @@ macro_rules! call {
     }};
 }
 
+/// One typed request, its response variant, and the refusal mapping the
+/// portal client used for it.
+macro_rules! ask {
+    ($korrid:expr, $mapping:ident, $variant:ident, $payload:expr, $outcome:path) => {{
+        use $outcome as Outcome;
+        match $korrid
+            .rpc(
+                $crate::surface::korrid::Mapping::$mapping,
+                $crate::RpcRequest::$variant($payload),
+            )
+            .await
+        {
+            Ok($crate::RpcResponse::$variant(outcome)) => outcome,
+            Ok(_) => Outcome::Err($crate::RpcFailure {
+                code: "BrainUnreachable".into(),
+                message: "korrid answered a different request".into(),
+            }),
+            Err(failure) => Outcome::Err(failure),
+        }
+    }};
+}
+pub(crate) use ask;
+
 impl Korrid {
     pub fn new(send: Send_) -> Self {
         Self { send }
+    }
+
+    /// Any request, its refusal read the way `mapping` says.
+    pub async fn rpc(
+        &self,
+        mapping: Mapping,
+        request: RpcRequest,
+    ) -> Result<RpcResponse, RpcFailure> {
+        (self.send)(request)
+            .await
+            .map_err(|refusal| failure(mapping, refusal))
     }
 
     pub async fn peer_list(&self) -> PeerListOutcome {
@@ -589,5 +623,37 @@ impl Korrid {
                 message: "That gameplay action did not answer.".into(),
             }),
         }
+    }
+
+    pub async fn surface_displays(
+        &self,
+        displays: crate::host::display_placement::SurfaceDisplayScope,
+        overlay: bool,
+        launch_id: Option<String>,
+    ) -> crate::host::display_placement::SurfaceDisplaysOutcome {
+        use crate::host::display_placement::{SurfaceDisplaysOutcome, SurfaceDisplaysRequest};
+        call!(
+            self,
+            Mapping::Unreachable,
+            SurfaceDisplays,
+            SurfaceDisplaysRequest {
+                displays,
+                overlay,
+                launch_id
+            },
+            SurfaceDisplaysOutcome
+        )
+    }
+
+    pub async fn session_leave(&self, expected_launch_id: String) -> SessionTransitionOutcome {
+        call!(
+            self,
+            Mapping::Unreachable,
+            SessionLeave,
+            crate::SessionLeaveRequest {
+                expected_launch_id: Some(expected_launch_id)
+            },
+            SessionTransitionOutcome
+        )
     }
 }

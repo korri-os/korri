@@ -606,3 +606,143 @@ async fn local_games_uses_the_installed_library_and_preserves_route_failures() {
         .unwrap()
         .is_empty());
 }
+
+/// The surface host's Device launch settings over the browser's real `/rpc`:
+/// the group comes from korrid's own snapshot, and a row's change lands in
+/// device.yaml.
+#[tokio::test]
+async fn surface_device_launch_settings_write_device_yaml_through_the_browser_rpc() {
+    let root = tempfile::tempdir().unwrap();
+    crate::plugin_test_fixtures::write_gba_library(root.path());
+    fs::create_dir(root.path().join("roms")).unwrap();
+    fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+    let registry = crate::plugin_test_fixtures::installed(root.path());
+    let config = root.path().join("host.toml");
+    fs::write(&config, "label = \"rpminiv2\"\n").unwrap();
+    let runtime = HostRuntime::from_paths_with_backend(
+        &config,
+        None,
+        root.path().join("private"),
+        Arc::new(InMemoryLaunchUnitBackend::default()),
+    )
+    .with_route_registry(root.path().into(), registry);
+    runtime.claim_save_owner();
+    let (mut browser, _) = crate::app_states(runtime);
+    browser.portal_access = Some(crate::PortalAccess::new(
+        "surface-test",
+        "http://127.0.0.1:8099",
+        crate::PortalPermission::Full,
+    ));
+    let app = crate::portal_router_with_surfaces(browser, None);
+    let call = |method: &'static str, payload: Value| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(
+                    Request::post("/rpc")
+                        .extension(axum::extract::ConnectInfo(
+                            "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                        ))
+                        .header("content-type", "application/json")
+                        .header("authorization", "Bearer surface-test")
+                        .header("origin", "http://127.0.0.1:8099")
+                        .body(Body::from(
+                            json!({"_tag": method, "payload": payload}).to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            serde_json::from_slice::<Value>(&bytes).unwrap()["outcome"].clone()
+        }
+    };
+    let declared = call(
+        "app.surface.declare",
+        json!({"surfaceId": "s", "preferences": {}}),
+    )
+    .await;
+    assert_eq!(declared["_tag"], "Ok", "{declared}");
+    let launch_group = |model: &Value| {
+        model["settings"]
+            .as_array()
+            .and_then(|groups| {
+                groups
+                    .iter()
+                    .find(|group| group["title"] == "Launch settings")
+            })
+            .cloned()
+    };
+    let model_until = |check: fn(&Value) -> bool| async move {
+        let mut last = Value::Null;
+        for _ in 0..100 {
+            let model = call("app.surface.model", json!({"surfaceId": "s"})).await;
+            if check(&model["payload"]) {
+                return model["payload"].clone();
+            }
+            last = model;
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("model never matched: {last}");
+    };
+    let model = model_until(|model| {
+        model["settings"].as_array().is_some_and(|groups| {
+            groups
+                .iter()
+                .any(|group| group["title"] == "Launch settings")
+        })
+    })
+    .await;
+    assert_eq!(model["launchSettings"], json!({"_tag": "Closed"}));
+    let group = launch_group(&model).unwrap();
+    let labels: Vec<&str> = group["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["label"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        labels,
+        ["CPU min", "CPU max", "GPU min", "GPU max", "CPU governor"],
+        "{group}"
+    );
+    let cpu_max = &group["items"][1];
+    assert_eq!(cpu_max["id"], "launch-device:cpu.max");
+    assert_eq!(cpu_max["value"], "Inherit", "{cpu_max}");
+    let changed = call(
+        "app.surface.request",
+        json!({"surfaceId": "s", "request": {"_tag": "ChangeSetting", "settingId": "launch-device:cpu.max", "value": "40"}}),
+    )
+    .await;
+    assert_eq!(changed["_tag"], "Ok", "{changed}");
+    let model = model_until(|model| {
+        model["settingsStatus"]["_tag"] == "Idle"
+            && model["settings"].as_array().is_some_and(|groups| {
+                groups.iter().any(|group| {
+                    group["title"] == "Launch settings"
+                        && group["items"][1]["source"] == "from Device"
+                })
+            })
+    })
+    .await;
+    assert_eq!(
+        launch_group(&model).unwrap()["items"][1]["value"]
+            .as_str()
+            .unwrap()
+            .split(' ')
+            .next(),
+        Some("40")
+    );
+    let device: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(root.path().join("device.yaml")).unwrap())
+            .unwrap();
+    // korrid keeps the Device place under `host` in device.yaml.
+    assert_eq!(
+        device["host"]["cpu"]["max"],
+        serde_yaml::Value::from(40),
+        "{device:?}"
+    );
+}

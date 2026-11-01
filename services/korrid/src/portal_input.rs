@@ -133,6 +133,8 @@ struct SourceState {
 struct Shared {
     limits: PortalInputLimits,
     state: Mutex<SourceState>,
+    /// Gamepad presence and evidence for the surface model's `controllers`.
+    controllers: Arc<crate::surface::controllers::Controllers>,
 }
 
 /// Sole producer (share through Arc when host lifecycle and ingress both use it).
@@ -182,6 +184,16 @@ impl PortalInputSource {
             NativeInputEvent::DeviceAdded(_) => unreachable!(),
         };
         broadcast(&mut state, class, &[text]);
+        drop(state);
+        match &event {
+            NativeInputEvent::DeviceRemoved(removed) => {
+                self.shared.controllers.removed(&removed.device_id)
+            }
+            NativeInputEvent::Input(input) if input.class == NativeInputDeviceClass::Gamepad => {
+                self.shared.controllers.input(&input.device_id)
+            }
+            _ => {}
+        }
         Ok(())
     }
 
@@ -252,6 +264,11 @@ impl PortalInputSource {
         )?);
         device.values.extend(updates);
         broadcast(&mut state, class, &frames);
+        drop(state);
+        // A live sample after the baseline is evidence the pad was heard.
+        if class == NativeInputDeviceClass::Gamepad {
+            self.shared.controllers.input(device_id);
+        }
         Ok(())
     }
 
@@ -325,6 +342,10 @@ impl PortalInputSource {
             },
         );
         broadcast(&mut state, info.class, &frames);
+        drop(state);
+        if info.class == NativeInputDeviceClass::Gamepad {
+            self.shared.controllers.added(&info.device_id, &info.name);
+        }
         Ok(())
     }
 
@@ -341,6 +362,8 @@ impl PortalInputSource {
             client.subscription = None;
             client.suspension = None;
         }
+        drop(state);
+        self.shared.controllers.disconnected();
     }
 
     /// Stop publishing before requesting retirement. Success means all attached
@@ -467,7 +490,7 @@ impl Drop for PortalInputSource {
 /// No authority is read from URLs, subprotocols, or controller payloads. The
 /// build disables dependency debug/trace logging of raw WS credentials.
 pub fn router(access: PortalAccess, limits: PortalInputLimits) -> (Router, PortalInputSource) {
-    router_with_surfaces(access, Arc::new(std::sync::OnceLock::new()), limits)
+    router_with_surfaces(access, Arc::default(), limits)
 }
 
 /// The same socket also serves `app.surface.watch` (native surfaces contract,
@@ -486,6 +509,7 @@ pub fn router_with_surfaces(
             && !limits.max_queue_age.is_zero()
     );
     let shared = Arc::new(Shared {
+        controllers: Arc::clone(&surfaces.controllers),
         limits,
         state: Mutex::new(SourceState {
             connected: true,
@@ -760,7 +784,7 @@ async fn serve(
             if crate::surface::check_surface_id(&surface_id).is_err() {
                 return;
             }
-            let Some(hub) = surfaces.get().cloned() else {
+            let Some(hub) = surfaces.hub.get().cloned() else {
                 return;
             };
             crate::surface::watch::serve(socket, hub, surface_id).await;
