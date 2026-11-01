@@ -48,18 +48,25 @@ fn save(pixels: &[u16], (w, h): (u32, u32), path: &Path) -> Result<()> {
         img.put_pixel(
             i as u32 % w,
             i as u32 / w,
-            image::Rgb([(r << 3 | r >> 2) as u8, (g << 2 | g >> 4) as u8, (b << 3 | b >> 2) as u8]),
+            image::Rgb([
+                (r << 3 | r >> 2) as u8,
+                (g << 2 | g >> 4) as u8,
+                (b << 3 | b >> 2) as u8,
+            ]),
         );
     }
-    img.save(path).with_context(|| format!("save {}", path.display()))
+    img.save(path)
+        .with_context(|| format!("save {}", path.display()))
 }
 
 fn render(instance: &slint_interpreter::ComponentInstance, size: (u32, u32)) -> Vec<u16> {
-    instance.window().set_size(slint::PhysicalSize::new(size.0, size.1));
+    instance
+        .window()
+        .set_size(slint::PhysicalSize::new(size.0, size.1));
     // Changed callbacks (the tokens follow the window) and the 16 ms reveal
     // (the cursor's control brought into sight) settle over a few passes.
     let mut frame = Vec::new();
-    for _ in 0..4 {
+    for _ in 0..10 {
         std::thread::sleep(std::time::Duration::from_millis(25));
         instance.window().request_redraw();
         frame = Headless::render().unwrap_or_default();
@@ -87,7 +94,11 @@ fn previews(dir: &Path, sizes: &[(u32, u32)], out: &Path) -> Result<()> {
     for file in &files {
         let compiler = slint_interpreter::Compiler::default();
         let result = pollster::block_on(compiler.build_from_path(file));
-        let name = file.file_name().unwrap().to_string_lossy().replace(".preview.slint", "");
+        let name = file
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .replace(".preview.slint", "");
         if result.has_errors() {
             let errors: Vec<String> = result.diagnostics().map(|d| d.to_string()).collect();
             failures.push(format!("{name}: does not compile: {}", errors.join("; ")));
@@ -105,9 +116,16 @@ fn previews(dir: &Path, sizes: &[(u32, u32)], out: &Path) -> Result<()> {
                 let frame = render(&instance, size);
                 let ground = frame.first().copied().unwrap_or_default();
                 if frame.is_empty() || frame.iter().all(|&p| p == ground) {
-                    failures.push(format!("{name}.{component} at {}x{}: draws nothing", size.0, size.1));
+                    failures.push(format!(
+                        "{name}.{component} at {}x{}: draws nothing",
+                        size.0, size.1
+                    ));
                 }
-                save(&frame, size, &out.join(format!("{name}.{component}.{}x{}.png", size.0, size.1)))?;
+                save(
+                    &frame,
+                    size,
+                    &out.join(format!("{name}.{component}.{}x{}.png", size.0, size.1)),
+                )?;
                 rendered += 1;
             }
             instance.hide()?;
@@ -180,7 +198,16 @@ fn unfocused(view: &Value) -> Value {
     match view {
         Value::Object(map) => Value::Object(
             map.iter()
-                .map(|(k, v)| (k.clone(), if k == "focused" { json!(false) } else { unfocused(v) }))
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        if k == "focused" {
+                            json!(false)
+                        } else {
+                            unfocused(v)
+                        },
+                    )
+                })
                 .collect(),
         ),
         Value::Array(items) => Value::Array(items.iter().map(unfocused).collect()),
@@ -190,20 +217,31 @@ fn unfocused(view: &Value) -> Value {
 
 fn has_focus(view: &Value) -> bool {
     match view {
-        Value::Object(map) => map.iter().any(|(k, v)| (k == "focused" && v == &json!(true)) || has_focus(v)),
+        Value::Object(map) => map
+            .iter()
+            .any(|(k, v)| (k == "focused" && v == &json!(true)) || has_focus(v)),
         Value::Array(items) => items.iter().any(has_focus),
         _ => false,
     }
 }
 
-fn walk(dir: &Path, model_file: &Path, size: (u32, u32), max: usize, out: &Path) -> Result<(usize, Vec<String>)> {
+fn walk(
+    dir: &Path,
+    model_file: &Path,
+    size: (u32, u32),
+    max: usize,
+    out: &Path,
+) -> Result<(usize, Vec<String>)> {
     let package = Package::at(dir)?;
     let views = package::compile(&package)?;
     let source = package.logic_source()?;
     let mut model: Value = serde_json::from_str(&std::fs::read_to_string(model_file)?)?;
     let catalog = model["catalog"].take();
     let (games, fixed) = if catalog["_tag"] == "Ready" {
-        (catalog["games"].as_array().cloned().unwrap_or_default(), None)
+        (
+            catalog["games"].as_array().cloned().unwrap_or_default(),
+            None,
+        )
     } else {
         (Vec::new(), Some(catalog))
     };
@@ -218,11 +256,17 @@ fn walk(dir: &Path, model_file: &Path, size: (u32, u32), max: usize, out: &Path)
         focused: None,
         displays: json!([{"id": "probe", "main": true, "x": 0, "y": 0, "width": size.0, "height": size.1, "touch": false}]),
     };
-    let definition = if overlay { views.overlay.clone().context("no Overlay")? } else { views.surface.clone() };
+    let definition = if overlay {
+        views.overlay.clone().context("no Overlay")?
+    } else {
+        views.surface.clone()
+    };
     let instance = definition.create()?;
     instance.show()?;
     let mut images = ImageCache::new(&package.dir);
-    let presses: Vec<&str> = vec!["up", "down", "left", "right", "confirm", "back", "menu", "options"];
+    let presses: Vec<&str> = vec![
+        "up", "down", "left", "right", "confirm", "back", "menu", "options",
+    ];
     let mut queue: VecDeque<Vec<&str>> = VecDeque::from([vec![]]);
     let mut seen: HashSet<String> = HashSet::new();
     let mut failures = Vec::new();
@@ -232,10 +276,21 @@ fn walk(dir: &Path, model_file: &Path, size: (u32, u32), max: usize, out: &Path)
             break;
         }
         // Replay the presses from a fresh start: the logic's state stays inside QuickJS.
-        let mut korri = Korri { ..clone_korri(&base_korri) };
-        let mut engine = Engine::load(&source, Limits { call: std::time::Duration::from_secs(5), ..Limits::default() })?;
+        let mut korri = Korri {
+            ..clone_korri(&base_korri)
+        };
+        let mut engine = Engine::load(
+            &source,
+            Limits {
+                call: std::time::Duration::from_secs(5),
+                ..Limits::default()
+            },
+        )?;
         engine.set_model(&korri.model().to_string())?;
-        engine.init(&engine::effective_preferences(engine.declaration(), &BTreeMap::new()))?;
+        engine.init(&engine::effective_preferences(
+            engine.declaration(),
+            &BTreeMap::new(),
+        ))?;
         let deliver = |engine: &mut Engine, korri: &mut Korri, message: Value| -> Result<()> {
             let mut queue = vec![message];
             let mut rounds = 0;
@@ -257,7 +312,11 @@ fn walk(dir: &Path, model_file: &Path, size: (u32, u32), max: usize, out: &Path)
             let message = json!({"_tag": "Pressed", "button": press});
             deliver(&mut engine, &mut korri, message)?;
         }
-        let view = if overlay { engine.overlay()?.unwrap_or(json!({})) } else { engine.view()? };
+        let view = if overlay {
+            engine.overlay()?.unwrap_or(json!({}))
+        } else {
+            engine.view()?
+        };
         let key = view.to_string();
         if !seen.insert(key) {
             continue;
@@ -275,12 +334,23 @@ fn walk(dir: &Path, model_file: &Path, size: (u32, u32), max: usize, out: &Path)
             let mut again = Binder::new(&definition);
             again.apply(&instance, &unfocused(&view), &mut images)?;
             let c = render(&instance, size);
-            let differs = a.iter().zip(&b).zip(&c).filter(|((x, y), z)| x != y && y == z).count();
+            let differs = a
+                .iter()
+                .zip(&b)
+                .zip(&c)
+                .filter(|((x, y), z)| x != y && y == z)
+                .count();
             if differs == 0 {
                 let name = format!("unseen-{}x{}-{}.png", size.0, size.1, failures.len());
                 std::fs::create_dir_all(out)?;
                 save(&a, size, &out.join(&name))?;
-                failures.push(format!("{} at {}x{}: focus not visible after [{}] ({name})", model_file.display(), size.0, size.1, path.join(" ")));
+                failures.push(format!(
+                    "{} at {}x{}: focus not visible after [{}] ({name})",
+                    model_file.display(),
+                    size.0,
+                    size.1,
+                    path.join(" ")
+                ));
             }
             // Restore every property for the next state.
             Binder::new(&definition).apply(&instance, &view, &mut images)?;
@@ -313,7 +383,12 @@ fn clone_korri(k: &Korri) -> Korri {
 fn main() -> Result<()> {
     Headless::install();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let flag = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
+    let flag = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
     let out = PathBuf::from(flag("--out").unwrap_or_else(|| "/tmp/surface-probe".into()));
     let sizes = sizes(&flag("--sizes").unwrap_or_else(|| "640x480".into()));
     match args.first().map(String::as_str) {

@@ -58,7 +58,8 @@ fn main() -> std::io::Result<()> {
         Behaviour::default(),
     )?;
     let read_model = |path: &str| -> serde_json::Value {
-        serde_json::from_str(&std::fs::read_to_string(path).expect("model file")).expect("model JSON")
+        serde_json::from_str(&std::fs::read_to_string(path).expect("model file"))
+            .expect("model JSON")
     };
     if let Some(path) = &model_file {
         fixture.set_model(read_model(path));
@@ -90,9 +91,9 @@ fn main() -> std::io::Result<()> {
             }
             ["model", path] => fixture.set_model(read_model(path)),
             ["displays", "none"] => fixture.set_displays(None),
-            ["displays", json @ ..] => {
-                fixture.set_displays(Some(serde_json::from_str(&json.join(" ")).expect("displays JSON")))
-            }
+            ["displays", json @ ..] => fixture.set_displays(Some(
+                serde_json::from_str(&json.join(" ")).expect("displays JSON"),
+            )),
             ["overlay", "on"] => fixture.set_overlay(true),
             ["overlay", "off"] => fixture.set_overlay(false),
             ["requests"] => {

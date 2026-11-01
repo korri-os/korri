@@ -319,7 +319,8 @@ fn model_for(state: &State, surface_id: &str) -> Value {
         // A base model may carry the actions of games (`fixtureGameActions`,
         // keyed by game id), as korrid publishes them for the focused game.
         let actions = state.base["fixtureGameActions"][id].clone();
-        model["focusedGame"] = json!({"gameId": id, "actions": if actions.is_array() { actions } else { json!([]) }});
+        model["focusedGame"] =
+            json!({"gameId": id, "actions": if actions.is_array() { actions } else { json!([]) }});
     }
     if let Some(object) = model.as_object_mut() {
         object.remove("fixtureGameActions");

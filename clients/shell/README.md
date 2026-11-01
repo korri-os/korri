@@ -49,6 +49,19 @@ the old one is removed.
 restores the previous one. Slint is patched (`vendor/README.md`) to cache
 still layers. Numbers and screenshots: `evidence/`.
 
+## Development tools
+
+- `examples/fixture-korrid.rs`: the fixture korrid as a process.
+  `--model FILE` serves another `SurfaceModel` (a Ready catalog's `games`
+  become the window's games; a model's `fixtureGameActions` are published for
+  the focused game), `--displays JSON` sets `model.displays`; on stdin
+  `model FILE` and `displays JSON` change them while the shell runs.
+- `examples/surface-probe.rs`: `previews DIR` renders every
+  `*.preview.slint` state headless at given sizes and fails one that does not
+  compile or draws nothing; `walk PACKAGE --model FILE` presses every button
+  from every state reached and fails a state whose focused control is not
+  drawn inside the window. Pico's tests use both (`packages/pico/README.md`).
+
 ## Backends
 
 `winit` (desktop, default), `headless` (tests), `sdl` (webOS, through

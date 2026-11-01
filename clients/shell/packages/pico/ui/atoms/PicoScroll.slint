@@ -10,17 +10,26 @@ export component PicoScroll inherits Rectangle {
     property <length> scroll: 0;
     property <length> limit: max(0, content.height - root.height);
     property <int> serial: Focus.serial;
-    changed serial => {
-        // Where the control stands in the content, from the window's top.
-        let top = Focus.y - root.absolute-position.y + min(scroll, limit);
-        // A control outside what this region holds is not its to reveal.
-        if (top < 0 || top > content.height) {
-            return;
-        }
-        if (top < min(scroll, limit) + margin) {
-            scroll = max(0, top - margin);
-        } else if (top + Focus.h > min(scroll, limit) + root.height - margin) {
-            scroll = min(limit, top + Focus.h - root.height + margin);
+    // A row inside (PicoRail) reads the same report first: the region moves
+    // a moment later, so the row measures before anything shifts under it.
+    property <bool> pending;
+    changed serial => { pending = true; }
+    Timer {
+        interval: 1ms;
+        running: pending;
+        triggered => {
+            pending = false;
+            // Where the control stands in the content, from the window's top.
+            let top = Focus.y - root.absolute-position.y + min(scroll, limit);
+            // A control outside what this region holds is not its to reveal.
+            if (top < 0 || top > content.height) {
+                return;
+            }
+            if (top < min(scroll, limit) + margin) {
+                scroll = max(0, top - margin);
+            } else if (top + Focus.h > min(scroll, limit) + root.height - margin) {
+                scroll = min(limit, top + Focus.h - root.height + margin);
+            }
         }
     }
     clip: true;
