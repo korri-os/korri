@@ -34,6 +34,7 @@ use super::{
     },
     settings_model::settings_from,
     starter_pack::StarterPack,
+    store::StoreAcquisition,
     Notify,
 };
 
@@ -99,6 +100,83 @@ fn local_runner_entry(entry: Option<&Entry>) -> Option<crate::Game> {
             .cloned(),
         _ => None,
     }
+}
+
+/// The korrid id of a game this device can play that korrid linked to a
+/// provider's claim (ADR 0016). Only local copies count.
+fn korrid_game_for_claim(
+    state: &LaunchablesState,
+    provider_id: &str,
+    claim_id: &str,
+) -> Option<String> {
+    for entry in state.entries() {
+        if entry.is_now_playing() {
+            continue;
+        }
+        let own = match entry {
+            Entry::LocalGame { game, .. } => Some((true, game.identity.as_ref(), game.id.clone())),
+            Entry::Game { game, .. } => Some((
+                game.source.is_local,
+                game.identity.as_ref(),
+                game.id.clone(),
+            )),
+            Entry::NowPlaying { .. } => None,
+        };
+        let copies = own
+            .into_iter()
+            .chain(entry.alternatives().iter().map(|copy| match copy {
+                super::launchables::fold::GameCopy::Local(game) => {
+                    (true, game.identity.as_ref(), game.id.clone())
+                }
+                super::launchables::fold::GameCopy::Remote(game) => (
+                    game.source.is_local,
+                    game.identity.as_ref(),
+                    game.id.clone(),
+                ),
+            }));
+        for (local, identity, id) in copies {
+            if let (true, Some(crate::GameIdentity::Provider(provider))) = (local, identity) {
+                if provider.provider == provider_id && provider.provider_ref == claim_id {
+                    return Some(id);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The surface's id for a korrid game, once the catalog holds it.
+fn surface_id_for_korrid_game(state: &LaunchablesState, game_id: &str) -> Option<String> {
+    state
+        .entries()
+        .iter()
+        .find(|entry| match entry {
+            Entry::NowPlaying { .. } => false,
+            Entry::LocalGame { game, .. } => {
+                game.id == game_id || entry.alternatives().iter().any(|copy| copy.id() == game_id)
+            }
+            Entry::Game { game, .. } => {
+                game.id == game_id || entry.alternatives().iter().any(|copy| copy.id() == game_id)
+            }
+        })
+        .map(Entry::key)
+}
+
+/// The store as the surface sees it: an imported game by the surface's id.
+fn store_for_surface(
+    mut store: korri_surface_treaty::SurfaceStore,
+    state: &LaunchablesState,
+) -> korri_surface_treaty::SurfaceStore {
+    if let korri_surface_treaty::SurfaceStoreDetails::Ready {
+        get: korri_surface_treaty::SurfaceStoreGet::InLibrary { game_id, .. },
+        ..
+    } = &mut store.details
+    {
+        if let Some(korrid_id) = game_id.take() {
+            *game_id = surface_id_for_korrid_game(state, &korrid_id);
+        }
+    }
+    store
 }
 
 fn save_ref(game: &AcquisitionGameRef) -> SaveGameRef {
@@ -218,6 +296,8 @@ pub struct Root {
     pub acquisition: Arc<AcquisitionGate>,
     pub runner: Arc<RunnerChooser>,
     pub saves: Arc<SaveSync>,
+    pub store: Arc<StoreAcquisition>,
+    last_library: std::sync::Mutex<Option<String>>,
     last_live_ids: std::sync::Mutex<Option<Vec<String>>>,
     controllers: Arc<super::controllers::Controllers>,
     displays: std::sync::Mutex<Displays>,
@@ -358,7 +438,29 @@ impl Root {
                     SAVE_CHECK_LIMIT,
                 )
             };
+            let store = {
+                let owned = this.clone();
+                let imported = this.clone();
+                StoreAcquisition::new(
+                    korrid.clone(),
+                    notify.clone(),
+                    Arc::new(move |provider_id, claim_id| {
+                        owned.upgrade().and_then(|root| {
+                            korrid_game_for_claim(&root.launchables.state(), provider_id, claim_id)
+                        })
+                    }),
+                    // An imported game joins the catalog by re-reading it in place.
+                    Arc::new(move |_| {
+                        if let Some(root) = imported.upgrade() {
+                            tokio::spawn(async move { root.launchables.refresh().await });
+                        }
+                    }),
+                    ACQUISITION_POLL_INTERVAL,
+                )
+            };
             Self {
+                store,
+                last_library: std::sync::Mutex::new(None),
                 saves,
                 last_live_ids: std::sync::Mutex::new(None),
                 runner,
@@ -650,6 +752,33 @@ impl Root {
     pub fn react(self: &Arc<Self>) {
         let state = self.launchables.state();
         self.place();
+        // The library changed: a store entry may now be owned, or no longer be.
+        let library = serde_json::to_string(
+            &state
+                .entries()
+                .iter()
+                .map(|entry| {
+                    (
+                        entry.key(),
+                        entry
+                            .alternatives()
+                            .iter()
+                            .map(|copy| copy.id().to_owned())
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )
+        .expect("library key serializes");
+        let library_changed = {
+            let mut last = self.last_library.lock().expect("library poisoned");
+            let changed = last.as_ref() != Some(&library);
+            *last = Some(library);
+            changed
+        };
+        if library_changed {
+            self.store.library_changed();
+        }
         self.restore_catalog_displays(&state);
         let onboarding = self.network.snapshot().onboarding_needed;
         self.launchables.set_onboarding_needed(onboarding);
@@ -750,7 +879,7 @@ impl Root {
             build_label: None,
             network: network.network,
             onboarding,
-            store: None,
+            store: Some(store_for_surface(self.store.snapshot(), &state)),
             invites: None,
             focused_game: None,
         };
@@ -1039,6 +1168,7 @@ impl Root {
                 if self.owner_binding.act(&action_id)
                     || self.saves.act(&action_id)
                     || self.starter_pack.act(&action_id)
+                    || self.store.act(&action_id)
                     || self.acquisition.act(&action_id)
                 {
                     return;
@@ -1197,10 +1327,11 @@ impl Root {
                 self.network.connect_hidden_wifi(ssid, password)
             }
             SurfaceRequest::FinishOnboarding => self.network.finish_onboarding(),
-            // The store is not ported.
-            SurfaceRequest::OpenStore
-            | SurfaceRequest::SearchStore { .. }
-            | SurfaceRequest::OpenStoreEntry { .. } => {}
+            SurfaceRequest::OpenStore => self.store.open_store(),
+            SurfaceRequest::SearchStore { provider_id, query } => {
+                self.store.search(provider_id, query)
+            }
+            SurfaceRequest::OpenStoreEntry { entry_id } => self.store.open_entry(entry_id),
             SurfaceRequest::FocusGame { .. }
             | SurfaceRequest::RememberPreference { .. }
             | SurfaceRequest::MoveCatalog { .. } => {}

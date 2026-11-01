@@ -2182,3 +2182,314 @@ mod save_sync {
 
     use korri_surface_treaty::SurfaceSaveHistory;
 }
+
+mod store_acquisition {
+    //! Port of `store-acquisition.test.ts`, against a scripted korrid.
+    use super::acquisition_gate::{push, scripted, Script};
+    use super::*;
+    use crate::surface::store::*;
+    use korri_surface_treaty::{
+        SurfaceStoreDetails, SurfaceStoreGet, SurfaceStoreProviders, SurfaceStoreSearch,
+    };
+    use std::sync::Mutex;
+
+    const BBS: &str = "@korri:pico8-bbs";
+
+    fn claim(id: &str, system: Option<&str>) -> Value {
+        let mut claim = json!({ "_tag": "ProviderClaim", "providerId": BBS, "id": id, "title": id.to_uppercase(),
+            "url": format!("https://www.lexaloffle.com/bbs/?tid={id}"), "platform": "PICO-8" });
+        if let Some(system) = system {
+            claim["artifact"] = json!({ "kind": "content", "system": system, "format": { "id": "p8.png" },
+                "file": { "name": format!("{id}.p8.png"), "sizeBytes": 48_000 } });
+        }
+        claim
+    }
+
+    fn details(id: &str, system: Option<&str>) -> Value {
+        let mut details = claim(id, system);
+        details["_tag"] = json!("ProviderClaimDetails");
+        details.as_object_mut().unwrap().remove("platform");
+        details["description"] = json!("A cart.");
+        json!({ "_tag": "Ok", "payload": details })
+    }
+
+    fn store(
+        owned: Arc<Mutex<Option<String>>>,
+    ) -> (
+        Arc<StoreAcquisition>,
+        Arc<Mutex<Script>>,
+        Arc<Mutex<Vec<String>>>,
+    ) {
+        let (korrid, script) = scripted();
+        let imported = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&imported);
+        let store = StoreAcquisition::new(
+            korrid,
+            Arc::new(|| {}),
+            Arc::new(move |_, _| owned.lock().unwrap().clone()),
+            Arc::new(move |game_id| log.lock().unwrap().push(game_id)),
+            Duration::from_millis(1),
+        );
+        (store, script, imported)
+    }
+
+    async fn settle() {
+        for _ in 0..30 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
+    fn get(store: &Arc<StoreAcquisition>) -> SurfaceStoreGet {
+        match store.snapshot().details {
+            SurfaceStoreDetails::Ready { get, .. } => get,
+            other => panic!("details not ready: {other:?}"),
+        }
+    }
+
+    fn press(store: &Arc<StoreAcquisition>, label: &str) {
+        let actions = match get(store) {
+            SurfaceStoreGet::Offer { actions, .. }
+            | SurfaceStoreGet::Confirm { actions, .. }
+            | SurfaceStoreGet::Working { actions, .. }
+            | SurfaceStoreGet::Problem { actions, .. } => actions,
+            other => panic!("no actions on {other:?}"),
+        };
+        let id = actions
+            .into_iter()
+            .find(|action| action.label == label)
+            .expect("action")
+            .id;
+        assert!(store.act(&id));
+    }
+
+    async fn open(
+        store: &Arc<StoreAcquisition>,
+        script: &Arc<Mutex<Script>>,
+        id: &str,
+        system: Option<&str>,
+    ) {
+        push(
+            script,
+            "app.acquisition.providers",
+            json!({ "_tag": "Ok", "payload": { "providers": [{ "id": BBS, "title": "PICO-8 BBS", "pluginId": BBS }] } }),
+        );
+        push(
+            script,
+            "app.acquisition.search",
+            json!({ "_tag": "Ok", "payload": { "claims": [claim(id, system)] } }),
+        );
+        push(script, "app.acquisition.details", details(id, system));
+        store.open_store();
+        settle().await;
+        store.search(BBS.into(), "celeste".into());
+        settle().await;
+        store.open_entry(store_entry_id(BBS, id));
+        settle().await;
+    }
+
+    #[tokio::test]
+    async fn providers_load_and_a_refused_list_offers_retry() {
+        let (store, script, _) = store(Arc::default());
+        push(
+            &script,
+            "app.acquisition.providers",
+            json!({ "_tag": "Err", "payload": { "code": "X", "message": "No providers." } }),
+        );
+        store.open_store();
+        settle().await;
+        let SurfaceStoreProviders::Problem { message, actions } = store.snapshot().providers else {
+            panic!()
+        };
+        assert_eq!(message, "No providers.");
+        push(
+            &script,
+            "app.acquisition.providers",
+            json!({ "_tag": "Ok", "payload": { "providers": [{ "id": BBS, "title": "PICO-8 BBS", "pluginId": BBS }] } }),
+        );
+        assert!(store.act(&actions[0].id));
+        settle().await;
+        assert_eq!(
+            serde_json::to_value(store.snapshot().providers).unwrap(),
+            json!({ "_tag": "Ready", "providers": [{ "id": BBS, "title": "PICO-8 BBS" }] })
+        );
+        // A search only for a listed provider.
+        store.search("elsewhere".into(), "x".into());
+        settle().await;
+        assert_eq!(store.snapshot().search, SurfaceStoreSearch::Idle);
+    }
+
+    #[tokio::test]
+    async fn a_claim_with_no_system_cannot_be_got() {
+        let (store, script, _) = store(Arc::default());
+        open(&store, &script, "nosystem", None).await;
+        assert_eq!(
+            get(&store),
+            SurfaceStoreGet::Unavailable {
+                reason: NO_SYSTEM_REASON.into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn get_asks_with_the_size_then_downloads_with_progress_and_lands_in_the_library() {
+        let (store, script, imported) = store(Arc::default());
+        open(&store, &script, "celeste", Some("pico8")).await;
+        assert!(matches!(
+            get(&store),
+            SurfaceStoreGet::Offer { note: None, .. }
+        ));
+        press(&store, "Get");
+        let SurfaceStoreGet::Confirm { kicker, detail, .. } = get(&store) else {
+            panic!()
+        };
+        assert_eq!(
+            (kicker.as_str(), detail.as_deref()),
+            ("Download to this device", Some("CELESTE, 48 KB"))
+        );
+        let job = |state: Value| json!({ "_tag": "Ok", "payload": { "jobId": "j1", "providerId": BBS, "id": "celeste", "state": state } });
+        push(
+            &script,
+            "app.acquisition.acquire",
+            job(json!({ "_tag": "Downloading", "bytesDone": 24_000, "bytesTotal": 48_000 })),
+        );
+        push(
+            &script,
+            "app.acquisition.acquire-status",
+            job(json!({ "_tag": "Placing" })),
+        );
+        press(&store, "Download");
+        for _ in 0..3 {
+            tokio::task::yield_now().await;
+        }
+        settle().await;
+        push(
+            &script,
+            "app.acquisition.acquire-status",
+            job(json!({ "_tag": "Imported", "gameId": "game-celeste" })),
+        );
+        settle().await;
+        assert_eq!(
+            get(&store),
+            SurfaceStoreGet::InLibrary {
+                detail: Some("In your library".into()),
+                game_id: Some("game-celeste".into())
+            }
+        );
+        assert_eq!(*imported.lock().unwrap(), vec!["game-celeste".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn an_owned_cart_is_play_at_once_and_a_removed_one_offers_get_again() {
+        let owned = Arc::new(Mutex::new(Some("game-celeste".to_owned())));
+        let (store, script, _) = store(Arc::clone(&owned));
+        open(&store, &script, "celeste", Some("pico8")).await;
+        assert!(
+            matches!(get(&store), SurfaceStoreGet::InLibrary { game_id: Some(id), .. } if id == "game-celeste")
+        );
+        *owned.lock().unwrap() = None;
+        store.library_changed();
+        assert!(matches!(get(&store), SurfaceStoreGet::Offer { .. }));
+    }
+
+    #[tokio::test]
+    async fn cancel_during_the_download_stops_it_and_get_is_offered_again() {
+        let (store, script, _) = store(Arc::default());
+        open(&store, &script, "celeste", Some("pico8")).await;
+        press(&store, "Get");
+        let job = |state: Value| json!({ "_tag": "Ok", "payload": { "jobId": "j1", "providerId": BBS, "id": "celeste", "state": state } });
+        let downloading =
+            job(json!({ "_tag": "Downloading", "bytesDone": 1, "bytesTotal": 48_000 }));
+        push(&script, "app.acquisition.acquire", downloading.clone());
+        push(&script, "app.acquisition.acquire-status", downloading);
+        press(&store, "Download");
+        settle().await;
+        let SurfaceStoreGet::Working {
+            kicker, progress, ..
+        } = get(&store)
+        else {
+            panic!()
+        };
+        assert_eq!(kicker, "Downloading CELESTE");
+        assert_eq!(progress.unwrap().total, Some(48_000.0));
+        push(
+            &script,
+            "app.acquisition.acquire-cancel",
+            job(json!({ "_tag": "Cancelled" })),
+        );
+        press(&store, "Cancel");
+        settle().await;
+        assert_eq!(
+            get(&store),
+            SurfaceStoreGet::Offer {
+                note: Some(CANCELLED_NOTE.into()),
+                actions: match get(&store) {
+                    SurfaceStoreGet::Offer { actions, .. } => actions,
+                    _ => unreachable!(),
+                }
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn korrid_restarting_under_a_download_says_download_stopped() {
+        let (store, script, _) = store(Arc::default());
+        open(&store, &script, "celeste", Some("pico8")).await;
+        press(&store, "Get");
+        push(
+            &script,
+            "app.acquisition.acquire",
+            json!({ "_tag": "Ok", "payload": { "jobId": "j1", "providerId": BBS, "id": "celeste", "state": { "_tag": "Resolving" } } }),
+        );
+        push(
+            &script,
+            "app.acquisition.acquire-status",
+            json!({ "_tag": "Err", "payload": { "code": "AcquisitionUnknownJob", "message": "gone" } }),
+        );
+        press(&store, "Download");
+        settle().await;
+        let SurfaceStoreGet::Problem {
+            kicker,
+            reason,
+            actions,
+        } = get(&store)
+        else {
+            panic!("{:?}", get(&store))
+        };
+        assert_eq!(
+            (kicker.as_str(), reason.as_str()),
+            (STOPPED_KICKER, STOPPED_REASON)
+        );
+        assert_eq!(actions[0].label, "Retry");
+    }
+
+    #[tokio::test]
+    async fn a_stale_press_sends_nothing() {
+        let (store, script, _) = store(Arc::default());
+        open(&store, &script, "celeste", Some("pico8")).await;
+        press(&store, "Get");
+        let SurfaceStoreGet::Confirm { actions, .. } = get(&store) else {
+            panic!()
+        };
+        let stale_download = actions[0].id.clone();
+        press(&store, "Cancel");
+        // The Confirm is gone: its Download sends nothing.
+        assert!(store.act(&stale_download));
+        settle().await;
+        assert!(matches!(get(&store), SurfaceStoreGet::Offer { .. }));
+        assert!(!script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .any(|(tag, _)| tag == "app.acquisition.acquire"));
+    }
+
+    #[test]
+    fn download_detail_reads_like_the_portal() {
+        assert_eq!(
+            store_download_detail(612_000, Some(1_700_000), Some(48_000.0)),
+            "612 KB of 1.7 MB · 48 KB/s · 0:23 left"
+        );
+        assert_eq!(store_download_detail(612_000, None, None), "612 KB so far");
+    }
+}
