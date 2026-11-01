@@ -2884,3 +2884,348 @@ mod plugin_repositories {
         );
     }
 }
+
+mod shared_play {
+    //! Ports of `shared-play.test.ts`, `shared-play.model.test.ts` and
+    //! `shared-play.netplay.test.ts`.
+    use super::acquisition_gate::{push, scripted};
+    use super::*;
+    use crate::surface::shared_play::*;
+    use std::sync::Mutex;
+
+    fn netplay(phase: Value) -> crate::netplay::NetplayStatus {
+        from(
+            json!({ "launchId": "N1", "deviceLabel": "Odin", "gameTitle": "Turtles", "phase": phase }),
+        )
+    }
+
+    fn invite(netplay: Value) -> crate::invites::Invite {
+        let mut invite = json!({ "inviteId": "i1", "devicePublicKey": "k", "deviceLabel": "Odin", "personName": "Simon",
+            "session": { "launchId": "L1", "gameId": "turtles", "title": "Turtles" } });
+        if !netplay.is_null() {
+            invite["netplay"] = netplay;
+        }
+        from(invite)
+    }
+
+    #[test]
+    fn invites_carry_opaque_actions_and_one_netplay_route_with_its_words() {
+        let state = LaunchablesState::Loading;
+        let check = |route: Value, label: Option<&str>| {
+            let invites = surface_invites_from(&[invite(route)], &state);
+            let labels: Vec<String> = invites[0]
+                .actions
+                .iter()
+                .map(|action| action.label.clone())
+                .collect();
+            let mut expected = vec!["Play on stream".to_owned()];
+            expected.extend(label.map(Into::into));
+            expected.push("Dismiss".into());
+            assert_eq!(labels, expected);
+            assert_eq!(invites[0].actions[0].id, "invite:stream:i1");
+        };
+        check(json!({ "_tag": "Ready" }), Some("Play here"));
+        check(
+            json!({ "_tag": "NeedsCopy", "bytes": 4.7e9 }),
+            Some("Copy and play here (4.7 GB)"),
+        );
+        check(
+            json!({ "_tag": "NeedsPlugin", "pluginId": "@korri:mgba", "title": "mGBA" }),
+            Some("Install mGBA and play here"),
+        );
+        check(
+            json!({ "_tag": "Unavailable", "reason": "NoNetplayRoute" }),
+            None,
+        );
+        check(Value::Null, None);
+    }
+
+    #[test]
+    fn korrids_report_becomes_busy_paused_or_reconnecting() {
+        assert_eq!(
+            serde_json::to_value(netplay_status_from(
+                &netplay(
+                    json!({ "_tag": "Copying", "done": 512_000_000u64, "total": 1_024_000_000u64 })
+                ),
+                Some("game:t".into())
+            ))
+            .unwrap(),
+            json!({ "_tag": "Busy", "kicker": "Copying Turtles from Odin", "detail": "50% of 1 GB", "progress": { "done": 512_000_000.0, "total": 1_024_000_000.0 },
+                "actions": [{ "id": "netplay:cancel", "label": "Cancel", "enabled": true }], "gameId": "game:t" })
+        );
+        assert!(
+            matches!(netplay_status_from(&netplay(json!({ "_tag": "HolderLeft" })), None), Some(SurfaceStatus::Paused { actions, .. }) if actions[0].id == "netplay:leave:N1")
+        );
+        assert!(matches!(
+            netplay_status_from(&netplay(json!({ "_tag": "Reconnecting" })), None),
+            Some(SurfaceStatus::Busy { actions: None, .. })
+        ));
+        assert!(netplay_status_from(&netplay(json!({ "_tag": "Playing" })), None).is_none());
+    }
+
+    #[test]
+    fn every_problem_names_the_game_and_the_device_and_codes_never_reach_the_person() {
+        let facts = NetplayProblemFacts {
+            game_title: "Turtles".into(),
+            device_label: "Odin".into(),
+            core: None,
+        };
+        let reason = |code: &str, message: &str| match netplay_problem(
+            &crate::RpcFailure {
+                code: code.into(),
+                message: message.into(),
+            },
+            &facts,
+        ) {
+            SurfaceStatus::Problem { kicker, reason, .. } => (kicker, reason),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            reason("NoNetplayRoute", "x"),
+            (
+                "Netplay unavailable".into(),
+                "Turtles can't play here with Odin right now. Play on stream still works.".into()
+            )
+        );
+        assert_eq!(
+            reason("CopyFailed", "x"),
+            (
+                "Copy failed".into(),
+                "Turtles did not copy from Odin. Nothing was kept.".into()
+            )
+        );
+        assert_eq!(
+            reason("NotEnoughSpace", "The copy needs 4700000000 bytes."),
+            (
+                "Not enough space".into(),
+                "Turtles needs 4.7 GB free on this device.".into()
+            )
+        );
+        assert_eq!(
+            reason("NotEnoughSpace", "odd"),
+            (
+                "Not enough space".into(),
+                "Turtles needs more free space on this device.".into()
+            )
+        );
+        assert_eq!(
+            reason("CoreVersionMismatch", "x").1,
+            "Odin runs a different version of the game's core. Play on stream still works."
+        );
+    }
+
+    #[test]
+    fn a_read_decides_between_idle_and_observing_and_keeps_the_game_only_for_the_same_launch() {
+        let observing = shared_play_step(
+            SharedPlay::Unread {
+                game_id: Some("game:t".into()),
+            },
+            SharedPlayEvent::Read(Some(netplay(json!({ "_tag": "Connecting" })))),
+        );
+        assert!(
+            matches!(&observing, SharedPlay::Observing { game_id: Some(id), .. } if id == "game:t")
+        );
+        let mut other = netplay(json!({ "_tag": "Connecting" }));
+        other.launch_id = "N2".into();
+        assert!(matches!(
+            shared_play_step(observing.clone(), SharedPlayEvent::Read(Some(other))),
+            SharedPlay::Observing { game_id: None, .. }
+        ));
+        assert!(matches!(
+            shared_play_step(observing, SharedPlayEvent::Read(None)),
+            SharedPlay::Idle
+        ));
+    }
+
+    #[test]
+    fn cancel_on_korrids_report_cancels_copying_and_connecting_only() {
+        for (phase, cancels) in [
+            ("Copying", true),
+            ("Connecting", true),
+            ("Playing", false),
+            ("HolderLeft", false),
+            ("Reconnecting", false),
+        ] {
+            let report = if phase == "Copying" {
+                json!({ "_tag": phase, "done": 1, "total": 2 })
+            } else {
+                json!({ "_tag": phase })
+            };
+            let next = shared_play_step(
+                SharedPlay::Observing {
+                    netplay: netplay(report),
+                    game_id: None,
+                },
+                SharedPlayEvent::CancelPressed,
+            );
+            assert_eq!(
+                matches!(next, SharedPlay::CancellingNetplay { launch_id: Some(ref id), sent: false, pending: None } if id == "N1"),
+                cancels,
+                "{phase}"
+            );
+        }
+    }
+
+    #[test]
+    fn one_piece_of_work_at_a_time_and_problems_end_with_dismiss() {
+        let starting = shared_play_step(
+            SharedPlay::Idle,
+            SharedPlayEvent::StreamRequested {
+                op: 1,
+                device_label: "Odin".into(),
+            },
+        );
+        let still = shared_play_step(
+            starting.clone(),
+            SharedPlayEvent::LeaveRequested {
+                op: 2,
+                kicker: "Leaving".into(),
+            },
+        );
+        assert!(matches!(still, SharedPlay::StreamStarting { op: 1, .. }));
+        let cancelling = shared_play_step(starting, SharedPlayEvent::CancelPressed);
+        assert!(matches!(
+            cancelling,
+            SharedPlay::CancellingStream { pending: 1 }
+        ));
+        assert_eq!(
+            serde_json::to_value(shared_play_status(&cancelling)).unwrap()["kicker"],
+            "Leaving stream"
+        );
+        let problem = shared_play_step(
+            cancelling,
+            SharedPlayEvent::Failed(SurfaceStatus::Problem {
+                kicker: "k".into(),
+                reason: "r".into(),
+                can_retry: false,
+                game_id: None,
+                game_title: None,
+            }),
+        );
+        assert!(shared_play_status(&problem).is_some());
+        assert!(matches!(
+            shared_play_step(problem, SharedPlayEvent::Dismissed),
+            SharedPlay::Unread { .. }
+        ));
+    }
+
+    fn controller(korrid: crate::surface::korrid::Korrid) -> Arc<SharedPlayController> {
+        SharedPlayController::new(
+            korrid,
+            Arc::new(|| {}),
+            SharedPlayContext {
+                state: Box::new(|| {
+                    LaunchablesState::recover_startup(Default::default(), None, &[])
+                }),
+                refresh_session: Box::new(|| Box::pin(async {})),
+                plugins_changed: Box::new(|| {}),
+            },
+        )
+    }
+
+    async fn settle() {
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn play_on_stream_starts_and_a_cancel_waits_then_leaves_only_this_viewer() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.invites.list",
+            json!({ "_tag": "Ok", "payload": { "invites": [serde_json::to_value(invite(Value::Null)).unwrap()] } }),
+        );
+        push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        push(
+            &script,
+            "app.invites.streamPlay",
+            json!({ "_tag": "Ok", "payload": { "launchId": "V1" } }),
+        );
+        script
+            .lock()
+            .unwrap()
+            .delays
+            .insert("app.invites.streamPlay".into(), Duration::from_millis(200));
+        push(
+            &script,
+            "app.session.leave",
+            json!({ "_tag": "Ok", "payload": { "launchId": "V1", "state": "frozen", "changed": true } }),
+        );
+        let shared = controller(korrid);
+        shared.refresh().await;
+        assert!(shared.act("invite:stream:i1"));
+        settle().await;
+        assert_eq!(
+            serde_json::to_value(shared.status()).unwrap()["kicker"],
+            "Connecting to Odin"
+        );
+        assert!(shared.act("stream-play:cancel"));
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let calls: Vec<(String, Value)> = script.lock().unwrap().calls.clone();
+        assert!(calls.iter().any(
+            |(tag, payload)| tag == "app.session.leave" && payload["expectedLaunchId"] == "V1"
+        ));
+        assert!(!calls.iter().any(|(tag, _)| tag == "app.session.end"));
+        assert!(shared.status().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_refused_netplay_is_a_problem_in_plain_words_and_dismiss_ends_it() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.invites.list",
+            json!({ "_tag": "Ok", "payload": { "invites": [serde_json::to_value(invite(json!({ "_tag": "Ready" }))).unwrap()] } }),
+        );
+        push(
+            &script,
+            "app.invites.netplay",
+            json!({ "_tag": "Err", "payload": { "code": "NoNetplayRoute", "message": "raw" } }),
+        );
+        let shared = controller(korrid);
+        shared.refresh().await;
+        assert!(shared.act("invite:netplay:i1"));
+        settle().await;
+        assert_eq!(
+            serde_json::to_value(shared.status()).unwrap(),
+            json!({ "_tag": "Problem", "kicker": "Netplay unavailable", "reason": "Turtles can't play here with Odin right now. Play on stream still works.", "canRetry": false })
+        );
+        assert!(shared.dismiss());
+        assert!(shared.status().is_none());
+    }
+
+    #[tokio::test]
+    async fn no_repository_offering_the_plugin_is_a_problem_that_says_so() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.invites.list",
+            json!({ "_tag": "Ok", "payload": { "invites": [serde_json::to_value(invite(json!({ "_tag": "NeedsPlugin", "pluginId": "@korri:mgba", "title": "mGBA" }))).unwrap()] } }),
+        );
+        push(
+            &script,
+            "system.plugins.repositories",
+            json!({ "_tag": "Ok", "payload": { "userAdded": [], "repositoryInstalls": [], "otherInstalls": [] } }),
+        );
+        push(
+            &script,
+            "system.plugins.publishers",
+            json!({ "_tag": "Ok", "payload": { "entries": [] } }),
+        );
+        let shared = controller(korrid);
+        shared.refresh().await;
+        assert!(shared.act("invite:netplay:i1"));
+        settle().await;
+        assert_eq!(
+            serde_json::to_value(shared.status()).unwrap(),
+            json!({ "_tag": "Problem", "kicker": "Install failed", "reason": "No plugin repository on this device offers mGBA.", "canRetry": false })
+        );
+        let _ = Mutex::new(());
+    }
+}
