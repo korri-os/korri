@@ -68,7 +68,7 @@ fn clamp(value: f64) -> f64 {
 pub fn quantize(data: &mut [u8], mode: Mode) {
     let vivid = mode == Mode::Vivid;
     let saturations = PALETTE.map(saturation);
-    for pixel in data.chunks_exact_mut(4) {
+    for pixel in data.as_chunks_mut::<4>().0 {
         if pixel[3] == 0 {
             continue;
         }
@@ -132,7 +132,7 @@ mod tests {
             data[i * 4 + 3] = 255;
         }
         quantize(&mut data, Mode::Vivid);
-        for pixel in data.chunks_exact(4) {
+        for pixel in data.as_chunks::<4>().0 {
             assert!(PALETTE.iter().any(|entry| entry[..] == pixel[..3]));
         }
     }

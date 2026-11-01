@@ -177,7 +177,9 @@ fn credential_acl_is_private(acl: &[u8], uid: u32) -> bool {
         (32, 0, u32::MAX),        // other: no access
     ];
     acl[4..]
-        .chunks_exact(8)
+        .as_chunks::<8>()
+        .0
+        .iter()
         .zip(expected)
         .all(|(entry, (tag, permission, id))| {
             entry[..2] == tag.to_le_bytes()

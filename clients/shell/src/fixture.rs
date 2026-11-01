@@ -16,10 +16,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tungstenite::{
-    handshake::server::{Request, Response},
-    Message,
-};
+use tungstenite::Message;
 
 /// What the fixture does with a surface.
 #[derive(Clone, Debug, Default)]
@@ -344,9 +341,7 @@ fn serve(
             prefix: io::Cursor::new(head),
             stream,
         };
-        let mut socket =
-            tungstenite::accept_hdr(replay, |_: &Request, response: Response| Ok(response))
-                .map_err(io::Error::other)?;
+        let mut socket = tungstenite::accept(replay).map_err(io::Error::other)?;
         let Message::Text(first) = socket.read().map_err(io::Error::other)? else {
             return Ok(());
         };
