@@ -1,0 +1,79 @@
+[package]
+name = "korri-shell"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Native Korri shell: loads surface packages (.slint views, QuickJS logic) over korrid"
+
+# Standalone, like clients/linux: not a member of any workspace.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "korri-shell"
+path = "src/main.rs"
+
+[[example]]
+name = "fixture-korrid"
+required-features = ["fixture"]
+
+[dependencies]
+# Software renderer only. The window system comes from exactly one feature
+# below (`desktop`, the default, or `webos`). `unstable-fontique-011` gives the
+# shared font collection the shell trims when a surface is unloaded.
+slint = { version = "=1.18.1", default-features = false, features = [
+  "std",
+  "compat-1-2",
+  "renderer-software",
+  "unstable-fontique-011",
+] }
+# `internal` exposes the declared int/float and struct field types, and
+# `create_with_existing_window` for one-window backends. Pinned exactly.
+slint-interpreter = { version = "=1.18.1", default-features = false, features = [
+  "std",
+  "compat-1-2",
+  "renderer-software",
+  "internal",
+] }
+i-slint-compiler = "=1.18.1"
+fontique = { version = "=0.11.1", features = ["fontconfig-dlopen"] }
+# korrid's engine and version.
+rquickjs = "=0.14.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tungstenite = { version = "0.27", default-features = false, features = ["handshake"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+base64 = "0.22"
+sha2 = "0.10"
+anyhow = "1"
+libc = "0.2"
+pollster = "0.4"
+zeroize = "1"
+# korri-window-sdl = { path = "window-sdl", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["desktop"]
+# Workstation and handheld: Slint's winit backend on Wayland and X11.
+desktop = [
+  "slint/backend-winit-wayland",
+  "slint/backend-winit-x11",
+  "slint/unstable-winit-030",
+  "slint-interpreter/backend-winit-wayland",
+  "slint-interpreter/backend-winit-x11",
+]
+# webOS: the SDL adapter (window-sdl/), one window, no winit.
+webos = []
+# The fixture korrid used by tests and workstation proofs. Never shipped.
+fixture = []
+
+[profile.release]
+opt-level = 3
+codegen-units = 4
+
+[profile.dev.package.rquickjs-sys]
+opt-level = 3

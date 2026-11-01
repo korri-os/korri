@@ -1,0 +1,551 @@
+// Pico's home shelf, as a package the spike shell loads at run time.
+//
+// A port of surfaces/pico: PicoHome on PicoScreenShell, with PicoCartShelf,
+// PicoGameStage, PicoGameFacts and PicoCart. Every value shown comes from
+// logic.js; every size is a whole number of virtual pixels (--pico-px), and
+// the layout is a function of the window size alone. No callbacks, no keys:
+// the shell delivers input to logic.js.
+
+import "fonts/tiny5.ttf";
+import { P8 } from "palette.slint";
+import { Cart, CartView, Snap } from "cart.slint";
+
+export struct StatView {
+    figure: string,
+    caption: string,
+}
+
+export struct StageView {
+    title: string,
+    subtitle: string,
+    kicker: string,
+    resumable: bool,
+    download: string,
+    stats: [StatView],
+    cart: CartView,
+}
+
+export struct HintView {
+    key: string,
+    label: string,
+}
+
+// One line of text in a line box, as Chrome sets it: the glyphs sit half the
+// leading below the box's top, that half floored to a whole pixel, and the
+// result rounded to the pixel grid. Keeps every glyph on Chrome's row.
+component Line {
+    in property <string> text;
+    in property <length> font-size;
+    in property <color> color;
+    in property <length> line-height: font-size * 1.5;
+    in property <TextOverflow> overflow: clip;
+    in property <TextHorizontalAlignment> horizontal-alignment: left;
+    height: line-height;
+    preferred-width: t.preferred-width;
+    min-width: overflow == TextOverflow.elide ? 0px : t.preferred-width;
+    t := Text {
+        x: 0;
+        y: round((root.absolute-position.y + floor((line-height - font-size) / 2 / 1px) * 1px) / 1px) * 1px - root.absolute-position.y;
+        width: root.width;
+        height: font-size;
+        text: root.text;
+        font-size: root.font-size;
+        color: root.color;
+        overflow: root.overflow;
+        horizontal-alignment: root.horizontal-alignment;
+    }
+}
+
+// A face button drawn on an 8x8 pixel disc, and what it does (PicoHint).
+component Hint inherits HorizontalLayout {
+    in property <HintView> hint;
+    in property <length> p;
+    in property <length> small-text;
+    spacing: 2 * p;
+    alignment: start;
+    Rectangle {
+      width: 8 * p;
+      Rectangle {
+        y: Snap.px((parent.height - self.height) / 2);
+        width: 8 * p;
+        height: 8 * p;
+        property <color> disc: hint.key == "a" ? P8.key-a : P8.key-b;
+        Rectangle { x: 2 * p; y: 0; width: 4 * p; height: p; background: disc; }
+        Rectangle { x: p; y: p; width: 6 * p; height: p; background: disc; }
+        Rectangle { x: 0; y: 2 * p; width: 8 * p; height: 4 * p; background: disc; }
+        Rectangle { x: p; y: 6 * p; width: 6 * p; height: p; background: disc; }
+        Rectangle { x: 2 * p; y: 7 * p; width: 4 * p; height: p; background: disc; }
+        Line {
+            y: (8 * p - small-text) / 2;
+            line-height: small-text;
+            text: hint.key == "a" ? "A" : "B";
+            font-size: small-text;
+            color: P8.key-ink;
+            horizontal-alignment: center;
+        }
+      }
+    }
+    Line {
+        text: hint.label;
+        font-size: small-text;
+        color: P8.ink-dim;
+    }
+}
+
+// A condition or a fact as a small plate (PicoBadge, PicoStat, PicoStatRun).
+component Chip {
+    in property <string> kind; // "ok", "info", "stat" or "empty"
+    in property <string> text;
+    in property <string> caption;
+    in property <length> p;
+    in property <length> small-text;
+    width: row.preferred-width;
+    height: 10 * p;
+    Rectangle {
+        background: kind == "ok" ? P8.ok : P8.plate;
+    }
+    row := HorizontalLayout {
+        padding-left: 3 * p;
+        padding-right: 3 * p;
+        spacing: 2 * p;
+        Line {
+            line-height: 10 * p;
+            text: root.text;
+            font-size: small-text;
+            color: kind == "ok" ? P8.ink-dark : kind == "stat" ? P8.ink : kind == "empty" ? P8.ink-quiet : P8.plate-ink;
+        }
+        if kind == "stat" : Line {
+            line-height: 10 * p;
+            text: caption;
+            font-size: small-text;
+            color: P8.ink-quiet;
+        }
+    }
+}
+
+// A shelf cart in its slot: lifted with a hard shadow when it is the chosen one.
+component ShelfCart {
+    in property <CartView> cart;
+    in property <length> p;
+    in property <length> box-w;
+    in property <length> box-h;
+    in property <length> small-text;
+    in property <length> body-text;
+    in property <color> lift-shadow;
+    out property <length> shell-h: shell.shell-h;
+    width: shell.shell-w;
+    height: shell.shell-h;
+    if cart.hero : Rectangle {
+        x: 3 * p;
+        y: 3 * p;
+        background: lift-shadow;
+    }
+    shell := Cart {
+        cart: root.cart;
+        p: root.p;
+        still: false;
+        box-w: root.box-w;
+        box-h: root.box-h;
+        initials-size: body-text;
+        small-text: root.small-text;
+        body-text: root.body-text;
+    }
+}
+
+export component Surface inherits Window {
+    // Everything shown, from logic.js view().
+    in property <string> place: "korri";
+    in property <string> label: "LIBRARY";
+    in property <string> clock-label;
+    in property <bool> show-clock;
+    in property <string> readout;
+    in property <[HintView]> hints;
+    in property <string> menu-label: "MENU";
+    in property <bool> has-shelf;
+    in property <int> selected-index;
+    in property <int> total;
+    in property <bool> cursor-on-shelf;
+    in property <float> narrowest-art: 1;
+    in property <[CartView]> carts;
+    in property <StageView> stage;
+
+    title: "Pico";
+    background: P8.bg;
+    default-font-family: "Pico Tiny5";
+    preferred-width: 640px;
+    preferred-height: 480px;
+
+    // The virtual pixel (pico-tokens.css): 360 rows on the short side, never
+    // under two device pixels, always whole device pixels.
+    property <length> p: max(2px, floor(min(root.width, root.height) / 360px) * 1px);
+    property <length> u: 4 * p;
+    // Type, as whole glyph pixels of a seven-row face.
+    property <length> text-sm: 7 * p;
+    property <length> text-md: round(p / 1px * 1.5) * 7px;
+    property <length> text-lg: round(p / 1px * 2.5) * 7px;
+    property <length> text-xl: round(p / 1px * 3.5) * 7px;
+    // A glyph's advance in the small face (Tiny5's "0" is 4 of its 7 rows).
+    property <length> ch: text-sm * 4 / 7;
+
+    // ---- The frame: header, body, floor row (PicoScreenShell) ----
+    property <length> head-line: text-lg * 1.1;
+    property <length> head-h: u + head-line + 2 * p + 3 * p;
+    property <length> foot-line: text-sm * 1.5;
+    property <length> foot-h: u + foot-line + u * 1.5;
+    property <length> body-y: head-h;
+    property <length> body-h: root.height - head-h - foot-h;
+    // A short body steps the largest title down a size.
+    property <bool> short-body: body-h < 30 * text-sm;
+
+    // ---- The rack (PicoCartShelf.css) ----
+    property <bool> short-shelf: body-h < 30 * text-sm;
+    property <length> art-w: short-shelf ? 20 * p : 28 * p;
+    property <length> art-h: short-shelf ? 36 * p : 56 * p;
+    property <length> rack-gap: short-shelf ? 3 * p : 4 * p;
+    // Every slot is as tall as the tallest cart; the narrowest art makes it.
+    property <length> tallest-art: narrowest-art <= 0 ? art-h : min(art-h, art-w / narrowest-art);
+    property <length> slot-h: 4 * p + tallest-art + 6 * p + p;
+    property <length> slot-w: art-w + 6 * p + 3 * p;
+    property <length> pitch: slot-w + rack-gap;
+    property <length> rack-h: has-shelf ? 8 * p + slot-h + u + 3 * p : 0px;
+    property <length> rack-y: body-y + body-h - rack-h;
+    property <length> rack-w: root.width - 4 * u;
+    property <length> rack-content-w: carts.length * slot-w + max(0, carts.length - 1) * rack-gap;
+    // How far the rack is scrolled. It moves only as far as it must to keep the
+    // chosen cart in view, with one cart of margin either side, so the
+    // neighbour shows there is more (PicoCartShelf's reveal).
+    property <length> scroll: 0px;
+
+    // ---- The stage (PicoGameStage.css) ----
+    property <length> stage-h: body-h - rack-h;
+    property <bool> stage-very-short: stage-h < 24 * text-sm;
+    property <bool> stage-no-art: stage-h < 16 * text-sm || (root.width < 67.5 * ch && stage-h < 40 * text-sm);
+    property <length> stage-pad-v: stage-very-short ? 2 * p : u;
+    property <length> title-size: short-body || stage-very-short ? text-lg : text-xl;
+    property <length> facts-gap: stage-very-short ? u : 3 * u;
+    property <length> facts-inner-gap: stage-h < 16 * text-sm ? p : u;
+    property <length> still-box-w: min(root.width * 42%, 190 * p);
+    property <length> still-box-h: min(stage-h - 38 * p, 190 * p);
+    property <length> still-block-w: stage-no-art ? 0px : still.shell-w + 8 * p;
+    property <length> still-block-h: still.shell-h + 8 * p;
+    property <length> facts-x: 2 * u + (stage-no-art ? 0px : still-block-w + 3 * u);
+    property <length> facts-w: root.width - 2 * u - facts-x - 3 * p;
+
+    // ---- Motion (pico-motion.css), all stepped ----
+    // pico-cycle: the chosen cart's shadow walks red, orange, pink, 600 ms a round.
+    property <int> cycle-phase: 0;
+    // pico-land: the stage's cartridge drops 12 pixels into place in 4 steps over 240 ms.
+    property <int> land-step: 4;
+
+    function reveal() {
+        if (pitch * selected-index - scroll + slot-w > rack-w - slot-w) {
+            scroll = pitch * selected-index + slot-w - (rack-w - slot-w);
+        } else if (pitch * selected-index - scroll < slot-w) {
+            scroll = pitch * selected-index - slot-w;
+        }
+        scroll = max(0px, min(scroll, rack-content-w - rack-w));
+    }
+
+    init => {
+        reveal();
+    }
+    changed selected-index => {
+        land-step = 0;
+        reveal();
+    }
+    changed width => {
+        reveal();
+    }
+
+    Timer {
+        interval: 200ms;
+        running: cursor-on-shelf && has-shelf;
+        triggered => {
+            cycle-phase = cycle-phase >= 2 ? 0 : cycle-phase + 1;
+        }
+    }
+    Timer {
+        interval: 60ms;
+        running: land-step < 4;
+        triggered => {
+            land-step += 1;
+        }
+    }
+
+    // ---- Header (PicoStatusBar): where you are, the clock, the palette ----
+    // The way back yields to where you are when the bar is under 75 glyphs wide.
+    property <bool> show-place: root.width - 4 * u >= 75 * ch;
+    property <length> head-baseline: u + floor((head-line - text-lg) / 2 / 1px) * 1px + text-lg * 6 / 7;
+    place-text := Text {
+        x: 2 * u;
+        y: head-baseline - text-lg * 6 / 7;
+        height: text-lg;
+        visible: show-place;
+        text: place;
+        font-size: text-lg;
+        color: P8.ink;
+    }
+    Text {
+        // A space of the large face (200 of Tiny5's 700 units) after the place.
+        x: show-place ? 2 * u + place-text.preferred-width + text-lg * 2 / 7 : 2 * u;
+        y: head-baseline - text-lg * 6 / 7;
+        width: root.width - 4 * u - self.x + 2 * u - (show-clock ? clock.preferred-width + 2 * u : 0px);
+        height: text-lg;
+        text: label;
+        font-size: text-lg;
+        color: P8.accent;
+        overflow: elide;
+    }
+    clock := Text {
+        x: root.width - 2 * u - self.preferred-width;
+        y: head-baseline - text-sm * 6 / 7;
+        height: text-sm;
+        visible: show-clock;
+        text: clock-label;
+        font-size: text-sm;
+        color: P8.ink-quiet;
+    }
+    for cell in 15 : Rectangle {
+        x: 2 * u + Snap.px(cell * rack-w / 15);
+        y: u + head-line + 2 * p;
+        width: 2 * u + Snap.px((cell + 1) * rack-w / 15) - self.x;
+        height: 3 * p;
+        background: P8.palette(cell);
+    }
+
+    // ---- The stage: the chosen cart large, and what Korri said about it ----
+    if has-shelf && !stage-no-art : Rectangle {
+        x: 2 * u;
+        y: body-y + stage-pad-v + (stage-h - 2 * stage-pad-v - still-block-h) / 2 - 3 * p * (4 - land-step);
+        width: still.shell-w + 8 * p;
+        height: still.shell-h + 8 * p;
+        Rectangle {
+            x: 8 * p;
+            y: 8 * p;
+            width: still.shell-w;
+            height: still.shell-h;
+            background: P8.cast-far;
+        }
+        Rectangle {
+            x: 4 * p;
+            y: 4 * p;
+            width: still.shell-w;
+            height: still.shell-h;
+            background: P8.cast-near;
+        }
+    }
+    still := Cart {
+        x: 2 * u;
+        y: body-y + stage-pad-v + (stage-h - 2 * stage-pad-v - still-block-h) / 2 - 3 * p * (4 - land-step);
+        visible: has-shelf && !stage-no-art;
+        cart: stage.cart;
+        p: p;
+        still: true;
+        box-w: still-box-w;
+        box-h: still-box-h;
+        initials-size: text-xl;
+        small-text: text-sm;
+        body-text: text-md;
+    }
+
+    // The facts, centred beside the cartridge (PicoGameFacts and the tally).
+    if has-shelf : VerticalLayout {
+        x: facts-x;
+        y: body-y + stage-pad-v;
+        width: facts-w + 3 * p;
+        height: stage-h - 2 * stage-pad-v;
+        alignment: center;
+        spacing: facts-gap;
+        padding-right: 3 * p;
+        padding-bottom: 3 * p;
+        VerticalLayout {
+            spacing: facts-inner-gap;
+            if stage.kicker != "" && stage-h >= 16 * text-sm : Line {
+                text: stage.kicker;
+                font-size: text-sm;
+                color: P8.go;
+            }
+            // The title: line-height 1.1, wrapping. Slint spaces wrapped
+            // lines at the face's own 1.0.
+            Rectangle {
+                min-height: title.preferred-height + title-size * 0.1;
+                title := Text {
+                    x: 0;
+                    y: round((parent.absolute-position.y + floor(title-size * 0.05 / 1px) * 1px) / 1px) * 1px - parent.absolute-position.y;
+                    width: parent.width;
+                    text: stage.title;
+                    font-size: title-size;
+                    color: P8.ink;
+                    wrap: word-wrap;
+                }
+            }
+            if stage.subtitle != "" : Line {
+                text: stage.subtitle;
+                font-size: text-md;
+                color: P8.accent;
+                overflow: elide;
+            }
+            if stage-h >= 16 * text-sm : Rectangle {
+                height: u + chips-h;
+                // RESUME, the download, then the play facts or NEVER PLAYED,
+                // wrapping as PicoGameFacts' chips do.
+                property <length> line-step: 10 * p + 2 * p;
+                property <length> gap: 3 * p;
+                property <length> room: facts-w;
+                property <length> a-w: stage.resumable ? chip-a.width : 0px;
+                property <length> a-end: stage.resumable ? a-w + gap : 0px;
+                property <bool> b-on: stage.download != "";
+                property <bool> b-wrap: b-on && a-end > 0 && a-end + chip-b.width > room;
+                property <length> b-x: b-wrap ? 0px : a-end;
+                property <length> b-y: b-wrap ? line-step : 0px;
+                property <length> b-end: b-on ? b-x + chip-b.width + gap : a-end;
+                property <length> b-line: b-on ? b-y : 0px;
+                property <bool> c-wrap: b-end > 0 && b-end + chip-c.width > room;
+                property <length> c-x: c-wrap ? 0px : b-end;
+                property <length> c-y: c-wrap ? b-line + line-step : b-line;
+                property <bool> d-on: stage.stats.length > 1;
+                property <length> c-end: c-x + chip-c.width + gap;
+                property <bool> d-wrap: d-on && c-end + chip-d.width > room;
+                property <length> d-x: d-wrap ? 0px : c-end;
+                property <length> d-y: d-wrap ? c-y + line-step : c-y;
+                property <length> chips-h: (d-on ? d-y : c-y) + 10 * p;
+                chip-a := Chip {
+                    x: 0;
+                    y: u;
+                    visible: stage.resumable;
+                    kind: "ok";
+                    text: "RESUME";
+                    p: p;
+                    small-text: text-sm;
+                }
+                chip-b := Chip {
+                    x: b-x;
+                    y: u + b-y;
+                    visible: b-on;
+                    kind: "info";
+                    text: stage.download;
+                    p: p;
+                    small-text: text-sm;
+                }
+                chip-c := Chip {
+                    x: c-x;
+                    y: u + c-y;
+                    kind: stage.stats.length == 0 ? "empty" : "stat";
+                    text: stage.stats.length == 0 ? "NEVER PLAYED" : stage.stats[0].figure;
+                    caption: stage.stats.length == 0 ? "" : stage.stats[0].caption;
+                    p: p;
+                    small-text: text-sm;
+                }
+                chip-d := Chip {
+                    x: d-x;
+                    y: u + d-y;
+                    visible: d-on;
+                    kind: "stat";
+                    text: d-on ? stage.stats[1].figure : "";
+                    caption: d-on ? stage.stats[1].caption : "";
+                    p: p;
+                    small-text: text-sm;
+                }
+            }
+        }
+        // Position on the shelf: a readout, so it yields on a short stage.
+        if stage-h >= 16 * text-sm : HorizontalLayout {
+            alignment: start;
+            height: foot-line;
+            spacing: p;
+            Line { text: selected-index + 1; font-size: text-sm; color: P8.ink-quiet; }
+            Line { text: "/"; font-size: text-sm; color: P8.ink-quiet; }
+            Line { text: total; font-size: text-sm; color: P8.ink-quiet; }
+        }
+    }
+
+    // ---- The rack: every game a small cartridge on one floor ----
+    if has-shelf : Rectangle {
+        x: 2 * u;
+        y: rack-y;
+        width: rack-w;
+        height: rack-h - 3 * p;
+        clip: true;
+        Rectangle {
+            x: -scroll;
+            width: rack-content-w;
+            for cart[index] in carts : ShelfCart {
+                x: index * pitch;
+                y: 8 * p + slot-h - p - self.shell-h - (cart.hero ? 4 * p : 0px);
+                cart: cart;
+                p: p;
+                box-w: art-w;
+                box-h: art-h;
+                small-text: text-sm;
+                body-text: text-md;
+                lift-shadow: cursor-on-shelf ? P8.cycle(cycle-phase) : P8.ink;
+            }
+        }
+    }
+    if has-shelf : Rectangle {
+        x: 2 * u;
+        y: rack-y + rack-h - 3 * p;
+        width: rack-w;
+        height: 3 * p;
+        background: P8.floor;
+    }
+
+    // ---- The floor row: MENU, the readout, the hints (PicoButtonBar) ----
+    property <length> foot-y: root.height - foot-h;
+    property <length> foot-mid: foot-y + u + foot-line / 2;
+    menu-key := Rectangle {
+        x: 2 * u;
+        y: Snap.px(foot-y + (foot-h - 14 * p) / 2);
+        width: menu-row.preferred-width;
+        height: 12 * p;
+        Rectangle {
+            x: 2 * p;
+            y: 2 * p;
+            background: P8.plate-shadow;
+        }
+        Rectangle {
+            background: P8.plate;
+        }
+        menu-row := HorizontalLayout {
+            padding-top: 2 * p;
+            padding-bottom: 2 * p;
+            padding-left: 3 * p;
+            padding-right: 3 * p;
+            spacing: 2 * p;
+            Rectangle {
+                width: 8 * p;
+                height: 8 * p;
+                Rectangle { x: p; y: p; width: 6 * p; height: p; background: P8.plate-ink; }
+                Rectangle { x: p; y: 3 * p; width: 6 * p; height: p; background: P8.plate-ink; }
+                Rectangle { x: p; y: 5 * p; width: 6 * p; height: p; background: P8.plate-ink; }
+            }
+            Line {
+                line-height: 8 * p;
+                text: menu-label;
+                font-size: text-sm;
+                color: P8.plate-ink;
+            }
+        }
+    }
+    hints-row := HorizontalLayout {
+        x: root.width - 2 * u - self.preferred-width;
+        y: foot-y + u;
+        width: self.preferred-width;
+        height: foot-line;
+        spacing: Snap.px(u * 1.5);
+        for hint in hints : Hint {
+            hint: hint;
+            p: p;
+            small-text: text-sm;
+        }
+    }
+    Line {
+        x: 2 * u + menu-key.width + 2 * p + 2 * u;
+        y: foot-y + u;
+        width: max(0px, hints-row.x - 2 * u - self.x);
+        text: readout;
+        font-size: text-sm;
+        color: P8.ink-quiet;
+        overflow: elide;
+    }
+}
