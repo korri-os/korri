@@ -70,7 +70,7 @@
         korrid-linux-device = import ./services/korrid/nixos-module.nix { korri = self; };
         korri-limits = import ./services/limitsd/nixos-module.nix { korri = self; };
         korri-linux-host = import ./services/inputd/nix/korri-linux-host.nix { korri = self; };
-        korri-portal = import ./clients/portal/nix/nixos-module.nix { korri = self; };
+        korri-shell = import ./clients/shell/nix/nixos-module.nix { korri = self; };
         korri-plugin-host = import ./services/korrid/plugin-host/nixos-module.nix { korri = self; };
       };
     in
@@ -164,7 +164,6 @@
           inherit pkgs;
           hooksInstall = tasks.hooks-install.program;
         };
-        devShells.portal = import ./clients/portal/devshell.nix { inherit pkgs; };
         devShells.android = import ./clients/android/devshell.nix {
           inherit pkgs;
           korri = self;
@@ -177,7 +176,6 @@
           korrid = korridPackage;
           korri = cli.package;
           korri-limitsd = import ./services/limitsd/package.nix { inherit pkgs crane; };
-          korri-portal = import ./clients/portal/nix/package.nix { inherit pkgs; };
           default = self.packages.${system}.korrid;
         }
         // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
@@ -189,14 +187,9 @@
             rgds-update-renderer = import ./nix/devices/rgds/update/renderer.nix { inherit pkgs; };
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
-            korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
             korri-shell = shell.package;
-            korri-portal-input-probe = import ./clients/linux/diagnostics/package.nix { inherit pkgs; };
-            korri-portal-native-input-probe = import ./clients/linux/diagnostics/native-package.nix {
-              inherit pkgs;
-            };
+            korri-shell-surfaces = shell.surfaces;
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
-            korri-chromium = import ./clients/linux/chromium/package.nix { inherit pkgs; };
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
@@ -234,7 +227,6 @@
           h700-uboot = h700.uboot;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
-          korri-chromium-aarch64 = import ./clients/linux/chromium/cross.nix { inherit pkgs; };
           rpminiv2-kernel = rpminiv2.kernelCross;
           rpminiv2-recovery-kernel = rpminiv2.recoveryKernelCross;
           rpminiv2-kernel-source-gcc15 = rpminiv2.kernelSourceGcc15;
@@ -372,14 +364,11 @@
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
             odin2portal = odin2portal.moduleCheck pkgs;
             odin2portal-inputplumber = odin2portal.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
-            korri-portal-module = import ./clients/portal/nix/module-check.nix {
-              inherit pkgs nixpkgs;
+            korri-shell-module = shell.moduleCheck {
+              inherit nixpkgs;
               korri = self;
             };
-            korri-portal-freezer = import ./clients/portal/nix/kiosk-freezer-vm-test.nix {
-              inherit pkgs;
-              korrid = self.packages.${system}.korrid;
-            };
+            korri-shell-freezer = shell.freezerCheck self.packages.${system}.korrid;
             korrid-game-stop = import ./services/korrid/game-stop-vm-test.nix {
               inherit pkgs;
               korrid = self.packages.${system}.korrid;

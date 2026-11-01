@@ -1,18 +1,20 @@
-# Portal → person CLI parity
+# Settings rows → person CLI parity
 
 Audit base: `a8cc7f528` (ADR 0031). Commands below start with `korri`.
-This is an inventory of real portal producers, not a proposed settings schema.
+This is an inventory of real producers, not a proposed settings schema. The
+portal published these rows until 2026-11; korrid now builds them for every
+surface (`services/korrid/src/surface/`), ported with the same IDs.
 Dynamic IDs are shown as prefixes or with the producer's placeholders.
 A command still obeys korrid's permissions, revisions, route availability and
 local-only boundaries. A mapping does not promise remote authorization.
 
 ## Settings rows
 
-Source paths in this section are under `clients/portal/src/surface/`.
-`settings-model.ts` publishes the device rows; `use-launchables.ts` routes their
-changes. `launch-settings-model.ts` publishes launch rows; `launch-settings.ts`
-routes them. `plugin-repositories.ts` and `plugin-repositories-controller.ts`
-publish and route plugin rows.
+Source paths in this section are under `services/korrid/src/surface/`.
+`settings_model.rs` publishes the device rows. `launch_model.rs` publishes
+launch rows; `launch_settings.rs` routes them. `plugins.rs` publishes and
+routes plugin rows. Rows below that name a `.ts` file record the portal
+producer the korrid port came from.
 
 | Portal setting ID / action | CLI command | Result / limits |
 | --- | --- | --- |
@@ -54,8 +56,8 @@ publish and route plugin rows.
 | `launch:reload`, `launch:retry`, `launch-device:retry` | `launch-settings show [--game GAME]`; explicitly repeat a failed command | No automatic conflict retry |
 | `launch:runner` | `play GAME --runner ID`; `launch-settings runner ID --game GAME` | One-launch choice vs persisted choice |
 | `launch:cancel` | Exit / do not submit a command | Navigation only |
-| Pico `pico:font` (`surfaces/pico/src/pico-settings-view.ts`) | **Needs shared RPC; schema unresolved** | `pico-font-preference.ts` keeps `pico.font` in browser storage; the host treaty never receives it |
-| Zone `zone:system-look` (`surfaces/zone/src/plan/options.ts`) | **Needs shared RPC; schema unresolved** | `zone-look-preference.ts` keeps `zone.look` in browser storage; the host treaty never receives it |
+| Pico `pico.font` (native package preference) | **No CLI command; schema unresolved** | The package declares it; korrid stores it per surface (`app.surface.preferences`) |
+| Zone `zone.look` (native package preference) | **No CLI command; schema unresolved** | The package declares it; korrid stores it per surface (`app.surface.preferences`) |
 | `launch:set:PLACE#file:*`, `runner-facts:*`, unavailable GPU row | `launch-settings show [layer] [scope]` | Read-only facts; hooks, environment, arguments, working directory and raw config remain file-authored exceptions |
 
 Layer flags: Device by default, `--system SYSTEM`, `--game GAME`,
@@ -93,7 +95,7 @@ a representative game or release.
 | `use-launchables.ts`: export active / retired identity backup | `identity backup [--retired PUBLIC_KEY]` | Password-encrypted output; private password input |
 | `use-launchables.ts`: switch identity from encrypted backup / NIP-46 | `identity switch local`; `identity switch nip46` | Same coordinator and data disposition; trust-loss confirmation stays explicit |
 | `use-launchables.ts`: delete retained identity key | `identity retired delete PUBLIC_KEY` | Same backup confirmation; `--yes` does not manufacture it |
-| `surface-preference.ts`: `?surface=ID` chooses and remembers a surface | **Needs a shared RPC; schema unresolved** | Existing producer is browser-local `korri.surface` storage, not korrid. Do not edit Chromium files from CLI |
+| Start surface | **No korrid producer** | The device image sets `services.korri.shell.startSurface`; the shell switches surfaces at run time |
 | Browse, search/filter a library, close sheets, retry reads, dismiss notices | `library games list`, `status`, or repeat the relevant read | Navigation/transient presentation; no settings mutation |
 
 Sleep, power off and Restart Korri have no portal action/RPC on the audit base.
@@ -125,10 +127,11 @@ storage, terminal/piped behavior and staging expiry.
 ## Guard and remaining work
 
 `nix run .#cli-check -- FILTER` always runs `tests/parity.py` before Rust format,
-lint and the focused Rust tests. The guard reads the actual portal setting rows,
-plugin row/action ID constructors and their prefix constants, launch ID
-constructors, limit keys, dynamic editor
-paths and the two surface-owned preference IDs. An unrecognized ID/path fails
+lint and the focused Rust tests. The guard reads korrid's settings rows
+(`settings_model.rs`), plugin row/action ID constants (`plugins.rs`), launch ID
+constructors (`launch_model.rs`, `launch_id`) and the two surface-owned
+preference keys. The portal guard's launch editor path and limit-key checks
+read TypeScript constructors that no longer exist and were not ported. An unrecognized ID/path fails
 and needs a command mapping in that change.
 Its small test-local table is not a second runtime settings manifest. Negative
 tests prove new literal, constant and dynamic IDs, plugin actions, and changed
@@ -136,7 +139,7 @@ publisher prefixes cannot pass without review.
 The check refuses a stale known-gap entry: once a gap's command exists, the
 entry must become a real mapping.
 
-This guard checks the current settings producer seams, not arbitrary new portal
+This guard checks the current settings producer seams, not arbitrary new korrid
 files or every action handler. Keep this action audit current during review.
 A new producer must be added to the guard. Command mappings do not replace
 real-process tests of effects and authorization.

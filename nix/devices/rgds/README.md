@@ -14,7 +14,7 @@ this tree are not proof that a new image has passed hardware acceptance.
 |---|---|
 | Kernel | Shared Linux 7.2, pinned in `../../product/kernel/mainline-7.2.nix`; upstream `rk3568-anbernic-rg-ds.dts`. |
 | Bootloader | U-Boot v2026.10-rc4, upstream `anbernic-rg-ds-rk3568_defconfig`; Rockchip BL31/TPL binaries from pinned nixpkgs. These firmware binaries are not fully open firmware. |
-| Display | The display-subsystem KMS device has DSI-1 and DSI-2. The current compositor uses only DSI-1 at 640×480, 60 Hz. The portal starts automatically; Chromium still uses `--disable-gpu`. |
+| Display | The display-subsystem KMS device has DSI-1 and DSI-2. The current compositor uses only DSI-1 at 640×480, 60 Hz. The native shell starts automatically and draws with its software renderer. |
 | GPU | The running kernel identified Panfrost `fde60000.gpu`, Mali-G52. Linux 7.2 `rk356x-base.dtsi` declares `gpu@fde60000`; Panfrost registers devfreq under the device name. The governor and limits helper now use `fde60000.gpu`. |
 | Wi-Fi | RTL8821CS, `rtw88_8821cs`, as on RG353M. At 652 s the RG DS logged `firmware failed to ack driver for entering Deep Power mode`. NetworkManager powersave is now disabled, matching the sister device's link-failure workaround. Stability after this change is unverified. |
 | Bluetooth | The RG DS DTS declares `realtek,rtl8821cs-bt` on UART1 with RTS/CTS and wake/enable GPIOs. The shared kernel's generated config lacked `BT_HCIUART_3WIRE` and `BT_HCIUART_RTL`. The device reuses `../rg353m/bluetooth.nix` to select both and enable BlueZ. Controller discovery and pairing remain unverified. |

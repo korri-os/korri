@@ -45,8 +45,6 @@ public class KorriPairingCeremonyRemovalContractTest {
         List<String> forbidden = List.of(
                 "openPairing(", "NotPaired", "readonly paired", ".paired", "paired:");
         assertTypeScriptTreeContainsNone(
-                repository.resolve("clients/portal/src"), forbidden);
-        assertTypeScriptTreeContainsNone(
                 repository.resolve("contracts/bridge"), forbidden);
         try (Stream<Path> surfaces = Files.list(repository.resolve("surfaces"))) {
             for (Path surface : surfaces.filter(path -> Files.isDirectory(path.resolve("src"))).toList()) {

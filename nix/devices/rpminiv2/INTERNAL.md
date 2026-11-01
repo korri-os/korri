@@ -18,7 +18,7 @@ SD present, no failed units.
 
 The product kernel builds the UFS host driver in (`config-korri.delta`). The
 UFS BSG node stays off, so userspace cannot send UFS query requests, such as a
-boot-LUN change. A udev rule in `portal.nix` marks every block device on LUNs 1
+boot-LUN change. A udev rule in `hardware.nix` marks every block device on LUNs 1
 to 5 read-only when it appears. This prevents accidental writes. It does not
 stop root from clearing the flag.
 
@@ -83,8 +83,7 @@ nix run .#rpminiv2-update -- --status
 
 System boot does **not** replace the persistent Korri service-bundle selection.
 This is deliberate: [bundle deployment](../../../services/inputd/deploy/README.md)
-and [portal deployment](../../../clients/portal/DEPLOYMENT.md) both preserve valid
-selections across system changes. Keep this as a separate reviewed operation,
+preserves valid selections across system changes. Keep this as a separate reviewed operation,
 not an implicit updater side effect. A booted new system can still run an old
 korrid until this step completes.
 
@@ -108,11 +107,11 @@ The existing selector checks the immutable bundle, keeps the previous bundle
 GC root, restarts its consumers and verifies health. It performs no build.
 Also check `/proc/$(systemctl show korrid -p MainPID --value)/exe` on the device
 against the bundle's `bin/korrid` target. Preserve both old and new bundle roots
-until full acceptance passes. The portal has its own explicit web selection;
-a service-bundle switch does not replace it.
+until full acceptance passes. The native shell and its surface packages come
+with the system closure; a service-bundle switch does not replace them.
 
 Require `current=` and `profile=` to equal the built system. Check failed units,
-korrid, compositor and portal, unchanged plugin-host trust, uclamp/launch limits,
+korrid, compositor and shell, unchanged plugin-host trust, uclamp/launch limits,
 and a real korrid launch through the selected runner. Do not treat staged files
 or a successful SSH copy as boot acceptance.
 

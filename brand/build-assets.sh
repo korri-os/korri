@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate every PWA icon from the canonical SVGs in this folder.
+# Generate the app icons from the canonical SVGs in this folder.
 # Needs python3, resvg, imagemagick on PATH: run as `nix run .#brand-assets`.
 # Outputs are checked in.
 #
@@ -7,8 +7,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"
-PORTAL="$ROOT/clients/portal/public"
+ICONS="$HERE/icons"
 DARK='#000000'
 
 python3 "$HERE/build-leaf-mark.py"
@@ -31,24 +30,13 @@ field_png() {
   magick "$tmp/leaf-$1.png" -background "$2" -flatten "$3"
 }
 
-# --- portal / PWA ----------------------------------------------------------
+# --- app icons -------------------------------------------------------------
 
-mkdir -p "$PORTAL"
+mkdir -p "$ICONS"
 
-# SVG favicon: leaf on transparent; the tab chrome supplies the field. Chrome
-# and Firefox use it; Safari falls back to the PNGs below.
-cp "$HERE/korri-mark.svg" "$PORTAL/favicon.svg"
-
-# Manifest icons. `any` shows the full field; `maskable` is the same artwork
-# because the leaf already sits inside the 80% safe circle.
+# Launcher icons (the webOS package uses icon-192.png): the full dark field.
 for s in 192 512; do
-  field_png "$s" "$DARK" "$PORTAL/icon-$s.png"
+  field_png "$s" "$DARK" "$ICONS/icon-$s.png"
 done
-field_png 180 "$DARK" "$PORTAL/apple-touch-icon.png"
 
-# Legacy favicon.ico: 16/32/48 from the dark field so the tab reads as Korri
-# in browsers that ignore the SVG.
-for s in 16 32 48; do field_png "$s" "$DARK" "$tmp/fav-$s.png"; done
-magick "$tmp/fav-16.png" "$tmp/fav-32.png" "$tmp/fav-48.png" "$PORTAL/favicon.ico"
-
-echo "brand assets written to $PORTAL"
+echo "brand assets written to $ICONS"

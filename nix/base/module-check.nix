@@ -94,7 +94,7 @@ assert lib.all (
   && device.config.services.seatd.enable
   && device.config.security.polkit.enable
 ) (lib.attrValues korri.nixosConfigurations);
-assert korri.nixosConfigurations.rg353m.config.services.korri.compositor.kiosk.enable;
+assert korri.nixosConfigurations.rg353m.config.services.korri.shell.enable;
 assert !(korri.nixosConfigurations.odin2portal.options.services ? korriKiosk);
 pkgs.runCommand "korri-base-module-check" { } ''
   touch "$out"

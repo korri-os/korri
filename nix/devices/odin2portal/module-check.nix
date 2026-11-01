@@ -3,9 +3,9 @@
 let
   inherit (pkgs) lib;
   c = configuration.config;
-  kiosk = c.systemd.services.korri-chromium-kiosk;
+  shell = c.systemd.services.korri-shell;
   compositor = c.systemd.services.korri-compositor;
-  credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
+  credential = "KORRID_RPC_CAPABILITY:/run/korri-shell-credentials/KORRID_RPC_CAPABILITY";
   oldBootstrapAppId = "chrome-127.0.0.1__kiosk-blank.html-Default";
   inputDataNames = map lib.getName c.services.korriLinuxInput.provider.extraDataPackages;
 in
@@ -69,51 +69,49 @@ assert c.services.korriLinuxHost.runtimeUser == "korri";
 assert c.services.korriLinuxHost.runtimeUid == 1000;
 assert c.services.korriLinuxHost.validation.enable;
 assert c.services.korriLinuxHost.audio.enable;
-assert c.services.korri.webSurfaceHost.enable;
-assert c.services.korri.webSurfaceHost.surfaceId == "pico";
-assert c.services.korri.compositor.kiosk.enable;
+assert c.services.korri.shell.enable;
+assert c.services.korri.shell.startSurface == "pico";
 assert c.services.korri.pluginHost.enable;
-assert c.systemd.services.korrid.environment.KORRID_PORTAL_UNIT == "korri-chromium-kiosk.service";
+assert c.systemd.services.korrid.environment.KORRID_PORTAL_UNIT == "korri-shell.service";
 assert c.systemd.services.korrid.environment.KORRID_PORTAL_FREEZER_ENABLED == "true";
 assert !(lib.hasInfix oldBootstrapAppId c.services.korriLinuxHost.compositor.extraConfig);
 assert !(configuration.options.services ? korriKiosk);
 assert !(c.systemd.services ? korri-kiosk);
 
-# Odin starts the existing private window.KorriRpc host on the compositor's
-# published Wayland socket. No credential is exposed through the environment.
-assert lib.hasSuffix "/bin/korri-chromium-kiosk" kiosk.serviceConfig.ExecStart;
-assert kiosk.serviceConfig.Type == "notify";
-assert kiosk.serviceConfig.User == "korri-portal";
-assert kiosk.serviceConfig.NoNewPrivileges;
-assert kiosk.serviceConfig.ProtectSystem == "strict";
-assert kiosk.serviceConfig.PrivateTmp;
-assert kiosk.serviceConfig.LoadCredential == [ credential ];
+# Odin starts the native shell on the compositor's published Wayland socket.
+# No credential is exposed through the environment.
+assert lib.hasInfix "/bin/korri-shell " shell.serviceConfig.ExecStart;
+assert lib.hasInfix " --installed " shell.serviceConfig.ExecStart;
+assert shell.serviceConfig.User == "korri-portal";
+assert shell.serviceConfig.NoNewPrivileges;
+assert shell.serviceConfig.ProtectSystem == "strict";
+assert shell.serviceConfig.PrivateTmp;
+assert shell.serviceConfig.PrivateDevices;
+assert shell.serviceConfig.LoadCredential == [ credential ];
 assert c.systemd.services.korrid.serviceConfig.LoadCredential == [ credential ];
-assert !(kiosk.environment ? KORRID_RPC_CAPABILITY);
+assert !(shell.environment ? KORRID_RPC_CAPABILITY);
 assert !(c.systemd.services.korrid.environment ? KORRID_RPC_CAPABILITY);
-assert kiosk.environment.KORRID_PORTAL_ORIGIN == "http://127.0.0.1:8099";
-assert kiosk.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/?surface=pico";
-assert kiosk.environment.WAYLAND_DISPLAY == compositor.environment.KORRI_WAYLAND_DISPLAY;
+assert shell.environment.KORRID_PORTAL_ORIGIN == c.systemd.services.korrid.environment.KORRID_PORTAL_ORIGIN;
+assert shell.environment.WAYLAND_DISPLAY == compositor.environment.KORRI_WAYLAND_DISPLAY;
 assert
-  kiosk.serviceConfig.BindReadOnlyPaths == [
+  shell.serviceConfig.BindReadOnlyPaths == [
     "/run/user/1000/korri-wayland:/run/korri-portal/korri-wayland"
   ];
-assert lib.elem "korri-compositor.service" kiosk.requires;
-assert lib.elem "korrid.service" kiosk.requires;
+assert lib.elem "korri-compositor.service" shell.requires;
+assert lib.elem "korrid.service" shell.requires;
 
 assert c.services.korriProduct.sleep.states == [ ];
 assert c.services.logind.settings.Login.HandlePowerKey == "poweroff";
 assert c.services.logind.settings.Login.HandleLidSwitch == "poweroff";
 
-# The portal composition does not depend on the optional streaming host.
+# The shell composition does not depend on the optional streaming host.
 assert !(c.systemd.services ? sunshine);
 assert !(c.systemd.sockets ? korri-certificate-control);
 assert !(lib.elem "sunshine.service" compositor.wants);
-assert c.systemd.services ? korri-chromium-kiosk;
+assert c.systemd.services ? korri-shell;
+assert !(c.systemd.services ? korri-chromium-kiosk);
+assert !c.services.nginx.enable;
 
 pkgs.runCommand "odin2portal-module-check" { } ''
-  grep -F 'korri-portal-shell' ${kiosk.serviceConfig.ExecStart}
-  grep -F -- '--ozone-platform=wayland' ${kiosk.serviceConfig.ExecStart}
-  if grep -F '${oldBootstrapAppId}' ${kiosk.serviceConfig.ExecStart}; then exit 1; fi
   touch "$out"
 ''

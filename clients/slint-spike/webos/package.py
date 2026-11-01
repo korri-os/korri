@@ -145,7 +145,7 @@ def main():
     ipk = target / (APP_ID + '_' + version + '_arm.ipk')
     if ipk.exists():
         parser.error('output already exists; choose a fresh output directory')
-    icon = ROOT / 'clients/portal/public/icon-192.png'
+    icon = ROOT / 'brand/icons/icon-192.png'
     appinfo = app_info(version)
     packageinfo = {'id': APP_ID, 'version': version, 'app': APP_ID}
     app_base = 'usr/palm/applications/' + APP_ID + '/'

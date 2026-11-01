@@ -16,7 +16,7 @@ LANES = (
     "cache",
     "fmt",
     "treaty",
-    "portal",
+    "shell",
     "parity",
     "cli",
     "korrid",
@@ -24,9 +24,8 @@ LANES = (
     "limitsd",
     "pico",
     "zone",
-    "boxbuster",
 )
-SURFACES = {"pico", "zone", "boxbuster"}
+SURFACES = {"pico", "zone"}
 # Inputs of the existing cache tests and delivery-workflow check. Shared Nix
 # trust/composition and unfamiliar helpers select all lanes in the requested profile.
 CACHE_POLICY_INPUTS = {
@@ -47,29 +46,14 @@ CACHE_POLICY_INPUTS = {
     "nix/cache/plugin-read-failure.py",
     "nix/cache/plugin-read-failure.test.py",
 }
-# Exact producer files read by clients/cli/tests/parity.py, not all portal UI.
+# Exact producer files read by clients/cli/tests/parity.py.
 PARITY_INPUTS = {
     "clients/cli/tests/parity.py",
-    "clients/portal/src/surface/settings-model.ts",
-    "clients/portal/src/surface/plugin-repositories.ts",
-    "clients/portal/src/surface/launch-settings-model.ts",
-    "surfaces/pico/src/pico-settings-view.ts",
-    "surfaces/zone/src/plan/options.ts",
-}
-PORTAL_PRESENTATION = (
-    "clients/portal/src/input/",
-    "clients/portal/src/launchables/",
-    "clients/portal/src/overlay/",
-    "clients/portal/src/surface/",
-    "clients/portal/public/",
-    "clients/portal/test/",
-)
-PORTAL_BUILD_INPUTS = {
-    "clients/portal/src/index.css",
-    "clients/portal/src/vite-env.d.ts",
-    "clients/portal/index.html",
-    "clients/portal/vite.config.ts",
-    "clients/portal/bunfig.toml",
+    "services/korrid/src/surface/settings_model.rs",
+    "services/korrid/src/surface/plugins.rs",
+    "services/korrid/src/surface/launch_model.rs",
+    "clients/shell/packages/pico/logic.ts",
+    "clients/shell/packages/zone/logic.ts",
 }
 # File formats currently produced/consumed by the presentation areas below.
 # An unfamiliar format cannot acquire a frontend-only exemption by location.
@@ -129,17 +113,10 @@ def affected(paths):
             selected.add("parity")
         if path == "clients/cli/tests/parity.py":
             continue
-        if path.startswith(PORTAL_PRESENTATION) or path in PORTAL_BUILD_INPUTS:
-            if (
-                path not in PORTAL_BUILD_INPUTS
-                and parsed.suffix not in FRONTEND_SUFFIXES
-            ):
-                return set(LANES)
-            selected.update({"portal"} | SURFACES)
-        elif path.startswith("clients/portal/src/korrid/"):
-            # The real RPC smoke imports this transport client. Keep backend
-            # validation for it, not for unrelated presentation or input code.
-            selected.update({"portal", "cli", "korrid"} | SURFACES)
+        if path.startswith("clients/shell/"):
+            # The shell's own crate, packages, vendored Slint and proofs. Its
+            # Nix files and lock already selected every lane above and below.
+            selected.add("shell")
         elif path.startswith("surfaces/"):
             parts = parsed.parts
             surface = parts[1] if len(parts) > 1 else ""
@@ -150,9 +127,9 @@ def affected(paths):
                 or parsed.suffix not in FRONTEND_SUFFIXES
             ):
                 return set(LANES)
-            selected.update({surface, "portal"})
+            selected.add(surface)
         elif path in SHARED_CSS:
-            selected.update({"portal"} | SURFACES)
+            selected.update(SURFACES)
         elif path.startswith("clients/cli/"):
             selected.update({"cli", "fmt", "parity"})
         elif path.startswith("services/korrid/"):

@@ -14,8 +14,8 @@ The gate can inspect the real service state, validated normalized event nodes,
 and canonical P1–P255 seat nodes. Seat checks use `SeatSpec::for_slot`, the exact
 `input_seat_uinput.rs` keys/axes and USB identity, contiguous slots, root owner,
 and the existing runtime user's primary GID with mode `0660`. It checks runtime
-readability and denies both source and seat access to the kiosk user obtained
-from `korri-chromium-kiosk.service`. More than one normalized source is valid.
+readability and denies both source and seat access to the shell user obtained
+from `korri-shell.service`. More than one normalized source is valid.
 These observations do not prove controller assignment or navigation.
 
 The configured seat count comes from `host.preferences.playerCount` in the

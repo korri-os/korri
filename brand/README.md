@@ -27,18 +27,13 @@ The leaf and wordmark, and every icon generated from them.
 | leaf | `#7EFD3B` | leaf body |
 | lobe | `#5FD62F` | folded left lobe |
 | vein | `#1F5A16` | veins, silhouette |
-| field dark | `#000000` | canonical icon field, PWA theme colour |
+| field dark | `#000000` | canonical icon field |
 | field light | `#FDFDFD` | light-scheme field |
 
 ## Light and dark
 
-The canonical icon is the leaf on a black field. The browser tab uses a
-transparent background:
-
-| Surface | Seam | Result |
-|---|---|---|
-| Browser tab | `favicon.svg` on transparent | Tab chrome supplies the field |
-| PWA manifest, Apple touch icon, legacy favicon | none | Black field |
+The canonical icon is the leaf on a black field. The launcher icons in
+`brand/icons/` use that field.
 
 ## Regenerate
 
@@ -46,7 +41,7 @@ transparent background:
 nix run .#brand-assets
 ```
 
-Writes the canonical SVGs in `brand/` and icons in `clients/portal/public/`.
+Writes the canonical SVGs in `brand/` and the launcher icons in `brand/icons/`.
 Commit the outputs.
 
 The Plymouth theme in `brand/plymouth/` renders its images from the canonical

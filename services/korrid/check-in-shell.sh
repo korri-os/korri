@@ -33,14 +33,6 @@ if [[ "$mode" == --full ]]; then
   # The independent treaty lane owns this in CI, not the Rust compilation lane.
   nix build --no-link -L \
     "$ROOT#checks.$(nix eval --raw --impure --expr builtins.currentSystem).korri-plugins-typecheck"
-  bash "$CRATE/check-portal-setup.sh"
-  cd "$ROOT/clients/portal"
-  bun run typecheck
-  bun test
-else
-  # The real RPC smoke imports the portal client but no presentation surface.
-  cd "$ROOT/clients/portal"
-  bun install --frozen-lockfile --ignore-scripts
 fi
 
 cd "$CRATE"
@@ -128,16 +120,15 @@ if [[ "$server_ready" != true ]]; then
   exit 1
 fi
 
-# The portal's own client speaks to that server: health, then the catalog.
-cd "$ROOT/clients/portal"
-bun src/korrid/smoke.ts
-
-# The installed proof is the whole app, not only its hidden RPC.
-if [[ "$mode" == --full ]]; then
-  cd "$ROOT"
-  if [[ -n "${KORRI_PORTAL_BUNDLE:-}" ]]; then
-    "$KORRI_PORTAL_BUNDLE"
-  else
-    nix run "$ROOT#portal-bundle"
-  fi
-fi
+# The native /rpc wire against that server: health, then the catalog. The
+# catalog may be unavailable without an upstream; report rather than fail.
+rpc() {
+  curl --fail --silent "$KORRID_SPIKE_URL/rpc" \
+    -H 'content-type: application/json' \
+    -H "authorization: Bearer $KORRID_RPC_CAPABILITY" \
+    -d "$1"
+}
+rpc '{"_tag":"system.health","payload":{}}' \
+  | jq -ce 'select(.outcome._tag == "Ok") | {version: .outcome.payload.version}'
+rpc '{"_tag":"app.catalog.snapshot","payload":{}}' \
+  | jq -c '{catalog: (if .outcome._tag == "Ok" then {games: (.outcome.payload.games | length)} else {unavailable: .outcome.payload.code} end)}'

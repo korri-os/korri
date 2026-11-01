@@ -109,7 +109,7 @@ is `ttyS0` at 115200 baud.
 
 ## Recorded limits
 
-- Chromium runs without GPU acceleration, as on the RG353M and RG DS.
+- The native shell draws with its software renderer, as on every device.
 - No sleep state is declared. The power key and the SP lid power off.
 - The PCF8563 RTC driver is not built, so the SP keeps time on the SoC RTC
   until NTP corrects it.

@@ -105,9 +105,6 @@ jobs:
       # The module and image checks also consume an x86 DT-driver audit report;
       # the kernel's runtime closure does not include that build-time gate.
       #
-      # korri-chromium-aarch64 is deliberately absent. It is a cross-build no
-      # device uses — every device closure carries an aarch64 chromium — and
-      # building it here cost two runs of over an hour each before it was caught.
       - name: Publish cross-built outputs
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
@@ -130,8 +127,7 @@ jobs:
             --package packages.x86_64-linux.rpminiv2-firmware \
             --package packages.x86_64-linux.rpminiv2-rocknix-baseline \
             --package packages.x86_64-linux.h700-kernel \
-            --package packages.x86_64-linux.h700-uboot \
-            --package packages.x86_64-linux.korri-portal
+            --package packages.x86_64-linux.h700-uboot
 
   # One device per runner. Signing a closure means writing a second, compressed
   # copy of it next to the closure itself, so three devices on one runner needs

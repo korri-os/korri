@@ -532,7 +532,7 @@ let
       )
       [
         "korri-compositor.service"
-        "korri-chromium-kiosk.service"
+        "korri-shell.service"
         "korri-plugin-host.service"
       ];
   rg353mFirewallTcpPorts =
@@ -601,12 +601,12 @@ let
       value = [ "/" ];
     }
     {
-      unit = "korri-chromium-kiosk";
+      unit = "korri-shell";
       field = "ExecStart";
       value = "/bin/false";
     }
     {
-      unit = "korri-chromium-kiosk";
+      unit = "korri-shell";
       field = "ExecStopPost";
       value = [ "/bin/true" ];
     }
@@ -644,8 +644,8 @@ let
   nativeUnpatched = mutateNative {
     systemd.package = lib.mkForce nativeProduct.pkgs.systemd;
   };
-  nativeWithoutKiosk = mutateNative {
-    services.korri.compositor.kiosk.enable = lib.mkForce false;
+  nativeWithoutShell = mutateNative {
+    services.korri.shell.enable = lib.mkForce false;
   };
   nativeSettingCasePasses =
     requirement:
@@ -686,7 +686,7 @@ let
           services.dbus.packages = lib.mkOverride 0 (
             missingNativeDbusPolicy.config.services.dbus.packages
             ++ [
-              (pkgs.writeTextDir "share/dbus-1/system.d/korri-portal-freezer.conf" ''
+              (pkgs.writeTextDir "share/dbus-1/system.d/korri-shell-freezer.conf" ''
                 <busconfig><policy user="korrid"><allow send_destination="*"/></policy></busconfig>
               '')
             ]
@@ -754,18 +754,18 @@ assert builtins.elem (check.nativeSystemdPackageFailure nativeName) (
 # Identity is independent of the existing native freezer prerequisites.
 assert
   nativeUnpatched.config.systemd.services.korrid.environment.KORRID_PORTAL_UNIT
-  == "korri-chromium-kiosk.service";
+  == "korri-shell.service";
 assert
   nativeUnpatched.config.systemd.services.korrid.environment.KORRID_PORTAL_FREEZER_ENABLED == "false";
-assert !(nativeWithoutKiosk.config.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
+assert !(nativeWithoutShell.config.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
 assert
-  !(nativeWithoutKiosk.config.systemd.services.korrid.environment ? KORRID_PORTAL_FREEZER_ENABLED);
+  !(nativeWithoutShell.config.systemd.services.korrid.environment ? KORRID_PORTAL_FREEZER_ENABLED);
 # Neither case acquires freezer authority or cleanup hooks.
 assert lib.all
   (
     device:
     (device.config.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ]
-    && !(lib.hasInfix "korri-chromium-kiosk" device.config.security.polkit.extraConfig)
+    && !(lib.hasInfix "korri-shell" device.config.security.polkit.extraConfig)
     &&
       lib.intersectLists nativeRequirements.requiredDbusPackages (
         map toString device.config.services.dbus.packages
@@ -773,9 +773,9 @@ assert lib.all
   )
   [
     nativeUnpatched
-    nativeWithoutKiosk
+    nativeWithoutShell
   ];
-assert check.validate nativeName nativeWithoutKiosk != [ ];
+assert check.validate nativeName nativeWithoutShell != [ ];
 # The same product contract holds for every device export.
 assert check.validate "rg353m" nativeProduct == [ ];
 assert lib.all nativeSettingCasePasses nativeOnlySettings;
@@ -869,7 +869,9 @@ assert builtins.elem "korrid-identity" requiredUnits.systemServices;
 assert builtins.elem "korri-input-source-guard" requiredUnits.systemServices;
 assert builtins.elem "NetworkManager" requiredUnits.systemServices;
 assert builtins.elem "inputplumber" requiredUnits.systemServices;
-assert builtins.elem "nginx" requiredUnits.systemServices;
+assert builtins.elem "korri-shell" requiredUnits.systemServices;
+assert builtins.elem "korri-shell-credentials" requiredUnits.systemServices;
+assert !(builtins.elem "nginx" requiredUnits.systemServices);
 assert builtins.elem "seatd" requiredUnits.systemServices;
 assert builtins.elem "pipewire" requiredUnits.userServices;
 assert builtins.elem "pipewire-pulse" requiredUnits.userServices;
@@ -1025,7 +1027,7 @@ assert
 assert !(builtins.elem 22 rg353mFirewallTcpPorts);
 assert lib.intersectLists streamingTcpPorts rg353mFirewallTcpPorts == [ ];
 assert
-  rg353m.systemd.services.korri-chromium-kiosk.environment.WAYLAND_DISPLAY
+  rg353m.systemd.services.korri-shell.environment.WAYLAND_DISPLAY
   == rg353m.systemd.services.korri-compositor.environment.KORRI_WAYLAND_DISPLAY;
 assert rg353m.services.korriLinuxHost.label == "haku";
 assert rg353m.services.korriLinuxHost.relays == requirements.constants.relays;
@@ -1035,27 +1037,22 @@ assert
   == builtins.toJSON requirements.constants.stun;
 # Every product device opens Pico (Phase 2 of Pico on Korri).
 assert requirements.constants.surfaceId == "pico";
-assert rg353m.services.korri.webSurfaceHost.surfaceId == "pico";
-assert
-  rg353m.systemd.services.korri-chromium-kiosk.environment.KORRI_WEB_SURFACE_URL
-  == "http://127.0.0.1:8099/?surface=pico";
+assert rg353m.services.korri.shell.startSurface == "pico";
+assert lib.hasInfix "--surfaces pico," rg353m.systemd.services.korri-shell.serviceConfig.ExecStart;
 assert rg353m.services.korridLinuxDevice.address == requirements.constants.korridAddress;
 assert builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts;
-assert
-  rg353m.services.korri.compositor.kiosk.extraChromiumArgs == [
-    "--disable-gpu"
-    "--force-prefers-reduced-motion"
+# Every device runs the same shell arguments; no device passes its own flags.
+assert lib.all
+  (
+    device:
+    lib.hasSuffix " --installed --placement fullscreen --surfaces pico,zone"
+      device.config.systemd.services.korri-shell.serviceConfig.ExecStart
+  )
+  [
+    standalone
+    korri.nixosConfigurations.rpminiv2
+    korri.nixosConfigurations.rg353m
   ];
-assert standalone.config.services.korri.compositor.kiosk.extraChromiumArgs == [ ];
-# Only the RG353M forces reduced motion; the product itself passes no flags.
-assert
-  builtins.fromJSON (
-    builtins.readFile standalone.config.systemd.services.korri-chromium-kiosk.environment.KORRI_CHROMIUM_ARGS_FILE
-  ) == [ ];
-assert
-  builtins.fromJSON (
-    builtins.readFile korri.nixosConfigurations.rpminiv2.config.systemd.services.korri-chromium-kiosk.environment.KORRI_CHROMIUM_ARGS_FILE
-  ) == [ ];
 assert
   rg353m.services.korriLinuxHost.compositor.drmDevice
   == "/dev/dri/by-path/platform-display-subsystem-card";

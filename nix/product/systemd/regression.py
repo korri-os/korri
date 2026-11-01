@@ -171,8 +171,8 @@ async def main():
     print('PASS: watchdog paused while frozen, reset by stop thaw and restart')
 
     # Real product dependency lists, fixture processes: an actual SIGKILL of
-    # the korrid stand-in must stop and then pull in the frozen kiosk once.
-    unit = 'korri-chromium-kiosk.service'
+    # the korrid stand-in must stop and then pull in the frozen shell once.
+    unit = 'korri-shell.service'
     old = await prop(unit, 'MainPID', DEST + '.Service')
     assert old > 0
     await manager.call_freeze_unit(unit)
@@ -180,9 +180,9 @@ async def main():
     await until(unit, 'MainPID', lambda value: value not in (0, old), DEST + '.Service')
     await until(unit, 'ActiveState', lambda value: value == 'active')
     await state(unit, 'running')
-    assert str(old) + ' SIGTERM' in marker('recovery-kiosk')
+    assert str(old) + ' SIGTERM' in marker('recovery-shell')
     assert await prop('korrid.service', 'NRestarts', DEST + '.Service') == 1
-    print('PASS: actual product dependency wiring recovers frozen kiosk after korrid fixture SIGKILL')
+    print('PASS: actual product dependency wiring recovers frozen shell after korrid fixture SIGKILL')
 
     # Leave this directly frozen for the driver to power off the VM, not stop it.
     await job('start', 'shutdown-marker.service')

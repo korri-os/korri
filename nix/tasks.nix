@@ -32,7 +32,7 @@ let
         python3 -m pyflakes .github/ci/*.py
         actionlint .github/workflows/korri-checks.yml .github/workflows/published-plugin-checks.yml
         shellcheck -s bash services/korrid/check.sh services/korrid/check-in-shell.sh \
-          services/korrid/check-treaty.sh services/korrid/check-portal-setup.sh
+          services/korrid/check-treaty.sh
       '';
     };
     ci-full-check = {
@@ -41,9 +41,9 @@ let
       script = ''
         cd "$KORRI_ROOT"
         for task in ci-plan-check korri-nix-cache-check rpminiv2-delivery-check \
-          korrid-fmt-check korrid-treaty-check portal-check portal-bundle \
-          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check pico-check zone-check boxbuster-check \
-          korri-published-plugins-check; do
+          korrid-fmt-check korrid-treaty-check \
+          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check pico-check zone-check \
+          shell-check korri-published-plugins-check; do
           nix run ".#$task"
         done
       '';
@@ -74,7 +74,7 @@ let
       '';
     };
     korrid-host-check = {
-      description = "Run all korrid tests, fixtures, config review and signer/RPC smoke without repeating portal/treaty lanes.";
+      description = "Run all korrid tests, fixtures, config review and signer/RPC smoke without repeating the treaty lane.";
       needsProseql = true;
       runtimeInputs = [ pkgs.nix ];
       env.NIX_PATH = "nixpkgs=${pkgs.path}";
@@ -83,7 +83,7 @@ let
       '';
     };
     cli-parity-check = {
-      description = "Check portal and surface producer parity with CLI commands without compiling Rust.";
+      description = "Check korrid's settings-row producers against CLI commands without compiling Rust.";
       runtimeInputs = [ pkgs.python3 ];
       script = ''
         exec python3 "$KORRI_ROOT/clients/cli/tests/parity.py"
@@ -279,28 +279,6 @@ let
           .#checks.${pkgs.stdenv.hostPlatform.system}.rgds-update-firmware)"
         export RGDS_TEST_FIRMWARE
         exec python3 "$KORRI_ROOT/nix/devices/rgds/update/update.test.py"
-      '';
-    };
-    rpminiv2-input-iterate = {
-      description = "Build and test browser/controller changes on the spare Mini V2, then restore the kiosk.";
-      usageSuffix = " -- <ssh-target> --ssh-config FILE --expected-system STORE_PATH [--isolate-portal] [--keep-on-pass] [--trace-input]";
-      runtimeInputs = [
-        pkgs.python3
-        pkgs.nix
-        pkgs.openssh
-      ];
-      script = ''
-        exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/iteration/run.py" "$@"
-      '';
-    };
-    rpminiv2-input-iterate-check = {
-      description = "Test the Mini V2 input-iteration verdict without contacting a device.";
-      runtimeInputs = [
-        pkgs.python3
-        pkgs.jq
-      ];
-      script = ''
-        exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/iteration/run.test.py"
       '';
     };
     rpminiv2-initrd-check = {
@@ -500,11 +478,10 @@ let
     };
 
     korrid-check = {
-      description = "Run the full host, contracts, and portal check.";
+      description = "Run the full host and contracts check.";
       needsProseql = true;
       runtimeInputs = [ pkgs.nix ];
       env = {
-        KORRI_PORTAL_BUNDLE = "${packages.portal-bundle}/bin/portal-bundle";
         # Child nix-shell helpers must use this task's locked nixpkgs, not a channel.
         NIX_PATH = "nixpkgs=${pkgs.path}";
       };
@@ -587,36 +564,6 @@ let
       '';
     };
 
-    portal-deploy = {
-      description = "Build and update the device portal without a NixOS switch; supports --rollback and --status.";
-      runtimeInputs = [
-        pkgs.python3
-        pkgs.nix
-        pkgs.openssh
-      ];
-      usageSuffix = " -- user@device [--ssh-config FILE] [--rollback | --status]";
-      script = ''
-        exec python3 "$KORRI_ROOT/clients/portal/nix/deploy.py" "$@"
-      '';
-    };
-
-    portal-runtime-check = {
-      description = "Test web-bundle selection and rollback with real Nix profiles and HTTP.";
-      runtimeInputs = [
-        pkgs.bash
-        pkgs.nix
-        pkgs.coreutils
-        pkgs.findutils
-        pkgs.diffutils
-        pkgs.curl
-        pkgs.python3
-        pkgs.util-linux
-      ];
-      script = ''
-        exec bash "$KORRI_ROOT/clients/portal/nix/select.test.sh"
-      '';
-    };
-
     brand-assets = {
       description = "Regenerate the PWA icons and canonical brand SVGs.";
       runtimeInputs = [
@@ -628,42 +575,6 @@ let
       ];
       script = ''
         bash "$KORRI_ROOT/brand/build-assets.sh"
-      '';
-    };
-
-    portal-bundle = {
-      description = "Build the portal and its surfaces into clients/portal/dist.";
-      runtimeInputs = [
-        pkgs.bun
-        pkgs.coreutils
-      ];
-      script = ''
-        bash "$KORRI_ROOT/services/korrid/check-portal-setup.sh"
-        cd "$KORRI_ROOT/clients/portal"
-        bun run build
-        test -f dist/index.html
-      '';
-    };
-
-    portal-check = {
-      description = "Run portal unit tests and typecheck.";
-      runtimeInputs = [ pkgs.bun ];
-      script = ''
-        bash "$KORRI_ROOT/services/korrid/check-portal-setup.sh"
-        cd "$KORRI_ROOT/clients/portal"
-        bun run typecheck
-        bun test
-      '';
-    };
-
-    boxbuster-check = {
-      description = "Run the Boxbuster surface unit tests, gates, and typecheck.";
-      runtimeInputs = [ pkgs.bun ];
-      script = ''
-        cd "$KORRI_ROOT/surfaces/boxbuster"
-        bun install --frozen-lockfile --ignore-scripts
-        bun test
-        bun run typecheck
       '';
     };
 
@@ -706,20 +617,10 @@ let
       '';
     };
 
-    portal-dev = {
-      description = "Serve the portal on the local network.";
-      runtimeInputs = [ pkgs.bun ];
-      script = ''
-        cd "$KORRI_ROOT/clients/portal"
-        exec bun run dev "$@"
-      '';
-    };
-
   };
 
   androidDefinitions = import ../clients/android/tasks.nix {
     inherit pkgs korri;
-    portalBundle = "${packages.portal-bundle}/bin/portal-bundle";
   };
 
   exports = pkgs.lib.mapAttrs (

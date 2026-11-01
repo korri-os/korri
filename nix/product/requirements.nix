@@ -252,25 +252,18 @@ in
     ] false)
     (setting "Linux korrid enabled" [ "services" "korridLinuxDevice" "enable" ] true)
 
-    (setting "shared portal enabled" [
+    (setting "native shell enabled" [
       "services"
       "korri"
-      "webSurfaceHost"
+      "shell"
       "enable"
     ] true)
-    (lockedSetting "product surface" [
+    (lockedSettingWithTestValue "product surface" [
       "services"
       "korri"
-      "webSurfaceHost"
-      "surfaceId"
-    ] constants.surfaceId)
-    (setting "shared portal browser enabled" [
-      "services"
-      "korri"
-      "compositor"
-      "kiosk"
-      "enable"
-    ] true)
+      "shell"
+      "startSurface"
+    ] constants.surfaceId "zone")
     (lockedSettingWithTestValue "all-interface korrid peer bind address" [
       "services"
       "korridLinuxDevice"

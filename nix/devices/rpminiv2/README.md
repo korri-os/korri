@@ -6,7 +6,7 @@ V2:
 - `rpminiv2-recovery` preserves the hardware-proven 1080 by 1240 TTY and USB
   serial recovery system.
 - `rpminiv2` extends that same SD-only baseline with the current Korri Linux
-  host, Sway DRM compositor, credential-backed Pico portal, sandboxed Chromium,
+  host, Sway DRM compositor, the credential-backed native shell opening Pico,
   a device-specific InputPlumber profile, and a USB network link beside the USB
   serial console.
 
@@ -231,9 +231,9 @@ replacement for it. Its current first milestone is deliberately local:
 - Sway uses MSM DRM on `/dev/dri/card0`, Adreno rendering on
   `/dev/dri/renderD128`, native `1080x1240@60Hz`, and the hardware-proven
   270-degree panel transform.
-- Chromium uses software drawing for the first pass while remaining sandboxed.
-  Sway itself still requires accelerated GLES2 rendering.
-- The portal and korrid communicate over loopback. The product starts
+- The native shell draws with its software renderer. Sway itself still
+  requires accelerated GLES2 rendering.
+- The shell and korrid communicate over loopback. The product starts
   NetworkManager and BlueZ and installs the wireless regulatory database.
   Select Wi-Fi after boot with `nmcli device wifi connect <SSID> --ask`; do not
   put credentials in the image. A restored native NetworkManager profile remains
@@ -282,9 +282,7 @@ Inputd waits for the user manager, whose socket activation precedes readiness.
 An absent audio socket does not prevent controller startup. Restarting only the
 PipeWire daemon preserves the socket. Replacing the socket or restarting its
 user manager requires an inputd restart to refresh the bind. Do that only after
-the game ends, and refresh the temporary browser input view as described in
-[controller iteration](iteration/README.md). Do not restart inputd automatically
-during gameplay.
+the game ends. Do not restart inputd automatically during gameplay.
 
 `nix build --no-link .#checks.x86_64-linux.rpminiv2-volume` tests real PipeWire
 volume changes, protected-file visibility, cold-start ordering, daemon restart,
@@ -384,7 +382,7 @@ the board's exact kernel configuration.
 
 Physical acceptance must verify the DRM/render node identities, compositor
 startup, orientation, five-minute OLED idle and wake behavior, ABXY semantics,
-D-pad, Start, sticks, triggers, and the portal's confirm/back/options/menu
+D-pad, Start, sticks, triggers, and the shell's confirm/back/options/menu
 actions. A failure does not authorize changing the installed loader or any
 internal partition.
 
@@ -416,15 +414,15 @@ systemctl is-active usb-gadget systemd-networkd
 ip -br addr show usb0
 iptables -S nixos-fw | grep -F usb0
 journalctl -b -u usb-gadget -u systemd-networkd --no-pager
-systemctl is-active inputplumber korri-inputd korrid korri-compositor nginx \
-  korri-chromium-kiosk rpminiv2-display-idle
+systemctl is-active inputplumber korri-inputd korrid korri-compositor \
+  korri-shell rpminiv2-display-idle
 systemctl --failed
 systemctl is-active NetworkManager avahi-daemon || true
 systemctl is-active korri-plugin-host || true
 systemctl list-units 'korri-plugin-*.service' --all --no-pager
 ss -ltnp
 journalctl -b -u inputplumber -u korri-inputd -u korrid \
-  -u korri-compositor -u korri-chromium-kiosk --no-pager
+  -u korri-compositor -u korri-shell --no-pager
 ```
 
 Require all listed product services to be active, no failed unit, `DSI-1`
@@ -438,17 +436,17 @@ only to loopback. On the host, run the host-side commands from
 access and that the selected Sunshine plugin starts when streaming is tested.
 Then verify on the device:
 
-1. The portal fills the landscape panel after the 270-degree transform with no
+1. The shell fills the landscape panel after the 270-degree transform with no
    clipped edge, upside-down content or software-composited Sway fallback.
 2. D-pad and both sticks navigate predictably. Physical A confirms, B returns,
    X and Y retain their printed positions, Y opens options, and Start opens the
    menu. Select, Guide, and the vendor `BTN_BACK` control are deliberately
-   unbound in this first milestone; they must not produce a Chromium keyboard
+   unbound in this first milestone; they must not produce a shell keyboard
    shortcut or a second controller. Exercise both analog triggers through their
    full travel.
-3. Chromium remains sandboxed. The kiosk command line must not contain
-   `--no-sandbox`; renderer processes should report seccomp filtering in
-   `/proc/<pid>/status`.
+3. The shell runs as `korri-portal`, never root, with no device nodes:
+   `systemctl show korri-shell -p User -p PrivateDevices` and no
+   `/dev/input` entry in `ls -l /proc/$(systemctl show -P MainPID korri-shell)/fd`.
 4. Use the controller continuously for more than five minutes. The OLED must
    remain on. Then leave the controller neutral and untouched for five minutes;
    the OLED must power off. Check wake with every button, both sticks, both
@@ -513,7 +511,7 @@ modetest -M msm -c
 | Shutdown and recovery | Shutdown completes and the factory path back to Android remains available. |
 
 The recovery cut still claims only TTY and USB serial. The product candidate
-adds portal display, Adreno compositor rendering, built-in controller
+adds the shell display, Adreno compositor rendering, built-in controller
 routing, and the USB network link, but those additions remain
 hardware-unaccepted. Touch, other physical networking, Bluetooth, audio, media decode, gameplay, and suspend stay
 outside this milestone. Internal-UFS system updates now have the separate guarded

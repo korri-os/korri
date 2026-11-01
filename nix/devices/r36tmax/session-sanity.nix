@@ -3,7 +3,6 @@ pkgs.writeShellApplication {
   name = "r36tmax-session-sanity";
   runtimeInputs = [
     pkgs.coreutils
-    pkgs.curl
     pkgs.gnugrep
     pkgs.procps
     pkgs.systemd

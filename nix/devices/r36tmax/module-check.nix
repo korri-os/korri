@@ -16,7 +16,7 @@ let
   speakerUcm = import ./audio/check.nix { inherit pkgs; };
   deviceUcm = "${configuration.pkgs.callPackage ./audio/ucm.nix { }}/share/alsa/ucm2";
   kernelConfig = builtins.readFile ./dts/config;
-  deviceFactsSource = builtins.readFile ./portal.nix;
+  deviceFactsSource = builtins.readFile ./hardware.nix;
   distributionWorkflow = builtins.readFile ../../../.github/workflows/device-images.yml;
   installerScript = pkgs.writeText "r36tmax-selected-installer" c.system.build.installBootLoader.text;
 
@@ -67,8 +67,9 @@ assert lib.all (name: lib.elem "CONFIG_${name}=m" (lib.splitString "\n" kernelCo
 ];
 assert hardwareFacts c;
 assert hardwareFacts console;
+# "tls" was loaded only for nginx's kernel TLS; the shell needs no web server.
+assert !(lib.elem "tls" c.boot.kernelModules);
 assert lib.all (name: lib.elem name c.boot.kernelModules) [
-  "tls"
   "tun"
   "uhid"
   "uinput"

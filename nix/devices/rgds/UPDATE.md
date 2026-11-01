@@ -192,10 +192,10 @@ not a claim about unseen changes on the running device.
 Record before/after current and profile paths, config bytes/hashes, mount/table
 identity, payload hashes, root free space and profile roots. Reboot explicitly,
 then require `current=` and `profile=` to equal the staged system. Verify U-Boot
-still scans eMMC ext4, both screens/input, USB SSH, failed units, korrid, portal,
+still scans eMMC ext4, both screens/input, USB SSH, failed units, korrid, shell,
 and unchanged plugin trust. Check rollback and another forward update too.
 
-Persistent service-bundle and portal selections are deliberately not changed.
+Persistent service-bundle selections are deliberately not changed.
 A new system can still run old application selections. Record them before the
 update and use the existing selectors only as separate approved operations; use
 the RG DS-specific `services.korriBundle.initialPackage`, not a generic bundle.

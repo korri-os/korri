@@ -13,13 +13,11 @@ cd "${KORRI_ROOT:?run through the odin2portal-cross-cache Nix app}"
 git diff --quiet HEAD --
 revision="$(git rev-parse HEAD)"
 # The device's default.nix consumes the cross-built kernels and firmware.
-# The shared portal module consumes the x86-built static web bundle.
 # Both transfer directions use these existing public outputs.
 packages=(
   packages.x86_64-linux.odin2portal-kernel
   packages.x86_64-linux.odin2portal-rescue-kernel
   packages.x86_64-linux.odin2portal-firmware
-  packages.x86_64-linux.korri-portal
 )
 
 case "$mode" in

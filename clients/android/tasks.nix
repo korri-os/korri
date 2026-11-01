@@ -1,5 +1,5 @@
 # The restored Artemis toolchain. Keep Android composition next to the client.
-{ pkgs, korri, portalBundle }:
+{ pkgs, korri }:
 let
   android = import ./sdk.nix { inherit pkgs; };
   rust = pkgs.rust-bin.stable.latest.default.override {
@@ -18,7 +18,6 @@ let
     pkgs.llvmPackages.libclang
   ];
   env = {
-    KORRI_PORTAL_BUNDLE = portalBundle;
     KORRI_ANDROID_RELAYS_FILE = import ./product.nix { inherit pkgs korri; };
     JAVA_HOME = "${android.jdk}";
     GRADLE_OPTS = android.gradleOpts;
@@ -37,7 +36,7 @@ let
   };
 in
 {
-  android-apk = task "Build the restored Artemis arm64 debug APK, including korrid and the portal." "apk";
+  android-apk = task "Build the restored Artemis arm64 debug APK, including korrid." "apk";
   android-jvm-check = task "Run the restored Android JVM/Robolectric tests." "test";
   android-brain-check = task "Cross-check korrid's library for arm64 Android." "brain-check";
   android-device-test-apk = task "Build the real WebView/JNI/RPC device test APK." "device-test-apk";

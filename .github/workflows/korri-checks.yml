@@ -42,7 +42,7 @@ jobs:
       cache: ${{ steps.plan.outputs.cache }}
       fmt: ${{ steps.plan.outputs.fmt }}
       treaty: ${{ steps.plan.outputs.treaty }}
-      portal: ${{ steps.plan.outputs.portal }}
+      shell: ${{ steps.plan.outputs.shell }}
       parity: ${{ steps.plan.outputs.parity }}
       cli: ${{ steps.plan.outputs.cli }}
       korrid: ${{ steps.plan.outputs.korrid }}
@@ -50,7 +50,6 @@ jobs:
       limitsd: ${{ steps.plan.outputs.limitsd }}
       pico: ${{ steps.plan.outputs.pico }}
       zone: ${{ steps.plan.outputs.zone }}
-      boxbuster: ${{ steps.plan.outputs.boxbuster }}
     steps:
       - name: Check out the exact tested source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -171,10 +170,10 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run korrid-treaty-check
         run: nix run .#korrid-treaty-check
-  portal:
-    name: Portal types, tests, and bundle
+  shell:
+    name: Native shell
     needs: select
-    if: needs.select.outputs.portal == 'true'
+    if: needs.select.outputs.shell == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -193,12 +192,10 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run portal-check
-        run: nix run .#portal-check
-      - name: Run portal-bundle
-        run: nix run .#portal-bundle
+      - name: Run shell-check
+        run: nix run .#shell-check
   parity:
-    name: Portal and CLI producer parity
+    name: Settings rows and CLI parity
     needs: select
     if: needs.select.outputs.parity == 'true'
     runs-on: ubuntu-24.04
@@ -393,34 +390,10 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run zone-check
         run: nix run .#zone-check
-  boxbuster:
-    name: Boxbuster surface
-    needs: select
-    if: needs.select.outputs.boxbuster == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - name: Check out the exact tested source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ inputs.source_sha || github.sha }}
-          persist-credentials: false
-      - name: Verify source identity
-        env:
-          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
-        run: |
-          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
-      - name: Install Nix
-        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run boxbuster-check
-        run: nix run .#boxbuster-check
   check:
-    name: Host, portal, and surface
+    name: Host, shell, and surface
     if: always()
-    needs: [select, policy, cache, fmt, treaty, portal, parity, cli, korrid, inputd, limitsd, pico, zone, boxbuster]
+    needs: [select, policy, cache, fmt, treaty, shell, parity, cli, korrid, inputd, limitsd, pico, zone]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

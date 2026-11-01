@@ -26,10 +26,6 @@ case "$mode" in
     cargo build --locked --release --lib --target aarch64-linux-android
     install -Dm755 "$CARGO_TARGET_DIR/aarch64-linux-android/release/libkorrid.so" \
       "$KORRI_ROOT/clients/android/app/src/main/jniLibs/arm64-v8a/libkorrid.so"
-    "$KORRI_PORTAL_BUNDLE"
-    rm -rf "$KORRI_ROOT/clients/android/app/src/main/assets/portal"
-    mkdir -p "$KORRI_ROOT/clients/android/app/src/main/assets/portal"
-    cp -R "$KORRI_ROOT/clients/portal/dist/." "$KORRI_ROOT/clients/android/app/src/main/assets/portal/"
     cd "$KORRI_ROOT/clients/android"
     exec ./gradlew assembleDebug "$@"
     ;;

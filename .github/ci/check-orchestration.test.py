@@ -251,7 +251,7 @@ class WorkflowContractTest(unittest.TestCase):
         workflow = yaml.safe_load(
             (ROOT / ".github/workflows/korri-checks.yml").read_text()
         )
-        for lane in ["korrid", "portal", "fmt", "treaty"]:
+        for lane in ["korrid", "shell", "fmt", "treaty"]:
             with self.subTest(lane=lane):
                 self.assertLessEqual(workflow["jobs"][lane]["timeout-minutes"], 30)
 
@@ -302,15 +302,6 @@ class WorkflowContractTest(unittest.TestCase):
         )
         self.assertIn('env.NIX_PATH = "nixpkgs=${pkgs.path}";', task)
         self.assertIn('bun test "$@"', task)
-
-    def test_portal_typecheck_precedes_bun_tests(self):
-        task = (
-            (ROOT / "nix/tasks.nix")
-            .read_text()
-            .split("    portal-check = {", 1)[1]
-            .split("    };", 1)[0]
-        )
-        self.assertLess(task.index("bun run typecheck"), task.index("bun test"))
 
     def test_parity_runs_without_installing_nix_or_compiling_rust(self):
         workflow = yaml.safe_load(
@@ -380,7 +371,7 @@ class WorkflowContractTest(unittest.TestCase):
         for lane in expected:
             self.assertEqual(jobs[lane]["needs"], "select")
             self.assertEqual(jobs[lane]["if"], f"needs.select.outputs.{lane} == 'true'")
-        for lane in ["portal", "fmt", "treaty"]:
+        for lane in ["shell", "fmt", "treaty"]:
             self.assertFalse(any("cache-nix-action" in step.get("uses", "")
                                  for step in jobs[lane]["steps"]))
         for job in jobs.values():

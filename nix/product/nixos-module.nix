@@ -16,7 +16,7 @@ in
     ../base
     ../device-cache/nixos-module.nix
     (import ../../services/inputd/nix/korri-linux-host-core.nix { inherit korri; })
-    (import ../../clients/portal/nix/nixos-module.nix { inherit korri; })
+    (import ../../clients/shell/nix/nixos-module.nix { inherit korri; })
     (import ../../services/korrid/plugin-host/nixos-module.nix { inherit korri; })
     # Lifted from the RP Mini V2 on 2026-09-30 so every device ships them.
     ./controls.nix
@@ -26,7 +26,7 @@ in
     ./udev-coldplug.nix
     ./boot.nix
     ./kernel.nix
-    ../../clients/portal/nix/kiosk-freezer.nix
+    ../../clients/shell/nix/freezer.nix
     ../base/clock-governor.nix
     (import ../../services/limitsd/nixos-module.nix { inherit korri; })
   ];
@@ -119,8 +119,7 @@ in
       stun = lib.mkForce constants.stun;
       validation.enable = true;
       audio.enable = true;
-      # The shared portal's real Wayland app id has not been accepted on a
-      # device yet. Product ownership starts with no guessed or legacy id;
+      # Product ownership starts with no guessed or legacy Wayland app id;
       # device modules cannot carry the old browser-specific exclusion.
       # The product admits the reviewed Sunshine virtual-device identities.
       # The removable plugin still owns whether those devices can exist.
@@ -133,11 +132,10 @@ in
       ];
     };
 
-    services.korri.webSurfaceHost = {
+    services.korri.shell = {
       enable = true;
-      surfaceId = lib.mkForce constants.surfaceId;
+      startSurface = lib.mkForce constants.surfaceId;
     };
-    services.korri.compositor.kiosk.enable = true;
     services.korridLinuxDevice = {
       address = lib.mkForce constants.korridAddress;
       streamPrivateStateRoot = "${constants.runtimeAccount.home}/.config/sunshine";

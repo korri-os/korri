@@ -28,7 +28,7 @@ let
         inherit korri;
         device = "r36tmax";
       })
-      ./portal.nix
+      ./hardware.nix
     ];
   };
   # Owner-operated image only. Keys and Wi-Fi credentials are provisioned on

@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""ADR 0031 inventory guard, not a TypeScript parser or an RPC behaviour test.
+"""ADR 0031 inventory guard, not a Rust parser or an RPC behaviour test.
 
-Check the existing portal row producers and ID constructors. Dynamic rows use
-prefixes, as their portal controllers do. An unfamiliar expression fails closed:
-when a producer changes shape, review its command instead of silently skipping it.
+korrid builds every settings row a surface shows (services/korrid/src/surface/).
+Check its row and action ID literals, constants and constructor prefixes against
+the CLI commands below. Dynamic rows use prefixes. An unfamiliar expression
+fails closed: when a producer changes shape, review its command instead of
+silently skipping it.
 """
 from pathlib import Path
 import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-PORTAL = ROOT / "clients/portal/src/surface"
+SURFACE = ROOT / "services/korrid/src/surface"
 
-# Existing portal IDs, not a new product manifest. Read-only rows still name the
+# Existing row IDs, not a new product manifest. Read-only rows still name the
 # command that reads them. Every editable row needs a command or a named gap.
 MAPPINGS = {
     "device-name": "devices rename NAME",
@@ -23,7 +25,8 @@ MAPPINGS = {
     "local-games": "library games list",
     "game-discovery-status": "library folders list",
     "library-folder-rescan": "library folders rescan",
-    "library-folder:": "library folders remove ID",
+    "library-folder:": "library folders list",
+    "library-folder-remove:": "library folders remove ID",
     "korrid-version": "status",
     "plugin-repository-add": "plugins repositories add URL",
     "plugin-repository:official": "plugins repositories list",
@@ -56,144 +59,104 @@ MAPPINGS = {
 # Surface-owned preferences have no shared RPC or agreed command yet. Do not
 # invent one to make this inventory green (see PARITY.md, schema unresolved).
 KNOWN_GAPS = {
-    "pico:font": None,
-    "zone:system-look": None,
+    "pico.font": None,
+    "zone.look": None,
 }
 
-# Launch editor row paths under launch:set:PLACE#. These are not all equivalent:
-# new paths require review even though they share the launch:set prefix.
-LAUNCH_PATHS = {
-    '"runner"': "launch-settings runner ID",
-    'options.rowPath(key)': "launch-settings set KEY=VALUE",
-    '`clear:${options.rowPath(key)}`': "launch-settings set KEY --inherit",
-    '"add-setting"': "launch-settings set KEY=VALUE",
-    '`modifier:${modifier.id}:enabled`': "launch-settings set MODIFIER.enabled=VALUE",
-    '`modifier:${modifier.id}:add-setting`': "launch-settings set MODIFIER.KEY=VALUE",
-    '`file:${key}`': "launch-settings show (read-only exception)",
-    '`runner-facts:${key}`': "launch-settings show (read-only facts)",
-    '"runner-facts:unavailable"': "launch-settings show",
-    'key': "launch-settings set cpu.min|cpu.max|gpu.min|gpu.max|cpu.governor=VALUE",
-    # One row constructor (`rowId`) serves every plugin-setting row of a place
-    # since ADR 0037: a setting path, `clear:PATH` (--inherit), `default:PATH`
-    # (--default), a section's Add setting, a modifier's enabled switch, and
-    # Sunshine's service settings (MODIFIER_OR_SERVICE_ID.PATH).
-    'path': "launch-settings set [ID.]PATH=VALUE|[ID.]PATH --inherit|[ID.]PATH --default",
+# Surface preference keys, as the native packages declare them.
+PREFERENCES = {
+    "pico.font": "clients/shell/packages/pico/logic.ts",
+    "zone.look": "clients/shell/packages/zone/logic.ts",
 }
-ROW_PATHS = {
-    '`setting:${key}`': "launch-settings set KEY=VALUE",
-    '`modifier:${modifier.id}:setting:${key}`': "launch-settings set MODIFIER.KEY=VALUE",
-    '`service:${service.id}:setting:${key}`': "launch-settings set SERVICE.KEY=VALUE",
-}
-LIMITS = {"cpu.min", "cpu.max", "gpu.min", "gpu.max", "cpu.governor"}
+
+# The ID constants each producer defines. Other string constants there are
+# labels or codes, never row IDs.
+ID_CONSTANT = re.compile(r'\bconst ([A-Z_]+(?:_ROW|_ACTION|_SETTING|_ACTION_ID)): &str = "([^"]*)";')
 
 
 def literal_id(expression, source):
     expression = expression.strip()
-    if expression.startswith(('"', '`')):
-        value = expression[1:-1]
-        return value.split("${", 1)[0]  # dynamic ID prefix, never broad wildcard
-    constant = re.search(rf'\bconst {re.escape(expression)} = ("[^"]*")', source)
+    if expression.startswith('"'):
+        return expression[1:-1]
+    formatted = re.fullmatch(r'format!\("([^"{]*)\{[^"]*"(?:,.*)?\)', expression, re.S)
+    if formatted:
+        return formatted[1]  # dynamic ID prefix, never broad wildcard
+    constant = re.search(rf'\bconst {re.escape(expression)}: &str = ("[^"]*");', source)
     if constant:
         return literal_id(constant[1], source)
-    raise AssertionError(f"Unreviewed portal setting ID expression: {expression}")
+    raise AssertionError(f"Unreviewed settings ID expression: {expression}")
 
 
-def setting_ids(source):
+def first_argument(source, start):
+    """The balanced first argument of the call whose '(' ends at start."""
+    depth, quote, escaped = 0, False, False
+    for index in range(start, len(source)):
+        char = source[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quote = False
+        elif char == '"':
+            quote = True
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if depth == 0:
+                return source[start:index]
+            depth -= 1
+        elif char == "," and depth == 0:
+            return source[start:index]
+    raise AssertionError("Unclosed settings ID constructor")
+
+
+def settings_ids(source):
+    """Row and action IDs in settings_model.rs."""
     ids = set()
-    for match in re.finditer(r'\bid:\s*("[^"]*"|`[^`]*`|[\w$]+)', source):
-        if match[1] == "string":  # function parameter type, not a settings row
+    for match in re.finditer(r'(?<!fn )\b(?:SurfaceSettingItem::new|action)\(\s*', source):
+        expression = first_argument(source, match.end())
+        if expression.strip() in ("id", "action_id"):  # the helper's own parameter
             continue
-        ids.add(literal_id(match[1], source))
+        ids.add(literal_id(expression, source))
     return ids
 
 
 def plugin_ids(source):
-    # Plugin rows and actions use the reviewed constructors. Include their
-    # constants too, so changing a prefix cannot leave a stale mapping green.
-    factories = {
-        "toggleSettingId": "plugin-toggle:",
-        "releaseRowId": "plugin-release:",
-        "repositoryRowId": "plugin-repository:",
-        "removeRepositoryActionId": "plugin-repository-remove:",
-        "inspectActionId": "plugin-inspect:",
-        "reviewActionId": "plugin-review:",
-        "reviewPublisherRowId": "plugin-review-publisher:",
-        "trustActionId": "plugin-trust:",
-        "publisherRowId": "plugin-publisher:",
-        "revokeActionId": "plugin-publisher-revoke:",
-    }
-    ids = set()
-    for value in re.findall(r'\b(?:id|actionId):\s*("[^"]*"|`[^`]*`|[\w$]+)', source):
-        if value in ("string", '`${repositoryRowId(url)}:status`'):
-            continue  # parameter type or read-only catalog status
-        ids.add(factories[value] if value in factories else literal_id(value, source))
-    ids.update(literal_id(value, source) for value in re.findall(
-        r'const (?:REPOSITORY_ROW|REMOVE_ACTION|RELEASE_ROW|INSPECT_ACTION|REVIEW_ACTION|TOGGLE_SETTING|TRUST_ACTION|REVIEW_PUBLISHER_ROW|PUBLISHER_ROW|REVOKE_ACTION|PUBLISHERS_STATUS_ROW) = ("[^"]*")', source))
-    return ids
+    # Plugin rows and actions use the reviewed constructors. Their constants
+    # are the IDs, so changing a prefix cannot leave a stale mapping green.
+    return {value for _, value in ID_CONSTANT.findall(source)}
 
 
 def launch_ids(source):
-    block = source.split("export const LAUNCH_ID = {", 1)[1].split("} as const", 1)[0]
-    return {literal_id(value, source) for value in re.findall(r'(?:=>\s*|:\s*)("[^"]*"|`[^`]*`)', block)}
-
-
-def call_paths(source):
-    """Read the balanced second argument of the existing ID constructor."""
-    for match in re.finditer(r'LAUNCH_ID\.set\(placeId,\s*', source):
-        depth, quote, escaped = 0, None, False
-        start = match.end()
-        for index in range(start, len(source)):
-            char = source[index]
-            if quote:
-                if escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif char == quote:
-                    quote = None
-            elif char in ('"', "'", '`'):
-                quote = char
-            elif char == "(":
-                depth += 1
-            elif char == ")":
-                if depth == 0:
-                    yield source[start:index].strip()
-                    break
-                depth -= 1
-        else:
-            raise AssertionError("Unclosed portal ID constructor")
+    block = source.split("pub mod launch_id {", 1)[1].split("\n}\n", 1)[0]
+    ids = set(re.findall(r'pub const [A-Z_]+: &str = "([^"]*)";', block))
+    ids.update(re.findall(r'format!\("([^"{]*)\{', block))
+    return ids
 
 
 def check_ids(ids):
     missing = ids - MAPPINGS.keys() - KNOWN_GAPS.keys()
-    assert not missing, f"Portal settings need korri commands in the same change: {sorted(missing)}"
+    assert not missing, f"Settings rows need korri commands in the same change: {sorted(missing)}"
 
 
 class Parity(unittest.TestCase):
-    def test_portal_settings_have_cli_mappings(self):
-        source = (PORTAL / "settings-model.ts").read_text()
-        check_ids(setting_ids(source))
-        plugins = (PORTAL / "plugin-repositories.ts").read_text()
-        check_ids(plugin_ids(plugins))
-        launch = (PORTAL / "launch-settings-model.ts").read_text()
-        check_ids(launch_ids(launch))
-        # Explicit constructor arguments: any new path fails, including a path
-        # whose ID uses the already-mapped launch:set prefix.
-        paths = set(call_paths(launch))
-        self.assertTrue(paths)
-        self.assertFalse(paths - LAUNCH_PATHS.keys(), paths - LAUNCH_PATHS.keys())
-        row_paths = set(re.findall(r'rowPath: key => (`[^`]*`)', launch))
-        self.assertEqual(row_paths, ROW_PATHS.keys())
-        limits = launch.split("export type LimitKey = ", 1)[1].split("\n", 1)[0]
-        self.assertEqual(set(re.findall(r'"([^"]*)"', limits)), LIMITS)
+    def test_settings_rows_have_cli_mappings(self):
+        settings = settings_ids((SURFACE / "settings_model.rs").read_text())
+        self.assertIn("device-name", settings)
+        check_ids(settings)
+        plugins = plugin_ids((SURFACE / "plugins.rs").read_text())
+        self.assertIn("plugin-toggle:", plugins)
+        check_ids(plugins)
+        launch = launch_ids((SURFACE / "launch_model.rs").read_text())
+        self.assertIn("launch:set:", launch)
+        check_ids(launch)
 
     def test_surface_owned_preferences_are_recorded(self):
-        for path, constant in [
-            ("surfaces/pico/src/pico-settings-view.ts", "PICO_FONT_SETTING"),
-            ("surfaces/zone/src/plan/options.ts", "ZONE_SYSTEM_LOOK"),
-        ]:
-            source = (ROOT / path).read_text()
-            check_ids({literal_id(constant, source)})
+        for key, path in PREFERENCES.items():
+            self.assertIn(f'"{key}"', (ROOT / path).read_text().replace("'", '"'))
+            check_ids({key})
 
     def test_known_gaps_cannot_outlive_their_command(self):
         for setting, command in KNOWN_GAPS.items():
@@ -204,30 +167,26 @@ class Parity(unittest.TestCase):
             self.assertNotRegex(source, rf'Command::new\(\s*"{verb}"',
                                 f"{setting} now has a command; replace its known gap with a mapping")
 
-    def test_new_portal_id_is_rejected(self):
+    def test_new_row_id_is_rejected(self):
         with self.assertRaisesRegex(AssertionError, "need korri commands"):
-            check_ids(setting_ids('{ id: "unmapped-setting", interaction: { kind: "text" } }'))
+            check_ids(settings_ids('SurfaceSettingItem::new("unmapped-setting", "Label")'))
         with self.assertRaisesRegex(AssertionError, "Unreviewed"):
-            setting_ids('{ id: NEW_SETTING, interaction: { kind: "text" } }')
-        self.assertEqual(setting_ids('const NEW_SETTING = "unmapped-setting"; { id: NEW_SETTING }'), {"unmapped-setting"})
+            settings_ids('SurfaceSettingItem::new(NEW_SETTING, "Label")')
+        self.assertEqual(
+            settings_ids('const NEW_SETTING: &str = "unmapped-setting"; SurfaceSettingItem::new(NEW_SETTING, "x")'),
+            {"unmapped-setting"},
+        )
         # New dynamic families cannot hide behind a broad prefix rule.
         with self.assertRaisesRegex(AssertionError, "need korri commands"):
-            check_ids(setting_ids('{ id: `new-family:${item.id}` }'))
+            check_ids(settings_ids('action(format!("new-family:{}", item.id), None, None)'))
 
-    def test_new_plugin_actions_and_changed_publisher_prefixes_are_rejected(self):
+    def test_new_plugin_ids_and_changed_prefixes_are_rejected(self):
         for source in [
-            '{ actionId: "unmapped-publisher-action" }',
-            '{ actionId: `new-publisher-family:${namespace}` }',
-            'const TRUST_ACTION = "unmapped-trust:"; { actionId: trustActionId(target, namespace) }',
-            'const PUBLISHER_ROW = "unmapped-publisher:"; { id: publisherRowId(namespace) }',
+            'const NEW_ACTION: &str = "unmapped-publisher-action";',
+            'const TRUST_ACTION: &str = "unmapped-trust:";',
+            'pub const PUBLISHER_ROW: &str = "unmapped-publisher:";',
         ]:
             with self.subTest(source=source), self.assertRaisesRegex(AssertionError, "need korri commands"):
-                check_ids(plugin_ids(source))
-        for source in [
-            '{ actionId: NEW_ACTION }',
-            '{ actionId: newPublisherActionId(namespace) }',
-        ]:
-            with self.subTest(source=source), self.assertRaisesRegex(AssertionError, "Unreviewed"):
                 check_ids(plugin_ids(source))
 
 

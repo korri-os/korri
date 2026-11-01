@@ -85,7 +85,7 @@
   };
 
   # Keep one read-only DRM probe in both profiles. The recovery image remains
-  # minimal; portal.nix adds the bounded product services without adding broad
+  # minimal; hardware.nix adds the bounded product services without adding broad
   # hardware diagnostics.
   environment.systemPackages = [ pkgs.libdrm ];
 

@@ -104,7 +104,6 @@ assert
   ];
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert builtins.match "/dev/dri/card[0-9]+" c.services.korriLinuxHost.compositor.drmDevice == null;
-assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ "--disable-gpu" ];
 assert
   map lib.getName c.services.korriLinuxInput.provider.extraDataPackages == [
     "rgds-inputplumber-data"

@@ -24,8 +24,8 @@ for sample in 1 2 3; do
   # Native systemd properties preserve units (MemoryCurrent/Peak are bytes).
   # Missing units on the console baseline are expected, not a passed session.
   systemctl --no-pager show \
-    korri-compositor.service korrid.service korri-chromium-kiosk.service \
-    nginx.service sunshine.service korri-inputd.service inputplumber.service \
+    korri-compositor.service korrid.service korri-shell.service \
+    sunshine.service korri-inputd.service inputplumber.service \
     -p Id -p LoadState -p ActiveState -p SubState -p Result -p NRestarts \
     -p MemoryCurrent -p MemoryPeak 2>&1 || true
   # RSS is KiB, includes shared pages, and must not be summed as unique memory.
@@ -35,13 +35,11 @@ done
 
 printf '\n%s\n' '--- bounded kernel OOM/GPU messages ---'
 journalctl -k -b --no-pager -n 30 --grep='oom|Out of memory|Killed process|panfrost|drm|GPU' 2>&1 || true
-printf '\n%s\n' '--- candidate service and static-origin sanity ---'
+printf '\n%s\n' '--- candidate service sanity ---'
 status=0
-for unit in korri-compositor korrid korri-chromium-kiosk nginx; do
+# Active units only. This does not prove authenticated RPC, a rendered frame,
+# interaction or a 1 GB memory fit. On the console baseline it must fail.
+for unit in korri-compositor korrid korri-shell; do
   if ! systemctl is-active "$unit.service"; then status=1; fi
 done
-# Static HTML only. This does not prove authenticated RPC, a rendered frame,
-# interaction or a 1 GB memory fit. On the console baseline it must fail.
-if ! curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
-  --output /dev/null http://127.0.0.1:8099/; then status=1; fi
 exit "$status"

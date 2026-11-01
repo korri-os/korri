@@ -62,7 +62,7 @@ let
         inherit korri;
         device = "rpminiv2";
       })
-      ./portal.nix
+      ./hardware.nix
       ./owner-publisher.nix
       (
         { lib, ... }:

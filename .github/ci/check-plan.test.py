@@ -43,15 +43,14 @@ class SelectionTest(unittest.TestCase):
             "docs/research/retroarch-effect-quickjs-probe/src/main.rs",
             "docs/research/android-app-plugin-schema-checkpoint/device.yaml",
             "nix/product/game-library-access.nix",
-            "clients/portal/nix/nixos-module.nix",
+            "clients/shell/nix/nixos-module.nix",
+            "clients/shell/Cargo.lock",
             "clients/cli/package.nix",
-            "services/korrid/check-portal-setup.sh",
+            "services/korrid/check-treaty.sh",
             "services/korrid/check-in-shell.sh",
             "services/inputd/nix/korri-linux-host.nix",
             "docs/new-guide.md",
             "unknown/file",
-            "clients/portal/unknown-runtime.json",
-            "clients/portal/src/surface/unknown-runtime.rs",
             "surfaces/pico/src/unknown-runtime.rs",
             "surfaces/pico/unknown-runtime.json",
             "packages/view/src/index.ts",
@@ -61,7 +60,7 @@ class SelectionTest(unittest.TestCase):
             ".github/workflows/korri-checks.yml",
             "flake.lock",
             "clients/cli/Cargo.lock",
-            "clients/portal/bun.lock",
+            "surfaces/pico/bun.lock",
             "contracts/generated/korrid.ts",
             "nix/product/requirements.nix",
         ]:
@@ -70,11 +69,16 @@ class SelectionTest(unittest.TestCase):
 
     def test_path_probes_are_subsets_of_full_and_include_consumers(self):
         probes = {
-            "clients/portal/src/surface/settings-model.ts": {"portal", "parity"}
-            | ci.SURFACES,
-            "surfaces/pico/src/pico-settings-view.ts": {"pico", "portal", "parity"},
-            "clients/portal/src/korrid/client.ts": {"portal", "cli", "korrid"}
-            | ci.SURFACES,
+            "services/korrid/src/surface/settings_model.rs": {
+                "fmt",
+                "treaty",
+                "korrid",
+                "cli",
+                "parity",
+            },
+            "surfaces/pico/src/pico-settings-view.ts": {"pico"},
+            "clients/shell/src/shell.rs": {"shell"},
+            "clients/shell/packages/zone/logic.ts": {"shell", "parity"},
             "services/korrid/src/main.rs": {
                 "fmt",
                 "treaty",
@@ -94,7 +98,7 @@ class SelectionTest(unittest.TestCase):
                 "cli",
             },
             "clients/cli/src/main.rs": {"fmt", "cli", "parity"},
-            "packages/intrinsic-design/intrinsic.css": {"portal"} | ci.SURFACES,
+            "packages/intrinsic-design/intrinsic.css": ci.SURFACES,
         }
         full = set(ci.LANES)
         for path, expected in probes.items():
@@ -138,18 +142,13 @@ class SelectionTest(unittest.TestCase):
     def test_known_frontend_changes_select_no_rust_compilation(self):
         rust = {"cli", "korrid", "inputd", "limitsd"}
         for path in [
-            "clients/portal/src/index.css",
-            "clients/portal/src/input/keyboard-adapter.ts",
-            "clients/portal/src/overlay/OverlayRoot.tsx",
-            "clients/portal/src/surface/SurfaceRoot.tsx",
-            "clients/portal/src/surface/settings-model.ts",
             "surfaces/pico/src/ui/atoms/PicoClock.css",
-            "surfaces/boxbuster/src/BoxbusterSurface.tsx",
             "surfaces/zone/src/plan/options.ts",
+            "clients/shell/packages/pico/main.slint",
+            "clients/shell/packages/zone/logic.ts",
         ]:
             with self.subTest(path=path):
                 selected = ci.affected([path])
-                self.assertIn("portal", selected)
                 self.assertFalse(selected & rust)
                 self.assertEqual("parity" in selected, path in ci.PARITY_INPUTS)
         self.assertEqual(
@@ -293,7 +292,7 @@ class SelectionTest(unittest.TestCase):
             )
             self.assertEqual(json.loads(result)["mode"], "affected")
             self.assertTrue(all(json.loads(result)["lanes"].values()))
-            self.assertIn("portal=true", output.read_text())
+            self.assertIn("shell=true", output.read_text())
             self.assertIn("plan=", output.read_text())
 
     def test_missing_base_broadens_and_empty_reviewed_diff_still_checks_policy(self):
@@ -360,7 +359,7 @@ class AggregateTest(unittest.TestCase):
     def test_failure_skip_cancel_or_missing_selected_result_fails(self):
         for result in ["failure", "skipped", "cancelled", None, ""]:
             needs = copy.deepcopy(self.needs)
-            needs["portal"]["result"] = result
+            needs["pico"]["result"] = result
             with self.subTest(result=result), self.assertRaises(ValueError):
                 ci.aggregate(self.selection, needs)
 
@@ -368,7 +367,7 @@ class AggregateTest(unittest.TestCase):
         for change in ["missing", "extra", "unexpected_success"]:
             needs = copy.deepcopy(self.needs)
             if change == "missing":
-                del needs["portal"]
+                del needs["pico"]
             elif change == "extra":
                 needs["unknown"] = {"result": "success"}
             else:
@@ -388,7 +387,7 @@ class AggregateTest(unittest.TestCase):
             {**self.selection, "lanes": {}},
             {**self.selection, "mode": "full"},
             {**self.selection, "lanes": {**self.selection["lanes"], "policy": False}},
-            {**self.selection, "lanes": {**self.selection["lanes"], "portal": "true"}},
+            {**self.selection, "lanes": {**self.selection["lanes"], "shell": "true"}},
         ]
         for selection in malformed:
             with self.subTest(selection=selection), self.assertRaises(ValueError):

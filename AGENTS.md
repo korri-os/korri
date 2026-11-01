@@ -39,11 +39,13 @@ the `legacy` branch apply here unless this file says so.
 ## Map
 
 ```
-clients/portal/    TS host: talks to the korrid brain over localhost RPC, then
-                   publishes one surface model and mounts a surface; browser
-                   dev uses the same in-memory korrid client and keyboard input
-surfaces/          presentation surfaces. One per directory, each self-contained
-                   and free to move to its own repository: a surface may import
+clients/shell/     the host on every Linux device: a native Rust shell that
+                   loads surface packages (Slint views + QuickJS logic), carries
+                   korrid's SurfaceModel to them and their requests back, and
+                   delivers input it receives from korrid; packages/ holds the
+                   surface packages, verified at image build time
+surfaces/          the web sources Pico and Zone were ported from; they go when
+                   the native packages stop importing them. A surface may import
                    contracts/surface/ (types only) and nothing else from Korri
 packages/          shared, product-agnostic packages consumable by surfaces
 contracts/         treaties between deployables; imports nothing outside
@@ -51,8 +53,8 @@ contracts/         treaties between deployables; imports nothing outside
                    contracts/surface/ is the hand-written Rust crate
                    korri-surface-treaty; contracts/generated/ is Typeshare
                    output from Rust (read-only), surface.ts from that crate.
-                   korri-surface.ts in contracts/surface/ is the web portal's
-                   treaty and goes with the portal's surfaces
+                   korri-surface.ts in contracts/surface/ is the removed web
+                   portal's treaty and goes with surfaces/
 services/korrid/   Rust brain, one per device. Ships as a standalone binary
                    with a configured bind, serving capability-bound RPC on
                    localhost
@@ -141,13 +143,17 @@ permission expansion.
 `@korri` publishes only content licensed for redistribution. A `@korri`
 acquisition provider serves only sources that publish their content legally.
 Korri hosts no plugin by an outside author and no list of outside plugin
-repositories, and the portal ships no outside repository address.
+repositories, and no Korri client ships an outside repository address.
 
 ## Standing decisions
 
-- The portal is hardware-blind: it receives semantic input actions
-  (`direction`, `confirm`, `back`, …), never key codes. `clients/portal/src/
-  input/` translates every device Korri supports.
+- The shell is the host and the only screen. The Chromium kiosk and the web
+  portal were removed on 2026-11-01; do not bring back a browser, a web server
+  or a second host. The shell runs as its own unprivileged system user
+  (`korri-shell.service`), never as root, and never opens `/dev/input`.
+- Surfaces are hardware-blind: they receive semantic buttons (`up`, `confirm`,
+  `back`, …), never key codes. Controller input reaches the shell only through
+  korrid's native input socket; `clients/shell/src/input/` maps it to buttons.
 - `flake.nix` is an index: inputs + per-area composition only. Shared
   toolchain composition lives in per-area Nix expressions; `devshell.nix`
   owns the interactive shell. No inline derivations or shells.
@@ -207,14 +213,13 @@ repositories, and the portal ships no outside repository address.
   small enough that a surface could ship from another repository unchanged.
 - Surfaces are focus-driven. They render native focusable controls and react to
   focus; translating devices into directional movement and confirmation is the
-  host's job (`clients/portal/src/input/`), never the surface's.
-- The portal's brain is always the korrid on its own device at
-  `http://127.0.0.1:<port>`; the portal never talks to another device's korrid
-  or any other backend directly. The Linux host injects the port and capability
-  through the private `window.KorriRpc` binding before navigation. The
-  production portal must call both binding methods before it mounts; the host
-  reports ready only after both calls. Never serve or persist these values in
-  `/runtime.json`, a URL, browser storage, logs, or static assets.
+  host's job (`clients/shell/src/input/`), never the surface's.
+- The shell's brain is always the korrid on its own device at
+  `http://127.0.0.1:<port>`; the shell never talks to another device's korrid
+  or any other backend directly. systemd hands it the capability through
+  `LoadCredential` (`CREDENTIALS_DIRECTORY/KORRID_RPC_CAPABILITY`) and the port
+  through `KORRID_ADDRESS`. Never put the capability in an argument, a URL, a
+  file outside the credential directory, a log, or a package.
 - Plugins are TypeScript or JavaScript **source**, transpiled and evaluated by
   korrid at runtime — never compiled ahead of time, never shipped as native
   code. A plugin returns a declaration and performs no effects; korrid acts on

@@ -1704,7 +1704,7 @@ remote_acceptance_fingerprint() {
 
 remote_automated_gates() {
   local runtime_user="$1" expected_identity="$2" profile="$3" require_physical="$4"
-  local fingerprint controller_evidence acceptance delegate delegate_controllers node seat_nodes runtime_gid browser_user event event_node unit active enabled readable_raw=0
+  local fingerprint controller_evidence acceptance delegate delegate_controllers node seat_nodes runtime_gid shell_user event event_node unit active enabled readable_raw=0
   remote_wait_unit inputplumber.service
   remote_wait_unit korri-inputd.service Ready
   remote_wait_unit korri-input-seat-receiver.service Ready
@@ -1737,17 +1737,17 @@ remote_automated_gates() {
   fi
   runtime_gid="$(id -g "$runtime_user")" || fail 'runtime group is unavailable'
   seat_nodes="$(remote_shared_seat_nodes "$runtime_gid")" || fail 'shared seat identity, contiguous slots, or permissions are invalid'
-  browser_user="$(systemctl show korri-chromium-kiosk.service -p User --value)" || fail 'portal identity is unavailable'
-  [[ -n "$browser_user" && "$browser_user" != root ]] || fail 'portal identity is unverified'
+  shell_user="$(systemctl show korri-shell.service -p User --value)" || fail 'shell identity is unavailable'
+  [[ -n "$shell_user" && "$shell_user" != root ]] || fail 'shell identity is unverified'
   while IFS= read -r node; do
     sudo -n -u "$runtime_user" test -r "$node" || fail 'runtime user cannot read a shared seat'
-    ! sudo -n -u "$browser_user" test -r "$node" || fail 'portal user can read a shared seat'
+    ! sudo -n -u "$shell_user" test -r "$node" || fail 'shell user can read a shared seat'
   done <<<"$seat_nodes"
   while IFS= read -r node; do
     node="${node#node=}"
     node="${node%% *}"
     ! sudo -n -u "$runtime_user" test -r "$node" || fail 'runtime user can read a normalized source'
-    ! sudo -n -u "$browser_user" test -r "$node" || fail 'portal user can read a normalized source'
+    ! sudo -n -u "$shell_user" test -r "$node" || fail 'shell user can read a normalized source'
   done <<<"$fingerprint"
   shopt -s nullglob
   for event in /sys/class/input/event*; do
@@ -1755,11 +1755,11 @@ remote_automated_gates() {
     # Skip only nodes whose complete identity and permissions were checked.
     grep -Fx "$event_node" <<<"$seat_nodes" >/dev/null && continue
     if udevadm info --query=property --name="$event_node" 2>/dev/null | grep -Fx 'ID_INPUT_JOYSTICK=1' >/dev/null \
-      && { sudo -n -u "$runtime_user" test -r "$event_node" || sudo -n -u "$browser_user" test -r "$event_node"; }; then
+      && { sudo -n -u "$runtime_user" test -r "$event_node" || sudo -n -u "$shell_user" test -r "$event_node"; }; then
       readable_raw=$((readable_raw + 1))
     fi
   done
-  [[ "$readable_raw" -eq 0 ]] || fail "runtime or portal user can read $readable_raw raw controller node(s)"
+  [[ "$readable_raw" -eq 0 ]] || fail "runtime or shell user can read $readable_raw raw controller node(s)"
   remote_dbus_unique_owner org.shadowblip.InputPlumber >/dev/null \
     || fail 'InputPlumber has no unique DBus owner'
   # No dbus0 assumption: provenance now follows each composite's DBusDevices.

@@ -10,7 +10,7 @@ let
         device = "rgds";
       })
       ./sd-image.nix
-      ./portal.nix
+      ./hardware.nix
     ];
   };
   # Expose local cross-builds for preflight on development machines, never on

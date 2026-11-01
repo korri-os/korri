@@ -27,7 +27,6 @@ flake = """{
       odin2portal-kernel = fixture "odin-kernel-cache-fixture";
       odin2portal-rescue-kernel = fixture "odin-rescue-cache-fixture";
       odin2portal-firmware = fixture "odin-firmware-cache-fixture";
-      korri-portal = fixture "odin-portal-cache-fixture";
     };
   };
 }

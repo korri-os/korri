@@ -109,8 +109,8 @@ fit. Capture those separately. The helper takes at most 47 seconds.
   node and udev convention, but is not present in the saved survey. The
   candidate loads Panfrost and fails normally if its render node is absent.
 - The existing full Linux host starts Sunshine, InputPlumber, inputd,
-  Sway/Xwayland and korrid. The current portal shell adds Chromium and nginx,
-  with a systemd credential shared with korrid. It does not require the retired
+  Sway/Xwayland and korrid. The native shell (`korri-shell.service`) adds the
+  Slint software renderer, with a systemd credential shared with korrid. It does not require the retired
   `brain.json` producer. This is not a minimal daemon-only memory test. It adds no
   controller profile, local compositor input, audio or rumble implementation.
 - The loopback test relay is the existing Odin/RG353M local-session precedent.
