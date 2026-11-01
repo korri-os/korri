@@ -25,7 +25,11 @@ export component ZoneCard {
     property <length> cap: big ? 2 * c1 : c1;
     property <bool> one-line: big || small-measure.preferred-width <= iw + (0.5 * Tokens.unit);
     property <int> lines: one-line ? 1 : title.lines;
-    property <length> title-h: lines * 1.4 * cap - 0.4 * cap;
+    // A card never lets its title out: lines taller than a third of the card
+    // draw no title (its cover and its tags still say which game it is).
+    property <length> wrapped-h: lines * 1.4 * cap - 0.4 * cap;
+    property <bool> title-shown: wrapped-h <= root.height / 3;
+    property <length> title-h: title-shown ? wrapped-h : 0;
     property <length> tag-h: 1.55 * c1;
     property <length> body-h: 2 * a + title-h + 2 * a + stripe + 2 * a + tag-h;
     property <length> body-y: self.height - frame - body-h;
@@ -65,6 +69,7 @@ export component ZoneCard {
         initials: root.card.initials;
     }
     title := ZoneCaps {
+        visible: root.title-shown;
         x: root.ix;
         y: root.body-y + 2 * root.a;
         box: root.iw;

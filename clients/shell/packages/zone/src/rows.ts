@@ -129,7 +129,8 @@ export function optionRows(plan: ZoneOptionsPlan, options: ZoneOptions, captions
         label: entry.item.label,
         labelFact: entry.keepCase?.label === true || group.verbatim,
         value: valueOf(entry, options),
-        valueFact: entry.keepCase?.value === true,
+        // The connection's SSID is Korri's name: its own case (ZoneSignal draws it as a fact).
+        valueFact: entry.keepCase?.value === true || (entry.signal?._tag === "Connection" && entry.signal.connection._tag === "Wifi"),
         focused,
         disabled: entry.disabled === true,
         danger: interaction?.kind === "action" && interaction.destructive === true,

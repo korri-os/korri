@@ -9,6 +9,7 @@
 #
 # Scenarios:
 #   cpu      Zone idle on GAMES for 20 s at 640x480: CPU of one core, PSS, fps
+#            (PROOF_LOOK=modern|blend|retro picks the look)
 #   switch   20 (PROOF_SWITCHES) F2 switches between Zone and Pico: PSS and RSS after each
 #   large    10,000 games (or GAMES): Zone and Pico, PSS and fps, a page of moves
 #   tour     screenshots: Zone, right, left, F2 to Pico, gamepad press, the
@@ -87,11 +88,13 @@ measure() { # measure PID SECONDS LABEL
 
 case $scenario in
   cpu)
+    # PROOF_LOOK=modern|blend|retro: the look Zone starts in (its stored zone.look).
+    if [[ -n ${PROOF_LOOK:-} ]]; then echo "store zone zone.look $PROOF_LOOK" >&7; fi
     start_shell zone cpu
     zone=$(window Zone)
     shot "$zone" zone-idle
     sleep 3
-    measure "$shell_pid" "${PROOF_SECONDS:-20}" zone-idle-640x480
+    measure "$shell_pid" "${PROOF_SECONDS:-20}" "zone-idle-640x480${PROOF_LOOK:+-$PROOF_LOOK}"
     ;;
   perf)
     start_shell zone perf

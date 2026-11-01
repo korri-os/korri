@@ -1,0 +1,174 @@
+bun test v1.3.10 (30e609e0)
+
+packages/zone/test/decomposition-gate.test.ts:
+(pass) decomposition > every React component of Zone has its Slint component, or a merge with its reason
+(pass) decomposition > each Slint component is named for its file and stands at its React component's layer [2.00ms]
+(pass) decomposition > no component without a React counterpart or a stated reason [1.00ms]
+(pass) decomposition > every layer is used, pages and a template among them
+(pass) decomposition > every component has its preview file beside it
+(pass) decomposition > every preview file sits beside a component, and every state renders that component [4.00ms]
+(pass) decomposition > every preview file exports at least one named preview state [1.00ms]
+
+packages/zone/test/atomic-gate.test.ts:
+(pass) atomic > exactly one component per component file [1.00ms]
+(pass) atomic > the foundation declares no component [1.00ms]
+(pass) atomic > imports point down: a file imports its own layer or lower, and the foundation [3.00ms]
+(pass) atomic > only main.slint (and the preview frame) inherits Window [2.00ms]
+(pass) atomic > nothing below main.slint writes the Tokens global [1.00ms]
+(pass) atomic > only main.slint knows the view: no component imports main.slint or declares the shell's window properties [4.00ms]
+
+packages/zone/test/authoring-gate.test.ts:
+(pass) authoring > no raw colour outside the tokens [2.00ms]
+(pass) authoring > no pixel literal outside the tokens (a preview's window size aside) [2.00ms]
+(pass) authoring > no blur, drop shadow or radial gradient anywhere [2.00ms]
+(pass) authoring > every linear gradient is a hard-stop stripe [2.00ms]
+(pass) authoring > no opacity under 1 anywhere [1.00ms]
+(pass) authoring > the one colour with alpha is the veil's see-through, and only ZoneVeil reads it [2.00ms]
+
+packages/zone/test/contrast-gate.test.ts:
+(pass) contrast > every screen group has its ground [1.00ms]
+(pass) contrast > white on black reaches 3:1
+(pass) contrast > white on black reaches 4.5:1
+(pass) contrast > banner-yellow on banner-blue reaches 3:1
+(pass) contrast > white on blue reaches 3:1
+(pass) contrast > white on red reaches 3:1
+(pass) contrast > black on yellow reaches 3:1
+(pass) contrast > black on orange reaches 3:1
+(pass) contrast > black on white reaches 3:1
+(pass) contrast > black on mint reaches 3:1
+(pass) contrast > black on stripe-light reaches 3:1
+(pass) contrast > yellow on black reaches 3:1
+(pass) contrast > key-b on key-disc reaches 3:1
+(pass) contrast > key-a on key-disc reaches 3:1
+(pass) contrast > white-shade on black reaches 3:1
+(pass) contrast > steel on black reaches 3:1
+(pass) contrast > danger on black reaches 3:1
+(pass) contrast > danger-shade on black reaches 3:1
+(pass) contrast > white inside its black ring reaches 3:1
+(pass) contrast > white-shade inside its black ring reaches 3:1
+(pass) contrast > yellow inside its hud-edge ring reaches 3:1
+(pass) contrast > banner-yellow inside its black ring reaches 3:1
+(pass) contrast > banner-white inside its black ring reaches 3:1
+(pass) contrast > danger inside its black ring reaches 3:1
+(pass) contrast > danger-shade inside its black ring reaches 3:1
+(pass) contrast > the build string's black on ground-games reaches 4.5:1
+(pass) contrast > the build string's black on ground-options reaches 4.5:1
+(pass) contrast > the build string's black on ground-savedata reaches 4.5:1
+(pass) contrast > the build string's black on ground-gameopts reaches 4.5:1
+(pass) contrast > the build string's black on ground-paused reaches 4.5:1
+(pass) contrast > the build string's black on ground-titlecard reaches 4.5:1
+(pass) contrast > the build string's black on ground-tally reaches 4.5:1
+
+packages/zone/test/plan-zone-select.test.ts:
+(pass) width decides how many cards > one pixel below 333 shows three, narrow triangles and gaps [1.00ms]
+(pass) width decides how many cards > at 333 shows five, wide triangles and gaps
+(pass) width decides how many cards > width never changes the strips
+(pass) height decides the strips > one pixel below 320 takes the short strips and type
+(pass) height decides the strips > at 320 takes the tall strips and type
+(pass) height decides the strips > height never changes how many cards show
+(pass) height decides the strips > the band is what the strips leave
+(pass) the focused card > never grows past 133
+(pass) the focused card > one art pixel below the cap takes the band less its padding
+(pass) the focused card > keeps the card ratio and the side scale
+(pass) nothing is cut: the visible set always fits > at the two devices the plan is Mania's canvas: five cards shrunk to fit 426 art px, three at full size in 320
+(pass) nothing is cut: the visible set always fits > a generous screen fits without shrinking
+(pass) nothing is cut: the visible set always fits > a narrow tall column shrinks every card by one factor and keeps three
+(pass) nothing is cut: the visible set always fits > a wide short strip draws at one CSS px per art px, keeps five cards and the short strips
+(pass) nothing is cut: the visible set always fits > a box too small for any band still answers, with nothing negative
+(pass) height and width decide where the GAMES facts line stands > one art pixel below 240 on a wide screen, it joins the action strip
+(pass) height and width decide where the GAMES facts line stands > at 240 it keeps its own row
+(pass) height and width decide where the GAMES facts line stands > a narrow screen keeps the row however short, since its width cannot pay for both
+(pass) height and width decide where the GAMES facts line stands > one art pixel below 240 the find keyboard rises over the screen, at any width
+(pass) height and width decide where the GAMES facts line stands > at 240 it rises inside the body
+(pass) height and width decide where the GAMES facts line stands > a CSS strip shorter than 240 px holds fewer than 240 art rows and takes the inline facts
+(pass) the art pixel > 640x480 stands on 2 CSS px per art px, a 320x240 canvas
+(pass) the art pixel > 1280x720 stands on 3 CSS px per art px, a 426x240 canvas
+(pass) the art pixel > 1920x1080 stands on 4 CSS px per art px, a 480x270 canvas
+(pass) the art pixel > 480x800 stands on 2 CSS px per art px, a 240x400 canvas
+(pass) the art pixel > 1280x300 stands on 1 CSS px per art px, a 1280x300 canvas
+(pass) the art pixel > one CSS px either side of each step of 240 rows
+(pass) the art pixel > never fractional and never under one, even for an empty box
+
+packages/zone/test/plan-top-strip.test.ts:
+(pass) planTopStrip at each threshold > inline at and over the inline width, tight one pixel under
+(pass) planTopStrip at each threshold > tight at the tight width, keys one pixel under
+(pass) planTopStrip at each threshold > keys at the keys width, two rows one pixel under
+(pass) planTopStrip at each threshold > two rows keep the hints' words down to their width, then keycaps alone
+(pass) planTopStrip at each threshold > the thresholds descend, so the ladder only ever yields more
+(pass) the yield order: space, then the hints' words, then a second row > gaps and type reach their least before a word goes
+(pass) the yield order: space, then the hints' words, then a second row > words go before the strip takes a second row
+(pass) the yield order: space, then the hints' words, then a second row > plan size above the inline width
+(pass) the part ladder: hints and tabs never share a row they do not fit > 426 art px wide
+(pass) the part ladder: hints and tabs never share a row they do not fit > 320 art px wide
+(pass) the part ladder: hints and tabs never share a row they do not fit > 240 art px wide
+(pass) the part ladder: hints and tabs never share a row they do not fit > 360 art px wide
+(pass) the part ladder: hints and tabs never share a row they do not fit > 260 art px wide
+(pass) the part ladder: hints and tabs never share a row they do not fit > 720p keeps the hints' words in one row; 640x480 one row of keycaps; 480x800 two rows with words [1.00ms]
+
+packages/zone/test/plan-bytes.test.ts:
+(pass) formatZoneBytes > bytes under 1 KB are whole bytes
+(pass) formatZoneBytes > KB from 1000 B, whole
+(pass) formatZoneBytes > a value that rounds to 1000 KB is written as 1 MB
+(pass) formatZoneBytes > MB from 1 000 000 B, whole below 10 MB [1.00ms]
+(pass) formatZoneBytes > one decimal from 10 MB
+(pass) formatZoneBytes > a value that rounds to 1000.0 MB is written as 1.0 GB
+(pass) formatZoneBytes > GB from 1 000 000 000 B, one decimal, and nothing larger
+(pass) formatZoneBytes > a negative or non-finite count is 0 B
+(pass) zoneProgressShare > a known total fills its share, clamped to the bar
+(pass) zoneProgressShare > no total has no share; a total of 0 fills nothing
+
+packages/zone/test/plan-tokens.test.ts:
+(pass) the plan's constants are the tokens > art-rows is held equal to the plan's 240
+(pass) the plan's constants are the tokens > wide-at is held equal to the plan's 333
+(pass) the plan's constants are the tokens > tall-at is held equal to the plan's 320
+(pass) the plan's constants are the tokens > strip-inline-at is held equal to the plan's 476
+(pass) the plan's constants are the tokens > strip-tight-at is held equal to the plan's 420
+(pass) the plan's constants are the tokens > strip-keys-at is held equal to the plan's 312
+(pass) the plan's constants are the tokens > card-most is held equal to the plan's 133
+(pass) the plan's constants are the tokens > card-aspect is held equal to the plan's 0.78
+(pass) the plan's constants are the tokens > side-share is held equal to the plan's 0.68
+(pass) the plan's constants are the tokens > top-short is held equal to the plan's 36
+(pass) the plan's constants are the tokens > top-tall is held equal to the plan's 40
+(pass) the plan's constants are the tokens > foot-short is held equal to the plan's 22
+(pass) the plan's constants are the tokens > foot-tall is held equal to the plan's 24
+(pass) the plan's constants are the tokens > keys-most is held equal to the plan's 450
+(pass) the plan's constants are the tokens > key-tall is held equal to the plan's 20
+(pass) the plan's constants are the tokens > key-least is held equal to the plan's 16
+(pass) the plan's constants are the tokens > idle-after-ms is held equal to the plan's 30000
+(pass) the plan's constants are the tokens > idle-cycle-ms is held equal to the plan's 6000
+(pass) the plan's constants are the tokens > paused-band-share is held equal to the plan's 0.25
+(pass) the plan's constants are the tokens > paused-band-least is held equal to the plan's 40
+(pass) the plan's constants are the tokens > paused-band-most is held equal to the plan's 72
+(pass) the plan's constants are the tokens > paused-wedge-top is held equal to the plan's 8
+(pass) the plan's constants are the tokens > paused-rows-least is held equal to the plan's 200
+
+packages/zone/test/plan-keyboard.test.ts:
+(pass) the keyboard's height is the sum of its lines > pad, slab, pad, the lines and their gaps, pad, and the inset under it [1.00ms]
+(pass) the keyboard's height is the sum of its lines > a box wide enough for twelve keys a line has five lines: four rows and the control row
+(pass) the keyboard's height is the sum of its lines > a key is a whole art px and never narrower than the least
+(pass) the keyboard's height is the sum of its lines > the panel never grows past its widest
+(pass) the keyboard's height is the sum of its lines > the control row stands on one line at its preferred widths, else at its least, else it wraps [1.00ms]
+(pass) the yield order: band, spacing, band hidden, key height > the band keeps what the keys leave while that is at least its least
+(pass) the yield order: band, spacing, band hidden, key height > one art px less and the spacing tightens before the band goes
+(pass) the yield order: band, spacing, band hidden, key height > then the band hides, and the keys keep their height
+(pass) the yield order: band, spacing, band hidden, key height > only then do the keys get shorter, a step at a time
+(pass) the yield order: band, spacing, band hidden, key height > a box with no band starts at the band hidden
+(pass) the ladder of screens fits without a scroll > 640x480: every key at its full height, nothing scrolled
+(pass) the ladder of screens fits without a scroll > 1280x720: every key at its full height, nothing scrolled
+(pass) the ladder of screens fits without a scroll > 480x800: every key at its full height, nothing scrolled [1.00ms]
+(pass) the ladder of screens fits without a scroll > 1280x300: every key at its full height, nothing scrolled
+(pass) the ladder of screens fits without a scroll > 1280x300 keeps the band over the keys; 640x480 and 1280x720 hide it while typing
+(pass) the control labels are Zone Caps' own advances > SPACE, DELETE, DONE, ABC, #?! and :// at caps-1
+
+packages/zone/test/qr.test.ts:
+(pass) the backup's QR code > 1 characters: the modules are qrcode's [6.00ms]
+(pass) the backup's QR code > 5 characters: the modules are qrcode's [1.00ms]
+(pass) the backup's QR code > 175 characters: the modules are qrcode's [3.00ms]
+(pass) the backup's QR code > 200 characters: the modules are qrcode's [3.00ms]
+(pass) the backup's QR code > 100 characters: the modules are qrcode's [1.00ms]
+(pass) the backup's QR code > the image is a PNG data URL [3.00ms]
+
+ 148 pass
+ 0 fail
+ 293 expect() calls
+Ran 148 tests across 10 files. [125.00ms]

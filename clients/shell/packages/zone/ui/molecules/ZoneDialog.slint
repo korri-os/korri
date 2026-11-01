@@ -84,12 +84,22 @@ export component ZoneDialog {
             ink: "hud";
             face: "korri";
         }
+        // The buttons stand at caps-2, and step to caps-1 when caps-2 would
+        // take a second line (the trial row draws nothing).
+        trial := ZoneActionRow {
+            visible: false;
+            x: 0;
+            y: 0;
+            width: root.width * 3 / 4;
+            buttons: root.dialog.buttons;
+            cap: 2 * root.c1;
+        }
         row := ZoneActionRow {
             x: root.width / 8;
             width: root.width * 3 / 4;
             y: root.panel-h - root.pad - self.needed;
             buttons: root.dialog.buttons;
-            cap: 2 * root.c1;
+            cap: trial.lines > 1 ? root.c1 : 2 * root.c1;
         }
     }
 }

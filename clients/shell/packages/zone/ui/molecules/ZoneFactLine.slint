@@ -26,6 +26,13 @@ export component ZoneFactLine {
     pure function at(i: int) -> length {
         return left + (i > 0 ? span(0) + between : 0) + (i > 1 ? span(1) + between : 0) + (i > 2 ? span(2) + between : 0) + (i > 3 ? span(3) + between : 0);
     }
+    // The whole line is one still layer: it changes only with the focused game.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        cache-rendering-hint: true;
     if root.count > 0: ZonePanel {
         x: (root.width - root.panel-w) / 2;
         y: 0;
@@ -50,5 +57,6 @@ export component ZoneFactLine {
         v3 := ZoneCaps { x: root.at(3) - parent.x + l3.natural + 3 * root.a; y: l0.y; text: root.fact(3).value; face: root.fact(3).known ? "fact" : "caps"; }
         l4 := ZoneCaps { x: root.at(4) - parent.x; y: l0.y; text: root.fact(4).label; ink: "hud"; }
         v4 := ZoneCaps { x: root.at(4) - parent.x + l4.natural + 3 * root.a; y: l0.y; text: root.fact(4).value; face: root.fact(4).known ? "fact" : "caps"; }
+    }
     }
 }

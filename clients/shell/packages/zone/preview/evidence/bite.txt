@@ -1,0 +1,16 @@
+bites: component with no preview -> (fail) every component has its preview file
+bites: component with no React counterpart -> (fail) no component without a React counterpart
+bites: preview that does not render its component -> (fail) renders that component
+bites: two components in one file -> (fail) exactly one component per component file
+bites: an atom importing a molecule -> (fail) imports point down
+bites: a shape writing the Tokens global -> (fail) writes the Tokens global
+bites: a raw colour in a component -> (fail) no raw colour
+bites: a pixel literal in a component -> (fail) no pixel literal
+bites: a drop shadow -> (fail) no blur, drop shadow
+bites: a smooth gradient -> (fail) hard-stop stripe
+bites: an opacity under 1 -> (fail) no opacity under 1
+bites: a second see-through colour -> (fail) the one colour with alpha
+bites: the see-through read outside ZoneVeil -> (fail) only ZoneVeil reads it
+bites: a steel too dark to read on black -> (fail) steel on black
+bites: a ground too dark for the build string -> (fail) on ground-tally
+bites: a Tokens threshold away from the plan's -> (fail) held equal

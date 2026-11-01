@@ -1,0 +1,212 @@
+bun test v1.3.10 (30e609e0)
+
+packages/zone/test/decomposition-gate.test.ts:
+ 95 | const components = files.filter(file => layerOf(file) !== undefined && !isPreview(file))
+ 96 | 
+ 97 | describe("decomposition", () => {
+ 98 |   test("every React component of Zone has its Slint component, or a merge with its reason", () => {
+ 99 |     const missing = Object.entries(REACT).filter(([, target]) => !target.startsWith("merged") && !existsSync(join(PACKAGE, target)))
+100 |     expect(missing.map(([name, target]) => `${name} → ${target}`)).toEqual([])
+                                                                        ^
+error: expect(received).toEqual(expected)
+
+- []
++ [
++   "ZoneBanner → ui/atoms/ZoneBanner.slint",
++   "ZoneBars → ui/atoms/ZoneBars.slint",
++   "ZoneButton → ui/atoms/ZoneButton.slint",
++   "ZoneCaps → ui/atoms/ZoneCaps.slint",
++   "ZoneCoverWell → ui/atoms/ZoneCoverWell.slint",
++   "ZoneEmblem → ui/atoms/ZoneEmblem.slint",
++   "ZoneKeycap → ui/atoms/ZoneKeycap.slint",
++   "ZonePanel → ui/atoms/ZonePanel.slint",
++   "ZoneQrWell → ui/atoms/ZoneQrWell.slint",
++   "ZoneSignal → ui/atoms/ZoneSignal.slint",
++   "ZoneTab → ui/atoms/ZoneTab.slint",
++   "ZoneTag → ui/atoms/ZoneTag.slint",
++   "ZoneTriangle → ui/atoms/ZoneTriangle.slint",
++   "ZoneUnderline → ui/atoms/ZoneUnderline.slint",
++   "ZoneVeil → ui/atoms/ZoneVeil.slint",
++   "ZoneVersus → ui/atoms/ZoneVersus.slint",
++   "ZoneWords → ui/atoms/ZoneWords.slint",
++   "ZoneActionRow → ui/molecules/ZoneActionRow.slint",
++   "ZoneBusyStrip → ui/molecules/ZoneBusyStrip.slint",
++   "ZoneCardBand → ui/molecules/ZoneCardBand.slint",
++   "ZoneCard → ui/molecules/ZoneCard.slint",
++   "ZoneDialog → ui/molecules/ZoneDialog.slint",
++   "ZoneFoot → ui/molecules/ZoneFoot.slint",
++   "ZoneKeyboard → ui/molecules/ZoneKeyboard.slint",
++   "ZoneOptionGroup → ui/molecules/ZoneOptionGroup.slint",
++   "ZoneOptionRow → ui/molecules/ZoneOptionRow.slint",
++   "ZoneSaveCard → ui/molecules/ZoneSaveCard.slint",
++   "ZoneSectionCard → ui/molecules/ZoneSectionCard.slint",
++   "ZoneTabStrip → ui/molecules/ZoneTabStrip.slint",
++   "ZoneTagRow → ui/molecules/ZoneTagRow.slint",
++   "ZoneTitleCard → ui/molecules/ZoneTitleCard.slint",
++   "ZoneAttract → ui/organisms/ZoneAttract.slint",
++   "ZoneControllerCard → ui/organisms/ZoneControllerCard.slint",
++   "ZoneGround → ui/organisms/ZoneGround.slint",
++   "ZoneLaunchCard → ui/organisms/ZoneLaunchCard.slint",
++   "ZoneOptionsEntry → ui/organisms/ZoneOptionsEntry.slint",
++   "ZonePausedControl → ui/organisms/ZonePausedControl.slint",
++   "ZoneRunWithRoute → ui/organisms/ZoneRunWithRoute.slint",
++   "ZoneSaveBand → ui/organisms/ZoneSaveBand.slint",
++   "ZoneSaveEntry → ui/organisms/ZoneSaveEntry.slint",
++   "ZoneSecretSlab → ui/organisms/ZoneSecretSlab.slint",
++   "ZoneStatusLayer → ui/organisms/ZoneStatusLayer.slint",
++   "ZoneStepStrip → ui/organisms/ZoneStepStrip.slint",
++   "ZoneTally → ui/organisms/ZoneTally.slint",
++   "ZoneWarningLines → ui/organisms/ZoneWarningLines.slint",
++   "ZoneShell → ui/templates/ZoneShell.slint",
++   "ZoneGames → pages/ZoneGames.slint",
++   "ZoneLaunchSettings → pages/ZoneLaunchSettings.slint",
++   "ZoneOnboarding → pages/ZoneOnboarding.slint",
++   "ZoneOptions → pages/ZoneOptions.slint",
++   "ZonePaused → pages/ZonePaused.slint",
++   "ZoneRunWith → pages/ZoneRunWith.slint",
++   "ZoneSaveData → pages/ZoneSaveData.slint",
++   "ZoneStore → pages/ZoneStore.slint",
++ ]
+
+- Expected  - 1
++ Received  + 56
+
+      at <anonymous> (/home/simonwjackson/code/sandbox/korri/.worktrees/c-f9257c14dc02b40c328eff39bf00c67516f3968a9e2083ae68314f69e2367536/clients/shell/packages/zone/test/decomposition-gate.test.ts:100:67)
+(fail) decomposition > every React component of Zone has its Slint component, or a merge with its reason [1.00ms]
+(pass) decomposition > each Slint component is named for its file and stands at its React component's layer
+(pass) decomposition > no component without a React counterpart or a stated reason
+112 |     const known = new Set([...Object.values(REACT), ...Object.keys(ADDED)])
+113 |     expect(components.filter(file => !known.has(file))).toEqual([])
+114 |   })
+115 | 
+116 |   test("every layer is used, pages and a template among them", () => {
+117 |     expect([...new Set(components.map(layerOf))].sort()).toEqual([...LAYERS].sort())
+                                                               ^
+error: expect(received).toEqual(expected)
+
+- [
+-   "atoms",
+-   "molecules",
+-   "organisms",
+-   "pages",
+-   "templates",
+- ]
++ []
+
+- Expected  - 7
++ Received  + 1
+
+      at <anonymous> (/home/simonwjackson/code/sandbox/korri/.worktrees/c-f9257c14dc02b40c328eff39bf00c67516f3968a9e2083ae68314f69e2367536/clients/shell/packages/zone/test/decomposition-gate.test.ts:117:58)
+(fail) decomposition > every layer is used, pages and a template among them [1.00ms]
+(pass) decomposition > every component has its preview file beside it
+(pass) decomposition > every preview file sits beside a component and renders that component
+(pass) decomposition > every preview file exports at least one named preview state
+
+packages/zone/test/atomic-gate.test.ts:
+(pass) atomic > exactly one component per component file
+(pass) atomic > the foundation declares no component [1.00ms]
+(pass) atomic > imports point down: a file imports its own layer or lower, and the foundation
+(pass) atomic > only main.slint (and the preview frame) inherits Window
+(pass) atomic > nothing below main.slint writes the Tokens global
+(pass) atomic > only main.slint knows the view: no component imports main.slint or declares the shell's window properties [1.00ms]
+
+packages/zone/test/authoring-gate.test.ts:
+(pass) authoring > no raw colour outside the tokens
+30 |   test("no pixel literal outside the tokens (a preview's window size aside)", () => {
+31 |     const source = (file: string) => {
+32 |       const text = stripComments(read(file))
+33 |       return isPreview(file) ? text.replace(/\b(width|height|preview-width|preview-height)\s*:\s*\d+px\s*;/g, "") : text
+34 |     }
+35 |     expect(hits(/\b\d+(\.\d+)?px\b/g, others, source)).toEqual([])
+                                                            ^
+error: expect(received).toEqual(expected)
+
+- []
++ [
++   "main.slint: 1px",
++   "main.slint: 1px",
++   "main.slint: 1px",
++   "main.slint: 1px",
++   "main.slint: 1px",
++   "main.slint: 1px",
++   "main.slint: 4px",
++   "main.slint: 3px",
++   "main.slint: 2px",
++   "main.slint: 1px",
++   "main.slint: 1px",
++   "main.slint: 1px",
++   "main.slint: 1px",
++ ]
+
+- Expected  - 1
++ Received  + 15
+
+      at <anonymous> (/home/simonwjackson/code/sandbox/korri/.worktrees/c-f9257c14dc02b40c328eff39bf00c67516f3968a9e2083ae68314f69e2367536/clients/shell/packages/zone/test/authoring-gate.test.ts:35:56)
+(fail) authoring > no pixel literal outside the tokens (a preview's window size aside)
+(pass) authoring > no blur, drop shadow or radial gradient anywhere [1.00ms]
+(pass) authoring > every linear gradient is a hard-stop stripe
+(pass) authoring > no opacity under 1 anywhere
+57 | 
+58 |   test("the one colour with alpha is the veil's see-through, and only ZoneVeil reads it", () => {
+59 |     const alpha = [...stripComments(read(TOKENS)).matchAll(/([\w-]+)\s*:\s*#[0-9a-fA-F]{8}\b/g)].map(match => match[1])
+60 |     expect(alpha).toEqual(["veil-see-through"])
+61 |     const readers = files.filter(file => /Tokens\.veil-see-through/.test(stripComments(read(file))))
+62 |     expect(readers).toEqual(["ui/atoms/ZoneVeil.slint"])
+                         ^
+error: expect(received).toEqual(expected)
+
+- [
+-   "ui/atoms/ZoneVeil.slint",
+- ]
++ []
+
+- Expected  - 3
++ Received  + 1
+
+      at <anonymous> (/home/simonwjackson/code/sandbox/korri/.worktrees/c-f9257c14dc02b40c328eff39bf00c67516f3968a9e2083ae68314f69e2367536/clients/shell/packages/zone/test/authoring-gate.test.ts:62:21)
+(fail) authoring > the one colour with alpha is the veil's see-through, and only ZoneVeil reads it [1.00ms]
+
+packages/zone/test/contrast-gate.test.ts:
+(pass) contrast > every screen group has its ground
+(pass) contrast > white on black reaches 3:1
+(pass) contrast > white on black reaches 4.5:1
+(pass) contrast > banner-yellow on banner-blue reaches 3:1
+(pass) contrast > white on blue reaches 3:1
+(pass) contrast > white on red reaches 3:1
+(pass) contrast > black on yellow reaches 3:1
+(pass) contrast > black on orange reaches 3:1
+(pass) contrast > black on white reaches 3:1
+(pass) contrast > black on mint reaches 3:1 [1.00ms]
+(pass) contrast > black on stripe-light reaches 3:1
+(pass) contrast > yellow on black reaches 3:1
+(pass) contrast > key-b on key-disc reaches 3:1
+(pass) contrast > key-a on key-disc reaches 3:1
+(pass) contrast > white-shade on black reaches 3:1
+(pass) contrast > steel on black reaches 3:1
+(pass) contrast > danger on black reaches 3:1
+(pass) contrast > danger-shade on black reaches 3:1
+(pass) contrast > white inside its black ring reaches 3:1
+(pass) contrast > white-shade inside its black ring reaches 3:1
+(pass) contrast > yellow inside its hud-edge ring reaches 3:1
+(pass) contrast > banner-yellow inside its black ring reaches 3:1
+(pass) contrast > banner-white inside its black ring reaches 3:1
+(pass) contrast > danger inside its black ring reaches 3:1
+(pass) contrast > danger-shade inside its black ring reaches 3:1
+(pass) contrast > the build string's black on ground-games reaches 4.5:1
+(pass) contrast > the build string's black on ground-options reaches 4.5:1
+(pass) contrast > the build string's black on ground-savedata reaches 4.5:1
+(pass) contrast > the build string's black on ground-gameopts reaches 4.5:1
+(pass) contrast > the build string's black on ground-paused reaches 4.5:1
+(pass) contrast > the build string's black on ground-titlecard reaches 4.5:1
+(pass) contrast > the build string's black on ground-tally reaches 4.5:1
+
+4 tests failed:
+(fail) decomposition > every React component of Zone has its Slint component, or a merge with its reason [1.00ms]
+(fail) decomposition > every layer is used, pages and a template among them [1.00ms]
+(fail) authoring > no pixel literal outside the tokens (a preview's window size aside)
+(fail) authoring > the one colour with alpha is the veil's see-through, and only ZoneVeil reads it [1.00ms]
+
+ 47 pass
+ 4 fail
+ 52 expect() calls
+Ran 51 tests across 4 files. [55.00ms]

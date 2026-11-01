@@ -14,7 +14,7 @@ export component ZoneWarningLines {
     in property <bool> full: true;
     property <length> a: Tokens.a;
     property <length> run: 13 * a;
-    property <length> box: (full ? root.width : root.width * 0.8) - 2 * run - 8 * a;
+    property <length> box: root.width - 2 * run - 8 * a;
     property <length> panel-h: words.drawn-h + 6 * a;
     height: panel-h + 4 * a;
     ZonePanel {

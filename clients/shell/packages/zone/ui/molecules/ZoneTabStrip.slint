@@ -22,9 +22,12 @@ export component ZoneTabStrip {
     property <bool> stacked: level == 3;
     property <length> margin: least ? 4 * a : Math.clamp(0.016 * root.width, 4 * a, 11 * a);
     property <length> gap: least ? 2 * a : 5 * a;
-    // Stacked: the hints in the first row, the tabs or the banner in the second.
-    property <length> cy: stacked ? root.height / 4 : root.height / 2;
-    property <length> row-cy: stacked ? root.height * 3 / 4 : root.height / 2;
+    // Stacked: the hints in the first row (9 art px down), the tabs or the
+    // banner under them. When the three tabs do not fit one row, the active
+    // tab's banner takes the second row and the other two the third.
+    property <length> cy: stacked ? 9 * a : root.height / 2;
+    property <length> row-cy: stacked ? 30 * a : root.height / 2;
+    property <length> third-cy: 56 * a;
     if root.tabs-shown: Rectangle {
         x: 0;
         y: 0;
@@ -32,21 +35,30 @@ export component ZoneTabStrip {
         height: parent.height;
         cache-rendering-hint: true;
         property <length> tabs-w: t0.span + t1.span + t2.span + 2 * root.gap;
+        property <bool> wraps: root.stacked && self.tabs-w > root.width - 4 * root.a;
+        property <int> active: root.tabs[0].active ? 0 : root.tabs[1].active ? 1 : 2;
+        // The inactive pair on the third row: their spans and where the pair starts.
+        property <length> pair-w: (self.active == 0 ? t1.span + t2.span : self.active == 1 ? t0.span + t2.span : t0.span + t1.span) + root.gap;
+        property <length> pair-x: (root.width - self.pair-w) / 2;
+        pure function wrapped-x(i: int) -> length {
+            return i == self.active ? (root.width - (i == 0 ? t0.span : i == 1 ? t1.span : t2.span)) / 2
+                : (i == 0 || (i == 1 && self.active == 0)) ? self.pair-x : self.pair-x + self.pair-w - (i == 1 ? t1.span : t2.span);
+        }
         t0 := ZoneTab {
-            x: (root.width - parent.tabs-w) / 2;
-            y: root.row-cy;
+            x: parent.wraps ? parent.wrapped-x(0) : (root.width - parent.tabs-w) / 2;
+            y: parent.wraps && parent.active != 0 ? root.third-cy : root.row-cy;
             tab: root.tabs[0];
             pad-y: root.least ? root.a : 5 * root.a;
         }
         t1 := ZoneTab {
-            x: t0.x + t0.span + root.gap;
-            y: root.row-cy;
+            x: parent.wraps ? parent.wrapped-x(1) : t0.x + t0.span + root.gap;
+            y: parent.wraps && parent.active != 1 ? root.third-cy : root.row-cy;
             tab: root.tabs[1];
             pad-y: root.least ? root.a : 5 * root.a;
         }
         t2 := ZoneTab {
-            x: t1.x + t1.span + root.gap;
-            y: root.row-cy;
+            x: parent.wraps ? parent.wrapped-x(2) : t1.x + t1.span + root.gap;
+            y: parent.wraps && parent.active != 2 ? root.third-cy : root.row-cy;
             tab: root.tabs[2];
             pad-y: root.least ? root.a : 5 * root.a;
         }

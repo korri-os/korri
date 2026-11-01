@@ -78,7 +78,7 @@ export global Tokens {
     out property <bool> wide: w-art >= wide-at;
     out property <bool> tall: h-art >= tall-at;
     out property <int> strip-level: w-art >= strip-inline-at ? 0 : w-art >= strip-tight-at ? 1 : w-art >= strip-keys-at ? 2 : 3;
-    out property <length> top-h: (tall ? top-tall : top-short) * a + (strip-level == 3 ? 20 * a : 0);
+    out property <length> top-h: (tall ? top-tall : top-short) * a + (strip-level == 3 ? 30 * a : 0);
     out property <length> foot-h: (tall ? foot-tall : foot-short) * a;
     out property <length> c1: caps-1 * a;
     out property <length> c2: caps-2 * a;

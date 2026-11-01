@@ -13,7 +13,7 @@
  */
 import type { SurfaceButton, SurfaceModel } from "../../../../../contracts/generated/surface"
 import { findKey, keyGrid, keyMove, type ZoneGridKey } from "./keys"
-import { entryHeading, optionsPlan } from "./plan/options"
+import { entryHeading, optionsPlan, ZONE_OPTIONS_SYSTEM } from "./plan/options"
 import { launchPlan, launchSlices, ZONE_LAUNCH_SCOPE_ROW } from "./plan/launch-settings"
 import { runWithPlan } from "./plan/options-run-with"
 import { storeRows } from "./rows"
@@ -346,7 +346,9 @@ function rowsPage(
     case "none":
       break
   }
-  const at = rows.findIndex(row => row.id === options.focused)
+  // The system button leaves the cursor on the SYSTEM group: its first row.
+  const focused = options.focused === ZONE_OPTIONS_SYSTEM ? (rows.find(row => row.group === ZONE_OPTIONS_SYSTEM) ?? rows[0])?.id : options.focused
+  const at = rows.findIndex(row => row.id === focused)
   const row = rows[at]
   if (button === "up" || button === "down") {
     if (row === undefined) {
