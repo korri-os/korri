@@ -1,0 +1,1 @@
+zone-idle-640x480 cpu_one_core_percent=6.6 pss_kib=48557 rss_kib=53348
