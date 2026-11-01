@@ -1,0 +1,15 @@
+[package]
+name = "korri-surface-treaty"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+typeshare = "1"
+
+[dev-dependencies]
+serde_json = "1"
