@@ -9,7 +9,7 @@
 #
 # Scenarios:
 #   cpu      Zone idle on GAMES for 20 s at 640x480: CPU of one core, PSS, fps
-#   switch   20 F2 switches between Zone and Pico: PSS and RSS after each
+#   switch   20 (PROOF_SWITCHES) F2 switches between Zone and Pico: PSS and RSS after each
 #   large    10,000 games (or GAMES): Zone and Pico, PSS and fps, a page of moves
 #   tour     screenshots: Zone, right, left, F2 to Pico, gamepad press, the
 #            overlay, back to resume, F2 to Zone
@@ -105,7 +105,7 @@ case $scenario in
     id=$(window Zone)
     sleep 2
     printf 'switch,surface,pss_kib,rss_kib\n0,zone,%s,%s\n' "$(pss "$shell_pid")" "$(rss "$shell_pid")" >"$out/switch.csv"
-    for n in $(seq 1 20); do
+    for n in $(seq 1 "${PROOF_SWITCHES:-20}"); do
       key "$id" F2 0.2
       if (( n % 2 )); then title=Pico; else title=Zone; fi
       id=$(window "$title")

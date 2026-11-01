@@ -1,0 +1,17 @@
+zone-idle SHELL_STATS fps=61.991 frames=310 seconds=5.001 heap_bytes=426934
+zone-idle SHELL_STATS fps=62.209 frames=311 seconds=4.999 heap_bytes=426934
+zone-idle SHELL_STATS fps=62.194 frames=311 seconds=5.001 heap_bytes=426934
+zone-idle SHELL_STATS fps=62.197 frames=311 seconds=5.000 heap_bytes=426934
+zone-idle SHELL_STATS fps=62.199 frames=311 seconds=5.000 heap_bytes=426934
+zone-idle SHELL_STATS fps=62.394 frames=312 seconds=5.000 heap_bytes=426934
+large-10000 SHELL_STATS package=zone compile_ms=31.911 logic_ms=7.090 korrid_ms=1.346 first_frame_ms=75.208
+large-10000 SHELL_STATS fps=61.996 frames=310 seconds=5.000 heap_bytes=481002
+large-10000 SHELL_STATS fps=62.207 frames=311 seconds=4.999 heap_bytes=481002
+large-10000 SHELL_STATS fps=61.895 frames=310 seconds=5.009 heap_bytes=481006
+large-10000 SHELL_STATS fps=61.602 frames=308 seconds=5.000 heap_bytes=481003
+large-10000 SHELL_STATS fps=62.401 frames=312 seconds=5.000 heap_bytes=481003
+large-10000 SHELL_STATS package=pico compile_ms=13.778 logic_ms=5.571 korrid_ms=1.218 first_frame_ms=42.317
+large-10000 SHELL_STATS fps=60.800 frames=304 seconds=5.000 heap_bytes=407485
+large-10000 SHELL_STATS fps=29.801 frames=149 seconds=5.000 heap_bytes=407671
+large-10000 SHELL_STATS fps=15.598 frames=78 seconds=5.001 heap_bytes=407671
+large-10000 SHELL_STATS fps=10.000 frames=50 seconds=5.000 heap_bytes=407671
