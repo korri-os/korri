@@ -78,6 +78,16 @@ export type SurfaceMessage = { _tag: "Pressed"; button: SurfaceButton } | { _tag
 export type SurfaceNetworkConnection = { _tag: "Offline" } | { _tag: "Wired" } | { _tag: "Wifi"; ssid: string; strengthPercent?: number };
 
 /**
+ * Which displays a package draws on: `globalThis.surface.displays` in its
+ * `logic.js`, which the shell hands korrid with `app.surface.declare`.
+ * Absent means `main`. `main`: the main display only. `all`: every display;
+ * korrid places the window across them and publishes `SurfaceModel.displays`.
+ * Grounding: the portal's surface registry (`clients/portal/src/surface/
+ * surface-registry.tsx`): Pico `all`, Zone and Boxbuster `main`.
+ */
+export type SurfacePackageDisplays = "main" | "all";
+
+/**
  * Whether a preference follows the person (`shared`) or stays on the device
  * (`device`). The mark belongs to the kind (ADR 0018).
  */

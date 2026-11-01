@@ -1585,6 +1585,21 @@ pub struct SurfacePreferenceDeclaration {
     pub initial: String,
 }
 
+/// Which displays a package draws on: `globalThis.surface.displays` in its
+/// `logic.js`, which the shell hands korrid with `app.surface.declare`.
+/// Absent means `main`. `main`: the main display only. `all`: every display;
+/// korrid places the window across them and publishes `SurfaceModel.displays`.
+/// Grounding: the portal's surface registry (`clients/portal/src/surface/
+/// surface-registry.tsx`): Pico `all`, Zone and Boxbuster `main`.
+#[typeshare(serialized_as = "SurfacePackageDisplaysWire")]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SurfacePackageDisplays {
+    #[default]
+    Main,
+    All,
+}
+
 /// A package's `preferences` declaration: key to declaration.
 #[typeshare]
 pub type SurfacePreferenceDeclarations = HashMap<String, SurfacePreferenceDeclaration>;

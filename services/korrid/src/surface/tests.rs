@@ -790,6 +790,7 @@ async fn preferences_follow_the_declaration() {
             },
         )]
         .into(),
+        Default::default(),
     )
     .unwrap();
     assert_eq!(hub.preferences("zone").unwrap()["zone.look"], "modern");
@@ -1517,4 +1518,38 @@ async fn native_input_reports_controllers() {
         }))
         .unwrap();
     assert!(link.controllers.snapshot().is_empty());
+}
+
+/// Port of `SurfaceRoot.displays.test.tsx`: a package that draws on all
+/// displays gets korrid's display facts; one on the main display gets none.
+#[tokio::test]
+async fn displays_follow_the_declared_scope() {
+    use korri_surface_treaty::SurfacePackageDisplays;
+    let mut outcomes = idle_outcomes(1);
+    outcomes.insert(
+        "app.surface.displays".into(),
+        json!({ "_tag": "Ok", "payload": [
+            { "id": "DSI-1", "main": true, "x": 0, "y": 0, "width": 1080, "height": 1240, "touch": true },
+            { "id": "DP-1", "main": false, "x": 1080, "y": 0, "width": 1920, "height": 1080, "touch": false }
+        ] }),
+    );
+    let (hub, _, _directory) = hub_with(outcomes);
+    settled(&hub, "pico").await;
+    hub.declare("pico", HashMap::new(), SurfacePackageDisplays::All)
+        .unwrap();
+    let mut displays = None;
+    for _ in 0..100 {
+        displays = hub.model("pico").unwrap().displays;
+        if displays.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let displays = displays.expect("pico gets the display facts");
+    assert_eq!(displays.len(), 2);
+    assert_eq!((displays[1].x, displays[1].width), (1080.0, 1920.0));
+    hub.declare("zone", HashMap::new(), SurfacePackageDisplays::Main)
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(hub.model("zone").unwrap().displays.is_none());
 }
