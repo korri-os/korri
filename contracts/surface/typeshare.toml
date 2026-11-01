@@ -1,0 +1,38 @@
+# Typeshare cannot derive serde's internally tagged unions (`_tag` or `kind`
+# inside the object) or literal string unions. Each line spells the exact
+# TypeScript of one such type; src/lib.rs enforces the same JSON with serde
+# and tests it. Keep both sides in the same commit.
+[typescript.type_mappings]
+SurfaceTrue = "true"
+SurfaceGameplayOverlayKind = '"gameplay-overlay"'
+SurfaceCatalogKind = '"catalog"'
+SurfaceGameDownloadWire = "SurfaceDownloadState & { bytes?: number }"
+SurfaceSavesWire = '{ _tag: "Synced" | "NotChecked" | "NotSynced" | "SyncedBySteam" } | { _tag: "Split"; choose: SurfaceAction }'
+SurfaceSettingInteractionWire = '{ kind: "action"; actionId: string; destructive?: boolean; confirmation?: SurfaceSettingConfirmation } | { kind: "choice"; choices: SurfaceSettingChoice[]; selected: string } | { kind: "number"; value?: number; min?: number; max?: number; step?: number; clearable?: boolean } | { kind: "text"; placeholder?: string; maxLength?: number; allowEmpty?: boolean } | { kind: "sensitiveText"; placeholder?: string; maxLength?: number; clearLabel?: string }'
+SurfaceSettingScopeWire = '"device" | "shared"'
+SurfaceSettingsStatusWire = '{ _tag: "Idle" } | { _tag: "Saving"; settingId: string } | { _tag: "Problem"; settingId: string; message: string }'
+SurfaceIdentityDispositionWire = '"transfer" | "delete"'
+SurfaceIdentityStatusWire = '{ _tag: "Idle" } | { _tag: "Working"; operation: string } | { _tag: "BackupReady"; encryptedSecret: string } | { _tag: "Problem"; message: string } | { _tag: "Switched"; ownerPublicKey: string }'
+CatalogOrderWire = '"korri" | "title" | "mostPlayed" | "recent"'
+CatalogFromWire = '{ _tag: "Start" } | { _tag: "End" } | { _tag: "After"; cursor: Cursor } | { _tag: "Before"; cursor: Cursor } | { _tag: "Around"; gameId: string }'
+SurfaceCatalogWire = '{ _tag: "Loading" } | { _tag: "Error"; message: string } | { _tag: "Empty" } | { _tag: "Ready"; total: number; window: SurfaceGame[]; firstIndex: number; before?: Cursor; after?: Cursor; query: CatalogQuery }'
+SurfaceStatusWire = '{ _tag: "Browsing" } | { _tag: "Busy"; kicker: string; detail?: string; progress?: SurfaceProgress; actions?: SurfaceAction[]; gameId?: string } | { _tag: "Confirm"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "ChooseSave"; gameId: string; kicker: string; detail?: string; actions: SurfaceAction[]; sides: SurfaceSaveSide[] } | { _tag: "Running"; kicker: string; gameId?: string } | { _tag: "Paused"; kicker: string; detail?: string; actions: SurfaceAction[]; gameId?: string } | { _tag: "Ended"; kicker: string; reason: string; gameId?: string; gameTitle?: string } | { _tag: "Problem"; kicker: string; reason: string; canRetry: boolean; gameId?: string; gameTitle?: string }'
+SurfaceGameplayControlInteractionWire = '{ kind: "command" } | { kind: "toggle"; value: boolean; trueLabel: string; falseLabel: string } | { kind: "choice"; value: string; options: SurfaceSettingChoice[] } | { kind: "range"; value: number; min: number; max: number; step: number }'
+SurfacePresentationWire = "SurfaceCatalogPresentation | SurfaceGameplayOverlayPresentation"
+SurfaceGameplayControlValueWire = '{ kind: "toggle"; value: boolean } | { kind: "choice"; value: string } | { kind: "range"; value: number }'
+SurfaceRunnerChoiceWire = '{ _tag: "Closed" } | ({ _tag: "Loading" | "Ready" | "Stale" | "Conflict" | "Error" | "Busy" | "Warnings" } & SurfaceRunnerChoiceContent)'
+SurfaceLaunchSettingsScopeKindWire = '"any" | "family" | "runner"'
+SurfaceLaunchSettingsWire = '{ _tag: "Closed" } | ({ _tag: "Loading" | "Ready" } & SurfaceLaunchSettingsContent) | ({ _tag: "Conflict" | "Error"; message: string } & SurfaceLaunchSettingsContent)'
+SurfaceNetworkConnectionWire = '{ _tag: "Offline" } | { _tag: "Wired" } | { _tag: "Wifi"; ssid: string; strengthPercent?: number }'
+SurfaceWifiAttemptWire = '{ _tag: "Idle" } | { _tag: "Connecting"; ssid: string } | { _tag: "Failed"; ssid: string; message: string; passwordRejected: boolean }'
+SurfaceWifiWire = '{ _tag: "NoAdapter" } | { _tag: "Available"; scanning: boolean; networks: SurfaceWifiNetwork[]; attempt: SurfaceWifiAttempt }'
+SurfaceStarterPackWire = '{ _tag: "Offered"; actions: SurfaceAction[] } | { _tag: "Installing" } | { _tag: "Installed" } | { _tag: "Failed"; message: string; actions: SurfaceAction[] }'
+SurfaceStoreProvidersWire = '{ _tag: "Loading" } | { _tag: "Problem"; message: string; actions: SurfaceAction[] } | { _tag: "Ready"; providers: SurfaceStoreProvider[] }'
+SurfaceStoreSearchWire = '{ _tag: "Idle" } | { _tag: "Searching"; providerId: string; query: string } | { _tag: "Problem"; providerId: string; query: string; message: string; actions: SurfaceAction[] } | { _tag: "Ready"; providerId: string; query: string; entries: SurfaceStoreEntry[] }'
+SurfaceStoreGetWire = '{ _tag: "Offer"; note?: string; actions: SurfaceAction[] } | { _tag: "Unavailable"; reason: string } | { _tag: "Confirm"; kicker: string; detail?: string; actions: SurfaceAction[] } | ({ _tag: "Working"; kicker: string; detail?: string; actions: SurfaceAction[] } & SurfaceDownloadState) | { _tag: "InLibrary"; detail?: string; gameId?: string } | { _tag: "Problem"; kicker: string; reason: string; actions: SurfaceAction[] }'
+SurfaceStoreDetailsWire = '{ _tag: "Closed" } | { _tag: "Loading"; entry: SurfaceStoreEntry } | { _tag: "Problem"; entry: SurfaceStoreEntry; message: string; actions: SurfaceAction[] } | { _tag: "Ready"; entry: SurfaceStoreEntry; description?: string; get: SurfaceStoreGet }'
+SurfaceSaveHistoryWire = '{ _tag: "Loading"; gameId: string; actions: SurfaceAction[] } | { _tag: "Error"; gameId: string; message: string; actions: SurfaceAction[] } | { _tag: "Ready"; gameId: string; entries: SurfaceSaveHistoryEntry[]; actions: SurfaceAction[] }'
+SurfaceButtonWire = '"up" | "down" | "left" | "right" | "confirm" | "back" | "options" | "menu" | "system"'
+SurfaceMessageWire = '{ _tag: "Pressed"; button: SurfaceButton } | { _tag: "KorriPublished" } | { _tag: "PreferenceStored"; key: string }'
+SurfaceRequestWire = '{ _tag: "LaunchGame"; gameId: string; launchLocationId?: string } | { _tag: "RunAction"; actionId: string } | { _tag: "ChangeSetting"; settingId: string; value: string } | { _tag: "DismissSettingsProblem" } | { _tag: "ExportIdentityBackup"; password: string; retiredPublicKey?: string } | { _tag: "SwitchIdentityFromBackup"; encryptedSecret: string; password: string; disposition: SurfaceIdentityDisposition; trustLossConfirmed: boolean } | { _tag: "SwitchIdentityToNip46"; bunkerUri: string; disposition: SurfaceIdentityDisposition; trustLossConfirmed: boolean } | { _tag: "DeleteRetiredIdentity"; publicKey: string; backupConfirmed: boolean } | { _tag: "DismissIdentityStatus" } | { _tag: "RunGameAction"; gameId: string; actionId: string } | { _tag: "InvokeGameplayControl"; controlId: string; value?: SurfaceGameplayControlValue } | { _tag: "DismissGameplayOverlay" } | { _tag: "Retry" } | { _tag: "Dismiss" } | { _tag: "Reload" } | { _tag: "ScanWifi" } | { _tag: "ConnectWifi"; networkId: string; password?: string } | { _tag: "ConnectHiddenWifi"; ssid: string; password?: string } | { _tag: "FinishOnboarding" } | { _tag: "OpenStore" } | { _tag: "SearchStore"; providerId: string; query: string } | { _tag: "OpenStoreEntry"; entryId: string } | { _tag: "FocusGame"; gameId?: string } | { _tag: "RememberPreference"; key: string; value: string } | { _tag: "MoveCatalog"; query: CatalogQuery; from: CatalogFrom; count: number }'
+SurfacePreferenceMarkWire = '"shared" | "device"'
