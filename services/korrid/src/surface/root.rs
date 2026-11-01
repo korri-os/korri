@@ -34,6 +34,7 @@ use super::{
         SAVE_HISTORY_ACTION_ID,
     },
     settings_model::settings_from,
+    shared_play::{surface_invites_from, SharedPlayContext, SharedPlayController},
     starter_pack::StarterPack,
     store::StoreAcquisition,
     Notify,
@@ -299,6 +300,7 @@ pub struct Root {
     pub saves: Arc<SaveSync>,
     pub store: Arc<StoreAcquisition>,
     pub plugins: Arc<PluginsController>,
+    pub shared: Arc<SharedPlayController>,
     plugin_facts: Arc<std::sync::Mutex<PluginFacts>>,
     last_library: std::sync::Mutex<Option<String>>,
     last_live_ids: std::sync::Mutex<Option<Vec<String>>>,
@@ -523,7 +525,38 @@ impl Root {
                     },
                 )
             };
+            let shared = {
+                let state = this.clone();
+                let session = this.clone();
+                let plugins = this.clone();
+                SharedPlayController::new(
+                    korrid.clone(),
+                    notify.clone(),
+                    SharedPlayContext {
+                        state: Box::new(move || {
+                            state
+                                .upgrade()
+                                .map_or(LaunchablesState::Loading, |root| root.launchables.state())
+                        }),
+                        refresh_session: Box::new(move || {
+                            let root = session.upgrade();
+                            Box::pin(async move {
+                                if let Some(root) = root {
+                                    root.launchables.refresh().await;
+                                }
+                            })
+                        }),
+                        // Installing a plugin for netplay changes what can be played.
+                        plugins_changed: Box::new(move || {
+                            if let Some(root) = plugins.upgrade() {
+                                root.launchables.reload();
+                            }
+                        }),
+                    },
+                )
+            };
             Self {
+                shared,
                 plugins,
                 plugin_facts,
                 store,
@@ -755,6 +788,7 @@ impl Root {
     /// Start every poll the portal ran while mounted.
     pub fn start(self: &Arc<Self>, mut overlay_intent: tokio::sync::watch::Receiver<u64>) {
         self.saves.start();
+        self.shared.start();
         // The overlay opens as soon as korrid's Home intent lands (the
         // portal waited for its window's focus), and once at start for an
         // intent recovered before any surface asked.
@@ -922,10 +956,12 @@ impl Root {
                 status = setup;
             }
         }
+        let shared_status = self.shared.status();
         if let Some(problem) = self
             .saves
             .status()
             .or_else(|| self.acquisition.status())
+            .or_else(|| shared_status.clone())
             .or_else(|| self.downloads.status())
         {
             status = problem;
@@ -954,7 +990,16 @@ impl Root {
             network: network.network,
             onboarding,
             store: Some(store_for_surface(self.store.snapshot(), &state)),
-            invites: None,
+            invites: Some(
+                if shared_status.is_none()
+                    && state.is_ready()
+                    && !state.entries().iter().any(Entry::is_now_playing)
+                {
+                    surface_invites_from(&self.shared.invites(), &state)
+                } else {
+                    Vec::new()
+                },
+            ),
             focused_game: None,
         };
         Facts { base, games, state }
@@ -1240,6 +1285,7 @@ impl Root {
             }
             SurfaceRequest::RunAction { action_id } => {
                 if self.owner_binding.act(&action_id)
+                    || self.shared.act(&action_id)
                     || self.saves.act(&action_id)
                     || self.starter_pack.act(&action_id)
                     || self.store.act(&action_id)
@@ -1377,7 +1423,10 @@ impl Root {
                 }
             }
             SurfaceRequest::Dismiss => {
-                if !self.saves.dismiss() && !self.acquisition.dismiss() && !self.downloads.dismiss()
+                if !self.shared.dismiss()
+                    && !self.saves.dismiss()
+                    && !self.acquisition.dismiss()
+                    && !self.downloads.dismiss()
                 {
                     launchables.dismiss_notice();
                 }

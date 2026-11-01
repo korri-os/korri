@@ -644,4 +644,16 @@ impl Korrid {
             SurfaceDisplaysOutcome
         )
     }
+
+    pub async fn session_leave(&self, expected_launch_id: String) -> SessionTransitionOutcome {
+        call!(
+            self,
+            Mapping::Unreachable,
+            SessionLeave,
+            crate::SessionLeaveRequest {
+                expected_launch_id: Some(expected_launch_id)
+            },
+            SessionTransitionOutcome
+        )
+    }
 }
