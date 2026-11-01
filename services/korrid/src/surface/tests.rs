@@ -1137,13 +1137,13 @@ mod acquisition_gate {
     /// Each call takes the next scripted answer; the last answer stays
     /// current, as a polled daemon's state would.
     #[derive(Default)]
-    struct Script {
+    pub(super) struct Script {
         answers: HashMap<String, Vec<Value>>,
         last: HashMap<String, Value>,
-        calls: Vec<(String, Value)>,
+        pub(super) calls: Vec<(String, Value)>,
     }
 
-    fn scripted() -> (Korrid, Arc<std::sync::Mutex<Script>>) {
+    pub(super) fn scripted() -> (Korrid, Arc<std::sync::Mutex<Script>>) {
         let script = Arc::new(std::sync::Mutex::new(Script::default()));
         let shared = Arc::clone(&script);
         let korrid = Korrid::new(Arc::new(move |request: RpcRequest| {
@@ -1175,7 +1175,7 @@ mod acquisition_gate {
         (korrid, script)
     }
 
-    fn push(script: &Arc<std::sync::Mutex<Script>>, tag: &str, answer: Value) {
+    pub(super) fn push(script: &Arc<std::sync::Mutex<Script>>, tag: &str, answer: Value) {
         script
             .lock()
             .unwrap()
@@ -1552,4 +1552,253 @@ async fn displays_follow_the_declared_scope() {
         .unwrap();
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(hub.model("zone").unwrap().displays.is_none());
+}
+
+mod runner_chooser {
+    //! Port of `runner-chooser.test.ts`, against a scripted korrid.
+    use super::acquisition_gate::{push, scripted, Script};
+    use super::*;
+    use crate::surface::runner::{Intent, RunnerChooser, RunnerLaunchIntegration};
+    use korri_surface_treaty::SurfaceRunnerChoice;
+    use std::sync::Mutex;
+
+    fn routes(game_runner: Option<&str>, selection: Value) -> Value {
+        json!({ "_tag": "Ok", "payload": {
+            "gameId": "wl4",
+            "routes": [{ "runnerId": "@korri:retroarch/mgba", "familyId": "@korri:retroarch", "systemId": "gba",
+                "runnerBuild": "/nix/store/x-mgba", "program": "retroarch", "warnings": [] }],
+            "selection": selection,
+            "gameRunner": game_runner,
+            "systemRunners": {},
+            "revisions": { "device": "d1", "games": "g1" }
+        } })
+    }
+
+    struct Started(Arc<Mutex<Vec<(String, String)>>>, Arc<Mutex<Vec<String>>>);
+
+    fn chooser(korrid: Korrid, start_answer: Option<Value>) -> (Arc<RunnerChooser>, Started) {
+        let started = Arc::new(Mutex::new(Vec::new()));
+        let returned = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&started);
+        let back = Arc::clone(&returned);
+        let chooser = RunnerChooser::new(
+            korrid,
+            Arc::new(|| {}),
+            RunnerLaunchIntegration {
+                start_launch: Box::new(move |id, runner| {
+                    log.lock().unwrap().push((id, runner));
+                    let answer = start_answer.clone();
+                    Box::pin(async move { answer.map(from) })
+                }),
+                return_session: Box::new(move |session| {
+                    back.lock().unwrap().push(session.launch_id)
+                }),
+                reload: Box::new(|| {}),
+            },
+        );
+        (chooser, Started(started, returned))
+    }
+
+    async fn settle() {
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
+    fn content(state: &SurfaceRunnerChoice) -> &korri_surface_treaty::SurfaceRunnerChoiceContent {
+        match state {
+            SurfaceRunnerChoice::Closed => panic!("closed"),
+            SurfaceRunnerChoice::Loading(content)
+            | SurfaceRunnerChoice::Ready(content)
+            | SurfaceRunnerChoice::Stale(content)
+            | SurfaceRunnerChoice::Conflict(content)
+            | SurfaceRunnerChoice::Error(content)
+            | SurfaceRunnerChoice::Busy(content)
+            | SurfaceRunnerChoice::Warnings(content) => content,
+        }
+    }
+
+    /// Press a published action by its command, like a surface button.
+    fn press(chooser: &Arc<RunnerChooser>, command: &str) {
+        let state = chooser.snapshot();
+        let content = content(&state);
+        let id = content
+            .actions
+            .iter()
+            .chain(content.routes.iter().flat_map(|route| &route.actions))
+            .find(|action| action.id.ends_with(&format!(":{command}")))
+            .map(|action| action.id["runner:".len()..].to_owned())
+            .unwrap_or_else(|| "unpublished".into());
+        chooser.act(id);
+    }
+
+    fn sets(script: &Arc<Mutex<Script>>) -> Vec<Value> {
+        script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|(tag, _)| tag == "app.launch-settings.set")
+            .map(|(_, payload)| payload.clone())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_repairable_stale_read_offers_repair_without_launching() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        push(
+            &script,
+            "app.local-games.routes",
+            routes(Some("@korri:removed/core"), json!({ "_tag": "Choose" })),
+        );
+        push(
+            &script,
+            "app.launch-settings.set",
+            json!({ "_tag": "Ok", "payload": { "device": "d1", "games": "g2" } }),
+        );
+        let (chooser, started) = chooser(korrid, None);
+        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Launch);
+        settle().await;
+        let state = chooser.snapshot();
+        assert!(matches!(state, SurfaceRunnerChoice::Stale(_)));
+        assert_eq!(
+            serde_json::to_value(&content(&state).saved).unwrap(),
+            json!([{ "label": "This game", "runnerId": "@korri:removed/core" }])
+        );
+        assert!(content(&state)
+            .actions
+            .iter()
+            .any(|action| action.id.ends_with(":clear-game")));
+        push(
+            &script,
+            "app.local-games.routes",
+            routes(
+                Some("@korri:retroarch/mgba"),
+                json!({ "_tag": "Selected", "runnerId": "@korri:retroarch/mgba" }),
+            ),
+        );
+        press(&chooser, "game:0");
+        settle().await;
+        assert_eq!(
+            sets(&script),
+            vec![
+                json!({ "place": { "layer": { "_tag": "Game", "id": "wl4" }, "scope": { "_tag": "Any" } },
+                "path": { "_tag": "Runner" }, "value": "@korri:retroarch/mgba", "clear": false, "expectedRevision": "g1" })
+            ]
+        );
+        assert!(matches!(chooser.snapshot(), SurfaceRunnerChoice::Ready(_)));
+        assert!(started.0.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_old_button_cannot_act_on_a_newer_read() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.local-games.routes",
+            routes(None, json!({ "_tag": "Choose" })),
+        );
+        let (chooser, started) = chooser(korrid, None);
+        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Inspect);
+        settle().await;
+        let old =
+            content(&chooser.snapshot()).routes[0].actions[0].id["runner:".len()..].to_owned();
+        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Inspect);
+        settle().await;
+        chooser.act(old);
+        settle().await;
+        assert!(started.0.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn launch_with_a_saved_runner_starts_it_and_shows_its_warnings() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        push(
+            &script,
+            "app.local-games.routes",
+            routes(
+                Some("@korri:retroarch/mgba"),
+                json!({ "_tag": "Selected", "runnerId": "@korri:retroarch/mgba" }),
+            ),
+        );
+        let warning = json!({ "setting": "video_filter", "runnerId": "@korri:retroarch/mgba", "build": "1.20", "message": "ignored" });
+        let (chooser, started) = chooser(
+            korrid,
+            Some(
+                json!({ "_tag": "Ok", "payload": { "session": { "gameId": "wl4", "launchId": "L" }, "warnings": [warning] } }),
+            ),
+        );
+        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Launch);
+        settle().await;
+        assert_eq!(
+            *started.0.lock().unwrap(),
+            vec![("wl4".to_owned(), "@korri:retroarch/mgba".to_owned())]
+        );
+        let state = chooser.snapshot();
+        assert!(matches!(state, SurfaceRunnerChoice::Warnings(_)));
+        assert_eq!(
+            content(&state).warnings,
+            vec!["video_filter · @korri:retroarch/mgba · 1.20: ignored"]
+        );
+        press(&chooser, "dismiss");
+        settle().await;
+        assert!(chooser.is_closed());
+    }
+
+    #[tokio::test]
+    async fn launching_a_game_already_live_returns_to_that_exact_session() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": { "active": { "launchId": "L1", "gameId": "wl4" } } }),
+        );
+        let (chooser, started) = chooser(korrid, None);
+        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Launch);
+        settle().await;
+        assert!(chooser.is_closed());
+        assert_eq!(*started.1.lock().unwrap(), vec!["L1".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn an_active_session_conflict_offers_to_end_it() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.local-games.routes",
+            routes(None, json!({ "_tag": "Choose" })),
+        );
+        let (chooser, _) = chooser(
+            korrid,
+            Some(
+                json!({ "_tag": "Err", "payload": { "code": "ActiveSessionConflict", "message": "busy" } }),
+            ),
+        );
+        chooser.open("wl4".into(), "Wario Land 4".into(), Intent::Inspect);
+        settle().await;
+        push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": { "active": { "launchId": "other", "title": "Turtles" } } }),
+        );
+        press(&chooser, "launch:0");
+        settle().await;
+        let state = chooser.snapshot();
+        assert!(matches!(state, SurfaceRunnerChoice::Conflict(_)));
+        assert_eq!(content(&state).message, "End Turtles before switching runners. Nothing will launch automatically after ending it.");
+        assert!(content(&state)
+            .actions
+            .iter()
+            .any(|action| action.id.ends_with(":end")));
+    }
 }

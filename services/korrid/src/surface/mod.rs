@@ -23,6 +23,7 @@ pub mod overlay;
 pub mod owner_binding;
 pub mod preferences;
 pub mod root;
+pub mod runner;
 pub mod settings_model;
 pub mod shared_play;
 pub mod starter_pack;

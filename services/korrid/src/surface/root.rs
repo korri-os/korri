@@ -14,6 +14,7 @@ use super::{
     acquisition_gate::{AcquisitionGameRef, AcquisitionGate},
     downloads::{DownloadGameRef, GameDownloads, ACQUISITION_POLL_INTERVAL},
     korrid::Korrid,
+    launchables::driver::SessionStartResult,
     launchables::{
         driver::{Launchables, LaunchablesHooks},
         state::{Entry, LaunchablesState, Loaded, Phase},
@@ -26,6 +27,7 @@ use super::{
     network_onboarding::NetworkOnboarding,
     overlay::{focused_overlay_session, OverlayController, OverlayExit},
     owner_binding::{owner_binding_status, OwnerBinding},
+    runner::{Intent, RunnerChooser, RunnerLaunchIntegration},
     settings_model::settings_from,
     starter_pack::StarterPack,
     Notify,
@@ -77,19 +79,30 @@ fn launchable_on_this_device(entry: Entry) -> Entry {
     entry
 }
 
-fn local_runner_entry(entry: Option<&Entry>) -> bool {
+/// The local catalog copy with installed-runner selection, if any.
+fn local_runner_entry(entry: Option<&Entry>) -> Option<crate::Game> {
     match entry {
         Some(Entry::Game { game, .. })
             if game.source.is_local && game.supports_runner_selection =>
         {
-            true
+            Some(game.clone())
         }
         Some(entry @ (Entry::Game { .. } | Entry::LocalGame { .. })) => entry
             .alternatives()
             .iter()
             .filter_map(|copy| copy.remote())
-            .any(|game| game.source.is_local && game.supports_runner_selection),
-        _ => false,
+            .find(|game| game.source.is_local && game.supports_runner_selection)
+            .cloned(),
+        _ => None,
+    }
+}
+
+type StartDone =
+    Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Option<SessionStartResult>>>>>;
+
+fn finish(done: &StartDone, outcome: Option<SessionStartResult>) {
+    if let Some(sender) = done.lock().expect("start poisoned").take() {
+        let _ = sender.send(outcome);
     }
 }
 
@@ -161,6 +174,7 @@ pub struct Root {
     pub starter_pack: Arc<StarterPack>,
     pub downloads: Arc<GameDownloads>,
     pub acquisition: Arc<AcquisitionGate>,
+    pub runner: Arc<RunnerChooser>,
     controllers: Arc<super::controllers::Controllers>,
     displays: std::sync::Mutex<Displays>,
     onboarding_was_needed: std::sync::Mutex<Option<bool>>,
@@ -182,95 +196,158 @@ impl Root {
         notify: Notify,
         controllers: Arc<super::controllers::Controllers>,
     ) -> Arc<Self> {
-        let launchables_korrid = korrid.clone();
-        let network = NetworkOnboarding::new(korrid.clone(), notify.clone());
-        let downloads =
-            GameDownloads::new(korrid.clone(), notify.clone(), ACQUISITION_POLL_INTERVAL);
-        // Downloads a launch needs come before reserve/start; the gate tells
-        // the downloads store when a launch's download changed what is on disk.
-        let acquisition = {
-            let settled = Arc::downgrade(&downloads);
-            AcquisitionGate::new(
-                korrid.clone(),
-                notify.clone(),
-                Arc::new(move || {
-                    if let Some(downloads) = settled.upgrade() {
-                        tokio::spawn(async move { downloads.refresh(None).await });
-                    }
+        Arc::new_cyclic(|this: &std::sync::Weak<Root>| {
+            let launchables_korrid = korrid.clone();
+            // The chooser speaks korrid ids and starts through the shared gate.
+            let runner = {
+                let start = this.clone();
+                let back = this.clone();
+                let reload = this.clone();
+                RunnerChooser::new(
+                    korrid.clone(),
+                    notify.clone(),
+                    RunnerLaunchIntegration {
+                        start_launch: Box::new(move |id, runner_id| {
+                            let root = start.upgrade();
+                            Box::pin(async move {
+                                let root = root?;
+                                root.start_from_chooser(id, runner_id).await
+                            })
+                        }),
+                        return_session: Box::new(move |session| {
+                            if let Some(root) = back.upgrade() {
+                                root.launchables.resume_catalog_session(session);
+                            }
+                        }),
+                        reload: Box::new(move || {
+                            if let Some(root) = reload.upgrade() {
+                                root.launchables.reload();
+                            }
+                        }),
+                    },
+                )
+            };
+            let network = NetworkOnboarding::new(korrid.clone(), notify.clone());
+            let downloads =
+                GameDownloads::new(korrid.clone(), notify.clone(), ACQUISITION_POLL_INTERVAL);
+            // Downloads a launch needs come before reserve/start; the gate tells
+            // the downloads store when a launch's download changed what is on disk.
+            let acquisition = {
+                let settled = Arc::downgrade(&downloads);
+                AcquisitionGate::new(
+                    korrid.clone(),
+                    notify.clone(),
+                    Arc::new(move || {
+                        if let Some(downloads) = settled.upgrade() {
+                            tokio::spawn(async move { downloads.refresh(None).await });
+                        }
+                    }),
+                    ACQUISITION_POLL_INTERVAL,
+                )
+            };
+            {
+                // The gate's open launch counts as a pending download.
+                let gate = Arc::downgrade(&acquisition);
+                downloads.set_held_games(Arc::new(move || {
+                    gate.upgrade()
+                        .and_then(|gate| gate.game_id())
+                        .into_iter()
+                        .collect()
+                }));
+            }
+            let launchables = {
+                let restart = Arc::clone(&network);
+                let dismiss = Arc::clone(&network);
+                Launchables::new(
+                    korrid.clone(),
+                    notify.clone(),
+                    LaunchablesHooks {
+                        launch_warnings: {
+                            // Prepare-path warnings show in the chooser's Warnings panel.
+                            let runner = Arc::clone(&runner);
+                            Box::new(move |title, warnings| runner.show_warnings(title, warnings))
+                        },
+                        plugins_refresh: Box::new(|| {}),
+                        plugins_run: Box::new(|_| false),
+                        plugins_change: Box::new(|_, _| false),
+                        restart_onboarding: Box::new(move || restart.restart_onboarding()),
+                        dismiss_network_problem: Box::new(move || dismiss.dismiss_problem()),
+                    },
+                )
+            };
+            let owner_binding = {
+                let changed = Arc::downgrade(&launchables);
+                let finish = Arc::clone(&network);
+                OwnerBinding::new(
+                    korrid.clone(),
+                    notify.clone(),
+                    Arc::new(move || {
+                        if let Some(launchables) = changed.upgrade() {
+                            tokio::spawn(async move { launchables.refresh().await });
+                        }
+                    }),
+                    Arc::new(move || finish.finish_onboarding()),
+                )
+            };
+            let starter_pack = {
+                let reload = Arc::downgrade(&launchables);
+                StarterPack::new(
+                    korrid,
+                    notify.clone(),
+                    Arc::new(move || {
+                        if let Some(launchables) = reload.upgrade() {
+                            launchables.reload();
+                        }
+                    }),
+                )
+            };
+            Self {
+                runner,
+                korrid: launchables_korrid,
+                presentation: std::sync::Mutex::new(Presentation::Catalog {
+                    retained_failure: None,
                 }),
-                ACQUISITION_POLL_INTERVAL,
-            )
-        };
-        {
-            // The gate's open launch counts as a pending download.
-            let gate = Arc::downgrade(&acquisition);
-            downloads.set_held_games(Arc::new(move || {
-                gate.upgrade()
-                    .and_then(|gate| gate.game_id())
-                    .into_iter()
-                    .collect()
-            }));
-        }
-        let launchables = {
-            let restart = Arc::clone(&network);
-            let dismiss = Arc::clone(&network);
-            Launchables::new(
-                korrid.clone(),
-                notify.clone(),
-                LaunchablesHooks {
-                    launch_warnings: Box::new(|_, _| {}),
-                    plugins_refresh: Box::new(|| {}),
-                    plugins_run: Box::new(|_| false),
-                    plugins_change: Box::new(|_, _| false),
-                    restart_onboarding: Box::new(move || restart.restart_onboarding()),
-                    dismiss_network_problem: Box::new(move || dismiss.dismiss_problem()),
-                },
-            )
-        };
-        let owner_binding = {
-            let changed = Arc::downgrade(&launchables);
-            let finish = Arc::clone(&network);
-            OwnerBinding::new(
-                korrid.clone(),
-                notify.clone(),
-                Arc::new(move || {
-                    if let Some(launchables) = changed.upgrade() {
-                        tokio::spawn(async move { launchables.refresh().await });
-                    }
-                }),
-                Arc::new(move || finish.finish_onboarding()),
-            )
-        };
-        let starter_pack = {
-            let reload = Arc::downgrade(&launchables);
-            StarterPack::new(
-                korrid,
-                notify.clone(),
-                Arc::new(move || {
-                    if let Some(launchables) = reload.upgrade() {
-                        launchables.reload();
-                    }
-                }),
-            )
-        };
-        Arc::new(Self {
-            korrid: launchables_korrid,
-            presentation: std::sync::Mutex::new(Presentation::Catalog {
-                retained_failure: None,
-            }),
-            launchables,
-            network,
-            owner_binding,
-            starter_pack,
-            downloads,
-            acquisition,
-            controllers,
-            displays: std::sync::Mutex::new(Displays::default()),
-            onboarding_was_needed: std::sync::Mutex::new(None),
-            clock: std::sync::Mutex::new(clock_label()),
-            last_local_ids: std::sync::Mutex::new(None),
-            notify,
+                launchables,
+                network,
+                owner_binding,
+                starter_pack,
+                downloads,
+                acquisition,
+                controllers,
+                displays: std::sync::Mutex::new(Displays::default()),
+                onboarding_was_needed: std::sync::Mutex::new(None),
+                clock: std::sync::Mutex::new(clock_label()),
+                last_local_ids: std::sync::Mutex::new(None),
+                notify,
+            }
         })
+    }
+
+    /// The chooser's start: the presented entry's id and title, then the gate.
+    async fn start_from_chooser(
+        self: Arc<Self>,
+        id: String,
+        runner_id: String,
+    ) -> Option<SessionStartResult> {
+        let current = self.launchables.state();
+        let surface_id = local_game_ids_by_surface_id(&current)
+            .into_iter()
+            .find(|(_, korrid_id)| *korrid_id == id)
+            .map(|(surface_id, _)| surface_id)
+            .unwrap_or_else(|| id.clone());
+        let title = match entry_for_id(&current, &surface_id) {
+            Some(Entry::Game { game, .. }) => game.title.clone(),
+            _ => id.clone(),
+        };
+        self.gated_start(AcquisitionGameRef {
+            id,
+            surface_id,
+            title,
+            runner_id: Some(runner_id),
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     /// The shell shows a package with this display scope.
@@ -589,7 +666,7 @@ impl Root {
             catalog: korri_surface_treaty::SurfaceCatalog::Loading,
             status,
             save_history: None,
-            runner_choice: None,
+            runner_choice: Some(self.runner.snapshot()),
             launch_settings: None,
             clock_label: Some(self.clock.lock().expect("clock poisoned").clone()),
             actions: Vec::new(),
@@ -676,7 +753,7 @@ impl Root {
             })
         );
         let healthy = matches!(&current, LaunchablesState::Loaded(Loaded { phase: Phase::Ready, content }) if content.unavailable_session_status.is_none());
-        if local_runner_entry(entry) {
+        if local_runner_entry(entry).is_some() {
             actions.push(SurfaceAction::new(
                 "runners",
                 "Runners on this device",
@@ -725,7 +802,14 @@ impl Root {
         if content.unavailable_session_status.is_some() {
             return;
         }
-        self.gated_start(AcquisitionGameRef {
+        // Several runners: the chooser first, then the gate with its choice,
+        // because korrid resolves artifacts per runner.
+        if game.supports_runner_selection {
+            self.runner
+                .open(game.id.clone(), game.title.clone(), Intent::Launch);
+            return;
+        }
+        let _ = self.gated_start(AcquisitionGameRef {
             id: game.id.clone(),
             surface_id: id.into(),
             title: game.title.clone(),
@@ -736,12 +820,25 @@ impl Root {
     /// The startup behind the gate: once every artifact the game's runner
     /// needs is Ready, the reserve/start lifecycle. korrid refusing a start
     /// with ArtifactsNotReady means the world moved: ask again.
-    fn gated_start(self: &Arc<Self>, game: AcquisitionGameRef) {
+    fn gated_start(
+        self: &Arc<Self>,
+        game: AcquisitionGameRef,
+    ) -> tokio::sync::oneshot::Receiver<Option<SessionStartResult>> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.gate(game, Arc::new(std::sync::Mutex::new(Some(sender))));
+        receiver
+    }
+
+    /// The download gate, then the start. Resolves None when the gate
+    /// closes without launching.
+    fn gate(self: &Arc<Self>, game: AcquisitionGameRef, done: StartDone) {
         let weak = Arc::downgrade(self);
         let retry_game = game.clone();
+        let proceed_done = Arc::clone(&done);
         let proceed = Arc::new(move || {
             let Some(root) = weak.upgrade() else { return };
             let game = retry_game.clone();
+            let done = Arc::clone(&proceed_done);
             tokio::spawn(async move {
                 let outcome = root
                     .launchables
@@ -751,12 +848,15 @@ impl Root {
                 {
                     if failure.code == "ArtifactsNotReady" {
                         root.launchables.dismiss_notice();
-                        root.gated_start(game);
+                        root.gate(game, done);
+                        return;
                     }
                 }
+                finish(&done, outcome);
             });
         });
-        self.acquisition.launch(game, proceed, Arc::new(|| {}));
+        let abandon: super::acquisition_gate::Step = Arc::new(move || finish(&done, None));
+        self.acquisition.launch(game, proceed, abandon);
     }
 
     /// Perform one request with the portal host's rules. Requests about the
@@ -786,7 +886,10 @@ impl Root {
                 launch_location_id,
             } => {
                 let current = launchables.state();
-                if !current.is_ready() || self.acquisition.status().is_some() {
+                if !current.is_ready()
+                    || self.acquisition.status().is_some()
+                    || !self.runner.is_closed()
+                {
                     return;
                 }
                 let Some(entry) = entry_for_id(&current, &game_id).cloned() else {
@@ -817,10 +920,11 @@ impl Root {
                     if self.acquisition.back() {
                         return;
                     }
+                    self.runner.cancel();
                     launchables.cancel_launch();
-                } else if action_id.starts_with("runner:") {
-                    // The runner chooser publishes these; it is not ported.
-                } else {
+                } else if let Some(runner_action) = action_id.strip_prefix("runner:") {
+                    self.runner.act(runner_action.to_owned());
+                } else if self.runner.is_closed() {
                     launchables.run_device_action(&action_id);
                 }
             }
@@ -857,7 +961,10 @@ impl Root {
             SurfaceRequest::DismissIdentityStatus => launchables.dismiss_identity_status(),
             SurfaceRequest::RunGameAction { game_id, action_id } => {
                 let current = launchables.state();
-                if !current.is_ready() || self.acquisition.status().is_some() {
+                if !current.is_ready()
+                    || self.acquisition.status().is_some()
+                    || !self.runner.is_closed()
+                {
                     return;
                 }
                 let Some(entry) = entry_for_id(&current, &game_id).cloned() else {
@@ -881,8 +988,14 @@ impl Root {
                     }
                     return;
                 }
-                if action_id == "runners" || action_id == "launch-settings" {
-                    // The runner chooser and the launch settings editor are not ported.
+                if action_id == "runners" {
+                    let healthy = matches!(&current, LaunchablesState::Loaded(Loaded { content, .. }) if content.unavailable_session_status.is_none());
+                    if let Some(local) = local_runner_entry(Some(&entry)).filter(|_| healthy) {
+                        self.runner.open(local.id, local.title, Intent::Inspect);
+                    }
+                    return;
+                }
+                if action_id == "launch-settings" {
                     return;
                 }
                 if action_id == "end" {
