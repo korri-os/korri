@@ -118,6 +118,8 @@ enum Search {
     },
 }
 
+// One value per store, replaced whole on each step: variant size is moot.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Details {
     Closed,
@@ -915,14 +917,15 @@ impl StoreAcquisition {
             actions.extend(list);
         }
         match snapshot.details {
-            SurfaceStoreDetails::Problem { actions: list, .. } => actions.extend(list),
-            SurfaceStoreDetails::Ready { get, .. } => match get {
-                SurfaceStoreGet::Offer { actions: list, .. }
-                | SurfaceStoreGet::Confirm { actions: list, .. }
-                | SurfaceStoreGet::Working { actions: list, .. }
-                | SurfaceStoreGet::Problem { actions: list, .. } => actions.extend(list),
-                _ => {}
-            },
+            SurfaceStoreDetails::Problem { actions: list, .. }
+            | SurfaceStoreDetails::Ready {
+                get:
+                    SurfaceStoreGet::Offer { actions: list, .. }
+                    | SurfaceStoreGet::Confirm { actions: list, .. }
+                    | SurfaceStoreGet::Working { actions: list, .. }
+                    | SurfaceStoreGet::Problem { actions: list, .. },
+                ..
+            } => actions.extend(list),
             _ => {}
         }
         actions

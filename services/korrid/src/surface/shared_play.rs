@@ -183,11 +183,10 @@ pub fn needed_bytes(message: Option<&str>) -> Option<f64> {
 
 /// "42% of 512 MB": how far the copy is.
 pub fn copy_detail(done: u64, total: u64) -> String {
-    let percent = if total > 0 {
-        (done.saturating_mul(100) / total).min(100)
-    } else {
-        0
-    };
+    let percent = done
+        .saturating_mul(100)
+        .checked_div(total)
+        .map_or(0, |percent| percent.min(100));
     format!("{percent}% of {}", format_bytes(total as f64))
 }
 
@@ -336,6 +335,8 @@ impl InstallStep {
 }
 
 /// Where shared play stands on this device: one case at a time.
+// One value per device, replaced whole on each step: variant size is moot.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum SharedPlay {
     Unread {
