@@ -1,0 +1,1108 @@
+//! Port of `clients/portal/src/surface/surface-model.test.ts`, and the hub,
+//! catalog window, focus, preference and watch tests of the native surface
+//! wire.
+
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
+use futures::{SinkExt, StreamExt};
+use korri_surface_treaty::{
+    CatalogFrom, CatalogOrder, CatalogQuery, SurfaceAction, SurfaceCatalog, SurfaceModel,
+    SurfacePreferenceDeclaration, SurfacePreferenceMark, SurfaceRequest, SurfaceStatus,
+};
+use serde::de::DeserializeOwned;
+use serde_json::{json, Value};
+
+use super::{
+    downloads::GameDownloadFacts,
+    korrid::{Korrid, Refusal},
+    launchables::state::{Content, Entry, LaunchNotice, LaunchSubject, LaunchablesState},
+    model::*,
+    SurfaceHub,
+};
+use crate::{RpcRequest, RpcResponse};
+
+fn from<T: DeserializeOwned>(value: Value) -> T {
+    serde_json::from_value(value).expect("fixture decodes")
+}
+
+fn source(label: &str) -> Value {
+    json!({ "label": label, "isLocal": false })
+}
+
+fn ready(
+    entries: Vec<Entry>,
+    notice: Option<&str>,
+    subject: Option<LaunchSubject>,
+) -> LaunchablesState {
+    LaunchablesState::recover_startup(
+        Content {
+            entries,
+            notice: notice.map(|message| LaunchNotice::Launch {
+                message: message.into(),
+                subject,
+            }),
+            ..Content::default()
+        },
+        None,
+        &[],
+    )
+}
+
+fn local_game() -> Entry {
+    Entry::LocalGame {
+        game: from(json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA" })),
+        alternatives: Vec::new(),
+    }
+}
+
+fn host_game_json() -> Value {
+    json!({ "id": "neverball", "title": "Neverball", "host": "zao", "supportsRunnerSelection": false, "source": source("zao") })
+}
+
+fn host_game() -> Entry {
+    Entry::Game {
+        game: from(host_game_json()),
+        alternatives: Vec::new(),
+    }
+}
+
+fn now_playing() -> Entry {
+    Entry::NowPlaying {
+        session: from(json!({ "launchId": "L1", "title": "Skate 3", "host": "aka" })),
+        local_catalog_game: None,
+    }
+}
+
+fn games(state: &LaunchablesState) -> Vec<korri_surface_treaty::SurfaceGame> {
+    catalog_games(state).expect("not loading")
+}
+
+mod surface_model {
+    use super::*;
+    use crate::surface::launchables::fold::GameCopy;
+
+    #[test]
+    fn empty_failed_catalogs_keep_their_cause() {
+        let state = LaunchablesState::from_sources(
+            &from(
+                json!({ "_tag": "Ok", "payload": { "games": [], "failures": [
+                { "host": "rpminiv2", "code": "LocalRomMissing", "message": "The ROM file is missing" }
+            ] } }),
+            ),
+            None,
+            None,
+            &[],
+            None,
+        );
+        assert_eq!(
+            serde_json::to_value(status_from(&state)).unwrap(),
+            json!({ "_tag": "Problem", "kicker": "Catalog problem", "reason": "rpminiv2: LocalRomMissing: The ROM file is missing", "canRetry": false })
+        );
+        assert!(games(&state).is_empty());
+    }
+
+    #[test]
+    fn stop_failures_are_not_labelled_as_attempted_launches() {
+        let stopping = ready(vec![now_playing()], None, None).begin_stopping(&now_playing());
+        let state = stopping.stop_timed_out();
+        assert!(
+            matches!(status_from(&state), SurfaceStatus::Problem { kicker, .. } if kicker == "Couldn't end the session")
+        );
+    }
+
+    #[test]
+    fn labels_a_source_local_catalog_route_as_this_device() {
+        let mut local = host_game_json();
+        local["source"] = json!({ "label": "device-label", "isLocal": true });
+        let mut aka = host_game_json();
+        aka["host"] = json!("aka");
+        aka["source"] = source("aka");
+        let entry = Entry::Game {
+            game: from(local),
+            alternatives: vec![GameCopy::Remote(from(aka))],
+        };
+        let state = ready(vec![entry.clone()], None, None);
+        let rendered = &games(&state)[0];
+        assert_eq!(rendered.section.as_deref(), Some("This device"));
+        assert_eq!(
+            rendered.subtitle.as_deref(),
+            Some("This device · Also on aka")
+        );
+        let locations = rendered.launch_locations.as_ref().unwrap();
+        assert_eq!(
+            locations
+                .iter()
+                .map(|location| location.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["This device", "aka"]
+        );
+        let chosen = entry_for_launch_location(&entry, &locations[0].id).unwrap();
+        assert_eq!(chosen.key(), "game:zao:neverball");
+    }
+
+    #[test]
+    fn publishes_only_playable_things_and_groups_them_by_where_they_play() {
+        let state = ready(vec![now_playing(), local_game(), host_game()], None, None);
+        let games = games(&state);
+        assert_eq!(
+            games
+                .iter()
+                .map(|game| game.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Skate 3", "Wario Land 4", "Neverball"]
+        );
+        assert_eq!(
+            games
+                .iter()
+                .map(|game| game.section.clone().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["Continue", "This device", "zao"]
+        );
+        assert_eq!(games[0].resumable, Some(true));
+    }
+
+    #[test]
+    fn never_invents_art_or_metadata_korrid_does_not_have() {
+        let state = ready(vec![local_game()], None, None);
+        let game = &games(&state)[0];
+        assert!(game.cover_art_url.is_none());
+        assert_eq!(game.subtitle.as_deref(), Some("GBA"));
+        assert!(
+            game.last_played_at.is_none()
+                && game.play_count.is_none()
+                && game.total_playtime_seconds.is_none()
+        );
+    }
+
+    #[test]
+    fn publishes_play_facts_as_utc_millis_and_merges_folded_copies() {
+        let entry = Entry::LocalGame {
+            game: from(
+                json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA",
+                "playStats": { "lastPlayed": "2026-01-02T03:04:05Z", "playCount": 2, "totalPlaytimeSeconds": 60.0 } }),
+            ),
+            alternatives: vec![GameCopy::Remote(from(
+                json!({ "id": "wl4", "title": "Wario Land 4", "host": "zao",
+                "supportsRunnerSelection": false, "source": source("zao"),
+                "playStats": { "lastPlayed": "2026-03-01T00:00:00Z", "playCount": 1, "totalPlaytimeSeconds": 30.0 } }),
+            ))],
+        };
+        let state = ready(vec![entry], None, None);
+        let game = &games(&state)[0];
+        assert_eq!(game.last_played_at, Some(1_772_323_200_000.0));
+        assert_eq!(game.play_count, Some(3));
+        assert_eq!(game.total_playtime_seconds, Some(90.0));
+    }
+
+    #[test]
+    fn reports_retained_host_copies_without_adding_another_game() {
+        let entry = Entry::LocalGame {
+            game: from(json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA" })),
+            alternatives: vec![
+                GameCopy::Remote(from(
+                    json!({ "id": "wl4", "title": "Wario Land 4", "host": "zao", "supportsRunnerSelection": false, "source": source("zao") }),
+                )),
+                GameCopy::Remote(from(
+                    json!({ "id": "wl4-aka", "title": "Wario Land 4", "host": "aka", "supportsRunnerSelection": false, "source": source("aka") }),
+                )),
+            ],
+        };
+        let state = ready(vec![entry.clone()], None, None);
+        let games = games(&state);
+        assert_eq!(games.len(), 1);
+        assert_eq!(games[0].subtitle.as_deref(), Some("GBA · Also on aka, zao"));
+        assert_eq!(
+            serde_json::to_value(&games[0].launch_locations).unwrap(),
+            json!([
+                { "id": "[\"local\",null,\"wl4\"]", "label": "This device" },
+                { "id": "[\"remote\",\"aka\",\"wl4-aka\"]", "label": "aka" },
+                { "id": "[\"remote\",\"zao\",\"wl4\"]", "label": "zao" }
+            ])
+        );
+        // A host choice resolves to exactly that copy.
+        let zao = entry_for_launch_location(&entry, "[\"remote\",\"zao\",\"wl4\"]").unwrap();
+        assert_eq!(zao.key(), "game:zao:wl4");
+        // A local record without a local catalog route never falls back.
+        let local = entry_for_launch_location(&entry, "[\"local\",null,\"wl4\"]").unwrap();
+        assert_eq!(local.key(), "local-game:wl4");
+        assert!(entry_for_launch_location(&entry, "unknown-location").is_none());
+    }
+
+    #[test]
+    fn a_notice_becomes_a_problem_the_user_acknowledges() {
+        let state = ready(vec![local_game()], Some("local ROM is missing"), None);
+        assert_eq!(
+            serde_json::to_value(status_from(&state)).unwrap(),
+            json!({ "_tag": "Problem", "kicker": "Couldn't start", "reason": "local ROM is missing", "canRetry": false })
+        );
+    }
+
+    #[test]
+    fn a_failure_names_the_game_it_belongs_to() {
+        let state = ready(
+            vec![local_game()],
+            Some("ActiveSessionConflict: a session must end"),
+            Some(LaunchSubject {
+                id: Some("wl4".into()),
+                entry_id: None,
+                title: "Wario Land 4".into(),
+            }),
+        );
+        assert_eq!(
+            serde_json::to_value(status_from(&state)).unwrap(),
+            json!({ "_tag": "Problem", "kicker": "Couldn't start Wario Land 4", "reason": "ActiveSessionConflict: a session must end",
+                "canRetry": false, "gameId": "local-game:wl4", "gameTitle": "Wario Land 4" })
+        );
+    }
+
+    #[test]
+    fn in_flight_work_is_busy_and_loading_is_not_empty() {
+        let preparing = ready(vec![host_game()], None, None).begin_preparing("Neverball", None);
+        assert!(
+            matches!(status_from(&preparing), SurfaceStatus::Busy { kicker, .. } if kicker.contains("Neverball"))
+        );
+        assert!(catalog_games(&LaunchablesState::Loading).is_none());
+        assert_eq!(
+            status_from(&LaunchablesState::Loading),
+            SurfaceStatus::Browsing
+        );
+    }
+
+    #[test]
+    fn only_the_running_session_has_actions_and_stopping_is_destructive() {
+        let actions = game_actions_for_entry(Some(&now_playing()), None);
+        assert_eq!(
+            serde_json::to_value(&actions).unwrap(),
+            json!([{ "id": "resume", "label": "Resume", "enabled": true }, { "id": "end", "label": "End", "enabled": true, "destructive": true }])
+        );
+        assert!(game_actions_for_entry(Some(&local_game()), None).is_empty());
+    }
+
+    #[test]
+    fn surface_ids_round_trip_and_unknown_ids_resolve_to_nothing() {
+        let state = ready(vec![now_playing(), local_game(), host_game()], None, None);
+        for game in games(&state) {
+            assert_eq!(entry_for_id(&state, &game.id).unwrap().key(), game.id);
+        }
+        assert!(entry_for_id(&state, "game:nowhere").is_none());
+    }
+
+    #[test]
+    fn manual_choices_publish_every_exact_phase_and_stable_same_title_labels() {
+        use crate::surface::launchables::state::{
+            CancelState, ChoicePhase, Loaded, PendingLaunchChoice, Phase,
+        };
+        use crate::PendingLaunchPhase::*;
+        let phases = [
+            ChoicePhase::Pending(Reserved),
+            ChoicePhase::Pending(Preparing),
+            ChoicePhase::Pending(Committing),
+            ChoicePhase::Waiting,
+            ChoicePhase::Pending(Cancelling),
+        ];
+        let mut choices: Vec<PendingLaunchChoice> = phases
+            .into_iter()
+            .enumerate()
+            .map(|(index, phase)| PendingLaunchChoice {
+                launch_id: index.to_string(),
+                game_id: Some("neverball".into()),
+                title: if index < 2 {
+                    "Same title".into()
+                } else {
+                    format!("Title {index}")
+                },
+                phase,
+                cancel: CancelState::Idle,
+            })
+            .collect();
+        choices.push(PendingLaunchChoice {
+            launch_id: "5".into(),
+            game_id: None,
+            title: "Retry title".into(),
+            phase: ChoicePhase::Pending(Reserved),
+            cancel: CancelState::Retry,
+        });
+        let state = LaunchablesState::Loaded(Loaded {
+            phase: Phase::Choosing { choices },
+            content: Content {
+                entries: vec![host_game()],
+                ..Content::default()
+            },
+        });
+        assert_eq!(
+            serde_json::to_value(status_from(&state)).unwrap(),
+            json!({ "_tag": "Busy", "kicker": "6 launches are starting", "detail": "Cancel each launch you do not want.", "actions": [
+                { "id": "cancel-pending:0", "label": "Cancel Same title (1)", "description": "Waiting to start", "enabled": true },
+                { "id": "cancel-pending:1", "label": "Cancel Same title (2)", "description": "Preparing", "enabled": true },
+                { "id": "cancel-pending:2", "label": "Cancel Title 2", "description": "Starting", "enabled": true },
+                { "id": "cancel-pending:3", "label": "Cancel Title 3", "description": "Waiting for its window", "enabled": true },
+                { "id": "cancel-pending:4", "label": "Cancel Title 4", "description": "Cancelling", "enabled": false },
+                { "id": "cancel-pending:5", "label": "Cancel Retry title", "description": "Cancel failed. Try again.", "enabled": true }
+            ] })
+        );
+        let sent = state.begin_pending_cancellation("0").unwrap();
+        let SurfaceStatus::Busy {
+            actions: Some(actions),
+            ..
+        } = status_from(&sent)
+        else {
+            panic!("expected Busy")
+        };
+        assert!(!actions[0].enabled);
+    }
+
+    fn idle() -> GameDownloadFacts {
+        GameDownloadFacts {
+            needs: false,
+            bytes: None,
+            active: false,
+            stoppable: false,
+            shared: false,
+            queued: false,
+            progress: None,
+            own_ready: false,
+            failure: None,
+        }
+    }
+
+    fn ids(facts: GameDownloadFacts, live: bool, enabled: bool) -> Vec<String> {
+        let entry: Entry = Entry::Game {
+            game: from(
+                json!({ "id": "mm", "title": "Mega Man Rock N Roll", "supportsRunnerSelection": false, "source": { "label": "This device", "isLocal": true } }),
+            ),
+            alternatives: Vec::new(),
+        };
+        game_actions_for_entry(
+            Some(&entry),
+            Some(&GameDownloadContext {
+                facts,
+                live,
+                enabled,
+            }),
+        )
+        .into_iter()
+        .map(|action| {
+            format!(
+                "{}{}",
+                action.id,
+                if action.enabled { "" } else { " (dimmed)" }
+            )
+        })
+        .collect()
+    }
+
+    #[test]
+    fn download_actions_follow_adr_0013() {
+        let progress = Some(korri_surface_treaty::SurfaceProgress {
+            done: 1.0,
+            total: Some(2.0),
+        });
+        assert_eq!(
+            ids(
+                GameDownloadFacts {
+                    needs: true,
+                    bytes: Some(500.0),
+                    ..idle()
+                },
+                false,
+                true
+            ),
+            vec!["download"]
+        );
+        assert_eq!(
+            ids(
+                GameDownloadFacts {
+                    needs: true,
+                    active: true,
+                    stoppable: true,
+                    queued: true,
+                    ..idle()
+                },
+                false,
+                true
+            ),
+            vec!["cancel-download"]
+        );
+        assert_eq!(
+            ids(
+                GameDownloadFacts {
+                    needs: true,
+                    active: true,
+                    stoppable: true,
+                    progress: progress.clone(),
+                    ..idle()
+                },
+                false,
+                true
+            ),
+            vec!["cancel-download"]
+        );
+        assert_eq!(
+            ids(
+                GameDownloadFacts {
+                    needs: true,
+                    active: true,
+                    ..idle()
+                },
+                false,
+                true
+            ),
+            vec!["cancel-download (dimmed)"]
+        );
+        assert_eq!(
+            ids(
+                GameDownloadFacts {
+                    needs: true,
+                    active: true,
+                    shared: true,
+                    progress,
+                    ..idle()
+                },
+                false,
+                true
+            ),
+            vec!["cancel-download (dimmed)"]
+        );
+        assert_eq!(
+            ids(
+                GameDownloadFacts {
+                    own_ready: true,
+                    ..idle()
+                },
+                false,
+                true
+            ),
+            vec!["remove-download"]
+        );
+        assert_eq!(
+            ids(
+                GameDownloadFacts {
+                    needs: true,
+                    own_ready: true,
+                    ..idle()
+                },
+                false,
+                true
+            ),
+            vec!["download", "remove-download"]
+        );
+        assert!(ids(idle(), false, true).is_empty());
+        assert!(ids(
+            GameDownloadFacts {
+                own_ready: true,
+                ..idle()
+            },
+            true,
+            true
+        )
+        .is_empty());
+        assert_eq!(
+            ids(
+                GameDownloadFacts {
+                    needs: true,
+                    ..idle()
+                },
+                false,
+                false
+            ),
+            vec!["download (dimmed)"]
+        );
+        assert_eq!(
+            serde_json::to_value(surface_download_from(Some(&GameDownloadFacts {
+                needs: true,
+                bytes: Some(500.0),
+                active: true,
+                queued: true,
+                ..idle()
+            })))
+            .unwrap(),
+            json!({ "queued": true, "bytes": 500.0 })
+        );
+        assert!(surface_download_from(Some(&GameDownloadFacts {
+            own_ready: true,
+            ..idle()
+        }))
+        .is_none());
+        assert!(surface_download_from(None).is_none());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The hub over an in-memory korrid
+// ---------------------------------------------------------------------------
+
+/// A real korrid stand-in configured with one outcome per request tag, the
+/// way the portal's in-memory client answered. Unknown tags are unreachable.
+fn in_memory_korrid(outcomes: Arc<std::sync::Mutex<HashMap<String, Value>>>) -> Korrid {
+    Korrid::new(Arc::new(move |request: RpcRequest| {
+        let outcomes = Arc::clone(&outcomes);
+        Box::pin(async move {
+            let tag = serde_json::to_value(&request).unwrap()["_tag"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            let outcome = outcomes.lock().unwrap().get(&tag).cloned();
+            match outcome {
+                Some(outcome) => serde_json::from_value::<RpcResponse>(
+                    json!({ "_tag": tag, "outcome": outcome }),
+                )
+                .map_err(|error| Refusal::Unreachable(error.to_string())),
+                None => Err(Refusal::Unreachable(format!("no answer for {tag}"))),
+            }
+        })
+    }))
+}
+
+fn idle_outcomes(game_count: usize) -> HashMap<String, Value> {
+    let games: Vec<Value> = (0..game_count)
+        .map(|index| json!({ "id": format!("g{index:05}"), "title": format!("Game {index:05}"), "supportsRunnerSelection": false,
+            "source": { "label": "This device", "isLocal": true } }))
+        .collect();
+    let unsupported =
+        json!({ "_tag": "Err", "payload": { "code": "OperationUnsupported", "message": "no" } });
+    [
+        (
+            "app.catalog.snapshot",
+            json!({ "_tag": "Ok", "payload": { "games": games } }),
+        ),
+        (
+            "app.local-games.list",
+            json!({ "_tag": "Ok", "payload": { "games": [] } }),
+        ),
+        ("app.session.status", json!({ "_tag": "Ok", "payload": {} })),
+        (
+            "app.peer.list",
+            json!({ "_tag": "Ok", "payload": { "peers": [] } }),
+        ),
+        (
+            "system.health",
+            json!({ "_tag": "Ok", "payload": { "version": "test" } }),
+        ),
+        ("system.settings.snapshot", unsupported.clone()),
+        ("app.library.folders.snapshot", unsupported.clone()),
+        ("system.identity.status", unsupported.clone()),
+        (
+            "system.identity.owner-binding.snapshot",
+            unsupported.clone(),
+        ),
+        ("system.network.status", unsupported.clone()),
+        (
+            "system.onboarding.status",
+            json!({ "_tag": "Ok", "payload": { "needed": false } }),
+        ),
+        (
+            "app.acquisition.status",
+            json!({ "_tag": "Ok", "payload": { "artifacts": [] } }),
+        ),
+        ("system.plugins.repositories", unsupported),
+    ]
+    .into_iter()
+    .map(|(tag, outcome)| (tag.to_owned(), outcome))
+    .collect()
+}
+
+type Outcomes = Arc<std::sync::Mutex<HashMap<String, Value>>>;
+
+fn hub_with(outcomes: HashMap<String, Value>) -> (Arc<SurfaceHub>, Outcomes, tempfile::TempDir) {
+    let outcomes = Arc::new(std::sync::Mutex::new(outcomes));
+    let directory = tempfile::tempdir().unwrap();
+    let hub = SurfaceHub::new(
+        in_memory_korrid(Arc::clone(&outcomes)),
+        directory.path().join("private"),
+    );
+    (hub, outcomes, directory)
+}
+
+async fn settled(hub: &Arc<SurfaceHub>, surface: &str) -> SurfaceModel {
+    for _ in 0..200 {
+        let model = hub.model(surface).unwrap();
+        if !matches!(model.catalog, SurfaceCatalog::Loading) {
+            return model;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("the catalog never loaded")
+}
+
+fn window_ids(model: &SurfaceModel) -> (u32, u32, Vec<String>) {
+    let SurfaceCatalog::Ready {
+        total,
+        first_index,
+        window,
+        ..
+    } = &model.catalog
+    else {
+        panic!("expected Ready, got {:?}", model.catalog)
+    };
+    (
+        *total,
+        *first_index,
+        window.iter().map(|game| game.id.clone()).collect(),
+    )
+}
+
+#[tokio::test]
+async fn the_default_window_is_fifty_games_from_the_start_and_each_surface_moves_its_own() {
+    let (hub, _, _directory) = hub_with(idle_outcomes(120));
+    let model = settled(&hub, "pico").await;
+    let (total, first, window) = window_ids(&model);
+    assert_eq!((total, first, window.len()), (120, 0, 50));
+    assert_eq!(window[0], "game:g00000");
+    let SurfaceCatalog::Ready { after, query, .. } = &model.catalog else {
+        unreachable!()
+    };
+    assert_eq!(*query, CatalogQuery::default());
+    hub.request(
+        "pico",
+        SurfaceRequest::MoveCatalog {
+            query: CatalogQuery::default(),
+            from: CatalogFrom::After {
+                cursor: after.clone().unwrap(),
+            },
+            count: 500,
+        },
+    )
+    .unwrap();
+    let (_, first, window) = window_ids(&hub.model("pico").unwrap());
+    assert_eq!((first, window.len()), (50, 70));
+    // Zone keeps its own query.
+    assert_eq!(window_ids(&hub.model("zone").unwrap()).1, 0);
+    hub.request(
+        "zone",
+        SurfaceRequest::MoveCatalog {
+            query: CatalogQuery {
+                text: " GAME 0011".into(),
+                section: None,
+                order: CatalogOrder::Title,
+            },
+            from: CatalogFrom::Start,
+            count: 50,
+        },
+    )
+    .unwrap();
+    let (total, _, window) = window_ids(&hub.model("zone").unwrap());
+    assert_eq!(total, 10);
+    assert_eq!(window[0], "game:g00110");
+    assert_eq!(window_ids(&hub.model("pico").unwrap()).1, 50);
+}
+
+#[tokio::test]
+async fn an_empty_library_is_empty_and_a_bad_surface_id_is_refused() {
+    let (hub, _, _directory) = hub_with(idle_outcomes(0));
+    assert_eq!(settled(&hub, "pico").await.catalog, SurfaceCatalog::Empty);
+    assert_eq!(hub.model("../pico").unwrap_err().code, "InvalidSurfaceId");
+    assert_eq!(hub.model("").unwrap_err().code, "InvalidSurfaceId");
+}
+
+#[tokio::test]
+async fn focus_game_publishes_that_games_actions_only_for_a_game_korri_knows() {
+    let mut outcomes = idle_outcomes(3);
+    outcomes.insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "active": { "launchId": "L1", "gameId": "g00001", "title": "Game 00001", "phase": "running", "initialHandoff": "observed" } } }),
+    );
+    let (hub, _, _directory) = hub_with(outcomes);
+    let model = settled(&hub, "pico").await;
+    assert!(model.focused_game.is_none());
+    hub.request(
+        "pico",
+        SurfaceRequest::FocusGame {
+            game_id: Some("nope".into()),
+        },
+    )
+    .unwrap();
+    assert!(hub.model("pico").unwrap().focused_game.is_none());
+    hub.request(
+        "pico",
+        SurfaceRequest::FocusGame {
+            game_id: Some("now-playing:L1".into()),
+        },
+    )
+    .unwrap();
+    let focused = hub.model("pico").unwrap().focused_game.unwrap();
+    assert_eq!(focused.game_id, "now-playing:L1");
+    assert_eq!(
+        focused.actions,
+        vec![
+            SurfaceAction::new("resume", "Resume", true),
+            SurfaceAction::new("end", "End", true).destructive()
+        ]
+    );
+    hub.request(
+        "pico",
+        SurfaceRequest::FocusGame {
+            game_id: Some("game:g00002".into()),
+        },
+    )
+    .unwrap();
+    let focused = hub.model("pico").unwrap().focused_game.unwrap();
+    assert_eq!(
+        focused
+            .actions
+            .iter()
+            .map(|action| action.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["launch-settings"]
+    );
+    hub.request("pico", SurfaceRequest::FocusGame { game_id: None })
+        .unwrap();
+    assert!(hub.model("pico").unwrap().focused_game.is_none());
+}
+
+#[tokio::test]
+async fn preferences_follow_the_declaration() {
+    let (hub, _, _directory) = hub_with(idle_outcomes(0));
+    let remember = |value: &str| SurfaceRequest::RememberPreference {
+        key: "zone.look".into(),
+        value: value.into(),
+    };
+    assert_eq!(
+        hub.request("zone", remember("retro")).unwrap_err().code,
+        "SurfaceNotDeclared"
+    );
+    assert_eq!(
+        hub.preferences("zone").unwrap_err().code,
+        "SurfaceNotDeclared"
+    );
+    hub.declare(
+        "zone",
+        [(
+            "zone.look".to_owned(),
+            SurfacePreferenceDeclaration {
+                mark: SurfacePreferenceMark::Shared,
+                initial: "modern".into(),
+            },
+        )]
+        .into(),
+    )
+    .unwrap();
+    assert_eq!(hub.preferences("zone").unwrap()["zone.look"], "modern");
+    hub.request("zone", remember("retro")).unwrap();
+    assert_eq!(hub.preferences("zone").unwrap()["zone.look"], "retro");
+    assert_eq!(
+        hub.request(
+            "zone",
+            SurfaceRequest::RememberPreference {
+                key: "zone.other".into(),
+                value: "x".into()
+            }
+        )
+        .unwrap_err()
+        .code,
+        "PreferenceRefused"
+    );
+}
+
+#[tokio::test]
+async fn a_launch_request_reserves_and_starts_the_exact_local_game() {
+    let mut outcomes = idle_outcomes(2);
+    outcomes.insert(
+        "app.session.reserve".into(),
+        json!({ "_tag": "Ok", "payload": { "gameId": "g00001", "launchId": "exact" } }),
+    );
+    outcomes.insert(
+        "app.session.start".into(),
+        json!({ "_tag": "Ok", "payload": { "session": { "gameId": "g00001", "launchId": "exact" }, "warnings": [] } }),
+    );
+    let (hub, outcomes, _directory) = hub_with(outcomes);
+    settled(&hub, "pico").await;
+    // korrid keeps reporting the exact pending launch until it hands off.
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "pendingLaunches": [
+            { "session": { "gameId": "g00001", "launchId": "exact" }, "phase": "committing" }
+        ] } }),
+    );
+    hub.request(
+        "pico",
+        SurfaceRequest::LaunchGame {
+            game_id: "game:g00001".into(),
+            launch_location_id: None,
+        },
+    )
+    .unwrap();
+    let mut busy = None;
+    for _ in 0..200 {
+        if let SurfaceStatus::Busy {
+            kicker,
+            actions,
+            game_id,
+            ..
+        } = hub.model("pico").unwrap().status
+        {
+            busy = Some((kicker, actions, game_id));
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let (kicker, actions, game_id) = busy.unwrap_or_else(|| {
+        panic!(
+            "the launch shows as Busy: {:?} {:?}",
+            hub.model("pico").unwrap().status,
+            hub.root().launchables.state()
+        )
+    });
+    assert_eq!(kicker, "Starting Game 00001…");
+    assert_eq!(game_id.as_deref(), Some("game:g00001"));
+    assert_eq!(actions.unwrap()[0].id, "cancel-launch");
+    // The exact launch hands off: the status observation resolves it.
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "active": { "launchId": "exact", "gameId": "g00001", "phase": "running", "initialHandoff": "observed" } } }),
+    );
+    for _ in 0..400 {
+        let model = hub.model("pico").unwrap();
+        if model.status == SurfaceStatus::Browsing {
+            let (_, _, window) = window_ids(&model);
+            assert_eq!(window[0], "now-playing:exact");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("the handoff never resolved the launch");
+}
+
+/// The watch rides the native-input socket: Origin, Bearer, then the watch
+/// frame. Pushes wait for their exact ack.
+#[tokio::test]
+async fn watch_pushes_whole_models_and_waits_for_each_ack() {
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+    let (hub, _, _directory) = hub_with(idle_outcomes(60));
+    let slot: super::SurfaceSlot = Arc::new(std::sync::OnceLock::new());
+    let _ = slot.set(Arc::clone(&hub));
+    let access = crate::PortalAccess::new(
+        "watch-capability",
+        "http://portal.test",
+        crate::PortalPermission::Full,
+    );
+    let (router, _source) =
+        crate::portal_input::router_with_surfaces(access, slot, Default::default());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let mut request = format!("ws://{address}/").into_client_request().unwrap();
+    request
+        .headers_mut()
+        .insert("Origin", "http://portal.test".parse().unwrap());
+    let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+    socket
+        .send(Message::Text("Bearer watch-capability".into()))
+        .await
+        .unwrap();
+    socket
+        .send(Message::Text(
+            json!({ "_tag": "app.surface.watch", "payload": { "surfaceId": "pico" } })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+    // Until the catalog loads, pushes arrive as the model changes.
+    let mut push = receive(&mut socket).await;
+    loop {
+        assert_eq!(push["kind"], "model");
+        let revision = push["revision"].as_str().unwrap().to_owned();
+        assert!(revision.parse::<u64>().is_ok());
+        socket
+            .send(Message::Text(
+                json!({ "kind": "ack", "revision": revision })
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        if push["model"]["catalog"]["_tag"] == "Ready" {
+            break;
+        }
+        push = receive(&mut socket).await;
+    }
+    assert_eq!(push["model"]["catalog"]["total"], 60);
+    assert_eq!(push["model"]["catalog"]["firstIndex"], 0);
+    // A move by this surface is pushed as a whole new model.
+    hub.request(
+        "pico",
+        SurfaceRequest::MoveCatalog {
+            query: CatalogQuery::default(),
+            from: CatalogFrom::End,
+            count: 10,
+        },
+    )
+    .unwrap();
+    let mut moved = None;
+    for _ in 0..20 {
+        let push = receive(&mut socket).await;
+        let revision = push["revision"].as_str().unwrap().to_owned();
+        socket
+            .send(Message::Text(
+                json!({ "kind": "ack", "revision": revision })
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        if push["model"]["catalog"]["firstIndex"] == 50 {
+            moved = Some(push);
+            break;
+        }
+    }
+    let moved = moved.expect("the moved window was pushed");
+    assert_eq!(
+        moved["model"]["catalog"]["window"]
+            .as_array()
+            .unwrap()
+            .len(),
+        10
+    );
+    assert!(moved["model"]["catalog"].get("after").is_none());
+    // A wrong ack closes the watch.
+    hub.request(
+        "pico",
+        SurfaceRequest::FocusGame {
+            game_id: Some("game:g00001".into()),
+        },
+    )
+    .unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(5), socket.next())
+        .await
+        .unwrap();
+    socket
+        .send(Message::Text(
+            json!({ "kind": "ack", "revision": "0" }).to_string().into(),
+        ))
+        .await
+        .unwrap();
+    let closed = tokio::time::timeout(Duration::from_secs(5), socket.next())
+        .await
+        .unwrap();
+    assert!(matches!(
+        closed,
+        None | Some(Ok(Message::Close(_))) | Some(Err(_))
+    ));
+}
+
+async fn receive<S>(socket: &mut S) -> Value
+where
+    S: futures::Stream<
+            Item = Result<
+                tokio_tungstenite::tungstenite::Message,
+                tokio_tungstenite::tungstenite::Error,
+            >,
+        > + Unpin,
+{
+    let message = tokio::time::timeout(Duration::from_secs(5), socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let tokio_tungstenite::tungstenite::Message::Text(text) = message else {
+        panic!("expected text")
+    };
+    serde_json::from_str(&text).unwrap()
+}
+
+mod overlay {
+    use super::*;
+    use crate::surface::overlay::gameplay_overlay_presentation_from;
+
+    /// Port of `overlay-model.test.ts`: authority is stripped, disabled
+    /// controls and empty groups are omitted, core controls come first.
+    #[test]
+    fn presentation_strips_authority_and_omits_disabled_controls() {
+        let controls: crate::SessionControls = from(json!({
+            "launchId": "L1", "title": "Wario Land 4",
+            "groups": [
+                { "id": "retroarch", "label": "RetroArch", "controls": [
+                    { "id": "save", "label": "Save state", "enabled": true, "destructive": false, "dismissOnSuccess": true,
+                      "interaction": { "kind": "command" } },
+                    { "id": "speed", "label": "Speed", "enabled": true, "destructive": false, "dismissOnSuccess": false,
+                      "interaction": { "kind": "range", "payload": { "value": 1.0, "min": 0.5, "max": 2.0, "step": 0.5 } } },
+                    { "id": "off", "label": "Off", "enabled": false, "disabledReason": "No", "destructive": false, "dismissOnSuccess": false,
+                      "interaction": { "kind": "command" } }
+                ] },
+                { "id": "empty", "label": "Empty", "controls": [
+                    { "id": "gone", "label": "Gone", "enabled": false, "destructive": false, "dismissOnSuccess": false,
+                      "interaction": { "kind": "toggle", "payload": { "value": true, "trueLabel": "On", "falseLabel": "Off" } } }
+                ] }
+            ]
+        }));
+        let presentation = gameplay_overlay_presentation_from(&controls, &["Simon".into()]);
+        let value = serde_json::to_value(&presentation).unwrap();
+        assert_eq!(value["kind"], "gameplay-overlay");
+        assert_eq!(value["title"], "Wario Land 4");
+        assert_eq!(
+            value["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|control| control["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["overlay:resume", "overlay:end", "overlay:open-korri"]
+        );
+        assert_eq!(value["groups"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            value["groups"][0]["controls"][1]["interaction"],
+            json!({ "kind": "range", "value": 1.0, "min": 0.5, "max": 2.0, "step": 0.5 })
+        );
+        assert_eq!(value["groups"][0]["controls"].as_array().unwrap().len(), 2);
+        assert_eq!(value["streamPlayers"], json!(["Simon"]));
+        assert!(serde_json::to_string(&value)
+            .unwrap()
+            .find("launchId")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn a_home_frozen_launch_shows_the_overlay_and_open_korri_returns_to_the_catalog() {
+        let mut outcomes = idle_outcomes(2);
+        let frozen = json!({ "launchId": "L1", "gameId": "g00001", "title": "Game 00001", "phase": "frozen", "initialHandoff": "observed" });
+        outcomes.insert(
+            "app.session.status".into(),
+            json!({ "_tag": "Ok", "payload": { "active": frozen, "overlay": frozen } }),
+        );
+        outcomes.insert(
+            "app.session.controls".into(),
+            json!({ "_tag": "Ok", "payload": { "launchId": "L1", "title": "Game 00001", "groups": [] } }),
+        );
+        let (hub, _, _directory) = hub_with(outcomes);
+        hub.model("pico").unwrap();
+        let mut shown = None;
+        for _ in 0..400 {
+            let model = hub.model("pico").unwrap();
+            if let SurfacePresentation::GameplayOverlay(presentation) = &model.presentation {
+                if model.status == SurfaceStatus::Browsing {
+                    shown = Some(presentation.clone());
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let presentation = shown.expect("the overlay shows");
+        assert_eq!(presentation.title.as_deref(), Some("Game 00001"));
+        hub.request(
+            "pico",
+            SurfaceRequest::InvokeGameplayControl {
+                control_id: "overlay:open-korri".into(),
+                value: None,
+            },
+        )
+        .unwrap();
+        for _ in 0..200 {
+            if matches!(
+                hub.model("pico").unwrap().presentation,
+                SurfacePresentation::Catalog(_)
+            ) {
+                // Still frozen: Open Korri keeps the catalog in front.
+                tokio::time::sleep(Duration::from_millis(1300)).await;
+                assert!(matches!(
+                    hub.model("pico").unwrap().presentation,
+                    SurfacePresentation::Catalog(_)
+                ));
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("Open Korri never showed the catalog");
+    }
+
+    use korri_surface_treaty::SurfacePresentation;
+}

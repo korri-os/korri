@@ -19,7 +19,7 @@ let
         inCrate = lib.hasPrefix "services/korrid/" relative;
         # The controller-lifecycle regression uses inputd's real seat runtime.
         inSeatRuntime = lib.hasPrefix "services/inputd/" relative;
-        inTreaty = lib.hasPrefix "contracts/input/" relative;
+        inTreaty = lib.hasPrefix "contracts/input/" relative || lib.hasPrefix "contracts/surface/" relative;
       in
       toString path == sourceRootString
       || builtins.elem relative [
@@ -28,6 +28,7 @@ let
         "services/inputd"
         "contracts"
         "contracts/input"
+        "contracts/surface"
       ]
       # Immutable producer declaration snapshots for consumer tests only.
       || lib.hasPrefix "services/korrid/tests/fixtures/first-party/" relative

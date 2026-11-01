@@ -181,7 +181,7 @@ fn remote_runtime_process() {
                 host::HostRuntime::from_paths_with_backend(&config, None, private.clone(), backend)
                     .with_route_registry(library, registry);
             let (peer, _, cli) =
-                secure_host_routers_with_federation(runtime, &private, resources, None, None);
+                secure_host_routers_with_federation(runtime, &private, resources, None, None, None);
             let peer = if root.join("slow-peer").exists() {
                 peer.layer(axum::middleware::from_fn(|request: axum::extract::Request, next: axum::middleware::Next| async move {
                     tokio::time::sleep(Duration::from_millis(150)).await;

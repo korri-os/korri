@@ -65,6 +65,7 @@ pub mod relay;
 pub mod remote_signer;
 mod rename;
 pub mod saves;
+pub mod surface;
 
 pub use play_log::{PlayEntry, PlayLog};
 use plugin_admin::{PluginAdminRequest, PluginAdminResponse};
@@ -1312,6 +1313,14 @@ pub enum RpcRequest {
     DisplayWake(host::display_placement::DisplayWakeRequest),
     #[serde(rename = "app.surface.displays")]
     SurfaceDisplays(host::display_placement::SurfaceDisplaysRequest),
+    #[serde(rename = "app.surface.model")]
+    SurfaceModel(surface::SurfaceModelRequest),
+    #[serde(rename = "app.surface.request")]
+    SurfaceRequest(surface::SurfaceRequestRequest),
+    #[serde(rename = "app.surface.preferences")]
+    SurfacePreferences(surface::SurfacePreferencesRequest),
+    #[serde(rename = "app.surface.declare")]
+    SurfaceDeclare(surface::SurfaceDeclareRequest),
     #[serde(rename = "app.launch-settings.snapshot")]
     LaunchSettingsSnapshot(launch_settings::LaunchSettingsSnapshotRequest),
     #[serde(rename = "app.launch-settings.set")]
@@ -1516,6 +1525,14 @@ pub enum RpcResponse {
     DisplayWake(host::display_placement::DisplayWakeOutcome),
     #[serde(rename = "app.surface.displays")]
     SurfaceDisplays(host::display_placement::SurfaceDisplaysOutcome),
+    #[serde(rename = "app.surface.model")]
+    SurfaceModel(surface::SurfaceModelOutcome),
+    #[serde(rename = "app.surface.request")]
+    SurfaceRequest(surface::SurfaceAcceptedOutcome),
+    #[serde(rename = "app.surface.preferences")]
+    SurfacePreferences(surface::SurfacePreferencesOutcome),
+    #[serde(rename = "app.surface.declare")]
+    SurfaceDeclare(surface::SurfaceAcceptedOutcome),
     #[serde(rename = "app.launch-settings.snapshot")]
     LaunchSettingsSnapshot(launch_settings::LaunchSettingsSnapshotOutcome),
     #[serde(rename = "app.launch-settings.set")]
@@ -1777,6 +1794,9 @@ struct AppState {
     /// Exact Home freeze waiting for the browser handoff. This is deliberately
     /// process-local and is never written to the active-session journal.
     overlay_intent: Arc<Mutex<Option<String>>>,
+    /// The native surface host of this portal router (`surface/`). Only the
+    /// browser state a portal router serves carries one.
+    surfaces: Option<Arc<surface::SurfaceHub>>,
 }
 
 impl AppState {
@@ -3671,6 +3691,38 @@ async fn dispatch(
                 }
             })
         }
+        RpcRequest::SurfaceModel(request) => RpcResponse::SurfaceModel(match &state.surfaces {
+            None => surface::SurfaceModelOutcome::Err(surface::surface_unavailable()),
+            Some(hub) => match hub.model(&request.surface_id) {
+                Ok(model) => surface::SurfaceModelOutcome::Ok(Box::new(model)),
+                Err(failure) => surface::SurfaceModelOutcome::Err(failure),
+            },
+        }),
+        RpcRequest::SurfaceRequest(request) => RpcResponse::SurfaceRequest(surface_accepted(
+            state
+                .surfaces
+                .as_ref()
+                .ok_or_else(surface::surface_unavailable)
+                .and_then(|hub| hub.request(&request.surface_id, request.request)),
+        )),
+        RpcRequest::SurfaceDeclare(request) => RpcResponse::SurfaceDeclare(surface_accepted(
+            state
+                .surfaces
+                .as_ref()
+                .ok_or_else(surface::surface_unavailable)
+                .and_then(|hub| hub.declare(&request.surface_id, request.preferences)),
+        )),
+        RpcRequest::SurfacePreferences(request) => RpcResponse::SurfacePreferences(
+            match state
+                .surfaces
+                .as_ref()
+                .ok_or_else(surface::surface_unavailable)
+                .and_then(|hub| hub.preferences(&request.surface_id))
+            {
+                Ok(values) => surface::SurfacePreferencesOutcome::Ok(values),
+                Err(failure) => surface::SurfacePreferencesOutcome::Err(failure),
+            },
+        ),
         RpcRequest::Health(_) => RpcResponse::Health(HealthOutcome::Ok(Health {
             version: VERSION.into(),
         })),
@@ -4539,6 +4591,38 @@ fn settings_failure(error: config::settings::SettingsError) -> RpcFailure {
     }
 }
 
+fn surface_accepted(result: Result<(), RpcFailure>) -> surface::SurfaceAcceptedOutcome {
+    match result {
+        Ok(()) => surface::SurfaceAcceptedOutcome::Ok(surface::SurfaceAccepted {}),
+        Err(failure) => surface::SurfaceAcceptedOutcome::Err(failure),
+    }
+}
+
+/// The native surface host for one portal router. It reaches korrid the way
+/// the portal did: the same typed requests, under the same capability and
+/// permission, handed to `dispatch` in process.
+fn surface_hub_for(browser: &AppState) -> Arc<surface::SurfaceHub> {
+    let base = browser.clone();
+    let send: surface::korrid::Send_ = Arc::new(move |request| {
+        let state = base.clone();
+        Box::pin(async move {
+            if let Some(access) = &state.portal_access {
+                if !access.permits(&request) {
+                    return Err(surface::korrid::Refusal::Denied);
+                }
+            }
+            let authorization = authorization::AuthorizationContext::LocalBrowser;
+            dispatch(&state, &authorization, request)
+                .await
+                .map_err(|_| surface::korrid::Refusal::Denied)
+        })
+    });
+    surface::SurfaceHub::new(
+        surface::korrid::Korrid::new(send),
+        browser.private_state_root().to_path_buf(),
+    )
+}
+
 async fn rpc(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -4809,12 +4893,24 @@ fn brain_app_state(
         portal_access: Some(portal_access),
         rpc_surface: RpcSurface::Lan,
         overlay_intent: Arc::new(Mutex::new(None)),
+        surfaces: None,
     };
     state.recover_acquisition();
     (state, ())
 }
 
 fn portal_router_from_state(state: AppState) -> Router {
+    portal_router_with_surfaces(state, None)
+}
+
+fn portal_router_with_surfaces(mut state: AppState, slot: Option<surface::SurfaceSlot>) -> Router {
+    if state.surfaces.is_none() {
+        let hub = surface_hub_for(&state);
+        if let Some(slot) = slot {
+            let _ = slot.set(Arc::clone(&hub));
+        }
+        state.surfaces = Some(hub);
+    }
     let access = state
         .portal_access
         .as_ref()
@@ -4920,9 +5016,11 @@ pub fn host_routers_with_federation(
     portal_access: Option<PortalAccess>,
 ) -> (Router, Router, Router, host::HostRuntime) {
     let private_state_root = private_state_root.into();
+    let surfaces: surface::SurfaceSlot = Arc::new(std::sync::OnceLock::new());
     let native = portal_access.clone().map(|access| {
-        portal_input::router(
+        portal_input::router_with_surfaces(
             access,
+            Arc::clone(&surfaces),
             portal_input::PortalInputLimits {
                 devices: korri_input_contract::MAX_PHYSICAL_SOURCES + 16,
                 queued_events: 1024,
@@ -4951,6 +5049,7 @@ pub fn host_routers_with_federation(
         resources,
         portal_access,
         native_router,
+        Some(surfaces),
     );
     runtime.spawn_portal_watch();
     (lan, local, cli, runtime)
@@ -5023,6 +5122,7 @@ fn app_states_with(
         portal_access: None,
         rpc_surface: RpcSurface::Lan,
         overlay_intent: overlay_intent.clone(),
+        surfaces: None,
     };
     let local = AppState {
         person_names: lan.person_names.clone(),
@@ -5043,6 +5143,7 @@ fn app_states_with(
         portal_access: None,
         rpc_surface: RpcSurface::LocalControl,
         overlay_intent,
+        surfaces: None,
     };
     lan.recover_acquisition();
     (lan, local)
@@ -5064,11 +5165,16 @@ pub(crate) fn plain_host_routers_for_tests(runtime: host::HostRuntime) -> (Route
 
 /// Give the browser its own `/rpc` router over the LAN state, carrying the
 /// portal's capability and origin without the private-control authority.
-fn portal_router_for(lan: &AppState, portal_access: Option<PortalAccess>) -> Option<Router> {
+fn portal_router_for(
+    lan: &AppState,
+    portal_access: Option<PortalAccess>,
+    surfaces: Option<surface::SurfaceSlot>,
+) -> Option<Router> {
     portal_access.map(|access| {
         let mut browser = lan.clone();
         browser.portal_access = Some(access);
-        portal_router_from_state(browser).layer(axum::middleware::from_fn(require_loopback))
+        portal_router_with_surfaces(browser, surfaces)
+            .layer(axum::middleware::from_fn(require_loopback))
     })
 }
 
@@ -5096,7 +5202,7 @@ fn secure_host_routers_with_acquisition(
     acquisition: acquisition::AcquisitionCoordinator,
 ) -> (Router, Router) {
     let (lan, local) = app_states_with(runtime, acquisition);
-    let portal = portal_router_for(&lan, portal_access);
+    let portal = portal_router_for(&lan, portal_access, None);
     let peer = peer_rpc::PeerRpcServer::new(lan, private_state_root)
         .expect("load or create peer RPC identity");
     (
@@ -5111,6 +5217,7 @@ fn secure_host_routers_with_federation(
     resources: FederationResources,
     portal_access: Option<PortalAccess>,
     native_router: Option<Router>,
+    surfaces: Option<surface::SurfaceSlot>,
 ) -> (Router, Router, Router) {
     let private_input = runtime.private_input_router();
     let (mut lan, mut local) = app_states(runtime.clone());
@@ -5146,10 +5253,11 @@ fn secure_host_routers_with_federation(
     stream_play::person_name::device::spawn_publish(lan.clone());
     lan.identity_switch = identity_switch.clone();
     local.identity_switch = identity_switch;
-    let portal = portal_router_for(&lan, portal_access).map(|router| match native_router {
-        Some(native) => router.merge(native),
-        None => router,
-    });
+    let portal =
+        portal_router_for(&lan, portal_access, surfaces).map(|router| match native_router {
+            Some(native) => router.merge(native),
+            None => router,
+        });
     let cli = cli::router(lan.clone(), resources.clone());
     // Only the peer-only router receives QUIC traffic.
     let peer = peer_rpc::PeerRpcServer::with_shared_authority(

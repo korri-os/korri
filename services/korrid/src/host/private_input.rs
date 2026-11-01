@@ -179,8 +179,9 @@ mod tests {
             Arc::new(super::super::systemd_unit::InMemoryLaunchUnitBackend::default()),
         );
         runtime.input_coordinator = Some(coordinator.clone());
-        let (_, control, cli) =
-            crate::secure_host_routers_with_federation(runtime, &private, resources, None, None);
+        let (_, control, cli) = crate::secure_host_routers_with_federation(
+            runtime, &private, resources, None, None, None,
+        );
         let control_path = root.path().join("control.sock");
         let cli_path = root.path().join("cli.sock");
         let control_listener = tokio::net::UnixListener::bind(&control_path).unwrap();

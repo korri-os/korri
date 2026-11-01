@@ -41,7 +41,7 @@ fn fixture() -> (tempfile::TempDir, Router, Router, FederationResources) {
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     );
     let (_, control, cli) =
-        secure_host_routers_with_federation(runtime, &private, resources.clone(), None, None);
+        secure_host_routers_with_federation(runtime, &private, resources.clone(), None, None, None);
     (root, cli, control, resources)
 }
 
