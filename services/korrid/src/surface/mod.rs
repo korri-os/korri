@@ -171,6 +171,8 @@ impl Default for Session {
 
 pub struct SurfaceHub {
     korrid: korrid::Korrid,
+    /// Announces every change of korrid's Home intent.
+    overlay_intent: tokio_watch::Receiver<u64>,
     root: OnceLock<Arc<Root>>,
     /// Bumped by every controller publish.
     host_revision: Arc<AtomicU64>,
@@ -185,9 +187,14 @@ pub struct SurfaceHub {
 pub type SurfaceSlot = Arc<OnceLock<Arc<SurfaceHub>>>;
 
 impl SurfaceHub {
-    pub fn new(korrid: korrid::Korrid, private_state_root: PathBuf) -> Arc<Self> {
+    pub fn new(
+        korrid: korrid::Korrid,
+        private_state_root: PathBuf,
+        overlay_intent: tokio_watch::Receiver<u64>,
+    ) -> Arc<Self> {
         let (revision, _) = tokio_watch::channel(0);
         Arc::new(Self {
+            overlay_intent,
             korrid,
             root: OnceLock::new(),
             host_revision: Arc::new(AtomicU64::new(0)),
@@ -213,7 +220,7 @@ impl SurfaceHub {
                 revision.send_modify(|revision| *revision += 1);
             });
             let root = Root::new(self.korrid.clone(), notify);
-            root.start();
+            root.start(self.overlay_intent.clone());
             // Effects the portal ran when its state changed.
             let reacting = Arc::downgrade(&root);
             let mut changes = self.revision.subscribe();
