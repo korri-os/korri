@@ -1,0 +1,39 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoHint, HintView } from "../atoms/PicoHint.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoMenuKey } from "../atoms/PicoMenuKey.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+
+// The floor row: the lead control (MENU, RELOAD), a readout, and the face
+// buttons with what they do. The readout yields to the hints.
+export component PicoButtonBar {
+    in property <[HintView]> hints;
+    in property <string> readout;
+    in property <bool> has-lead;
+    in property <bool> lead-menu: true;
+    in property <ButtonView> lead;
+    height: Tokens.snap(Tokens.sm * 1.5) + Tokens.u;
+    key := PicoMenuKey {
+        x: 0;
+        y: Tokens.snap((root.height - 12 * Tokens.p) / 2);
+        visible: has-lead;
+        button: lead;
+        menu: lead-menu;
+    }
+    row := HorizontalLayout {
+        x: root.width - self.preferred-width;
+        y: 0;
+        width: self.preferred-width;
+        height: root.height;
+        spacing: Tokens.snap(Tokens.u * 1.5);
+        for hint in hints : PicoHint { hint: hint; }
+    }
+    PicoLine {
+        x: has-lead ? key.width + 2 * Tokens.p + 2 * Tokens.u : 0;
+        y: Tokens.snap((root.height - self.height) / 2);
+        width: max(0, row.x - 2 * Tokens.u - self.x);
+        text: readout;
+        color: P8.ink-quiet;
+    }
+}

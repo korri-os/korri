@@ -1,0 +1,23 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// Words that wrap at the face's size. A word longer than the line breaks
+// where it must, so nothing runs past the box.
+export component PicoPara {
+    in property <string> text;
+    in property <length> font-size: Tokens.md;
+    in property <color> color: P8.ink;
+    in property <TextHorizontalAlignment> horizontal-alignment: left;
+    min-height: t.preferred-height;
+    preferred-height: t.preferred-height;
+    t := Text {
+        x: 0;
+        y: 0;
+        width: root.width;
+        text: root.text;
+        font-size: root.font-size;
+        color: root.color;
+        wrap: word-wrap;
+        horizontal-alignment: root.horizontal-alignment;
+    }
+}

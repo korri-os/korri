@@ -1,0 +1,29 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoTitle } from "../atoms/PicoTitle.slint";
+import { PicoSub } from "../atoms/PicoSub.slint";
+import { PicoTally } from "../atoms/PicoTally.slint";
+import { ChipView } from "../atoms/PicoBadge.slint";
+import { PicoStatRun } from "PicoStatRun.slint";
+
+// What Korri says about a game beside its cart: the kicker, the title, the
+// system and place, the facts, and where it stands on the shelf. A short
+// box drops the kicker, the facts and the tally, in that order.
+export component PicoGameFacts inherits VerticalLayout {
+    in property <string> kicker;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <[ChipView]> chips;
+    in property <int> index;
+    in property <int> total;
+    in property <bool> large: true;
+    in property <bool> roomy: true;
+    alignment: center;
+    spacing: roomy ? Tokens.u : Tokens.p;
+    if kicker != "" && roomy : PicoLine { text: kicker; color: P8.go; }
+    PicoTitle { text: title; large: large; }
+    if subtitle != "" : PicoSub { text: subtitle; }
+    if roomy : PicoStatRun { chips: chips; }
+    if total > 0 && roomy : PicoTally { index: index; total: total; }
+}

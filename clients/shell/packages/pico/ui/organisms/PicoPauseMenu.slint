@@ -1,0 +1,49 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoControlRow } from "../molecules/PicoControlRow.slint";
+
+// One item of a list on a blue card: a control to press ("row"), a note,
+// a section caption, a heading, a fact, or a line of text.
+export struct SheetItem {
+    kind: string,
+    label: string,
+    value: string,
+    focused: bool,
+    disabled: bool,
+    warn: bool,
+    range: bool,
+    cells: int,
+    arrows: bool,
+    rows-before: int,
+    lines-before: int,
+    heads-before: int,
+}
+
+// The pause menu's list: Korri's controls first, then each plugin's group
+// under its caption, each control with its note. The runner picker lists its
+// routes and their facts the same way.
+export component PicoPauseMenu inherits VerticalLayout {
+    in property <[SheetItem]> items;
+    spacing: 2 * Tokens.p;
+    for item in items : VerticalLayout {
+        if item.kind == "row" : PicoControlRow {
+            label: item.label;
+            value: item.value;
+            focused: item.focused;
+            disabled: item.disabled;
+            warn: item.warn;
+            range: item.range;
+            cells: item.cells;
+            arrows: item.arrows;
+        }
+        if item.kind == "note" || item.kind == "text" : PicoLine { text: item.label; color: P8.shell-tell-note; }
+        if item.kind == "section" : PicoLine { text: item.label; color: P8.shell-tell-kicker; }
+        if item.kind == "heading" : PicoLine { text: item.label; font-size: Tokens.lg; color: P8.shell-tell-ink; }
+        if item.kind == "fact" : HorizontalLayout {
+            spacing: 2 * Tokens.p;
+            PicoLine { width: 40 * Tokens.p; text: item.label; color: P8.shell-tell-note; }
+            PicoLine { text: item.value; color: P8.shell-tell-ink; }
+        }
+    }
+}

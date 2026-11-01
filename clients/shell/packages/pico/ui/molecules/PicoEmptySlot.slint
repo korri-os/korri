@@ -1,0 +1,17 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+
+// An empty cartridge slot: the showcase with nothing to show.
+export component PicoEmptySlot {
+    property <length> w: min(root.width * 60%, 120 * Tokens.p);
+    Rectangle {
+        x: (root.width - w) / 2;
+        y: (root.height - 20 * Tokens.p) / 2;
+        width: w;
+        height: 20 * Tokens.p;
+        background: P8.floor;
+        Rectangle { x: 6 * Tokens.p; y: 8 * Tokens.p; width: parent.width - 12 * Tokens.p; height: 4 * Tokens.p; background: P8.bg; }
+    }
+    PicoLine { x: 0; y: (root.height + 20 * Tokens.p) / 2 + Tokens.u; width: root.width; text: "INSERT CART"; color: P8.ink-quiet; horizontal-alignment: center; }
+}

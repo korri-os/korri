@@ -1,0 +1,30 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoChip } from "../atoms/PicoChip.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+
+// The spines of a panel: one coloured tab per group, as a row over the card
+// or a column beside it. A row that is too long scrolls to the chosen tab.
+export component PicoTabs inherits Rectangle {
+    in property <[ButtonView]> spines;
+    in property <bool> beside;
+    property <length> tab-h: Tokens.md + 4 * Tokens.p;
+    property <int> at: 0;
+    clip: true;
+    if beside : VerticalLayout {
+        x: 0;
+        y: 0;
+        width: root.width;
+        alignment: start;
+        spacing: 3 * Tokens.p;
+        for spine[i] in spines : PicoChip { button: spine; font-size: Tokens.md; ground: P8.spine(i); ink: P8.ink-dark; lit-ground: P8.spine(i); }
+    }
+    if !beside : HorizontalLayout {
+        x: 0;
+        y: 0;
+        height: root.height;
+        alignment: start;
+        spacing: 3 * Tokens.p;
+        for spine[i] in spines : PicoChip { button: spine; font-size: Tokens.md; ground: P8.spine(i); ink: P8.ink-dark; lit-ground: P8.spine(i); }
+    }
+}

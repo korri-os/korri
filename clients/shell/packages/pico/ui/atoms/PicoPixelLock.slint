@@ -1,0 +1,13 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// A padlock in five pixels: the network asks for a password.
+export component PicoPixelLock {
+    in property <color> ink: P8.ink-dark;
+    width: 5 * Tokens.p;
+    height: 5 * Tokens.p;
+    Rectangle { x: Tokens.p; y: 0; width: 3 * Tokens.p; height: Tokens.p; background: ink; }
+    Rectangle { x: Tokens.p; y: Tokens.p; width: Tokens.p; height: Tokens.p; background: ink; }
+    Rectangle { x: 3 * Tokens.p; y: Tokens.p; width: Tokens.p; height: Tokens.p; background: ink; }
+    Rectangle { x: 0; y: 2 * Tokens.p; width: 5 * Tokens.p; height: 3 * Tokens.p; background: ink; }
+}

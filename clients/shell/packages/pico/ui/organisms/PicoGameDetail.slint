@@ -1,0 +1,67 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoTitle } from "../atoms/PicoTitle.slint";
+import { PicoSub } from "../atoms/PicoSub.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
+import { PicoButton } from "../atoms/PicoButton.slint";
+import { PicoDownloadBar, BarView } from "../atoms/PicoDownloadBar.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+import { ChipView } from "../atoms/PicoBadge.slint";
+import { PicoCart, CartView } from "../molecules/PicoCart.slint";
+import { PicoStatRun } from "../molecules/PicoStatRun.slint";
+import { PicoNotice, CardView } from "../molecules/PicoNotice.slint";
+import { PicoGameActions } from "PicoGameActions.slint";
+
+export struct DetailView {
+    cart: CartView,
+    title: string,
+    subtitle: string,
+    chips: [ChipView],
+    primary: ButtonView,
+    bar: BarView,
+    actions: [ButtonView],
+}
+
+// A game's own screen: its cart large, and beside it (below it, in a tall
+// narrow box) its title, facts, the download, PLAY and its actions. The
+// store's entry draws the same, with the provider's words and its card.
+export component PicoGameDetail {
+    in property <DetailView> detail;
+    in property <string> description;
+    in property <bool> has-primary: true;
+    in property <bool> mark: true;
+    in property <CardView> inline;
+    // Narrow boxes stack the cart over the facts.
+    property <bool> stacked: root.width < 240 * Tokens.p;
+    property <length> box-w: stacked ? min(root.width * 50%, 120 * Tokens.p) : min(root.width * 38%, 190 * Tokens.p);
+    property <length> box-h: stacked ? min(root.width * 50%, 120 * Tokens.p) : max(16 * Tokens.p, min(Tokens.height * 62%, 190 * Tokens.p));
+    property <bool> art: !Tokens.tiny || stacked;
+    preferred-height: stacked ? facts.y + facts.preferred-height : facts.preferred-height;
+    min-height: self.preferred-height;
+    still := Rectangle {
+        x: 0;
+        y: stacked ? 0 : Tokens.snap(max(0, (root.height - self.height) / 2));
+        width: art ? cart.shell-w + 8 * Tokens.p : 0;
+        height: art ? cart.shell-h + 8 * Tokens.p : 0;
+        visible: art;
+        Rectangle { x: 8 * Tokens.p; y: 8 * Tokens.p; width: cart.shell-w; height: cart.shell-h; background: P8.cast-far; }
+        Rectangle { x: 4 * Tokens.p; y: 4 * Tokens.p; width: cart.shell-w; height: cart.shell-h; background: P8.cast-near; }
+        cart := PicoCart { x: 0; y: 0; cart: detail.cart; still: true; box-w: box-w; box-h: box-h; initials-size: Tokens.xl; }
+    }
+    facts := VerticalLayout {
+        x: stacked || !art ? 0 : still.width + 10 * Tokens.p;
+        y: stacked ? still.height + Tokens.u : 0;
+        width: root.width - self.x;
+        height: root.height - self.y;
+        alignment: stacked ? start : center;
+        spacing: Tokens.u;
+        if detail.title != "" : PicoTitle { text: detail.title; large: false; }
+        if detail.subtitle != "" : PicoSub { text: detail.subtitle; }
+        PicoStatRun { chips: detail.chips; }
+        if detail.bar.shown : PicoDownloadBar { bar: detail.bar; }
+        if description != "" : PicoPara { text: description; color: P8.ink-dim; }
+        if has-primary : HorizontalLayout { alignment: start; PicoButton { button: detail.primary; mark: root.mark; } }
+        PicoGameActions { actions: detail.actions; }
+        if inline.shown : PicoNotice { card: inline; }
+    }
+}

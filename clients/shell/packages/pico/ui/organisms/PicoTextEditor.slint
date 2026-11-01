@@ -1,0 +1,46 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
+import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+import { KeyView } from "../atoms/PicoKey.slint";
+import { PicoTextField } from "../molecules/PicoTextField.slint";
+import { PicoKeyboard } from "../molecules/PicoKeyboard.slint";
+
+export struct EditorView {
+    group: string,
+    now: string,
+    note: string,
+    prompt: string,
+    text: string,
+    placeholder: string,
+    count: string,
+    keys: [KeyView],
+    key-rows: int,
+    actions: [ButtonView],
+    alone: ButtonView,
+    has-alone: bool,
+    problem: string,
+}
+
+// Pico's text editor: the prompt, the field, what is saved now and how much
+// is typed, the keyboard, and the caller's answers.
+export component PicoTextEditor inherits VerticalLayout {
+    in property <EditorView> editor;
+    spacing: 3 * Tokens.p;
+    if editor.prompt != "" : PicoLine { text: editor.prompt; color: P8.ink-dim; }
+    PicoTextField { text: editor.text; placeholder: editor.placeholder; }
+    Rectangle { height: Tokens.p; background: P8.floor; }
+    HorizontalLayout {
+        PicoLine { text: editor.now; color: P8.ink-dim; }
+        PicoLine { text: editor.count; color: P8.ink-quiet; horizontal-alignment: right; }
+    }
+    if editor.note != "" : PicoPara { text: editor.note; font-size: Tokens.sm; color: P8.ink-dim; }
+    if editor.problem != "" : PicoPara { text: editor.problem; font-size: Tokens.sm; color: P8.warn; }
+    PicoKeyboard { keys: editor.keys; rows: editor.key-rows; }
+    HorizontalLayout {
+        spacing: 3 * Tokens.p;
+        for action in editor.actions : PicoRow { button: action; }
+    }
+    if editor.has-alone : PicoRow { button: editor.alone; }
+}

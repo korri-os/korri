@@ -1,0 +1,18 @@
+import { P8 } from "../ui/palette.slint";
+import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { PicoLibraryBrowser, FindView } from "../ui/organisms/PicoLibraryBrowser.slint";
+import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slint";
+
+// FIND: the library, narrowed by Korri to what is typed and chosen.
+export component PicoLibrary inherits Rectangle {
+    in property <FrameView> frame;
+    in property <FindView> find;
+    PicoScreenShell {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        frame: frame;
+        PicoLibraryBrowser { find: find; }
+    }
+}

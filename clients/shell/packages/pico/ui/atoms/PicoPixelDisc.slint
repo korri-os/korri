@@ -1,0 +1,25 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// An eight-pixel disc with a glyph on it, the way PICO-8 draws its buttons.
+export component PicoPixelDisc {
+    in property <color> disc: P8.key-a;
+    in property <string> glyph;
+    width: 8 * Tokens.p;
+    height: 8 * Tokens.p;
+    Rectangle { x: 2 * Tokens.p; y: 0; width: 4 * Tokens.p; height: Tokens.p; background: disc; }
+    Rectangle { x: Tokens.p; y: Tokens.p; width: 6 * Tokens.p; height: Tokens.p; background: disc; }
+    Rectangle { x: 0; y: 2 * Tokens.p; width: 8 * Tokens.p; height: 4 * Tokens.p; background: disc; }
+    Rectangle { x: Tokens.p; y: 6 * Tokens.p; width: 6 * Tokens.p; height: Tokens.p; background: disc; }
+    Rectangle { x: 2 * Tokens.p; y: 7 * Tokens.p; width: 4 * Tokens.p; height: Tokens.p; background: disc; }
+    Text {
+        x: 0;
+        y: (root.height - self.height) / 2;
+        width: root.width;
+        height: glyph.character-count > 1 ? Tokens.sm / 2 : Tokens.sm;
+        text: glyph;
+        font-size: self.height;
+        color: P8.key-ink;
+        horizontal-alignment: center;
+    }
+}

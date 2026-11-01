@@ -1,0 +1,26 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
+
+// One invite announced: who is playing what, and where. A blue tell card
+// with no control: the home entry has the actions.
+export component PicoInviteNotice inherits Rectangle {
+    in property <string> playing;
+    in property <string> game;
+    in property <string> where;
+    min-height: col.preferred-height;
+    Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: root.width; height: root.height; background: P8.cast-near; }
+    Rectangle { background: P8.shell-tell; }
+    col := VerticalLayout {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        padding: 4 * Tokens.p;
+        spacing: Tokens.p;
+        PicoLine { text: playing; color: P8.shell-tell-note; }
+        PicoPara { text: game; color: P8.shell-tell-ink; }
+        PicoLine { text: where; color: P8.shell-tell-note; }
+    }
+}

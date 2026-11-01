@@ -1,0 +1,37 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// A cover, sampled to the sixteen by the shell, or, with no art, a sticker
+// in a plastic colour with the game's initials.
+export component PicoCoverArt inherits Rectangle {
+    in property <image> art;
+    in property <bool> has-art;
+    in property <string> initials;
+    in property <int> sticker;
+    in property <bool> ink-light;
+    in property <length> initials-size: Tokens.md;
+    clip: true;
+    if has-art : Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: art;
+        image-fit: fill;
+        image-rendering: pixelated;
+    }
+    if !has-art : Rectangle {
+        background: P8.plastic(sticker);
+        Text {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            text: initials;
+            font-size: initials-size;
+            color: ink-light ? P8.ink : P8.ink-dark;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

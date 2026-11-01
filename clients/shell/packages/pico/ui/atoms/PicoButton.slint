@@ -1,0 +1,40 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoReveal } from "PicoReveal.slint";
+import { PicoLine } from "PicoLine.slint";
+import { ButtonView } from "PicoRow.slint";
+
+// The one thing the screen wants pressed: yellow, a play mark, a brown hard
+// shadow that cycles under the cursor.
+export component PicoButton {
+    in property <ButtonView> button;
+    in property <length> font-size: Tokens.lg;
+    in property <bool> mark: true;
+    width: row.preferred-width;
+    height: font-size + 8 * Tokens.p;
+    Rectangle {
+        x: Tokens.drop;
+        y: Tokens.drop;
+        width: root.width;
+        height: root.height;
+        background: button.focused ? Cycle.now : P8.go-shadow;
+    }
+    Rectangle { background: button.disabled ? P8.slate : P8.go; }
+    row := HorizontalLayout {
+        padding-left: 5 * Tokens.p;
+        padding-right: 6 * Tokens.p;
+        spacing: 5 * Tokens.p;
+        if mark : Rectangle {
+            width: font-size * 3 / 7;
+            for r in 5 : Rectangle {
+                x: 0;
+                y: Tokens.snap((parent.height - font-size * 5 / 7) / 2) + r * font-size / 7;
+                width: (r < 3 ? r + 1 : 5 - r) * font-size / 7;
+                height: font-size / 7;
+                background: P8.go-ink;
+            }
+        }
+        PicoLine { line-height: root.height; text: button.label; font-size: root.font-size; color: P8.go-ink; overflow: clip; }
+    }
+    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
+}

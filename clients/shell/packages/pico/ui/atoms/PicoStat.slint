@@ -1,0 +1,12 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoBadge } from "PicoBadge.slint";
+
+// A play fact: a figure and its caption, "3 PLAYS", "2H 10M PLAYED".
+export component PicoStat {
+    in property <string> figure;
+    in property <string> caption;
+    width: badge.width;
+    height: badge.height;
+    badge := PicoBadge { chip: { text: figure, caption: caption, kind: "stat" }; }
+}

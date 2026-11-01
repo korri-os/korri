@@ -1,0 +1,14 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+
+// One choice in a list to pick from, with a note under it when Korri gives one.
+export component PicoChoiceRow inherits VerticalLayout {
+    in property <ButtonView> choice;
+    in property <string> note;
+    in property <color> note-ink: P8.ink-dark;
+    spacing: Tokens.p;
+    PicoRow { button: choice; kind: "card"; }
+    if note != "" : PicoLine { text: note; color: note-ink; }
+}

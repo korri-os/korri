@@ -1,0 +1,24 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "PicoLine.slint";
+
+// Sixteen cells of real progress from Korri's bytes, the cell being filled
+// blinking; a walking band when the end is unknown.
+export struct BarView { shown: bool, cells: int, walking: bool, label: string }
+
+export component PicoDownloadBar {
+    in property <BarView> bar;
+    property <int> tick;
+    Timer { interval: 100ms; running: bar.shown && bar.cells < 16; triggered => { tick = mod(tick + 1, 64); } }
+    height: 6 * Tokens.p;
+    property <length> cell: (root.width - 15 * Tokens.p) / 16;
+    for i in 16 : Rectangle {
+        x: Tokens.snap(i * (cell + Tokens.p));
+        y: 0;
+        width: Tokens.snap(cell);
+        height: root.height;
+        background: bar.walking
+            ? (mod(i - tick, 16) < 4 ? P8.ok : P8.floor)
+            : (i < bar.cells ? P8.ok : i == bar.cells && mod(tick, 4) < 2 ? P8.green : P8.floor);
+    }
+}

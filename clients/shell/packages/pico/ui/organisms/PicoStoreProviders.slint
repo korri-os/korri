@@ -1,0 +1,17 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+
+// Where to look for a game: Korri's providers, one row each.
+export component PicoStoreProviders inherits VerticalLayout {
+    in property <string> message;
+    in property <[ButtonView]> providers;
+    spacing: 4 * Tokens.p;
+    alignment: start;
+    if message != "" : PicoLine { text: message; font-size: Tokens.md; color: P8.ink-dim; }
+    for provider in providers : HorizontalLayout {
+        alignment: start;
+        PicoRow { width: min(280 * Tokens.p, root.width); button: provider; kind: "card"; }
+    }
+}

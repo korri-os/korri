@@ -1,0 +1,20 @@
+// Preview states of PicoLibraryBrowser, with fixture data: the Caliper part's role.
+// Render one: slint-viewer --component STATE --screenshot out.png PicoLibraryBrowser.organism.preview.slint
+import { P8 } from "../palette.slint";
+import { Tokens } from "../tokens.slint";
+import { PicoLibraryBrowser } from "PicoLibraryBrowser.slint";
+
+
+export component Default inherits Window {
+    background: P8.bg;
+    default-font-family: Tokens.family;
+    init => { Tokens.fit(self.width, self.height); }
+    changed width => { Tokens.fit(self.width, self.height); }
+    changed height => { Tokens.fit(self.width, self.height); }
+    VerticalLayout {
+        padding: 2 * Tokens.u;
+        spacing: Tokens.u;
+        alignment: start;
+        PicoLibraryBrowser { find: { query: "", sections: [{ label: "ALL", detail: "", focused: false, disabled: false, warn: false, lit: true }, { label: "ZAO", detail: "", focused: false, disabled: false, warn: false, lit: false }], orders: [{ label: "KORRI", detail: "", focused: false, disabled: false, warn: false, lit: true }, { label: "A-Z", detail: "", focused: false, disabled: false, warn: false, lit: false }], keys: [{ cap: "A", row: 0, col: 0, cols: 1, focused: true },{ cap: "B", row: 0, col: 1, cols: 1, focused: false },{ cap: "C", row: 0, col: 2, cols: 1, focused: false },{ cap: "D", row: 0, col: 3, cols: 1, focused: false },{ cap: "E", row: 0, col: 4, cols: 1, focused: false },{ cap: "F", row: 0, col: 5, cols: 1, focused: false },{ cap: "G", row: 0, col: 6, cols: 1, focused: false },{ cap: "H", row: 0, col: 7, cols: 1, focused: false },{ cap: "I", row: 0, col: 8, cols: 1, focused: false },{ cap: "J", row: 0, col: 9, cols: 1, focused: false },{ cap: "K", row: 1, col: 0, cols: 1, focused: false },{ cap: "L", row: 1, col: 1, cols: 1, focused: false },{ cap: "M", row: 1, col: 2, cols: 1, focused: false },{ cap: "N", row: 1, col: 3, cols: 1, focused: false },{ cap: "O", row: 1, col: 4, cols: 1, focused: false },{ cap: "P", row: 1, col: 5, cols: 1, focused: false },{ cap: "Q", row: 1, col: 6, cols: 1, focused: false },{ cap: "R", row: 1, col: 7, cols: 1, focused: false },{ cap: "S", row: 1, col: 8, cols: 1, focused: false },{ cap: "T", row: 1, col: 9, cols: 1, focused: false },{ cap: "U", row: 2, col: 0, cols: 1, focused: false },{ cap: "V", row: 2, col: 1, cols: 1, focused: false },{ cap: "W", row: 2, col: 2, cols: 1, focused: false },{ cap: "X", row: 2, col: 3, cols: 1, focused: false },{ cap: "Y", row: 2, col: 4, cols: 1, focused: false },{ cap: "Z", row: 2, col: 5, cols: 1, focused: false },{ cap: "0", row: 2, col: 6, cols: 1, focused: false },{ cap: "1", row: 2, col: 7, cols: 1, focused: false },{ cap: "2", row: 2, col: 8, cols: 1, focused: false },{ cap: "3", row: 2, col: 9, cols: 1, focused: false },{ cap: "4", row: 3, col: 0, cols: 1, focused: false },{ cap: "5", row: 3, col: 1, cols: 1, focused: false },{ cap: "6", row: 3, col: 2, cols: 1, focused: false },{ cap: "7", row: 3, col: 3, cols: 1, focused: false },{ cap: "8", row: 3, col: 4, cols: 1, focused: false },{ cap: "9", row: 3, col: 5, cols: 1, focused: false },{ cap: "SPACE", row: 3, col: 6, cols: 2 },{ cap: "DEL", row: 3, col: 8, cols: 1 },{ cap: "CLEAR", row: 3, col: 9, cols: 1 }], key-rows: 4, results: [{ cart: { id: "celeste", title: "Celeste Classic", has-art: false, art-ratio: 1, initials: "CC", system: "pico8", shell: 4, sticker: 7, sticker-ink-light: false, progress: "new", hero: true, focused: false }, title: "Celeste Classic" }, { cart: { id: "hollow", title: "Hollow Knight", has-art: false, art-ratio: 1, initials: "HK", system: "snes", shell: 0, sticker: 3, sticker-ink-light: false, progress: "resume", hero: false, focused: false }, title: "Hollow Knight" }], focused-result: 0, empty: false, count: "9 GAMES" }; }
+    }
+}

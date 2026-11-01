@@ -1,0 +1,55 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoChip } from "../atoms/PicoChip.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+import { KeyView } from "../atoms/PicoKey.slint";
+import { PicoQueryField } from "../molecules/PicoQueryField.slint";
+import { PicoKeyboard } from "../molecules/PicoKeyboard.slint";
+import { PicoResultRow } from "../molecules/PicoResultRow.slint";
+import { CartView } from "../molecules/PicoCart.slint";
+
+export struct ResultView { cart: CartView, title: string }
+
+export struct FindView {
+    query: string,
+    sections: [ButtonView],
+    orders: [ButtonView],
+    keys: [KeyView],
+    key-rows: int,
+    results: [ResultView],
+    focused-result: int,
+    empty: bool,
+    count: string,
+}
+
+// Find: what is typed, the collections, the orders, the keys, and the games
+// Korri found, in a rack that keeps the cursor's game in view. Chips that do
+// not fit a row scroll with the cursor.
+export component PicoLibraryBrowser inherits VerticalLayout {
+    in property <FindView> find;
+    property <length> slot-w: 54 * Tokens.p;
+    spacing: 3 * Tokens.p;
+    PicoQueryField { query: find.query; }
+    HorizontalLayout { alignment: start; spacing: 3 * Tokens.p; for b in find.sections : PicoChip { button: b; } }
+    HorizontalLayout { alignment: start; spacing: 3 * Tokens.p; for b in find.orders : PicoChip { button: b; } }
+    PicoKeyboard { keys: find.keys; rows: find.key-rows; }
+    if find.empty : VerticalLayout {
+        PicoLine { text: "NOTHING MATCHES"; color: P8.go; }
+        PicoLine { text: "Try fewer letters, or a different collection."; color: P8.ink-dim; }
+    }
+    if !find.empty : Rectangle {
+        min-height: 54 * Tokens.p;
+        clip: true;
+        property <length> scroll: max(0, min(find.results.length * slot-w - self.width, find.focused-result * slot-w - self.width / 2 + slot-w / 2));
+        for result[i] in find.results : PicoResultRow {
+            x: i * slot-w - parent.scroll;
+            y: 0;
+            width: slot-w - 4 * Tokens.p;
+            height: parent.height;
+            cart: result.cart;
+            title: result.title;
+            cart-h: 30 * Tokens.p;
+        }
+    }
+}

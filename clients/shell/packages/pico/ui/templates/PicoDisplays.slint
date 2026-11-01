@@ -1,0 +1,25 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// Where the display plan puts what, in the window: the display that shows
+// and the display that chooses (src/pico-display-plan.ts). Any further
+// display stays dark. What it holds places itself by the two rectangles.
+export struct SplitView {
+    on: bool,
+    show-x: int, show-y: int, show-w: int, show-h: int,
+    choose-x: int, choose-y: int, choose-w: int, choose-h: int,
+}
+
+export component PicoDisplays inherits Rectangle {
+    in property <SplitView> split;
+    out property <length> show-x: Tokens.px(split.show-x);
+    out property <length> show-y: Tokens.px(split.show-y);
+    out property <length> show-w: Tokens.px(split.show-w);
+    out property <length> show-h: Tokens.px(split.show-h);
+    out property <length> choose-x: split.on ? Tokens.px(split.choose-x) : 0;
+    out property <length> choose-y: split.on ? Tokens.px(split.choose-y) : 0;
+    out property <length> choose-w: split.on ? Tokens.px(split.choose-w) : root.width;
+    out property <length> choose-h: split.on ? Tokens.px(split.choose-h) : root.height;
+    background: P8.bg;
+    @children
+}

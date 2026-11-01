@@ -1,0 +1,22 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoPixelDisc } from "PicoPixelDisc.slint";
+import { PicoLine } from "PicoLine.slint";
+
+// A face button and what it does: "a", "b", or "lr" for left and right.
+export struct HintView { key: string, label: string }
+
+export component PicoHint inherits HorizontalLayout {
+    in property <HintView> hint;
+    spacing: 2 * Tokens.p;
+    Rectangle {
+        width: 8 * Tokens.p;
+        PicoPixelDisc {
+            x: 0;
+            y: Tokens.snap((parent.height - self.height) / 2);
+            disc: hint.key == "a" ? P8.key-a : hint.key == "b" ? P8.key-b : P8.key-lr;
+            glyph: hint.key == "a" ? "A" : hint.key == "b" ? "B" : "◀▶";
+        }
+    }
+    PicoLine { text: hint.label; color: P8.ink-dim; overflow: clip; }
+}

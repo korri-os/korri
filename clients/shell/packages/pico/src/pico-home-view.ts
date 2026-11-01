@@ -1,0 +1,99 @@
+import type { SurfaceCatalog } from "./model"
+import type { PicoShelfGame } from "./pico-shelf-game"
+
+/**
+ * What the home screen is currently showing.
+ *
+ * One closed set of cases, so the page renders a state rather than testing a
+ * pile of booleans and nullable arrays. Every case the treaty can produce is
+ * named here; a new catalog state becomes a compile error at the conversion
+ * below rather than a blank screen at runtime.
+ */
+export type PicoHomeView =
+  | { readonly _tag: "Loading" }
+  | { readonly _tag: "Empty" }
+  | { readonly _tag: "Failed"; readonly message: string }
+  | { readonly _tag: "Shelf"; readonly games: readonly PicoShelfGame[] }
+
+/**
+ * Convert Korri's catalog into the home's own state, once, at the seam.
+ *
+ * A `Ready` catalog with no games is `Empty`: the treaty allows both spellings
+ * of "there is nothing to play", and letting them diverge would give the shelf
+ * an empty strip to render and the user a screen that says nothing at all.
+ */
+export function picoHomeViewFromCatalog(catalog: SurfaceCatalog): PicoHomeView {
+  // Korri replaces the catalog whole when it changes, and a library can hold
+  // thousands of games. One view per catalog object keeps every game's view
+  // the same object between renders, so a cart that did not change is not
+  // drawn again (PicoCart is memoized).
+  const cached = homeViews.get(catalog)
+  if (cached !== undefined) return cached
+  const view = homeViewFrom(catalog)
+  homeViews.set(catalog, view)
+  return view
+}
+
+const homeViews = new WeakMap<SurfaceCatalog, PicoHomeView>()
+
+function homeViewFrom(catalog: SurfaceCatalog): PicoHomeView {
+  switch (catalog._tag) {
+    case "Loading":
+      return { _tag: "Loading" }
+    case "Error":
+      return { _tag: "Failed", message: catalog.message }
+    case "Empty":
+      return { _tag: "Empty" }
+    case "Ready":
+      return catalog.games.length === 0
+        ? { _tag: "Empty" }
+        : {
+            _tag: "Shelf",
+            games: catalog.games.map((game) => ({
+              id: game.id,
+              title: game.title,
+              ...(game.subtitle === undefined ? {} : { subtitle: game.subtitle }),
+              ...(game.coverArtUrl === undefined
+                ? {}
+                : { artUrl: game.coverArtUrl }),
+              ...(game.resumable === undefined
+                ? {}
+                : { resumable: game.resumable }),
+              ...(game.section === undefined ? {} : { section: game.section }),
+              ...(game.lastPlayedAt === undefined
+                ? {}
+                : { lastPlayedAt: game.lastPlayedAt }),
+              ...(game.playCount === undefined
+                ? {}
+                : { playCount: game.playCount }),
+              ...(game.totalPlaytimeSeconds === undefined
+                ? {}
+                : { totalPlaytimeSeconds: game.totalPlaytimeSeconds }),
+              ...(game.download === undefined
+                ? {}
+                : {
+                    download: {
+                      ...(game.download.bytes === undefined ? {} : { bytes: game.download.bytes }),
+                      ...(game.download.queued === true ? { queued: true as const } : {}),
+                      ...(game.download.progress === undefined
+                        ? {}
+                        : {
+                            progress: {
+                              done: game.download.progress.done,
+                              ...(game.download.progress.total === undefined ? {} : { total: game.download.progress.total }),
+                            },
+                          }),
+                    },
+                  }),
+              ...(game.launchLocations === undefined
+                ? {}
+                : {
+                    locations: game.launchLocations.map((location) => ({
+                      id: location.id,
+                      label: location.label,
+                    })),
+                  }),
+            })),
+          }
+  }
+}

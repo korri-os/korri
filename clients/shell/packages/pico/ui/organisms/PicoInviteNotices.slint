@@ -1,0 +1,25 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoInviteNotice } from "../molecules/PicoInviteNotice.slint";
+
+export struct NoticeView { playing: string, game: string, where: string }
+
+// Invites announced over every screen of the catalog, in the top left, for
+// 8 s or until the next press. They take no focus; the oldest give way whole
+// past half the screen's height.
+export component PicoInviteNotices {
+    in property <[NoticeView]> notices;
+    in property <int> round;
+    property <bool> fresh: true;
+    changed round => { fresh = true; }
+    Timer { interval: 8s; running: fresh && notices.length > 0; triggered => { fresh = false; } }
+    if fresh : VerticalLayout {
+        x: 2 * Tokens.u;
+        y: 2 * Tokens.u;
+        width: min(root.width - 4 * Tokens.u, 170 * Tokens.p);
+        height: min(self.preferred-height, root.height * 50%);
+        alignment: start;
+        spacing: 2 * Tokens.u;
+        for notice in notices : PicoInviteNotice { playing: notice.playing; game: notice.game; where: notice.where; }
+    }
+}

@@ -1,0 +1,18 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+
+// A controller Korri can see, and its lamp: lit once Korri has heard it.
+export component PicoControllerRow inherits HorizontalLayout {
+    in property <string> name;
+    in property <bool> heard;
+    in property <color> ink: P8.ink-dark;
+    spacing: 3 * Tokens.p;
+    height: Tokens.md * 1.5;
+    Rectangle {
+        width: 6 * Tokens.p;
+        Rectangle { x: 0; y: (parent.height - 6 * Tokens.p) / 2; width: 6 * Tokens.p; height: 6 * Tokens.p; background: heard ? P8.ok : P8.slate; }
+    }
+    PicoLine { line-height: root.height; text: name; font-size: Tokens.md; color: ink; }
+    PicoLine { line-height: root.height; text: heard ? "READY" : "Press any button"; color: ink; horizontal-alignment: right; }
+}

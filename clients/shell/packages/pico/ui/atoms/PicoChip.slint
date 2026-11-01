@@ -1,0 +1,30 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoReveal } from "PicoReveal.slint";
+import { ButtonView } from "PicoRow.slint";
+
+// A filter or a tab: a plate in its colour, lit when chosen, white with a
+// cycling drop under the cursor.
+export component PicoChip {
+    in property <ButtonView> button;
+    in property <color> lit-ground: P8.go;
+    in property <color> lit-ink: P8.ink-dark;
+    in property <color> ground: P8.plate;
+    in property <color> ink: P8.plate-ink;
+    in property <length> font-size: Tokens.sm;
+    preferred-width: label.preferred-width + 6 * Tokens.p;
+    min-width: min(self.preferred-width, 12 * Tokens.p);
+    height: font-size + 4 * Tokens.p;
+    if button.focused : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
+    Rectangle { background: button.focused ? P8.pick : button.lit ? lit-ground : ground; }
+    label := Text {
+        x: 3 * Tokens.p;
+        y: 2 * Tokens.p;
+        width: root.width - 6 * Tokens.p;
+        text: button.label;
+        font-size: root.font-size;
+        overflow: elide;
+        color: button.focused || button.lit ? lit-ink : button.disabled ? P8.ink-quiet : ink;
+    }
+    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
+}

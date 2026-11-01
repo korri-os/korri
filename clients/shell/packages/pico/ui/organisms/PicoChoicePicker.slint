@@ -1,0 +1,11 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoModal } from "PicoModal.slint";
+import { CardView } from "../molecules/PicoNotice.slint";
+
+// A list to pick one value from, when nothing is chosen yet (Add setting):
+// CHOOSE ONE, Korri's words, every value, and CANCEL.
+export component PicoChoicePicker inherits PicoModal {
+    in property <CardView> choices;
+    card: { shown: true, tone: "ask", kicker: "CHOOSE ONE", title: choices.title, message: choices.message, lines: [], actions: choices.actions, inline: false };
+}

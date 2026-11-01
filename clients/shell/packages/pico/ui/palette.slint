@@ -1,0 +1,109 @@
+// PICO-8's sixteen and Pico's roles (surfaces/pico/src/pico-tokens.css).
+// Nothing else is ever painted: no blend, no fractional opacity, no gradient.
+// Components name a role, never a colour, so a decision such as "what colour
+// is a note on a warning card" is made once, here.
+
+export global P8 {
+    // PICO-8's fixed sixteen.
+    out property <color> black: #000000;
+    out property <color> navy: #1d2b53;
+    out property <color> maroon: #7e2553;
+    out property <color> green: #008751;
+    out property <color> brown: #ab5236;
+    out property <color> slate: #5f574f;
+    out property <color> silver: #c2c3c7;
+    out property <color> white: #fff1e8;
+    out property <color> red: #ff004d;
+    out property <color> orange: #ffa300;
+    out property <color> yellow: #ffec27;
+    out property <color> lime: #00e436;
+    out property <color> blue: #29adff;
+    out property <color> lilac: #83769c;
+    out property <color> pink: #ff77a8;
+    out property <color> peach: #ffccaa;
+
+    // Roles.
+    out property <color> bg: black;
+    out property <color> accent: pink;
+    out property <color> ink: white;
+    out property <color> ink-dim: silver;
+    out property <color> ink-quiet: lilac;
+    out property <color> ink-dark: black;
+    // A plate is the quiet thing a label sits on: a chip, a key, a menu row.
+    out property <color> plate: navy;
+    out property <color> plate-ink: peach;
+    out property <color> plate-shadow: maroon;
+    // The one thing the screen wants pressed.
+    out property <color> go: yellow;
+    out property <color> go-ink: black;
+    out property <color> go-shadow: brown;
+    // A chosen row inside a coloured card.
+    out property <color> pick: white;
+    out property <color> pick-ink: black;
+    out property <color> pick-mark: maroon;
+    out property <color> ok: lime;
+    // A step passed without being done, such as Wi-Fi left offline.
+    out property <color> skip: orange;
+    out property <color> warn: red;
+    out property <color> warn-ink: white;
+    // The floor carts stand on, and the slot a launching cart seats into.
+    out property <color> floor: navy;
+    out property <color> floor-edge: lilac;
+    // Card shells by what they say: yellow asks, red warns, blue tells, with
+    // their ink, the quieter kicker and a note in the small face.
+    out property <color> shell-ask: yellow;
+    out property <color> shell-warn: red;
+    out property <color> shell-tell: blue;
+    out property <color> shell-ask-ink: black;
+    out property <color> shell-ask-kicker: brown;
+    out property <color> shell-warn-ink: white;
+    out property <color> shell-warn-kicker: peach;
+    out property <color> shell-tell-ink: black;
+    out property <color> shell-tell-kicker: navy;
+    out property <color> shell-ask-note: navy;
+    out property <color> shell-warn-note: black;
+    out property <color> shell-tell-note: navy;
+    // The two shadow steps behind a large cartridge.
+    out property <color> cast-near: navy;
+    out property <color> cast-far: maroon;
+    // Face buttons, drawn the way PICO-8 draws its O and X.
+    out property <color> key-a: orange;
+    out property <color> key-b: blue;
+    out property <color> key-lr: silver;
+    out property <color> key-ink: navy;
+
+    // A card's shell, ink, kicker and note by tone: "ask", "warn" or "tell".
+    public pure function shell(tone: string) -> color {
+        tone == "warn" ? shell-warn : tone == "tell" ? shell-tell : shell-ask
+    }
+    public pure function shell-ink(tone: string) -> color {
+        tone == "warn" ? shell-warn-ink : tone == "tell" ? shell-tell-ink : shell-ask-ink
+    }
+    public pure function kicker(tone: string) -> color {
+        tone == "warn" ? shell-warn-kicker : tone == "tell" ? shell-tell-kicker : shell-ask-kicker
+    }
+    public pure function note(tone: string) -> color {
+        tone == "warn" ? shell-warn-note : tone == "tell" ? shell-tell-note : shell-ask-note
+    }
+
+    // The fifteen colours that are not black, in PICO-8 order, for the palette bar.
+    public pure function palette(index: int) -> color {
+        index == 0 ? navy : index == 1 ? maroon : index == 2 ? green : index == 3 ? brown
+            : index == 4 ? slate : index == 5 ? silver : index == 6 ? white : index == 7 ? red
+            : index == 8 ? orange : index == 9 ? yellow : index == 10 ? lime : index == 11 ? blue
+            : index == 12 ? lilac : index == 13 ? pink : peach
+    }
+
+    // Cartridge plastics: PICO_SHELL_COLORS in pico-palette.ts, by index.
+    public pure function plastic(index: int) -> color {
+        index == 0 ? blue : index == 1 ? pink : index == 2 ? orange : index == 3 ? lime
+            : index == 4 ? peach : index == 5 ? silver : index == 6 ? red : index == 7 ? yellow
+            : index == 8 ? green : lilac
+    }
+
+    // The spines' colours, in turn (PicoPanelScreen).
+    public pure function spine(index: int) -> color {
+        mod(index, 6) == 0 ? blue : mod(index, 6) == 1 ? pink : mod(index, 6) == 2 ? orange
+            : mod(index, 6) == 3 ? yellow : mod(index, 6) == 4 ? lime : peach
+    }
+}

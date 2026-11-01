@@ -1,0 +1,12 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "PicoLine.slint";
+
+// Korri's preformatted time, quiet in the corner.
+export component PicoClock inherits PicoLine {
+    in property <string> label;
+    text: label;
+    font-size: Tokens.sm;
+    color: P8.ink-quiet;
+    overflow: clip;
+}

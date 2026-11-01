@@ -1,0 +1,16 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoTitle } from "../atoms/PicoTitle.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
+import { PicoButton } from "../atoms/PicoButton.slint";
+import { SetupView } from "../molecules/PicoSetupHeading.slint";
+
+// Setup's HELLO: what is about to happen, and START.
+export component PicoSetupWelcome inherits VerticalLayout {
+    in property <SetupView> setup;
+    alignment: center;
+    spacing: Tokens.u;
+    PicoTitle { text: setup.title; }
+    if setup.message != "" : PicoPara { text: setup.message; color: P8.ink-dim; }
+    HorizontalLayout { alignment: start; padding-top: Tokens.u; PicoButton { button: setup.go; } }
+}

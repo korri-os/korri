@@ -1,0 +1,9 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "PicoLine.slint";
+
+// The line under a title, in the accent: system and place.
+export component PicoSub inherits PicoLine {
+    font-size: Tokens.md;
+    color: P8.accent;
+}

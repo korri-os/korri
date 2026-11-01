@@ -1,0 +1,20 @@
+// Preview states of PicoStoreResults, with fixture data: the Caliper part's role.
+// Render one: slint-viewer --component STATE --screenshot out.png PicoStoreResults.organism.preview.slint
+import { P8 } from "../palette.slint";
+import { Tokens } from "../tokens.slint";
+import { PicoStoreResults } from "PicoStoreResults.slint";
+
+
+export component Default inherits Window {
+    background: P8.bg;
+    default-font-family: Tokens.family;
+    init => { Tokens.fit(self.width, self.height); }
+    changed width => { Tokens.fit(self.width, self.height); }
+    changed height => { Tokens.fit(self.width, self.height); }
+    VerticalLayout {
+        padding: 2 * Tokens.u;
+        spacing: Tokens.u;
+        alignment: start;
+        PicoStoreResults { search: { label: "SEARCH", detail: "TYPE A NAME", focused: false, disabled: false, warn: false, lit: false }; results: [{ cart: { id: "cc", title: "Celeste Classic", has-art: false, art-ratio: 1, initials: "CC", system: "pico8", shell: 8, sticker: 1, sticker-ink-light: false, progress: "played", hero: true, focused: true }, title: "Celeste Classic 2", subtitle: "PICO-8" }]; }
+    }
+}

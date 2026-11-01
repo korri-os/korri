@@ -1,0 +1,11 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "PicoLine.slint";
+
+// Where the chosen cart stands on the shelf: "1 / 9".
+export component PicoTally inherits PicoLine {
+    in property <int> index;
+    in property <int> total;
+    text: total == 0 ? "" : index + " / " + total;
+    color: P8.ink-quiet;
+}

@@ -1,0 +1,20 @@
+// Preview states of PicoBadge, with fixture data: the Caliper part's role.
+// Render one: slint-viewer --component STATE --screenshot out.png PicoBadge.atom.preview.slint
+import { P8 } from "../palette.slint";
+import { Tokens } from "../tokens.slint";
+import { PicoBadge } from "PicoBadge.slint";
+
+
+export component Default inherits Window {
+    background: P8.bg;
+    default-font-family: Tokens.family;
+    init => { Tokens.fit(self.width, self.height); }
+    changed width => { Tokens.fit(self.width, self.height); }
+    changed height => { Tokens.fit(self.width, self.height); }
+    VerticalLayout {
+        padding: 2 * Tokens.u;
+        spacing: Tokens.u;
+        alignment: start;
+        HorizontalLayout { spacing: Tokens.u; alignment: start; PicoBadge { chip: { text: "RESUME", kind: "ok" }; } PicoBadge { chip: { text: "1.5 GB DOWNLOAD", kind: "info" }; } PicoBadge { chip: { text: "NEVER PLAYED", kind: "empty" }; } PicoBadge { chip: { text: "FAILED", kind: "warn" }; } }
+    }
+}

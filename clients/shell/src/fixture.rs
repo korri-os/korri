@@ -58,6 +58,10 @@ struct State {
     calls: Vec<String>,
     declarations: Vec<Value>,
     generation: u64,
+    /// `model.displays` for a surface that draws on all; absent: one 640x480 main display.
+    displays: Option<Value>,
+    /// A catalog published as it is (Loading, Error, Empty) instead of a window.
+    fixed_catalog: Option<Value>,
 }
 
 pub struct Fixture {
@@ -93,6 +97,8 @@ impl Fixture {
                 calls: Vec::new(),
                 declarations: Vec::new(),
                 generation: 0,
+                displays: None,
+                fixed_catalog: None,
             }),
             Condvar::new(),
         ));
@@ -193,6 +199,36 @@ impl Fixture {
         changed.notify_all();
     }
 
+    /// Publish another model: a Ready catalog's `games` become the games the
+    /// window moves over; any other catalog is published as it is.
+    pub fn set_model(&self, mut model: Value) {
+        let (lock, changed) = &*self.shared;
+        let mut state = lock.lock().unwrap();
+        let catalog = model["catalog"].take();
+        if catalog["_tag"] == "Ready" {
+            state.games = catalog["games"].as_array().cloned().unwrap_or_default();
+            state.fixed_catalog = None;
+        } else {
+            state.fixed_catalog = Some(catalog);
+        }
+        state.base = model;
+        for surface in state.surfaces.values_mut() {
+            surface.revision += 1;
+        }
+        changed.notify_all();
+    }
+
+    /// The displays published to a surface that draws on all of them.
+    pub fn set_displays(&self, displays: Option<Value>) {
+        let (lock, changed) = &*self.shared;
+        let mut state = lock.lock().unwrap();
+        state.displays = displays;
+        for surface in state.surfaces.values_mut() {
+            surface.revision += 1;
+        }
+        changed.notify_all();
+    }
+
     pub fn set_overlay(&self, shown: bool) {
         self.publish(|model| {
             model["presentation"] = if shown {
@@ -269,13 +305,24 @@ fn model_for(state: &State, surface_id: &str) -> Value {
             s.count
         }
     });
-    model["catalog"] = catalog::window(&state.games, &query, &from, count);
+    model["catalog"] = match &state.fixed_catalog {
+        Some(catalog) => catalog.clone(),
+        None => catalog::window(&state.games, &query, &from, count),
+    };
     if surface.and_then(|s| s.displays) == Some(engine::Displays::All) {
-        // One main display; the fixture has no compositor to read outputs from.
-        model["displays"] = json!([{"id": "fixture", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false}]);
+        // One main display unless told otherwise; the fixture has no compositor to read outputs from.
+        model["displays"] = state.displays.clone().unwrap_or_else(
+            || json!([{"id": "fixture", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false}]),
+        );
     }
     if let Some(id) = surface.and_then(|s| s.focused.as_deref()) {
-        model["focusedGame"] = json!({"gameId": id, "actions": []});
+        // A base model may carry the actions of games (`fixtureGameActions`,
+        // keyed by game id), as korrid publishes them for the focused game.
+        let actions = state.base["fixtureGameActions"][id].clone();
+        model["focusedGame"] = json!({"gameId": id, "actions": if actions.is_array() { actions } else { json!([]) }});
+    }
+    if let Some(object) = model.as_object_mut() {
+        object.remove("fixtureGameActions");
     }
     model
 }

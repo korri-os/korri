@@ -1,0 +1,34 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+import { PicoTabs } from "../molecules/PicoTabs.slint";
+import { PicoCard } from "../molecules/PicoCard.slint";
+
+// A panel: coloured spines, a row of tabs over the card or a column beside
+// it when the screen is wide, and the card in the chosen spine's colour
+// holding the chosen group.
+export component PicoPanelScreen inherits Rectangle {
+    in property <[ButtonView]> spines;
+    in property <int> spine-tone;
+    in property <bool> beside;
+    property <length> spines-w: beside ? 64 * Tokens.p : 0;
+    property <length> tabs-h: beside || spines.length == 0 ? 0 : Tokens.md + 4 * Tokens.p;
+    preferred-height: tabs-h + 3 * Tokens.p + card.preferred-height + 5 * Tokens.p;
+    min-height: self.preferred-height;
+    PicoTabs {
+        x: 0;
+        y: 0;
+        width: beside ? spines-w - 4 * Tokens.p : root.width;
+        height: beside ? root.height : tabs-h;
+        spines: spines;
+        beside: beside;
+    }
+    card := PicoCard {
+        x: spines-w;
+        y: tabs-h + (tabs-h > 0 ? 3 * Tokens.p : 0);
+        width: root.width - self.x - 5 * Tokens.p;
+        height: self.preferred-height;
+        shell: P8.spine(spine-tone);
+        @children
+    }
+}

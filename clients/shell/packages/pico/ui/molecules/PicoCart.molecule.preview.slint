@@ -1,0 +1,34 @@
+// Preview states of PicoCart, with fixture data: the Caliper part's role.
+// Render one: slint-viewer --component STATE --screenshot out.png PicoCart.molecule.preview.slint
+import { P8 } from "../palette.slint";
+import { Tokens } from "../tokens.slint";
+import { PicoCart } from "PicoCart.slint";
+
+
+export component Default inherits Window {
+    background: P8.bg;
+    default-font-family: Tokens.family;
+    init => { Tokens.fit(self.width, self.height); }
+    changed width => { Tokens.fit(self.width, self.height); }
+    changed height => { Tokens.fit(self.width, self.height); }
+    VerticalLayout {
+        padding: 2 * Tokens.u;
+        spacing: Tokens.u;
+        alignment: start;
+        HorizontalLayout { spacing: 4 * Tokens.u; alignment: start; height: 60 * Tokens.p; PicoCart { cart: { id: "a", title: "Petal Quest", has-art: false, art-ratio: 1, initials: "PQ", system: "pico8", shell: 1, sticker: 4, sticker-ink-light: false, progress: "new", hero: false, focused: false }; box-w: 28 * Tokens.p; box-h: 36 * Tokens.p; } PicoCart { cart: { id: "b", title: "Tetris", has-art: false, art-ratio: 1, initials: "T", system: "gb", shell: 7, sticker: 0, sticker-ink-light: false, progress: "played", hero: false, focused: false }; box-w: 28 * Tokens.p; box-h: 36 * Tokens.p; } PicoCart { cart: { id: "c", title: "Hollow Knight", has-art: false, art-ratio: 1, initials: "HK", system: "snes", shell: 0, sticker: 3, sticker-ink-light: false, progress: "resume", hero: false, focused: false }; box-w: 28 * Tokens.p; box-h: 36 * Tokens.p; } PicoCart { cart: { id: "d", title: "Comet Courier", has-art: false, art-ratio: 1, initials: "CC", system: "nes", shell: 5, sticker: 8, sticker-ink-light: false, progress: "new", hero: false, focused: false }; box-w: 28 * Tokens.p; box-h: 36 * Tokens.p; } }
+    }
+}
+
+export component Still inherits Window {
+    background: P8.bg;
+    default-font-family: Tokens.family;
+    init => { Tokens.fit(self.width, self.height); }
+    changed width => { Tokens.fit(self.width, self.height); }
+    changed height => { Tokens.fit(self.width, self.height); }
+    VerticalLayout {
+        padding: 2 * Tokens.u;
+        spacing: Tokens.u;
+        alignment: start;
+        HorizontalLayout { alignment: start; height: 120 * Tokens.p; PicoCart { still: true; cart: { id: "a", title: "Petal Quest", has-art: false, art-ratio: 1, initials: "PQ", system: "pico8", shell: 1, sticker: 4, sticker-ink-light: false, progress: "resume", hero: false, focused: false }; box-w: 100 * Tokens.p; box-h: 100 * Tokens.p; initials-size: Tokens.xl; } }
+    }
+}

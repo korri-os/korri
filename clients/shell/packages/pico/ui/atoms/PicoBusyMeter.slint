@@ -1,0 +1,24 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "PicoLine.slint";
+
+// Work under way with no measure: a band walks the sixteen cells.
+export component PicoBusyMeter inherits VerticalLayout {
+    in property <string> label;
+    in property <color> ink: P8.ink-dim;
+    property <int> tick;
+    Timer { interval: 100ms; running: true; triggered => { tick = mod(tick + 1, 64); } }
+    spacing: Tokens.p;
+    Rectangle {
+        height: 6 * Tokens.p;
+        property <length> cell: (self.width - 15 * Tokens.p) / 16;
+        for i in 16 : Rectangle {
+            x: Tokens.snap(i * (cell + Tokens.p));
+            y: 0;
+            width: Tokens.snap(cell);
+            height: parent.height;
+            background: mod(i - tick, 16) < 4 ? P8.ok : P8.floor;
+        }
+    }
+    if label != "" : PicoLine { text: label; color: ink; }
+}
