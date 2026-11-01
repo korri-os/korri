@@ -561,7 +561,7 @@ impl OverlayController {
                 self.problem(
                     "Action refused",
                     action_failure(failure.reason, &failure.message),
-                    (!unknown).then(|| Retry::Invoke(control_id, value)),
+                    (!unknown).then_some(Retry::Invoke(control_id, value)),
                 );
             }
             return;

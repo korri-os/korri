@@ -11,6 +11,7 @@ use korri_surface_treaty::{
 };
 
 use super::{
+    acquisition_gate::{AcquisitionGameRef, AcquisitionGate},
     downloads::{DownloadGameRef, GameDownloads, ACQUISITION_POLL_INTERVAL},
     korrid::Korrid,
     launchables::{
@@ -129,6 +130,7 @@ pub struct Root {
     pub owner_binding: Arc<OwnerBinding>,
     pub starter_pack: Arc<StarterPack>,
     pub downloads: Arc<GameDownloads>,
+    pub acquisition: Arc<AcquisitionGate>,
     clock: std::sync::Mutex<String>,
     last_local_ids: std::sync::Mutex<Option<Vec<String>>>,
     notify: Notify,
@@ -147,6 +149,31 @@ impl Root {
         let network = NetworkOnboarding::new(korrid.clone(), notify.clone());
         let downloads =
             GameDownloads::new(korrid.clone(), notify.clone(), ACQUISITION_POLL_INTERVAL);
+        // Downloads a launch needs come before reserve/start; the gate tells
+        // the downloads store when a launch's download changed what is on disk.
+        let acquisition = {
+            let settled = Arc::downgrade(&downloads);
+            AcquisitionGate::new(
+                korrid.clone(),
+                notify.clone(),
+                Arc::new(move || {
+                    if let Some(downloads) = settled.upgrade() {
+                        tokio::spawn(async move { downloads.refresh(None).await });
+                    }
+                }),
+                ACQUISITION_POLL_INTERVAL,
+            )
+        };
+        {
+            // The gate's open launch counts as a pending download.
+            let gate = Arc::downgrade(&acquisition);
+            downloads.set_held_games(Arc::new(move || {
+                gate.upgrade()
+                    .and_then(|gate| gate.game_id())
+                    .into_iter()
+                    .collect()
+            }));
+        }
         let launchables = {
             let restart = Arc::clone(&network);
             let dismiss = Arc::clone(&network);
@@ -199,6 +226,7 @@ impl Root {
             owner_binding,
             starter_pack,
             downloads,
+            acquisition,
             clock: std::sync::Mutex::new(clock_label()),
             last_local_ids: std::sync::Mutex::new(None),
             notify,
@@ -280,7 +308,7 @@ impl Root {
                 tick += 1;
                 match this.overlay() {
                     // The overlay re-reads its launch every second.
-                    Some(controller) if tick % 4 == 0 => controller.refresh().await,
+                    Some(controller) if tick.is_multiple_of(4) => controller.refresh().await,
                     Some(_) => {}
                     None => {
                         let retained = matches!(
@@ -289,7 +317,7 @@ impl Root {
                                 retained_failure: Some(_)
                             }
                         );
-                        if retained || tick % 4 == 0 {
+                        if retained || tick.is_multiple_of(4) {
                             this.inspect_overlay().await;
                         }
                     }
@@ -363,7 +391,11 @@ impl Root {
                 status = setup;
             }
         }
-        if let Some(problem) = self.downloads.status() {
+        if let Some(problem) = self
+            .acquisition
+            .status()
+            .or_else(|| self.downloads.status())
+        {
             status = problem;
         }
         let onboarding = (onboarding_needed == Some(true) && owner.is_unsupported()).then(|| {
@@ -517,12 +549,38 @@ impl Root {
         if content.unavailable_session_status.is_some() {
             return;
         }
-        let _ = id;
-        let launchables = Arc::clone(&self.launchables);
-        let game_id = game.id.clone();
-        tokio::spawn(async move {
-            launchables.start_catalog_launch(&game_id, None).await;
+        self.gated_start(AcquisitionGameRef {
+            id: game.id.clone(),
+            surface_id: id.into(),
+            title: game.title.clone(),
+            runner_id: None,
         });
+    }
+
+    /// The startup behind the gate: once every artifact the game's runner
+    /// needs is Ready, the reserve/start lifecycle. korrid refusing a start
+    /// with ArtifactsNotReady means the world moved: ask again.
+    fn gated_start(self: &Arc<Self>, game: AcquisitionGameRef) {
+        let weak = Arc::downgrade(self);
+        let retry_game = game.clone();
+        let proceed = Arc::new(move || {
+            let Some(root) = weak.upgrade() else { return };
+            let game = retry_game.clone();
+            tokio::spawn(async move {
+                let outcome = root
+                    .launchables
+                    .start_catalog_launch(&game.id, game.runner_id.clone())
+                    .await;
+                if let Some(crate::game_routes::SelectedGameLaunchOutcome::Err(failure)) = &outcome
+                {
+                    if failure.code == "ArtifactsNotReady" {
+                        root.launchables.dismiss_notice();
+                        root.gated_start(game);
+                    }
+                }
+            });
+        });
+        self.acquisition.launch(game, proceed, Arc::new(|| {}));
     }
 
     /// Perform one request with the portal host's rules. Requests about the
@@ -552,7 +610,7 @@ impl Root {
                 launch_location_id,
             } => {
                 let current = launchables.state();
-                if !current.is_ready() {
+                if !current.is_ready() || self.acquisition.status().is_some() {
                     return;
                 }
                 let Some(entry) = entry_for_id(&current, &game_id).cloned() else {
@@ -570,12 +628,19 @@ impl Root {
                 self.confirm_launch(&game_id, entry);
             }
             SurfaceRequest::RunAction { action_id } => {
-                if self.owner_binding.act(&action_id) || self.starter_pack.act(&action_id) {
+                if self.owner_binding.act(&action_id)
+                    || self.starter_pack.act(&action_id)
+                    || self.acquisition.act(&action_id)
+                {
                     return;
                 }
                 if let Some(launch_id) = action_id.strip_prefix("cancel-pending:") {
                     launchables.cancel_pending_launch(launch_id);
                 } else if action_id == "cancel-launch" {
+                    // Before the startup, the same intent leaves the gate.
+                    if self.acquisition.back() {
+                        return;
+                    }
                     launchables.cancel_launch();
                 } else if action_id.starts_with("runner:") {
                     // The runner chooser publishes these; it is not ported.
@@ -616,7 +681,7 @@ impl Root {
             SurfaceRequest::DismissIdentityStatus => launchables.dismiss_identity_status(),
             SurfaceRequest::RunGameAction { game_id, action_id } => {
                 let current = launchables.state();
-                if !current.is_ready() {
+                if !current.is_ready() || self.acquisition.status().is_some() {
                     return;
                 }
                 let Some(entry) = entry_for_id(&current, &game_id).cloned() else {
@@ -655,9 +720,13 @@ impl Root {
             | SurfaceRequest::DismissGameplayOverlay => {}
             // Korri has nothing new to try after a failed launch, so retrying
             // means re-reading the world.
-            SurfaceRequest::Retry => launchables.reload(),
+            SurfaceRequest::Retry => {
+                if !self.acquisition.retry() {
+                    launchables.reload()
+                }
+            }
             SurfaceRequest::Dismiss => {
-                if !self.downloads.dismiss() {
+                if !self.acquisition.dismiss() && !self.downloads.dismiss() {
                     launchables.dismiss_notice();
                 }
             }

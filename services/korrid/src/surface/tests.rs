@@ -1106,3 +1106,349 @@ mod overlay {
 
     use korri_surface_treaty::SurfacePresentation;
 }
+
+mod acquisition_gate {
+    //! Port of `acquisition-gate.test.ts`.
+    use super::*;
+    use crate::surface::{
+        acquisition_gate::{confirm_detail, format_eta, AcquisitionGameRef, AcquisitionGate},
+        shared_play::format_bytes,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Each call takes the next scripted answer; the last answer stays
+    /// current, as a polled daemon's state would.
+    #[derive(Default)]
+    struct Script {
+        answers: HashMap<String, Vec<Value>>,
+        last: HashMap<String, Value>,
+        calls: Vec<(String, Value)>,
+    }
+
+    fn scripted() -> (Korrid, Arc<std::sync::Mutex<Script>>) {
+        let script = Arc::new(std::sync::Mutex::new(Script::default()));
+        let shared = Arc::clone(&script);
+        let korrid = Korrid::new(Arc::new(move |request: RpcRequest| {
+            let script = Arc::clone(&shared);
+            Box::pin(async move {
+                let value = serde_json::to_value(&request).unwrap();
+                let tag = value["_tag"].as_str().unwrap().to_owned();
+                let mut script = script.lock().unwrap();
+                script.calls.push((tag.clone(), value["payload"].clone()));
+                let next = script
+                    .answers
+                    .get_mut(&tag)
+                    .and_then(|queue| (!queue.is_empty()).then(|| queue.remove(0)));
+                let answer = match next {
+                    Some(answer) => {
+                        script.last.insert(tag.clone(), answer.clone());
+                        answer
+                    }
+                    None => script
+                        .last
+                        .get(&tag)
+                        .cloned()
+                        .ok_or_else(|| Refusal::Unreachable(format!("no answer for {tag}")))?,
+                };
+                serde_json::from_value::<RpcResponse>(json!({ "_tag": tag, "outcome": answer }))
+                    .map_err(|error| Refusal::Unreachable(error.to_string()))
+            })
+        }));
+        (korrid, script)
+    }
+
+    fn push(script: &Arc<std::sync::Mutex<Script>>, tag: &str, answer: Value) {
+        script
+            .lock()
+            .unwrap()
+            .answers
+            .entry(tag.into())
+            .or_default()
+            .push(answer);
+    }
+
+    fn rootfs(state: Value) -> Value {
+        json!({ "id": "@korri:fex/rootfs", "title": "FEX rootfs", "version": "1", "bytesTotal": 1_160_000_000u64, "state": state })
+    }
+    fn proton(state: Value) -> Value {
+        json!({ "id": "@korri:proton/cachyos", "title": "Proton-CachyOS", "version": "11.0", "bytesTotal": 340_000_000u64, "state": state })
+    }
+    fn ok(artifacts: Vec<Value>) -> Value {
+        json!({ "_tag": "Ok", "payload": { "artifacts": artifacts } })
+    }
+    fn missing() -> Value {
+        json!({ "_tag": "Missing" })
+    }
+    fn ready() -> Value {
+        json!({ "_tag": "Ready", "path": "/cache/x" })
+    }
+    fn game() -> AcquisitionGameRef {
+        AcquisitionGameRef {
+            id: "steam:1".into(),
+            surface_id: "game:steam:1".into(),
+            title: "Hollow Knight".into(),
+            runner_id: None,
+        }
+    }
+    fn gate(korrid: Korrid) -> Arc<AcquisitionGate> {
+        AcquisitionGate::new(
+            korrid,
+            Arc::new(|| {}),
+            Arc::new(|| {}),
+            Duration::from_millis(1),
+        )
+    }
+    async fn settle() {
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+    fn action_id(status: Option<SurfaceStatus>, label: &str) -> String {
+        let actions = match status {
+            Some(SurfaceStatus::Confirm { actions, .. }) => actions,
+            Some(SurfaceStatus::Busy {
+                actions: Some(actions),
+                ..
+            }) => actions,
+            other => panic!("no actions on {other:?}"),
+        };
+        actions
+            .into_iter()
+            .find(|action| action.label == label)
+            .expect("action")
+            .id
+    }
+
+    #[test]
+    fn formatting_reads_the_way_the_contract_shows_it() {
+        assert_eq!(format_bytes(612_000_000.0), "612 MB");
+        assert_eq!(format_bytes(1_160_000_000.0), "1.2 GB");
+        assert_eq!(format_bytes(1_500_000_000.0), "1.5 GB");
+        assert_eq!(format_bytes(2_000_000_000.0), "2 GB");
+        assert_eq!(format_bytes(48_000.0), "48 KB");
+        assert_eq!(format_bytes(900.0), "900 B");
+        assert_eq!(format_eta(90.0), "1:30");
+        assert_eq!(format_eta(5.0), "0:05");
+        assert_eq!(format_eta(3723.0), "1:02:03");
+        let artifacts: Vec<crate::acquisition::ArtifactStatus> =
+            vec![from(rootfs(missing())), from(proton(missing()))];
+        assert_eq!(
+            confirm_detail(&artifacts.iter().collect::<Vec<_>>()),
+            "FEX rootfs and Proton-CachyOS, 1.5 GB"
+        );
+        assert_eq!(confirm_detail(&[&artifacts[0]]), "FEX rootfs, 1.2 GB");
+        let mut unknown = proton(missing());
+        unknown.as_object_mut().unwrap().remove("bytesTotal");
+        let unknown: crate::acquisition::ArtifactStatus = from(unknown);
+        assert_eq!(
+            confirm_detail(&[&artifacts[0], &unknown]),
+            "FEX rootfs and Proton-CachyOS, size unknown"
+        );
+    }
+
+    #[tokio::test]
+    async fn every_artifact_ready_steps_aside_and_the_launch_proceeds() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![rootfs(ready()), proton(ready())]),
+        );
+        let gate = gate(korrid);
+        let proceeded = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&proceeded);
+        gate.launch(
+            game(),
+            Arc::new(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }),
+            Arc::new(|| {}),
+        );
+        settle().await;
+        assert_eq!(proceeded.load(Ordering::SeqCst), 1);
+        assert!(gate.status().is_none());
+        assert_eq!(
+            script.lock().unwrap().calls[0].1,
+            json!({ "gameId": "steam:1" })
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_confirm_download_progress_unpacking_ready_then_the_start() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![rootfs(missing()), proton(missing())]),
+        );
+        let gate = gate(korrid);
+        let proceeded = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&proceeded);
+        gate.launch(
+            game(),
+            Arc::new(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }),
+            Arc::new(|| {}),
+        );
+        settle().await;
+        let confirm = gate.status();
+        let Some(SurfaceStatus::Confirm {
+            kicker,
+            detail,
+            game_id,
+            ..
+        }) = &confirm
+        else {
+            panic!("{confirm:?}")
+        };
+        assert_eq!(
+            (kicker.as_str(), detail.as_deref(), game_id.as_deref()),
+            (
+                "Needs a download",
+                Some("FEX rootfs and Proton-CachyOS, 1.5 GB"),
+                Some("game:steam:1")
+            )
+        );
+        let ten_percent = ok(vec![
+            rootfs(
+                json!({ "_tag": "Downloading", "file": 1, "fileCount": 11, "bytesDone": 116_000_000u64, "bytesTotal": 1_160_000_000u64, "bytesPerSecond": 6_400_000.0 }),
+            ),
+            proton(missing()),
+        ]);
+        push(&script, "app.acquisition.start", ten_percent.clone());
+        push(&script, "app.acquisition.status", ten_percent);
+        assert!(gate.act(&action_id(confirm, "Download")));
+        settle().await;
+        assert!(script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .any(|(tag, payload)| tag == "app.acquisition.start"
+                && *payload
+                    == json!({ "artifactIds": ["@korri:fex/rootfs", "@korri:proton/cachyos"] })));
+        assert_eq!(
+            serde_json::to_value(gate.status()).unwrap(),
+            json!({ "_tag": "Busy", "kicker": "Downloading FEX rootfs", "detail": "116 MB of 1.2 GB · 6.4 MB/s · 2:43 left",
+                "progress": { "done": 116_000_000.0, "total": 1_160_000_000.0 },
+                "actions": [{ "id": action_id(gate.status(), "Cancel"), "label": "Cancel", "enabled": true }],
+                "gameId": "game:steam:1" })
+        );
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![
+                rootfs(json!({ "_tag": "Unpacking" })),
+                proton(missing()),
+            ]),
+        );
+        settle().await;
+        assert_eq!(
+            serde_json::to_value(gate.status()).unwrap(),
+            json!({ "_tag": "Busy", "kicker": "Unpacking FEX rootfs", "progress": { "done": 0.0 }, "gameId": "game:steam:1" })
+        );
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![rootfs(ready()), proton(ready())]),
+        );
+        settle().await;
+        assert_eq!(proceeded.load(Ordering::SeqCst), 1);
+        assert!(gate.status().is_none());
+    }
+
+    #[tokio::test]
+    async fn cancel_on_confirm_sends_nothing_and_cancel_while_downloading_stops_only_the_live_download(
+    ) {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![rootfs(missing()), proton(missing())]),
+        );
+        let gate = gate(korrid);
+        let proceeded = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&proceeded);
+        let proceed: crate::surface::acquisition_gate::Step = Arc::new(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        });
+        gate.launch(game(), Arc::clone(&proceed), Arc::new(|| {}));
+        settle().await;
+        assert!(gate.act(&action_id(gate.status(), "Cancel")));
+        assert!(gate.status().is_none());
+        assert!(script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .all(|(tag, _)| tag == "app.acquisition.status"));
+        gate.launch(game(), proceed, Arc::new(|| {}));
+        settle().await;
+        let begun = ok(vec![
+            rootfs(
+                json!({ "_tag": "Downloading", "file": 1, "fileCount": 11, "bytesDone": 10, "bytesTotal": 1_160_000_000u64 }),
+            ),
+            proton(missing()),
+        ]);
+        push(&script, "app.acquisition.start", begun.clone());
+        push(&script, "app.acquisition.status", begun);
+        gate.act(&action_id(gate.status(), "Download"));
+        settle().await;
+        push(
+            &script,
+            "app.acquisition.cancel",
+            ok(vec![rootfs(missing())]),
+        );
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![rootfs(missing()), proton(missing())]),
+        );
+        assert!(gate.act(&action_id(gate.status(), "Cancel")));
+        settle().await;
+        let cancels: Vec<Value> = script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|(tag, _)| tag == "app.acquisition.cancel")
+            .map(|(_, payload)| payload.clone())
+            .collect();
+        assert_eq!(cancels, vec![json!({ "artifactId": "@korri:fex/rootfs" })]);
+        assert!(gate.status().is_none());
+        assert_eq!(proceeded.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn failed_shows_korrids_words_and_dismiss_closes_without_starting() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![rootfs(
+                json!({ "_tag": "Failed", "reason": { "code": "X", "message": "The connection stalled." } }),
+            )]),
+        );
+        let gate = gate(korrid);
+        gate.launch(game(), Arc::new(|| {}), Arc::new(|| {}));
+        settle().await;
+        // A Failed artifact without anything under way is a question again.
+        assert!(matches!(gate.status(), Some(SurfaceStatus::Confirm { .. })));
+        push(
+            &script,
+            "app.acquisition.start",
+            json!({ "_tag": "Err", "payload": { "code": "X", "message": "No space left." } }),
+        );
+        gate.act(&action_id(gate.status(), "Download"));
+        settle().await;
+        assert_eq!(
+            serde_json::to_value(gate.status()).unwrap(),
+            json!({ "_tag": "Problem", "kicker": "Couldn't start the download", "reason": "No space left.", "canRetry": true,
+                "gameId": "game:steam:1", "gameTitle": "Hollow Knight" })
+        );
+        assert!(gate.dismiss());
+        assert!(gate.status().is_none());
+    }
+}

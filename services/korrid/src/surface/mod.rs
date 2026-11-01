@@ -11,6 +11,7 @@
 //! preference store. A model is whole: the hub builds it from the
 //! controllers' facts each time one changes.
 
+pub mod acquisition_gate;
 pub mod catalog;
 pub mod downloads;
 pub mod korrid;
@@ -244,8 +245,11 @@ impl SurfaceHub {
     ) -> Option<Arc<CatalogGames>> {
         let games = games?;
         let mut cached = self.games.lock().expect("games poisoned");
-        if let Some((revision, list)) = cached.as_ref() {
-            if *revision == host_revision {
+        if let Some((revision, list)) = cached.as_mut() {
+            // Most publishes change no game: keep the list, and with it every
+            // surface's sorted query.
+            if *revision == host_revision || list.games() == games.as_slice() {
+                *revision = host_revision;
                 return Some(Arc::clone(list));
             }
         }
