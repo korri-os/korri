@@ -112,6 +112,36 @@ pub fn clock_label() -> String {
     }
 }
 
+/// Port of `surface-displays.ts` and SurfaceRoot's catalog restore: the
+/// window's placement for the package the shell shows.
+#[derive(Default)]
+struct Displays {
+    /// The scope of the package declared last; None before any.
+    scope: Option<korri_surface_treaty::SurfacePackageDisplays>,
+    /// Scope, overlay and launch of the last placement asked for.
+    placed: Option<(
+        korri_surface_treaty::SurfacePackageDisplays,
+        bool,
+        Option<String>,
+    )>,
+    facts: Option<Vec<korri_surface_treaty::SurfaceDisplay>>,
+    /// A game held the displays; restore the catalog's after it is gone.
+    restore: bool,
+}
+
+fn host_scope(
+    scope: korri_surface_treaty::SurfacePackageDisplays,
+) -> crate::host::display_placement::SurfaceDisplayScope {
+    match scope {
+        korri_surface_treaty::SurfacePackageDisplays::Main => {
+            crate::host::display_placement::SurfaceDisplayScope::Main
+        }
+        korri_surface_treaty::SurfacePackageDisplays::All => {
+            crate::host::display_placement::SurfaceDisplayScope::All
+        }
+    }
+}
+
 /// Which presentation the surface shows: the catalog, or the gameplay
 /// overlay of one exact launch (`main.tsx`'s switch).
 enum Presentation {
@@ -132,6 +162,7 @@ pub struct Root {
     pub downloads: Arc<GameDownloads>,
     pub acquisition: Arc<AcquisitionGate>,
     controllers: Arc<super::controllers::Controllers>,
+    displays: std::sync::Mutex<Displays>,
     onboarding_was_needed: std::sync::Mutex<Option<bool>>,
     clock: std::sync::Mutex<String>,
     last_local_ids: std::sync::Mutex<Option<Vec<String>>>,
@@ -234,11 +265,114 @@ impl Root {
             downloads,
             acquisition,
             controllers,
+            displays: std::sync::Mutex::new(Displays::default()),
             onboarding_was_needed: std::sync::Mutex::new(None),
             clock: std::sync::Mutex::new(clock_label()),
             last_local_ids: std::sync::Mutex::new(None),
             notify,
         })
+    }
+
+    /// The shell shows a package with this display scope.
+    pub fn show_package(self: &Arc<Self>, scope: korri_surface_treaty::SurfacePackageDisplays) {
+        {
+            let mut displays = self.displays.lock().expect("displays poisoned");
+            displays.scope = Some(scope);
+            displays.placed = None;
+            displays.facts = None;
+        }
+        self.place();
+        (self.notify)();
+    }
+
+    /// `model.displays`: published only for a package that draws on all.
+    pub fn display_facts(&self) -> Option<Vec<korri_surface_treaty::SurfaceDisplay>> {
+        let displays = self.displays.lock().expect("displays poisoned");
+        (displays.scope == Some(korri_surface_treaty::SurfacePackageDisplays::All))
+            .then(|| displays.facts.clone())
+            .flatten()
+    }
+
+    /// Place the window for the current package and presentation, once per
+    /// change of either, as the portal's effect did.
+    fn place(self: &Arc<Self>) {
+        let overlay_launch = self.overlay().map(|overlay| overlay.launch_id().to_owned());
+        let key = {
+            let mut displays = self.displays.lock().expect("displays poisoned");
+            let Some(scope) = displays.scope else { return };
+            let key = (scope, overlay_launch.is_some(), overlay_launch);
+            if displays.placed.as_ref() == Some(&key) {
+                return;
+            }
+            displays.placed = Some(key.clone());
+            displays.facts = None;
+            key
+        };
+        let this = Arc::clone(self);
+        tokio::spawn(async move {
+            let outcome = this
+                .korrid
+                .surface_displays(host_scope(key.0), key.1, key.2.clone())
+                .await;
+            if let crate::host::display_placement::SurfaceDisplaysOutcome::Ok(facts) = outcome {
+                let mut displays = this.displays.lock().expect("displays poisoned");
+                if displays.placed.as_ref() != Some(&key) {
+                    return;
+                }
+                displays.facts = Some(
+                    facts
+                        .into_iter()
+                        .map(|display| korri_surface_treaty::SurfaceDisplay {
+                            id: display.id,
+                            main: display.main,
+                            x: f64::from(display.x),
+                            y: f64::from(display.y),
+                            width: f64::from(display.width),
+                            height: f64::from(display.height),
+                            touch: display.touch,
+                        })
+                        .collect(),
+                );
+                drop(displays);
+                (this.notify)();
+            }
+        });
+    }
+
+    /// The catalog stays mounted while a game owns the displays. Restore its
+    /// placement only after authoritative absence, never on a failed read.
+    fn restore_catalog_displays(self: &Arc<Self>, state: &LaunchablesState) {
+        let game_using = match state {
+            LaunchablesState::Loading => false,
+            LaunchablesState::Loaded(loaded) => {
+                matches!(
+                    loaded.phase,
+                    Phase::Preparing { .. }
+                        | Phase::Starting { .. }
+                        | Phase::Launching { .. }
+                        | Phase::Stopping { .. }
+                ) || loaded.content.entries.iter().any(Entry::is_now_playing)
+            }
+        };
+        let scope = {
+            let mut displays = self.displays.lock().expect("displays poisoned");
+            if game_using {
+                displays.restore = true;
+                return;
+            }
+            let healthy = matches!(state, LaunchablesState::Loaded(Loaded { phase: Phase::Ready, content }) if content.unavailable_session_status.is_none());
+            if !(displays.restore && healthy) {
+                return;
+            }
+            displays.restore = false;
+            displays.scope.unwrap_or_default()
+        };
+        let korrid = self.korrid.clone();
+        tokio::spawn(async move {
+            korrid
+                .surface_displays(host_scope(scope), false, None)
+                .await;
+        });
     }
 
     /// The overlay of the exact launch, while it shows.
@@ -378,6 +512,8 @@ impl Root {
     /// Reactions the portal ran as effects of a new launchables state.
     pub fn react(self: &Arc<Self>) {
         let state = self.launchables.state();
+        self.place();
+        self.restore_catalog_displays(&state);
         let onboarding = self.network.snapshot().onboarding_needed;
         self.launchables.set_onboarding_needed(onboarding);
         // Setup run again: `heard` counts input since setup began, so pads

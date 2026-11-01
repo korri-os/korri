@@ -3711,7 +3711,13 @@ async fn dispatch(
                 .surfaces
                 .as_ref()
                 .ok_or_else(surface::surface_unavailable)
-                .and_then(|hub| hub.declare(&request.surface_id, request.preferences)),
+                .and_then(|hub| {
+                    hub.declare(
+                        &request.surface_id,
+                        request.preferences,
+                        request.displays.unwrap_or_default(),
+                    )
+                }),
         )),
         RpcRequest::SurfacePreferences(request) => RpcResponse::SurfacePreferences(
             match state

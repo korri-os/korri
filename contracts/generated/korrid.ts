@@ -1905,6 +1905,8 @@ export interface SurfaceAccepted {
 export interface SurfaceDeclareRequest {
 	surfaceId: string;
 	preferences: import("./surface").SurfacePreferenceDeclarations;
+	/** Absent: `main`, as in the portal's surface registry. */
+	displays?: import("./surface").SurfacePackageDisplays;
 }
 
 export interface SurfaceDisplay {

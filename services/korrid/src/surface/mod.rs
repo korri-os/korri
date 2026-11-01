@@ -114,6 +114,9 @@ pub enum SurfacePreferencesOutcome {
 pub struct SurfaceDeclareRequest {
     pub surface_id: String,
     pub preferences: SurfacePreferenceDeclarations,
+    /// Absent: `main`, as in the portal's surface registry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub displays: Option<korri_surface_treaty::SurfacePackageDisplays>,
 }
 
 /// The second frame on the native-input WebSocket that selects a model watch
@@ -292,12 +295,15 @@ impl SurfaceHub {
         check_surface_id(surface_id)?;
         let root = self.root();
         if let Some(overlay) = root.overlay() {
-            return Ok(overlay.model());
+            let mut model = overlay.model();
+            model.displays = root.display_facts();
+            return Ok(model);
         }
         let host_revision = self.host_revision.load(Ordering::SeqCst);
         let facts = root.facts();
         let games = self.games(host_revision, facts.games);
         let mut model = facts.base;
+        model.displays = root.display_facts();
         let mut sessions = self.sessions.lock().expect("sessions poisoned");
         let session = sessions.entry(surface_id.to_owned()).or_default();
         model.catalog = match games {
@@ -359,13 +365,18 @@ impl SurfaceHub {
         Ok(())
     }
 
+    /// The shell loaded this package: its preferences and its displays. The
+    /// last package declared is the one the window shows.
     pub fn declare(
-        &self,
+        self: &Arc<Self>,
         surface_id: &str,
         preferences: SurfacePreferenceDeclarations,
+        displays: korri_surface_treaty::SurfacePackageDisplays,
     ) -> Result<(), RpcFailure> {
         check_surface_id(surface_id)?;
-        self.preferences.declare(surface_id, preferences)
+        self.preferences.declare(surface_id, preferences)?;
+        self.root().show_package(displays);
+        Ok(())
     }
 
     pub fn preferences(&self, surface_id: &str) -> Result<SurfacePreferenceValues, RpcFailure> {

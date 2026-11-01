@@ -590,4 +590,24 @@ impl Korrid {
             }),
         }
     }
+
+    pub async fn surface_displays(
+        &self,
+        displays: crate::host::display_placement::SurfaceDisplayScope,
+        overlay: bool,
+        launch_id: Option<String>,
+    ) -> crate::host::display_placement::SurfaceDisplaysOutcome {
+        use crate::host::display_placement::{SurfaceDisplaysOutcome, SurfaceDisplaysRequest};
+        call!(
+            self,
+            Mapping::Unreachable,
+            SurfaceDisplays,
+            SurfaceDisplaysRequest {
+                displays,
+                overlay,
+                launch_id
+            },
+            SurfaceDisplaysOutcome
+        )
+    }
 }
