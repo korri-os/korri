@@ -55,3 +55,10 @@ LaunchLimitValueWire = "number | string"
 PluginLaunchNetplayWire = '{ role: "host"; passwordConfig: string } | { role: "client"; address: string; port: number; player: number; passwordConfig: string }'
 InviteNetplayWire = '{ _tag: "Ready" } | { _tag: "NeedsCopy"; bytes: number } | { _tag: "NeedsPlugin"; pluginId: string; title: string; bytes?: number } | { _tag: "Unavailable"; reason: string }'
 NetplayPhaseWire = '{ _tag: "Copying"; done: number; total: number } | { _tag: "Connecting" } | { _tag: "Playing" } | { _tag: "HolderLeft" } | { _tag: "Reconnecting" }'
+
+# The surface treaty is its own crate with its own generated file
+# (contracts/generated/surface.ts). korrid's surface RPC names its types.
+SurfaceModel = 'import("./surface").SurfaceModel'
+SurfaceRequest = 'import("./surface").SurfaceRequest'
+SurfacePreferenceDeclarations = 'import("./surface").SurfacePreferenceDeclarations'
+SurfacePreferenceValues = 'import("./surface").SurfacePreferenceValues'

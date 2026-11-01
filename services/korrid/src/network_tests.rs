@@ -210,6 +210,7 @@ async fn local_sessions_wifi_scan_reaches_network_manager_through_host_http_rout
             "http://portal.test",
             crate::PortalPermission::LocalSessions,
         )),
+        None,
     );
     let app = crate::peer_rpc::PeerRpcServer::new(lan, &private)
         .unwrap()

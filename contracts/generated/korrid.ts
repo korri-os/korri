@@ -1898,6 +1898,15 @@ export interface SteamGridDbCredentialSetRequest {
 	token: string;
 }
 
+/** The empty Ok payload of a request korrid accepted. */
+export interface SurfaceAccepted {
+}
+
+export interface SurfaceDeclareRequest {
+	surfaceId: string;
+	preferences: import("./surface").SurfacePreferenceDeclarations;
+}
+
 export interface SurfaceDisplay {
 	id: string;
 	main: boolean;
@@ -1917,6 +1926,19 @@ export interface SurfaceDisplaysRequest {
 	displays: SurfaceDisplayScope;
 	overlay: boolean;
 	launchId?: string;
+}
+
+export interface SurfaceModelRequest {
+	surfaceId: string;
+}
+
+export interface SurfacePreferencesRequest {
+	surfaceId: string;
+}
+
+export interface SurfaceRequestRequest {
+	surfaceId: string;
+	request: import("./surface").SurfaceRequest;
 }
 
 export interface WifiConnectHiddenRequest {
@@ -2089,6 +2111,10 @@ export enum PluginRepositoryRemoveResult {
 export type RpcRequest =
 	| { _tag: "app.displays.wake", payload: DisplayWakeRequest }
 	| { _tag: "app.surface.displays", payload: SurfaceDisplaysRequest }
+	| { _tag: "app.surface.model", payload: SurfaceModelRequest }
+	| { _tag: "app.surface.request", payload: SurfaceRequestRequest }
+	| { _tag: "app.surface.preferences", payload: SurfacePreferencesRequest }
+	| { _tag: "app.surface.declare", payload: SurfaceDeclareRequest }
 	| { _tag: "app.launch-settings.snapshot", payload: LaunchSettingsSnapshotRequest }
 	| { _tag: "app.launch-settings.set", payload: LaunchSetRequest }
 	| { _tag: "app.launch-settings.profile.save", payload: LaunchProfileSaveRequest }
@@ -2182,6 +2208,10 @@ export type RpcRequest =
 export type RpcResponse =
 	| { _tag: "app.displays.wake", outcome: DisplayWakeOutcome }
 	| { _tag: "app.surface.displays", outcome: SurfaceDisplaysOutcome }
+	| { _tag: "app.surface.model", outcome: SurfaceModelOutcome }
+	| { _tag: "app.surface.request", outcome: SurfaceAcceptedOutcome }
+	| { _tag: "app.surface.preferences", outcome: SurfacePreferencesOutcome }
+	| { _tag: "app.surface.declare", outcome: SurfaceAcceptedOutcome }
 	| { _tag: "app.launch-settings.snapshot", outcome: LaunchSettingsSnapshotOutcome }
 	| { _tag: "app.launch-settings.set", outcome: LaunchSettingsWriteOutcome }
 	| { _tag: "app.launch-settings.profile.save", outcome: LaunchSettingsWriteOutcome }
@@ -2340,8 +2370,20 @@ export type SourceStatusOutcome =
 	| { _tag: "Ok", payload: SourceStatus }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type SurfaceAcceptedOutcome =
+	| { _tag: "Ok", payload: SurfaceAccepted }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type SurfaceDisplaysOutcome =
 	| { _tag: "Ok", payload: SurfaceDisplay[] }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SurfaceModelOutcome =
+	| { _tag: "Ok", payload: import("./surface").SurfaceModel }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SurfacePreferencesOutcome =
+	| { _tag: "Ok", payload: import("./surface").SurfacePreferenceValues }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type WifiAttempt =

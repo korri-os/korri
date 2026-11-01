@@ -263,7 +263,11 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::SelectedGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::DisplayWake(_) => PeerPolicy::LocalOnly,
-        RpcRequest::SurfaceDisplays(_) => PeerPolicy::LocalPortalOnly,
+        RpcRequest::SurfaceDisplays(_)
+        | RpcRequest::SurfaceModel(_)
+        | RpcRequest::SurfaceRequest(_)
+        | RpcRequest::SurfacePreferences(_)
+        | RpcRequest::SurfaceDeclare(_) => PeerPolicy::LocalPortalOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LibraryFoldersSnapshot(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LibraryFolderAdd(_) | RpcRequest::LibraryFolderChange(_) => {

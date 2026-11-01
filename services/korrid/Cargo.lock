@@ -2426,6 +2426,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "korri-surface-treaty"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "typeshare",
+]
+
+[[package]]
 name = "korrid"
 version = "0.0.0"
 dependencies = [
@@ -2446,6 +2454,7 @@ dependencies = [
  "jni 0.22.4",
  "korri-input-contract",
  "korri-inputd",
+ "korri-surface-treaty",
  "libc",
  "log",
  "netlink-packet-core 0.9.0",

@@ -264,7 +264,7 @@ async fn peer_list_encrypted_owner_only_and_local_unix_control() {
         f.root.path(),
         f.resources.clone(),
         None,
-        None,
+        None, None,
     );
     let (status, expected) = list_local(local, None).await;
     assert_eq!(status, StatusCode::OK);
@@ -653,7 +653,7 @@ async fn cli_forwarding_uses_signed_native_transport_and_revision_safe_owner_set
         target_root,
         target_resources,
         None,
-        None,
+        None, None,
     )
     .0;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -668,7 +668,7 @@ async fn cli_forwarding_uses_signed_native_transport_and_revision_safe_owner_set
         f.root.path(),
         f.resources.clone(),
         None,
-        None,
+        None, None,
     )
     .2;
     let key = f.peers[0].public_key().unwrap();

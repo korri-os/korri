@@ -30,6 +30,13 @@ class TreatyDriftTest(unittest.TestCase):
             root = Path(directory)
             (root / "services/korrid/src").mkdir(parents=True)
             (root / "contracts/generated").mkdir(parents=True)
+            (root / "contracts/surface/src").mkdir(parents=True)
+            (root / "contracts/surface/src/lib.rs").write_text(
+                "#[typeshare]\npub struct CheckSurface { pub count: u32 }\n"
+            )
+            (root / "contracts/surface/typeshare.toml").write_text("")
+            (root / "services/korrid/typeshare.toml").write_text("")
+            (root / "contracts/generated/surface.ts").write_text("")
             (root / "services/korrid/src/lib.rs").write_text(
                 "#[typeshare]\npub struct CheckTreaty { pub count: u32 }\n"
             )
@@ -48,6 +55,9 @@ class TreatyDriftTest(unittest.TestCase):
             )
             generated = output.read_text()
             self.assertIn("CheckTreaty", generated)
+            self.assertIn(
+                "CheckSurface", (root / "contracts/generated/surface.ts").read_text()
+            )
             subprocess.run(command, env=env, check=True, capture_output=True)
             self.assertEqual(output.read_text(), generated)
             output.unlink()

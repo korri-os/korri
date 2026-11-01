@@ -48,8 +48,11 @@ surfaces/          presentation surfaces. One per directory, each self-contained
 packages/          shared, product-agnostic packages consumable by surfaces
 contracts/         treaties between deployables; imports nothing outside
                    contracts/; when sides disagree, the contract file wins.
-                   contracts/surface/ is hand-written; contracts/generated/ is
-                   Typeshare output from Rust (read-only)
+                   contracts/surface/ is the hand-written Rust crate
+                   korri-surface-treaty; contracts/generated/ is Typeshare
+                   output from Rust (read-only), surface.ts from that crate.
+                   korri-surface.ts in contracts/surface/ is the web portal's
+                   treaty and goes with the portal's surfaces
 services/korrid/   Rust brain, one per device. Ships as a standalone binary
                    with a configured bind, serving capability-bound RPC on
                    localhost
@@ -193,9 +196,12 @@ repositories, and the portal ships no outside repository address.
 - Services are Rust. Wire types live in Rust and are exported through
   Typeshare into `contracts/generated/` — those files are read-only;
   regenerate them via `nix run .#korrid-check`, never edit by hand.
-- A surface is a deployable, not a theme. It receives one `SurfaceModel` and one
-  `SurfaceHost` through `contracts/surface/` and may import nothing else from
-  Korri — no korrid client, no generated Rust types, no host state.
+- A surface is a deployable, not a theme. It receives one `SurfaceModel` and
+  returns `SurfaceRequest`s, typed by `contracts/generated/surface.ts`
+  (generated from the `contracts/surface/` crate), and may import nothing else
+  from Korri — no korrid client, no korrid RPC types, no host state. korrid
+  builds the model and performs the requests (`services/korrid/src/surface/`);
+  the shell only carries them (`docs/briefs/2026-10-31-native-surfaces-contract.md`).
   The host owns facts, effects, and input delivery; the surface owns every
   pixel, including how it presents data Korri does not have. Keep the treaty
   small enough that a surface could ship from another repository unchanged.

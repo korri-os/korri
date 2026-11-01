@@ -20,6 +20,13 @@ impl PortalPermission {
             | RpcRequest::SaveRecords(_)
             | RpcRequest::SaveInUse(_)
             | RpcRequest::SaveObject(_) => false,
+            // The surface host checks each effect it performs against this
+            // same permission (`surface_hub_for`); the surface's own reads,
+            // window, focus and preferences need none beyond the portal's.
+            RpcRequest::SurfaceModel(_)
+            | RpcRequest::SurfaceRequest(_)
+            | RpcRequest::SurfacePreferences(_)
+            | RpcRequest::SurfaceDeclare(_) => true,
             RpcRequest::InvitesList(_) | RpcRequest::SavesStatus(_)
             | RpcRequest::SavesHistory(_)
             | RpcRequest::NetworkStatus(_)
