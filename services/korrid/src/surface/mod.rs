@@ -16,6 +16,8 @@ pub mod catalog;
 pub mod controllers;
 pub mod downloads;
 pub mod korrid;
+pub mod launch_model;
+pub mod launch_settings;
 pub mod launchables;
 pub mod model;
 pub mod network_onboarding;
