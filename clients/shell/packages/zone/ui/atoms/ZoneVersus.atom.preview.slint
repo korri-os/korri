@@ -1,0 +1,10 @@
+// ZoneVersus's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneVersus } from "./ZoneVersus.slint";
+
+export component Default inherits ZonePreview {
+    ZoneVersus { x: (parent.width - 60 * Tokens.a) / 2; y: (parent.height - 28 * Tokens.a) / 2; width: 60 * Tokens.a; height: 28 * Tokens.a; }
+}

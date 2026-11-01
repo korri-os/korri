@@ -50,4 +50,10 @@ paths = [
   # Acceptance records cite Korri and upstream commits by hash next to the word
   # they fixed, which the generic rule reads as a key.
   '''docs/acceptance/''',
+  # Zone's logic.js is the minified bundle of logic.ts, which is scanned: its
+  # one-letter names beside words like `secret:` read as keys to the generic rule.
+  '''clients/shell/packages/zone/logic\.js$''',
+  # Zone's preview scenarios carry its fixtures' made-up backup secret
+  # (a deterministic bech32 string from fixture-save-data.ts, never a real key).
+  '''clients/shell/packages/zone/preview/scenarios/''',
 ]

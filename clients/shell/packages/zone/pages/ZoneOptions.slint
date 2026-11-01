@@ -1,0 +1,46 @@
+// ZoneOptions: OPTIONS: Korri's settings in their groups, SYSTEM (Korri's device actions, Zone's own LOOK, the BUILD), WI-FI (the connection, SCAN, the networks strongest first, HIDDEN NETWORK), on the sky band; the keyboard and Korri's confirmation over it.
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZoneSkyBand } from "../ui/organisms/ZoneSkyBand.slint";
+import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry.slint";
+import { ZoneShell } from "../ui/templates/ZoneShell.slint";
+import { Tab, Hints, Foot, Head, Row, WellInfo, Keyboard } from "../ui/types.slint";
+
+export component ZoneOptions {
+    in property <[Tab]> tabs;
+    in property <Hints> hints;
+    in property <Foot> foot;
+    in property <Head> head;
+    in property <[Row]> rows;
+    in property <WellInfo> well;
+    in property <Keyboard> keyboard;
+    in property <length> bottom-room: 0;
+    shell := ZoneShell {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        tabs: root.tabs;
+
+        hints: root.hints;
+        foot: root.foot;
+        ZoneSkyBand {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: shell.body-h;
+            head: root.head;
+            rows: root.rows;
+            well: root.well;
+            label-share: 0.55;
+            bottom-room: root.bottom-room;
+        }
+    }
+    if root.keyboard.shown: ZoneOptionsEntry {
+        x: 0;
+        y: Tokens.top-h;
+        width: root.width;
+        height: root.height - Tokens.top-h;
+        board: root.keyboard;
+    }
+}

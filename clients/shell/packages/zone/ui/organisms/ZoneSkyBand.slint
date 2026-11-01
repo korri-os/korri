@@ -1,0 +1,101 @@
+// ZoneSkyBand
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneCoverWell } from "../atoms/ZoneCoverWell.slint";
+import { ZoneTagRow } from "../molecules/ZoneTagRow.slint";
+import { ZoneRowList } from "./ZoneRowList.slint";
+import { Row, Head, WellInfo } from "../types.slint";
+
+// The sky band (OPTIONS' band): the screen's full width with a 3-art-px
+// black lip over and under it, 4 art px of ground from each strip, the
+// black wedge in its bottom-left corner standing still under the rows.
+export component ZoneSkyBand {
+    property <length> a: Tokens.a;
+    in property <Head> head;
+    in property <[Row]> rows;
+    in property <WellInfo> well;
+    in property <float> nudge: Tokens.nudge-button;
+    in property <float> label-share: 0.55;
+    in property <length> bottom-room: 0;
+    property <length> c1: 10 * a;
+    property <length> head-h: head.shown ? 26 * a : 0;
+    property <length> band-y: head-h + 4 * a;
+    property <length> band-h: Math.max(0, root.height - band-y - 4 * a - bottom-room);
+    property <length> leg: Math.min(0.78 * band-h, root.width / 4);
+    if root.head.shown: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        cache-rendering-hint: true;
+        property <length> title-w: Math.min(title.natural, root.width - tags.natural - 60 * root.a);
+        ZonePanel {
+            x: (root.width - self.width - tags.natural - 6 * root.a) / 2;
+            y: 2 * root.a;
+            width: parent.title-w + 2 * 22 * root.a;
+            height: 22 * root.a;
+            run: 21 * root.a;
+            ink: Tokens.black;
+        }
+        title := ZoneCaps {
+            x: (root.width - parent.title-w - 44 * root.a - tags.natural - 6 * root.a) / 2 + 22 * root.a;
+            y: 3 * root.a;
+            box: parent.title-w;
+            elide: true;
+            text: root.head.title;
+            cap: 2 * root.c1;
+            face: "korri";
+        }
+        tags := ZoneTagRow {
+            fill: false;
+            x: title.x + parent.title-w + 22 * root.a + 6 * root.a;
+            y: 6 * root.a;
+            width: self.natural;
+            tags: root.head.tags;
+        }
+    }
+    Rectangle {
+        x: 0;
+        width: parent.width;
+        y: root.band-y;
+        height: root.band-h;
+        background: Tokens.black;
+        Rectangle {
+            x: 0;
+            width: parent.width;
+            y: 3 * root.a;
+            height: parent.height - 6 * root.a;
+            background: Tokens.sky;
+            clip: true;
+            ZoneShape {
+                x: 0;
+                y: parent.height - root.leg;
+                width: root.leg;
+                height: root.leg;
+                ink: Tokens.black;
+                commands: "M 0 0 L " + Tokens.pt(root.leg, root.leg) + " L 0 " + (root.leg / (1 * Tokens.unit)) + " Z";
+            }
+            property <length> well-w: root.well.shown ? 48 * root.a : 0;
+            if root.well.shown: ZoneCoverWell {
+                x: 8 * root.a;
+                y: 6 * root.a;
+                width: parent.well-w;
+                height: parent.well-w * 4 / 3;
+                has-art: false;
+                stripes: root.well.stripes;
+                initials: root.well.initials;
+            }
+            ZoneRowList {
+                x: 8 * root.a + (root.well.shown ? parent.well-w + 8 * root.a : 0);
+                y: 4 * root.a;
+                width: parent.width - self.x - 8 * root.a;
+                height: parent.height - 8 * root.a;
+                rows: root.rows;
+                label-share: root.label-share;
+            }
+        }
+    }
+}

@@ -461,8 +461,8 @@ fn zone_pages_a_10000_game_catalog_and_keeps_its_focus() {
     assert!(rig.int("first-index") > 0.0, "the window moved");
     let focus = rig.int("first-index") + rig.int("focused-card");
     assert_eq!(
-        focus, 61.0,
-        "60 presses from the second game reach the 62nd"
+        focus, 60.0,
+        "60 presses from the first game (Zone's start) reach the 61st"
     );
     let moves = rig.requests("MoveCatalog");
     assert!(
@@ -474,6 +474,6 @@ fn zone_pages_a_10000_game_catalog_and_keeps_its_focus() {
     let focus_reports = rig.requests("FocusGame");
     assert_eq!(
         focus_reports.last().unwrap()["gameId"],
-        json!(catalog::games(&verify::fixture().1, 10_000)[61]["id"])
+        json!(catalog::games(&verify::fixture().1, 10_000)[60]["id"])
     );
 }

@@ -1,0 +1,16 @@
+// ZoneTitleCard's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneTitleCard } from "./ZoneTitleCard.slint";
+
+export component Default inherits ZonePreview {
+    ground: "titlecard";
+    ZoneTitleCard { x: 0; y: 0; width: parent.width; height: parent.height; title: "Hollow Knight"; system: "Switch"; act: 8; }
+}
+
+export component LongTitle inherits ZonePreview {
+    ground: "titlecard";
+    ZoneTitleCard { x: 0; y: 0; width: parent.width; height: parent.height; title: "The Legend of Zelda: Oracle of Seasons"; system: "GBC"; act: 1; }
+}

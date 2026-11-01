@@ -1,0 +1,10 @@
+// ZoneShape's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneShape } from "./ZoneShape.slint";
+
+export component Default inherits ZonePreview {
+    ZoneShape { x: (parent.width - 120 * Tokens.a) / 2; y: (parent.height - 40 * Tokens.a) / 2; width: 120 * Tokens.a; height: 40 * Tokens.a; ink: Tokens.black; commands: "M 0 0 L " + Tokens.pt(120 * Tokens.a, 0) + " L " + Tokens.pt(100 * Tokens.a, 40 * Tokens.a) + " L 0 " + (40 * Tokens.a / Tokens.unit) + " Z"; }
+}

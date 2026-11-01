@@ -1,0 +1,44 @@
+// ZoneWarningLines: Korri's words on a black panel flush at its start and
+// leaning at its end, in the fact face as written (Zone's own words in
+// caps); a warning wears the 2-art-px danger bar at its start. A row's note
+// stands under it at the row's width; Korri's message takes the band's.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneWords } from "../atoms/ZoneWords.slint";
+
+export component ZoneWarningLines {
+    in property <string> line;
+    in property <bool> fact: true;
+    in property <bool> warning: false;
+    in property <bool> full: true;
+    property <length> a: Tokens.a;
+    property <length> run: 13 * a;
+    property <length> box: (full ? root.width : root.width * 0.8) - 2 * run - 8 * a;
+    property <length> panel-h: words.drawn-h + 6 * a;
+    height: panel-h + 4 * a;
+    ZonePanel {
+        x: 0;
+        y: 0;
+        width: Math.min(root.width, words.natural + 2 * root.run + 10 * root.a);
+        height: root.panel-h;
+        run: Math.min(root.run, root.panel-h - root.a);
+        left-straight: true;
+        ink: Tokens.black;
+    }
+    if root.warning: Rectangle {
+        x: 0;
+        y: 0;
+        width: 2 * root.a;
+        height: root.panel-h;
+        background: Tokens.danger;
+    }
+    words := ZoneWords {
+        x: 5 * root.a;
+        y: 3 * root.a;
+        box: Math.max(Tokens.unit, root.box);
+        text: root.line;
+        cap: Tokens.c1;
+        face: root.fact ? "fact" : "caps";
+    }
+}

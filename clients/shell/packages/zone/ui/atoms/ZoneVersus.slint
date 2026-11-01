@@ -1,0 +1,22 @@
+// ZoneVersus: COMPETITION's VS between exactly two heard seats.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "./ZonePanel.slint";
+import { ZoneCaps } from "./ZoneCaps.slint";
+
+export component ZoneVersus {
+    ZonePanel {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        run: root.height / 2;
+        ink: Tokens.black;
+    }
+    ZoneCaps {
+        x: (root.width - self.natural) / 2;
+        y: (root.height - Tokens.c2) / 2;
+        text: "VS";
+        cap: Tokens.c2;
+    }
+}

@@ -1,0 +1,16 @@
+// ZoneSaveCard's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneSaveCard } from "./ZoneSaveCard.slint";
+
+export component New inherits ZonePreview {
+    ground: "savedata";
+    ZoneSaveCard { x: (parent.width - 93 * Tokens.a) / 2; y: (parent.height - 133 * Tokens.a) / 2; width: 93 * Tokens.a; height: 133 * Tokens.a; focused: true; card: { header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open" }; }
+}
+
+export component Retired inherits ZonePreview {
+    ground: "savedata";
+    ZoneSaveCard { x: (parent.width - 93 * Tokens.a) / 2; y: (parent.height - 133 * Tokens.a) / 2; width: 93 * Tokens.a; height: 133 * Tokens.a; card: { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }; }
+}

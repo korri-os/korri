@@ -1,0 +1,35 @@
+// ZoneStepStrip: first boot's steps: four diamond pips (5 art px inside a
+// one-art-px black outline) hung under the banner; the steps done and the
+// step shown lit yellow. The banner itself is the tab strip's.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+
+export component ZoneStepStrip {
+    in property <int> pips: 4;
+    in property <int> pip;
+    property <length> a: Tokens.a;
+    height: 7 * a;
+    for i in root.pips: Rectangle {
+        x: root.width / 2 + (i - root.pips / 2) * 9 * root.a + root.a;
+        y: 0;
+        width: 7 * root.a;
+        height: 7 * root.a;
+        ZoneShape {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            ink: Tokens.black;
+            commands: "M " + Tokens.pt(self.width / 2, 0) + " L " + Tokens.pt(self.width, self.height / 2) + " L " + Tokens.pt(self.width / 2, self.height) + " L " + Tokens.pt(0, self.height / 2) + " Z";
+        }
+        ZoneShape {
+            x: root.a;
+            y: root.a;
+            width: 5 * root.a;
+            height: 5 * root.a;
+            ink: i <= root.pip ? Tokens.yellow : Tokens.ground-fill;
+            commands: "M " + Tokens.pt(self.width / 2, 0) + " L " + Tokens.pt(self.width, self.height / 2) + " L " + Tokens.pt(self.width / 2, self.height) + " L " + Tokens.pt(0, self.height / 2) + " Z";
+        }
+    }
+}

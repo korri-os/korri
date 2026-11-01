@@ -1,0 +1,44 @@
+// ZoneTag: one tag, its colour by kind (system blue, HERE yellow, a device
+// red, CONTINUE white, DOWNLOAD and OPEN orange, SAVED mint); the light ones
+// take black ink, the rest white ink with its ring. In a ZoneTagRow its
+// neighbours' slants cut its ends (`cut-start`, `cut-end`); alone, both lean.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "./ZoneShape.slint";
+import { ZoneCaps } from "./ZoneCaps.slint";
+import { Tag } from "../types.slint";
+
+export component ZoneTag inherits Rectangle {
+    in property <Tag> tag;
+    in property <length> cap: Tokens.c1;
+    in property <length> slant: 0.55 * cap;
+    in property <bool> cut-start: true;
+    in property <bool> cut-end: true;
+    // The room either side of the words, and their box.
+    in property <length> pad-start: slant + 2 * Tokens.a;
+    in property <length> pad-end: slant + 2 * Tokens.a;
+    out property <length> natural: words.natural;
+    property <color> bg: tag.kind == "here" ? Tokens.yellow : tag.kind == "remote" ? Tokens.red : tag.kind == "continue" ? Tokens.white
+        : tag.kind == "download" || tag.kind == "open" ? Tokens.orange : tag.kind == "saved" ? Tokens.mint : Tokens.blue;
+    property <bool> dark: tag.kind == "here" || tag.kind == "download" || tag.kind == "open" || tag.kind == "continue" || tag.kind == "saved";
+    width: pad-start + words.natural + pad-end;
+    height: 1.55 * cap;
+    clip: true;
+    ZoneShape {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        ink: root.bg;
+        commands: "M " + Tokens.pt(root.cut-start ? root.slant : 0, 0) + " L " + Tokens.pt(root.width, 0) + " L "
+            + Tokens.pt(root.width - (root.cut-end ? root.slant : 0), root.height) + " L " + Tokens.pt(0, root.height) + " Z";
+    }
+    words := ZoneCaps {
+        x: root.pad-start + (root.width - root.pad-start - root.pad-end - self.natural) / 2;
+        y: (root.height - root.cap) / 2;
+        text: root.tag.label;
+        cap: root.cap;
+        ink: root.dark ? "ink" : "white";
+        face: root.tag.korri ? "korri" : "caps";
+    }
+}

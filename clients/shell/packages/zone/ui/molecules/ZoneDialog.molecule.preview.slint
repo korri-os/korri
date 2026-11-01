@@ -1,0 +1,14 @@
+// ZoneDialog's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneDialog } from "./ZoneDialog.slint";
+
+export component Question inherits ZonePreview {
+    ZoneDialog { x: 0; y: 0; width: parent.width; height: parent.height; dialog: { shown: true, headline: "Delete save", lines: ["The save on this device is removed. Saves on zao stay."], title: "Spelunky", buttons: [{ label: "No", focused: true }, { label: "Yes" }] }; }
+}
+
+export component OneButton inherits ZonePreview {
+    ZoneDialog { x: 0; y: 0; width: parent.width; height: parent.height; dialog: { shown: true, headline: "Games", lines: ["The library could not be read. The disk did not answer."], buttons: [{ label: "Reload", focused: true }] }; }
+}

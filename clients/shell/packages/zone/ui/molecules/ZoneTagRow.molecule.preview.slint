@@ -1,0 +1,14 @@
+// ZoneTagRow's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneTagRow } from "./ZoneTagRow.slint";
+
+export component Card inherits ZonePreview {
+    ZoneTagRow { x: (parent.width - 96 * Tokens.a) / 2; y: (parent.height - 16 * Tokens.a) / 2; width: 96 * Tokens.a; tags: [{ label: "Spelunky", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "zao", kind: "remote", korri: true }, { label: "Continue", kind: "continue" }]; }
+}
+
+export component Natural inherits ZonePreview {
+    ZoneTagRow { x: (parent.width - self.natural) / 2; y: (parent.height - 16 * Tokens.a) / 2; width: self.natural; fill: false; tags: [{ label: "Saved", kind: "here" }, { label: "System gba", kind: "system", korri: true }]; }
+}

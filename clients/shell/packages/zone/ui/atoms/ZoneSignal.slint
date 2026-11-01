@@ -1,0 +1,48 @@
+// ZoneSignal: the Wi-Fi badge: the SSID in its own case (cut with "…"
+// when the foot is short), the bars, the strength.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "./ZonePanel.slint";
+import { ZoneCaps } from "./ZoneCaps.slint";
+import { ZoneBars } from "./ZoneBars.slint";
+import { Signal } from "../types.slint";
+
+export component ZoneSignal {
+    in property <Signal> signal;
+    in property <length> pad: 5 * Tokens.a;
+    property <length> a: Tokens.a;
+    property <length> run: root.height - a;
+    property <length> side: run + pad;
+    out property <length> fixed: 2 * side + 5 * a + 11 * a + 5 * a + strength.natural;
+    out property <length> natural: fixed + ssid.natural;
+    property <length> name-w: Math.max(0, root.width - fixed);
+    ZonePanel {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        run: root.run;
+        ink: Tokens.black;
+    }
+    ssid := ZoneCaps {
+        x: root.side;
+        y: (root.height - Tokens.c1) / 2;
+        box: Math.max(Tokens.unit, root.name-w);
+        elide: root.name-w < self.natural;
+        text: root.signal.name;
+        cap: Tokens.c1;
+        face: root.signal.korri ? "fact" : "caps";
+    }
+    ZoneBars {
+        x: root.side + root.name-w + 5 * root.a;
+        y: (root.height - 8 * root.a) / 2;
+        lit: root.signal.bars;
+    }
+    strength := ZoneCaps {
+        x: root.side + root.name-w + 21 * root.a;
+        y: (root.height - Tokens.c1) / 2;
+        text: root.signal.strength;
+        cap: Tokens.c1;
+        face: "fact";
+    }
+}

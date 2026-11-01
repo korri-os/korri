@@ -1,0 +1,33 @@
+// The preview frame: a window that feeds the Tokens global its size, look
+// and ground, as main.slint does for the shell, so a component's preview
+// states (`<Name>.<layer>.preview.slint`) draw it alone at any size. The
+// preview renderer (clients/shell/tests/package_previews.rs) sets the size.
+
+import { Tokens } from "tokens.slint";
+
+export component ZonePreview inherits Window {
+    in property <string> look: "blend";
+    in property <string> ground: "games";
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: Tokens.ground-fill;
+    init => {
+        Tokens.width = self.width;
+        Tokens.height = self.height;
+        Tokens.look = self.look;
+        Tokens.ground = self.ground;
+    }
+    changed width => {
+        Tokens.width = self.width;
+    }
+    changed height => {
+        Tokens.height = self.height;
+    }
+    changed look => {
+        Tokens.look = self.look;
+    }
+    changed ground => {
+        Tokens.ground = self.ground;
+    }
+    @children
+}

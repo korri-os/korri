@@ -1,0 +1,176 @@
+// ZoneKeyboard
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneMeasure } from "../atoms/ZoneMeasure.slint";
+import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
+import { Keyboard } from "../types.slint";
+
+// The slanted keyboard (ZoneKeyboard): the sky panel rising from the foot
+// with a black wedge at its left, the white slab with the draft in the fact
+// face and a red caret blinking once a second, the count in HUD ink, four
+// rows of black slanted keys and the control row, caps-1; the focused key
+// wears the pink drop. Its plan is src/plan/keyboard.ts: key unit and
+// height whole art px, the spacing yielding before the keys.
+export component ZoneKeyboard {
+    in property <Keyboard> board;
+    property <length> a: Tokens.a;
+    property <length> c1: 10 * a;
+    property <bool> tight: root.height < 170 * a;
+    property <length> pad: tight ? 4 * a : 7 * a;
+    property <length> gap: tight ? 2 * a : 3 * a;
+    property <length> slab-h: tight ? 18 * a : 24 * a;
+    property <length> slant: tight ? 7 * a : 14 * a;
+    property <length> title-h: board.title != "" ? 12 * a : 0;
+    property <length> panel-w: Math.min(root.width - 4 * a, 450 * a);
+    property <length> inner: panel-w - 2 * (pad + slant);
+    property <length> unit: Math.max(16 * a, Math.floor((inner - 11 * gap) / 12 / a) * a);
+    property <length> key-h: Math.max(16 * a, Math.min(20 * a, Math.floor((root.height - title-h - 3 * pad - slab-h - (board.rows - 1) * gap - 4 * a) / Math.max(1, board.rows) / a) * a));
+    out property <length> panel-h: pad + title-h + slab-h + pad + board.rows * key-h + (board.rows - 1) * gap + pad;
+    property <length> px: (root.width - panel-w) / 2;
+    property <length> py: root.height - panel-h - 2 * a;
+    property <length> keys-w: 12 * unit + 11 * gap;
+    property <length> keys-x: px + (panel-w - keys-w) / 2;
+    ZoneShape {
+        x: root.px;
+        y: root.py;
+        width: root.panel-w;
+        height: root.panel-h;
+        ink: Tokens.sky;
+        commands: "M " + Tokens.pt(root.slant, 0) + " L " + Tokens.pt(root.panel-w, 0) + " L " + Tokens.pt(root.panel-w - root.slant, root.panel-h)
+            + " L 0 " + (root.panel-h / (1 * Tokens.unit)) + " Z";
+    }
+    ZoneShape {
+        x: root.px;
+        y: root.py + root.panel-h * 0.22;
+        width: root.panel-w * 0.2;
+        height: root.panel-h * 0.78;
+        ink: Tokens.black;
+        commands: "M " + Tokens.pt(root.slant * 0.22, 0) + " L " + Tokens.pt(0, self.height) + " L " + Tokens.pt(self.width, self.height) + " Z";
+    }
+    if root.board.title != "": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        ZonePanel {
+            x: root.px + root.slant;
+            y: root.py + root.pad - 2 * root.a;
+            width: title.natural + (root.board.name != "" ? name.natural + 4 * root.a : 0) + 2 * 12 * root.a;
+            height: 12 * root.a;
+            run: 11 * root.a;
+            ink: Tokens.black;
+        }
+        title := ZoneCaps {
+            x: root.px + root.slant + 10 * root.a;
+            y: root.py + root.pad - root.a;
+            text: root.board.title;
+            cap: root.c1;
+        }
+        name := ZoneCaps {
+            visible: root.board.name != "";
+            x: title.x + title.natural + 4 * root.a;
+            y: title.y;
+            text: root.board.name;
+            cap: root.c1;
+            ink: "hud";
+            face: "fact";
+        }
+    }
+    // The slab: the draft, the caret, Korri's hint, the count.
+    property <length> slab-x: px + slant + pad;
+    property <length> slab-y: py + pad + title-h;
+    property <length> slab-w: panel-w - 2 * (slant + pad) - (board.count != "" ? count.natural + 6 * a : 0);
+    Rectangle {
+        x: root.slab-x;
+        y: root.slab-y;
+        width: root.slab-w;
+        height: root.slab-h;
+        background: Tokens.white;
+        clip: true;
+        property <length> before-w: before.preferred-width;
+        property <length> shift: Math.max(0, before-w + 20 * root.a - self.width);
+        before := ZoneMeasure {
+            text: root.board.draft;
+            cap: root.c1;
+            face: "fact";
+        }
+        Text {
+            x: 4 * root.a - parent.shift;
+            y: (parent.height - self.height) / 2;
+            text: root.board.draft;
+            font-family: Tokens.fact-family;
+            font-size: root.c1 * Tokens.fact-size;
+            color: Tokens.black;
+        }
+        if root.board.placeholder != "": Text {
+            x: 12 * root.a;
+            y: (parent.height - self.height) / 2;
+            text: root.board.placeholder;
+            font-family: Tokens.fact-family;
+            font-size: root.c1 * Tokens.fact-size;
+            color: Tokens.steel;
+        }
+        // The caret: a red pixel triangle at the end of the draft, blinking once a second.
+        if Tokens.blink-on: ZoneTriangle {
+            x: 4 * root.a - parent.shift + Math.min(parent.before-w, parent.before-w * root.board.caret / Math.max(1, root.board.draft.character-count)) + root.a;
+            y: (parent.height - 7 * root.a) / 2;
+            width: 6 * root.a;
+            height: 7 * root.a;
+            ink: Tokens.red;
+            commands: "M 0.5 0 L 1 1 L 0 1 Z";
+        }
+    }
+    count := ZoneCaps {
+        visible: root.board.count != "";
+        x: root.slab-x + root.slab-w + 6 * root.a;
+        y: root.slab-y + (root.slab-h - root.c1) / 2;
+        text: root.board.count;
+        cap: root.c1;
+        ink: "hud";
+        face: "fact";
+    }
+    if root.board.danger != "": ZoneCaps {
+        x: root.slab-x;
+        y: root.py - 14 * root.a;
+        box: root.panel-w - 2 * root.slant;
+        elide: true;
+        text: root.board.danger;
+        cap: root.c1;
+        ink: "danger";
+        face: "fact";
+    }
+    property <length> keys-y: slab-y + slab-h + pad;
+    for k in root.board.keys: Rectangle {
+        x: root.keys-x + k.at * (root.unit + root.gap);
+        y: root.keys-y + k.row * (root.key-h + root.gap);
+        width: k.units * root.unit + (k.units - 1) * root.gap;
+        height: root.key-h;
+        if k.focused: ZonePanel {
+            x: -3 * root.a;
+            y: 3 * root.a;
+            width: parent.width;
+            height: parent.height;
+            run: 5 * root.a;
+            ink: Tokens.pink;
+        }
+        ZonePanel {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            run: 5 * root.a;
+            ink: Tokens.black;
+        }
+        ZoneCaps {
+            x: (parent.width - self.natural) / 2;
+            y: (parent.height - root.c1) / 2;
+            text: k.label;
+            cap: root.c1;
+            ink: k.current ? "hud" : "white";
+            face: k.fact ? "fact" : "caps";
+        }
+    }
+}

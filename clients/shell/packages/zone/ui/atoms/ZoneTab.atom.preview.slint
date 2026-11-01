@@ -1,0 +1,14 @@
+// ZoneTab's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneTab } from "./ZoneTab.slint";
+
+export component Active inherits ZonePreview {
+    ZoneTab { x: (parent.width - self.span) / 2; y: parent.height / 2; tab: { label: "Games", active: true }; pad-y: 5 * Tokens.a; }
+}
+
+export component Focused inherits ZonePreview {
+    ZoneTab { x: (parent.width - self.span) / 2; y: parent.height / 2; tab: { label: "Options", focused: true }; pad-y: 5 * Tokens.a; }
+}

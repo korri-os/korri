@@ -1,0 +1,14 @@
+{
+  "name": "@korri/shell-packages",
+  "private": true,
+  "description": "Builds the surface packages' logic.js from their logic.ts (bun) and typechecks them. The packages themselves hold no node_modules.",
+  "type": "module",
+  "scripts": {
+    "zone:build": "cd packages/zone && bun build logic.ts --outfile logic.js --format iife --target browser --minify",
+    "zone:typecheck": "tsc -p packages/zone"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "qrcode": "1.5.4"
+  }
+}

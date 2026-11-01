@@ -1,0 +1,14 @@
+// ZoneBanner's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneBanner } from "./ZoneBanner.slint";
+
+export component Default inherits ZonePreview {
+    ZoneBanner { x: (parent.width - self.span) / 2; y: (parent.height - self.height) / 2; label: "Games"; }
+}
+
+export component Long inherits ZonePreview {
+    ZoneBanner { x: (parent.width - self.span) / 2; y: (parent.height - self.height) / 2; label: "Launch settings"; focused: true; }
+}

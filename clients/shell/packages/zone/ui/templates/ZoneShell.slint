@@ -1,0 +1,65 @@
+// ZoneShell: every page's frame: the ground with its rings, the top strip
+// (the tabs, or the banner of a page with none and first boot's pips under
+// it), the body, and the foot. The page's own children fill the body.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneGround } from "../organisms/ZoneGround.slint";
+import { ZoneStepStrip } from "../organisms/ZoneStepStrip.slint";
+import { ZoneTabStrip } from "../molecules/ZoneTabStrip.slint";
+import { ZoneFoot } from "../molecules/ZoneFoot.slint";
+import { Tab, Hints, Foot } from "../types.slint";
+
+export component ZoneShell {
+    in property <[Tab]> tabs;
+    in property <bool> tabs-shown: true;
+    in property <string> banner;
+    in property <int> pips;
+    in property <int> pip;
+    in property <Hints> hints: { back: "Back", confirm: "Confirm" };
+    in property <Foot> foot;
+    in property <bool> rings: true;
+    property <length> a: Tokens.a;
+    property <length> pips-h: pips > 0 ? 9 * a : 0;
+    out property <length> body-y: Tokens.top-h + pips-h;
+    out property <length> foot-h: foot.shown ? Tokens.foot-h : 0;
+    out property <length> body-h: Math.max(0, root.height - body-y - foot-h);
+    ZoneGround {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        still: !root.rings;
+    }
+    Rectangle {
+        x: 0;
+        y: root.body-y;
+        width: root.width;
+        height: root.body-h;
+        @children
+    }
+    ZoneTabStrip {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: Tokens.top-h;
+        tabs: root.tabs;
+        tabs-shown: root.tabs-shown;
+        banner: root.banner;
+        banner-lift: root.pips > 0 ? 2 * root.a : 0;
+        hints: root.hints;
+    }
+    if root.pips > 0: ZoneStepStrip {
+        x: 0;
+        y: Tokens.top-h;
+        width: root.width;
+        pips: root.pips;
+        pip: root.pip;
+    }
+    if root.foot.shown: ZoneFoot {
+        x: 0;
+        y: root.height - root.foot-h;
+        width: root.width;
+        height: root.foot-h;
+        foot: root.foot;
+    }
+}

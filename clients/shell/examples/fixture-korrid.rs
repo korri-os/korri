@@ -16,6 +16,8 @@
 //! | `overlay on` / `overlay off` | switch the presentation |
 //! | `requests` | print every request received so far, one JSON line each |
 //! | `stored ID` | print the preferences stored for a surface |
+//! | `store ID KEY VALUE` | store a preference for a surface, as a remembered one |
+//! | `model FILE` | publish the `SurfaceModel` in FILE; a `catalog.games` list becomes the games behind the cursor window; any other catalog is published as it is |
 
 use korri_shell::{
     catalog,
@@ -79,6 +81,21 @@ fn main() -> std::io::Result<()> {
                 }
             }
             ["stored", id] => println!("{}", json!(fixture.stored(id))),
+            ["store", id, key, value] => fixture.store(id, key, value),
+            ["model", path] => match std::fs::read_to_string(path)
+                .map_err(|e| e.to_string())
+                .and_then(|text| {
+                    serde_json::from_str::<serde_json::Value>(&text).map_err(|e| e.to_string())
+                }) {
+                Ok(mut model) => {
+                    let games = model["catalog"]["games"].as_array().cloned();
+                    if games.is_some() {
+                        model["catalog"] = json!({"_tag": "Loading"});
+                    }
+                    fixture.reset(model, games);
+                }
+                Err(error) => eprintln!("fixture-korrid: model {path}: {error}"),
+            },
             [] => {}
             _ => eprintln!("fixture-korrid: unknown command {line:?}"),
         }

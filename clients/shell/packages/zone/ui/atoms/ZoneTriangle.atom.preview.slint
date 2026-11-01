@@ -1,0 +1,14 @@
+// ZoneTriangle's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneTriangle } from "./ZoneTriangle.slint";
+
+export component Right inherits ZonePreview {
+    ZoneTriangle { x: (parent.width - 12 * Tokens.a) / 2; y: (parent.height - 13 * Tokens.a) / 2; width: 12 * Tokens.a; height: 13 * Tokens.a; ink: Tokens.red; }
+}
+
+export component LeftSteel inherits ZonePreview {
+    ZoneTriangle { x: (parent.width - 12 * Tokens.a) / 2; y: (parent.height - 13 * Tokens.a) / 2; width: 12 * Tokens.a; height: 13 * Tokens.a; left: true; ink: Tokens.steel; }
+}

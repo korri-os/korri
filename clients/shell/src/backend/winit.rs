@@ -32,6 +32,7 @@ fn key_of(code: winit::keyboard::KeyCode) -> Option<Key> {
         K::Backspace => Key::Backspace,
         K::KeyM => Key::M,
         K::KeyO => Key::O,
+        K::KeyS => Key::S,
         K::F2 => Key::F2,
         _ => return None,
     })

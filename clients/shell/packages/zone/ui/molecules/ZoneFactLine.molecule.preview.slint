@@ -1,0 +1,14 @@
+// ZoneFactLine's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneFactLine } from "./ZoneFactLine.slint";
+
+export component Default inherits ZonePreview {
+    ZoneFactLine { x: 0; y: (parent.height - 18 * Tokens.a) / 2; width: parent.width; height: 18 * Tokens.a; facts: [{ label: "Last played", value: "10 Oct 2026", known: true }, { label: "Plays", value: "7", known: true }, { label: "Time", value: "3h 12m", known: true }]; }
+}
+
+export component NoneRecorded inherits ZonePreview {
+    ZoneFactLine { x: 0; y: (parent.height - 18 * Tokens.a) / 2; width: parent.width; height: 18 * Tokens.a; facts: [{ label: "Last played", value: "--" }, { label: "Plays", value: "--" }, { label: "Time", value: "--'--\"--" }]; }
+}

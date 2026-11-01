@@ -1,0 +1,29 @@
+// ZoneSectionCard: a section's spine in the band: a narrow black card, its
+// caption up it, a stripe down it; no focus.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+
+export component ZoneSectionCard inherits Rectangle {
+    in property <string> caption;
+    property <length> a: Tokens.a;
+    background: Tokens.black;
+    Rectangle {
+        x: root.width - 4 * root.a;
+        y: 2 * root.a;
+        width: 2 * root.a;
+        height: root.height - 4 * root.a;
+        background: Tokens.orange;
+    }
+    // The caption runs up the spine: Slint draws no rotated text, so each
+    // letter stands on its own line (README.md, differences).
+    ZoneCaps {
+        x: 2 * root.a;
+        y: 4 * root.a;
+        box: Math.max(Tokens.unit, root.width - 8 * root.a);
+        wrap: true;
+        text: root.caption;
+        cap: Tokens.c1;
+        face: "korri";
+    }
+}

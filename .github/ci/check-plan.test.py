@@ -145,7 +145,6 @@ class SelectionTest(unittest.TestCase):
             "clients/portal/src/surface/settings-model.ts",
             "surfaces/pico/src/ui/atoms/PicoClock.css",
             "surfaces/boxbuster/src/BoxbusterSurface.tsx",
-            "surfaces/zone/src/plan/options.ts",
         ]:
             with self.subTest(path=path):
                 selected = ci.affected([path])

@@ -1,0 +1,120 @@
+// ZoneSaveCard
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneMeasure } from "../atoms/ZoneMeasure.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZoneEmblem } from "../atoms/ZoneEmblem.slint";
+import { SaveCard } from "../types.slint";
+
+// A save card (ZoneSaveCard, MANIA MODE's save select): a 4-art-px black
+// frame, the pale header with its stripes and the label, the window with
+// the teal diagonal, the emblem over its word on a black tag, the foot bar.
+export component ZoneSaveCard {
+    in property <SaveCard> card;
+    in property <bool> focused;
+    property <length> a: Tokens.a;
+    property <length> c1: 10 * a;
+    property <length> head-h: 2 * c1 + 6 * a;
+    property <length> foot-h: card.foot != "" ? c1 + 4 * a : 0;
+    property <bool> big: head-measure.preferred-width <= root.width - 16 * a;
+    head-measure := ZoneMeasure { text: root.card.header.to-uppercase(); cap: 2 * root.c1; }
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        x: root.focused ? 3 * root.a : 2 * root.a;
+        y: self.x;
+        background: Tokens.shade;
+    }
+    if root.focused: Rectangle {
+        x: -2 * root.a;
+        y: -2 * root.a;
+        width: root.width + 4 * root.a;
+        height: root.height + 4 * root.a;
+        background: Tokens.pink;
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.black;
+    }
+    Rectangle {
+        x: 4 * root.a;
+        y: 4 * root.a;
+        width: root.width - 8 * root.a;
+        height: root.head-h;
+        background: Tokens.stripe-light;
+        Rectangle { y: parent.height - 4 * root.a; height: root.a; background: Tokens.yellow; }
+        Rectangle { y: parent.height - 3 * root.a; height: root.a; background: Tokens.red; }
+        Rectangle { y: parent.height - 2 * root.a; height: root.a; background: Tokens.blue; }
+        Rectangle { y: parent.height - root.a; height: root.a; background: Tokens.white; }
+        ZoneCaps {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - 4 * root.a - self.cap) / 2;
+            box: Math.min(self.natural, parent.width - 4 * root.a);
+            elide: true;
+            text: root.card.header;
+            cap: root.big ? 2 * root.c1 : root.c1;
+            ink: "ink";
+        }
+    }
+    property <length> win-y: 4 * root.a + root.head-h + 2 * root.a;
+    property <length> win-h: root.height - win-y - 4 * root.a - root.foot-h;
+    Rectangle {
+        x: 4 * root.a;
+        y: root.win-y;
+        width: root.width - 8 * root.a;
+        height: root.win-h;
+        background: Tokens.stripe-light;
+        clip: true;
+        ZoneShape {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            ink: Tokens.stripe-teal;
+            commands: "M " + Tokens.pt(parent.width * 0.55, 0) + " L " + Tokens.pt(parent.width, 0) + " L " + Tokens.pt(parent.width, parent.height * 0.25)
+                + " L " + Tokens.pt(parent.width * 0.4, parent.height) + " L 0 " + (parent.height / (1 * Tokens.unit)) + " L 0 " + (parent.height * 0.85 / (1 * Tokens.unit)) + " Z";
+        }
+        ZoneEmblem {
+            x: (parent.width - self.width) / 2;
+            y: parent.height * 0.18;
+            width: Math.min(parent.width * 0.5, parent.height * 0.4) * 1.3;
+            height: Math.min(parent.width * 0.5, parent.height * 0.4);
+            kind: root.card.emblem;
+        }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: parent.height * 0.66;
+            width: Math.min(parent.width - 4 * root.a, word.natural + 6 * root.a);
+            height: root.c1 + 4 * root.a;
+            background: Tokens.black;
+            word := ZoneCaps {
+                x: 3 * root.a;
+                y: 2 * root.a;
+                box: Math.max((1 * Tokens.unit), parent.width - 6 * root.a);
+                elide: true;
+                centre: true;
+                text: root.card.word;
+                cap: root.c1;
+                face: root.card.header == "Retired" ? "fact" : "caps";
+            }
+        }
+    }
+    if root.card.foot != "": Rectangle {
+        x: 4 * root.a;
+        y: root.height - 4 * root.a - root.foot-h;
+        width: root.width - 8 * root.a;
+        height: root.foot-h;
+        background: root.card.foot-kind == "saved" ? Tokens.mint : Tokens.orange;
+        ZoneCaps {
+            x: (parent.width - self.natural) / 2;
+            y: 2 * root.a;
+            text: root.card.foot;
+            cap: root.c1;
+            ink: "ink";
+        }
+    }
+}

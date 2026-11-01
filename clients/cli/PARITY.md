@@ -55,7 +55,7 @@ publish and route plugin rows.
 | `launch:runner` | `play GAME --runner ID`; `launch-settings runner ID --game GAME` | One-launch choice vs persisted choice |
 | `launch:cancel` | Exit / do not submit a command | Navigation only |
 | Pico `pico:font` (`surfaces/pico/src/pico-settings-view.ts`) | **Needs shared RPC; schema unresolved** | `pico-font-preference.ts` keeps `pico.font` in browser storage; the host treaty never receives it |
-| Zone `zone:system-look` (`surfaces/zone/src/plan/options.ts`) | **Needs shared RPC; schema unresolved** | `zone-look-preference.ts` keeps `zone.look` in browser storage; the host treaty never receives it |
+| Zone `zone:system-look` (`clients/shell/packages/zone/src/plan/options.ts`) | **Needs shared RPC; schema unresolved** | The native package keeps `zone.look` as a surface preference (`RememberPreference`, mark `shared`); the CLI has no command for it |
 | `launch:set:PLACE#file:*`, `runner-facts:*`, unavailable GPU row | `launch-settings show [layer] [scope]` | Read-only facts; hooks, environment, arguments, working directory and raw config remain file-authored exceptions |
 
 Layer flags: Device by default, `--system SYSTEM`, `--game GAME`,

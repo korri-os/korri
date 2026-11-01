@@ -1,0 +1,14 @@
+// ZoneControllerCard's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneControllerCard } from "./ZoneControllerCard.slint";
+
+export component Heard inherits ZonePreview {
+    ZoneControllerCard { x: (parent.width - 82 * Tokens.a) / 2; y: (parent.height - 100 * Tokens.a) / 2; width: 82 * Tokens.a; height: 100 * Tokens.a; seat: { seat: "1P", name: "Xbox Wireless Controller", heard: true, focused: true }; }
+}
+
+export component Waiting inherits ZonePreview {
+    ZoneControllerCard { x: (parent.width - 82 * Tokens.a) / 2; y: (parent.height - 100 * Tokens.a) / 2; width: 82 * Tokens.a; height: 100 * Tokens.a; seat: { seat: "" }; }
+}

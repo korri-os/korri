@@ -1,0 +1,95 @@
+// ZoneDialog
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneVeil } from "../atoms/ZoneVeil.slint";
+import { ZoneActionRow } from "./ZoneActionRow.slint";
+import { Dialog } from "../types.slint";
+
+// The sky dialog (ZoneDialog): edge to edge over its layer, a black wedge
+// in its top-left and bottom-right corners (legs 0.78 of the panel's
+// height, never more than a quarter of its width), the headline at caps-2,
+// Korri's lines in the fact face as written, the game in yellow, the
+// buttons at caps-2 in Korri's order.
+export component ZoneDialog {
+    in property <Dialog> dialog;
+    property <length> a: Tokens.a;
+    in property <float> nudge: Tokens.nudge-button;
+    property <length> c1: 10 * a;
+    property <length> pad: 8 * a;
+    property <length> inner-w: Math.min(root.width - 2 * pad - root.width / 4, 46 * 8 * a);
+    property <length> head-h: 2 * c1;
+    property <length> lines-h: lines.drawn-h;
+    property <bool> has-lines: dialog.lines.length > 0;
+    property <length> panel-h: pad + head-h + 6 * a + (has-lines ? lines-h + 6 * a : 0) + (dialog.title != "" ? c1 + 6 * a : 0)
+        + row.needed + pad;
+    property <length> panel-y: (root.height - panel-h) / 2;
+    property <length> leg: Math.min(0.78 * panel-h, root.width / 4);
+    ZoneVeil {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+    }
+    Rectangle {
+        x: 0;
+        width: parent.width;
+        y: root.panel-y;
+        height: root.panel-h;
+        background: Tokens.sky;
+        ZoneShape {
+            x: 0;
+            y: 0;
+            width: root.leg;
+            height: root.leg;
+            ink: Tokens.black;
+            commands: "M 0 0 L " + Tokens.pt(root.leg, 0) + " L 0 " + (root.leg / (1 * Tokens.unit)) + " Z";
+        }
+        ZoneShape {
+            x: root.width - root.leg;
+            y: root.panel-h - root.leg;
+            width: root.leg;
+            height: root.leg;
+            ink: Tokens.black;
+            commands: "M " + Tokens.pt(root.leg, 0) + " L " + Tokens.pt(root.leg, root.leg) + " L 0 " + (root.leg / (1 * Tokens.unit)) + " Z";
+        }
+        head := ZoneCaps {
+            x: (root.width - self.width) / 2;
+            y: root.pad;
+            box: Math.min(self.natural, root.inner-w);
+            elide: true;
+            text: root.dialog.headline;
+            cap: 2 * root.c1;
+            face: root.dialog.korri ? "korri" : "caps";
+        }
+        lines := ZoneCaps {
+            visible: root.has-lines;
+            x: (root.width - root.inner-w) / 2;
+            y: root.pad + root.head-h + 6 * root.a;
+            box: root.inner-w;
+            centre: true;
+            wrap: true;
+            text: root.has-lines ? root.dialog.lines[0] : "";
+            cap: root.c1;
+            face: "fact";
+        }
+        if root.dialog.title != "": ZoneCaps {
+            x: (root.width - self.width) / 2;
+            y: root.pad + root.head-h + 6 * root.a + (root.has-lines ? root.lines-h + 6 * root.a : 0);
+            box: Math.min(self.natural, root.inner-w);
+            elide: true;
+            text: root.dialog.title;
+            cap: root.c1;
+            ink: "hud";
+            face: "korri";
+        }
+        row := ZoneActionRow {
+            x: root.width / 8;
+            width: root.width * 3 / 4;
+            y: root.panel-h - root.pad - self.needed;
+            buttons: root.dialog.buttons;
+            cap: 2 * root.c1;
+        }
+    }
+}

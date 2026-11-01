@@ -1,0 +1,101 @@
+// ZoneRowList: the rows of a list page, top to bottom, scrolled so the
+// focused row stands in view (centred when the list is taller than its
+// box; the cut row at an edge shows that more is there). Each row by its
+// kind: a group's head, a caption, an option row, a route, Korri's words or
+// warnings, a row of buttons, tags, a big word (LOADING, NOTHING FOUND).
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneOptionRow } from "../molecules/ZoneOptionRow.slint";
+import { ZoneOptionGroup } from "../molecules/ZoneOptionGroup.slint";
+import { ZoneActionRow } from "../molecules/ZoneActionRow.slint";
+import { ZoneTagRow } from "../molecules/ZoneTagRow.slint";
+import { ZoneWarningLines } from "ZoneWarningLines.slint";
+import { ZoneRunWithRoute } from "ZoneRunWithRoute.slint";
+import { Row } from "../types.slint";
+
+export component ZoneRowList inherits Rectangle {
+    in property <[Row]> rows;
+    in property <float> label-share: 0.55;
+    property <length> a: Tokens.a;
+    in-out property <length> focus-y;
+    in-out property <length> focus-h;
+    property <length> list-h: list.preferred-height;
+    property <length> scroll: list-h <= root.height ? 0 : Math.clamp(focus-y + focus-h / 2 - root.height / 2, 0, list-h - root.height);
+    clip: true;
+    list := VerticalLayout {
+        x: 0;
+        y: -root.scroll;
+        height: self.preferred-height;
+        width: root.width;
+        spacing: 0;
+        for r in root.rows: VerticalLayout {
+            init => {
+                if (r.focused) {
+                    root.focus-y = self.y;
+                    root.focus-h = self.preferred-height;
+                }
+            }
+            changed y => {
+                if (r.focused) {
+                    root.focus-y = self.y;
+                    root.focus-h = self.preferred-height;
+                }
+            }
+            if r.kind == "title" || r.kind == "caption": ZoneOptionGroup {
+                title: r.label;
+                caption: r.kind == "caption";
+            }
+            if r.kind == "item" || r.kind == "range": ZoneOptionRow {
+                it: r;
+                label-share: root.label-share;
+            }
+            if r.kind == "route": ZoneRunWithRoute {
+                route: r;
+            }
+            if r.kind == "note" || r.kind == "problem" || r.kind == "text": ZoneWarningLines {
+                line: r.label;
+                fact: r.label-fact;
+                warning: r.kind == "problem";
+                full: r.kind != "note";
+            }
+            if r.kind == "buttons": Rectangle {
+                height: buttons.needed + 8 * root.a;
+                buttons := ZoneActionRow {
+                    x: 0;
+                    y: 4 * root.a;
+                    width: parent.width;
+                    buttons: r.buttons;
+                }
+            }
+            if r.kind == "tags": Rectangle {
+                height: 1.55 * Tokens.c1 + 4 * root.a;
+                ZoneTagRow {
+                    x: 4 * root.a;
+                    y: 2 * root.a;
+                    width: self.natural;
+                    fill: false;
+                    tags: r.tags;
+                }
+            }
+            if r.kind == "word": Rectangle {
+                height: 2 * Tokens.c1 + 12 * root.a;
+                ZonePanel {
+                    x: (parent.width - self.width) / 2;
+                    y: 4 * root.a;
+                    width: word.natural + 2 * (2 * Tokens.c1 + 6 * root.a);
+                    height: 2 * Tokens.c1 + 4 * root.a;
+                    run: 2 * Tokens.c1;
+                    ink: Tokens.black;
+                }
+                word := ZoneCaps {
+                    x: (parent.width - self.natural) / 2;
+                    y: 6 * root.a;
+                    text: r.label;
+                    cap: Tokens.c2;
+                }
+            }
+        }
+    }
+}

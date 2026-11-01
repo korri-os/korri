@@ -1,0 +1,219 @@
+// ZoneGames: the zone select. The band of cards with the focused one
+// centred, the facts line, the action row (PLAY, CONTINUE, PLAY ON a
+// device, then OPTS.), FIND under the A hint and GET GAMES under the B hint,
+// a kept filter's FIND: tag; LOADING's stripe wells, NO GAMES' card of
+// static; and Zone's own layers over it: the FIND keyboard, GAME OPTS., the
+// launch title card, the results tally, the idle attract. The band gives
+// the action row its second line when the row wraps (zone-select.ts).
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZonePanel } from "../ui/atoms/ZonePanel.slint";
+import { ZoneCaps } from "../ui/atoms/ZoneCaps.slint";
+import { ZoneButton } from "../ui/atoms/ZoneButton.slint";
+import { ZoneCoverWell } from "../ui/atoms/ZoneCoverWell.slint";
+import { ZoneCardBand } from "../ui/molecules/ZoneCardBand.slint";
+import { ZoneFactLine } from "../ui/molecules/ZoneFactLine.slint";
+import { ZoneActionRow } from "../ui/molecules/ZoneActionRow.slint";
+import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry.slint";
+import { ZoneGameOpts } from "../ui/organisms/ZoneGameOpts.slint";
+import { ZoneLaunchCard } from "../ui/organisms/ZoneLaunchCard.slint";
+import { ZoneTally } from "../ui/organisms/ZoneTally.slint";
+import { ZoneAttract } from "../ui/organisms/ZoneAttract.slint";
+import { ZoneShell } from "../ui/templates/ZoneShell.slint";
+import { Tab, Hints, Foot, Card, Fact, Btn, Row, Keyboard, LaunchCard, Tally } from "../ui/types.slint";
+
+export component ZoneGames {
+    in property <[Tab]> tabs;
+    in property <Hints> hints;
+    in property <Foot> foot;
+    in property <string> catalog: "Ready";
+    in property <[Card]> cards;
+    in property <int> focused-card;
+    in property <bool> card-focused;
+    in property <int> first-index;
+    in property <int> total;
+    in property <[Fact]> facts;
+    in property <[Btn]> actions;
+    in property <bool> find-shown;
+    in property <string> find-label: "Find";
+    in property <bool> find-focused;
+    in property <string> kept;
+    in property <bool> get-shown;
+    in property <bool> get-focused;
+    in property <bool> typing;
+    in property <Keyboard> keyboard;
+    in property <bool> opts-shown;
+    in property <string> opts-title;
+    in property <[Row]> opts-rows;
+    in property <LaunchCard> launch-card;
+    in property <Tally> tally;
+    in property <bool> attract;
+    in property <float> idle-ms;
+    property <length> a: Tokens.a;
+    property <bool> has-games: catalog == "Ready" && cards.length > 0;
+    shell := ZoneShell {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        tabs: root.tabs;
+        hints: root.hints;
+        foot: root.foot;
+        // The body: the band, then the facts line, then the action row.
+        property <length> facts-h: 18 * root.a;
+        property <length> acts-h: Math.max(26 * root.a, row.needed + 4 * root.a);
+        property <length> band-h: Math.max(0, self.body-h - (root.has-games ? self.facts-h + self.acts-h : 0));
+        if root.has-games && !root.typing: ZoneCardBand {
+            x: 0;
+            y: 4 * root.a;
+            width: root.width;
+            height: shell.band-h;
+            cards: root.cards;
+            focused-card: root.focused-card;
+            card-focused: root.card-focused;
+            first-index: root.first-index;
+            total: root.total;
+        }
+        if root.has-games: ZoneFactLine {
+            x: 4 * root.a;
+            y: shell.band-h;
+            width: root.width - 8 * root.a;
+            height: shell.facts-h;
+            facts: root.facts;
+        }
+        row := ZoneActionRow {
+            cache-rendering-hint: true;
+            visible: root.has-games;
+            x: 0;
+            y: shell.band-h + shell.facts-h + (shell.acts-h - self.needed) / 2;
+            width: root.width;
+            buttons: root.actions;
+        }
+        if root.catalog == "Loading": Rectangle {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: shell.body-h;
+            property <length> h: Math.min(90 * root.a, self.height - 24 * root.a);
+            for i in 3: ZoneCoverWell {
+                x: root.width / 2 - parent.h * 0.78 * 1.5 - 7 * root.a + i * (parent.h * 0.78 + 7 * root.a);
+                y: (parent.height - parent.h) / 2;
+                width: parent.h * 0.78;
+                height: parent.h;
+                has-art: false;
+                stripes: i * 2;
+                initials: "";
+            }
+        }
+        if root.catalog == "Empty" || (root.catalog == "Ready" && root.cards.length == 0): Rectangle {
+            property <length> h: Math.min(90 * root.a, shell.body-h - 24 * root.a);
+            x: (root.width - self.h * 0.78) / 2;
+            y: (shell.body-h - self.h) / 2;
+            width: self.h * 0.78;
+            height: self.h;
+            background: Tokens.black;
+            Rectangle {
+                x: 4 * root.a;
+                y: 4 * root.a;
+                width: parent.width - 8 * root.a;
+                height: 14 * root.a;
+                background: Tokens.white;
+                ZoneCaps {
+                    x: (parent.width - self.natural) / 2;
+                    y: 2 * root.a;
+                    text: "No games";
+                    ink: "ink";
+                }
+            }
+            Image {
+                x: 4 * root.a;
+                y: 20 * root.a;
+                width: parent.width - 8 * root.a;
+                height: parent.height - 24 * root.a;
+                source: @image-url("../art/veil-1.png");
+                horizontal-tiling: repeat;
+                vertical-tiling: repeat;
+                colorize: Tokens.white;
+                image-rendering: pixelated;
+            }
+        }
+        if root.find-shown && !root.typing: ZoneButton {
+            cache-rendering-hint: true;
+            x: root.width - 12 * root.a - self.span;
+            y: 4 * root.a;
+            btn: { label: root.find-label, focused: root.find-focused };
+        }
+        if root.get-shown && !root.typing: ZoneButton {
+            cache-rendering-hint: true;
+            x: 21 * root.a;
+            y: 4 * root.a;
+            btn: { label: "Get games", focused: root.get-focused };
+        }
+        if root.kept != "": Rectangle {
+            x: 12 * root.a;
+            y: (root.get-shown ? 28 : 4) * root.a;
+            width: kept-label.natural + kept-word.natural + 27 * root.a;
+            height: 14 * root.a;
+            ZonePanel {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                run: 11 * root.a;
+                ink: Tokens.black;
+            }
+            kept-label := ZoneCaps {
+                x: 10 * root.a;
+                y: 2 * root.a;
+                text: "Find:";
+                ink: "hud";
+            }
+            kept-word := ZoneCaps {
+                x: 13 * root.a + kept-label.natural;
+                y: 2 * root.a;
+                text: root.kept;
+                face: "fact";
+            }
+        }
+        if root.opts-shown: ZoneGameOpts {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: shell.body-h;
+            title: root.opts-title;
+            rows: root.opts-rows;
+        }
+    }
+    // The FIND keyboard rises over everything below the tabs.
+    if root.keyboard.shown: ZoneOptionsEntry {
+        x: 0;
+        y: Tokens.top-h;
+        width: root.width;
+        height: root.height - Tokens.top-h;
+        board: root.keyboard;
+        veiled: false;
+    }
+    if root.launch-card.shown: ZoneLaunchCard {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        card: root.launch-card;
+    }
+    if root.tally.shown: ZoneTally {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        tally: root.tally;
+    }
+    if root.attract: ZoneAttract {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        cards: root.cards;
+        start: root.focused-card;
+        idle-ms: root.idle-ms;
+    }
+}

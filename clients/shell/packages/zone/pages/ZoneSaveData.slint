@@ -1,0 +1,73 @@
+// ZoneSaveData: SAVE DATA, MANIA MODE's save select over identity: the save
+// band (BACK UP, SWITCH FROM BACKUP, SWITCH BUNKER, the retired keys and
+// their BACK UP / DELETE), or Korri's backup taking the band's room: the QR
+// code beside its secret's slab (under it on a page taller than wide);
+// the password, backup and bunker keyboards over the page.
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZoneQrWell } from "../ui/atoms/ZoneQrWell.slint";
+import { ZoneSaveBand } from "../ui/organisms/ZoneSaveBand.slint";
+import { ZoneSecretSlab } from "../ui/organisms/ZoneSecretSlab.slint";
+import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry.slint";
+import { ZoneShell } from "../ui/templates/ZoneShell.slint";
+import { Tab, Hints, Foot, SaveCard, Btn, Keyboard } from "../ui/types.slint";
+
+export component ZoneSaveData {
+    in property <[Tab]> tabs;
+    in property <Hints> hints;
+    in property <Foot> foot;
+    in property <[SaveCard]> cards;
+    in property <int> at;
+    in property <bool> marked;
+    in property <[Btn]> retired;
+    in property <bool> qr-shown;
+    in property <image> qr;
+    in property <string> secret;
+    in property <bool> slab-focused;
+    in property <Keyboard> keyboard;
+    property <length> a: Tokens.a;
+    shell := ZoneShell {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        tabs: root.tabs;
+        hints: root.hints;
+        foot: root.foot;
+        if !root.qr-shown: ZoneSaveBand {
+            x: 0;
+            y: 4 * root.a;
+            width: root.width;
+            height: shell.body-h - 8 * root.a;
+            cards: root.cards;
+            at: root.at;
+            marked: root.marked;
+            retired: root.retired;
+        }
+        // The code takes the largest square the slab's least room leaves (save-data.ts).
+        property <bool> beside: root.width >= shell.body-h;
+        property <length> side: Math.max(0, self.beside ? Math.min(shell.body-h - 16 * root.a, root.width - 236 * root.a) : Math.min(root.width - 16 * root.a, shell.body-h - 146 * root.a));
+        if root.qr-shown: ZoneQrWell {
+            x: 8 * root.a;
+            y: 8 * root.a;
+            width: shell.side;
+            height: shell.side;
+            code: root.qr;
+        }
+        if root.qr-shown: ZoneSecretSlab {
+            x: shell.beside ? shell.side + 16 * root.a : 8 * root.a;
+            y: shell.beside ? 8 * root.a : shell.side + 16 * root.a;
+            width: root.width - self.x - 8 * root.a;
+            height: shell.body-h - self.y - 8 * root.a;
+            secret: root.secret;
+            focused: root.slab-focused;
+        }
+    }
+    if root.keyboard.shown: ZoneOptionsEntry {
+        x: 0;
+        y: Tokens.top-h;
+        width: root.width;
+        height: root.height - Tokens.top-h;
+        board: root.keyboard;
+    }
+}

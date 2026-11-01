@@ -1,0 +1,119 @@
+// ZonePausedControl: one of PAUSED's rows on the yellow wedge: the label at
+// caps-2 (caps-1 when the list must) rising over its black slab, red when
+// destructive, steel when inert; the value (Korri's words) at the right with
+// a range's bar, yellow while the range moves ahead of Korri; the pink drop
+// and the value's red triangles when focused. A group's head is a blue tag;
+// a note is Korri's words in black on the wedge.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "../atoms/ZoneShape.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneUnderline } from "../atoms/ZoneUnderline.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneWords } from "../atoms/ZoneWords.slint";
+import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
+import { Row } from "../types.slint";
+
+export component ZonePausedControl {
+    in property <Row> it;
+    in property <length> cap: Tokens.c2;
+    in property <float> nudge: Tokens.nudge-button;
+    property <length> a: Tokens.a;
+    property <length> c1: Tokens.c1;
+    if root.it.kind == "title": Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        ZoneShape {
+            x: 0;
+            y: 2 * root.a;
+            width: group.natural + 24 * root.a;
+            height: root.c1 + 6 * root.a;
+            ink: Tokens.blue;
+            commands: "M " + Tokens.pt(root.c1, 0) + " L " + Tokens.pt(self.width, 0) + " L " + Tokens.pt(self.width - root.c1, self.height) + " L 0 " + (self.height / Tokens.unit) + " Z";
+        }
+        group := ZoneCaps {
+            x: 12 * root.a;
+            y: 5 * root.a;
+            text: root.it.label;
+        }
+    }
+    if root.it.kind == "note": ZoneWords {
+        x: 0;
+        y: 2 * root.a;
+        box: root.width;
+        text: root.it.label;
+        ink: "ink";
+        face: "fact";
+    }
+    if root.it.kind == "item" || root.it.kind == "range": Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        if root.it.focused: ZoneUnderline {
+            x: 0;
+            y: 4 * root.a;
+            width: root.width;
+            height: root.cap + 4 * root.a;
+            run: root.cap;
+        }
+        ZonePanel {
+            x: 0;
+            y: 4 * root.a;
+            width: root.width;
+            height: root.cap + 4 * root.a;
+            run: root.cap;
+            ink: Tokens.black;
+        }
+        ZoneCaps {
+            x: root.cap + 4 * root.a;
+            y: 0;
+            box: Math.max(Tokens.unit, root.width * 0.6);
+            elide: true;
+            text: root.it.label;
+            cap: root.cap;
+            ink: root.it.disabled ? "flat" : root.it.danger ? "danger" : "white";
+            colour: Tokens.steel;
+        }
+        property <length> right-end: root.width - root.cap - 6 * root.a;
+        property <length> meter-w: root.it.kind == "range" ? 3.5 * root.c1 : 0;
+        if root.it.kind == "range": Rectangle {
+            x: parent.right-end - parent.meter-w;
+            y: 4 * root.a + (root.cap + 4 * root.a) / 2 - 3 * root.a;
+            width: parent.meter-w;
+            height: 6 * root.a;
+            background: Tokens.track;
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width * Math.clamp(root.it.bars / 100, 0, 1);
+                height: parent.height;
+                background: Tokens.danger-shade;
+            }
+        }
+        value := ZoneCaps {
+            x: parent.right-end - parent.meter-w - (parent.meter-w > 0 ? 4 * root.a : 0) - self.natural;
+            y: 4 * root.a + (root.cap + 4 * root.a - root.c1) / 2;
+            text: root.it.value;
+            ink: root.it.saving ? "hud" : "white";
+            face: "fact";
+        }
+        if root.it.focused && root.it.choice && root.it.value != "": ZoneTriangle {
+            x: value.x - 2 * root.a - 2 * root.a * root.nudge - 5 * root.a;
+            y: value.y + (root.c1 - 6 * root.a) / 2;
+            width: 5 * root.a;
+            height: 6 * root.a;
+            left: true;
+            ink: Tokens.red;
+        }
+        if root.it.focused && root.it.choice && root.it.value != "": ZoneTriangle {
+            x: parent.right-end + 2 * root.a + 2 * root.a * root.nudge;
+            y: value.y + (root.c1 - 6 * root.a) / 2;
+            width: 5 * root.a;
+            height: 6 * root.a;
+            ink: Tokens.red;
+        }
+    }
+}

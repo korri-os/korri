@@ -1,0 +1,14 @@
+// ZonePanel's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZonePanel } from "./ZonePanel.slint";
+
+export component Default inherits ZonePreview {
+    ZonePanel { x: (parent.width - 140 * Tokens.a) / 2; y: (parent.height - 14 * Tokens.a) / 2; width: 140 * Tokens.a; height: 14 * Tokens.a; run: 13 * Tokens.a; ink: Tokens.black; }
+}
+
+export component Blue inherits ZonePreview {
+    ZonePanel { x: (parent.width - 140 * Tokens.a) / 2; y: (parent.height - 14 * Tokens.a) / 2; width: 140 * Tokens.a; height: 14 * Tokens.a; run: 13 * Tokens.a; ink: Tokens.blue; left-straight: true; }
+}

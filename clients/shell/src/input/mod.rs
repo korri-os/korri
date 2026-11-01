@@ -2,7 +2,8 @@
 //!
 //! Gamepads arrive through korrid's native input subscription ([`native`])
 //! and the portal's mapper ([`mapper`]). The window keyboard stays for
-//! development: arrows, Return, Escape/Backspace, M, O, and F2 to switch.
+//! development: arrows, Return, Escape/Backspace, M, O, S (system), and F2
+//! to switch.
 //! Both repeat a held direction after 400 ms, then every 100 ms.
 
 pub mod mapper;
@@ -32,6 +33,8 @@ pub enum Key {
     Backspace,
     M,
     O,
+    /// The system button, which no gamepad mapping sends to a surface.
+    S,
     F2,
 }
 
@@ -136,6 +139,7 @@ impl Router {
             Key::Escape | Key::Backspace => Press::Button(Button::Back),
             Key::M => Press::Button(Button::Menu),
             Key::O => Press::Button(Button::Options),
+            Key::S => Press::Button(Button::System),
             Key::F2 => Press::Switch,
             Key::Up | Key::Down | Key::Left | Key::Right => unreachable!("handled above"),
         }]

@@ -1,0 +1,11 @@
+// ZoneMeasure's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneMeasure } from "./ZoneMeasure.slint";
+
+export component Default inherits ZonePreview {
+    m := ZoneMeasure { text: "MEASURED, NOT DRAWN"; cap: Tokens.c1; }
+    Rectangle { x: (parent.width - m.preferred-width) / 2; y: parent.height / 2; width: m.preferred-width; height: Tokens.c1; background: Tokens.black; }
+}

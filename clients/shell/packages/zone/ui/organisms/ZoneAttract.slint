@@ -1,0 +1,59 @@
+// ZoneAttract
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneCoverWell } from "../atoms/ZoneCoverWell.slint";
+import { ZoneTitleCard } from "../molecules/ZoneTitleCard.slint";
+import { Card } from "../types.slint";
+
+// The idle attract (ZoneAttract): after 30 s with no press on GAMES, the
+// focused game's title card, then its stage (its cover, panning), the next
+// game every 6 s. Drawn on the view's own clock: the contract has no timer
+// message, so the logic never hears that it shows; any press restarts the
+// clock and takes it down.
+export component ZoneAttract {
+    property <length> a: Tokens.a;
+    in property <[Card]> cards;
+    in property <int> start;
+    in property <float> idle-ms;
+    property <float> turn-ms: idle-ms - 30000;
+    property <int> index: cards.length == 0 ? 0 : Math.mod(start + Math.floor(turn-ms / 6000), cards.length);
+    property <float> within: Math.mod(turn-ms, 6000);
+    property <Card> card: cards.length == 0 ? { title: "" } : cards[index];
+    property <bool> stage: within >= 2900;
+    if !root.stage: ZoneTitleCard {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        title: root.card.title;
+        system: root.card.tags.length > 0 && root.card.tags[0].kind == "system" ? root.card.tags[0].label : "";
+        act: 0;
+        t: Math.clamp(root.within / 320, 0, 1);
+    }
+    if root.stage: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.black;
+        clip: true;
+        ZoneCoverWell {
+            y: 0;
+            x: -32 * root.a * Math.clamp((root.within - 2900) / 2700, 0, 1);
+            width: root.width + 32 * root.a;
+            height: root.height;
+            art: root.card.art;
+            has-art: root.card.has-art;
+            stripes: root.card.stripes;
+            initials: root.card.initials;
+        }
+        ZoneCaps {
+            x: 8 * root.a;
+            y: root.height - 18 * root.a;
+            text: root.card.title;
+            cap: root.a * 10;
+            face: "korri";
+        }
+    }
+}

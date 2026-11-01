@@ -1,0 +1,16 @@
+// ZonePanel (and ZoneSlab): a black (or any ink) parallelogram leaning right by `run`, ZonePanel.css's 45 degree shape. Zone's pixel looks cut the slant as a stair of one art px a step; here it is one straight line in every look (README.md, differences).
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "./ZoneShape.slint";
+
+// A parallelogram leaning right by `run` (ZonePanel.css's 45 degree shape).
+// Zone's pixel looks cut this edge as a stair of one art px a step; here it
+// is one straight line in every look (README.md, differences).
+export component ZonePanel inherits ZoneShape {
+    in property <length> run;
+    in property <length> a: Tokens.a;
+    in property <bool> left-straight: false;
+    in property <bool> right-straight: false;
+    commands: (left-straight ? "M 0 0" : "M " + Tokens.pt(run, 0)) + " L " + Tokens.pt(self.width, 0) + " L "
+        + (right-straight ? Tokens.pt(self.width, self.height) : Tokens.pt(self.width - run, self.height)) + " L " + Tokens.pt(0, self.height) + " Z";
+}

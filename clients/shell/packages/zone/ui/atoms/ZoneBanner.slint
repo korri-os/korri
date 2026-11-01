@@ -1,0 +1,73 @@
+// ZoneBanner: the one yellow-on-blue banner with its points and the red and green lip with four notches.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "./ZoneShape.slint";
+import { ZoneCaps } from "./ZoneCaps.slint";
+
+// The one yellow-on-blue banner (ZoneBanner): caps-2 banner ink on blue
+// with its points, and the red and green lip with four notches under it.
+export component ZoneBanner {
+    in property <string> label;
+    property <length> a: Tokens.a;
+    in property <bool> focused;
+    in property <bool> korri: false;
+    property <length> c2: 20 * a;
+    property <length> bh: 2 * 10 * a;
+    property <length> point: 0.45 * bh;
+    property <length> mid: bh / 2;
+    out property <length> span: words.natural + 2 * (point + 6 * a);
+    width: span;
+    height: bh;
+    property <string> hexagon: "M " + Tokens.pt(point, 0) + " L " + Tokens.pt(0, mid - a / 2) + " L " + Tokens.pt(0, mid + a / 2)
+        + " L " + Tokens.pt(point, bh) + " L " + Tokens.pt(span - point, bh) + " L " + Tokens.pt(span, mid + a / 2)
+        + " L " + Tokens.pt(span, mid - a / 2) + " L " + Tokens.pt(span - point, 0) + " Z";
+    if root.focused: ZoneShape {
+        x: -3 * root.a;
+        y: 3 * root.a;
+        width: root.span;
+        height: root.bh;
+        commands: root.hexagon;
+        ink: Tokens.pink;
+    }
+    ZoneShape {
+        x: 0;
+        y: 0;
+        width: root.span;
+        height: root.bh;
+        commands: root.hexagon;
+        ink: Tokens.banner-blue;
+    }
+    words := ZoneCaps {
+        x: root.point + 6 * root.a;
+        y: 0;
+        text: root.label;
+        cap: root.c2;
+        ink: "banner";
+        face: root.korri ? "korri" : "caps";
+    }
+    property <length> lx0: root.point;
+    property <length> lx1: root.span - root.point;
+    property <length> half: (lx0 + lx1) / 2;
+    property <length> t: 2 * root.a;
+    property <length> d: 4 * root.a;
+    ZoneShape {
+        x: 0;
+        y: root.bh;
+        width: root.span;
+        height: root.d;
+        ink: Tokens.red;
+        commands: "M " + Tokens.pt(root.lx0, 0) + " L " + Tokens.pt(root.half, 0) + " L " + Tokens.pt(root.half, root.t) + " L " + Tokens.pt(root.half - 2 * root.a, root.d)
+            + " L " + Tokens.pt(root.half - 4 * root.a, root.t) + " L " + Tokens.pt(root.half - 6 * root.a, root.d) + " L " + Tokens.pt(root.half - 8 * root.a, root.t)
+            + " L " + Tokens.pt(root.lx0, root.t) + " Z";
+    }
+    ZoneShape {
+        x: 0;
+        y: root.bh;
+        width: root.span;
+        height: root.d;
+        ink: Tokens.green;
+        commands: "M " + Tokens.pt(root.half, 0) + " L " + Tokens.pt(root.lx1, 0) + " L " + Tokens.pt(root.lx1, root.t) + " L " + Tokens.pt(root.half + 8 * root.a, root.t)
+            + " L " + Tokens.pt(root.half + 6 * root.a, root.d) + " L " + Tokens.pt(root.half + 4 * root.a, root.t) + " L " + Tokens.pt(root.half + 2 * root.a, root.d)
+            + " L " + Tokens.pt(root.half, root.t) + " Z";
+    }
+}

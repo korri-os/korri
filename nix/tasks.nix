@@ -687,22 +687,28 @@ let
     };
 
     zone-check = {
-      description = "Run the Zone surface unit tests, gates and acceptance, typecheck, and architecture lint.";
+      description = "Run Zone's native package checks: its gates, plan and contrast tests, typecheck, and logic.js freshness.";
       usageSuffix = " -- [bun test arguments]";
-      # Architecture tests launch oxlint directly through its env-node shebang.
       runtimeInputs = [
         pkgs.bun
         pkgs.nodejs
+        pkgs.diffutils
       ];
-      # The font reproducibility check launches its native Nix-shebang builder.
-      # Hosted Nix installs need not have a channel or a pre-existing NIX_PATH.
       env.NIX_PATH = "nixpkgs=${pkgs.path}";
       script = ''
-        cd "$KORRI_ROOT/surfaces/zone"
+        cd "$KORRI_ROOT/clients/shell"
         bun install --frozen-lockfile --ignore-scripts
-        bun test "$@"
-        bun run typecheck
-        bun run lint
+        bun test "$@" packages/zone/test
+        bun run zone:typecheck
+        # logic.js is the bundle of logic.ts: it must be the one committed.
+        committed=$(mktemp)
+        cp packages/zone/logic.js "$committed"
+        bun run zone:build >/dev/null
+        if ! cmp -s "$committed" packages/zone/logic.js; then
+          cp "$committed" packages/zone/logic.js
+          echo "packages/zone/logic.js is stale: run bun run zone:build in clients/shell" >&2
+          exit 1
+        fi
       '';
     };
 

@@ -1,0 +1,14 @@
+// ZoneBars's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneBars } from "./ZoneBars.slint";
+
+export component Three inherits ZonePreview {
+    ZoneBars { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; lit: 3; }
+}
+
+export component Offline inherits ZonePreview {
+    ZoneBars { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; lit: 0; }
+}

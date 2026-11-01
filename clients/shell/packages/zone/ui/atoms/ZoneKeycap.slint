@@ -1,0 +1,71 @@
+// ZoneKeycap: the disc, its letter, and at a wide enough strip the word on a black tail behind it.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneShape } from "./ZoneShape.slint";
+import { ZoneCaps } from "./ZoneCaps.slint";
+
+// A keycap hint (ZoneKeycap): the disc, its letter, and at a wide enough
+// strip the word on a black tail behind it.
+export component ZoneKeycap {
+    in property <string> key;
+    in property <string> word;
+    in property <color> key-ink;
+    property <length> a: Tokens.a;
+    in property <bool> words;
+    in property <length> pad;
+    property <length> c1: 10 * a;
+    property <length> d: 1.5 * c1;
+    out property <length> span: words ? d + pad + label.natural + 14 * a : d;
+    width: span;
+    height: d;
+    property <length> wx: d / 2;
+    property <length> ww: span - d / 2;
+    property <length> wy: d / 2 - 6 * a;
+    if root.words: ZoneShape {
+        x: root.wx;
+        y: root.wy;
+        width: root.ww;
+        height: 12 * root.a;
+        ink: Tokens.black;
+        commands: "M 0 0 L " + Tokens.pt(0, 12 * root.a) + " L " + Tokens.pt(root.ww - 11 * root.a, 12 * root.a)
+            + " L " + Tokens.pt(root.ww - 11 * root.a, 11 * root.a) + " L " + Tokens.pt(root.ww, 0) + " Z";
+    }
+    Rectangle {
+        x: root.wx;
+        y: root.wy;
+        width: root.ww;
+        height: 12 * root.a;
+        clip: true;
+        visible: root.words;
+        label := ZoneCaps {
+            x: root.d / 2 + root.pad;
+            y: root.a;
+            text: root.word;
+            cap: root.c1;
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.d;
+        height: root.d;
+        border-radius: root.d / 2;
+        background: Tokens.black;
+    }
+    Rectangle {
+        x: root.a;
+        y: root.a;
+        width: root.d - 2 * root.a;
+        height: root.d - 2 * root.a;
+        border-radius: self.width / 2;
+        background: Tokens.key-disc;
+    }
+    letter := ZoneCaps {
+        x: (root.d - self.natural) / 2;
+        y: 2 * root.a;
+        text: root.key;
+        cap: root.c1;
+        ink: "flat";
+        colour: root.key-ink;
+    }
+}

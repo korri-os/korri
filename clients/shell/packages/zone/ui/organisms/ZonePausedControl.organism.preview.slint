@@ -1,0 +1,16 @@
+// ZonePausedControl's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZonePausedControl } from "./ZonePausedControl.slint";
+
+export component Choice inherits ZonePreview {
+    ground: "paused";
+    ZonePausedControl { x: 40 * Tokens.a; y: (parent.height - self.height) / 2; width: parent.width - 60 * Tokens.a; height: 34 * Tokens.a; it: { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, focused: true, choice: true, bars: -1 }; }
+}
+
+export component Range inherits ZonePreview {
+    ground: "paused";
+    ZonePausedControl { x: 40 * Tokens.a; y: (parent.height - self.height) / 2; width: parent.width - 60 * Tokens.a; height: 34 * Tokens.a; it: { kind: "range", label: "Volume", value: "85", value-fact: true, focused: true, choice: true, saving: true, bars: 85 }; }
+}

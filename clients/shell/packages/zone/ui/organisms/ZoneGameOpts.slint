@@ -1,0 +1,71 @@
+// ZoneGameOpts
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "../atoms/ZonePanel.slint";
+import { ZoneCaps } from "../atoms/ZoneCaps.slint";
+import { ZoneRowList } from "./ZoneRowList.slint";
+import { Row } from "../types.slint";
+
+// GAME OPTS. (ZoneGames' sheet): a panel of its own ground over GAMES, the
+// head (GAME OPTS. caps-2 on black, the game on blue), Korri's actions as
+// rows with RUN, red when destructive.
+export component ZoneGameOpts {
+    property <length> a: Tokens.a;
+    in property <string> title;
+    in property <[Row]> rows;
+    in property <float> nudge: Tokens.nudge-button;
+    property <length> c1: 10 * a;
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.ground-fill;
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        cache-rendering-hint: true;
+        ZonePanel {
+            x: (root.width - self.width) / 2;
+            y: 4 * root.a;
+            width: head.natural + 2 * 22 * root.a;
+            height: 24 * root.a;
+            run: 23 * root.a;
+            ink: Tokens.black;
+        }
+        head := ZoneCaps {
+            x: (root.width - self.natural) / 2;
+            y: 6 * root.a;
+            text: "Game opts.";
+            cap: 2 * root.c1;
+        }
+        ZonePanel {
+            x: (root.width - self.width) / 2;
+            y: 32 * root.a;
+            width: Math.min(root.width - 16 * root.a, game.natural + 2 * 14 * root.a);
+            height: 14 * root.a;
+            run: 13 * root.a;
+            ink: Tokens.blue;
+        }
+        game := ZoneCaps {
+            x: (root.width - self.width) / 2;
+            y: 34 * root.a;
+            box: Math.min(self.natural, root.width - 44 * root.a);
+            elide: true;
+            text: root.title;
+            cap: root.c1;
+            face: "fact";
+            ink: "hud";
+        }
+    }
+    ZoneRowList {
+        x: 12 * root.a;
+        y: 52 * root.a;
+        width: root.width - 24 * root.a;
+        height: root.height - 56 * root.a;
+        rows: root.rows;
+    }
+}

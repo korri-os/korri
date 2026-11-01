@@ -54,7 +54,7 @@ PARITY_INPUTS = {
     "clients/portal/src/surface/plugin-repositories.ts",
     "clients/portal/src/surface/launch-settings-model.ts",
     "surfaces/pico/src/pico-settings-view.ts",
-    "surfaces/zone/src/plan/options.ts",
+    "clients/shell/packages/zone/src/plan/options.ts",
 }
 PORTAL_PRESENTATION = (
     "clients/portal/src/input/",

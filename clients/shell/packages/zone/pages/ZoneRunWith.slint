@@ -1,0 +1,46 @@
+// ZoneRunWith: RUN WITH: Korri's runner choice for one game: its title and state tag in the head, Korri's warnings and message, a row per route with SAVED on the routes saved choices pick, Korri's actions as buttons. No tabs: the banner names the page.
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZoneSkyBand } from "../ui/organisms/ZoneSkyBand.slint";
+import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry.slint";
+import { ZoneShell } from "../ui/templates/ZoneShell.slint";
+import { Tab, Hints, Foot, Head, Row, WellInfo, Keyboard } from "../ui/types.slint";
+
+export component ZoneRunWith {
+
+    in property <Hints> hints;
+    in property <Foot> foot;
+    in property <Head> head;
+    in property <[Row]> rows;
+    in property <WellInfo> well;
+    in property <Keyboard> keyboard;
+    in property <length> bottom-room: 0;
+    shell := ZoneShell {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        tabs-shown: false;
+        banner: "Run with";
+        hints: root.hints;
+        foot: root.foot;
+        ZoneSkyBand {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: shell.body-h;
+            head: root.head;
+            rows: root.rows;
+            well: root.well;
+            label-share: 0.45;
+            bottom-room: root.bottom-room;
+        }
+    }
+    if root.keyboard.shown: ZoneOptionsEntry {
+        x: 0;
+        y: Tokens.top-h;
+        width: root.width;
+        height: root.height - Tokens.top-h;
+        board: root.keyboard;
+    }
+}

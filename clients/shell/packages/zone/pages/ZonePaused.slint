@@ -1,0 +1,160 @@
+// ZonePaused: the gameplay overlay (src/plan/paused.ts). The running game's
+// art (else the grey checker of 16 art px squares), the red band a quarter
+// of the height (40 to 72 art px) with Korri's title at caps-3 (caps-2
+// when it must) rising over its black slab, the yellow wedge in the
+// bottom-right corner, Korri's controls then its groups stepping down-left
+// along it (one cap a step, at most four, resting at the foot, clear of
+// B BACK when the column reaches over it), Korri's status over it.
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZoneShape } from "../ui/atoms/ZoneShape.slint";
+import { ZonePanel } from "../ui/atoms/ZonePanel.slint";
+import { ZoneCaps } from "../ui/atoms/ZoneCaps.slint";
+import { ZoneKeycap } from "../ui/atoms/ZoneKeycap.slint";
+import { ZoneVeil } from "../ui/atoms/ZoneVeil.slint";
+import { ZonePausedControl } from "../ui/organisms/ZonePausedControl.slint";
+import { ZoneStatusLayer } from "../ui/organisms/ZoneStatusLayer.slint";
+import { Row, Dialog, Busy, Hints } from "../ui/types.slint";
+
+export component ZonePaused {
+    in property <string> heading: "Paused";
+    in property <bool> korri-heading;
+    in property <bool> has-art;
+    in property <image> art;
+    in property <[Row]> rows;
+    in property <Dialog> dialog;
+    in property <Busy> busy;
+    in property <Hints> hints;
+    property <length> a: Tokens.a;
+    property <length> c1: Tokens.c1;
+    property <length> band-h: Math.clamp(Math.round(Tokens.h-art * Tokens.paused-band-share), Tokens.paused-band-least, Tokens.paused-band-most) * a;
+    property <length> wedge: Math.max(1, Tokens.h-art - Tokens.paused-wedge-top) * a;
+    property <length> rows-left: Math.max(0, Math.min(Math.max(0, Tokens.w-art - wedge / a) + 8, Tokens.w-art - Math.min(Tokens.w-art, Tokens.paused-rows-least))) * a;
+    property <length> rows-foot: rows-left < 80 * a ? 25 * a : 0;
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        cache-rendering-hint: true;
+        if root.a > 0: Image {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            source: root.a >= 4 * Tokens.unit ? @image-url("../art/checker-4.png") : root.a >= 3 * Tokens.unit ? @image-url("../art/checker-3.png")
+                : root.a >= 2 * Tokens.unit ? @image-url("../art/checker-2.png") : @image-url("../art/checker-1.png");
+            horizontal-tiling: repeat;
+            vertical-tiling: repeat;
+            image-rendering: pixelated;
+        }
+        if root.has-art: Rectangle {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            clip: true;
+            property <float> ratio: root.art.width / Math.max(1, root.art.height);
+            property <bool> wider: ratio > root.width / Math.max(Tokens.unit, root.height);
+            Image {
+                width: parent.wider ? root.height * parent.ratio : root.width;
+                height: parent.wider ? root.height : root.width / Math.max(0.01, parent.ratio);
+                x: (root.width - self.width) / 2;
+                y: (root.height - self.height) / 2;
+                source: root.art;
+                image-fit: fill;
+                image-rendering: pixelated;
+            }
+            // Zone shows the art in grey; Slint has no grey filter, so the
+            // veil mutes it instead (README.md, differences).
+            ZoneVeil {
+                x: 0;
+                y: 0;
+                width: root.width;
+                height: root.height;
+            }
+        }
+        ZoneShape {
+            x: root.width - root.wedge;
+            y: root.height - root.wedge;
+            width: root.wedge;
+            height: root.wedge;
+            ink: Tokens.yellow;
+            commands: "M " + Tokens.pt(root.wedge, 0) + " L " + Tokens.pt(root.wedge, root.wedge) + " L " + Tokens.pt(0, root.wedge) + " Z";
+        }
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.band-h;
+            background: Tokens.paused-band;
+        }
+        // Caps-3 while the title fits the band (about 16 art px a letter at caps-3), else caps-2.
+        property <length> title-cap: root.heading.character-count * 16 * root.a > root.width - 120 * root.a ? Tokens.c2 : Tokens.c3;
+        ZonePanel {
+            x: 8 * root.a;
+            y: root.band-h - self.height - 4 * root.a;
+            width: Math.min(root.width - 16 * root.a, title-word.natural + 2 * parent.title-cap + 24 * root.a);
+            height: parent.title-cap + 4 * root.a;
+            run: parent.title-cap;
+            ink: Tokens.black;
+        }
+        title-word := ZoneCaps {
+            x: 16 * root.a + parent.title-cap;
+            y: root.band-h - 8 * root.a - parent.title-cap;
+            box: Math.min(self.natural, root.width - 24 * root.a - 2 * parent.title-cap);
+            elide: true;
+            text: root.heading;
+            cap: parent.title-cap;
+            face: root.korri-heading ? "korri" : "caps";
+        }
+        ZoneKeycap {
+            x: 8 * root.a;
+            y: root.height - 20 * root.a;
+            key: "B";
+            word: root.hints.back;
+            key-ink: Tokens.key-b;
+            words: true;
+            pad: 2 * root.a;
+        }
+    }
+    // The rows: caps-2 while they fit, caps-1 otherwise.
+    property <int> count: rows.length;
+    property <length> col-w: root.width - rows-left - 8 * a;
+    property <length> room-h: root.height - band-h - 8 * a - rows-foot - 6 * a;
+    property <bool> big: count * (Tokens.c2 + 14 * a) <= room-h;
+    property <length> cap: big ? Tokens.c2 : c1;
+    property <length> pitch: cap + (big ? 14 : 9) * a;
+    property <int> stairs: Math.clamp(count - 1, 0, 4);
+    property <length> list-h: count * pitch;
+    // A list taller than its room scrolls, the focused row in view.
+    in property <int> focus-at;
+    property <length> shown-h: Math.min(list-h, room-h);
+    property <length> scroll: Math.clamp((focus-at + 1) * pitch - room-h, 0, Math.max(0, list-h - room-h));
+    Rectangle {
+        x: 0;
+        y: root.height - root.rows-foot - 8 * root.a - root.shown-h;
+        width: root.width;
+        height: root.shown-h + 4 * root.a;
+        clip: true;
+        for r[i] in root.rows: ZonePausedControl {
+            property <int> step: Math.clamp(root.stairs - (root.count - 1 - i), 0, root.stairs);
+            x: root.rows-left + (root.stairs - self.step) * root.c1;
+            y: i * root.pitch - root.scroll;
+            width: root.col-w - (root.stairs - self.step) * root.c1;
+            height: root.pitch;
+            it: r;
+            cap: root.cap;
+        }
+    }
+    ZoneStatusLayer {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        busy: root.busy;
+        dialog: root.dialog;
+        header-h: 0;
+        foot-h: 0;
+    }
+}

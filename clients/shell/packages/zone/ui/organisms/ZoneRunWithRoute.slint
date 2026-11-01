@@ -1,0 +1,32 @@
+// ZoneRunWithRoute: one route of Korri's runner choice: SAVED with the
+// saved choices that pick it (yellow, then Korri's names in blue), then the
+// program and its exact build as an option row (the build whole under it
+// while focused, from the view). A saved choice no route offers stands as
+// a route of its own with UNAVAILABLE for its build.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneOptionRow } from "../molecules/ZoneOptionRow.slint";
+import { ZoneTagRow } from "../molecules/ZoneTagRow.slint";
+import { Row } from "../types.slint";
+
+export component ZoneRunWithRoute {
+    in property <Row> route;
+    property <length> a: Tokens.a;
+    property <length> tags-h: route.tags.length > 0 ? 1.55 * Tokens.c1 + 4 * a : 0;
+    height: tags-h + row.need;
+    if root.route.tags.length > 0: ZoneTagRow {
+        x: 4 * root.a;
+        y: 2 * root.a;
+        width: self.natural;
+        fill: false;
+        tags: root.route.tags;
+    }
+    row := ZoneOptionRow {
+        x: 0;
+        y: root.tags-h;
+        width: root.width;
+        it: { kind: "item", label: root.route.label, label-fact: true, value: root.route.value, value-fact: root.route.value-fact,
+            focused: root.route.focused, bars: -1 };
+        label-share: 0.45;
+    }
+}

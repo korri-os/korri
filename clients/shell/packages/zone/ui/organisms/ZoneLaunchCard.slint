@@ -1,0 +1,26 @@
+// ZoneLaunchCard: the title card that opens on PLAY or CONTINUE (M3): the
+// game's title card with the act about to start. It waits for Korri; the
+// view lets go of it when Korri does.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTitleCard } from "../molecules/ZoneTitleCard.slint";
+import { LaunchCard } from "../types.slint";
+
+export component ZoneLaunchCard {
+    in property <LaunchCard> card;
+    // The card sweeps in over 600 ms on the view's clock.
+    property <float> opened-ms: 0;
+    init => {
+        self.opened-ms = Tokens.clock-ms;
+    }
+    ZoneTitleCard {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        title: root.card.title;
+        system: root.card.system;
+        act: root.card.act;
+        t: Math.clamp((Tokens.clock-ms - root.opened-ms) / 600, 0, 1);
+    }
+}

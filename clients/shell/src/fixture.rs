@@ -58,6 +58,8 @@ struct State {
     calls: Vec<String>,
     declarations: Vec<Value>,
     generation: u64,
+    /// A catalog published as it is (`reset` without games).
+    fixed_catalog: Option<Value>,
 }
 
 pub struct Fixture {
@@ -93,6 +95,7 @@ impl Fixture {
                 calls: Vec::new(),
                 declarations: Vec::new(),
                 generation: 0,
+                fixed_catalog: None,
             }),
             Condvar::new(),
         ));
@@ -193,6 +196,29 @@ impl Fixture {
         changed.notify_all();
     }
 
+    /// Replace the published model and the games behind its catalog, and
+    /// push it to every surface. Each surface's catalog window starts over.
+    /// With `games` absent the model's own catalog (Loading, Error, Empty)
+    /// is published as it is.
+    pub fn reset(&self, model: Value, games: Option<Vec<Value>>) {
+        let (lock, changed) = &*self.shared;
+        let mut state = lock.lock().unwrap();
+        state.fixed_catalog = if games.is_none() {
+            Some(model["catalog"].clone())
+        } else {
+            None
+        };
+        state.base = model;
+        state.games = games.unwrap_or_default();
+        for surface in state.surfaces.values_mut() {
+            surface.query = None;
+            surface.from = None;
+            surface.focused = None;
+            surface.revision += 1;
+        }
+        changed.notify_all();
+    }
+
     pub fn set_overlay(&self, shown: bool) {
         self.publish(|model| {
             model["presentation"] = if shown {
@@ -269,13 +295,26 @@ fn model_for(state: &State, surface_id: &str) -> Value {
             s.count
         }
     });
-    model["catalog"] = catalog::window(&state.games, &query, &from, count);
+    model["catalog"] = match &state.fixed_catalog {
+        Some(fixed) => fixed.clone(),
+        None => catalog::window(&state.games, &query, &from, count),
+    };
     if surface.and_then(|s| s.displays) == Some(engine::Displays::All) {
         // One main display; the fixture has no compositor to read outputs from.
         model["displays"] = json!([{"id": "fixture", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false}]);
     }
+    // A model that names actions in `focusedGame` lends them to whichever
+    // game the surface focuses (the fixture has no per-game actions).
+    let actions = state
+        .base
+        .pointer("/focusedGame/actions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    model
+        .as_object_mut()
+        .map(|fields| fields.remove("focusedGame"));
     if let Some(id) = surface.and_then(|s| s.focused.as_deref()) {
-        model["focusedGame"] = json!({"gameId": id, "actions": []});
+        model["focusedGame"] = json!({"gameId": id, "actions": actions});
     }
     model
 }

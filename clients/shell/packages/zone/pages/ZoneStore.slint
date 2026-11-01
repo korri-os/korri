@@ -1,0 +1,46 @@
+// ZoneStore: GET GAMES: Korri's providers, one provider's search and results, one entry (its stand-in well, Korri's words, GET or PLAY); the head names where the person is; the search keyboard is FIND's.
+
+import { Tokens } from "../ui/tokens.slint";
+import { ZoneSkyBand } from "../ui/organisms/ZoneSkyBand.slint";
+import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry.slint";
+import { ZoneShell } from "../ui/templates/ZoneShell.slint";
+import { Tab, Hints, Foot, Head, Row, WellInfo, Keyboard } from "../ui/types.slint";
+
+export component ZoneStore {
+
+    in property <Hints> hints;
+    in property <Foot> foot;
+    in property <Head> head;
+    in property <[Row]> rows;
+    in property <WellInfo> well;
+    in property <Keyboard> keyboard;
+    in property <length> bottom-room: 0;
+    shell := ZoneShell {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        tabs-shown: false;
+        banner: "Get games";
+        hints: root.hints;
+        foot: root.foot;
+        ZoneSkyBand {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: shell.body-h;
+            head: root.head;
+            rows: root.rows;
+            well: root.well;
+            label-share: 0.55;
+            bottom-room: root.bottom-room;
+        }
+    }
+    if root.keyboard.shown: ZoneOptionsEntry {
+        x: 0;
+        y: Tokens.top-h;
+        width: root.width;
+        height: root.height - Tokens.top-h;
+        board: root.keyboard;
+    }
+}

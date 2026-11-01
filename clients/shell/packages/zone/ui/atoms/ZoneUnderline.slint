@@ -1,0 +1,20 @@
+// ZoneUnderline: the pink drop under a focused (3 art px) or lit (2 art px)
+// control, its panel's shape offset down and left. Draw it before the panel.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePanel } from "./ZonePanel.slint";
+
+export component ZoneUnderline {
+    in property <length> run;
+    in property <length> depth: 3 * Tokens.a;
+    in property <bool> left-straight: false;
+    ZonePanel {
+        x: -root.depth;
+        y: root.depth;
+        width: root.width;
+        height: root.height;
+        run: root.run;
+        left-straight: root.left-straight;
+        ink: Tokens.pink;
+    }
+}

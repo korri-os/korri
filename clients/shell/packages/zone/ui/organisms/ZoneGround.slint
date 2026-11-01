@@ -1,0 +1,98 @@
+// ZoneGround: the screen group's ground with its two rings and their dots.
+
+import { Tokens } from "../../ui/tokens.slint";
+
+// The ground (ZoneGround): ring A across the middle, ring B upper right,
+// ring A's dots once round in 140 s clockwise, ring B's in 200 s the other
+// way. Modern glides at 60 frames a second; the pixel looks step the dots
+// at 15 (--zone-ground-fps) and stand them on whole art px.
+export component ZoneGround {
+    property <length> a: Tokens.a;
+    in property <float> clock-ms: Tokens.clock-ms;
+    in property <bool> still: false;
+    property <float> w-art: Math.floor(root.width / a);
+    property <float> h-art: Math.floor(root.height / a);
+    property <float> short: Math.min(w-art, h-art);
+    property <float> ra-cx: Math.round(w-art * 0.5);
+    property <float> ra-cy: Math.round(h-art * 0.56);
+    property <float> ra-r: Math.round(short * 0.46);
+    property <float> rb-cx: Math.round(w-art * 0.8);
+    property <float> rb-cy: Math.round(h-art * 0.36);
+    property <float> rb-r: Math.round(short * 0.34);
+    property <float> fps: Tokens.modern ? 60 : 15;
+    property <float> ground-ms: still ? 0 : Math.floor(clock-ms * fps / 1000) * 1000 / fps;
+    property <angle> a-turn: ground-ms / 140000 * 360deg;
+    property <angle> b-turn: -ground-ms / 200000 * 360deg;
+    // The pixel looks stand a dot on whole art px.
+    pure function snap(v: float) -> float {
+        return Tokens.modern ? v : Math.round(v);
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.ground-fill;
+    }
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        cache-rendering-hint: true;
+        Rectangle {
+            x: root.rb-cx * root.a - root.rb-r * root.a - 6 * root.a / 2;
+            y: root.rb-cy * root.a - root.rb-r * root.a - 6 * root.a / 2;
+            width: 2 * root.rb-r * root.a + 6 * root.a;
+            height: 2 * root.rb-r * root.a + 6 * root.a;
+            border-radius: self.width / 2;
+            border-width: 6 * root.a;
+            border-color: Tokens.ring-b;
+        }
+        Rectangle {
+            x: root.ra-cx * root.a - root.ra-r * root.a - 6 * root.a / 2;
+            y: root.ra-cy * root.a - root.ra-r * root.a - 6 * root.a / 2;
+            width: 2 * root.ra-r * root.a + 6 * root.a;
+            height: 2 * root.ra-r * root.a + 6 * root.a;
+            border-radius: self.width / 2;
+            border-width: 6 * root.a;
+            border-color: Tokens.ring-a;
+        }
+    }
+    Path {
+        x: (root.snap(root.rb-cx + root.rb-r * Math.cos(0.5 * 360deg + root.b-turn)) + 0.5) * root.a - 8 * root.a;
+        y: (root.snap(root.rb-cy + root.rb-r * Math.sin(0.5 * 360deg + root.b-turn)) + 0.5) * root.a - 8 * root.a;
+        width: 2 * 8 * root.a;
+        height: 2 * 8 * root.a;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 2;
+        viewbox-height: 2;
+        commands: "M 0 1 A 1 1 0 1 0 2 1 A 1 1 0 1 0 0 1 Z";
+        fill: Tokens.ring-b;
+    }
+    Path {
+        x: (root.snap(root.ra-cx + root.ra-r * Math.cos(0.75 * 360deg + root.a-turn)) + 0.5) * root.a - 10 * root.a;
+        y: (root.snap(root.ra-cy + root.ra-r * Math.sin(0.75 * 360deg + root.a-turn)) + 0.5) * root.a - 10 * root.a;
+        width: 2 * 10 * root.a;
+        height: 2 * 10 * root.a;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 2;
+        viewbox-height: 2;
+        commands: "M 0 1 A 1 1 0 1 0 2 1 A 1 1 0 1 0 0 1 Z";
+        fill: Tokens.ring-a;
+    }
+    Path {
+        x: (root.snap(root.ra-cx + root.ra-r * Math.cos(0.08 * 360deg + root.a-turn)) + 0.5) * root.a - 6 * root.a;
+        y: (root.snap(root.ra-cy + root.ra-r * Math.sin(0.08 * 360deg + root.a-turn)) + 0.5) * root.a - 6 * root.a;
+        width: 2 * 6 * root.a;
+        height: 2 * 6 * root.a;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 2;
+        viewbox-height: 2;
+        commands: "M 0 1 A 1 1 0 1 0 2 1 A 1 1 0 1 0 0 1 Z";
+        fill: Tokens.ring-a;
+    }
+}

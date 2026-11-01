@@ -1,0 +1,26 @@
+// ZoneOptionsEntry (and ZoneSaveEntry): the one slanted keyboard risen over
+// a page, the page under it veiled when the page's rows stand behind it.
+// What it types, for what, comes from the view (src/view.ts).
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZoneVeil } from "../atoms/ZoneVeil.slint";
+import { ZoneKeyboard } from "../molecules/ZoneKeyboard.slint";
+import { Keyboard } from "../types.slint";
+
+export component ZoneOptionsEntry {
+    in property <Keyboard> board;
+    in property <bool> veiled: true;
+    if root.veiled: ZoneVeil {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+    }
+    ZoneKeyboard {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        board: root.board;
+    }
+}

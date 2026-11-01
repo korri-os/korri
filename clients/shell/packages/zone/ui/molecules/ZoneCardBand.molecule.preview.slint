@@ -1,0 +1,18 @@
+// ZoneCardBand's preview states, with fixture data from Zone's fixtures.
+// Written by preview/write-previews.py.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneCardBand } from "./ZoneCardBand.slint";
+
+export component Default inherits ZonePreview {
+    ZoneCardBand { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ title: "Celeste Classic", initials: "CC", stripes: 1, tags: [{ label: "PICO-8", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "Continue", kind: "continue" }] }, { title: "Hollow Knight", initials: "HK", stripes: 3, tags: [{ label: "Switch", kind: "system", korri: true }, { label: "Here", kind: "here" }] }, { title: "Tetris", initials: "T", stripes: 4, tags: [{ label: "GB", kind: "system", korri: true }, { label: "zao", kind: "remote", korri: true }] }, { title: "Spelunky", initials: "S", stripes: 2, tags: [{ label: "PC", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "zao", kind: "remote", korri: true }] }, { title: "The Legend of Zelda: Oracle of Seasons", initials: "LZ", stripes: 5, section: "On zao", tags: [{ label: "GBC", kind: "system", korri: true }] }]; focused-card: 1; card-focused: true; total: 5; }
+}
+
+export component Last inherits ZonePreview {
+    ZoneCardBand { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ title: "Celeste Classic", initials: "CC", stripes: 1, tags: [{ label: "PICO-8", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "Continue", kind: "continue" }] }, { title: "Hollow Knight", initials: "HK", stripes: 3, tags: [{ label: "Switch", kind: "system", korri: true }, { label: "Here", kind: "here" }] }, { title: "Tetris", initials: "T", stripes: 4, tags: [{ label: "GB", kind: "system", korri: true }, { label: "zao", kind: "remote", korri: true }] }, { title: "Spelunky", initials: "S", stripes: 2, tags: [{ label: "PC", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "zao", kind: "remote", korri: true }] }, { title: "The Legend of Zelda: Oracle of Seasons", initials: "LZ", stripes: 5, section: "On zao", tags: [{ label: "GBC", kind: "system", korri: true }] }]; focused-card: 4; card-focused: true; total: 5; }
+}
+
+export component OneCard inherits ZonePreview {
+    ZoneCardBand { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ title: "Hollow Knight", initials: "HK", stripes: 3, tags: [{ label: "Switch", kind: "system", korri: true }, { label: "Here", kind: "here" }] }]; card-focused: true; total: 1; }
+}
