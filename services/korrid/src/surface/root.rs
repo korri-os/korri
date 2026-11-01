@@ -14,6 +14,8 @@ use super::{
     acquisition_gate::{AcquisitionGameRef, AcquisitionGate},
     downloads::{DownloadGameRef, GameDownloads, ACQUISITION_POLL_INTERVAL},
     korrid::Korrid,
+    launch_model::launch_id,
+    launch_settings::{LaunchSettings, LAUNCH_SETTINGS_ACTION_ID},
     launchables::driver::SessionStartResult,
     launchables::{
         driver::{Launchables, LaunchablesHooks},
@@ -298,12 +300,14 @@ pub struct Root {
     pub acquisition: Arc<AcquisitionGate>,
     pub runner: Arc<RunnerChooser>,
     pub saves: Arc<SaveSync>,
+    pub launch: Arc<LaunchSettings>,
     pub store: Arc<StoreAcquisition>,
     pub plugins: Arc<PluginsController>,
     pub shared: Arc<SharedPlayController>,
     plugin_facts: Arc<std::sync::Mutex<PluginFacts>>,
     last_library: std::sync::Mutex<Option<String>>,
     last_live_ids: std::sync::Mutex<Option<Vec<String>>>,
+    runner_was_closed: std::sync::Mutex<bool>,
     controllers: Arc<super::controllers::Controllers>,
     displays: std::sync::Mutex<Displays>,
     onboarding_was_needed: std::sync::Mutex<Option<bool>>,
@@ -555,8 +559,14 @@ impl Root {
                     },
                 )
             };
+            // Launch settings: Device settings' group and one game's editor.
+            // Back is not taken here: the surface closes its own questions,
+            // then the editor.
+            let launch = LaunchSettings::new(korrid.clone(), notify.clone());
             Self {
                 shared,
+                launch,
+                runner_was_closed: std::sync::Mutex::new(true),
                 plugins,
                 plugin_facts,
                 store,
@@ -590,6 +600,8 @@ impl Root {
         id: String,
         runner_id: String,
     ) -> Option<SessionStartResult> {
+        // A launch from the chooser leaves any launch settings it was opened from.
+        self.launch.cancel();
         let current = self.launchables.state();
         let surface_id = local_game_ids_by_surface_id(&current)
             .into_iter()
@@ -789,6 +801,8 @@ impl Root {
     pub fn start(self: &Arc<Self>, mut overlay_intent: tokio::sync::watch::Receiver<u64>) {
         self.saves.start();
         self.shared.start();
+        let launch = Arc::clone(&self.launch);
+        tokio::spawn(async move { launch.refresh_device().await });
         // The overlay opens as soon as korrid's Home intent lands (the
         // portal waited for its window's focus), and once at start for an
         // intent recovered before any surface asked.
@@ -852,6 +866,16 @@ impl Root {
     /// Reactions the portal ran as effects of a new launchables state.
     pub fn react(self: &Arc<Self>) {
         let state = self.launchables.state();
+        // The editor shows again once the runner chooser it opened closes,
+        // read afresh: a runner chosen there brings its layers.
+        let closed = self.runner.is_closed();
+        let was_closed = std::mem::replace(
+            &mut *self.runner_was_closed.lock().expect("runner poisoned"),
+            closed,
+        );
+        if !was_closed && closed && self.launch.is_open() {
+            self.launch.act(launch_id::RELOAD);
+        }
         self.place();
         // The library changed: a store entry may now be owned, or no longer be.
         let library = serde_json::to_string(
@@ -940,6 +964,7 @@ impl Root {
                 .as_ref()
                 .map(|settings| settings.plugins.as_slice()),
         ));
+        facts.launch_settings = self.launch.device_groups();
         let settings = settings_from(&facts);
         let mut status = match &network.problem {
             Some(problem) => SurfaceStatus::Problem {
@@ -980,11 +1005,14 @@ impl Root {
             status,
             save_history: self.saves.history(),
             runner_choice: Some(self.runner.snapshot()),
-            launch_settings: None,
+            launch_settings: Some(self.launch.editor()),
             clock_label: Some(self.clock.lock().expect("clock poisoned").clone()),
             actions: Vec::new(),
             settings,
-            settings_status: self.launchables.settings_status(),
+            settings_status: self
+                .launch
+                .status()
+                .unwrap_or_else(|| self.launchables.settings_status()),
             identity_management: self.launchables.identity_management(),
             build_label: None,
             network: network.network,
@@ -1009,7 +1037,8 @@ impl Root {
     fn decorate(&self, games: Vec<SurfaceGame>, state: &LaunchablesState) -> Vec<SurfaceGame> {
         let facts = self.downloads.facts();
         let marks = self.saves.marks();
-        if facts.is_empty() && marks.is_empty() {
+        let profiles = self.launch.active_profiles();
+        if facts.is_empty() && marks.is_empty() && profiles.is_empty() {
             return games;
         }
         let ids = local_game_ids_by_surface_id(state);
@@ -1022,6 +1051,9 @@ impl Root {
                     }
                     if let Some(saves) = surface_saves_from(marks.get(korrid_id)) {
                         game.saves = Some(saves);
+                    }
+                    if let Some(Some(profile)) = profiles.get(korrid_id) {
+                        game.active_profile = Some(profile.clone());
                     }
                 }
                 game
@@ -1079,6 +1111,10 @@ impl Root {
             })
         );
         let healthy = matches!(&current, LaunchablesState::Loaded(Loaded { phase: Phase::Ready, content }) if content.unavailable_session_status.is_none());
+        // A game's page shows the profile its next launch uses: read it once.
+        if let Some(korrid_id) = korrid_id.as_ref().filter(|_| ready_now) {
+            self.launch.learn(korrid_id);
+        }
         if local_runner_entry(entry).is_some() {
             actions.push(SurfaceAction::new(
                 "runners",
@@ -1088,7 +1124,7 @@ impl Root {
         }
         if korrid_id.is_some() {
             actions.push(SurfaceAction::new(
-                "launch-settings",
+                LAUNCH_SETTINGS_ACTION_ID,
                 "Launch settings",
                 ready_now,
             ));
@@ -1141,12 +1177,13 @@ impl Root {
                 .open(game.id.clone(), game.title.clone(), Intent::Launch);
             return;
         }
-        let _ = self.gated_start(AcquisitionGameRef {
+        // The gate starts at once; nothing here waits for its outcome.
+        drop(self.gated_start(AcquisitionGameRef {
             id: game.id.clone(),
             surface_id: id.into(),
             title: game.title.clone(),
             runner_id: None,
-        });
+        }));
     }
 
     /// The startup behind the gate: once every artifact the game's runner
@@ -1266,6 +1303,7 @@ impl Root {
                     || self.acquisition.status().is_some()
                     || self.saves.status().is_some()
                     || !self.runner.is_closed()
+                    || self.launch.is_open()
                 {
                     return;
                 }
@@ -1286,6 +1324,7 @@ impl Root {
             SurfaceRequest::RunAction { action_id } => {
                 if self.owner_binding.act(&action_id)
                     || self.shared.act(&action_id)
+                    || self.launch.act(&action_id)
                     || self.saves.act(&action_id)
                     || self.starter_pack.act(&action_id)
                     || self.store.act(&action_id)
@@ -1309,9 +1348,15 @@ impl Root {
                 }
             }
             SurfaceRequest::ChangeSetting { setting_id, value } => {
-                launchables.change_setting(&setting_id, &value)
+                if !self.launch.change(&setting_id, &value) {
+                    launchables.change_setting(&setting_id, &value)
+                }
             }
-            SurfaceRequest::DismissSettingsProblem => launchables.dismiss_settings_problem(),
+            SurfaceRequest::DismissSettingsProblem => {
+                if !self.launch.dismiss_problem() {
+                    launchables.dismiss_settings_problem()
+                }
+            }
             SurfaceRequest::ExportIdentityBackup {
                 password,
                 retired_public_key,
@@ -1345,6 +1390,7 @@ impl Root {
                     || self.acquisition.status().is_some()
                     || self.saves.status().is_some()
                     || !self.runner.is_closed()
+                    || self.launch.is_open()
                 {
                     return;
                 }
@@ -1403,7 +1449,34 @@ impl Root {
                     }
                     return;
                 }
-                if action_id == "launch-settings" {
+                if action_id == LAUNCH_SETTINGS_ACTION_ID {
+                    let Some(korrid_id) = local_game_ids_by_surface_id(&current)
+                        .get(&game_id)
+                        .cloned()
+                    else {
+                        return;
+                    };
+                    let Entry::Game { game, .. } = &entry else {
+                        return;
+                    };
+                    // The runner chooser, when this page offers it, fills in
+                    // the layers that wait on a runner choice.
+                    let healthy = matches!(&current, LaunchablesState::Loaded(Loaded { content, .. }) if content.unavailable_session_status.is_none());
+                    let choose =
+                        local_runner_entry(Some(&entry))
+                            .filter(|_| healthy)
+                            .map(|local| {
+                                let runner = Arc::clone(&self.runner);
+                                Arc::new(move || {
+                                    runner.open(
+                                        local.id.clone(),
+                                        local.title.clone(),
+                                        Intent::Inspect,
+                                    )
+                                })
+                                    as super::launch_settings::OpenRunners
+                            });
+                    self.launch.open(korrid_id, game.title.clone(), choose);
                     return;
                 }
                 if action_id == "end" {
@@ -1433,6 +1506,8 @@ impl Root {
             }
             SurfaceRequest::Reload => {
                 launchables.reload();
+                let launch = Arc::clone(&self.launch);
+                tokio::spawn(async move { launch.refresh_device().await });
                 let network = Arc::clone(&self.network);
                 network.dismiss_problem();
                 tokio::spawn(async move { network.refresh().await });

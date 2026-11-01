@@ -344,13 +344,6 @@ impl Launchables {
         self.lock().facts.plugin_groups = groups;
         self.changed();
     }
-    pub fn set_launch_settings(
-        &self,
-        groups: Option<Vec<korri_surface_treaty::SurfaceSettingGroup>>,
-    ) {
-        self.lock().facts.launch_settings = groups;
-        self.changed();
-    }
 
     async fn session_status_with_timeout(&self) -> SessionStatusOutcome {
         let outcome = self

@@ -2213,13 +2213,13 @@ mod store_acquisition {
         json!({ "_tag": "Ok", "payload": details })
     }
 
-    fn store(
-        owned: Arc<Mutex<Option<String>>>,
-    ) -> (
+    type Store = (
         Arc<StoreAcquisition>,
         Arc<Mutex<Script>>,
         Arc<Mutex<Vec<String>>>,
-    ) {
+    );
+
+    fn store(owned: Arc<Mutex<Option<String>>>) -> Store {
         let (korrid, script) = scripted();
         let imported = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&imported);
@@ -2513,12 +2513,13 @@ mod plugin_repositories {
     }
 
     fn repositories(user_added: Vec<&str>, installs: Value) -> PluginFacts {
-        let mut facts = PluginFacts::default();
-        facts.repositories = Read::Ready(from(
-            json!({ "official": null, "userAdded": user_added, "repositoryInstalls": installs, "otherInstalls": [] }),
-        ));
-        facts.publishers = Read::Ready(from(json!({ "entries": [] })));
-        facts
+        PluginFacts {
+            repositories: Read::Ready(from(
+                json!({ "official": null, "userAdded": user_added, "repositoryInstalls": installs, "otherInstalls": [] }),
+            )),
+            publishers: Read::Ready(from(json!({ "entries": [] }))),
+            ..PluginFacts::default()
+        }
     }
 
     fn retro_facts() -> PluginFacts {
@@ -2884,6 +2885,9 @@ mod plugin_repositories {
         );
     }
 }
+
+#[path = "launch_settings_tests.rs"]
+mod launch_settings;
 
 mod shared_play {
     //! Ports of `shared-play.test.ts`, `shared-play.model.test.ts` and
