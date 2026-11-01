@@ -24,14 +24,19 @@ let
         "services/korrid"
         "contracts"
         "contracts/input"
+        "contracts/surface"
         "contracts/generated"
         "contracts/generated/korrid.ts"
+        # korrid.ts imports the surface treaty's types from ./surface.
+        "contracts/generated/surface.ts"
       ]
       || (
         (
           lib.hasPrefix "clients/cli/" relative
           || lib.hasPrefix "services/korrid/" relative
           || lib.hasPrefix "contracts/input/" relative
+          # korrid's path dependency on the surface treaty crate.
+          || lib.hasPrefix "contracts/surface/" relative
         )
         && craneLib.filterCargoSources path type
       )

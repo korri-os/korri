@@ -34,6 +34,10 @@ fn plugin_new_is_self_contained_and_never_overwrites_a_project() {
         fs::read_to_string(project.join("korrid.ts")).unwrap(),
         include_str!("../../../contracts/generated/korrid.ts")
     );
+    assert_eq!(
+        fs::read_to_string(project.join("surface.ts")).unwrap(),
+        include_str!("../../../contracts/generated/surface.ts")
+    );
     let flake = fs::read_to_string(project.join("flake.nix")).unwrap();
     assert!(flake.contains("korri.lib.${system}.mkPlugin { inherit pkgs; }"));
     assert!(flake.contains("publisher.namespace = \"@author\""));
