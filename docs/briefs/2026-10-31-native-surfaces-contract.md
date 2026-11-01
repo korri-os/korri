@@ -1,6 +1,6 @@
 # Native surfaces: binding contract (workflow b64b9b94, 2026-10-31)
 
-Status: DRAFT for owner approval. No worker builds anything before approval.
+Status: APPROVED by the owner 2026-10-31 (Boxbuster deferred, option O1.1; Shift dropped).
 Source of decisions: `docs/briefs/2026-10-31-native-surface-treaty-proposal.md`.
 
 ## 0. Scope found while writing this contract (owner must decide)
@@ -62,7 +62,7 @@ returning requests (`src/state/requests.ts`).
 ### 3.2 Messages to the surface (C3)
 ```rust
 enum SurfaceMessage {
-  Pressed { action: SurfaceAction_ },   // up down left right confirm back options menu system
+  Pressed { button: SurfaceButton },    // Up Down Left Right Confirm Back Options Menu System
   KorriPublished,                        // a new model arrived
   PreferenceStored { key: String },      // a RememberPreference completed
 }
@@ -202,3 +202,26 @@ image to the PICO-8 palette first. The algorithm is ported unchanged from
    camera positions (`boxbuster-spots.ts`), so pre-drawn views fit.
 3. **Add a generic 3D scene to the shell** that any package can describe as
    data. This is large shell work and slows this run a lot.
+
+Lean (opinion): option 1 for this run, so the run stays on the platform plus
+Pico and Zone. Option 2 then follows as its own piece of work.
+
+## 6. Shell ↔ korrid wire (added at Platform start, inside the approved section 2)
+
+Both platform workers build against exactly this, so they can work in parallel.
+
+- Existing pattern: `RpcRequest` tagged `app.*` methods over the private
+  loopback (`services/korrid/src/lib.rs`), and the native-input WebSocket
+  subscription the portal uses (`clients/portal/src/input/native-connection.ts`,
+  `services/korrid/src/portal_input.rs`). The shell keeps the native-input
+  subscription exactly as the portal uses it.
+- `app.surface.model { surface_id }` → the current `SurfaceModel` for that
+  surface (catalog window as last moved by that surface).
+- `app.surface.watch { surface_id }` on the same authenticated WebSocket: korrid
+  pushes `{ revision, model }` whenever the model changes; the shell acks the
+  revision like native input. Whole model per push in this run.
+- `app.surface.request { surface_id, request: SurfaceRequest }` → `Ok` or a typed
+  error; consequences arrive as a new model.
+- `app.surface.preferences { surface_id }` → stored preference values.
+- surface_id is the package folder id (`pico`, `zone`).
+- The capability and port are injected exactly as the portal gets them today; never in a URL, file, log or asset.
