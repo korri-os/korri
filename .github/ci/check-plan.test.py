@@ -52,8 +52,8 @@ class SelectionTest(unittest.TestCase):
             "unknown/file",
             "clients/portal/unknown-runtime.json",
             "clients/portal/src/surface/unknown-runtime.rs",
-            "surfaces/pico/src/unknown-runtime.rs",
-            "surfaces/pico/unknown-runtime.json",
+            "surfaces/zone/src/unknown-runtime.rs",
+            "surfaces/zone/unknown-runtime.json",
             "packages/view/src/index.ts",
             "nix/cache/unknown-read-helper.py",
             "nix/cache/identity.nix",
@@ -72,7 +72,6 @@ class SelectionTest(unittest.TestCase):
         probes = {
             "clients/portal/src/surface/settings-model.ts": {"portal", "parity"}
             | ci.SURFACES,
-            "surfaces/pico/src/pico-settings-view.ts": {"pico", "portal", "parity"},
             "clients/portal/src/korrid/client.ts": {"portal", "cli", "korrid"}
             | ci.SURFACES,
             "services/korrid/src/main.rs": {
@@ -143,7 +142,6 @@ class SelectionTest(unittest.TestCase):
             "clients/portal/src/overlay/OverlayRoot.tsx",
             "clients/portal/src/surface/SurfaceRoot.tsx",
             "clients/portal/src/surface/settings-model.ts",
-            "surfaces/pico/src/ui/atoms/PicoClock.css",
             "surfaces/boxbuster/src/BoxbusterSurface.tsx",
             "surfaces/zone/src/plan/options.ts",
         ]:
@@ -345,7 +343,7 @@ class SelectionTest(unittest.TestCase):
 
 class AggregateTest(unittest.TestCase):
     def setUp(self):
-        self.selection = ci.plan("affected", ["surfaces/pico/src/index.ts"], "test")
+        self.selection = ci.plan("affected", ["surfaces/zone/src/index.ts"], "test")
         self.needs = {"select": {"result": "success"}}
         self.needs.update(
             {

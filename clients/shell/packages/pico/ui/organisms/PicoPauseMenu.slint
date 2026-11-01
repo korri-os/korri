@@ -24,6 +24,7 @@ export struct SheetItem {
 // under its caption, each control with its note. The runner picker lists its
 // routes and their facts the same way.
 export component PicoPauseMenu inherits VerticalLayout {
+    alignment: start;
     in property <[SheetItem]> items;
     spacing: 2 * Tokens.p;
     for item in items : VerticalLayout {

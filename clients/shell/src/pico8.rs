@@ -1,6 +1,6 @@
 //! The PICO-8 palette quantiser, ported unchanged from
-//! `surfaces/pico/src/pico8-remap.ts` (and its palette from
-//! `surfaces/pico/src/pico-palette.ts`). Contract 3.8: `{"$image": url,
+//! `surfaces/pico/src/pico8-remap.ts`, removed with the web Pico (its palette is
+//! `packages/pico/src/pico-palette.ts`). Contract 3.8: `{"$image": url,
 //! "pico8": "flat" | "vivid"}`. The arithmetic follows the TypeScript: channel
 //! values stay in floating point between the vivid lift and the distance, and
 //! only the final palette entry is written back.
@@ -101,7 +101,7 @@ pub fn quantize(data: &mut [u8], mode: Mode) {
 
 #[cfg(test)]
 mod tests {
-    //! The cases of `surfaces/pico/test/pico8-remap.test.ts`, as bytes.
+    //! The cases of the web Pico's `test/pico8-remap.test.ts`, as bytes.
     use super::*;
 
     fn hex(data: &[u8]) -> String {
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn palette_matches_pico_palette_ts_byte_for_byte() {
-        let source = include_str!("../../../surfaces/pico/src/pico-palette.ts");
+        let source = include_str!("../packages/pico/src/pico-palette.ts");
         let hexes: Vec<String> = source
             .lines()
             .filter_map(|line| line.split('"').nth(3).filter(|h| h.starts_with('#')))

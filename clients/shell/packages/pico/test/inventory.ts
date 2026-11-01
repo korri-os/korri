@@ -62,5 +62,6 @@ export const ADDED: Readonly<Record<string, { readonly layer: Layer; readonly wh
   PicoLine: { layer: "atoms", why: "One line of text in a line box with its glyphs on the pixel grid: CSS line-height did this." },
   PicoPara: { layer: "atoms", why: "Words that wrap at the face's size: CSS did this for every block of text." },
   PicoReveal: { layer: "atoms", why: "Says where the cursor's control stands once laid out; the DOM's focus() did this." },
+  PicoRail: { layer: "atoms", why: "A row that slides to keep the cursor's item in sight: the host's scrollIntoView did this for the DOM." },
   PicoScroll: { layer: "atoms", why: "A region that keeps the cursor's control in sight: the host's scrollIntoView did this for the DOM." },
 }

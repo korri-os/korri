@@ -189,7 +189,7 @@ class Parity(unittest.TestCase):
 
     def test_surface_owned_preferences_are_recorded(self):
         for path, constant in [
-            ("surfaces/pico/src/pico-settings-view.ts", "PICO_FONT_SETTING"),
+            ("clients/shell/packages/pico/src/pico-settings-view.ts", "PICO_FONT_SETTING"),
             ("surfaces/zone/src/plan/options.ts", "ZONE_SYSTEM_LOOK"),
         ]:
             source = (ROOT / path).read_text()

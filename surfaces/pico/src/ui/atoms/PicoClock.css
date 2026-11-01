@@ -1,6 +1,0 @@
-/* Korri's clock, as Korri formatted it. */
-.pico-clock {
-	font-size: var(--pico-text-sm);
-	color: var(--pico-ink-quiet);
-	white-space: nowrap;
-}

@@ -1,10 +1,10 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle, Focus } from "../tokens.slint";
-import { PicoReveal } from "PicoReveal.slint";
 import { PicoLine } from "PicoLine.slint";
 import { ButtonView } from "PicoRow.slint";
 
 // The floor's lead control: MENU with its three bars, or a quiet word (RELOAD).
+// It stands on the floor, never in a scrolled body, so it reveals nothing.
 export component PicoMenuKey {
     in property <ButtonView> button;
     in property <bool> menu: true;
@@ -25,5 +25,4 @@ export component PicoMenuKey {
         }
         PicoLine { line-height: 8 * Tokens.p; text: button.label; font-size: menu ? Tokens.sm : Tokens.md; color: row.ink; overflow: clip; }
     }
-    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
 }

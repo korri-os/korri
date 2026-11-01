@@ -2,6 +2,7 @@ import { P8 } from "../palette.slint";
 import { Tokens, Cycle, Focus } from "../tokens.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoChip } from "../atoms/PicoChip.slint";
+import { PicoRail } from "../atoms/PicoRail.slint";
 import { ButtonView } from "../atoms/PicoRow.slint";
 import { KeyView } from "../atoms/PicoKey.slint";
 import { PicoQueryField } from "../molecules/PicoQueryField.slint";
@@ -27,12 +28,13 @@ export struct FindView {
 // Korri found, in a rack that keeps the cursor's game in view. Chips that do
 // not fit a row scroll with the cursor.
 export component PicoLibraryBrowser inherits VerticalLayout {
+    alignment: start;
     in property <FindView> find;
     property <length> slot-w: 54 * Tokens.p;
     spacing: 3 * Tokens.p;
     PicoQueryField { query: find.query; }
-    HorizontalLayout { alignment: start; spacing: 3 * Tokens.p; for b in find.sections : PicoChip { button: b; } }
-    HorizontalLayout { alignment: start; spacing: 3 * Tokens.p; for b in find.orders : PicoChip { button: b; } }
+    PicoRail { for b in find.sections : PicoChip { button: b; } }
+    PicoRail { for b in find.orders : PicoChip { button: b; } }
     PicoKeyboard { keys: find.keys; rows: find.key-rows; }
     if find.empty : VerticalLayout {
         PicoLine { text: "NOTHING MATCHES"; color: P8.go; }

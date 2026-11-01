@@ -1,0 +1,1028 @@
+{
+  "results": [
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "default",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.default.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 873,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 54,
+            "top": 210,
+            "right": 576,
+            "bottom": 495.25
+          },
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 54,
+            "top": 503.25,
+            "right": 576,
+            "bottom": 788.5
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 54,
+            "top": 796.5,
+            "right": 576,
+            "bottom": 830.75
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 54,
+            "top": 838.75,
+            "right": 576,
+            "bottom": 873
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "default",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.default.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1398,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 561,
+            "top": 815.9375,
+            "right": 1344,
+            "bottom": 1262.1875
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 561,
+            "top": 1274.1875,
+            "right": 1344,
+            "bottom": 1329.9375
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 561,
+            "top": 1341.9375,
+            "right": 1344,
+            "bottom": 1397.6875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "default",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.default.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1240,
+        "bottom": 1398,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 221,
+            "top": 815.9375,
+            "right": 1004,
+            "bottom": 1262.1875
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 221,
+            "top": 1274.1875,
+            "right": 1004,
+            "bottom": 1329.9375
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 221,
+            "top": 1341.9375,
+            "right": 1004,
+            "bottom": 1397.6875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "default",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.default.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 888,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 94,
+            "top": 518.640625,
+            "right": 616,
+            "bottom": 803.890625
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 94,
+            "top": 811.890625,
+            "right": 616,
+            "bottom": 846.140625
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 94,
+            "top": 854.140625,
+            "right": 616,
+            "bottom": 888.390625
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "default",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.default.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "default",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.default.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 873,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 374,
+            "top": 210,
+            "right": 896,
+            "bottom": 495.25
+          },
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 374,
+            "top": 503.25,
+            "right": 896,
+            "bottom": 788.5
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 374,
+            "top": 796.5,
+            "right": 896,
+            "bottom": 830.75
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 374,
+            "top": 838.75,
+            "right": 896,
+            "bottom": 873
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Loading",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Loading.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Loading",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Loading.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Loading",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Loading.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Loading",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Loading.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Loading",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Loading.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Loading",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Loading.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Ready",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Ready.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 865,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 54,
+            "top": 202,
+            "right": 576,
+            "bottom": 487.25
+          },
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 54,
+            "top": 495.25,
+            "right": 576,
+            "bottom": 780.5
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 54,
+            "top": 788.5,
+            "right": 576,
+            "bottom": 822.75
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 54,
+            "top": 830.75,
+            "right": 576,
+            "bottom": 865
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Ready",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Ready.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1386,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 561,
+            "top": 803.9375,
+            "right": 1344,
+            "bottom": 1250.1875
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 561,
+            "top": 1262.1875,
+            "right": 1344,
+            "bottom": 1317.9375
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 561,
+            "top": 1329.9375,
+            "right": 1344,
+            "bottom": 1385.6875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Ready",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Ready.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1240,
+        "bottom": 1386,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 221,
+            "top": 803.9375,
+            "right": 1004,
+            "bottom": 1250.1875
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 221,
+            "top": 1262.1875,
+            "right": 1004,
+            "bottom": 1317.9375
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 221,
+            "top": 1329.9375,
+            "right": 1004,
+            "bottom": 1385.6875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Ready",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Ready.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 880,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 94,
+            "top": 510.640625,
+            "right": 616,
+            "bottom": 795.890625
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 94,
+            "top": 803.890625,
+            "right": 616,
+            "bottom": 838.140625
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 94,
+            "top": 846.140625,
+            "right": 616,
+            "bottom": 880.390625
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Ready",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Ready.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Ready",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Ready.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 865,
+        "elements": [
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 374,
+            "top": 202,
+            "right": 896,
+            "bottom": 487.25
+          },
+          {
+            "element": "section.pico-runner-picker-route",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 374,
+            "top": 495.25,
+            "right": 896,
+            "bottom": 780.5
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 374,
+            "top": 788.5,
+            "right": 896,
+            "bottom": 822.75
+          },
+          {
+            "element": "button.pico-row",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 374,
+            "top": 830.75,
+            "right": 896,
+            "bottom": 865
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "NoRunners",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.NoRunners.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "NoRunners",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.NoRunners.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "NoRunners",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.NoRunners.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "NoRunners",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.NoRunners.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "NoRunners",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.NoRunners.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "NoRunners",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.NoRunners.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Error",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Error.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Error",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Error.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Error",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Error.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Error",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Error.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Error",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Error.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Error",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Error.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Conflict",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Conflict.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Conflict",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Conflict.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Conflict",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Conflict.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Conflict",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Conflict.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Conflict",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Conflict.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Conflict",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Conflict.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Busy",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Busy.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Busy",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Busy.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Busy",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Busy.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Busy",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Busy.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Busy",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Busy.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Busy",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Busy.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Warnings",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Warnings.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Warnings",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Warnings.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Warnings",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Warnings.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Warnings",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Warnings.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Warnings",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Warnings.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoRunnerPicker.page.part.tsx",
+      "state": "Warnings",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoRunnerPicker.page/src-pages-PicoRunnerPicker.page.cbde8a725556.Warnings.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    }
+  ]
+}

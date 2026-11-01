@@ -56,7 +56,7 @@ export component PicoHome inherits Rectangle {
             if home.invites.length > 0 : PicoPlayingNow { invites: home.invites; count: home.invites-label; }
             if home.body == "shelf" : Rectangle {
                 vertical-stretch: 1;
-                min-height: rack.rack-h + 16 * Tokens.sm;
+                min-height: rack.rack-h + 6 * Tokens.sm;
                 if home.stage.shown : PicoGameStage {
                     x: 0;
                     y: 0;

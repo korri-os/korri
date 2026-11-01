@@ -4,7 +4,7 @@ import { Tokens, Cycle, Focus } from "../tokens.slint";
 // A region that scrolls what it holds to keep the cursor's control in sight
 // (the web build had the host's scrollIntoView). What it holds is laid out
 // at its natural height, never less than the region's; a control outside
-// the region (the floor's MENU) never scrolls it.
+// what the region holds never scrolls it.
 export component PicoScroll inherits Rectangle {
     in property <length> margin: Tokens.u;
     property <length> scroll: 0;
@@ -13,7 +13,8 @@ export component PicoScroll inherits Rectangle {
     changed serial => {
         // Where the control stands in the content, from the window's top.
         let top = Focus.y - root.absolute-position.y + min(scroll, limit);
-        if (Focus.y < root.absolute-position.y - root.height || Focus.y > root.absolute-position.y + 2 * root.height + limit) {
+        // A control outside what this region holds is not its to reveal.
+        if (top < 0 || top > content.height) {
             return;
         }
         if (top < min(scroll, limit) + margin) {

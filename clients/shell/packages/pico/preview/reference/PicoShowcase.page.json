@@ -1,0 +1,900 @@
+{
+  "results": [
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "default",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.default.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "default",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.default.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "default",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.default.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "default",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.default.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "default",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.default.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "default",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.default.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "ResumableCart",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.ResumableCart.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "ResumableCart",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.ResumableCart.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "ResumableCart",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.ResumableCart.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "ResumableCart",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.ResumableCart.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "ResumableCart",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.ResumableCart.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "ResumableCart",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.ResumableCart.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "LongTitle",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.LongTitle.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 544,
+        "elements": [
+          {
+            "element": "div.pico-game-facts",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1)",
+            "left": 344.796875,
+            "top": 8,
+            "right": 618,
+            "bottom": 498.84375
+          },
+          {
+            "element": "span.pico-stat-run-empty",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(1)",
+            "left": 344.796875,
+            "top": 478.84375,
+            "right": 464.796875,
+            "bottom": 498.84375
+          },
+          {
+            "element": "span.pico-tally",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 344.796875,
+            "top": 522.84375,
+            "right": 370.796875,
+            "bottom": 543.84375
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "LongTitle",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.LongTitle.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "LongTitle",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.LongTitle.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "LongTitle",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.LongTitle.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "LongTitle",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.LongTitle.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "LongTitle",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.LongTitle.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "NoArtwork",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.NoArtwork.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "NoArtwork",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.NoArtwork.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "NoArtwork",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.NoArtwork.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "NoArtwork",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.NoArtwork.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "NoArtwork",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.NoArtwork.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "NoArtwork",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.NoArtwork.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Downloading",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Downloading.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 500,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 220.25,
+            "top": 207.609375,
+            "right": 419.75,
+            "bottom": 500
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Downloading",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Downloading.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1110,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 693.1875,
+            "top": 315.375,
+            "right": 1226.796875,
+            "bottom": 1110
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Downloading",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Downloading.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1240,
+        "bottom": 1110,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 353.1875,
+            "top": 315.375,
+            "right": 886.796875,
+            "bottom": 1110
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Downloading",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Downloading.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 740,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 181.28125,
+            "top": 207.6875,
+            "right": 538.703125,
+            "bottom": 740
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Downloading",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Downloading.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 980,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 110,
+            "top": 352.625,
+            "right": 530,
+            "bottom": 980
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Downloading",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Downloading.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 500,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 540.25,
+            "top": 207.609375,
+            "right": 739.75,
+            "bottom": 500
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Running",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Running.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 500,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 223.703125,
+            "top": 218.109375,
+            "right": 416.296875,
+            "bottom": 500
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Running",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Running.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1110,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 700.09375,
+            "top": 336.359375,
+            "right": 1219.890625,
+            "bottom": 1110
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Running",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Running.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1240,
+        "bottom": 1110,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 360.09375,
+            "top": 336.359375,
+            "right": 879.890625,
+            "bottom": 1110
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Running",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Running.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 740,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 184.734375,
+            "top": 218.1875,
+            "right": 535.25,
+            "bottom": 740
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Running",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Running.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 980,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 110,
+            "top": 352.625,
+            "right": 530,
+            "bottom": 980
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Running",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Running.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 500,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 543.703125,
+            "top": 218.109375,
+            "right": 736.296875,
+            "bottom": 500
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "StreamPaused",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.StreamPaused.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "StreamPaused",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.StreamPaused.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "StreamPaused",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.StreamPaused.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "StreamPaused",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.StreamPaused.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "StreamPaused",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.StreamPaused.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "StreamPaused",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.StreamPaused.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Idle",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Idle.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Idle",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Idle.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Idle",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Idle.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Idle",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Idle.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Idle",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Idle.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoShowcase.page.part.tsx",
+      "state": "Idle",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoShowcase.page/src-pages-PicoShowcase.page.58e359b4c91c.Idle.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    }
+  ]
+}

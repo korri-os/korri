@@ -79,13 +79,17 @@ export global Cycle {
 // Where the cursor's control stands on screen, written by the focused control
 // when focus arrives; the screen shell scrolls its body to keep it in sight.
 export global Focus {
+    in-out property <length> x;
     in-out property <length> y;
+    in-out property <length> w;
     in-out property <length> h;
     in-out property <int> serial;
 
     // The focused control says where it stands.
-    public function reveal(top: length, tall: length) {
+    public function reveal(left: length, top: length, wide: length, tall: length) {
+        x = left;
         y = top;
+        w = wide;
         h = tall;
         serial += 1;
     }

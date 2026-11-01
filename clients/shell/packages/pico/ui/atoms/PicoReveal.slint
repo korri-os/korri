@@ -13,7 +13,7 @@ export component PicoReveal {
         running: pending;
         triggered => {
             pending = false;
-            Focus.reveal(root.absolute-position.y, root.height);
+            Focus.reveal(root.absolute-position.x, root.absolute-position.y, root.width, root.height);
         }
     }
 }

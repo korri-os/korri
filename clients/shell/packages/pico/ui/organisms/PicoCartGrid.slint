@@ -7,6 +7,7 @@ export struct GridSectionView { title: string, row-start: int, carts: [CartView]
 
 // Every collection Korri named, its carts in rows on a floor.
 export component PicoCartGrid inherits VerticalLayout {
+    alignment: start;
     in property <[GridSectionView]> sections;
     in property <int> columns: 1;
     property <length> slot-w: 30 * Tokens.p;

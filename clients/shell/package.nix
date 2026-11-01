@@ -26,7 +26,8 @@ pkgs.rustPlatform.buildRustPackage {
   version = "0.0.0";
 
   # The repository root: the treaty crate (contracts/surface) is a path
-  # dependency, and the pico8 palette test reads Pico's own palette.
+  # dependency. The pico8 palette test reads Pico's own palette, in
+  # packages/pico.
   src = lib.fileset.toSource {
     root = ../..;
     fileset = lib.fileset.unions [
@@ -41,7 +42,6 @@ pkgs.rustPlatform.buildRustPackage {
       ./window-sdl
       ../../contracts/surface/Cargo.toml
       ../../contracts/surface/src
-      ../../surfaces/pico/src/pico-palette.ts
     ];
   };
   buildAndTestSubdir = "clients/shell";

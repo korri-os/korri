@@ -22,11 +22,10 @@ LANES = (
     "korrid",
     "inputd",
     "limitsd",
-    "pico",
     "zone",
     "boxbuster",
 )
-SURFACES = {"pico", "zone", "boxbuster"}
+SURFACES = {"zone", "boxbuster"}
 # Inputs of the existing cache tests and delivery-workflow check. Shared Nix
 # trust/composition and unfamiliar helpers select all lanes in the requested profile.
 CACHE_POLICY_INPUTS = {
@@ -53,7 +52,7 @@ PARITY_INPUTS = {
     "clients/portal/src/surface/settings-model.ts",
     "clients/portal/src/surface/plugin-repositories.ts",
     "clients/portal/src/surface/launch-settings-model.ts",
-    "surfaces/pico/src/pico-settings-view.ts",
+    "clients/shell/packages/pico/src/pico-settings-view.ts",
     "surfaces/zone/src/plan/options.ts",
 }
 PORTAL_PRESENTATION = (

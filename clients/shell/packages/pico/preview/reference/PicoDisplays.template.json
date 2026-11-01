@@ -1,0 +1,2756 @@
+{
+  "results": [
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "default",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.default.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "default",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.default.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "default",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.default.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "default",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.default.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "default",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.default.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "default",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.default.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Shelf",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Shelf.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 994,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Shelf",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Shelf.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Shelf",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Shelf.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Shelf",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Shelf.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 994,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Shelf",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Shelf.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 994,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(6)",
+            "left": 566,
+            "top": 646.921875,
+            "right": 664,
+            "bottom": 810.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(7)",
+            "left": 676,
+            "top": 646.921875,
+            "right": 774,
+            "bottom": 810.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(8)",
+            "left": 786,
+            "top": 646.921875,
+            "right": 884,
+            "bottom": 810.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(9)",
+            "left": 896,
+            "top": 646.921875,
+            "right": 994,
+            "bottom": 810.578125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Shelf",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Shelf.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Grid",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Grid.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 1006,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Grid",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Grid.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Grid",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Grid.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Grid",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Grid.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 1006,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Grid",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Grid.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 1006,
+        "elements": [
+          {
+            "element": "li.pico-cart-grid-collection",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > ul:nth-of-type(1) > li:nth-of-type(3)",
+            "left": 16,
+            "top": 852,
+            "right": 624,
+            "bottom": 1006
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Grid",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Grid.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 1006,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Hero",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Hero.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Hero",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Hero.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Hero",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Hero.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Hero",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Hero.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Hero",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Hero.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Hero",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Hero.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "PlayingNow",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.PlayingNow.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "PlayingNow",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.PlayingNow.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "PlayingNow",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.PlayingNow.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "PlayingNow",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.PlayingNow.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          },
+          {
+            "element": "li.pico-playing-now-item",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(3)",
+            "left": 16,
+            "top": 687,
+            "right": 624,
+            "bottom": 748.75
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "PlayingNow",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.PlayingNow.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "PlayingNow",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.PlayingNow.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Detail",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Detail.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-game-detail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Detail",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Detail.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Detail",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Detail.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Detail",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Detail.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-game-detail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Detail",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Detail.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Detail",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Detail.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-game-detail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Loading",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Loading.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Loading",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Loading.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Loading",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Loading.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Loading",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Loading.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Loading",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Loading.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Loading",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Loading.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.EmptyLibrary.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.EmptyLibrary.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.EmptyLibrary.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.EmptyLibrary.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.EmptyLibrary.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.EmptyLibrary.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "LibraryError",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.LibraryError.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "LibraryError",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.LibraryError.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "LibraryError",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.LibraryError.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "LibraryError",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.LibraryError.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "LibraryError",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.LibraryError.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "LibraryError",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.LibraryError.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "OneGame",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.OneGame.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "OneGame",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.OneGame.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "OneGame",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.OneGame.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "OneGame",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.OneGame.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "OneGame",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.OneGame.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "OneGame",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.OneGame.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-home-library",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Downloading",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Downloading.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 220.25,
+            "top": 207.609375,
+            "right": 419.75,
+            "bottom": 500
+          },
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "section.pico-launch-stage",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Downloading",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Downloading.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Downloading",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Downloading.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Downloading",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Downloading.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "section.pico-launch-stage",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Downloading",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Downloading.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Downloading",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Downloading.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 220.25,
+            "top": 207.609375,
+            "right": 419.75,
+            "bottom": 500
+          },
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "section.pico-launch-stage",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Running",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Running.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 223.703125,
+            "top": 218.109375,
+            "right": 416.296875,
+            "bottom": 500
+          },
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Running",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Running.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Running",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Running.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Running",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Running.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Running",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Running.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Running",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Running.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "span.pico-launch-stage-cart",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(2) > span:nth-of-type(1)",
+            "left": 223.703125,
+            "top": 218.109375,
+            "right": 416.296875,
+            "bottom": 500
+          },
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Problem",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Problem.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "section.pico-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Problem",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Problem.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Problem",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Problem.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Problem",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Problem.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "section.pico-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Problem",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Problem.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Problem",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Problem.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "section.pico-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Settings",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Settings.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-panel-screen",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Settings",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Settings.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Settings",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Settings.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Settings",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Settings.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-panel-screen",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Settings",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Settings.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Settings",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Settings.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-panel-screen",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Find",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Find.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 1089,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-library-browser",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 16,
+            "top": 667,
+            "right": 69.1875,
+            "bottom": 696
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 77.1875,
+            "top": 667,
+            "right": 130.390625,
+            "bottom": 696
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(1) > button:nth-of-type(3)",
+            "left": 138.390625,
+            "top": 667,
+            "right": 191.59375,
+            "bottom": 696
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Find",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Find.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1920,
+        "bottom": 1089,
+        "elements": [
+          {
+            "element": "div.pico-library-browser-results",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 16,
+            "top": 827,
+            "right": 624,
+            "bottom": 1089
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Find",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Find.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1240,
+        "bottom": 1089,
+        "elements": [
+          {
+            "element": "div.pico-library-browser-results",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 16,
+            "top": 827,
+            "right": 624,
+            "bottom": 1089
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Find",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Find.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 720,
+        "bottom": 1089,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-library-browser",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(2) > button:nth-of-type(1)",
+            "left": 16,
+            "top": 704,
+            "right": 69.1875,
+            "bottom": 733
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(2) > button:nth-of-type(2)",
+            "left": 77.1875,
+            "top": 704,
+            "right": 130.390625,
+            "bottom": 733
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(2) > button:nth-of-type(3)",
+            "left": 138.390625,
+            "top": 704,
+            "right": 191.59375,
+            "bottom": 733
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Find",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Find.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 1089,
+        "elements": [
+          {
+            "element": "div.pico-library-browser-results",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 16,
+            "top": 827,
+            "right": 624,
+            "bottom": 1089
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "Find",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.Find.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 1089,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 0,
+            "top": 480,
+            "right": 640,
+            "bottom": 960
+          },
+          {
+            "element": "div.pico-library-browser",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 536.5,
+            "right": 640,
+            "bottom": 919
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(1) > button:nth-of-type(1)",
+            "left": 16,
+            "top": 667,
+            "right": 69.1875,
+            "bottom": 696
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(1) > button:nth-of-type(2)",
+            "left": 77.1875,
+            "top": 667,
+            "right": 130.390625,
+            "bottom": 696
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(1) > button:nth-of-type(3)",
+            "left": 138.390625,
+            "top": 667,
+            "right": 191.59375,
+            "bottom": 696
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "SideBySide",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.SideBySide.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 480,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 640,
+            "top": 0,
+            "right": 1280,
+            "bottom": 480
+          },
+          {
+            "element": "span.pico-stat-run-empty",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(1)",
+            "left": 984.796875,
+            "top": 300.640625,
+            "right": 1104.796875,
+            "bottom": 320.640625
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(6)",
+            "left": 566,
+            "top": 166.921875,
+            "right": 664,
+            "bottom": 330.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(7)",
+            "left": 676,
+            "top": 166.921875,
+            "right": 774,
+            "bottom": 330.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(8)",
+            "left": 786,
+            "top": 166.921875,
+            "right": 884,
+            "bottom": 330.578125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "SideBySide",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.SideBySide.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "SideBySide",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.SideBySide.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 1080,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 640,
+            "top": 0,
+            "right": 1280,
+            "bottom": 480
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "SideBySide",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.SideBySide.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 720,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 640,
+            "top": 0,
+            "right": 1280,
+            "bottom": 480
+          },
+          {
+            "element": "span.pico-stat-run-empty",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(1)",
+            "left": 984.796875,
+            "top": 300.640625,
+            "right": 1104.796875,
+            "bottom": 320.640625
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(7)",
+            "left": 676,
+            "top": 166.921875,
+            "right": 774,
+            "bottom": 330.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(8)",
+            "left": 786,
+            "top": 166.921875,
+            "right": 884,
+            "bottom": 330.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(9)",
+            "left": 896,
+            "top": 166.921875,
+            "right": 994,
+            "bottom": 330.578125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "SideBySide",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.SideBySide.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-theme.pico-screen.pico-displays-region",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 640,
+            "top": 0,
+            "right": 1280,
+            "bottom": 480
+          },
+          {
+            "element": "span.pico-stat-run-empty",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(1)",
+            "left": 984.796875,
+            "top": 300.640625,
+            "right": 1104.796875,
+            "bottom": 320.640625
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(6)",
+            "left": 566,
+            "top": 166.921875,
+            "right": 664,
+            "bottom": 330.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(7)",
+            "left": 676,
+            "top": 166.921875,
+            "right": 774,
+            "bottom": 330.578125
+          },
+          {
+            "element": "li.pico-cart-shelf-slot",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > section:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(8)",
+            "left": 786,
+            "top": 166.921875,
+            "right": 884,
+            "bottom": 330.578125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/templates/PicoDisplays.template.part.tsx",
+      "state": "SideBySide",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoDisplays.template/src-ui-templates-PicoDisplays.template.6c00b0cea093.SideBySide.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    }
+  ]
+}

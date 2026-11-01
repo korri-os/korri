@@ -6,6 +6,7 @@ import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
 // A game's own actions, as Korri publishes them for the focused game, each
 // with Korri's note under it.
 export component PicoGameActions inherits VerticalLayout {
+    alignment: start;
     in property <[ButtonView]> actions;
     spacing: 2 * Tokens.p;
     if actions.length > 0 : PicoLine { text: "ACTIONS"; color: P8.ink-quiet; }

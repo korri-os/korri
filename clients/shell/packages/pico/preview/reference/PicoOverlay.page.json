@@ -1,0 +1,720 @@
+{
+  "results": [
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "default",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.default.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "default",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.default.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "default",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.default.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "default",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.default.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "default",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.default.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "default",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.default.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "ConfirmQuit",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.ConfirmQuit.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "ConfirmQuit",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.ConfirmQuit.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "ConfirmQuit",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.ConfirmQuit.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "ConfirmQuit",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.ConfirmQuit.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "ConfirmQuit",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.ConfirmQuit.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "ConfirmQuit",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.ConfirmQuit.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "RetryableProblem",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.RetryableProblem.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 547,
+        "elements": [
+          {
+            "element": "section.pico-pause-menu-group",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 54,
+            "top": 313.75,
+            "right": 576,
+            "bottom": 547
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "RetryableProblem",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.RetryableProblem.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "RetryableProblem",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.RetryableProblem.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "RetryableProblem",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.RetryableProblem.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "RetryableProblem",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.RetryableProblem.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "RetryableProblem",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.RetryableProblem.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 547,
+        "elements": [
+          {
+            "element": "section.pico-pause-menu-group",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 374,
+            "top": 313.75,
+            "right": 896,
+            "bottom": 547
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "Problem",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.Problem.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 511,
+        "elements": [
+          {
+            "element": "section.pico-pause-menu-group",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 54,
+            "top": 277.5,
+            "right": 576,
+            "bottom": 510.75
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "Problem",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.Problem.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "Problem",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.Problem.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "Problem",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.Problem.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "Problem",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.Problem.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "Problem",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.Problem.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 511,
+        "elements": [
+          {
+            "element": "section.pico-pause-menu-group",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 374,
+            "top": 277.5,
+            "right": 896,
+            "bottom": 510.75
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "StreamPlayers",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.StreamPlayers.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 498,
+        "elements": [
+          {
+            "element": "section.pico-pause-menu-group",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 54,
+            "top": 264.25,
+            "right": 576,
+            "bottom": 497.5
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "StreamPlayers",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.StreamPlayers.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "StreamPlayers",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.StreamPlayers.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "StreamPlayers",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.StreamPlayers.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "StreamPlayers",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.StreamPlayers.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "StreamPlayers",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.StreamPlayers.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 498,
+        "elements": [
+          {
+            "element": "section.pico-pause-menu-group",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 374,
+            "top": 264.25,
+            "right": 896,
+            "bottom": 497.5
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "LongStreamPlayers",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.LongStreamPlayers.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 640,
+        "bottom": 592,
+        "elements": [
+          {
+            "element": "section.pico-pause-menu-group",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 54,
+            "top": 359,
+            "right": 576,
+            "bottom": 592.25
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "LongStreamPlayers",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.LongStreamPlayers.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "LongStreamPlayers",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.LongStreamPlayers.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "LongStreamPlayers",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.LongStreamPlayers.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "LongStreamPlayers",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.LongStreamPlayers.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "LongStreamPlayers",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.LongStreamPlayers.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 592,
+        "elements": [
+          {
+            "element": "section.pico-pause-menu-group",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > section:nth-of-type(2)",
+            "left": 374,
+            "top": 359,
+            "right": 896,
+            "bottom": 592.25
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "NoPluginControls",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.NoPluginControls.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "NoPluginControls",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.NoPluginControls.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "NoPluginControls",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.NoPluginControls.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "NoPluginControls",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.NoPluginControls.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "NoPluginControls",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.NoPluginControls.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOverlay.page.part.tsx",
+      "state": "NoPluginControls",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOverlay.page/src-pages-PicoOverlay.page.b13aa35f0063.NoPluginControls.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    }
+  ]
+}

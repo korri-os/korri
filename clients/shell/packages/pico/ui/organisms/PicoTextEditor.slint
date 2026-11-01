@@ -26,6 +26,7 @@ export struct EditorView {
 // Pico's text editor: the prompt, the field, what is saved now and how much
 // is typed, the keyboard, and the caller's answers.
 export component PicoTextEditor inherits VerticalLayout {
+    alignment: start;
     in property <EditorView> editor;
     spacing: 3 * Tokens.p;
     if editor.prompt != "" : PicoLine { text: editor.prompt; color: P8.ink-dim; }

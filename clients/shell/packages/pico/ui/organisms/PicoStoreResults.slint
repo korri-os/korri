@@ -11,6 +11,7 @@ export struct StoreResultView { cart: CartView, title: string, subtitle: string 
 // One provider's search: the SEARCH row with what was typed, and the games
 // it found as carts with their titles; or Korri's words when it failed.
 export component PicoStoreResults inherits VerticalLayout {
+    alignment: start;
     in property <ButtonView> search;
     in property <string> note;
     in property <[StoreResultView]> results;

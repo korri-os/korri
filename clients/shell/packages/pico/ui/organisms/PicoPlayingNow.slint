@@ -5,6 +5,7 @@ import { PicoInviteRow, InviteView } from "../molecules/PicoInviteRow.slint";
 
 // PLAYING NOW: every invite Korri publishes, counted, each with its actions.
 export component PicoPlayingNow inherits VerticalLayout {
+    alignment: start;
     in property <[InviteView]> invites;
     in property <string> count;
     spacing: Tokens.p;

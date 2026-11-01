@@ -13,7 +13,7 @@ export component PicoChip {
     in property <color> ink: P8.plate-ink;
     in property <length> font-size: Tokens.sm;
     preferred-width: label.preferred-width + 6 * Tokens.p;
-    min-width: min(self.preferred-width, 12 * Tokens.p);
+    min-width: self.preferred-width;
     height: font-size + 4 * Tokens.p;
     if button.focused : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
     Rectangle { background: button.focused ? P8.pick : button.lit ? lit-ground : ground; }

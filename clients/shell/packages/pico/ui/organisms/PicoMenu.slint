@@ -18,6 +18,6 @@ export component PicoMenu inherits Rectangle {
         padding: 4 * Tokens.p;
         padding-right: 7 * Tokens.p;
         spacing: 3 * Tokens.p;
-        for entry in entries : PicoRow { button: entry; kind: "card"; }
+        for entry in entries : PicoRow { button: entry; kind: "card"; reveal: false; }
     }
 }

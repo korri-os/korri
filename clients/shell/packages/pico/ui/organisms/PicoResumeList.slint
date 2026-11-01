@@ -7,6 +7,7 @@ export struct ResumeView { cart: CartView, title: string, subtitle: string }
 
 // The games with a save waiting, each a cart with its title and system.
 export component PicoResumeList inherits VerticalLayout {
+    alignment: start;
     in property <[ResumeView]> games;
     spacing: 2 * Tokens.p;
     PicoLine { text: "RESUME"; color: P8.ink-quiet; }
@@ -15,6 +16,7 @@ export component PicoResumeList inherits VerticalLayout {
         spacing: 6 * Tokens.p;
         for game in games : VerticalLayout {
             width: 44 * Tokens.p;
+            alignment: start;
             spacing: Tokens.p;
             Rectangle {
                 height: 40 * Tokens.p;

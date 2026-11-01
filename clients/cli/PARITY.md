@@ -54,7 +54,7 @@ publish and route plugin rows.
 | `launch:reload`, `launch:retry`, `launch-device:retry` | `launch-settings show [--game GAME]`; explicitly repeat a failed command | No automatic conflict retry |
 | `launch:runner` | `play GAME --runner ID`; `launch-settings runner ID --game GAME` | One-launch choice vs persisted choice |
 | `launch:cancel` | Exit / do not submit a command | Navigation only |
-| Pico `pico:font` (`surfaces/pico/src/pico-settings-view.ts`) | **Needs shared RPC; schema unresolved** | `pico-font-preference.ts` keeps `pico.font` in browser storage; the host treaty never receives it |
+| Pico `pico:font` (`clients/shell/packages/pico/src/pico-settings-view.ts`) | **Needs shared RPC; schema unresolved** | Pico declares `pico.font` (mark `device`) and korrid stores it per surface (`RememberPreference`, contract 3.6); the CLI has no command for it |
 | Zone `zone:system-look` (`surfaces/zone/src/plan/options.ts`) | **Needs shared RPC; schema unresolved** | `zone-look-preference.ts` keeps `zone.look` in browser storage; the host treaty never receives it |
 | `launch:set:PLACE#file:*`, `runner-facts:*`, unavailable GPU row | `launch-settings show [layer] [scope]` | Read-only facts; hooks, environment, arguments, working directory and raw config remain file-authored exceptions |
 
