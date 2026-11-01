@@ -51,7 +51,7 @@ PARITY_INPUTS = {
     "services/korrid/src/surface/settings_model.rs",
     "services/korrid/src/surface/plugins.rs",
     "services/korrid/src/surface/launch_model.rs",
-    "clients/shell/packages/pico/logic.ts",
+    "clients/shell/packages/pico/src/pico-font-preference.ts",
     "clients/shell/packages/zone/logic.ts",
 }
 # File formats currently produced/consumed by the presentation areas below.

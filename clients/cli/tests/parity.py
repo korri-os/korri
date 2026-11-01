@@ -65,7 +65,7 @@ KNOWN_GAPS = {
 
 # Surface preference keys, as the native packages declare them.
 PREFERENCES = {
-    "pico.font": "clients/shell/packages/pico/logic.ts",
+    "pico.font": "clients/shell/packages/pico/src/pico-font-preference.ts",
     "zone.look": "clients/shell/packages/zone/logic.ts",
 }
 
