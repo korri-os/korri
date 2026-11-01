@@ -59,7 +59,10 @@ impl fmt::Display for KorridError {
             Self::Refused(failure) => write!(
                 f,
                 "korrid refused: {}",
-                failure.get("_tag").and_then(Value::as_str).unwrap_or("error")
+                failure
+                    .get("_tag")
+                    .and_then(Value::as_str)
+                    .unwrap_or("error")
             ),
         }
     }
@@ -88,7 +91,10 @@ impl Korrid {
     }
 
     pub fn declare(&self, surface: &str, preferences: &Value) -> Result<()> {
-        self.call("app.surface.declare", json!({"surfaceId": surface, "preferences": preferences}))?;
+        self.call(
+            "app.surface.declare",
+            json!({"surfaceId": surface, "preferences": preferences}),
+        )?;
         Ok(())
     }
 
@@ -107,18 +113,24 @@ impl Korrid {
     }
 
     pub fn request(&self, surface: &str, request: &Value) -> Result<()> {
-        self.call("app.surface.request", json!({"surfaceId": surface, "request": request}))?;
+        self.call(
+            "app.surface.request",
+            json!({"surfaceId": surface, "request": request}),
+        )?;
         Ok(())
     }
 
     fn call(&self, method: &str, payload: Value) -> Result<Value> {
         let body = json!({"_tag": method, "payload": payload}).to_string();
         let reply = post(&self.connection, &body)?;
-        let reply: Value = serde_json::from_slice(&reply).map_err(|_| unavailable("reply is not JSON"))?;
+        let reply: Value =
+            serde_json::from_slice(&reply).map_err(|_| unavailable("reply is not JSON"))?;
         if reply.get("_tag").and_then(Value::as_str) != Some(method) {
             return Err(unavailable("reply names another method"));
         }
-        let outcome = reply.get("outcome").ok_or_else(|| unavailable("reply has no outcome"))?;
+        let outcome = reply
+            .get("outcome")
+            .ok_or_else(|| unavailable("reply has no outcome"))?;
         let payload = outcome.get("payload").cloned().unwrap_or(Value::Null);
         match outcome.get("_tag").and_then(Value::as_str) {
             Some("Ok") => Ok(payload),
@@ -154,9 +166,14 @@ pub fn loopback(port: u16) -> SocketAddr {
 /// One HTTP/1.1 request on its own connection. korrid is local; keep-alive
 /// buys nothing measurable here.
 fn post(connection: &Connection, body: &str) -> Result<Vec<u8>> {
-    let mut stream = TcpStream::connect_timeout(&loopback(connection.port), CONNECT_TIMEOUT).map_err(unavailable)?;
-    stream.set_read_timeout(Some(IO_TIMEOUT)).map_err(unavailable)?;
-    stream.set_write_timeout(Some(IO_TIMEOUT)).map_err(unavailable)?;
+    let mut stream = TcpStream::connect_timeout(&loopback(connection.port), CONNECT_TIMEOUT)
+        .map_err(unavailable)?;
+    stream
+        .set_read_timeout(Some(IO_TIMEOUT))
+        .map_err(unavailable)?;
+    stream
+        .set_write_timeout(Some(IO_TIMEOUT))
+        .map_err(unavailable)?;
     let head = format!(
         "POST /rpc HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         connection.port,
@@ -194,8 +211,14 @@ fn read_response(mut reader: impl BufRead) -> Result<Vec<u8>> {
         if let Some((name, value)) = header.split_once(':') {
             let value = value.trim();
             if name.eq_ignore_ascii_case("content-length") {
-                length = Some(value.parse::<usize>().map_err(|_| unavailable("bad length"))?);
-            } else if name.eq_ignore_ascii_case("transfer-encoding") && value.eq_ignore_ascii_case("chunked") {
+                length = Some(
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| unavailable("bad length"))?,
+                );
+            } else if name.eq_ignore_ascii_case("transfer-encoding")
+                && value.eq_ignore_ascii_case("chunked")
+            {
                 chunked = true;
             }
         }
@@ -208,7 +231,8 @@ fn read_response(mut reader: impl BufRead) -> Result<Vec<u8>> {
         loop {
             line.clear();
             reader.read_line(&mut line).map_err(unavailable)?;
-            let size = usize::from_str_radix(line.trim().split(';').next().unwrap_or(""), 16).map_err(|_| unavailable("bad chunk"))?;
+            let size = usize::from_str_radix(line.trim().split(';').next().unwrap_or(""), 16)
+                .map_err(|_| unavailable("bad chunk"))?;
             if size == 0 {
                 break;
             }
@@ -228,7 +252,10 @@ fn read_response(mut reader: impl BufRead) -> Result<Vec<u8>> {
         body.resize(length, 0);
         reader.read_exact(&mut body).map_err(unavailable)?;
     } else {
-        reader.take(MAX_REPLY_BYTES as u64 + 1).read_to_end(&mut body).map_err(unavailable)?;
+        reader
+            .take(MAX_REPLY_BYTES as u64 + 1)
+            .read_to_end(&mut body)
+            .map_err(unavailable)?;
         if body.len() > MAX_REPLY_BYTES {
             return Err(unavailable("reply too large"));
         }
@@ -280,12 +307,16 @@ pub fn open_socket(connection: &Connection, max_message: usize) -> io::Result<So
         .map_err(io::Error::other)?;
     request.headers_mut().insert(
         "Origin",
-        connection.origin.parse().map_err(|_| io::Error::other("origin header"))?,
+        connection
+            .origin
+            .parse()
+            .map_err(|_| io::Error::other("origin header"))?,
     );
     let mut config = WebSocketConfig::default();
     config.max_message_size = Some(max_message);
     config.max_frame_size = Some(max_message);
-    let (mut socket, _) = tungstenite::client::client_with_config(request, stream, Some(config)).map_err(io::Error::other)?;
+    let (mut socket, _) = tungstenite::client::client_with_config(request, stream, Some(config))
+        .map_err(io::Error::other)?;
     socket
         .send(Message::Text(connection.bearer().as_str().into()))
         .map_err(io::Error::other)?;
@@ -293,24 +324,28 @@ pub fn open_socket(connection: &Connection, max_message: usize) -> io::Result<So
     Ok(socket)
 }
 
-fn watch_loop(connection: &Connection, surface: &str, events: &dyn Fn(WatchEvent), acks: &mpsc::Receiver<String>, stop: &AtomicBool) {
+fn watch_loop(
+    connection: &Connection,
+    surface: &str,
+    events: &dyn Fn(WatchEvent),
+    acks: &mpsc::Receiver<String>,
+    stop: &AtomicBool,
+) {
     let mut delay = RECONNECT_INITIAL;
     let mut first = true;
     while !stop.load(Ordering::SeqCst) {
-        match open_socket(connection, MAX_REPLY_BYTES) {
-            Ok(mut socket) => {
-                let subscribe = json!({"_tag": "app.surface.watch", "payload": {"surfaceId": surface}}).to_string();
-                if socket.send(Message::Text(subscribe.into())).is_ok() {
-                    if !first {
-                        events(WatchEvent::Reconnected);
-                    }
-                    first = false;
-                    delay = RECONNECT_INITIAL;
-                    serve_watch(&mut socket, events, acks, stop);
+        if let Ok(mut socket) = open_socket(connection, MAX_REPLY_BYTES) {
+            let subscribe =
+                json!({"_tag": "app.surface.watch", "payload": {"surfaceId": surface}}).to_string();
+            if socket.send(Message::Text(subscribe.into())).is_ok() {
+                if !first {
+                    events(WatchEvent::Reconnected);
                 }
-                let _ = socket.close(None);
+                first = false;
+                delay = RECONNECT_INITIAL;
+                serve_watch(&mut socket, events, acks, stop);
             }
-            Err(_) => {}
+            let _ = socket.close(None);
         }
         // Wait out the backoff in short steps so a drop stays prompt.
         let mut waited = Duration::ZERO;
@@ -322,7 +357,12 @@ fn watch_loop(connection: &Connection, surface: &str, events: &dyn Fn(WatchEvent
     }
 }
 
-fn serve_watch(socket: &mut Socket, events: &dyn Fn(WatchEvent), acks: &mpsc::Receiver<String>, stop: &AtomicBool) {
+fn serve_watch(
+    socket: &mut Socket,
+    events: &dyn Fn(WatchEvent),
+    acks: &mpsc::Receiver<String>,
+    stop: &AtomicBool,
+) {
     let mut pending: Option<String> = None;
     while !stop.load(Ordering::SeqCst) {
         while let Ok(revision) = acks.try_recv() {
@@ -346,7 +386,10 @@ fn serve_watch(socket: &mut Socket, events: &dyn Fn(WatchEvent), acks: &mpsc::Re
                 ) else {
                     return;
                 };
-                if pending.is_some() || !revision.bytes().all(|b| b.is_ascii_digit()) || revision.is_empty() {
+                if pending.is_some()
+                    || !revision.bytes().all(|b| b.is_ascii_digit())
+                    || revision.is_empty()
+                {
                     return; // korrid must wait for the ack; a second push breaks the wire
                 }
                 pending = Some(revision.to_owned());
@@ -357,7 +400,11 @@ fn serve_watch(socket: &mut Socket, events: &dyn Fn(WatchEvent), acks: &mpsc::Re
             }
             Ok(Message::Close(_)) => return,
             Ok(_) => {}
-            Err(tungstenite::Error::Io(error)) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
+            Err(tungstenite::Error::Io(error))
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) => {}
             Err(_) => return,
         }
     }
@@ -374,6 +421,8 @@ mod tests {
         let chunked = b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n3\r\nhel\r\n2\r\nlo\r\n0\r\n\r\n".as_slice();
         assert_eq!(read_response(chunked).unwrap(), b"hello");
         let denied = b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\n\r\n".as_slice();
-        assert!(matches!(read_response(denied), Err(KorridError::Unavailable(r)) if r == "HTTP 401"));
+        assert!(
+            matches!(read_response(denied), Err(KorridError::Unavailable(r)) if r == "HTTP 401")
+        );
     }
 }

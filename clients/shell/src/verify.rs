@@ -44,7 +44,10 @@ const FIXTURE_MODEL: &str = include_str!("../fixtures/model.json");
 /// The fixture model (contract shape) and its 12 example games.
 pub fn fixture() -> (Value, Vec<Value>) {
     let mut model: Value = serde_json::from_str(FIXTURE_MODEL).expect("fixture model is JSON");
-    let games = model["catalog"]["games"].as_array().cloned().unwrap_or_default();
+    let games = model["catalog"]["games"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     model["catalog"] = json!({"_tag": "Loading"});
     (model, games)
 }
@@ -104,7 +107,11 @@ pub fn files(dir: &Path) -> Result<Vec<(PathBuf, (u64, u128))>> {
                 walk(root, &path, out)?;
             } else if kind.is_file() {
                 let metadata = entry.metadata()?;
-                let mtime = metadata.modified()?.duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+                let mtime = metadata
+                    .modified()?
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
                 out.push((path.strip_prefix(root)?.to_owned(), (metadata.len(), mtime)));
             }
         }
@@ -171,23 +178,33 @@ impl Checker<'_> {
             if rounds > 16 {
                 bail!("requests keep causing more requests");
             }
-            let requests = self.engine.update(&message).with_context(|| format!("update({message})"))?;
+            let requests = self
+                .engine
+                .update(&message)
+                .with_context(|| format!("update({message})"))?;
             self.run.updates += 1;
             self.views(sweep)?;
             let mut republish = false;
             for request in requests {
                 self.run.requests += 1;
-                let tag = messages::request_tag(&request).with_context(|| format!("unknown request {}", short(&request)))?;
+                let tag = messages::request_tag(&request)
+                    .with_context(|| format!("unknown request {}", short(&request)))?;
                 match tag {
                     "RememberPreference" => {
-                        let (key, value) = messages::remembered(&request).context("RememberPreference needs key and value")?;
-                        if !self.engine.declaration().contains_key(key) || value.len() > engine::MAX_PREFERENCE_BYTES {
+                        let (key, value) = messages::remembered(&request)
+                            .context("RememberPreference needs key and value")?;
+                        if !self.engine.declaration().contains_key(key)
+                            || value.len() > engine::MAX_PREFERENCE_BYTES
+                        {
                             bail!("RememberPreference of undeclared key or oversized value: {key}");
                         }
                         queue.push(messages::preference_stored(key));
                     }
                     "MoveCatalog" => {
-                        let count = request.get("count").and_then(Value::as_u64).context("MoveCatalog count")?;
+                        let count = request
+                            .get("count")
+                            .and_then(Value::as_u64)
+                            .context("MoveCatalog count")?;
                         if count == 0 || count > messages::MAX_CATALOG_COUNT {
                             bail!("MoveCatalog count {count} is not 1..=200");
                         }
@@ -197,7 +214,10 @@ impl Checker<'_> {
                         republish = true;
                     }
                     "FocusGame" => {
-                        sweep.focused = request.get("gameId").and_then(Value::as_str).map(str::to_owned);
+                        sweep.focused = request
+                            .get("gameId")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned);
                         republish = true;
                     }
                     "DismissGameplayOverlay" if sweep.overlay => {
@@ -220,19 +240,62 @@ fn short(value: &Value) -> String {
     value.to_string().chars().take(120).collect()
 }
 
-fn sweep_one(source: &str, package: &Package, surface: &BTreeMap<String, i_slint_compiler::langtype::Type>, overlay: Option<&BTreeMap<String, i_slint_compiler::langtype::Type>>, games: &[Value], gameplay_overlay: bool, limits: Limits, peak: &mut usize, max_call: &mut Duration) -> Result<FixtureRun> {
+/// What one fixture sweep checks against.
+struct Plan<'a> {
+    source: &'a str,
+    package: &'a Package,
+    surface: &'a BTreeMap<String, i_slint_compiler::langtype::Type>,
+    overlay: Option<&'a BTreeMap<String, i_slint_compiler::langtype::Type>>,
+    limits: Limits,
+}
+
+/// The heaviest call and heap across sweeps.
+#[derive(Default)]
+struct Peaks {
+    heap: usize,
+    call: Duration,
+}
+
+fn sweep_one(
+    plan: &Plan,
+    games: &[Value],
+    gameplay_overlay: bool,
+    peaks: &mut Peaks,
+) -> Result<FixtureRun> {
+    let Plan {
+        source,
+        package,
+        surface,
+        overlay,
+        limits,
+    } = *plan;
     let (base, _) = fixture();
-    let mut sweep = Sweep { base, games, query: catalog::default_query(), from: json!({"_tag": "Start"}), count: catalog::DEFAULT_COUNT, focused: None, overlay: gameplay_overlay };
+    let mut sweep = Sweep {
+        base,
+        games,
+        query: catalog::default_query(),
+        from: json!({"_tag": "Start"}),
+        count: catalog::DEFAULT_COUNT,
+        focused: None,
+        overlay: gameplay_overlay,
+    };
     let engine = Engine::load(source, limits)?;
     let mut checker = Checker {
         engine,
         surface,
         overlay,
         images: ImageCache::new(&package.dir),
-        run: FixtureRun { games: games.len(), overlay: gameplay_overlay, views: 0, updates: 0, requests: 0 },
+        run: FixtureRun {
+            games: games.len(),
+            overlay: gameplay_overlay,
+            views: 0,
+            updates: 0,
+            requests: 0,
+        },
     };
     let outcome = (|| -> Result<()> {
-        let preferences = engine::effective_preferences(checker.engine.declaration(), &BTreeMap::new());
+        let preferences =
+            engine::effective_preferences(checker.engine.declaration(), &BTreeMap::new());
         checker.engine.set_model(&sweep.model().to_string())?;
         checker.engine.init(&preferences)?;
         checker.views(&sweep)?;
@@ -253,9 +316,19 @@ fn sweep_one(source: &str, package: &Package, surface: &BTreeMap<String, i_slint
         }
         Ok(())
     })();
-    *peak = (*peak).max(checker.engine.heap_bytes());
-    *max_call = (*max_call).max(checker.engine.max_call());
-    outcome.map(|()| checker.run.clone()).with_context(|| format!("{} games{}", games.len(), if gameplay_overlay { ", gameplay overlay" } else { "" }))
+    peaks.heap = peaks.heap.max(checker.engine.heap_bytes());
+    peaks.call = peaks.call.max(checker.engine.max_call());
+    outcome.map(|()| checker.run.clone()).with_context(|| {
+        format!(
+            "{} games{}",
+            games.len(),
+            if gameplay_overlay {
+                ", gameplay overlay"
+            } else {
+                ""
+            }
+        )
+    })
 }
 
 /// Verify one package. Always returns a summary; `pass` says whether it may load.
@@ -274,8 +347,7 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         pass: false,
         reasons: Vec::new(),
     };
-    let mut peak = 0;
-    let mut max_call = Duration::ZERO;
+    let mut peaks = Peaks::default();
     let outcome = (|| -> Result<()> {
         summary.package_sha256 = digest(&package.dir)?;
         let views = package::compile(package)?;
@@ -291,18 +363,29 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         }
         drop(probe);
         let (_, examples) = fixture();
+        let plan = Plan {
+            source: &source,
+            package,
+            surface: &surface,
+            overlay: overlay.as_ref(),
+            limits,
+        };
         for count in FIXTURE_GAMES {
             let games = catalog::games(&examples, count);
-            summary.runs.push(sweep_one(&source, package, &surface, overlay.as_ref(), &games, false, limits, &mut peak, &mut max_call)?);
+            summary
+                .runs
+                .push(sweep_one(&plan, &games, false, &mut peaks)?);
         }
         if overlay.is_some() {
             let games = catalog::games(&examples, 12);
-            summary.runs.push(sweep_one(&source, package, &surface, overlay.as_ref(), &games, true, limits, &mut peak, &mut max_call)?);
+            summary
+                .runs
+                .push(sweep_one(&plan, &games, true, &mut peaks)?);
         }
         Ok(())
     })();
-    summary.max_call_ms = max_call.as_secs_f64() * 1e3;
-    summary.peak_heap_bytes = peak;
+    summary.max_call_ms = peaks.call.as_secs_f64() * 1e3;
+    summary.peak_heap_bytes = peaks.heap;
     match outcome {
         Ok(()) => summary.pass = true,
         Err(error) => summary.reasons.push(format!("{error:#}")),
@@ -334,7 +417,9 @@ pub struct Cache {
 
 impl Cache {
     pub fn new(root: &Path) -> Self {
-        Self { root: root.to_owned() }
+        Self {
+            root: root.to_owned(),
+        }
     }
 
     /// `$XDG_CACHE_HOME/korri-shell`, else `$HOME/.cache/korri-shell`.
@@ -375,7 +460,10 @@ impl Cache {
             bail!("{} changed during verification", package.id);
         }
         self.write(&self.summary_path(&package.id), &summary)?;
-        let mut index = self.read_index().unwrap_or_else(|| Index { verifier: VERIFIER.into(), entries: Vec::new() });
+        let mut index = self.read_index().unwrap_or_else(|| Index {
+            verifier: VERIFIER.into(),
+            entries: Vec::new(),
+        });
         index.entries.retain(|e| e.id != package.id);
         index.entries.push(Entry {
             id: package.id.clone(),
@@ -395,18 +483,32 @@ impl Cache {
         let index = self.read_index().unwrap_or_default();
         let mut loadable = Vec::new();
         for package in packages {
-            let current = index.entries.iter().find(|e| e.id == package.id && e.dir == package.dir);
+            let current = index
+                .entries
+                .iter()
+                .find(|e| e.id == package.id && e.dir == package.dir);
             let unchanged = current.is_some_and(|entry| {
-                files(&package.dir).is_ok_and(|now| now.into_iter().map(|(p, (s, m))| (p, s, m)).collect::<Vec<_>>() == entry.files)
-                    && self.summary_path(&package.id).is_file()
+                files(&package.dir).is_ok_and(|now| {
+                    now.into_iter()
+                        .map(|(p, (s, m))| (p, s, m))
+                        .collect::<Vec<_>>()
+                        == entry.files
+                }) && self.summary_path(&package.id).is_file()
             });
             let pass = if unchanged {
                 current.is_some_and(|e| e.pass)
             } else {
-                eprintln!("korri-shell: verifying {} (not in the index or changed)", package.id);
+                eprintln!(
+                    "korri-shell: verifying {} (not in the index or changed)",
+                    package.id
+                );
                 let summary = self.install(package, limits)?;
                 if !summary.pass {
-                    eprintln!("korri-shell: {} failed verification: {}", package.id, summary.reasons.join("; "));
+                    eprintln!(
+                        "korri-shell: {} failed verification: {}",
+                        package.id,
+                        summary.reasons.join("; ")
+                    );
                 }
                 summary.pass
             };
@@ -456,8 +558,14 @@ mod tests {
         let package = planted(&root.path().join("demo"), VIEW, &logic("return { count: s.n, rows: (model.catalog.window ?? []).map(g => ({ label: g.title })) }"));
         let summary = verify(&package, Limits::default());
         assert!(summary.pass, "{:?}", summary.reasons);
-        assert_eq!(summary.runs.iter().map(|r| r.games).collect::<Vec<_>>(), vec![0, 12, 10_000]);
-        assert!(summary.runs.iter().all(|r| r.updates >= 9 + 1 + 1 + SEEDED_PRESSES));
+        assert_eq!(
+            summary.runs.iter().map(|r| r.games).collect::<Vec<_>>(),
+            vec![0, 12, 10_000]
+        );
+        assert!(summary
+            .runs
+            .iter()
+            .all(|r| r.updates >= 9 + 1 + 1 + SEEDED_PRESSES));
         assert!(summary.runs.iter().all(|r| r.requests > 0));
         assert_eq!(summary.preferences["demo.size"].initial, "m");
     }
@@ -467,46 +575,84 @@ mod tests {
         assert!(reasons("return { nope: 1 }").contains("undeclared property"));
         assert!(reasons("return { count: 'one' }").contains("wrong type"));
         assert!(reasons("return { rows: [{ label: false }] }").contains("rows[0].label"));
-        assert!(reasons("return { art: { $image: 'data:image/png;base64,AAAA' } }").contains("image decode"));
+        assert!(
+            reasons("return { art: { $image: 'data:image/png;base64,AAAA' } }")
+                .contains("image decode")
+        );
     }
 
     #[test]
     fn rejects_throws_loops_and_heap_blow_ups() {
         assert!(reasons("throw new Error('planted')").contains("planted"));
         assert!(reasons("while (true) {}").contains("budget"));
-        assert!(reasons("const a = []; while (true) a.push(new Uint8Array(1 << 20));").contains("heap"));
+        assert!(
+            reasons("const a = []; while (true) a.push(new Uint8Array(1 << 20));").contains("heap")
+        );
     }
 
     #[test]
     fn rejects_unknown_requests_and_bad_declarations() {
         let root = tempfile::tempdir().unwrap();
         let bad_request = planted(&root.path().join("one"), VIEW, "globalThis.surface = { init: () => 0, update: (s) => ({ state: s, requests: [{ _tag: 'Teleport' }] }), view: () => ({}) };");
-        assert!(verify(&bad_request, Limits::default()).reasons.join(" ").contains("unknown request"));
+        assert!(verify(&bad_request, Limits::default())
+            .reasons
+            .join(" ")
+            .contains("unknown request"));
         let bad_declaration = planted(&root.path().join("two"), VIEW, "globalThis.surface = { preferences: { 'UPPER': { mark: 'device', initial: '' } }, init: () => 0, update: (s) => ({ state: s, requests: [] }), view: () => ({}) };");
-        assert!(verify(&bad_declaration, Limits::default()).reasons.join(" ").contains("preference key"));
+        assert!(verify(&bad_declaration, Limits::default())
+            .reasons
+            .join(" ")
+            .contains("preference key"));
     }
 
     #[test]
     fn the_index_skips_reverification_until_a_file_changes() {
         let root = tempfile::tempdir().unwrap();
         let cache = Cache::new(&root.path().join("cache"));
-        let package = planted(&root.path().join("packages/demo"), VIEW, &logic("return { count: s.n }"));
-        let loadable = cache.loadable(std::slice::from_ref(&package), Limits::default()).unwrap();
+        let package = planted(
+            &root.path().join("packages/demo"),
+            VIEW,
+            &logic("return { count: s.n }"),
+        );
+        let loadable = cache
+            .loadable(std::slice::from_ref(&package), Limits::default())
+            .unwrap();
         assert_eq!(loadable, vec![package.clone()]);
         let index = cache.read_index().unwrap();
         // A summary that claims failure is believed while files are unchanged.
         let mut failed = index.clone();
         failed.entries[0].pass = false;
         cache.write(&cache.index_path(), &failed).unwrap();
-        assert!(cache.loadable(std::slice::from_ref(&package), Limits::default()).unwrap().is_empty());
+        assert!(cache
+            .loadable(std::slice::from_ref(&package), Limits::default())
+            .unwrap()
+            .is_empty());
         // Changing a file makes the shell verify again.
         std::thread::sleep(Duration::from_millis(20));
-        std::fs::write(package.dir.join("logic.js"), logic("return { count: s.n + 1 }")).unwrap();
-        assert_eq!(cache.loadable(std::slice::from_ref(&package), Limits::default()).unwrap(), vec![package]);
+        std::fs::write(
+            package.dir.join("logic.js"),
+            logic("return { count: s.n + 1 }"),
+        )
+        .unwrap();
+        assert_eq!(
+            cache
+                .loadable(std::slice::from_ref(&package), Limits::default())
+                .unwrap(),
+            vec![package]
+        );
         // A missing index is rebuilt.
         std::fs::remove_file(cache.index_path()).unwrap();
         assert!(cache.read_index().is_none());
-        assert_eq!(cache.loadable(&[Package::at(&root.path().join("packages/demo")).unwrap()], Limits::default()).unwrap().len(), 1);
+        assert_eq!(
+            cache
+                .loadable(
+                    &[Package::at(&root.path().join("packages/demo")).unwrap()],
+                    Limits::default()
+                )
+                .unwrap()
+                .len(),
+            1
+        );
         assert!(cache.read_index().is_some());
     }
 }

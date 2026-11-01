@@ -51,7 +51,7 @@ anyhow = "1"
 libc = "0.2"
 pollster = "0.4"
 zeroize = "1"
-# korri-window-sdl = { path = "window-sdl", optional = true }
+korri-window-sdl = { path = "window-sdl", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -67,7 +67,7 @@ desktop = [
   "slint-interpreter/backend-winit-x11",
 ]
 # webOS: the SDL adapter (window-sdl/), one window, no winit.
-webos = []
+webos = ["dep:korri-window-sdl"]
 # The fixture korrid used by tests and workstation proofs. Never shipped.
 fixture = []
 

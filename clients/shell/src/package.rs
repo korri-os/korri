@@ -20,7 +20,10 @@ pub const LOGIC: &str = "logic.js";
 /// A surface id: the package folder's name. Lowercase letters, digits and
 /// dashes, like the existing `pico` and `zone`.
 pub fn valid_id(id: &str) -> bool {
-    (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,7 +47,10 @@ impl Package {
                 bail!("package {id} has no {entry}");
             }
         }
-        Ok(Self { id, dir: dir.to_owned() })
+        Ok(Self {
+            id,
+            dir: dir.to_owned(),
+        })
     }
 
     /// Every package folder directly inside `root`, by id.
@@ -57,7 +63,10 @@ impl Package {
             }
             match Self::at(&entry.path()) {
                 Ok(package) => packages.push(package),
-                Err(error) => eprintln!("korri-shell: skipping {}: {error:#}", entry.path().display()),
+                Err(error) => eprintln!(
+                    "korri-shell: skipping {}: {error:#}",
+                    entry.path().display()
+                ),
             }
         }
         packages.sort_by(|a, b| a.id.cmp(&b.id));
@@ -82,9 +91,15 @@ pub fn compile(package: &Package) -> Result<Views> {
     let result = pollster::block_on(compiler.build_from_path(package.dir.join(VIEW)));
     let diagnostics: Vec<String> = result.diagnostics().map(|d| d.to_string()).collect();
     if result.has_errors() {
-        bail!("{} does not compile: {}", package.id, diagnostics.join("; "));
+        bail!(
+            "{} does not compile: {}",
+            package.id,
+            diagnostics.join("; ")
+        );
     }
-    let surface = result.component("Surface").with_context(|| format!("{} must export component Surface", package.id))?;
+    let surface = result
+        .component("Surface")
+        .with_context(|| format!("{} must export component Surface", package.id))?;
     Ok(Views {
         surface,
         overlay: result.component("Overlay"),
@@ -110,7 +125,10 @@ mod tests {
         let root = tempfile::tempdir()?;
         let dir = root.path().join("demo");
         std::fs::create_dir(&dir)?;
-        std::fs::write(dir.join(VIEW), "export component Surface inherits Window {}")?;
+        std::fs::write(
+            dir.join(VIEW),
+            "export component Surface inherits Window {}",
+        )?;
         assert!(Package::at(&dir).is_err());
         std::fs::write(dir.join(LOGIC), "")?;
         let package = Package::at(&dir)?;

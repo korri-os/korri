@@ -96,7 +96,7 @@ cargo build --locked --manifest-path "$manifest" "${features[@]}"
 echo "== SDL 2.0.4 ABI: every bound function is in 2.0.4's export list"
 tar -xzOf "$SDL_204_SOURCE" SDL2-2.0.4/src/dynapi/SDL_dynapi_procs.h \
   | grep -o 'SDL_DYNAPI_PROC([^,]*,SDL_[A-Za-z0-9_]*' | sed 's/.*,//' | sort -u >"$audit/exports"
-sed -n '/^sdl_functions! {/,/^}/p' "$crate/src/sdl/ffi.rs" \
+sed -n '/^sdl_functions! {/,/^}/p' "$crate/../shell/window-sdl/src/ffi.rs" \
   | grep -o '^    SDL_[A-Za-z0-9_]*' | tr -d ' ' | sort -u >"$audit/bound"
 missing="$(comm -23 "$audit/bound" "$audit/exports")"
 if [[ -n "$missing" ]]; then

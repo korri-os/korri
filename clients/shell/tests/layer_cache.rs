@@ -65,9 +65,16 @@ export component Surface inherits Window {
 "#;
 
 fn compile(source: &str) -> ComponentDefinition {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/packages/probe/layer-test.slint");
-    let result = pollster::block_on(slint_interpreter::Compiler::default().build_from_source(source.into(), path));
-    assert!(!result.has_errors(), "{:?}", result.diagnostics().collect::<Vec<_>>());
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/packages/probe/layer-test.slint");
+    let result = pollster::block_on(
+        slint_interpreter::Compiler::default().build_from_source(source.into(), path),
+    );
+    assert!(
+        !result.has_errors(),
+        "{:?}",
+        result.diagnostics().collect::<Vec<_>>()
+    );
     result.component("Surface").expect("Surface")
 }
 
@@ -84,7 +91,9 @@ impl Pair {
         let definition = compile(source);
         let make = |cached: bool| {
             let instance = definition.create().unwrap();
-            instance.set_property("cached", Value::Bool(cached)).unwrap();
+            instance
+                .set_property("cached", Value::Bool(cached))
+                .unwrap();
             instance.show().unwrap();
             instance
         };
@@ -93,7 +102,12 @@ impl Pair {
             let w = w.borrow();
             [w[w.len() - 2].clone(), w[w.len() - 1].clone()]
         });
-        let mut pair = Self { instances, windows, buffers: [Vec::new(), Vec::new()], size: (0, 0) };
+        let mut pair = Self {
+            instances,
+            windows,
+            buffers: [Vec::new(), Vec::new()],
+            size: (0, 0),
+        };
         pair.resize(width, height);
         pair
     }
@@ -126,8 +140,15 @@ impl Pair {
     }
 
     fn assert_same(&self, step: &str) {
-        let differing = self.buffers[0].iter().zip(&self.buffers[1]).filter(|(a, b)| a != b).count();
-        assert_eq!(differing, 0, "{step}: {differing} pixels differ between the cached and the direct layer");
+        let differing = self.buffers[0]
+            .iter()
+            .zip(&self.buffers[1])
+            .filter(|(a, b)| a != b)
+            .count();
+        assert_eq!(
+            differing, 0,
+            "{step}: {differing} pixels differ between the cached and the direct layer"
+        );
     }
 }
 
@@ -146,7 +167,12 @@ fn a_cached_layer_matches_direct_rendering_through_every_change() {
     pair.set("word", Value::String("MOVED".into()));
     pair.render();
     pair.assert_same("word changed");
-    pair.set("ink", Value::Brush(slint::Brush::SolidColor(slint::Color::from_rgb_u8(10, 200, 90))));
+    pair.set(
+        "ink",
+        Value::Brush(slint::Brush::SolidColor(slint::Color::from_rgb_u8(
+            10, 200, 90,
+        ))),
+    );
     pair.render();
     pair.assert_same("colour changed");
     pair.set("count", Value::Number(5.0));
@@ -163,7 +189,8 @@ fn a_cached_layer_matches_direct_rendering_through_every_change() {
     pair.render();
     pair.assert_same("resized");
     for window in &pair.windows {
-        window.dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged { scale_factor: 2.0 });
+        window
+            .dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged { scale_factor: 2.0 });
     }
     pair.resize(400, 240);
     pair.render();
@@ -187,7 +214,10 @@ fn a_clean_cached_layer_is_not_walked() {
     let [cached, direct] = pair.render();
     pair.assert_same("many children");
     assert!(direct > 300, "the direct layer walks every child: {direct}");
-    assert!(cached < 20, "the clean cached layer is skipped: walked {cached}");
+    assert!(
+        cached < 20,
+        "the clean cached layer is skipped: walked {cached}"
+    );
     // A change inside makes it walk again, once.
     pair.set("word", Value::String("AGAIN".into()));
     let [cached, _] = pair.render();

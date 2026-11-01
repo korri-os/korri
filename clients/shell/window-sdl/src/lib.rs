@@ -1,4 +1,10 @@
-//! THROWAWAY webOS experiment: a Slint custom platform over an existing SDL2.
+//! The webOS window: a Slint custom platform over an existing SDL2. Built for
+//! the slint-spike inspector on the LG B7, and the window backend of the
+//! native shell's `webos` build (`clients/shell`, `--features webos`).
+//!
+//! The inspector lets SDL keys reach the view as Slint key events. A host that
+//! owns input itself (the shell) installs with [`install_with_host_keys`]; SDL
+//! keys then go to its callback and never to the view.
 //!
 //! The view renders with Slint's software renderer into a buffer in this
 //! process. SDL only shows that buffer: one streaming texture, copied and
@@ -92,6 +98,36 @@ pub fn install(title: &str, placement: Placement) -> Result<(), String> {
     slint::platform::set_platform(Box::new(platform)).map_err(|error| error.to_string())
 }
 
+/// Keys a host takes for itself instead of the view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostKey {
+    Up,
+    Down,
+    Left,
+    Right,
+    Confirm,
+    Back,
+    F2,
+    M,
+    O,
+}
+
+/// Receives each host key press (`true`) and release (`false`). Repeats are
+/// not delivered: the host times its own repeats.
+pub type HostKeys = Box<dyn Fn(HostKey, bool)>;
+
+/// As [`install`], for a host that handles keys itself. Back does not close
+/// the window; the host decides what it means.
+pub fn install_with_host_keys(
+    title: &str,
+    placement: Placement,
+    keys: HostKeys,
+) -> Result<(), String> {
+    let mut platform = SdlPlatform::open(title, placement)?;
+    platform.host_keys = Some(keys);
+    slint::platform::set_platform(Box::new(platform)).map_err(|error| error.to_string())
+}
+
 /// State shared with other threads: queued closures and the quit request.
 struct Shared {
     sdl: Arc<Sdl>,
@@ -181,6 +217,8 @@ pub struct SdlPlatform {
     click_confirming: Cell<bool>,
     /// TV only: the compositor's cursor request, when available.
     webos_cursor: Option<webos_cursor::WebosCursor>,
+    /// A host's own key handling; when set, keys never reach the view.
+    host_keys: Option<HostKeys>,
 }
 
 impl SdlPlatform {
@@ -262,6 +300,7 @@ impl SdlPlatform {
             mode: Cell::new(keys::Mode::Keys),
             click_confirming: Cell::new(false),
             webos_cursor: None,
+            host_keys: None,
         };
         if platform.webos_abi {
             let window = platform.screen.borrow().window;
@@ -544,6 +583,14 @@ impl SdlPlatform {
 
     fn key_event(&self, event: &ffi::Event, pressed: bool) {
         let key = event.key(self.webos_abi);
+        if let Some(host_keys) = &self.host_keys {
+            if !key.repeat {
+                if let Some(host_key) = keys::host_key(key.keycode, key.scancode) {
+                    host_keys(host_key, pressed);
+                }
+            }
+            return;
+        }
         let action = keys::translate(key.keycode, key.scancode, key.modifiers);
         if self.webos_abi && pressed {
             if let Some(mode) = keys::mode_after_key(key.scancode, action) {

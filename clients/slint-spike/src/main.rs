@@ -4,7 +4,7 @@
 mod brain;
 mod report;
 #[cfg(feature = "webos")]
-mod sdl;
+use korri_window_sdl as sdl;
 #[cfg(feature = "webos")]
 mod startup;
 

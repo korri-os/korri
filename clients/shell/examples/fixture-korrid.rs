@@ -17,12 +17,19 @@
 //! | `requests` | print every request received so far, one JSON line each |
 //! | `stored ID` | print the preferences stored for a surface |
 
-use korri_shell::{catalog, fixture::{Behaviour, Fixture}, verify};
+use korri_shell::{
+    catalog,
+    fixture::{Behaviour, Fixture},
+    verify,
+};
 use serde_json::json;
 use std::io::{BufRead, Write};
 
 fn code(text: &str) -> Option<u16> {
-    text.strip_prefix("0x").map_or_else(|| text.parse().ok(), |hex| u16::from_str_radix(hex, 16).ok())
+    text.strip_prefix("0x").map_or_else(
+        || text.parse().ok(),
+        |hex| u16::from_str_radix(hex, 16).ok(),
+    )
 }
 
 fn main() -> std::io::Result<()> {
@@ -37,7 +44,11 @@ fn main() -> std::io::Result<()> {
         }
     }
     let (model, examples) = verify::fixture();
-    let fixture = Fixture::start(model, catalog::games(&examples, games), Behaviour::default())?;
+    let fixture = Fixture::start(
+        model,
+        catalog::games(&examples, games),
+        Behaviour::default(),
+    )?;
     let credentials = credentials.expect("--credentials DIR");
     fixture.write_credential(std::path::Path::new(&credentials))?;
     println!("KORRID_ADDRESS=127.0.0.1:{}", fixture.port());
@@ -50,9 +61,16 @@ fn main() -> std::io::Result<()> {
         let words: Vec<&str> = line.split_whitespace().collect();
         match words.as_slice() {
             ["pad"] => fixture.send_input(&Fixture::gamepad_frames("fixture-pad")),
-            ["press", value] => fixture.send_input(&Fixture::press_frames("fixture-pad", code(value).expect("key code"))),
-            ["hold", value] => fixture.send_input(&[key(code(value).expect("key code"), 1), report.clone()]),
-            ["release", value] => fixture.send_input(&[key(code(value).expect("key code"), 0), report.clone()]),
+            ["press", value] => fixture.send_input(&Fixture::press_frames(
+                "fixture-pad",
+                code(value).expect("key code"),
+            )),
+            ["hold", value] => {
+                fixture.send_input(&[key(code(value).expect("key code"), 1), report.clone()])
+            }
+            ["release", value] => {
+                fixture.send_input(&[key(code(value).expect("key code"), 0), report.clone()])
+            }
             ["overlay", "on"] => fixture.set_overlay(true),
             ["overlay", "off"] => fixture.set_overlay(false),
             ["requests"] => {

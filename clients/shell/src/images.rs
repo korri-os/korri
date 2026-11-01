@@ -139,7 +139,8 @@ impl ImageCache {
             let size = image.size();
             return Ok((image, (size.width * size.height * 4) as usize));
         }
-        let mut reader = image::ImageReader::new(std::io::Cursor::new(&bytes)).with_guessed_format()?;
+        let mut reader =
+            image::ImageReader::new(std::io::Cursor::new(&bytes)).with_guessed_format()?;
         let mut limits = image::Limits::default();
         limits.max_image_width = Some(MAX_SIDE);
         limits.max_image_height = Some(MAX_SIDE);
@@ -182,7 +183,10 @@ pub(crate) mod tests {
         let image = image::RgbaImage::from_raw(2, 1, vec![0x2b, 0xac, 0xfd, 255, 9, 9, 9, 0])
             .expect("pixels");
         image
-            .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
             .expect("encode");
         format!(
             "data:image/png;base64,{}",

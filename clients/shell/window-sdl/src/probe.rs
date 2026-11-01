@@ -14,7 +14,7 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use crate::sdl::webos_cursor::Unavailable;
+use crate::webos_cursor::Unavailable;
 
 const PREFIX: &str = "korri-slint-spike-input-";
 pub const LIMIT: usize = 64;
@@ -55,7 +55,7 @@ pub enum Record {
     AppIdInherited,
     AppIdSupplied,
     /// The compositor cursor request: bound, or why not.
-    Cursor(Option<crate::sdl::webos_cursor::Unavailable>),
+    Cursor(Option<crate::webos_cursor::Unavailable>),
 }
 
 impl KeyAction {

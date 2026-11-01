@@ -67,7 +67,11 @@ impl Violation {
 impl fmt::Display for Violation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Time { call, millis } => write!(f, "{call} ran {millis} ms, over the {} ms budget", CALL_BUDGET.as_millis()),
+            Self::Time { call, millis } => write!(
+                f,
+                "{call} ran {millis} ms, over the {} ms budget",
+                CALL_BUDGET.as_millis()
+            ),
             Self::Memory { call } => write!(f, "{call} reached the QuickJS heap limit"),
             Self::Exception { call, message } => write!(f, "{call} threw: {message}"),
             Self::Contract { call, message } => write!(f, "{call}: {message}"),
@@ -115,30 +119,49 @@ pub fn check_declaration(value: &Value) -> Result<Declaration, String> {
         if !valid_preference_key(key) {
             return Err(format!("preference key {key:?} is not [a-z0-9.-]{{1,32}}"));
         }
-        let entry = entry.as_object().ok_or_else(|| format!("preference {key} must be an object"))?;
+        let entry = entry
+            .as_object()
+            .ok_or_else(|| format!("preference {key} must be an object"))?;
         if entry.keys().any(|k| k != "mark" && k != "initial") {
-            return Err(format!("preference {key} has a key other than mark and initial"));
+            return Err(format!(
+                "preference {key} has a key other than mark and initial"
+            ));
         }
         let mark = match entry.get("mark").and_then(Value::as_str) {
             Some("shared") => Mark::Shared,
             Some("device") => Mark::Device,
-            _ => return Err(format!("preference {key} mark must be \"shared\" or \"device\"")),
+            _ => {
+                return Err(format!(
+                    "preference {key} mark must be \"shared\" or \"device\""
+                ))
+            }
         };
         let initial = entry
             .get("initial")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("preference {key} initial must be a string"))?;
         if initial.len() > MAX_PREFERENCE_BYTES {
-            return Err(format!("preference {key} initial is over {MAX_PREFERENCE_BYTES} bytes"));
+            return Err(format!(
+                "preference {key} initial is over {MAX_PREFERENCE_BYTES} bytes"
+            ));
         }
-        declaration.insert(key.clone(), Preference { mark, initial: initial.to_owned() });
+        declaration.insert(
+            key.clone(),
+            Preference {
+                mark,
+                initial: initial.to_owned(),
+            },
+        );
     }
     Ok(declaration)
 }
 
 /// Stored values where korrid has them, the declared initial otherwise.
 /// Stored keys the package no longer declares, and oversized values, are dropped.
-pub fn effective_preferences(declaration: &Declaration, stored: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+pub fn effective_preferences(
+    declaration: &Declaration,
+    stored: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
     declaration
         .iter()
         .map(|(key, preference)| {
@@ -201,13 +224,19 @@ pub struct Engine {
 impl Engine {
     /// Evaluate `logic.js` and read its preference declaration.
     pub fn load(source: &str, limits: Limits) -> Result<Self, Violation> {
-        let runtime = Runtime::new().map_err(|e| Violation::Exception { call: "load", message: e.to_string() })?;
+        let runtime = Runtime::new().map_err(|e| Violation::Exception {
+            call: "load",
+            message: e.to_string(),
+        })?;
         runtime.set_memory_limit(limits.heap);
         runtime.set_max_stack_size(1024 * 1024);
         let deadline = Rc::new(Cell::new(Instant::now() + limits.call));
         let clock = deadline.clone();
         runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= clock.get())));
-        let context = Context::full(&runtime).map_err(|e| Violation::Exception { call: "load", message: e.to_string() })?;
+        let context = Context::full(&runtime).map_err(|e| Violation::Exception {
+            call: "load",
+            message: e.to_string(),
+        })?;
         let started = Instant::now();
         deadline.set(started + limits.call);
         let dispatch = context.with(|ctx| -> Result<Persistent<Object<'static>>, Violation> {
@@ -231,8 +260,16 @@ impl Engine {
         };
         engine.over_budget("load", started)?;
         let declaration = engine.call_string("preferences", &[])?;
-        let declaration: Value = serde_json::from_str(&declaration).map_err(|e| Violation::Contract { call: "preferences", message: e.to_string() })?;
-        engine.declaration = check_declaration(&declaration).map_err(|message| Violation::Contract { call: "preferences", message })?;
+        let declaration: Value =
+            serde_json::from_str(&declaration).map_err(|e| Violation::Contract {
+                call: "preferences",
+                message: e.to_string(),
+            })?;
+        engine.declaration =
+            check_declaration(&declaration).map_err(|message| Violation::Contract {
+                call: "preferences",
+                message,
+            })?;
         engine.has_overlay = engine.call_bool("hasOverlay")?;
         Ok(engine)
     }
@@ -272,7 +309,11 @@ impl Engine {
     /// Run `update`; returns the requests it asked for.
     pub fn update(&mut self, message: &Value) -> Result<Vec<Value>, Violation> {
         let requests = self.call_string("update", &[&message.to_string()])?;
-        let requests: Vec<Value> = serde_json::from_str(&requests).map_err(|e| Violation::Contract { call: "update", message: e.to_string() })?;
+        let requests: Vec<Value> =
+            serde_json::from_str(&requests).map_err(|e| Violation::Contract {
+                call: "update",
+                message: e.to_string(),
+            })?;
         Ok(requests)
     }
 
@@ -290,9 +331,15 @@ impl Engine {
 
     fn call_json(&mut self, name: &'static str) -> Result<Value, Violation> {
         let text = self.call_string(name, &[])?;
-        let value: Value = serde_json::from_str(&text).map_err(|e| Violation::Contract { call: name, message: e.to_string() })?;
+        let value: Value = serde_json::from_str(&text).map_err(|e| Violation::Contract {
+            call: name,
+            message: e.to_string(),
+        })?;
         if !value.is_object() {
-            return Err(Violation::Contract { call: name, message: format!("{name} must return an object") });
+            return Err(Violation::Contract {
+                call: name,
+                message: format!("{name} must return an object"),
+            });
         }
         Ok(value)
     }
@@ -310,18 +357,26 @@ impl Engine {
             [] => self.invoke(name, |function| function.call::<_, String>(())),
             [one] => {
                 let one = one.to_string();
-                self.invoke(name, move |function| function.call::<_, String>((one.as_str(),)))
+                self.invoke(name, move |function| {
+                    function.call::<_, String>((one.as_str(),))
+                })
             }
             _ => unreachable!("dispatch functions take at most one argument"),
         }
     }
 
-    fn invoke<T>(&mut self, name: &'static str, call: impl for<'js> FnOnce(Function<'js>) -> rquickjs::Result<T>) -> Result<T, Violation> {
+    fn invoke<T>(
+        &mut self,
+        name: &'static str,
+        call: impl for<'js> FnOnce(Function<'js>) -> rquickjs::Result<T>,
+    ) -> Result<T, Violation> {
         let started = Instant::now();
         self.deadline.set(started + self.limits.call);
         let dispatch = self.dispatch.clone();
         let result = self.context.with(|ctx| {
-            let object = dispatch.restore(&ctx).map_err(|e| classify(name, e, &ctx))?;
+            let object = dispatch
+                .restore(&ctx)
+                .map_err(|e| classify(name, e, &ctx))?;
             let function: Function = object.get(name).map_err(|e| classify(name, e, &ctx))?;
             call(function).map_err(|e| classify(name, e, &ctx))
         });
@@ -334,7 +389,10 @@ impl Engine {
     fn over_budget(&self, call: &'static str, started: Instant) -> Result<(), Violation> {
         let elapsed = started.elapsed();
         if elapsed > self.limits.call {
-            return Err(Violation::Time { call, millis: elapsed.as_millis() });
+            return Err(Violation::Time {
+                call,
+                millis: elapsed.as_millis(),
+            });
         }
         Ok(())
     }
@@ -345,7 +403,7 @@ fn classify(call: &'static str, error: rquickjs::Error, ctx: &rquickjs::Ctx<'_>)
         rquickjs::Error::Exception => {
             let caught = ctx.catch();
             if let Some(exception) = caught.as_exception() {
-                format!("{}", exception.message().unwrap_or_default())
+                exception.message().unwrap_or_default().to_string()
             } else {
                 format!("{caught:?}")
             }
@@ -354,14 +412,23 @@ fn classify(call: &'static str, error: rquickjs::Error, ctx: &rquickjs::Ctx<'_>)
         other => other.to_string(),
     };
     if let Some(rest) = message.strip_prefix("contract: ") {
-        return Violation::Contract { call, message: trim(rest) };
+        return Violation::Contract {
+            call,
+            message: trim(rest),
+        };
     }
     if message.contains("out of memory") {
         Violation::Memory { call }
     } else if message.contains("interrupted") {
-        Violation::Time { call, millis: CALL_BUDGET.as_millis() }
+        Violation::Time {
+            call,
+            millis: CALL_BUDGET.as_millis(),
+        }
     } else {
-        Violation::Exception { call, message: trim(&message) }
+        Violation::Exception {
+            call,
+            message: trim(&message),
+        }
     }
 }
 
@@ -404,7 +471,10 @@ mod tests {
         assert_eq!(engine.declaration()["zone.look"].initial, "modern");
         engine.set_model(r#"{"total": 3}"#)?;
         engine.init(&prefs("retro"))?;
-        assert_eq!(engine.view()?, json!({"position": 0, "look": "retro", "total": 3}));
+        assert_eq!(
+            engine.view()?,
+            json!({"position": 0, "look": "retro", "total": 3})
+        );
         let requests = engine.update(&json!({"_tag": "Pressed", "button": "right"}))?;
         assert_eq!(requests, vec![json!({"_tag": "FocusGame", "gameId": "1"})]);
         engine.set_model(r#"{"total": 9}"#)?;
@@ -421,7 +491,9 @@ mod tests {
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
         let started = Instant::now();
-        let error = engine.update(&json!({"_tag": "KorriPublished"})).unwrap_err();
+        let error = engine
+            .update(&json!({"_tag": "KorriPublished"}))
+            .unwrap_err();
         assert_eq!(error.kind(), "time", "{error}");
         assert!(started.elapsed() < Duration::from_millis(500));
     }
@@ -429,46 +501,81 @@ mod tests {
     #[test]
     fn a_heap_blow_up_breaks_the_memory_limit() {
         let source = "globalThis.surface = { init: () => 0, update: (s) => { const a = []; while (true) a.push(new Uint8Array(1 << 20)); }, view: () => ({}) };";
-        let limits = Limits { heap: 16 * 1024 * 1024, call: Duration::from_secs(5) };
+        let limits = Limits {
+            heap: 16 * 1024 * 1024,
+            call: Duration::from_secs(5),
+        };
         let mut engine = Engine::load(source, limits).expect("load");
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
-        let error = engine.update(&json!({"_tag": "KorriPublished"})).unwrap_err();
+        let error = engine
+            .update(&json!({"_tag": "KorriPublished"}))
+            .unwrap_err();
         assert_eq!(error.kind(), "memory", "{error}");
     }
 
     #[test]
     fn wrong_shapes_and_throws_are_violations() {
-        let old_style = "globalThis.surface = { init: () => 0, update: (s) => s, view: () => ({}) };";
+        let old_style =
+            "globalThis.surface = { init: () => 0, update: (s) => s, view: () => ({}) };";
         let mut engine = Engine::load(old_style, Limits::default()).expect("load");
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
-        assert_eq!(engine.update(&json!({"_tag": "KorriPublished"})).unwrap_err().kind(), "contract");
+        assert_eq!(
+            engine
+                .update(&json!({"_tag": "KorriPublished"}))
+                .unwrap_err()
+                .kind(),
+            "contract"
+        );
         let throws = "globalThis.surface = { init: () => 0, update: (s) => ({state: s, requests: []}), view: () => { throw new Error('planted') } };";
         let mut engine = Engine::load(throws, Limits::default()).expect("load");
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
         let error = engine.view().unwrap_err();
-        assert!(matches!(&error, Violation::Exception { message, .. } if message.contains("planted")), "{error}");
+        assert!(
+            matches!(&error, Violation::Exception { message, .. } if message.contains("planted")),
+            "{error}"
+        );
         assert!(Engine::load("globalThis.surface = {}", Limits::default()).is_err());
         let clock = "globalThis.surface = { init: () => Date.now(), update: (s) => ({state: s, requests: []}), view: () => ({}) };";
         let mut engine = Engine::load(clock, Limits::default()).expect("load");
         engine.set_model("{}").expect("model");
-        assert_eq!(engine.init(&BTreeMap::new()).unwrap_err().kind(), "exception");
+        assert_eq!(
+            engine.init(&BTreeMap::new()).unwrap_err().kind(),
+            "exception"
+        );
     }
 
     #[test]
     fn declarations_follow_contract_3_6() {
-        assert!(check_declaration(&json!({"pico.font": {"mark": "shared", "initial": "tiny5"}})).is_ok());
+        assert!(
+            check_declaration(&json!({"pico.font": {"mark": "shared", "initial": "tiny5"}}))
+                .is_ok()
+        );
         assert!(check_declaration(&json!({"Pico": {"mark": "shared", "initial": ""}})).is_err());
         assert!(check_declaration(&json!({"a": {"mark": "cloud", "initial": ""}})).is_err());
-        assert!(check_declaration(&json!({"a": {"mark": "device", "initial": "x".repeat(257)}})).is_err());
-        let many: serde_json::Map<String, Value> = (0..17).map(|i| (format!("k{i}"), json!({"mark": "device", "initial": ""}))).collect();
+        assert!(
+            check_declaration(&json!({"a": {"mark": "device", "initial": "x".repeat(257)}}))
+                .is_err()
+        );
+        let many: serde_json::Map<String, Value> = (0..17)
+            .map(|i| (format!("k{i}"), json!({"mark": "device", "initial": ""})))
+            .collect();
         assert!(check_declaration(&Value::Object(many)).is_err());
         assert!(!valid_preference_key(&"a".repeat(33)));
         let declaration = check_declaration(&json!({"a": {"mark": "device", "initial": "one"}, "b": {"mark": "shared", "initial": "two"}})).unwrap();
-        let stored = BTreeMap::from([("a".to_owned(), "stored".to_owned()), ("gone".to_owned(), "x".to_owned())]);
+        let stored = BTreeMap::from([
+            ("a".to_owned(), "stored".to_owned()),
+            ("gone".to_owned(), "x".to_owned()),
+        ]);
         let effective = effective_preferences(&declaration, &stored);
-        assert_eq!(effective, BTreeMap::from([("a".to_owned(), "stored".to_owned()), ("b".to_owned(), "two".to_owned())]));
+        assert_eq!(
+            effective,
+            BTreeMap::from([
+                ("a".to_owned(), "stored".to_owned()),
+                ("b".to_owned(), "two".to_owned())
+            ])
+        );
     }
 }

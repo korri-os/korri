@@ -57,7 +57,8 @@ impl Connection {
     }
 
     pub fn from_environment() -> Result<Self> {
-        let directory = env::var_os("CREDENTIALS_DIRECTORY").ok_or("systemd credentials are required")?;
+        let directory =
+            env::var_os("CREDENTIALS_DIRECTORY").ok_or("systemd credentials are required")?;
         let capability = read_credential(&Path::new(&directory).join("KORRID_RPC_CAPABILITY"))?;
         let address: SocketAddr = env::var("KORRID_ADDRESS")
             .map_err(|_| "KORRID_ADDRESS is required")?
@@ -66,7 +67,8 @@ impl Connection {
         if address.port() == 0 {
             return Err("korrid must have a nonzero port");
         }
-        let origin = env::var("KORRID_PORTAL_ORIGIN").map_err(|_| "KORRID_PORTAL_ORIGIN is required")?;
+        let origin =
+            env::var("KORRID_PORTAL_ORIGIN").map_err(|_| "KORRID_PORTAL_ORIGIN is required")?;
         validate_origin(&origin)?;
         Ok(Self {
             port: address.port(),
@@ -121,7 +123,10 @@ pub fn read_credential(path: &Path) -> Result<Zeroizing<String>> {
     if capability.ends_with('\n') {
         capability.pop();
     }
-    if capability.is_empty() || capability.len() > 4096 || !capability.bytes().all(|byte| (0x21..=0x7e).contains(&byte)) {
+    if capability.is_empty()
+        || capability.len() > 4096
+        || !capability.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
         return Err("the RPC credential is invalid");
     }
     Ok(capability)
@@ -148,7 +153,9 @@ fn credential_is_private(file: &fs::File) -> io::Result<bool> {
     if size < 0 {
         let error = io::Error::last_os_error();
         return match error.raw_os_error() {
-            Some(libc::ENODATA | libc::EOPNOTSUPP) => Ok(metadata.uid() == uid && metadata.mode() & 0o077 == 0),
+            Some(libc::ENODATA | libc::EOPNOTSUPP) => {
+                Ok(metadata.uid() == uid && metadata.mode() & 0o077 == 0)
+            }
             Some(libc::ERANGE) => Ok(false),
             _ => Err(error),
         };
@@ -169,9 +176,14 @@ fn credential_acl_is_private(acl: &[u8], uid: u32) -> bool {
         (16, 4, u32::MAX),        // mask: read only
         (32, 0, u32::MAX),        // other: no access
     ];
-    acl[4..].chunks_exact(8).zip(expected).all(|(entry, (tag, permission, id))| {
-        entry[..2] == tag.to_le_bytes() && entry[2..4] == permission.to_le_bytes() && entry[4..] == id.to_le_bytes()
-    })
+    acl[4..]
+        .chunks_exact(8)
+        .zip(expected)
+        .all(|(entry, (tag, permission, id))| {
+            entry[..2] == tag.to_le_bytes()
+                && entry[2..4] == permission.to_le_bytes()
+                && entry[4..] == id.to_le_bytes()
+        })
 }
 
 #[cfg(test)]

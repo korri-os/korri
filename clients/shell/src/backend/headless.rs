@@ -12,9 +12,17 @@ use std::{
     rc::{Rc, Weak},
 };
 
+/// A window, its host sink, its frame counter, and whether its first frame is still due.
+type Sink = (
+    Weak<MinimalSoftwareWindow>,
+    Rc<dyn Fn(HostEvent)>,
+    FrameCounter,
+    bool,
+);
+
 thread_local! {
     static WINDOWS: RefCell<Vec<Weak<MinimalSoftwareWindow>>> = const { RefCell::new(Vec::new()) };
-    static SINKS: RefCell<Vec<(Weak<MinimalSoftwareWindow>, Rc<dyn Fn(HostEvent)>, FrameCounter, bool)>> = const { RefCell::new(Vec::new()) };
+    static SINKS: RefCell<Vec<Sink>> = const { RefCell::new(Vec::new()) };
 }
 
 struct HeadlessPlatform {
@@ -39,7 +47,9 @@ pub struct Headless;
 impl Headless {
     /// Install the headless platform for this thread. Idempotent.
     pub fn install() -> Self {
-        let _ = slint::platform::set_platform(Box::new(HeadlessPlatform { started: std::time::Instant::now() }));
+        let _ = slint::platform::set_platform(Box::new(HeadlessPlatform {
+            started: std::time::Instant::now(),
+        }));
         Self
     }
 
@@ -48,7 +58,11 @@ impl Headless {
         WINDOWS.with(|w| {
             let mut windows = w.borrow_mut();
             windows.retain(|w| w.strong_count() > 0);
-            windows.iter().filter_map(Weak::upgrade).filter(|w| w.window().is_visible()).count()
+            windows
+                .iter()
+                .filter_map(Weak::upgrade)
+                .filter(|w| w.window().is_visible())
+                .count()
         })
     }
 
@@ -58,7 +72,8 @@ impl Headless {
     pub fn render() -> Option<Vec<u16>> {
         slint::platform::update_timers_and_animations();
         let mut front = None;
-        let windows: Vec<_> = WINDOWS.with(|w| w.borrow().iter().filter_map(Weak::upgrade).collect());
+        let windows: Vec<_> =
+            WINDOWS.with(|w| w.borrow().iter().filter_map(Weak::upgrade).collect());
         for window in windows {
             if !window.window().is_visible() {
                 continue;
@@ -71,11 +86,14 @@ impl Headless {
             let sink = SINKS.with(|s| {
                 let mut sinks = s.borrow_mut();
                 sinks.retain(|(w, ..)| w.strong_count() > 0);
-                sinks.iter_mut().find(|(w, ..)| w.upgrade().is_some_and(|w2| Rc::ptr_eq(&w2, &window))).map(|(_, sink, frames, first)| {
-                    frames.add();
-                    let was_first = std::mem::replace(first, false);
-                    (sink.clone(), was_first)
-                })
+                sinks
+                    .iter_mut()
+                    .find(|(w, ..)| w.upgrade().is_some_and(|w2| Rc::ptr_eq(&w2, &window)))
+                    .map(|(_, sink, frames, first)| {
+                        frames.add();
+                        let was_first = std::mem::replace(first, false);
+                        (sink.clone(), was_first)
+                    })
             });
             if let Some((sink, true)) = sink {
                 sink(HostEvent::FirstFrame);
@@ -93,10 +111,16 @@ impl Backend for Headless {
 
     fn attach(&self, window: &slint::Window, sink: Rc<dyn Fn(HostEvent)>, frames: FrameCounter) {
         let found = WINDOWS.with(|w| {
-            w.borrow().iter().filter_map(Weak::upgrade).find(|candidate| std::ptr::eq(candidate.window(), window))
+            w.borrow()
+                .iter()
+                .filter_map(Weak::upgrade)
+                .find(|candidate| std::ptr::eq(candidate.window(), window))
         });
         if let Some(window) = found {
-            SINKS.with(|s| s.borrow_mut().push((Rc::downgrade(&window), sink, frames, true)));
+            SINKS.with(|s| {
+                s.borrow_mut()
+                    .push((Rc::downgrade(&window), sink, frames, true))
+            });
         }
     }
 

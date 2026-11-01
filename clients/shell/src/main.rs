@@ -41,19 +41,37 @@ enum Command {
 }
 
 fn arguments() -> Result<Arguments, String> {
-    let mut args = std::env::args_os().skip(1).map(|a| a.into_string().map_err(|_| "arguments must be UTF-8".to_owned()));
-    let mut parsed = Arguments { command: Command::Run, packages: None, cache: None, surfaces: None, placement: Placement::Fullscreen, stats: false };
+    let mut args = std::env::args_os().skip(1).map(|a| {
+        a.into_string()
+            .map_err(|_| "arguments must be UTF-8".to_owned())
+    });
+    let mut parsed = Arguments {
+        command: Command::Run,
+        packages: None,
+        cache: None,
+        surfaces: None,
+        placement: Placement::Fullscreen,
+        stats: false,
+    };
     let mut first = true;
     while let Some(arg) = args.next() {
         let arg = arg?;
-        let mut value = |name: &str| args.next().unwrap_or_else(|| Err(format!("{name} needs a value")));
+        let mut value = |name: &str| {
+            args.next()
+                .unwrap_or_else(|| Err(format!("{name} needs a value")))
+        };
         match arg.as_str() {
             "install" if first => parsed.command = Command::Install,
             "verify" if first => parsed.command = Command::Verify(PathBuf::from(value("verify")?)),
             "--packages" => parsed.packages = Some(PathBuf::from(value("--packages")?)),
             "--cache" => parsed.cache = Some(PathBuf::from(value("--cache")?)),
-            "--surfaces" => parsed.surfaces = Some(value("--surfaces")?.split(',').map(str::to_owned).collect()),
-            "--placement" => parsed.placement = Placement::parse(&value("--placement")?).ok_or("--placement is fullscreen or WxH")?,
+            "--surfaces" => {
+                parsed.surfaces = Some(value("--surfaces")?.split(',').map(str::to_owned).collect())
+            }
+            "--placement" => {
+                parsed.placement = Placement::parse(&value("--placement")?)
+                    .ok_or("--placement is fullscreen or WxH")?
+            }
             "--stats" => parsed.stats = true,
             _ => return Err(USAGE.to_owned()),
         }
@@ -85,7 +103,10 @@ impl Post for EventLoopPost {
 
 fn main() -> ExitCode {
     // No core dump may carry the in-memory capability (as clients/linux).
-    let no_core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    let no_core = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
     // SAFETY: plain setrlimit on this process with a valid struct.
     if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &no_core) } != 0 {
         eprintln!("korri-shell: refusing to start: could not disable core dumps");
@@ -121,16 +142,38 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
         anyhow::ensure!(summary.pass, "{} failed verification", summary.surface_id);
         return Ok(());
     }
-    let root = arguments.packages.clone().ok_or_else(|| anyhow::anyhow!("--packages is required\n{USAGE}"))?;
-    let cache = Cache::new(&arguments.cache.clone().or_else(Cache::default_root).ok_or_else(|| anyhow::anyhow!("no cache directory: set --cache, XDG_CACHE_HOME or HOME"))?);
+    let root = arguments
+        .packages
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--packages is required\n{USAGE}"))?;
+    let cache = Cache::new(
+        &arguments
+            .cache
+            .clone()
+            .or_else(Cache::default_root)
+            .ok_or_else(|| {
+                anyhow::anyhow!("no cache directory: set --cache, XDG_CACHE_HOME or HOME")
+            })?,
+    );
     let mut packages = Package::discover(&root)?;
     if let Some(order) = &arguments.surfaces {
-        packages = order.iter().filter_map(|id| packages.iter().find(|p| &p.id == id).cloned()).collect();
+        packages = order
+            .iter()
+            .filter_map(|id| packages.iter().find(|p| &p.id == id).cloned())
+            .collect();
     }
     if arguments.command == Command::Install {
         for package in &packages {
             let summary = cache.install(package, limits)?;
-            println!("{} {}", package.id, if summary.pass { "pass".to_owned() } else { format!("fail: {}", summary.reasons.join("; ")) });
+            println!(
+                "{} {}",
+                package.id,
+                if summary.pass {
+                    "pass".to_owned()
+                } else {
+                    format!("fail: {}", summary.reasons.join("; "))
+                }
+            );
         }
         return Ok(());
     }
@@ -138,15 +181,31 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
     let connection = Connection::from_environment().map_err(anyhow::Error::msg)?;
     config::scrub_environment();
     let loadable = cache.loadable(&packages, limits)?;
-    anyhow::ensure!(!loadable.is_empty(), "no verified surface package in {}", root.display());
+    anyhow::ensure!(
+        !loadable.is_empty(),
+        "no verified surface package in {}",
+        root.display()
+    );
 
     #[cfg(feature = "desktop")]
     let backend: Rc<dyn Backend> = Rc::new(korri_shell::backend::winit::Winit::install()?);
     #[cfg(feature = "webos")]
-    let backend: Rc<dyn Backend> = Rc::new(korri_shell::backend::sdl::Sdl::install(arguments.placement).map_err(anyhow::Error::msg)?);
+    let backend: Rc<dyn Backend> = Rc::new(
+        korri_shell::backend::sdl::Sdl::install(arguments.placement).map_err(anyhow::Error::msg)?,
+    );
 
     let post: Arc<dyn Post> = Arc::new(EventLoopPost);
-    let mut shell = Shell::new(loadable, Korrid::new(connection.clone()), backend, post.clone(), Options { limits, placement: arguments.placement, stats: arguments.stats });
+    let mut shell = Shell::new(
+        loadable,
+        Korrid::new(connection.clone()),
+        backend,
+        post.clone(),
+        Options {
+            limits,
+            placement: arguments.placement,
+            stats: arguments.stats,
+        },
+    );
     let outcome: Rc<RefCell<Result<(), String>>> = Rc::new(RefCell::new(Ok(())));
     let quit_outcome = outcome.clone();
     shell.on_quit(Box::new(move |result| {
@@ -154,9 +213,15 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
         let _ = slint::quit_event_loop();
     }));
     let input_post = post.clone();
-    let native = Arc::new(Mutex::new(NativeInput::start(connection, true, Box::new(move |event| input_post.post(Event::Native(event))))));
+    let native = Arc::new(Mutex::new(NativeInput::start(
+        connection,
+        true,
+        Box::new(move |event| input_post.post(Event::Native(event))),
+    )));
     let follow = native.clone();
-    shell.on_native_active(Box::new(move |active| follow.lock().expect("native input lock").set_active(active)));
+    shell.on_native_active(Box::new(move |active| {
+        follow.lock().expect("native input lock").set_active(active)
+    }));
     shell.start()?;
     let frames = shell.frames();
     SHELL.with(|cell| *cell.borrow_mut() = Some(shell));
@@ -164,14 +229,22 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
     let _stats = arguments.stats.then(|| {
         let timer = slint::Timer::default();
         let last = RefCell::new((Instant::now(), frames.get()));
-        timer.start(slint::TimerMode::Repeated, Duration::from_secs(5), move || {
-            let (then, count) = *last.borrow();
-            let now = (Instant::now(), frames.get());
-            let seconds = now.0.duration_since(then).as_secs_f64();
-            let heap = SHELL.with(|s| s.borrow().as_ref().map_or(0, |s| s.heap_bytes()));
-            eprintln!("SHELL_STATS fps={:.3} frames={} seconds={seconds:.3} heap_bytes={heap}", (now.1 - count) as f64 / seconds, now.1 - count);
-            *last.borrow_mut() = now;
-        });
+        timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_secs(5),
+            move || {
+                let (then, count) = *last.borrow();
+                let now = (Instant::now(), frames.get());
+                let seconds = now.0.duration_since(then).as_secs_f64();
+                let heap = SHELL.with(|s| s.borrow().as_ref().map_or(0, |s| s.heap_bytes()));
+                eprintln!(
+                    "SHELL_STATS fps={:.3} frames={} seconds={seconds:.3} heap_bytes={heap}",
+                    (now.1 - count) as f64 / seconds,
+                    now.1 - count
+                );
+                *last.borrow_mut() = now;
+            },
+        );
         timer
     });
     slint::run_event_loop_until_quit()?;

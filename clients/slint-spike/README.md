@@ -153,7 +153,7 @@ adapter and its workstation proof only. Nothing here was run on the TV.
 | Feature | Window system | Build |
 | --- | --- | --- |
 | `desktop-x11` (default) | Slint winit X11 backend, as before | `cargo build` |
-| `webos` | Slint custom platform over the system `libSDL2-2.0.so.0`, loaded with `dlopen` (`src/sdl/`) | `cargo build --no-default-features --features webos` |
+| `webos` | Slint custom platform over the system `libSDL2-2.0.so.0`, loaded with `dlopen` (`../shell/window-sdl/`, shared with the native shell) | `cargo build --no-default-features --features webos` |
 
 The two features exclude each other (`compile_error!`). The `webos` build
 links no SDL, X11, Wayland, freetype or fontconfig library; on x86_64 its
@@ -177,7 +177,7 @@ Slint's own Inter font (`ui/fonts/`, OFL), so text does not need a TV font.
   Accelerated renderer first, any renderer if that fails.
 - Scale: output height / 720 (1080 lines give 1.5, a 1280x720 logical view).
   This is a guess for viewing distance. `SLINT_SCALE_FACTOR` overrides it.
-- Input at the host edge (`src/sdl/keys.rs`): Up/Left send Backtab, Down/Right
+- Input at the host edge (`../shell/window-sdl/src/keys.rs`): Up/Left send Backtab, Down/Right
   send Tab (the view is one focus chain: Refresh, Close); Return and keypad
   Enter confirm; Escape or `SDL_SCANCODE_AC_BACK` close on key release.
   Pointer and wheel events pass through. Every key press logs its scancode

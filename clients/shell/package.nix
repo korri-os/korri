@@ -1,0 +1,62 @@
+# The native Korri shell, `korri-shell`, for the workstation or a device.
+#
+#   nix build .#korri-shell
+#   nix build --impure --expr '(import <nixpkgs> { system = "aarch64-linux"; }).callPackage ./clients/shell/package.nix {}'
+#
+# Software renderer, winit on Wayland and X11. The tests run with the fixture
+# korrid (feature `fixture`), which is never part of the installed output.
+{ pkgs }:
+let
+  lib = pkgs.lib;
+  # winit, xkbcommon and fontique open these with dlopen at run time; none is
+  # linked. They go on the binary's RUNPATH so the store path runs as it is.
+  runtimeLibraries = with pkgs; [
+    wayland
+    libxkbcommon
+    libx11
+    libxcursor
+    libxrandr
+    libxi
+    libxcb
+    fontconfig.lib
+  ];
+in
+pkgs.rustPlatform.buildRustPackage {
+  pname = "korri-shell";
+  version = "0.0.0";
+
+  # The repository root, so the pico8 palette test can read Pico's own palette.
+  src = lib.fileset.toSource {
+    root = ../..;
+    fileset = lib.fileset.unions [
+      ./Cargo.toml
+      ./Cargo.lock
+      ./src
+      ./tests
+      ./examples
+      ./fixtures
+      ./packages
+      ./vendor
+      ./window-sdl
+      ../../surfaces/pico/src/pico-palette.ts
+    ];
+  };
+  buildAndTestSubdir = "clients/shell";
+  cargoRoot = "clients/shell";
+  cargoLock.lockFile = ./Cargo.lock;
+
+  checkFeatures = [ "fixture" ];
+  # The credential test needs a filesystem that keeps POSIX modes; the Nix
+  # sandbox does. Every test is display-free.
+  nativeBuildInputs = [ pkgs.patchelf ];
+
+  postFixup = ''
+    patchelf --add-rpath "${lib.makeLibraryPath runtimeLibraries}" "$out/bin/korri-shell"
+  '';
+
+  meta = {
+    description = "Native Korri shell: surface packages (.slint views, QuickJS logic) over korrid";
+    mainProgram = "korri-shell";
+    platforms = lib.platforms.linux;
+  };
+}

@@ -2,13 +2,25 @@
 //! packages' components 20 times must not grow by a font file per round
 //! (Zone's Anton is 123 KiB). `--nocapture` prints each step.
 
-use korri_shell::{backend::headless::Headless, engine, fonts, package::{self, Package}};
+use korri_shell::{
+    backend::headless::Headless,
+    engine, fonts,
+    package::{self, Package},
+};
 use slint::ComponentHandle;
 use std::path::Path;
 
 fn rss() -> u64 {
     let status = std::fs::read_to_string("/proc/self/status").unwrap();
-    status.lines().find(|l| l.starts_with("VmRSS:")).unwrap().split_whitespace().nth(1).unwrap().parse().unwrap()
+    status
+        .lines()
+        .find(|l| l.starts_with("VmRSS:"))
+        .unwrap()
+        .split_whitespace()
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap()
 }
 
 fn trim() {
@@ -68,7 +80,11 @@ fn memory_stays_flat_over_20_rounds_of_both_packages() {
         Headless::render();
         c.hide().unwrap();
     });
-    eprintln!("faces registered: Anton {}, Pico Tiny5 {}", fonts::registered_faces("Anton"), fonts::registered_faces("Pico Tiny5"));
+    eprintln!(
+        "faces registered: Anton {}, Pico Tiny5 {}",
+        fonts::registered_faces("Anton"),
+        fonts::registered_faces("Pico Tiny5")
+    );
     let source = zone.logic_source().unwrap();
     report("engine load", &mut || {
         drop(engine::Engine::load(&source, engine::Limits::default()).unwrap());

@@ -80,6 +80,28 @@ pub enum Action {
     Unmapped,
 }
 
+const SDLK_F2: i32 = 59 | SCANCODE_MASK;
+const SDLK_M: i32 = 'm' as i32;
+const SDLK_O: i32 = 'o' as i32;
+
+/// A host's keys: directions, confirm, back, and the shell's F2, M and O.
+pub fn host_key(keycode: i32, scancode: i32) -> Option<crate::HostKey> {
+    use crate::HostKey as K;
+    Some(match keycode {
+        SDLK_UP => K::Up,
+        SDLK_DOWN => K::Down,
+        SDLK_LEFT => K::Left,
+        SDLK_RIGHT => K::Right,
+        SDLK_RETURN | SDLK_KP_ENTER => K::Confirm,
+        SDLK_ESCAPE | SDLK_AC_BACK => K::Back,
+        SDLK_F2 => K::F2,
+        SDLK_M => K::M,
+        SDLK_O => K::O,
+        _ if scancode == SDL_SCANCODE_AC_BACK || scancode == SDL_SCANCODE_WEBOS_BACK => K::Back,
+        _ => return None,
+    })
+}
+
 pub fn translate(keycode: i32, scancode: i32, modifiers: u16) -> Action {
     let shift = modifiers & KMOD_SHIFT != 0;
     match keycode {

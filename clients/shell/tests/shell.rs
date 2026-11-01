@@ -4,9 +4,10 @@
 
 use korri_shell::{
     backend::{headless::Headless, Backend, HostEvent, Placement},
-    catalog, fonts,
+    catalog,
     engine::Limits,
     fixture::{Behaviour, Fixture},
+    fonts,
     input::Key,
     korrid::Korrid,
     package::Package,
@@ -74,10 +75,28 @@ fn rig(ids: &[&str], games: usize, behaviour: Behaviour) -> Rig {
     let (model, examples) = verify::fixture();
     let fixture = Fixture::start(model, catalog::games(&examples, games), behaviour).unwrap();
     let queue = Arc::new(Queue::default());
-    let options = Options { limits: Limits::default(), placement: Placement::Windowed { width: 640, height: 480 }, stats: false };
-    let mut shell = Shell::new(packages, Korrid::new(fixture.connection()), backend, queue.clone(), options);
+    let options = Options {
+        limits: Limits::default(),
+        placement: Placement::Windowed {
+            width: 640,
+            height: 480,
+        },
+        stats: false,
+    };
+    let mut shell = Shell::new(
+        packages,
+        Korrid::new(fixture.connection()),
+        backend,
+        queue.clone(),
+        options,
+    );
     shell.start().unwrap();
-    let mut rig = Rig { shell, queue, fixture, _root: root };
+    let mut rig = Rig {
+        shell,
+        queue,
+        fixture,
+        _root: root,
+    };
     rig.settle();
     rig
 }
@@ -95,7 +114,11 @@ impl Rig {
             if test(self) {
                 return;
             }
-            assert!(started.elapsed() < Duration::from_secs(10), "timed out waiting for {what}; log: {:?}", self.shell.log());
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "timed out waiting for {what}; log: {:?}",
+                self.shell.log()
+            );
             std::thread::sleep(Duration::from_millis(5));
         }
     }
@@ -120,7 +143,11 @@ impl Rig {
 
     fn key(&mut self, key: Key) {
         for pressed in [true, false] {
-            self.shell.handle(Event::Host { generation: 0, window: 0, event: HostEvent::Key { key, pressed } });
+            self.shell.handle(Event::Host {
+                generation: 0,
+                window: 0,
+                event: HostEvent::Key { key, pressed },
+            });
         }
         self.settle();
     }
@@ -140,7 +167,12 @@ impl Rig {
     }
 
     fn requests(&self, tag: &str) -> Vec<Value> {
-        self.fixture.requests().into_iter().filter(|(_, r)| r["_tag"] == tag).map(|(_, r)| r).collect()
+        self.fixture
+            .requests()
+            .into_iter()
+            .filter(|(_, r)| r["_tag"] == tag)
+            .map(|(_, r)| r)
+            .collect()
     }
 }
 
@@ -149,7 +181,14 @@ fn loads_declares_reads_preferences_and_shows_the_view() {
     let rig = rig(&["probe"], 12, Behaviour::default());
     assert_eq!(rig.shell.current_id(), Some("probe"));
     let calls = rig.fixture.calls();
-    assert_eq!(&calls[..3], &["app.surface.declare", "app.surface.preferences", "app.surface.model"]);
+    assert_eq!(
+        &calls[..3],
+        &[
+            "app.surface.declare",
+            "app.surface.preferences",
+            "app.surface.model"
+        ]
+    );
     assert_eq!(rig.string("word"), "first");
     assert_eq!(rig.int("total"), 12.0);
     // The watch delivered the model too, and the shell acked it.
@@ -163,46 +202,95 @@ fn keyboard_presses_reach_update_and_repeat_when_held() {
     rig.key(Key::Right);
     rig.key(Key::Right);
     assert_eq!(rig.int("count"), 2.0);
-    rig.shell.handle(Event::Host { generation: 0, window: 0, event: HostEvent::Key { key: Key::Left, pressed: true } });
+    rig.shell.handle(Event::Host {
+        generation: 0,
+        window: 0,
+        event: HostEvent::Key {
+            key: Key::Left,
+            pressed: true,
+        },
+    });
     std::thread::sleep(Duration::from_millis(560));
     rig.until("repeats", |r| r.int("count") <= 0.0);
-    rig.shell.handle(Event::Host { generation: 0, window: 0, event: HostEvent::Key { key: Key::Left, pressed: false } });
+    rig.shell.handle(Event::Host {
+        generation: 0,
+        window: 0,
+        event: HostEvent::Key {
+            key: Key::Left,
+            pressed: false,
+        },
+    });
     rig.settle();
     let count = rig.int("count");
     // One press plus at least one repeat after 400 ms, then every 100 ms.
-    assert!(count <= 0.0 && count >= -4.0, "{count}");
+    assert!((-4.0..=0.0).contains(&count), "{count}");
 }
 
 #[test]
 fn preferences_round_trip_through_korrid() {
     let mut rig = rig(&["probe"], 12, Behaviour::default());
     rig.key(Key::O);
-    rig.until("PreferenceStored", |r| matches!(r.shell.surface_property("stored"), Some(SlintValue::Bool(true))));
-    assert_eq!(rig.fixture.stored("probe").get("probe.word").map(String::as_str), Some("second"));
+    rig.until("PreferenceStored", |r| {
+        matches!(
+            r.shell.surface_property("stored"),
+            Some(SlintValue::Bool(true))
+        )
+    });
+    assert_eq!(
+        rig.fixture
+            .stored("probe")
+            .get("probe.word")
+            .map(String::as_str),
+        Some("second")
+    );
     // A fresh load gets the stored value in init.
     let backend: Rc<dyn Backend> = Rc::new(Headless::install());
     let package = Package::at(&rig._root.path().join("probe")).unwrap();
-    let mut again = Shell::new(vec![package], Korrid::new(rig.fixture.connection()), backend, rig.queue.clone(), Options::default());
+    let mut again = Shell::new(
+        vec![package],
+        Korrid::new(rig.fixture.connection()),
+        backend,
+        rig.queue.clone(),
+        Options::default(),
+    );
     again.start().unwrap();
-    assert!(matches!(again.surface_property("word"), Some(SlintValue::String(s)) if s.as_str() == "second"));
+    assert!(
+        matches!(again.surface_property("word"), Some(SlintValue::String(s)) if s.as_str() == "second")
+    );
 }
 
 #[test]
 fn a_refused_declaration_keeps_the_current_surface() {
-    let behaviour = Behaviour { refuse_declare: vec!["pico".into()], ..Default::default() };
+    let behaviour = Behaviour {
+        refuse_declare: vec!["pico".into()],
+        ..Default::default()
+    };
     let mut rig = rig(&["probe", "pico"], 12, behaviour);
     rig.key(Key::F2);
     assert_eq!(rig.shell.current_id(), Some("probe"));
-    assert!(rig.shell.log().iter().any(|l| l.contains("pico not loaded") && l.contains("app.surface.declare")), "{:?}", rig.shell.log());
+    assert!(
+        rig.shell
+            .log()
+            .iter()
+            .any(|l| l.contains("pico not loaded") && l.contains("app.surface.declare")),
+        "{:?}",
+        rig.shell.log()
+    );
 }
 
 #[test]
 fn model_pushes_run_korri_published_and_are_acked_in_order() {
     let mut rig = rig(&["probe"], 12, Behaviour::default());
     rig.key(Key::Down); // MoveCatalog End
-    rig.until("new window", |r| r.fixture.requests().iter().any(|(_, q)| q["_tag"] == "MoveCatalog"));
+    rig.until("new window", |r| {
+        r.fixture
+            .requests()
+            .iter()
+            .any(|(_, q)| q["_tag"] == "MoveCatalog")
+    });
     let before = rig.fixture.acks().len();
-    rig.fixture.publish(|model| model["clockLabel"] = json!("12:34"));
+    rig.fixture
+        .publish(|model| model["clockLabel"] = json!("12:34"));
     rig.until("ack", |r| r.fixture.acks().len() > before);
     let acks = rig.fixture.acks();
     let revisions: Vec<u64> = acks.iter().map(|(_, r)| r.parse().unwrap()).collect();
@@ -215,7 +303,9 @@ fn the_overlay_follows_the_presentation() {
     assert!(!rig.shell.overlay_shown());
     rig.fixture.set_overlay(true);
     rig.until("overlay", |r| r.shell.overlay_shown());
-    assert!(matches!(rig.shell.overlay_property("heading"), Some(SlintValue::String(s)) if s.as_str() == "Paused"));
+    assert!(
+        matches!(rig.shell.overlay_property("heading"), Some(SlintValue::String(s)) if s.as_str() == "Paused")
+    );
     assert_eq!(Headless::live_windows(), 2);
     rig.key(Key::Escape); // back: DismissGameplayOverlay
     rig.until("overlay gone", |r| !r.shell.overlay_shown());
@@ -229,7 +319,9 @@ fn switching_replaces_the_surface_after_its_first_frame_and_fonts_do_not_pile_up
     assert_eq!(rig.shell.current_id(), Some("pico"));
     assert_eq!(fonts::registered_faces("Pico Tiny5"), 1);
     rig.key(Key::F2);
-    rig.until("zone shown, pico retired", |r| r.shell.current_id() == Some("zone") && r.shell.retiring() == 0);
+    rig.until("zone shown, pico retired", |r| {
+        r.shell.current_id() == Some("zone") && r.shell.retiring() == 0
+    });
     assert_eq!(Headless::live_windows(), 1);
     for _ in 0..6 {
         rig.key(Key::F2);
@@ -245,12 +337,21 @@ fn switching_replaces_the_surface_after_its_first_frame_and_fonts_do_not_pile_up
 fn a_runaway_call_unloads_the_surface_and_restores_the_previous_one() {
     let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());
     rig.key(Key::F2);
-    rig.until("probe", |r| r.shell.current_id() == Some("probe") && r.shell.retiring() == 0);
+    rig.until("probe", |r| {
+        r.shell.current_id() == Some("probe") && r.shell.retiring() == 0
+    });
     let started = Instant::now();
     rig.key(Key::Return); // probe loops forever on confirm
     assert!(started.elapsed() < Duration::from_secs(2));
     assert_eq!(rig.shell.current_id(), Some("pico"));
-    assert!(rig.shell.log().iter().any(|l| l.contains("probe unloaded (time)")), "{:?}", rig.shell.log());
+    assert!(
+        rig.shell
+            .log()
+            .iter()
+            .any(|l| l.contains("probe unloaded (time)")),
+        "{:?}",
+        rig.shell.log()
+    );
 }
 
 #[test]
@@ -260,7 +361,14 @@ fn a_heap_blow_up_unloads_the_surface() {
     rig.until("probe", |r| r.shell.current_id() == Some("probe"));
     rig.key(Key::M); // probe allocates without end on menu
     assert_eq!(rig.shell.current_id(), Some("pico"));
-    assert!(rig.shell.log().iter().any(|l| l.contains("probe unloaded (memory)")), "{:?}", rig.shell.log());
+    assert!(
+        rig.shell
+            .log()
+            .iter()
+            .any(|l| l.contains("probe unloaded (memory)")),
+        "{:?}",
+        rig.shell.log()
+    );
 }
 
 #[test]
@@ -271,7 +379,11 @@ fn an_unknown_request_is_a_violation() {
     rig.shell.press(korri_shell::messages::Button::System);
     rig.settle();
     assert_eq!(rig.shell.current_id(), Some("pico"));
-    assert!(rig.shell.log().iter().any(|l| l.contains("probe unloaded (contract)")));
+    assert!(rig
+        .shell
+        .log()
+        .iter()
+        .any(|l| l.contains("probe unloaded (contract)")));
 }
 
 #[test]
@@ -279,7 +391,11 @@ fn native_gamepad_input_moves_and_l1_r1_switches() {
     let mut rig = rig(&["probe", "pico"], 12, Behaviour::default());
     let connection = rig.fixture.connection();
     let queue = rig.queue.clone();
-    let _input = korri_shell::input::native::NativeInput::start(connection, true, Box::new(move |event| queue.post(Event::Native(event))));
+    let _input = korri_shell::input::native::NativeInput::start(
+        connection,
+        true,
+        Box::new(move |event| queue.post(Event::Native(event))),
+    );
     rig.until("subscribed", |r| r.fixture.input_subscribers() == 1);
     rig.fixture.send_input(&Fixture::gamepad_frames("pad"));
     rig.settle();
@@ -287,8 +403,18 @@ fn native_gamepad_input_moves_and_l1_r1_switches() {
     rig.until("moved", |r| r.int("count") == 1.0);
     let key = |code: u16, value: u8| json!({"kind": "input", "deviceId": "pad", "class": "gamepad", "type": 1, "code": code, "value": value, "timestamp": 0});
     let report = json!({"kind": "input", "deviceId": "pad", "class": "gamepad", "type": 0, "code": 0, "value": 0, "timestamp": 0});
-    rig.fixture.send_input(&[key(0x136, 1), report.clone(), key(0x137, 1), report.clone(), key(0x136, 0), key(0x137, 0), report]);
-    rig.until("switched by L1+R1", |r| r.shell.current_id() == Some("pico"));
+    rig.fixture.send_input(&[
+        key(0x136, 1),
+        report.clone(),
+        key(0x137, 1),
+        report.clone(),
+        key(0x136, 0),
+        key(0x137, 0),
+        report,
+    ]);
+    rig.until("switched by L1+R1", |r| {
+        r.shell.current_id() == Some("pico")
+    });
 }
 
 #[test]
@@ -302,9 +428,20 @@ fn zone_pages_a_10000_game_catalog_and_keeps_its_focus() {
     }
     assert!(rig.int("first-index") > 0.0, "the window moved");
     let focus = rig.int("first-index") + rig.int("focused-card");
-    assert_eq!(focus, 61.0, "60 presses from the second game reach the 62nd");
+    assert_eq!(
+        focus, 61.0,
+        "60 presses from the second game reach the 62nd"
+    );
     let moves = rig.requests("MoveCatalog");
-    assert!(!moves.is_empty() && moves.iter().all(|m| m["from"]["_tag"] == "Around" && m["count"] == 50));
+    assert!(
+        !moves.is_empty()
+            && moves
+                .iter()
+                .all(|m| m["from"]["_tag"] == "Around" && m["count"] == 50)
+    );
     let focus_reports = rig.requests("FocusGame");
-    assert_eq!(focus_reports.last().unwrap()["gameId"], json!(catalog::games(&verify::fixture().1, 10_000)[61]["id"]));
+    assert_eq!(
+        focus_reports.last().unwrap()["gameId"],
+        json!(catalog::games(&verify::fixture().1, 10_000)[61]["id"])
+    );
 }

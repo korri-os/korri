@@ -2231,6 +2231,7 @@ dependencies = [
  "fontique",
  "i-slint-compiler",
  "image",
+ "korri-window-sdl",
  "libc",
  "pollster",
  "rquickjs",
@@ -2242,6 +2243,15 @@ dependencies = [
  "tempfile",
  "tungstenite",
  "zeroize",
+]
+
+[[package]]
+name = "korri-window-sdl"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "slint",
+ "tempfile",
 ]
 
 [[package]]

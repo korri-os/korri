@@ -55,7 +55,10 @@ pub struct Router {
 
 impl Router {
     pub fn new(active: bool) -> Self {
-        Self { active, ..Default::default() }
+        Self {
+            active,
+            ..Default::default()
+        }
     }
 
     pub fn active(&self) -> bool {
@@ -88,11 +91,21 @@ impl Router {
                 self.mapper.initialize(Some(&id), self.active);
                 Vec::new()
             }
-            NativeEvent::DeviceAdded { id, gamepad, axes } => self.mapper.configure_device(&id, gamepad, &axes).unwrap_or_default(),
+            NativeEvent::DeviceAdded { id, gamepad, axes } => self
+                .mapper
+                .configure_device(&id, gamepad, &axes)
+                .unwrap_or_default(),
             NativeEvent::DeviceRemoved(id) => self.mapper.clear_device(&id),
-            NativeEvent::Input { device, gamepad: true, kind, code, value } => {
-                self.mapper.handle(&device, kind, code, value, now, self.active).unwrap_or_default()
-            }
+            NativeEvent::Input {
+                device,
+                gamepad: true,
+                kind,
+                code,
+                value,
+            } => self
+                .mapper
+                .handle(&device, kind, code, value, now, self.active)
+                .unwrap_or_default(),
             NativeEvent::Input { .. } => Vec::new(),
         };
         Self::convert(outputs)
@@ -149,7 +162,9 @@ impl Router {
         outputs
             .into_iter()
             .filter_map(|output| match output {
-                Output::Direction { direction, .. } => Some(Press::Button(direction_button(direction))),
+                Output::Direction { direction, .. } => {
+                    Some(Press::Button(direction_button(direction)))
+                }
                 Output::DirectionEnd { .. } => None,
                 Output::Button(action) => Some(Press::Button(match action {
                     mapper::Action::Confirm => Button::Confirm,
@@ -179,7 +194,10 @@ mod tests {
     #[test]
     fn keyboard_repeats_like_the_gamepad() {
         let mut router = Router::new(true);
-        assert_eq!(router.key(Key::Right, true, 0.0), vec![Press::Button(Button::Right)]);
+        assert_eq!(
+            router.key(Key::Right, true, 0.0),
+            vec![Press::Button(Button::Right)]
+        );
         assert!(router.tick(399.0).is_empty());
         assert_eq!(router.tick(400.0), vec![Press::Button(Button::Right)]);
         assert!(router.tick(450.0).is_empty());
@@ -187,22 +205,50 @@ mod tests {
         assert!(router.key(Key::Right, false, 510.0).is_empty());
         assert!(!router.holding());
         assert_eq!(router.key(Key::F2, true, 600.0), vec![Press::Switch]);
-        assert_eq!(router.key(Key::Escape, true, 600.0), vec![Press::Button(Button::Back)]);
+        assert_eq!(
+            router.key(Key::Escape, true, 600.0),
+            vec![Press::Button(Button::Back)]
+        );
     }
 
     #[test]
     fn native_gamepad_presses_become_buttons() {
         let mut router = Router::new(true);
-        router.native(NativeEvent::DeviceAdded { id: "pad".into(), gamepad: true, axes: vec![] }, 0.0);
+        router.native(
+            NativeEvent::DeviceAdded {
+                id: "pad".into(),
+                gamepad: true,
+                axes: vec![],
+            },
+            0.0,
+        );
         router.native(NativeEvent::Initialized, 0.0);
-        let input = |code, value| NativeEvent::Input { device: "pad".into(), gamepad: true, kind: 1, code, value };
-        let report = NativeEvent::Input { device: "pad".into(), gamepad: true, kind: 0, code: 0, value: 0 };
+        let input = |code, value| NativeEvent::Input {
+            device: "pad".into(),
+            gamepad: true,
+            kind: 1,
+            code,
+            value,
+        };
+        let report = NativeEvent::Input {
+            device: "pad".into(),
+            gamepad: true,
+            kind: 0,
+            code: 0,
+            value: 0,
+        };
         router.native(input(0x130, 1), 0.0);
-        assert_eq!(router.native(report.clone(), 0.0), vec![Press::Button(Button::Confirm)]);
+        assert_eq!(
+            router.native(report.clone(), 0.0),
+            vec![Press::Button(Button::Confirm)]
+        );
         router.native(input(0x130, 0), 0.0);
         router.native(report.clone(), 0.0);
         router.native(input(0x223, 1), 0.0);
-        assert_eq!(router.native(report, 0.0), vec![Press::Button(Button::Right)]);
+        assert_eq!(
+            router.native(report, 0.0),
+            vec![Press::Button(Button::Right)]
+        );
         assert!(router.holding());
         assert_eq!(router.tick(400.0), vec![Press::Button(Button::Right)]);
         assert!(router.set_active(false, 401.0).is_empty());

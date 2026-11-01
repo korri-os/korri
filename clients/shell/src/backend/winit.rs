@@ -55,13 +55,18 @@ impl Backend for Winit {
                 }
                 // X11 replays held keys as synthetic presses when a new
                 // window gains focus; a replayed F2 would switch again.
-                WindowEvent::KeyboardInput { is_synthetic: true, .. } => return EventResult::PreventDefault,
+                WindowEvent::KeyboardInput {
+                    is_synthetic: true, ..
+                } => return EventResult::PreventDefault,
                 WindowEvent::KeyboardInput { event, .. } => {
                     // Surfaces handle no keys: every key stops here.
                     if !event.repeat {
                         if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
                             if let Some(key) = key_of(code) {
-                                sink(HostEvent::Key { key, pressed: event.state == ElementState::Pressed });
+                                sink(HostEvent::Key {
+                                    key,
+                                    pressed: event.state == ElementState::Pressed,
+                                });
                             }
                         }
                     }
@@ -81,7 +86,9 @@ impl Backend for Winit {
     fn place(&self, window: &slint::Window, placement: Placement) {
         match placement {
             Placement::Fullscreen => window.set_fullscreen(true),
-            Placement::Windowed { width, height } => window.set_size(slint::LogicalSize::new(width as f32, height as f32)),
+            Placement::Windowed { width, height } => {
+                window.set_size(slint::LogicalSize::new(width as f32, height as f32))
+            }
         }
     }
 }

@@ -20,12 +20,17 @@ use crate::input::Key;
 use std::rc::Rc;
 
 #[cfg(all(feature = "desktop", feature = "webos"))]
-compile_error!("choose one window system: the default `desktop`, or `--no-default-features --features webos`");
+compile_error!(
+    "choose one window system: the default `desktop`, or `--no-default-features --features webos`"
+);
 
 /// What a window reports to the shell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostEvent {
-    Key { key: Key, pressed: bool },
+    Key {
+        key: Key,
+        pressed: bool,
+    },
     Focus(bool),
     Close,
     /// The window finished drawing a frame. Sent once per window.
@@ -45,7 +50,8 @@ impl Placement {
         }
         let (width, height) = text.split_once('x')?;
         let (width, height) = (width.parse().ok()?, height.parse().ok()?);
-        (width > 0 && height > 0 && width <= 16384 && height <= 16384).then_some(Self::Windowed { width, height })
+        (width > 0 && height > 0 && width <= 16384 && height <= 16384)
+            .then_some(Self::Windowed { width, height })
     }
 }
 

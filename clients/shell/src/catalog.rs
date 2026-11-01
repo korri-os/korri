@@ -16,26 +16,44 @@ pub fn default_query() -> Value {
 }
 
 fn title(game: &Value) -> String {
-    game.get("title").and_then(Value::as_str).unwrap_or("").to_lowercase()
+    game.get("title")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_lowercase()
 }
 
 fn number(game: &Value, key: &str) -> f64 {
-    game.get(key).and_then(Value::as_f64).unwrap_or(f64::NEG_INFINITY)
+    game.get(key)
+        .and_then(Value::as_f64)
+        .unwrap_or(f64::NEG_INFINITY)
 }
 
 /// The games a query selects, in its order.
 pub fn select<'a>(games: &'a [Value], query: &Value) -> Vec<&'a Value> {
-    let text = query.get("text").and_then(Value::as_str).unwrap_or("").trim().to_lowercase();
+    let text = query
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
     let section = query.get("section").and_then(Value::as_str);
     let mut selected: Vec<&Value> = games
         .iter()
         .filter(|game| text.is_empty() || title(game).contains(&text))
         .filter(|game| section.is_none() || game.get("section").and_then(Value::as_str) == section)
         .collect();
-    match query.get("order").and_then(Value::as_str).unwrap_or("korri") {
+    match query
+        .get("order")
+        .and_then(Value::as_str)
+        .unwrap_or("korri")
+    {
         "title" => selected.sort_by_key(|game| title(game)),
-        "mostPlayed" => selected.sort_by(|a, b| number(b, "playCount").total_cmp(&number(a, "playCount"))),
-        "recent" => selected.sort_by(|a, b| number(b, "lastPlayedAt").total_cmp(&number(a, "lastPlayedAt"))),
+        "mostPlayed" => {
+            selected.sort_by(|a, b| number(b, "playCount").total_cmp(&number(a, "playCount")))
+        }
+        "recent" => {
+            selected.sort_by(|a, b| number(b, "lastPlayedAt").total_cmp(&number(a, "lastPlayedAt")))
+        }
         _ => {}
     }
     selected
@@ -56,13 +74,17 @@ pub fn window(games: &[Value], query: &Value, from: &Value, count: usize) -> Val
     let start = match from.get("_tag").and_then(Value::as_str) {
         Some("End") => total.saturating_sub(count),
         Some("After") => cursor_position(from.get("cursor")).map_or(0, |p| (p + 1).min(total)),
-        Some("Before") => cursor_position(from.get("cursor")).map_or(0, |p| p.min(total).saturating_sub(count)),
+        Some("Before") => {
+            cursor_position(from.get("cursor")).map_or(0, |p| p.min(total).saturating_sub(count))
+        }
         Some("Around") => {
             let id = from.get("gameId").and_then(Value::as_str);
             selected
                 .iter()
                 .position(|game| game.get("id").and_then(Value::as_str) == id)
-                .map_or(0, |p| p.saturating_sub(count / 2).min(total.saturating_sub(count)))
+                .map_or(0, |p| {
+                    p.saturating_sub(count / 2).min(total.saturating_sub(count))
+                })
         }
         _ => 0,
     };
@@ -116,15 +138,30 @@ mod tests {
         assert_eq!(first["total"], 12);
         assert_eq!(first["window"].as_array().unwrap().len(), 5);
         assert!(first.get("before").is_none());
-        let next = window(&games, &default_query(), &json!({"_tag": "After", "cursor": first["after"]}), 5);
+        let next = window(
+            &games,
+            &default_query(),
+            &json!({"_tag": "After", "cursor": first["after"]}),
+            5,
+        );
         assert_eq!(next["firstIndex"], 5);
         assert_eq!(next["window"][0]["id"], "g5");
         let end = window(&games, &default_query(), &json!({"_tag": "End"}), 5);
         assert_eq!(end["firstIndex"], 7);
         assert!(end.get("after").is_none());
-        let back = window(&games, &default_query(), &json!({"_tag": "Before", "cursor": end["before"]}), 5);
+        let back = window(
+            &games,
+            &default_query(),
+            &json!({"_tag": "Before", "cursor": end["before"]}),
+            5,
+        );
         assert_eq!(back["firstIndex"], 2);
-        let around = window(&games, &default_query(), &json!({"_tag": "Around", "gameId": "g6"}), 5);
+        let around = window(
+            &games,
+            &default_query(),
+            &json!({"_tag": "Around", "gameId": "g6"}),
+            5,
+        );
         assert_eq!(around["firstIndex"], 4);
     }
 
@@ -132,12 +169,18 @@ mod tests {
     fn queries_filter_and_order() {
         let games = twelve();
         let query = json!({"text": " game 1", "section": null, "order": "korri"});
-        assert_eq!(window(&games, &query, &json!({"_tag": "Start"}), 50)["total"], 2); // Game 10, Game 11
+        assert_eq!(
+            window(&games, &query, &json!({"_tag": "Start"}), 50)["total"],
+            2
+        ); // Game 10, Game 11
         let query = json!({"text": "", "section": "odd", "order": "mostPlayed"});
         let result = window(&games, &query, &json!({"_tag": "Start"}), 50);
         assert_eq!(result["total"], 6);
         assert_eq!(result["window"][0]["id"], "g11");
-        assert_eq!(window(&[], &default_query(), &json!({"_tag": "Start"}), 50), json!({"_tag": "Empty"}));
+        assert_eq!(
+            window(&[], &default_query(), &json!({"_tag": "Start"}), 50),
+            json!({"_tag": "Empty"})
+        );
         assert_eq!(super::games(&twelve(), 10_000).len(), 10_000);
     }
 }

@@ -40,11 +40,25 @@ use std::{
 #[derive(Debug)]
 pub enum Event {
     /// `window`: 0 for a surface's `Surface`, 1 for its `Overlay`.
-    Host { generation: u64, window: u8, event: HostEvent },
+    Host {
+        generation: u64,
+        window: u8,
+        event: HostEvent,
+    },
     Native(NativeEvent),
-    Model { generation: u64, revision: Option<String>, model: String },
-    Reconnected { generation: u64 },
-    RequestDone { generation: u64, request: Value, outcome: std::result::Result<(), String> },
+    Model {
+        generation: u64,
+        revision: Option<String>,
+        model: String,
+    },
+    Reconnected {
+        generation: u64,
+    },
+    RequestDone {
+        generation: u64,
+        request: Value,
+        outcome: std::result::Result<(), String>,
+    },
     /// Repeat timer for held directions.
     Tick,
 }
@@ -65,11 +79,17 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             limits: Limits::default(),
-            placement: Placement::Windowed { width: 640, height: 480 },
+            placement: Placement::Windowed {
+                width: 640,
+                height: 480,
+            },
             stats: false,
         }
     }
 }
+
+/// Told when the shell cannot continue (`Err`) or its window closed (`Ok`).
+pub type QuitCallback = Box<dyn Fn(Result<(), String>)>;
 
 /// Measured on each load, reported with `--stats`.
 #[derive(Clone, Copy, Debug, Default)]
@@ -120,12 +140,18 @@ pub struct Shell {
     native_active: Option<Box<dyn Fn(bool)>>,
     /// Shell windows that have keyboard focus; `None` until the first focus event.
     focused: Option<std::collections::HashSet<(u64, u8)>>,
-    quit: Option<Box<dyn Fn(Result<(), String>)>>,
+    quit: Option<QuitCallback>,
     log: Vec<String>,
 }
 
 impl Shell {
-    pub fn new(packages: Vec<Package>, korrid: Korrid, backend: Rc<dyn Backend>, post: Arc<dyn Post>, options: Options) -> Self {
+    pub fn new(
+        packages: Vec<Package>,
+        korrid: Korrid,
+        backend: Rc<dyn Backend>,
+        post: Arc<dyn Post>,
+        options: Options,
+    ) -> Self {
         let (jobs, receiver) = mpsc::channel::<RequestJob>();
         let worker_korrid = korrid.clone();
         let worker_post = post.clone();
@@ -135,8 +161,14 @@ impl Shell {
             .name("korrid-requests".into())
             .spawn(move || {
                 for job in receiver {
-                    let outcome = worker_korrid.request(&job.surface, &job.request).map_err(|e| e.to_string());
-                    worker_post.post(Event::RequestDone { generation: job.generation, request: job.request, outcome });
+                    let outcome = worker_korrid
+                        .request(&job.surface, &job.request)
+                        .map_err(|e| e.to_string());
+                    worker_post.post(Event::RequestDone {
+                        generation: job.generation,
+                        request: job.request,
+                        outcome,
+                    });
                 }
             })
             .expect("spawn the request thread");
@@ -168,7 +200,7 @@ impl Shell {
     }
 
     /// Called when the shell cannot continue (`Err`) or the window closed.
-    pub fn on_quit(&mut self, callback: Box<dyn Fn(Result<(), String>)>) {
+    pub fn on_quit(&mut self, callback: QuitCallback) {
         self.quit = Some(callback);
     }
 
@@ -209,7 +241,13 @@ impl Shell {
 
     /// A property of the current `Overlay`.
     pub fn overlay_property(&self, name: &str) -> Option<slint_interpreter::Value> {
-        self.current.as_ref()?.overlay.as_ref()?.0.get_property(name).ok()
+        self.current
+            .as_ref()?
+            .overlay
+            .as_ref()?
+            .0
+            .get_property(name)
+            .ok()
     }
 
     fn say(&mut self, line: String) {
@@ -240,22 +278,37 @@ impl Shell {
 
     pub fn handle(&mut self, event: Event) {
         match event {
-            Event::Host { generation, window, event } => self.host(generation, window, event),
+            Event::Host {
+                generation,
+                window,
+                event,
+            } => self.host(generation, window, event),
             Event::Native(event) => {
                 let now = self.now();
                 let presses = self.router.native(event, now);
                 self.presses(presses);
             }
-            Event::Model { generation, revision, model } => self.model(generation, revision, model),
+            Event::Model {
+                generation,
+                revision,
+                model,
+            } => self.model(generation, revision, model),
             Event::Reconnected { generation } => {
-                let Some(current) = self.current.as_ref().filter(|c| c.generation == generation) else { return };
+                let Some(current) = self.current.as_ref().filter(|c| c.generation == generation)
+                else {
+                    return;
+                };
                 let id = current.package.id.clone();
                 match self.korrid.model(&id) {
                     Ok(model) => self.model(generation, None, model),
                     Err(error) => self.say(format!("{id}: model after reconnect: {error}")),
                 }
             }
-            Event::RequestDone { generation, request, outcome } => self.request_done(generation, request, outcome),
+            Event::RequestDone {
+                generation,
+                request,
+                outcome,
+            } => self.request_done(generation, request, outcome),
             Event::Tick => self.tick(),
         }
     }
@@ -263,7 +316,8 @@ impl Shell {
     fn host(&mut self, generation: u64, window: u8, event: HostEvent) {
         match event {
             HostEvent::FirstFrame => {
-                if let Some(current) = self.current.as_mut().filter(|c| c.generation == generation) {
+                if let Some(current) = self.current.as_mut().filter(|c| c.generation == generation)
+                {
                     current.drawn.set(true);
                     if current.timing.shown.is_zero() {
                         current.timing.shown = current.started.elapsed();
@@ -306,7 +360,10 @@ impl Shell {
     /// Input is live while any shell window has focus (the portal's rule:
     /// a page without focus receives no controller input).
     fn follow_focus(&mut self) {
-        let active = self.focused.as_ref().is_none_or(|windows| !windows.is_empty());
+        let active = self
+            .focused
+            .as_ref()
+            .is_none_or(|windows| !windows.is_empty());
         if active == self.router.active() {
             return;
         }
@@ -337,7 +394,11 @@ impl Shell {
         if self.router.holding() && self.repeat.is_none() {
             let timer = slint::Timer::default();
             let post = self.post.clone();
-            timer.start(slint::TimerMode::Repeated, Duration::from_millis(10), move || post.post(Event::Tick));
+            timer.start(
+                slint::TimerMode::Repeated,
+                Duration::from_millis(10),
+                move || post.post(Event::Tick),
+            );
             self.repeat = Some(timer);
         }
     }
@@ -353,7 +414,10 @@ impl Shell {
             return;
         }
         let current = self.current.as_ref().map(|c| c.package.id.clone());
-        let start = current.as_ref().and_then(|id| self.packages.iter().position(|p| &p.id == id)).map_or(0, |i| i + 1);
+        let start = current
+            .as_ref()
+            .and_then(|id| self.packages.iter().position(|p| &p.id == id))
+            .map_or(0, |i| i + 1);
         for step in 0..self.packages.len() - 1 {
             let index = (start + step) % self.packages.len();
             if Some(&self.packages[index].id) == current.as_ref() {
@@ -373,7 +437,11 @@ impl Shell {
     }
 
     pub fn switch_to(&mut self, id: &str) -> Result<()> {
-        let index = self.packages.iter().position(|p| p.id == id).with_context(|| format!("no package {id}"))?;
+        let index = self
+            .packages
+            .iter()
+            .position(|p| p.id == id)
+            .with_context(|| format!("no package {id}"))?;
         let loaded = self.load(index)?;
         self.replace(loaded);
         Ok(())
@@ -404,7 +472,15 @@ impl Shell {
     }
 
     fn unload(&mut self, loaded: Loaded) {
-        let Loaded { generation, surface, overlay, watch, engine, images, .. } = loaded;
+        let Loaded {
+            generation,
+            surface,
+            overlay,
+            watch,
+            engine,
+            images,
+            ..
+        } = loaded;
         if let Some(windows) = &mut self.focused {
             windows.retain(|(g, _)| *g != generation);
         }
@@ -426,17 +502,31 @@ impl Shell {
         let started = Instant::now();
         let views = package::compile(&package)?;
         let compiled = started.elapsed();
-        let mut engine = Engine::load(&package.logic_source()?, self.options.limits).map_err(|v| anyhow!("logic: {v}"))?;
+        let mut engine = Engine::load(&package.logic_source()?, self.options.limits)
+            .map_err(|v| anyhow!("logic: {v}"))?;
         let logic_loaded = started.elapsed();
-        let declaration = serde_json::to_value(engine.declaration()).expect("declaration serialises");
-        self.korrid.declare(&package.id, &declaration).context("app.surface.declare")?;
-        let stored = self.korrid.preferences(&package.id).context("app.surface.preferences")?;
+        let declaration =
+            serde_json::to_value(engine.declaration()).expect("declaration serialises");
+        self.korrid
+            .declare(&package.id, &declaration)
+            .context("app.surface.declare")?;
+        let stored = self
+            .korrid
+            .preferences(&package.id)
+            .context("app.surface.preferences")?;
         let preferences = engine::effective_preferences(engine.declaration(), &stored);
-        let model = self.korrid.model(&package.id).context("app.surface.model")?;
+        let model = self
+            .korrid
+            .model(&package.id)
+            .context("app.surface.model")?;
         let korrid_done = started.elapsed();
         let gameplay_overlay = messages::is_gameplay_overlay(&serde_json::from_str(&model)?);
-        engine.set_model(&model).map_err(|v| anyhow!("logic: {v}"))?;
-        engine.init(&preferences).map_err(|v| anyhow!("logic: {v}"))?;
+        engine
+            .set_model(&model)
+            .map_err(|v| anyhow!("logic: {v}"))?;
+        engine
+            .init(&preferences)
+            .map_err(|v| anyhow!("logic: {v}"))?;
         let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
         let logic_done = started.elapsed();
 
@@ -459,7 +549,11 @@ impl Shell {
             &package.id,
             Box::new(move |event| {
                 post.post(match event {
-                    WatchEvent::Model { revision, model } => Event::Model { generation, revision: Some(revision), model },
+                    WatchEvent::Model { revision, model } => Event::Model {
+                        generation,
+                        revision: Some(revision),
+                        model,
+                    },
                     WatchEvent::Reconnected => Event::Reconnected { generation },
                 })
             }),
@@ -494,12 +588,24 @@ impl Shell {
 
     fn attach(&self, window: &slint::Window, generation: u64, role: u8) {
         let post = self.post.clone();
-        self.backend.attach(window, Rc::new(move |event| post.post(Event::Host { generation, window: role, event })), self.frames.clone());
+        self.backend.attach(
+            window,
+            Rc::new(move |event| {
+                post.post(Event::Host {
+                    generation,
+                    window: role,
+                    event,
+                })
+            }),
+            self.frames.clone(),
+        );
     }
 
     /// Show, refresh or remove the Overlay to match the presentation.
     fn render_overlay(&mut self, loaded: &mut Loaded) -> Result<()> {
-        let wanted = loaded.gameplay_overlay && loaded.overlay_definition.is_some() && loaded.engine.has_overlay();
+        let wanted = loaded.gameplay_overlay
+            && loaded.overlay_definition.is_some()
+            && loaded.engine.has_overlay();
         if !wanted {
             if let Some((overlay, _)) = loaded.overlay.take() {
                 if let Some(windows) = &mut self.focused {
@@ -513,12 +619,17 @@ impl Shell {
             }
             return Ok(());
         }
-        let view = loaded.engine.overlay().map_err(|v| anyhow!("{v}"))?.context("overlay")?;
+        let view = loaded
+            .engine
+            .overlay()
+            .map_err(|v| anyhow!("{v}"))?
+            .context("overlay")?;
         if loaded.overlay.is_none() {
             let definition = loaded.overlay_definition.as_ref().expect("checked");
             let component = definition.create()?;
             self.attach(component.window(), loaded.generation, 1);
-            self.backend.place(component.window(), self.options.placement);
+            self.backend
+                .place(component.window(), self.options.placement);
             let binder = Binder::new(definition);
             loaded.overlay = Some((component, binder));
         }
@@ -530,7 +641,9 @@ impl Shell {
 
     /// Run `update`, render, and send its requests.
     fn update(&mut self, message: &Value) {
-        let Some(mut current) = self.current.take() else { return };
+        let Some(mut current) = self.current.take() else {
+            return;
+        };
         let outcome = (|| -> std::result::Result<Vec<Value>, Failure> {
             let requests = current.engine.update(message)?;
             for request in &requests {
@@ -542,7 +655,11 @@ impl Shell {
         match outcome {
             Ok(requests) => {
                 for request in requests {
-                    let _ = self.jobs.send(RequestJob { generation: current.generation, surface: current.package.id.clone(), request });
+                    let _ = self.jobs.send(RequestJob {
+                        generation: current.generation,
+                        surface: current.package.id.clone(),
+                        request,
+                    });
                 }
                 self.current = Some(current);
             }
@@ -552,17 +669,27 @@ impl Shell {
 
     fn render(&mut self, current: &mut Loaded) -> std::result::Result<(), Failure> {
         let view = current.engine.view()?;
-        current.surface_binder.apply(&current.surface, &view, &mut current.images).map_err(Failure::View)?;
+        current
+            .surface_binder
+            .apply(&current.surface, &view, &mut current.images)
+            .map_err(Failure::View)?;
         self.render_overlay(current).map_err(Failure::View)?;
         Ok(())
     }
 
     fn model(&mut self, generation: u64, revision: Option<String>, model: String) {
-        if self.current.as_ref().is_none_or(|c| c.generation != generation) {
+        if self
+            .current
+            .as_ref()
+            .is_none_or(|c| c.generation != generation)
+        {
             return; // a retired surface's watch
         }
-        let gameplay_overlay = serde_json::from_str::<Value>(&model).map(|m| messages::is_gameplay_overlay(&m));
-        let Some(mut current) = self.current.take() else { return };
+        let gameplay_overlay =
+            serde_json::from_str::<Value>(&model).map(|m| messages::is_gameplay_overlay(&m));
+        let Some(mut current) = self.current.take() else {
+            return;
+        };
         current.gameplay_overlay = gameplay_overlay.unwrap_or(false);
         match current.engine.set_model(&model) {
             Ok(()) => self.current = Some(current),
@@ -572,19 +699,31 @@ impl Shell {
             }
         }
         self.update(&messages::korri_published());
-        if let (Some(revision), Some(current)) = (revision, self.current.as_ref().filter(|c| c.generation == generation)) {
+        if let (Some(revision), Some(current)) = (
+            revision,
+            self.current.as_ref().filter(|c| c.generation == generation),
+        ) {
             if let Some(watch) = &current.watch {
                 watch.ack(&revision);
             }
         }
     }
 
-    fn request_done(&mut self, generation: u64, request: Value, outcome: std::result::Result<(), String>) {
+    fn request_done(
+        &mut self,
+        generation: u64,
+        request: Value,
+        outcome: std::result::Result<(), String>,
+    ) {
         let tag = messages::request_tag(&request).unwrap_or("?").to_owned();
         if let Err(error) = &outcome {
             self.say(format!("request {tag}: {error}"));
         }
-        if self.current.as_ref().is_none_or(|c| c.generation != generation) {
+        if self
+            .current
+            .as_ref()
+            .is_none_or(|c| c.generation != generation)
+        {
             return;
         }
         if outcome.is_ok() {
@@ -661,19 +800,35 @@ impl std::fmt::Display for Failure {
 }
 
 /// The shell's own checks on a request before korrid sees it.
-fn check_request(request: &Value, declaration: &engine::Declaration) -> std::result::Result<(), Failure> {
-    let tag = messages::request_tag(request).ok_or_else(|| Failure::Request("update returned a request that is not a SurfaceRequest".into()))?;
+fn check_request(
+    request: &Value,
+    declaration: &engine::Declaration,
+) -> std::result::Result<(), Failure> {
+    let tag = messages::request_tag(request).ok_or_else(|| {
+        Failure::Request("update returned a request that is not a SurfaceRequest".into())
+    })?;
     if let Some((key, value)) = messages::remembered(request) {
         if !declaration.contains_key(key) {
-            return Err(Failure::Request(format!("RememberPreference of undeclared key {key:?}")));
+            return Err(Failure::Request(format!(
+                "RememberPreference of undeclared key {key:?}"
+            )));
         }
         if value.len() > engine::MAX_PREFERENCE_BYTES {
-            return Err(Failure::Request(format!("RememberPreference value for {key} is over 256 bytes")));
+            return Err(Failure::Request(format!(
+                "RememberPreference value for {key} is over 256 bytes"
+            )));
         }
     } else if tag == "RememberPreference" {
-        return Err(Failure::Request("RememberPreference needs string key and value".into()));
+        return Err(Failure::Request(
+            "RememberPreference needs string key and value".into(),
+        ));
     }
-    if tag == "MoveCatalog" && request.get("count").and_then(Value::as_u64).is_none_or(|c| c == 0 || c > messages::MAX_CATALOG_COUNT) {
+    if tag == "MoveCatalog"
+        && request
+            .get("count")
+            .and_then(Value::as_u64)
+            .is_none_or(|c| c == 0 || c > messages::MAX_CATALOG_COUNT)
+    {
         return Err(Failure::Request("MoveCatalog count must be 1..=200".into()));
     }
     Ok(())

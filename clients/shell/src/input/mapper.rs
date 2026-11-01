@@ -47,8 +47,15 @@ pub enum Action {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Output {
-    Direction { direction: Direction, gesture: u64, repeat: bool },
-    DirectionEnd { direction: Direction, gesture: u64 },
+    Direction {
+        direction: Direction,
+        gesture: u64,
+        repeat: bool,
+    },
+    DirectionEnd {
+        direction: Direction,
+        gesture: u64,
+    },
     Button(Action),
     /// L1+R1: switch to the next surface.
     Switch,
@@ -93,11 +100,19 @@ pub struct DeviceLimit;
 impl Mapper {
     fn release(device: &mut Device, out: &mut Vec<Output>) {
         if let Some(hold) = device.hold.take() {
-            out.push(Output::DirectionEnd { direction: hold.direction, gesture: hold.gesture });
+            out.push(Output::DirectionEnd {
+                direction: hold.direction,
+                gesture: hold.gesture,
+            });
         }
     }
 
-    pub fn configure_device(&mut self, id: &str, gamepad: bool, axes: &[Axis]) -> Result<Vec<Output>, DeviceLimit> {
+    pub fn configure_device(
+        &mut self,
+        id: &str,
+        gamepad: bool,
+        axes: &[Axis],
+    ) -> Result<Vec<Output>, DeviceLimit> {
         let out = self.clear_device(id);
         if !gamepad {
             return Ok(out);
@@ -134,7 +149,15 @@ impl Mapper {
     }
 
     /// One native `input` event. `Err` for an unknown device.
-    pub fn handle(&mut self, device_id: &str, kind: u32, code: u16, value: i64, now: f64, active: bool) -> Result<Vec<Output>, UnknownDevice> {
+    pub fn handle(
+        &mut self,
+        device_id: &str,
+        kind: u32,
+        code: u16,
+        value: i64,
+        now: f64,
+        active: bool,
+    ) -> Result<Vec<Output>, UnknownDevice> {
         let mut out = Vec::new();
         if !self.devices.contains_key(device_id) {
             return Err(UnknownDevice);
@@ -235,7 +258,13 @@ fn commit(device: &mut Device) {
     }
 }
 
-fn reconcile(device: &mut Device, next_gesture: &mut u64, now: f64, initialized: bool, out: &mut Vec<Output>) {
+fn reconcile(
+    device: &mut Device,
+    next_gesture: &mut u64,
+    now: f64,
+    initialized: bool,
+    out: &mut Vec<Output>,
+) {
     if !(initialized && device.initialized) {
         return;
     }
@@ -246,7 +275,10 @@ fn reconcile(device: &mut Device, next_gesture: &mut u64, now: f64, initialized:
         return; // the neutral transition only arms; it never fires
     }
     let direction = direction_for(device);
-    if device.hold.is_some_and(|hold| Some(hold.direction) != direction) {
+    if device
+        .hold
+        .is_some_and(|hold| Some(hold.direction) != direction)
+    {
         Mapper::release(device, out);
     }
     let Some(direction) = direction else {
@@ -255,12 +287,24 @@ fn reconcile(device: &mut Device, next_gesture: &mut u64, now: f64, initialized:
     match &mut device.hold {
         None => {
             *next_gesture += 1;
-            device.hold = Some(Hold { direction, gesture: *next_gesture, next_repeat: now + REPEAT_DELAY });
-            out.push(Output::Direction { direction, gesture: *next_gesture, repeat: false });
+            device.hold = Some(Hold {
+                direction,
+                gesture: *next_gesture,
+                next_repeat: now + REPEAT_DELAY,
+            });
+            out.push(Output::Direction {
+                direction,
+                gesture: *next_gesture,
+                repeat: false,
+            });
         }
         Some(hold) if now >= hold.next_repeat => {
             hold.next_repeat = now + REPEAT_INTERVAL; // no catch-up burst after a busy frame
-            out.push(Output::Direction { direction, gesture: hold.gesture, repeat: true });
+            out.push(Output::Direction {
+                direction,
+                gesture: hold.gesture,
+                repeat: true,
+            });
         }
         Some(_) => {}
     }
@@ -289,21 +333,39 @@ fn stick(device: &Device) -> (f64, f64, f64) {
             normalized(value(ABS_Y).unwrap_or((y.minimum + y.maximum) / 2.0), y),
             0.6,
         ),
-        _ => (value(ABS_X).unwrap_or(0.0), value(ABS_Y).unwrap_or(0.0), 16_000.0),
+        _ => (
+            value(ABS_X).unwrap_or(0.0),
+            value(ABS_Y).unwrap_or(0.0),
+            16_000.0,
+        ),
     }
 }
 
 fn direction_for(device: &Device) -> Option<Direction> {
     let key = |code| i64::from(device.keys.contains(&code));
-    let or_hat = |d: i64, code| if d != 0 { d } else { *device.values.get(&code).unwrap_or(&0) };
+    let or_hat = |d: i64, code| {
+        if d != 0 {
+            d
+        } else {
+            *device.values.get(&code).unwrap_or(&0)
+        }
+    };
     let horizontal = or_hat(key(0x223) - key(0x222), ABS_HAT0X);
     let vertical = or_hat(key(0x221) - key(0x220), ABS_HAT0Y);
     // One gesture per source, D-pad priority.
     if vertical != 0 {
-        return Some(if vertical > 0 { Direction::Down } else { Direction::Up });
+        return Some(if vertical > 0 {
+            Direction::Down
+        } else {
+            Direction::Up
+        });
     }
     if horizontal != 0 {
-        return Some(if horizontal > 0 { Direction::Right } else { Direction::Left });
+        return Some(if horizontal > 0 {
+            Direction::Right
+        } else {
+            Direction::Left
+        });
     }
     let (x, y, threshold) = stick(device);
     if x.abs() > y.abs() {
@@ -358,7 +420,12 @@ mod tests {
         fn new() -> Self {
             let mut mapper = Mapper::default();
             mapper.configure_device("pad", true, &[]).unwrap();
-            Self { mapper, out: vec![], now: 0.0, active: true }
+            Self {
+                mapper,
+                out: vec![],
+                now: 0.0,
+                active: true,
+            }
         }
         fn initialize(&mut self) {
             self.mapper.initialize(None, self.active);
@@ -369,7 +436,10 @@ mod tests {
             self.out.extend(out);
         }
         fn event(&mut self, device: &str, kind: u32, code: u16, value: i64) {
-            let out = self.mapper.handle(device, kind, code, value, self.now, self.active).unwrap();
+            let out = self
+                .mapper
+                .handle(device, kind, code, value, self.now, self.active)
+                .unwrap();
             self.out.extend(out);
         }
         fn report(&mut self, device: &str) {
@@ -394,7 +464,13 @@ mod tests {
             }
         }
         fn buttons(&self) -> Vec<Action> {
-            self.out.iter().filter_map(|o| match o { Output::Button(a) => Some(*a), _ => None }).collect()
+            self.out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::Button(a) => Some(*a),
+                    _ => None,
+                })
+                .collect()
         }
     }
 
@@ -414,7 +490,10 @@ mod tests {
         }
         mapper.initialize(None, true);
         assert!(out.is_empty());
-        assert_eq!(mapper.configure_device("over-budget", true, &[]), Err(DeviceLimit));
+        assert_eq!(
+            mapper.configure_device("over-budget", true, &[]),
+            Err(DeviceLimit)
+        );
         for index in 0..count {
             let id = format!("source-{index}");
             key(&mut mapper, &id, 0, &mut out);
@@ -450,13 +529,26 @@ mod tests {
         s.tick(0.0);
         assert!(s.out.is_empty());
         s.report("pad");
-        assert!(matches!(s.out[..], [Output::Direction { direction: Direction::Up, .. }]));
+        assert!(matches!(
+            s.out[..],
+            [Output::Direction {
+                direction: Direction::Up,
+                ..
+            }]
+        ));
         s.axis_on("pad", 0, 0, false);
         s.axis_on("pad", 1, 0, false);
         s.report("pad");
         s.key(0x130, 1);
         s.key(0x130, 0);
-        assert!(matches!(s.out[..], [Output::Direction { .. }, Output::DirectionEnd { .. }, Output::Button(Action::Confirm)]));
+        assert!(matches!(
+            s.out[..],
+            [
+                Output::Direction { .. },
+                Output::DirectionEnd { .. },
+                Output::Button(Action::Confirm)
+            ]
+        ));
     }
 
     #[test]
@@ -483,7 +575,16 @@ mod tests {
             s.key(code, 1);
             s.key(code, 0);
         }
-        assert_eq!(s.buttons(), vec![Action::Confirm, Action::Back, Action::Back, Action::Options, Action::Menu]);
+        assert_eq!(
+            s.buttons(),
+            vec![
+                Action::Confirm,
+                Action::Back,
+                Action::Back,
+                Action::Options,
+                Action::Menu
+            ]
+        );
     }
 
     #[test]
@@ -499,8 +600,24 @@ mod tests {
         s.key(0x223, 0);
         s.tick(21_000.0);
         s.mapper.reset();
-        let right = |repeat| Output::Direction { direction: Direction::Right, gesture: 1, repeat };
-        assert_eq!(s.out, vec![right(false), right(true), right(true), right(true), Output::DirectionEnd { direction: Direction::Right, gesture: 1 }]);
+        let right = |repeat| Output::Direction {
+            direction: Direction::Right,
+            gesture: 1,
+            repeat,
+        };
+        assert_eq!(
+            s.out,
+            vec![
+                right(false),
+                right(true),
+                right(true),
+                right(true),
+                Output::DirectionEnd {
+                    direction: Direction::Right,
+                    gesture: 1
+                }
+            ]
+        );
     }
 
     #[test]
@@ -511,32 +628,92 @@ mod tests {
         s.axis(16, 1);
         assert_eq!(s.out.len(), 1);
         s.axis(16, -1);
-        assert!(matches!(s.out[..], [Output::Direction { .. }, Output::DirectionEnd { .. }, Output::Direction { direction: Direction::Left, gesture: 2, .. }]));
+        assert!(matches!(
+            s.out[..],
+            [
+                Output::Direction { .. },
+                Output::DirectionEnd { .. },
+                Output::Direction {
+                    direction: Direction::Left,
+                    gesture: 2,
+                    ..
+                }
+            ]
+        ));
         let end = s.mapper.clear_device("pad");
-        assert_eq!(end, vec![Output::DirectionEnd { direction: Direction::Left, gesture: 2 }]);
+        assert_eq!(
+            end,
+            vec![Output::DirectionEnd {
+                direction: Direction::Left,
+                gesture: 2
+            }]
+        );
     }
 
     #[test]
     fn low_range_metadata_dominant_axes_and_flat_dead_zones() {
         let mut s = Session::new();
-        let axes = [Axis { code: 0, minimum: -1408.0, maximum: 1408.0, flat: Some(200.0) }, Axis { code: 1, minimum: -1408.0, maximum: 1408.0, flat: Some(200.0) }];
+        let axes = [
+            Axis {
+                code: 0,
+                minimum: -1408.0,
+                maximum: 1408.0,
+                flat: Some(200.0),
+            },
+            Axis {
+                code: 1,
+                minimum: -1408.0,
+                maximum: 1408.0,
+                flat: Some(200.0),
+            },
+        ];
         s.mapper.configure_device("pad", true, &axes).unwrap();
         s.initialize();
         s.axis(0, 150);
         s.axis(1, -150);
         assert!(s.out.is_empty());
         s.axis(0, 1000);
-        assert!(matches!(s.out.last(), Some(Output::Direction { direction: Direction::Right, .. })));
+        assert!(matches!(
+            s.out.last(),
+            Some(Output::Direction {
+                direction: Direction::Right,
+                ..
+            })
+        ));
         s.axis(1, -1200);
-        assert!(matches!(s.out.last(), Some(Output::Direction { direction: Direction::Up, .. })));
+        assert!(matches!(
+            s.out.last(),
+            Some(Output::Direction {
+                direction: Direction::Up,
+                ..
+            })
+        ));
     }
 
     #[test]
     fn does_not_infer_scaling_from_incomplete_metadata() {
         let cases: [Vec<Axis>; 3] = [
             vec![],
-            vec![Axis { code: 0, minimum: -1408.0, maximum: 1408.0, flat: None }],
-            vec![Axis { code: 0, minimum: 0.0, maximum: 0.0, flat: None }, Axis { code: 1, minimum: -1.0, maximum: 1.0, flat: None }],
+            vec![Axis {
+                code: 0,
+                minimum: -1408.0,
+                maximum: 1408.0,
+                flat: None,
+            }],
+            vec![
+                Axis {
+                    code: 0,
+                    minimum: 0.0,
+                    maximum: 0.0,
+                    flat: None,
+                },
+                Axis {
+                    code: 1,
+                    minimum: -1.0,
+                    maximum: 1.0,
+                    flat: None,
+                },
+            ],
         ];
         for axes in cases {
             let mut s = Session::new();
@@ -550,7 +727,12 @@ mod tests {
     #[test]
     fn unsigned_centers_and_trigger_minima_in_held_baselines() {
         let mut s = Session::new();
-        let axes = [0, 1, 2].map(|code| Axis { code, minimum: 0.0, maximum: 255.0, flat: None });
+        let axes = [0, 1, 2].map(|code| Axis {
+            code,
+            minimum: 0.0,
+            maximum: 255.0,
+            flat: None,
+        });
         s.mapper.configure_device("pad", true, &axes).unwrap();
         s.axis(0, 128);
         s.axis(1, 128);
@@ -597,7 +779,10 @@ mod tests {
         assert_eq!(s.out.len(), 2);
         s.axis(16, 0);
         s.axis(16, 1);
-        assert!(matches!(s.out.last(), Some(Output::Direction { gesture: 2, .. })));
+        assert!(matches!(
+            s.out.last(),
+            Some(Output::Direction { gesture: 2, .. })
+        ));
     }
 
     #[test]
@@ -616,6 +801,9 @@ mod tests {
     #[test]
     fn unknown_devices_are_refused() {
         let mut mapper = Mapper::default();
-        assert_eq!(mapper.handle("ghost", 1, 0x130, 1, 0.0, true), Err(UnknownDevice));
+        assert_eq!(
+            mapper.handle("ghost", 1, 0x130, 1, 0.0, true),
+            Err(UnknownDevice)
+        );
     }
 }

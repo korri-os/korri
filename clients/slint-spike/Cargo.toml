@@ -37,6 +37,8 @@ serde_json = "1"
 tempfile = "3"
 zeroize = "1"
 libc = "0.2"
+# The SDL window, shared with the native shell (clients/shell/window-sdl).
+korri-window-sdl = { path = "../shell/window-sdl", optional = true }
 
 [features]
 default = ["desktop-x11"]
@@ -46,7 +48,7 @@ desktop-x11 = ["slint/backend-winit-x11"]
 # libSDL2-2.0.so.0 loaded at run time (src/sdl/). Links no SDL and no X11.
 # Build: --no-default-features --features webos. The workstation checks use
 # the same feature over a workstation SDL.
-webos = ["dep:i-slint-core"]
+webos = ["dep:i-slint-core", "dep:korri-window-sdl"]
 
 [build-dependencies]
 slint-build = "=1.18.1"

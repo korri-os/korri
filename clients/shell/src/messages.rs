@@ -101,7 +101,10 @@ pub fn remembered(request: &Value) -> Option<(&str, &str)> {
     if request.get("_tag")?.as_str()? != "RememberPreference" {
         return None;
     }
-    Some((request.get("key")?.as_str()?, request.get("value")?.as_str()?))
+    Some((
+        request.get("key")?.as_str()?,
+        request.get("value")?.as_str()?,
+    ))
 }
 
 /// Largest count a `MoveCatalog` may ask for (contract 3.4).
@@ -118,18 +121,39 @@ mod tests {
 
     #[test]
     fn builds_the_agreed_wire_shapes() {
-        assert_eq!(pressed(Button::Left).to_string(), r#"{"_tag":"Pressed","button":"left"}"#);
-        assert_eq!(korri_published().to_string(), r#"{"_tag":"KorriPublished"}"#);
-        assert_eq!(preference_stored("zone.look").to_string(), r#"{"_tag":"PreferenceStored","key":"zone.look"}"#);
+        assert_eq!(
+            pressed(Button::Left).to_string(),
+            r#"{"_tag":"Pressed","button":"left"}"#
+        );
+        assert_eq!(
+            korri_published().to_string(),
+            r#"{"_tag":"KorriPublished"}"#
+        );
+        assert_eq!(
+            preference_stored("zone.look").to_string(),
+            r#"{"_tag":"PreferenceStored","key":"zone.look"}"#
+        );
     }
 
     #[test]
     fn reads_request_tags_and_preferences() {
-        assert_eq!(request_tag(&json!({"_tag": "MoveCatalog"})), Some("MoveCatalog"));
+        assert_eq!(
+            request_tag(&json!({"_tag": "MoveCatalog"})),
+            Some("MoveCatalog")
+        );
         assert_eq!(request_tag(&json!({"_tag": "DismissProblem"})), None);
         assert_eq!(request_tag(&json!({"tag": "Retry"})), None);
-        assert_eq!(remembered(&json!({"_tag": "RememberPreference", "key": "pico.font", "value": "tiny5"})), Some(("pico.font", "tiny5")));
-        assert!(is_gameplay_overlay(&json!({"presentation": {"kind": "gameplay-overlay"}})));
-        assert!(!is_gameplay_overlay(&json!({"presentation": {"kind": "catalog"}})));
+        assert_eq!(
+            remembered(
+                &json!({"_tag": "RememberPreference", "key": "pico.font", "value": "tiny5"})
+            ),
+            Some(("pico.font", "tiny5"))
+        );
+        assert!(is_gameplay_overlay(
+            &json!({"presentation": {"kind": "gameplay-overlay"}})
+        ));
+        assert!(!is_gameplay_overlay(
+            &json!({"presentation": {"kind": "catalog"}})
+        ));
     }
 }

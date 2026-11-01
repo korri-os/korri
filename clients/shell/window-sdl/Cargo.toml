@@ -1,0 +1,16 @@
+# The webOS window: a Slint platform over an existing libSDL2-2.0.so.0,
+# loaded at run time. Shared by the native shell (`webos` feature) and the
+# slint-spike inspector. Links no SDL and no X11.
+[package]
+name = "korri-window-sdl"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "renderer-software"] }
+libc = "0.2"
+tempfile = "3"
