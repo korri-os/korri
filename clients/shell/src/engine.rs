@@ -210,16 +210,10 @@ const BOOTSTRAP: &str = r#"(() => {
 /// Explicit `new Date(ms)` stays available for formatting model timestamps.
 const SANDBOX: &str = "Date.now = () => { throw new Error('Date.now is not available to surfaces'); };\nMath.random = () => { throw new Error('Math.random is not available to surfaces'); };";
 
-/// Which displays a surface asks Korri to give it (`globalThis.surface.displays`).
-/// Absent means [`Displays::Main`]; korrid publishes `model.displays` only for
-/// [`Displays::All`]. Grounding: the portal registry's `displays` field
-/// (`clients/portal/src/surface/surface-registry.tsx`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Displays {
-    Main,
-    All,
-}
+/// Which displays a package draws on: the treaty's `SurfacePackageDisplays`.
+/// The shell keeps "absent" apart from `main` so declare passes on exactly
+/// what the package wrote.
+pub use korri_surface_treaty::SurfacePackageDisplays as Displays;
 
 /// Check a `displays` declaration: `"main"`, `"all"` or absent (`None`).
 pub fn check_displays(value: Option<&Value>) -> Result<Option<Displays>, String> {
