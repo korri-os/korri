@@ -19,7 +19,7 @@ use crate::{
     catalog,
     engine::{self, Engine, Limits},
     images::ImageCache,
-    messages::{self, Button},
+    messages,
     package::{self, Package},
     view,
 };
@@ -193,12 +193,12 @@ impl Checker<'_> {
                     "RememberPreference" => {
                         let (key, value) = messages::remembered(&request)
                             .context("RememberPreference needs key and value")?;
-                        if !self.engine.declaration().contains_key(key)
+                        if !self.engine.declaration().contains_key(&key)
                             || value.len() > engine::MAX_PREFERENCE_BYTES
                         {
                             bail!("RememberPreference of undeclared key or oversized value: {key}");
                         }
-                        queue.push(messages::preference_stored(key));
+                        queue.push(messages::preference_stored(&key));
                     }
                     "MoveCatalog" => {
                         let count = request
@@ -300,7 +300,10 @@ fn sweep_one(
         checker.engine.init(&preferences)?;
         checker.views(&sweep)?;
         let keys: Vec<String> = checker.engine.declaration().keys().cloned().collect();
-        let mut every: Vec<Value> = Button::ALL.iter().map(|b| messages::pressed(*b)).collect();
+        let mut every: Vec<Value> = messages::BUTTONS
+            .iter()
+            .map(|b| messages::pressed(*b))
+            .collect();
         every.push(messages::korri_published());
         every.extend(keys.iter().map(|k| messages::preference_stored(k)));
         for message in every {
@@ -311,7 +314,7 @@ fn sweep_one(
             seed ^= seed << 13;
             seed ^= seed >> 17;
             seed ^= seed << 5;
-            let button = Button::ALL[seed as usize % Button::ALL.len()];
+            let button = messages::BUTTONS[seed as usize % messages::BUTTONS.len()];
             checker.deliver(&mut sweep, messages::pressed(button))?;
         }
         Ok(())
@@ -550,6 +553,31 @@ mod tests {
         let summary = verify(&package, Limits::default());
         assert!(!summary.pass, "expected a failure for {view_body}");
         summary.reasons.join(" ")
+    }
+
+    #[test]
+    fn fixture_models_are_treaty_models() {
+        let (base, examples) = fixture();
+        for count in FIXTURE_GAMES {
+            for overlay in [false, true] {
+                let games = catalog::games(&examples, count);
+                let sweep = Sweep {
+                    base: base.clone(),
+                    games: &games,
+                    query: catalog::default_query(),
+                    from: json!({"_tag": "Start"}),
+                    count: catalog::DEFAULT_COUNT,
+                    focused: Some("celeste".into()),
+                    overlay,
+                };
+                let model = sweep.model();
+                if let Err(error) =
+                    serde_json::from_value::<korri_surface_treaty::SurfaceModel>(model)
+                {
+                    panic!("{count} games, overlay {overlay}: {error}");
+                }
+            }
+        }
     }
 
     #[test]

@@ -2317,7 +2317,7 @@
     }
     const focused = focusedId(zone, model);
     if (focused !== state.reported)
-      out.push({ _tag: "FocusGame", gameId: focused });
+      out.push(focused === null ? { _tag: "FocusGame" } : { _tag: "FocusGame", gameId: focused });
     const catalog = model.catalog;
     if (!moving && focused !== null && catalog._tag === "Ready" && zone.nav.zone === "cards") {
       const card = zone.nav.card;

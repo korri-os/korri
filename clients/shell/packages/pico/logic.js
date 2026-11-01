@@ -1527,7 +1527,7 @@
     const index = chosenIndex(next.nav, games);
     const chosen = games[index]?.id ?? null;
     if (chosen !== next.reported) {
-      requests.push({ _tag: "FocusGame", gameId: chosen });
+      requests.push(chosen === null ? { _tag: "FocusGame" } : { _tag: "FocusGame", gameId: chosen });
       next = { ...next, reported: chosen };
     }
     const catalog = model.catalog;

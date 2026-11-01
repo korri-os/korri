@@ -1,114 +1,74 @@
-//! The treaty values the shell itself builds or reads (contract 3.2, 3.3).
-//!
-//! Wire shape, shared with korrid: tagged unions carry a PascalCase `_tag`,
-//! fields are camelCase, and plain string enums are camelCase. The shell
-//! builds `SurfaceMessage`s and reads only the tags of requests; korrid
-//! validates and performs every request.
+//! The treaty values the shell builds or reads (contract 3.2, 3.3), through
+//! the treaty crate `korri-surface-treaty` (`contracts/surface/`), so the
+//! shell and korrid share one serialisation.
 
-use serde_json::{json, Value};
+use korri_surface_treaty::{SurfaceMessage, SurfaceRequest, CATALOG_MAX_COUNT};
+use serde_json::Value;
 
-/// `SurfaceButton`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Button {
-    Up,
-    Down,
-    Left,
-    Right,
-    Confirm,
-    Back,
-    Options,
-    Menu,
-    System,
-}
+pub use korri_surface_treaty::SurfaceButton as Button;
 
-impl Button {
-    pub const ALL: [Button; 9] = [
-        Button::Up,
-        Button::Down,
-        Button::Left,
-        Button::Right,
-        Button::Confirm,
-        Button::Back,
-        Button::Options,
-        Button::Menu,
-        Button::System,
-    ];
+/// Every button, for the verifier's sweep.
+pub const BUTTONS: [Button; 9] = [
+    Button::Up,
+    Button::Down,
+    Button::Left,
+    Button::Right,
+    Button::Confirm,
+    Button::Back,
+    Button::Options,
+    Button::Menu,
+    Button::System,
+];
 
-    pub fn wire(self) -> &'static str {
-        match self {
-            Button::Up => "up",
-            Button::Down => "down",
-            Button::Left => "left",
-            Button::Right => "right",
-            Button::Confirm => "confirm",
-            Button::Back => "back",
-            Button::Options => "options",
-            Button::Menu => "menu",
-            Button::System => "system",
-        }
-    }
+fn json(message: SurfaceMessage) -> Value {
+    serde_json::to_value(message).expect("a SurfaceMessage serialises")
 }
 
 pub fn pressed(button: Button) -> Value {
-    json!({"_tag": "Pressed", "button": button.wire()})
+    json(SurfaceMessage::Pressed { button })
 }
 
 pub fn korri_published() -> Value {
-    json!({"_tag": "KorriPublished"})
+    json(SurfaceMessage::KorriPublished)
 }
 
 pub fn preference_stored(key: &str) -> Value {
-    json!({"_tag": "PreferenceStored", "key": key})
+    json(SurfaceMessage::PreferenceStored {
+        key: key.to_owned(),
+    })
 }
 
-/// Every `SurfaceRequest` tag (contract 3.3).
-pub const REQUEST_TAGS: [&str; 25] = [
-    "LaunchGame",
-    "RunAction",
-    "ChangeSetting",
-    "DismissSettingsProblem",
-    "ExportIdentityBackup",
-    "SwitchIdentityFromBackup",
-    "SwitchIdentityToNip46",
-    "DeleteRetiredIdentity",
-    "DismissIdentityStatus",
-    "RunGameAction",
-    "InvokeGameplayControl",
-    "DismissGameplayOverlay",
-    "Retry",
-    "Dismiss",
-    "Reload",
-    "ScanWifi",
-    "ConnectWifi",
-    "ConnectHiddenWifi",
-    "FinishOnboarding",
-    "OpenStore",
-    "SearchStore",
-    "OpenStoreEntry",
-    "FocusGame",
-    "RememberPreference",
-    "MoveCatalog",
-];
+/// A request as the treaty reads it, or why it is not one. The reason never
+/// includes the request's values (a Wi-Fi password may be among them).
+pub fn request(value: &Value) -> Result<SurfaceRequest, String> {
+    let tag = value
+        .get("_tag")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .chars()
+        .take(40)
+        .collect::<String>();
+    SurfaceRequest::deserialize(value)
+        .map_err(|_| format!("update returned a request that is not a SurfaceRequest ({tag})"))
+}
 
-/// The tag of a request the treaty knows, or `None`.
-pub fn request_tag(request: &Value) -> Option<&str> {
-    let tag = request.get("_tag")?.as_str()?;
-    REQUEST_TAGS.contains(&tag).then_some(tag)
+use serde::Deserialize as _;
+
+/// The tag of a valid request, safe to log.
+pub fn request_tag(value: &Value) -> Option<&'static str> {
+    request(value).ok().map(|r| r.tag())
 }
 
 /// `RememberPreference { key, value }`.
-pub fn remembered(request: &Value) -> Option<(&str, &str)> {
-    if request.get("_tag")?.as_str()? != "RememberPreference" {
-        return None;
+pub fn remembered(value: &Value) -> Option<(String, String)> {
+    match request(value).ok()? {
+        SurfaceRequest::RememberPreference { key, value } => Some((key, value)),
+        _ => None,
     }
-    Some((
-        request.get("key")?.as_str()?,
-        request.get("value")?.as_str()?,
-    ))
 }
 
 /// Largest count a `MoveCatalog` may ask for (contract 3.4).
-pub const MAX_CATALOG_COUNT: u64 = 200;
+pub const MAX_CATALOG_COUNT: u64 = CATALOG_MAX_COUNT as u64;
 
 /// Whether the presentation is the gameplay overlay (contract 3.7).
 pub fn is_gameplay_overlay(model: &Value) -> bool {
@@ -118,6 +78,7 @@ pub fn is_gameplay_overlay(model: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn builds_the_agreed_wire_shapes() {
@@ -136,24 +97,32 @@ mod tests {
     }
 
     #[test]
-    fn reads_request_tags_and_preferences() {
-        assert_eq!(
-            request_tag(&json!({"_tag": "MoveCatalog"})),
-            Some("MoveCatalog")
-        );
+    fn reads_requests_through_the_treaty() {
+        let around = json!({"_tag": "MoveCatalog", "query": {"text": "", "section": null, "order": "korri"}, "from": {"_tag": "Around", "gameId": "g"}, "count": 50});
+        assert_eq!(request_tag(&around), Some("MoveCatalog"));
         assert_eq!(request_tag(&json!({"_tag": "DismissProblem"})), None);
-        assert_eq!(request_tag(&json!({"tag": "Retry"})), None);
+        assert_eq!(
+            request_tag(&json!({"_tag": "LaunchGame", "locationId": "x"})),
+            None,
+            "fields are checked, not only tags"
+        );
+        assert_eq!(
+            request_tag(&json!({"_tag": "LaunchGame", "gameId": "g", "launchLocationId": "x"})),
+            Some("LaunchGame")
+        );
         assert_eq!(
             remembered(
                 &json!({"_tag": "RememberPreference", "key": "pico.font", "value": "tiny5"})
             ),
-            Some(("pico.font", "tiny5"))
+            Some(("pico.font".into(), "tiny5".into()))
         );
+        let secret =
+            request(&json!({"_tag": "ConnectWifi", "networkId": 3, "password": "hunter2"}))
+                .err()
+                .unwrap();
+        assert!(!secret.contains("hunter2"));
         assert!(is_gameplay_overlay(
             &json!({"presentation": {"kind": "gameplay-overlay"}})
-        ));
-        assert!(!is_gameplay_overlay(
-            &json!({"presentation": {"kind": "catalog"}})
         ));
     }
 }

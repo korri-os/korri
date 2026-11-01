@@ -728,7 +728,7 @@ impl Shell {
         }
         if outcome.is_ok() {
             if let Some((key, _)) = messages::remembered(&request) {
-                let message = messages::preference_stored(key);
+                let message = messages::preference_stored(&key);
                 self.update(&message);
             }
         }
@@ -799,37 +799,32 @@ impl std::fmt::Display for Failure {
     }
 }
 
-/// The shell's own checks on a request before korrid sees it.
+/// The shell's own checks on a request before korrid sees it: a treaty
+/// request, a declared preference within 256 bytes, a catalog count of 1..=200.
 fn check_request(
     request: &Value,
     declaration: &engine::Declaration,
 ) -> std::result::Result<(), Failure> {
-    let tag = messages::request_tag(request).ok_or_else(|| {
-        Failure::Request("update returned a request that is not a SurfaceRequest".into())
-    })?;
-    if let Some((key, value)) = messages::remembered(request) {
-        if !declaration.contains_key(key) {
-            return Err(Failure::Request(format!(
-                "RememberPreference of undeclared key {key:?}"
-            )));
+    use korri_surface_treaty::SurfaceRequest;
+    match messages::request(request).map_err(Failure::Request)? {
+        SurfaceRequest::RememberPreference { key, value } => {
+            if !declaration.contains_key(&key) {
+                return Err(Failure::Request(format!(
+                    "RememberPreference of undeclared key {key:?}"
+                )));
+            }
+            if value.len() > engine::MAX_PREFERENCE_BYTES {
+                return Err(Failure::Request(format!(
+                    "RememberPreference value for {key} is over 256 bytes"
+                )));
+            }
         }
-        if value.len() > engine::MAX_PREFERENCE_BYTES {
-            return Err(Failure::Request(format!(
-                "RememberPreference value for {key} is over 256 bytes"
-            )));
+        SurfaceRequest::MoveCatalog { count, .. }
+            if count == 0 || u64::from(count) > messages::MAX_CATALOG_COUNT =>
+        {
+            return Err(Failure::Request("MoveCatalog count must be 1..=200".into()));
         }
-    } else if tag == "RememberPreference" {
-        return Err(Failure::Request(
-            "RememberPreference needs string key and value".into(),
-        ));
-    }
-    if tag == "MoveCatalog"
-        && request
-            .get("count")
-            .and_then(Value::as_u64)
-            .is_none_or(|c| c == 0 || c > messages::MAX_CATALOG_COUNT)
-    {
-        return Err(Failure::Request("MoveCatalog count must be 1..=200".into()));
+        _ => {}
     }
     Ok(())
 }

@@ -259,8 +259,7 @@ fn model_for(state: &State, surface_id: &str) -> Value {
     });
     model["catalog"] = catalog::window(&state.games, &query, &from, count);
     if let Some(id) = surface.and_then(|s| s.focused.as_deref()) {
-        model["focusedGame"] =
-            json!({"gameId": id, "actions": [{"id": "favourite", "label": "Favourite"}]});
+        model["focusedGame"] = json!({"gameId": id, "actions": []});
     }
     model
 }

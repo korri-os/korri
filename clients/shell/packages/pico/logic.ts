@@ -23,7 +23,9 @@
  *
  * Pure: no timers, no Date, no randomness, no globals but `surface`.
  */
-import type { SurfaceGame, SurfaceGameplayControl, SurfaceModel } from "../../../../contracts/surface/korri-surface"
+// Pico's code still speaks the TypeScript treaty it was written against;
+// `legacy` below hands it the model in that shape.
+import type { SurfaceGameplayControl, SurfaceModel } from "../../../../contracts/surface/korri-surface"
 import { picoDownloadLabel, picoStatsFor } from "../../../../surfaces/pico/src/pico-detail-view"
 import { PICO_DEFAULT_FONT, PICO_FONT_IDS, type PicoFontId } from "../../../../surfaces/pico/src/pico-fonts"
 import { picoInitials } from "../../../../surfaces/pico/src/pico-initials"
@@ -34,28 +36,12 @@ import { initialNavigation, type PicoNavigation } from "../../../../surfaces/pic
 import { shownScreen } from "../../../../surfaces/pico/src/state/shown"
 import { update as picoUpdate } from "../../../../surfaces/pico/src/state/update"
 
-// The treaty pieces read here that the TypeScript treaty file does not have
-// yet (contract 3.2 to 3.4). Replace with contracts/generated/surface.ts.
-type Button = "up" | "down" | "left" | "right" | "confirm" | "back" | "options" | "menu" | "system"
-type Message =
-  | { readonly _tag: "Pressed"; readonly button: Button }
-  | { readonly _tag: "KorriPublished" }
-  | { readonly _tag: "PreferenceStored"; readonly key: string }
-type Catalog =
-  | { readonly _tag: "Loading" }
-  | { readonly _tag: "Error"; readonly message: string }
-  | { readonly _tag: "Empty" }
-  | {
-      readonly _tag: "Ready"
-      readonly total: number
-      readonly window: readonly SurfaceGame[]
-      readonly firstIndex: number
-      readonly before?: string
-      readonly after?: string
-      readonly query: unknown
-    }
-type Model = Omit<SurfaceModel, "catalog"> & { readonly catalog: Catalog }
-type Request = { readonly _tag: string; readonly [key: string]: unknown }
+import type {
+  SurfaceButton as Button,
+  SurfaceMessage as Message,
+  SurfaceModel as Model,
+  SurfaceRequest as Request,
+} from "../../../../contracts/generated/surface"
 
 interface State {
   readonly nav: PicoNavigation
@@ -202,7 +188,7 @@ function update(state: State, message: Message, model: Model): { state: State; r
   const index = chosenIndex(next.nav, games)
   const chosen = games[index]?.id ?? null
   if (chosen !== next.reported) {
-    requests.push({ _tag: "FocusGame", gameId: chosen })
+    requests.push(chosen === null ? { _tag: "FocusGame" } : { _tag: "FocusGame", gameId: chosen })
     next = { ...next, reported: chosen }
   }
   const catalog = model.catalog

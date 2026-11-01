@@ -29,6 +29,8 @@
  * Pure: no timers, no Date, no randomness. The facts line's day is computed
  * from Korri's epoch milliseconds in UTC.
  */
+// Zone's state code still speaks the TypeScript treaty it was written against;
+// `legacy` below hands it the model in that shape.
 import type { SurfaceGame, SurfaceModel, SurfaceNetworkConnection } from "../../../../contracts/surface/korri-surface"
 import { launchChoices, playtime, type ZoneLaunchChoice } from "../../../../surfaces/zone/src/state/games"
 import { bandGames, ZONE_TABS, type ZoneNavMessage, type ZoneTab } from "../../../../surfaces/zone/src/state/navigation"
@@ -36,29 +38,12 @@ import type { ZoneRequest } from "../../../../surfaces/zone/src/state/requests"
 import { update as zoneUpdate, zoneShown, zoneSurfaceStart, type ZoneSurfaceMessage, type ZoneSurfaceState } from "../../../../surfaces/zone/src/state/surface"
 import { isZoneLook, ZONE_DEFAULT_LOOK } from "../../../../surfaces/zone/src/plan/look"
 
-// The treaty pieces this adapter reads that the TypeScript treaty file does
-// not have yet (contract 3.2 to 3.5). Replace with contracts/generated/surface.ts.
-type Button = "up" | "down" | "left" | "right" | "confirm" | "back" | "options" | "menu" | "system"
-type Message =
-  | { readonly _tag: "Pressed"; readonly button: Button }
-  | { readonly _tag: "KorriPublished" }
-  | { readonly _tag: "PreferenceStored"; readonly key: string }
-type CatalogQuery = { readonly text: string; readonly section: string | null; readonly order: string }
-type Catalog =
-  | { readonly _tag: "Loading" }
-  | { readonly _tag: "Error"; readonly message: string }
-  | { readonly _tag: "Empty" }
-  | {
-      readonly _tag: "Ready"
-      readonly total: number
-      readonly window: readonly SurfaceGame[]
-      readonly firstIndex: number
-      readonly before?: string
-      readonly after?: string
-      readonly query: CatalogQuery
-    }
-export type Model = Omit<SurfaceModel, "catalog"> & { readonly catalog: Catalog }
-type Request = { readonly _tag: string; readonly [key: string]: unknown }
+import type {
+  SurfaceButton as Button,
+  SurfaceMessage as Message,
+  SurfaceModel as Model,
+  SurfaceRequest as Request,
+} from "../../../../contracts/generated/surface"
 
 export interface State {
   readonly zone: ZoneSurfaceState
@@ -101,7 +86,7 @@ function treaty(request: ZoneRequest): Request | undefined {
     case "RememberLook":
       return { _tag: "RememberPreference", key: LOOK_KEY, value: request.look }
     default:
-      return request as Request
+      return request as unknown as Request
   }
 }
 
@@ -154,7 +139,7 @@ export function update(state: State, message: Message, model: Model): { state: S
       break
   }
   const focused = focusedId(zone, model)
-  if (focused !== state.reported) out.push({ _tag: "FocusGame", gameId: focused })
+  if (focused !== state.reported) out.push(focused === null ? { _tag: "FocusGame" } : { _tag: "FocusGame", gameId: focused })
   const catalog = model.catalog
   if (!moving && focused !== null && catalog._tag === "Ready" && zone.nav.zone === "cards") {
     const card = zone.nav.card

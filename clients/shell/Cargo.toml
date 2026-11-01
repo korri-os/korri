@@ -39,6 +39,8 @@ slint-interpreter = { version = "=1.18.1", default-features = false, features = 
 ] }
 i-slint-compiler = "=1.18.1"
 fontique = { version = "=0.11.1", features = ["fontconfig-dlopen"] }
+# The treaty: SurfaceModel, SurfaceMessage, SurfaceRequest (contracts/surface).
+korri-surface-treaty = { path = "../../contracts/surface" }
 # korrid's engine and version.
 rquickjs = "=0.14.0"
 serde = { version = "1", features = ["derive"] }
