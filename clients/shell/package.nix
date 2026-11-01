@@ -25,7 +25,8 @@ pkgs.rustPlatform.buildRustPackage {
   pname = "korri-shell";
   version = "0.0.0";
 
-  # The repository root, so the pico8 palette test can read Pico's own palette.
+  # The repository root: the treaty crate (contracts/surface) is a path
+  # dependency, and the pico8 palette test reads Pico's own palette.
   src = lib.fileset.toSource {
     root = ../..;
     fileset = lib.fileset.unions [
@@ -38,6 +39,8 @@ pkgs.rustPlatform.buildRustPackage {
       ./packages
       ./vendor
       ./window-sdl
+      ../../contracts/surface/Cargo.toml
+      ../../contracts/surface/src
       ../../surfaces/pico/src/pico-palette.ts
     ];
   };
