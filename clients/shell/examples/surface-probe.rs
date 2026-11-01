@@ -393,6 +393,20 @@ fn main() -> Result<()> {
     let sizes = sizes(&flag("--sizes").unwrap_or_else(|| "640x480".into()));
     match args.first().map(String::as_str) {
         Some("previews") => previews(Path::new(args.get(1).context("DIR")?), &sizes, &out),
+        Some("load") => {
+            // How long a package's logic takes to load, as the shell measures it.
+            let package = Package::at(Path::new(args.get(1).context("PACKAGE")?))?;
+            let source = package.logic_source()?;
+            let mut times = Vec::new();
+            for _ in 0..20 {
+                let started = std::time::Instant::now();
+                Engine::load(&source, Limits { call: std::time::Duration::from_secs(5), ..Limits::default() })?;
+                times.push(started.elapsed().as_secs_f64() * 1000.0);
+            }
+            times.sort_by(f64::total_cmp);
+            println!("load ms: min {:.1} median {:.1} max {:.1}", times[0], times[10], times[19]);
+            Ok(())
+        }
         Some("walk") => {
             let dir = PathBuf::from(args.get(1).context("PACKAGE")?);
             let max = flag("--max").and_then(|m| m.parse().ok()).unwrap_or(300);
