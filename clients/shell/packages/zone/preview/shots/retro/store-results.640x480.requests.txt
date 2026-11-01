@@ -1,0 +1,3 @@
+{"request":{"_tag":"FocusGame","gameId":"celeste"},"surface":"zone"}
+{"request":{"_tag":"FocusGame","gameId":"hollow-knight"},"surface":"zone"}
+{"request":{"_tag":"OpenStore"},"surface":"zone"}
