@@ -27,6 +27,7 @@ use super::{
     network_onboarding::NetworkOnboarding,
     overlay::{focused_overlay_session, OverlayController, OverlayExit},
     owner_binding::{owner_binding_status, OwnerBinding},
+    plugins::{plugin_setting_groups, PluginFacts, PluginsController, PluginsHost},
     runner::{Intent, RunnerChooser, RunnerLaunchIntegration},
     saves::{
         surface_saves_from, SaveGameRef, SaveSync, SAVE_CHECK_LIMIT, SAVE_CHOOSE_ACTION_ID,
@@ -297,6 +298,8 @@ pub struct Root {
     pub runner: Arc<RunnerChooser>,
     pub saves: Arc<SaveSync>,
     pub store: Arc<StoreAcquisition>,
+    pub plugins: Arc<PluginsController>,
+    plugin_facts: Arc<std::sync::Mutex<PluginFacts>>,
     last_library: std::sync::Mutex<Option<String>>,
     last_live_ids: std::sync::Mutex<Option<Vec<String>>>,
     controllers: Arc<super::controllers::Controllers>,
@@ -391,9 +394,28 @@ impl Root {
                             let runner = Arc::clone(&runner);
                             Box::new(move |title, warnings| runner.show_warnings(title, warnings))
                         },
-                        plugins_refresh: Box::new(|| {}),
-                        plugins_run: Box::new(|_| false),
-                        plugins_change: Box::new(|_, _| false),
+                        // Plugin facts are read beside the rest and publish on their own.
+                        plugins_refresh: {
+                            let root = this.clone();
+                            Box::new(move || {
+                                if let Some(root) = root.upgrade() {
+                                    tokio::spawn(async move { root.plugins.refresh().await });
+                                }
+                            })
+                        },
+                        plugins_run: {
+                            let root = this.clone();
+                            Box::new(move |id| {
+                                root.upgrade().is_some_and(|root| root.plugins.run(id))
+                            })
+                        },
+                        plugins_change: {
+                            let root = this.clone();
+                            Box::new(move |id, value| {
+                                root.upgrade()
+                                    .is_some_and(|root| root.plugins.change(id, value))
+                            })
+                        },
                         restart_onboarding: Box::new(move || restart.restart_onboarding()),
                         dismiss_network_problem: Box::new(move || dismiss.dismiss_problem()),
                     },
@@ -458,7 +480,52 @@ impl Root {
                     ACQUISITION_POLL_INTERVAL,
                 )
             };
+            let plugin_facts = Arc::new(std::sync::Mutex::new(PluginFacts::default()));
+            let plugins = {
+                let read = Arc::clone(&plugin_facts);
+                let write = Arc::clone(&plugin_facts);
+                let published = notify.clone();
+                let status = this.clone();
+                let busy_get = this.clone();
+                let busy_set = this.clone();
+                let changed = this.clone();
+                PluginsController::new(
+                    korrid.clone(),
+                    PluginsHost {
+                        facts: Box::new(move || {
+                            read.lock().expect("plugin facts poisoned").clone()
+                        }),
+                        publish: Box::new(move |next| {
+                            *write.lock().expect("plugin facts poisoned") = next;
+                            published();
+                        }),
+                        status: Box::new(move |next| {
+                            if let Some(root) = status.upgrade() {
+                                root.launchables.set_settings_status(next);
+                            }
+                        }),
+                        busy_get: Box::new(move || {
+                            busy_get
+                                .upgrade()
+                                .is_some_and(|root| root.launchables.settings_busy())
+                        }),
+                        busy_set: Box::new(move |value| {
+                            if let Some(root) = busy_set.upgrade() {
+                                root.launchables.set_settings_busy(value);
+                            }
+                        }),
+                        // Installing or switching a plugin changes what can be played.
+                        changed: Box::new(move || {
+                            if let Some(root) = changed.upgrade() {
+                                tokio::spawn(async move { root.launchables.refresh().await });
+                            }
+                        }),
+                    },
+                )
+            };
             Self {
+                plugins,
+                plugin_facts,
                 store,
                 last_library: std::sync::Mutex::new(None),
                 saves,
@@ -831,7 +898,14 @@ impl Root {
         let network = self.network.snapshot();
         let owner = self.owner_binding.snapshot();
         let onboarding_needed = network.onboarding_needed;
-        let facts = self.launchables.facts();
+        let mut facts = self.launchables.facts();
+        facts.plugin_groups = Some(plugin_setting_groups(
+            &self.plugin_facts.lock().expect("plugin facts poisoned"),
+            facts
+                .settings
+                .as_ref()
+                .map(|settings| settings.plugins.as_slice()),
+        ));
         let settings = settings_from(&facts);
         let mut status = match &network.problem {
             Some(problem) => SurfaceStatus::Problem {

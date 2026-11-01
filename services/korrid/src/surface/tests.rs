@@ -2493,3 +2493,394 @@ mod store_acquisition {
         assert_eq!(store_download_detail(612_000, None, None), "612 KB so far");
     }
 }
+
+mod plugin_repositories {
+    //! Ports of `plugin-repositories.test.ts` and
+    //! `plugin-repositories-controller.test.ts`.
+    use super::acquisition_gate::{push, scripted};
+    use super::*;
+    use crate::surface::plugins::*;
+    use korri_surface_treaty::{
+        SurfaceSettingGroup, SurfaceSettingInteraction, SurfaceSettingsStatus,
+    };
+    use std::sync::Mutex;
+
+    const OFFICIAL: &str = "https://plugins.korri.dev/";
+    const RETRO: &str = "https://retro.example/plugins";
+
+    fn publisher(namespace: &str, state: &str) -> Value {
+        json!({ "namespace": namespace, "state": state, "fingerprint": format!("{namespace}-fp"), "publicKey": format!("{namespace}-key") })
+    }
+
+    fn repositories(user_added: Vec<&str>, installs: Value) -> PluginFacts {
+        let mut facts = PluginFacts::default();
+        facts.repositories = Read::Ready(from(
+            json!({ "official": null, "userAdded": user_added, "repositoryInstalls": installs, "otherInstalls": [] }),
+        ));
+        facts.publishers = Read::Ready(from(json!({ "entries": [] })));
+        facts
+    }
+
+    fn retro_facts() -> PluginFacts {
+        let mut facts = repositories(
+            vec![RETRO],
+            json!([{ "id": "@ada:netplay", "sourceUrl": RETRO, "releaseVersion": "0.4.0", "enabled": true }]),
+        );
+        facts.catalogs.insert(
+            RETRO.into(),
+            CatalogView::Ready(from(json!([
+                { "pluginId": "@ada:netplay", "title": "Netplay", "releaseVersion": "0.4.0", "installed": "Enabled", "publisher": publisher("@ada", "Trusted") },
+                { "pluginId": "@ada:chiptune", "title": "Chiptune", "description": "Bleeps.", "releaseVersion": "1.0.0", "publisher": publisher("@ada", "Trusted") }
+            ]))),
+        );
+        facts
+    }
+
+    fn chiptune() -> ReleaseTarget {
+        ReleaseTarget {
+            source_url: RETRO.into(),
+            plugin_id: "@ada:chiptune".into(),
+            release_version: "1.0.0".into(),
+        }
+    }
+
+    fn inspection(publisher_state: &str, brings: Value) -> crate::plugin_admin::PluginInspection {
+        from(
+            json!({ "publisher": publisher("@ada", publisher_state), "id": "@ada:chiptune", "title": "Chiptune",
+            "approval": "sha256:digest", "warning": "Plays loud.", "ports": { "allowedTCPPorts": [55435], "allowedUDPPorts": [] },
+            "nativeUnits": ["chiptune.service"], "brings": brings }),
+        )
+    }
+
+    fn group<'a>(groups: &'a [SurfaceSettingGroup], title: &str) -> &'a SurfaceSettingGroup {
+        groups
+            .iter()
+            .find(|group| group.title == title)
+            .expect("group")
+    }
+
+    #[test]
+    fn official_only_shows_not_set_up_and_the_add_row() {
+        let groups = plugin_setting_groups(&repositories(vec![], json!([])), Some(&[]));
+        assert_eq!(
+            groups
+                .iter()
+                .map(|group| group.title.as_str())
+                .collect::<Vec<_>>(),
+            vec![PLUGINS_GROUP, PUBLISHERS_GROUP]
+        );
+        assert_eq!(groups[0].items[0].id, OFFICIAL_REPOSITORY_ROW);
+        assert_eq!(groups[0].items[0].value.as_deref(), Some("Not set up yet"));
+        assert!(groups[0].items[0].interaction.is_none());
+        assert_eq!(groups[0].items[1].id, ADD_REPOSITORY_SETTING);
+        let loading = plugin_setting_groups(&PluginFacts::default(), None);
+        assert_eq!(loading.len(), 1);
+        assert_eq!(loading[0].items[0].value.as_deref(), Some("Checking…"));
+    }
+
+    #[test]
+    fn an_added_repository_lists_its_plugins_and_ends_with_remove() {
+        let groups = plugin_setting_groups(&retro_facts(), Some(&[]));
+        let retro = group(&groups, "retro.example/plugins");
+        assert_eq!(
+            retro
+                .items
+                .iter()
+                .map(|item| item.id.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                toggle_setting_id("@ada:netplay"),
+                release_row_id(&chiptune()),
+                remove_repository_action_id(RETRO)
+            ]
+        );
+        assert_eq!(retro.items[0].value.as_deref(), Some("On"));
+        assert_eq!(retro.items[1].value.as_deref(), Some("Install"));
+        assert_eq!(retro.items[1].description.as_deref(), Some("Bleeps."));
+        let Some(SurfaceSettingInteraction::Action {
+            confirmation: Some(confirmation),
+            destructive: Some(true),
+            ..
+        }) = &retro.items[2].interaction
+        else {
+            panic!()
+        };
+        assert_eq!(confirmation.message, "Korri stops showing plugins from retro.example/plugins. The plugin you installed from it stays, and still turns on and off under \"Installed from removed repositories\".");
+        assert_eq!(
+            group(&groups, PLUGINS_GROUP).items[1].value.as_deref(),
+            Some("2 plugins")
+        );
+    }
+
+    #[test]
+    fn an_inspected_release_becomes_review_and_turn_on_whose_question_is_the_report() {
+        let report = inspection("Trusted", json!([]));
+        let facts = with_review(retro_facts(), &chiptune(), report.clone());
+        let groups = plugin_setting_groups(&facts, Some(&[]));
+        let row = group(&groups, "retro.example/plugins")
+            .items
+            .iter()
+            .find(|item| item.id == release_row_id(&chiptune()))
+            .unwrap();
+        assert_eq!(row.value.as_deref(), Some("Review and turn on"));
+        let Some(SurfaceSettingInteraction::Action {
+            action_id,
+            confirmation: Some(confirmation),
+            destructive,
+            ..
+        }) = &row.interaction
+        else {
+            panic!()
+        };
+        assert_eq!(*action_id, review_action_id(&chiptune()));
+        assert_eq!(*destructive, None);
+        assert_eq!(confirmation.title, "Turn on Chiptune?");
+        assert_eq!(confirmation.message, review_message(&report));
+        assert_eq!(
+            review_message(&report),
+            "Publisher @ada, trusted on this device. Key @ada-fp.\nWarning: Plays loud.\nOpens network ports: TCP 55435.\nRuns in the background: chiptune.service."
+        );
+    }
+
+    #[test]
+    fn a_new_publisher_is_trusted_first_with_its_key_in_the_question() {
+        let report = inspection("New", json!([]));
+        let facts = with_review(retro_facts(), &chiptune(), report);
+        let groups = plugin_setting_groups(&facts, Some(&[]));
+        let row = group(&groups, "retro.example/plugins")
+            .items
+            .iter()
+            .find(|item| item.id == release_row_id(&chiptune()))
+            .unwrap();
+        assert_eq!(row.value.as_deref(), Some("Trust @ada"));
+        let Some(SurfaceSettingInteraction::Action {
+            action_id,
+            confirmation: Some(confirmation),
+            ..
+        }) = &row.interaction
+        else {
+            panic!()
+        };
+        assert_eq!(*action_id, trust_action_id(&chiptune(), "@ada"));
+        assert_eq!(
+            confirmation.message,
+            "Chiptune comes from @ada. This device has not trusted it before.\nKey @ada-fp.\nTrust it only if the plugin maker gave you this key.\nLater plugins from @ada must have the same key."
+        );
+    }
+
+    #[test]
+    fn a_stale_approval_shows_needs_review() {
+        let facts = with_needs_review(retro_facts(), "@ada:netplay", false);
+        let groups = plugin_setting_groups(&facts, Some(&[]));
+        let row = &group(&groups, "retro.example/plugins").items[0];
+        assert_eq!(row.value.as_deref(), Some("Needs review"));
+        assert_eq!(
+            row.description.as_deref(),
+            Some("It changed since you approved it. Check it again to turn it off.")
+        );
+    }
+
+    #[test]
+    fn the_publishers_list_offers_revoke_only_for_owner_trusted_ones() {
+        let mut facts = repositories(vec![], json!([]));
+        facts.publishers = Read::Ready(from(json!({ "entries": [
+            { "namespace": "@korri", "fingerprint": "k", "state": "Bound", "installed": [] },
+            { "namespace": "@ada", "fingerprint": "a", "state": "Trusted", "installed": ["@ada:netplay"] }
+        ] })));
+        let groups = plugin_setting_groups(&facts, Some(&[]));
+        let publishers = groups.last().unwrap();
+        assert_eq!(publishers.title, PUBLISHERS_GROUP);
+        assert!(publishers.items[0].interaction.is_none());
+        assert_eq!(publishers.items[1].value.as_deref(), Some("Revoke"));
+        assert_eq!(
+            publishers.items[1].description.as_deref(),
+            Some("Trusted on this device. Key a. 1 plugin installed from it.")
+        );
+    }
+
+    #[test]
+    fn ids_round_trip_with_colons_and_slashes() {
+        let target = chiptune();
+        assert_eq!(
+            plugin_action_from(&inspect_action_id(&target)),
+            Some(PluginAction::Inspect(target.clone()))
+        );
+        assert_eq!(
+            plugin_action_from(&review_action_id(&target)),
+            Some(PluginAction::Review(target.clone()))
+        );
+        assert_eq!(
+            plugin_action_from(&trust_action_id(&target, "@a:b/c")),
+            Some(PluginAction::Trust(target, "@a:b/c".into()))
+        );
+        assert_eq!(
+            plugin_action_from(&remove_repository_action_id(RETRO)),
+            Some(PluginAction::Remove(RETRO.into()))
+        );
+        assert_eq!(
+            plugin_action_from(&revoke_action_id("@ada")),
+            Some(PluginAction::Revoke("@ada".into()))
+        );
+        assert_eq!(
+            plugin_change_from(&toggle_setting_id("@ada:x"), "true"),
+            Some(PluginChange::Toggle("@ada:x".into(), true))
+        );
+        assert_eq!(
+            plugin_change_from(&toggle_setting_id("@ada:x"), "maybe"),
+            None
+        );
+        assert_eq!(plugin_change_from("device-name", "x"), None);
+        assert_eq!(
+            https_address(" https://retro.example/plugins "),
+            Some("https://retro.example/plugins".into())
+        );
+        assert_eq!(https_address("http://retro.example"), None);
+        assert_eq!(https_address("https://"), None);
+        assert_eq!(enc("a b:c/é"), "a%20b%3Ac%2F%C3%A9");
+        assert_eq!(dec("%E0%A4%A"), None);
+    }
+
+    struct Host {
+        facts: Arc<Mutex<PluginFacts>>,
+        status: Arc<Mutex<Vec<SurfaceSettingsStatus>>>,
+        changed: Arc<Mutex<usize>>,
+    }
+
+    fn controller(korrid: Korrid, facts: PluginFacts) -> (Arc<PluginsController>, Host) {
+        let facts = Arc::new(Mutex::new(facts));
+        let status = Arc::new(Mutex::new(Vec::new()));
+        let changed = Arc::new(Mutex::new(0));
+        let busy = Arc::new(Mutex::new(false));
+        let (read, write, log, count, get, set) = (
+            Arc::clone(&facts),
+            Arc::clone(&facts),
+            Arc::clone(&status),
+            Arc::clone(&changed),
+            Arc::clone(&busy),
+            Arc::clone(&busy),
+        );
+        let controller = PluginsController::new(
+            korrid,
+            PluginsHost {
+                facts: Box::new(move || read.lock().unwrap().clone()),
+                publish: Box::new(move |next| *write.lock().unwrap() = next),
+                status: Box::new(move |next| log.lock().unwrap().push(next)),
+                busy_get: Box::new(move || *get.lock().unwrap()),
+                busy_set: Box::new(move |value| *set.lock().unwrap() = value),
+                changed: Box::new(move || *count.lock().unwrap() += 1),
+            },
+        );
+        (
+            controller,
+            Host {
+                facts,
+                status,
+                changed,
+            },
+        )
+    }
+
+    async fn settle() {
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn install_needs_an_inspection_and_passes_exactly_its_digest_then_turns_on() {
+        let (korrid, script) = scripted();
+        let (controller, host) = controller(korrid, retro_facts());
+        // No kept report: nothing installs.
+        assert!(controller.run(&review_action_id(&chiptune())));
+        settle().await;
+        assert!(script.lock().unwrap().calls.is_empty());
+        push(
+            &script,
+            "system.plugins.inspect",
+            json!({ "_tag": "Ok", "payload": serde_json::to_value(inspection("Trusted", json!([]))).unwrap() }),
+        );
+        controller.run(&inspect_action_id(&chiptune()));
+        settle().await;
+        assert!(review_for(&host.facts.lock().unwrap(), &chiptune()).is_some());
+        push(
+            &script,
+            "system.plugins.install",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        push(
+            &script,
+            "system.plugins.setEnabled",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        controller.run(&review_action_id(&chiptune()));
+        settle().await;
+        let calls = script.lock().unwrap().calls.clone();
+        let install = calls
+            .iter()
+            .find(|(tag, _)| tag == "system.plugins.install")
+            .unwrap();
+        assert_eq!(
+            install.1,
+            json!({ "url": RETRO, "pluginId": "@ada:chiptune", "releaseVersion": "1.0.0", "approval": "sha256:digest" })
+        );
+        let enable = calls
+            .iter()
+            .find(|(tag, _)| tag == "system.plugins.setEnabled")
+            .unwrap();
+        assert_eq!(enable.1, json!({ "id": "@ada:chiptune", "enabled": true }));
+        assert_eq!(*host.changed.lock().unwrap(), 1);
+        assert!(review_for(&host.facts.lock().unwrap(), &chiptune()).is_none());
+        assert_eq!(
+            host.status.lock().unwrap().last(),
+            Some(&SurfaceSettingsStatus::Idle)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stale_approval_marks_needs_review_and_an_invalid_address_asks_nothing() {
+        let (korrid, script) = scripted();
+        let (controller, host) = controller(korrid, retro_facts());
+        push(
+            &script,
+            "system.plugins.setEnabled",
+            json!({ "_tag": "Err", "payload": { "code": NEEDS_REVIEW_CODE, "message": "changed" } }),
+        );
+        assert!(controller.change(&toggle_setting_id("@ada:netplay"), "false"));
+        settle().await;
+        assert_eq!(
+            host.facts.lock().unwrap().needs_review.get("@ada:netplay"),
+            Some(&false)
+        );
+        assert!(controller.change(ADD_REPOSITORY_SETTING, "http://nope"));
+        assert_eq!(
+            host.status.lock().unwrap().last(),
+            Some(&SurfaceSettingsStatus::Problem {
+                setting_id: ADD_REPOSITORY_SETTING.into(),
+                message: INVALID_ADDRESS.into()
+            })
+        );
+        assert_eq!(script.lock().unwrap().calls.len(), 1);
+    }
+
+    #[test]
+    fn the_newest_trusted_release_wins() {
+        let mut facts = retro_facts();
+        facts.catalogs.insert(
+            OFFICIAL.into(),
+            CatalogView::Ready(from(json!([
+                { "pluginId": "@ada:chiptune", "releaseVersion": "1.10.0", "publisher": publisher("@ada", "Trusted") },
+                { "pluginId": "@ada:chiptune", "releaseVersion": "9.0.0", "publisher": publisher("@ada", "New") }
+            ]))),
+        );
+        assert_eq!(
+            newest_release(&facts, "@ada:chiptune")
+                .unwrap()
+                .release_version,
+            "1.10.0"
+        );
+        assert_eq!(
+            natural_compare("2026.10.2", "2026.9.30"),
+            std::cmp::Ordering::Greater
+        );
+    }
+}

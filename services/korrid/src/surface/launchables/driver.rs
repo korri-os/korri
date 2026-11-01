@@ -323,6 +323,17 @@ impl Launchables {
     pub fn identity_management(&self) -> Option<SurfaceIdentityManagement> {
         self.lock().identity_management.clone()
     }
+    /// The shared settings lock the plugin rows take too.
+    pub fn settings_busy(&self) -> bool {
+        self.lock().settings_busy
+    }
+    pub fn set_settings_busy(&self, busy: bool) {
+        self.lock().settings_busy = busy;
+    }
+    pub fn set_settings_status(&self, status: SurfaceSettingsStatus) {
+        self.publish_settings_status(status);
+    }
+
     pub fn set_onboarding_needed(&self, needed: Option<bool>) {
         self.lock().facts.onboarding_needed = needed;
     }
