@@ -467,6 +467,17 @@ impl Drop for PortalInputSource {
 /// No authority is read from URLs, subprotocols, or controller payloads. The
 /// build disables dependency debug/trace logging of raw WS credentials.
 pub fn router(access: PortalAccess, limits: PortalInputLimits) -> (Router, PortalInputSource) {
+    router_with_surfaces(access, Arc::new(std::sync::OnceLock::new()), limits)
+}
+
+/// The same socket also serves `app.surface.watch` (native surfaces contract,
+/// section 6): a second frame naming it, instead of a native input
+/// subscription, hands the authenticated connection to the hub in `surfaces`.
+pub fn router_with_surfaces(
+    access: PortalAccess,
+    surfaces: crate::surface::SurfaceSlot,
+    limits: PortalInputLimits,
+) -> (Router, PortalInputSource) {
     assert!(limits.connections > 0 && limits.devices > 0 && limits.queued_events > 0);
     assert!(limits.incoming_bytes > 0 && limits.event_bytes > 0);
     assert!(
@@ -488,6 +499,7 @@ pub fn router(access: PortalAccess, limits: PortalInputLimits) -> (Router, Porta
     let app = Router::new().route("/", get(upgrade)).with_state(Endpoint {
         access,
         shared: Arc::clone(&shared),
+        surfaces,
     });
     (app, PortalInputSource { shared })
 }
@@ -495,6 +507,7 @@ pub fn router(access: PortalAccess, limits: PortalInputLimits) -> (Router, Porta
 struct Endpoint {
     access: PortalAccess,
     shared: Arc<Shared>,
+    surfaces: crate::surface::SurfaceSlot,
 }
 
 // Reserved before upgrade, including idle unauthenticated clients.
@@ -666,16 +679,36 @@ async fn upgrade(
         .max_frame_size(limits.incoming_bytes)
         .read_buffer_size(limits.incoming_bytes)
         .write_buffer_size(0)
-        .max_write_buffer_size(limits.event_bytes.saturating_add(1024))
-        .on_upgrade(move |socket| serve(socket, endpoint.access, connection, stop, control)))
+        // A surface watch pushes a whole model in one message.
+        .max_write_buffer_size(
+            limits
+                .event_bytes
+                .saturating_add(1024)
+                .max(SURFACE_MODEL_BYTES),
+        )
+        .on_upgrade(move |socket| {
+            serve(
+                socket,
+                endpoint.access,
+                endpoint.surfaces,
+                connection,
+                stop,
+                control,
+            )
+        }))
 }
 async fn stopped(stop: &mut watch::Receiver<bool>) {
     let _ = stop.wait_for(|stopped| *stopped).await;
 }
-async fn handshake(
-    socket: &mut WebSocket,
-    access: &PortalAccess,
-) -> Option<NativeInputSubscription> {
+/// The largest whole model one surface watch push may carry.
+const SURFACE_MODEL_BYTES: usize = 8 * 1024 * 1024;
+
+enum Selection {
+    Native(NativeInputSubscription),
+    Surface(String),
+}
+
+async fn handshake(socket: &mut WebSocket, access: &PortalAccess) -> Option<Selection> {
     let Message::Text(bearer) = socket.recv().await?.ok()? else {
         return None;
     };
@@ -684,7 +717,11 @@ async fn handshake(
     let Message::Text(text) = socket.recv().await?.ok()? else {
         return None;
     };
-    serde_json::from_str(&text).ok()
+    if let Ok(crate::surface::SurfaceWatchSubscription::Watch(watch)) = serde_json::from_str(&text)
+    {
+        return Some(Selection::Surface(watch.surface_id));
+    }
+    serde_json::from_str(&text).ok().map(Selection::Native)
 }
 async fn send(
     socket: &mut WebSocket,
@@ -704,15 +741,31 @@ async fn send(
 async fn serve(
     mut socket: WebSocket,
     access: PortalAccess,
+    surfaces: crate::surface::SurfaceSlot,
     connection: Connection,
     mut stop: watch::Receiver<bool>,
     mut control: watch::Receiver<Option<NativeInputControl>>,
 ) {
     let limits = connection.shared.limits;
-    let subscription = tokio::select! {
+    let selection = tokio::select! {
         biased;
         _ = stopped(&mut stop) => return,
-        result = timeout(limits.handshake_timeout, handshake(&mut socket, &access)) => match result { Ok(Some(subscription)) => subscription, _ => return },
+        result = timeout(limits.handshake_timeout, handshake(&mut socket, &access)) => match result { Ok(Some(selection)) => selection, _ => return },
+    };
+    let subscription = match selection {
+        Selection::Native(subscription) => subscription,
+        Selection::Surface(surface_id) => {
+            // A watch receives no input: release the input slot first.
+            drop(connection);
+            if crate::surface::check_surface_id(&surface_id).is_err() {
+                return;
+            }
+            let Some(hub) = surfaces.get().cloned() else {
+                return;
+            };
+            crate::surface::watch::serve(socket, hub, surface_id).await;
+            return;
+        }
     };
     let Some((snapshot, mut queue)) = connection.subscribe(subscription) else {
         return;
