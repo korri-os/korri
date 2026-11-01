@@ -1138,9 +1138,10 @@ mod acquisition_gate {
     /// current, as a polled daemon's state would.
     #[derive(Default)]
     pub(super) struct Script {
-        answers: HashMap<String, Vec<Value>>,
+        pub(super) answers: HashMap<String, Vec<Value>>,
         last: HashMap<String, Value>,
         pub(super) calls: Vec<(String, Value)>,
+        pub(super) delays: HashMap<String, Duration>,
     }
 
     pub(super) fn scripted() -> (Korrid, Arc<std::sync::Mutex<Script>>) {
@@ -1151,6 +1152,10 @@ mod acquisition_gate {
             Box::pin(async move {
                 let value = serde_json::to_value(&request).unwrap();
                 let tag = value["_tag"].as_str().unwrap().to_owned();
+                let delay = script.lock().unwrap().delays.get(&tag).copied();
+                if let Some(delay) = delay {
+                    tokio::time::sleep(delay).await;
+                }
                 let mut script = script.lock().unwrap();
                 script.calls.push((tag.clone(), value["payload"].clone()));
                 let next = script
@@ -1801,4 +1806,379 @@ mod runner_chooser {
             .iter()
             .any(|action| action.id.ends_with(":end")));
     }
+}
+
+mod save_sync {
+    //! Port of `SurfaceRoot.saves.test.tsx` at the save-sync seam.
+    use super::acquisition_gate::{push, scripted};
+    use super::*;
+    use crate::surface::saves::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const HERE: &str = "here-key";
+    const ZAO: &str = "zao-key";
+
+    fn entry(id: &str, device: &str, ended: &str, parents: &[&str]) -> Value {
+        json!({ "snapshotId": id, "record": { "parents": parents, "gameId": "wl4", "runnerId": "r", "device": device,
+            "endedAt": ended, "durationSeconds": 60, "interrupted": false, "locations": [] } })
+    }
+
+    fn sync() -> (
+        Arc<SaveSync>,
+        Arc<std::sync::Mutex<super::acquisition_gate::Script>>,
+    ) {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.peer.list",
+            json!({ "_tag": "Ok", "payload": { "peers": [
+            { "devicePublicKey": ZAO, "label": "zao", "state": "ready", "updatedAt": 1 }
+        ] } }),
+        );
+        let sync = SaveSync::new(
+            korrid,
+            Arc::new(|| {}),
+            Arc::new(|| [HERE.to_owned()].into()),
+            Duration::from_millis(200),
+        );
+        (sync, script)
+    }
+
+    fn game() -> SaveGameRef {
+        SaveGameRef {
+            id: "wl4".into(),
+            surface_id: "game:wl4".into(),
+            title: "Wario Land 4".into(),
+            runner_id: None,
+        }
+    }
+
+    fn counter() -> (Arc<AtomicUsize>, crate::surface::acquisition_gate::Step) {
+        let count = Arc::new(AtomicUsize::new(0));
+        let step = Arc::clone(&count);
+        (
+            count,
+            Arc::new(move || {
+                step.fetch_add(1, Ordering::SeqCst);
+            }),
+        )
+    }
+
+    async fn settle() {
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
+    fn action(status: &Option<SurfaceStatus>, label: &str) -> String {
+        match status {
+            Some(SurfaceStatus::Busy {
+                actions: Some(actions),
+                ..
+            })
+            | Some(SurfaceStatus::Confirm { actions, .. })
+            | Some(SurfaceStatus::ChooseSave { actions, .. }) => actions
+                .iter()
+                .find(|action| action.label == label)
+                .expect("action")
+                .id
+                .clone(),
+            other => panic!("no actions on {other:?}"),
+        }
+    }
+
+    #[test]
+    fn marks_and_history_follow_korrid() {
+        let split = SaveMarkFact {
+            mark: crate::saves::types::SaveMark::Split,
+            heads: vec![],
+        };
+        assert_eq!(
+            serde_json::to_value(surface_saves_from(Some(&split))).unwrap(),
+            json!({ "_tag": "Split", "choose": { "id": "save-choose", "label": "Choose a save", "enabled": true } })
+        );
+        let synced = SaveMarkFact {
+            mark: crate::saves::types::SaveMark::Synced,
+            heads: vec![],
+        };
+        assert_eq!(
+            serde_json::to_value(surface_saves_from(Some(&synced))).unwrap(),
+            json!({ "_tag": "Synced" })
+        );
+        assert!(offers_save_history(Some(&synced)));
+        assert!(!offers_save_history(Some(&SaveMarkFact {
+            mark: crate::saves::types::SaveMark::NotSynced,
+            heads: vec![]
+        })));
+        assert!(!offers_save_history(Some(&SaveMarkFact {
+            mark: crate::saves::types::SaveMark::SyncedBySteam,
+            heads: vec![]
+        })));
+        assert!(surface_saves_from(None).is_none());
+    }
+
+    #[test]
+    fn no_failure_code_reaches_the_person() {
+        for code in [
+            "SavesSplit",
+            "SaveContentUnavailable",
+            "ActiveSessionConflict",
+            "SavePayloadUnavailable",
+            "DeviceNeedsOwner",
+            "SavesUnavailable",
+            "BrainUnreachable",
+            "PermissionDenied",
+            "GameNotFound",
+            "SomethingNew",
+        ] {
+            let reason = save_failure_reason(&crate::RpcFailure {
+                code: code.into(),
+                message: format!("{code}: raw"),
+            });
+            assert!(!reason.contains(code) && !reason.contains("raw"), "{code}");
+        }
+        assert_eq!(
+            save_failure_reason(&crate::RpcFailure {
+                code: "ActiveSessionConflict".into(),
+                message: String::new()
+            }),
+            "A game is running. Stop it, then try again."
+        );
+    }
+
+    #[test]
+    fn newest_first_by_ancestry() {
+        // A child whose clock is behind its parent's still comes first.
+        let late: crate::saves::types::SaveHistoryEntry =
+            from(entry("p", HERE, "2026-10-21T12:00:00.000Z", &[]));
+        let early: crate::saves::types::SaveHistoryEntry =
+            from(entry("q", ZAO, "2026-10-01T00:00:00.000Z", &["p"]));
+        assert_eq!(
+            newest_first(&[late, early])
+                .iter()
+                .map(|e| e.snapshot_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["q", "p"]
+        );
+        let base = from(entry("a", HERE, "2026-10-01T00:00:00.000Z", &[]));
+        let zao = from(entry("b", ZAO, "2026-10-03T00:00:00.000Z", &["a"]));
+        let here = from(entry("c", HERE, "2026-10-02T00:00:00.000Z", &["a"]));
+        assert_eq!(
+            newest_first(&[base, zao, here])
+                .iter()
+                .map(|e| e.snapshot_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["b", "c", "a"]
+        );
+    }
+
+    #[tokio::test]
+    async fn checking_offers_skip_and_skip_launches_not_checked() {
+        let (sync, script) = sync();
+        push(
+            &script,
+            "app.saves.status",
+            json!({ "_tag": "Ok", "payload": { "games": [{ "gameId": "wl4", "status": "Synced", "heads": ["h"] }] } }),
+        );
+        sync.refresh().await;
+        let (proceeded, proceed) = counter();
+        // The check answers late: it waits until Skip or the limit.
+        push(
+            &script,
+            "app.saves.check",
+            json!({ "_tag": "Ok", "payload": { "warnings": [], "status": "Synced", "inUse": [] } }),
+        );
+        script
+            .lock()
+            .unwrap()
+            .delays
+            .insert("app.saves.check".into(), Duration::from_millis(150));
+        sync.launch(game(), proceed, Arc::new(|| {}));
+        settle().await;
+        let status = sync.status();
+        assert!(
+            matches!(&status, Some(SurfaceStatus::Busy { kicker, game_id: Some(id), .. }) if kicker == "Checking other devices…" && id == "game:wl4")
+        );
+        sync.act(&action(&status, "Skip"));
+        settle().await;
+        assert_eq!(proceeded.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            sync.marks()["wl4"].mark,
+            crate::saves::types::SaveMark::NotChecked
+        );
+    }
+
+    #[tokio::test]
+    async fn a_split_asks_with_two_sides_by_name_and_a_pick_launches() {
+        let (sync, script) = sync();
+        push(
+            &script,
+            "app.saves.status",
+            json!({ "_tag": "Ok", "payload": { "games": [{ "gameId": "wl4", "status": "Split", "heads": ["b", "c"] }] } }),
+        );
+        push(
+            &script,
+            "app.saves.check",
+            json!({ "_tag": "Ok", "payload": { "warnings": [], "status": "Split", "inUse": [] } }),
+        );
+        let history = json!({ "_tag": "Ok", "payload": { "records": [
+            entry("a", HERE, "2026-10-01T00:00:00.000Z", &[]),
+            entry("b", ZAO, "2026-10-03T00:00:00.000Z", &["a"]),
+            entry("c", HERE, "2026-10-02T00:00:00.000Z", &["a"])
+        ] } });
+        push(&script, "app.saves.history", history.clone());
+        push(&script, "app.saves.choose", history);
+        let (proceeded, proceed) = counter();
+        sync.launch(game(), proceed, Arc::new(|| {}));
+        settle().await;
+        let status = sync.status();
+        let Some(SurfaceStatus::ChooseSave {
+            sides,
+            actions,
+            kicker,
+            ..
+        }) = &status
+        else {
+            panic!("{status:?}")
+        };
+        assert_eq!(kicker, "Saves split between two devices");
+        assert_eq!(
+            sides
+                .iter()
+                .map(|side| side.device.as_str())
+                .collect::<Vec<_>>(),
+            vec!["zao", "This device"]
+        );
+        assert_eq!(
+            actions
+                .iter()
+                .map(|action| action.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Not now"]
+        );
+        sync.act(&sides[0].action_id.clone());
+        settle().await;
+        assert_eq!(proceeded.load(Ordering::SeqCst), 1);
+        assert!(script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .any(|(tag, payload)| tag == "app.saves.choose" && payload["snapshotId"] == "b"));
+    }
+
+    #[tokio::test]
+    async fn in_use_elsewhere_confirms_and_launch_anyway_goes_on() {
+        let (sync, script) = sync();
+        push(
+            &script,
+            "app.saves.status",
+            json!({ "_tag": "Ok", "payload": { "games": [] } }),
+        );
+        push(
+            &script,
+            "app.saves.check",
+            json!({ "_tag": "Ok", "payload": { "warnings": ["The release changed."], "status": "Synced",
+            "inUse": [{ "device": ZAO, "since": 1_000_000u64 }] } }),
+        );
+        sync.refresh().await;
+        let (proceeded, proceed) = counter();
+        let (abandoned, abandon) = counter();
+        sync.launch(game(), proceed, abandon);
+        settle().await;
+        let status = sync.status();
+        let Some(SurfaceStatus::Confirm { kicker, detail, .. }) = &status else {
+            panic!("{status:?}")
+        };
+        assert!(kicker.starts_with("In use on zao since "));
+        assert!(detail
+            .as_deref()
+            .unwrap()
+            .starts_with("If you play here too, Korri asks which save to keep afterwards."));
+        assert!(detail.as_deref().unwrap().ends_with("The release changed."));
+        sync.act(&action(&status, "Launch anyway"));
+        settle().await;
+        assert_eq!(
+            (
+                proceeded.load(Ordering::SeqCst),
+                abandoned.load(Ordering::SeqCst)
+            ),
+            (1, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn device_needs_owner_is_plain_words_with_nothing_to_retry() {
+        let (sync, _) = sync();
+        let (abandoned, abandon) = counter();
+        sync.refuse_start(
+            game(),
+            &crate::RpcFailure {
+                code: "DeviceNeedsOwner".into(),
+                message: "raw".into(),
+            },
+            abandon,
+        );
+        assert_eq!(
+            serde_json::to_value(sync.status()).unwrap(),
+            json!({ "_tag": "Problem", "kicker": "Couldn't start Wario Land 4", "reason": "This device needs an owner before it can start a game.",
+                "canRetry": false, "gameId": "game:wl4", "gameTitle": "Wario Land 4" })
+        );
+        assert!(sync.dismiss());
+        assert_eq!(abandoned.load(Ordering::SeqCst), 1);
+        assert!(sync.status().is_none());
+    }
+
+    #[tokio::test]
+    async fn history_is_newest_first_by_name_and_restore_asks_first() {
+        let (sync, script) = sync();
+        push(
+            &script,
+            "app.saves.status",
+            json!({ "_tag": "Ok", "payload": { "games": [] } }),
+        );
+        sync.refresh().await;
+        push(
+            &script,
+            "app.saves.history",
+            json!({ "_tag": "Ok", "payload": { "current": "b", "records": [
+            entry("a", HERE, "2026-10-01T00:00:00.000Z", &[]),
+            entry("b", ZAO, "2026-10-03T00:00:00.000Z", &["a"])
+        ] } }),
+        );
+        sync.open_history(game());
+        settle().await;
+        let Some(SurfaceSaveHistory::Ready {
+            entries,
+            actions,
+            game_id,
+        }) = sync.history()
+        else {
+            panic!("not ready")
+        };
+        assert_eq!(game_id, "game:wl4");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (entry.device.as_str(), entry.current))
+                .collect::<Vec<_>>(),
+            vec![("zao", true), ("This device", false)]
+        );
+        assert!(entries[0].restore.is_none());
+        let restore = entries[1].restore.clone().unwrap();
+        assert_eq!(restore.destructive, Some(true));
+        push(
+            &script,
+            "app.saves.restore",
+            json!({ "_tag": "Err", "payload": { "code": "SavePayloadUnavailable", "message": "raw" } }),
+        );
+        sync.act(&restore.id);
+        settle().await;
+        assert!(
+            matches!(sync.history(), Some(SurfaceSaveHistory::Error { message, .. }) if message == "Couldn't restore that save. That older save's files are not on any device in reach. Try again when the device that made it is on.")
+        );
+    }
+
+    use korri_surface_treaty::SurfaceSaveHistory;
 }

@@ -28,6 +28,10 @@ use super::{
     overlay::{focused_overlay_session, OverlayController, OverlayExit},
     owner_binding::{owner_binding_status, OwnerBinding},
     runner::{Intent, RunnerChooser, RunnerLaunchIntegration},
+    saves::{
+        surface_saves_from, SaveGameRef, SaveSync, SAVE_CHECK_LIMIT, SAVE_CHOOSE_ACTION_ID,
+        SAVE_HISTORY_ACTION_ID,
+    },
     settings_model::settings_from,
     starter_pack::StarterPack,
     Notify,
@@ -95,6 +99,44 @@ fn local_runner_entry(entry: Option<&Entry>) -> Option<crate::Game> {
             .cloned(),
         _ => None,
     }
+}
+
+fn save_ref(game: &AcquisitionGameRef) -> SaveGameRef {
+    SaveGameRef {
+        id: game.id.clone(),
+        surface_id: game.surface_id.clone(),
+        title: game.title.clone(),
+        runner_id: game.runner_id.clone(),
+    }
+}
+
+/// This device's own key, as a local catalog game's source states it.
+fn local_device_keys_of(state: &LaunchablesState) -> std::collections::HashSet<String> {
+    state
+        .entries()
+        .iter()
+        .filter_map(|entry| match entry {
+            Entry::Game { game, .. } if game.source.is_local => {
+                game.source.device_public_key.clone()
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// korrid ids of games with a live session, sorted.
+fn live_game_ids_of(state: &LaunchablesState) -> Vec<String> {
+    let mut ids: Vec<String> = state
+        .entries()
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .session()
+                .map(|session| session.game_id.clone().unwrap_or_default())
+        })
+        .collect();
+    ids.sort();
+    ids
 }
 
 type StartDone =
@@ -175,6 +217,8 @@ pub struct Root {
     pub downloads: Arc<GameDownloads>,
     pub acquisition: Arc<AcquisitionGate>,
     pub runner: Arc<RunnerChooser>,
+    pub saves: Arc<SaveSync>,
+    last_live_ids: std::sync::Mutex<Option<Vec<String>>>,
     controllers: Arc<super::controllers::Controllers>,
     displays: std::sync::Mutex<Displays>,
     onboarding_was_needed: std::sync::Mutex<Option<bool>>,
@@ -292,7 +336,7 @@ impl Root {
             let starter_pack = {
                 let reload = Arc::downgrade(&launchables);
                 StarterPack::new(
-                    korrid,
+                    korrid.clone(),
                     notify.clone(),
                     Arc::new(move || {
                         if let Some(launchables) = reload.upgrade() {
@@ -301,7 +345,22 @@ impl Root {
                     }),
                 )
             };
+            let saves = {
+                let keys = this.clone();
+                SaveSync::new(
+                    korrid.clone(),
+                    notify.clone(),
+                    Arc::new(move || {
+                        keys.upgrade()
+                            .map(|root| local_device_keys_of(&root.launchables.state()))
+                            .unwrap_or_default()
+                    }),
+                    SAVE_CHECK_LIMIT,
+                )
+            };
             Self {
+                saves,
+                last_live_ids: std::sync::Mutex::new(None),
                 runner,
                 korrid: launchables_korrid,
                 presentation: std::sync::Mutex::new(Presentation::Catalog {
@@ -526,6 +585,7 @@ impl Root {
 
     /// Start every poll the portal ran while mounted.
     pub fn start(self: &Arc<Self>, mut overlay_intent: tokio::sync::watch::Receiver<u64>) {
+        self.saves.start();
         // The overlay opens as soon as korrid's Home intent lands (the
         // portal waited for its window's focus), and once at start for an
         // intent recovered before any surface asked.
@@ -616,6 +676,19 @@ impl Root {
             *last = Some(ids.clone());
             changed
         };
+        // Marks change when a session ends, and the set of local games
+        // decides which marks there are to read.
+        let live = live_game_ids_of(&state);
+        let live_changed = {
+            let mut last = self.last_live_ids.lock().expect("ids poisoned");
+            let changed = last.as_ref() != Some(&live);
+            *last = Some(live);
+            changed
+        };
+        if (changed || live_changed) && !ids.is_empty() {
+            let saves = Arc::clone(&self.saves);
+            tokio::spawn(async move { saves.refresh().await });
+        }
         if changed && !ids.is_empty() {
             let downloads = Arc::clone(&self.downloads);
             tokio::spawn(async move { downloads.refresh(Some(ids)).await });
@@ -647,8 +720,9 @@ impl Root {
             }
         }
         if let Some(problem) = self
-            .acquisition
+            .saves
             .status()
+            .or_else(|| self.acquisition.status())
             .or_else(|| self.downloads.status())
         {
             status = problem;
@@ -665,7 +739,7 @@ impl Root {
             presentation: SurfacePresentation::catalog(),
             catalog: korri_surface_treaty::SurfaceCatalog::Loading,
             status,
-            save_history: None,
+            save_history: self.saves.history(),
             runner_choice: Some(self.runner.snapshot()),
             launch_settings: None,
             clock_label: Some(self.clock.lock().expect("clock poisoned").clone()),
@@ -686,7 +760,8 @@ impl Root {
     /// Download facts on each local game, as the portal decorated them.
     fn decorate(&self, games: Vec<SurfaceGame>, state: &LaunchablesState) -> Vec<SurfaceGame> {
         let facts = self.downloads.facts();
-        if facts.is_empty() {
+        let marks = self.saves.marks();
+        if facts.is_empty() && marks.is_empty() {
             return games;
         }
         let ids = local_game_ids_by_surface_id(state);
@@ -696,6 +771,9 @@ impl Root {
                 if let Some(korrid_id) = ids.get(&game.id) {
                     if let Some(download) = surface_download_from(facts.get(korrid_id)) {
                         game.download = Some(download);
+                    }
+                    if let Some(saves) = surface_saves_from(marks.get(korrid_id)) {
+                        game.saves = Some(saves);
                     }
                 }
                 game
@@ -767,6 +845,12 @@ impl Root {
                 ready_now,
             ));
         }
+        if korrid_id
+            .as_ref()
+            .is_some_and(|id| self.saves.has_history(id))
+        {
+            actions.push(SurfaceAction::new(SAVE_HISTORY_ACTION_ID, "Saves", true));
+        }
         actions
     }
 
@@ -831,7 +915,24 @@ impl Root {
 
     /// The download gate, then the start. Resolves None when the gate
     /// closes without launching.
+    /// The save check and its questions first, then the download gate.
     fn gate(self: &Arc<Self>, game: AcquisitionGameRef, done: StartDone) {
+        let weak = Arc::downgrade(self);
+        let gate_game = game.clone();
+        let gate_done = Arc::clone(&done);
+        let proceed: super::acquisition_gate::Step = Arc::new(move || {
+            if let Some(root) = weak.upgrade() {
+                root.download_gate(gate_game.clone(), Arc::clone(&gate_done));
+            }
+        });
+        let abandon: super::acquisition_gate::Step = Arc::new(move || finish(&done, None));
+        self.saves.launch(save_ref(&game), proceed, abandon);
+    }
+
+    /// The download gate, then the start. korrid refusing the start over
+    /// artifacts goes back through the gate; over a split it asks for the
+    /// choice; with no owner it says so.
+    fn download_gate(self: &Arc<Self>, game: AcquisitionGameRef, done: StartDone) {
         let weak = Arc::downgrade(self);
         let retry_game = game.clone();
         let proceed_done = Arc::clone(&done);
@@ -848,7 +949,34 @@ impl Root {
                 {
                     if failure.code == "ArtifactsNotReady" {
                         root.launchables.dismiss_notice();
-                        root.gate(game, done);
+                        root.download_gate(game, done);
+                        return;
+                    }
+                    if failure.code == "SavesSplit" {
+                        root.launchables.dismiss_notice();
+                        let again = Arc::downgrade(&root);
+                        let again_game = game.clone();
+                        let again_done = Arc::clone(&done);
+                        let abandon_done = Arc::clone(&done);
+                        root.saves.resolve_split(
+                            save_ref(&game),
+                            Arc::new(move || {
+                                if let Some(root) = again.upgrade() {
+                                    root.download_gate(again_game.clone(), Arc::clone(&again_done));
+                                }
+                            }),
+                            Arc::new(move || finish(&abandon_done, None)),
+                        );
+                        return;
+                    }
+                    if failure.code == "DeviceNeedsOwner" {
+                        root.launchables.dismiss_notice();
+                        let abandon_done = Arc::clone(&done);
+                        root.saves.refuse_start(
+                            save_ref(&game),
+                            failure,
+                            Arc::new(move || finish(&abandon_done, None)),
+                        );
                         return;
                     }
                 }
@@ -888,6 +1016,7 @@ impl Root {
                 let current = launchables.state();
                 if !current.is_ready()
                     || self.acquisition.status().is_some()
+                    || self.saves.status().is_some()
                     || !self.runner.is_closed()
                 {
                     return;
@@ -908,6 +1037,7 @@ impl Root {
             }
             SurfaceRequest::RunAction { action_id } => {
                 if self.owner_binding.act(&action_id)
+                    || self.saves.act(&action_id)
                     || self.starter_pack.act(&action_id)
                     || self.acquisition.act(&action_id)
                 {
@@ -963,6 +1093,7 @@ impl Root {
                 let current = launchables.state();
                 if !current.is_ready()
                     || self.acquisition.status().is_some()
+                    || self.saves.status().is_some()
                     || !self.runner.is_closed()
                 {
                     return;
@@ -988,6 +1119,33 @@ impl Root {
                     }
                     return;
                 }
+                if action_id == SAVE_HISTORY_ACTION_ID || action_id == SAVE_CHOOSE_ACTION_ID {
+                    let Some(korrid_id) = local_game_ids_by_surface_id(&current)
+                        .get(&game_id)
+                        .cloned()
+                    else {
+                        return;
+                    };
+                    let Entry::Game { game, .. } = &entry else {
+                        return;
+                    };
+                    let reference = SaveGameRef {
+                        id: korrid_id.clone(),
+                        surface_id: game_id.clone(),
+                        title: game.title.clone(),
+                        runner_id: None,
+                    };
+                    let split = matches!(
+                        surface_saves_from(self.saves.marks().get(&korrid_id)),
+                        Some(korri_surface_treaty::SurfaceSaves::Split { .. })
+                    );
+                    if action_id == SAVE_HISTORY_ACTION_ID && self.saves.has_history(&korrid_id) {
+                        self.saves.open_history(reference);
+                    } else if action_id == SAVE_CHOOSE_ACTION_ID && split {
+                        self.saves.choose(reference);
+                    }
+                    return;
+                }
                 if action_id == "runners" {
                     let healthy = matches!(&current, LaunchablesState::Loaded(Loaded { content, .. }) if content.unavailable_session_status.is_none());
                     if let Some(local) = local_runner_entry(Some(&entry)).filter(|_| healthy) {
@@ -1010,12 +1168,13 @@ impl Root {
             // Korri has nothing new to try after a failed launch, so retrying
             // means re-reading the world.
             SurfaceRequest::Retry => {
-                if !self.acquisition.retry() {
+                if !self.saves.retry() && !self.acquisition.retry() {
                     launchables.reload()
                 }
             }
             SurfaceRequest::Dismiss => {
-                if !self.acquisition.dismiss() && !self.downloads.dismiss() {
+                if !self.saves.dismiss() && !self.acquisition.dismiss() && !self.downloads.dismiss()
+                {
                     launchables.dismiss_notice();
                 }
             }
@@ -1026,6 +1185,8 @@ impl Root {
                 tokio::spawn(async move { network.refresh().await });
                 let downloads = Arc::clone(&self.downloads);
                 tokio::spawn(async move { downloads.refresh(None).await });
+                let saves = Arc::clone(&self.saves);
+                tokio::spawn(async move { saves.refresh().await });
             }
             SurfaceRequest::ScanWifi => self.network.scan_wifi(),
             SurfaceRequest::ConnectWifi {
