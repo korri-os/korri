@@ -1,0 +1,11 @@
+SHELL_STATS package=zone compile_ms=66.294 logic_ms=11.731 korrid_ms=1.677 first_frame_ms=149.689
+SHELL_STATS fps=61.801 frames=309 seconds=5.000 heap_bytes=480584
+SHELL_STATS fps=62.401 frames=312 seconds=5.000 heap_bytes=480584
+SHELL_STATS fps=61.993 frames=310 seconds=5.001 heap_bytes=480588
+SHELL_STATS fps=62.208 frames=311 seconds=4.999 heap_bytes=480585
+SHELL_STATS fps=62.396 frames=312 seconds=5.000 heap_bytes=480585
+SHELL_STATS package=pico compile_ms=13.508 logic_ms=5.369 korrid_ms=0.952 first_frame_ms=42.089
+SHELL_STATS fps=60.996 frames=305 seconds=5.000 heap_bytes=406442
+SHELL_STATS fps=30.005 frames=150 seconds=4.999 heap_bytes=406628
+SHELL_STATS fps=15.399 frames=77 seconds=5.000 heap_bytes=406628
+SHELL_STATS fps=9.999 frames=50 seconds=5.000 heap_bytes=406628

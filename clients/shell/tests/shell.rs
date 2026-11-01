@@ -120,7 +120,7 @@ impl Rig {
 
     fn key(&mut self, key: Key) {
         for pressed in [true, false] {
-            self.shell.handle(Event::Host { generation: 0, event: HostEvent::Key { key, pressed } });
+            self.shell.handle(Event::Host { generation: 0, window: 0, event: HostEvent::Key { key, pressed } });
         }
         self.settle();
     }
@@ -163,10 +163,10 @@ fn keyboard_presses_reach_update_and_repeat_when_held() {
     rig.key(Key::Right);
     rig.key(Key::Right);
     assert_eq!(rig.int("count"), 2.0);
-    rig.shell.handle(Event::Host { generation: 0, event: HostEvent::Key { key: Key::Left, pressed: true } });
+    rig.shell.handle(Event::Host { generation: 0, window: 0, event: HostEvent::Key { key: Key::Left, pressed: true } });
     std::thread::sleep(Duration::from_millis(560));
     rig.until("repeats", |r| r.int("count") <= 0.0);
-    rig.shell.handle(Event::Host { generation: 0, event: HostEvent::Key { key: Key::Left, pressed: false } });
+    rig.shell.handle(Event::Host { generation: 0, window: 0, event: HostEvent::Key { key: Key::Left, pressed: false } });
     rig.settle();
     let count = rig.int("count");
     // One press plus at least one repeat after 400 ms, then every 100 ms.
@@ -224,21 +224,21 @@ fn the_overlay_follows_the_presentation() {
 }
 
 #[test]
-fn switching_replaces_the_surface_after_its_first_frame_and_releases_fonts() {
+fn switching_replaces_the_surface_after_its_first_frame_and_fonts_do_not_pile_up() {
     let mut rig = rig(&["pico", "zone"], 12, Behaviour::default());
     assert_eq!(rig.shell.current_id(), Some("pico"));
     assert_eq!(fonts::registered_faces("Pico Tiny5"), 1);
     rig.key(Key::F2);
     rig.until("zone shown, pico retired", |r| r.shell.current_id() == Some("zone") && r.shell.retiring() == 0);
     assert_eq!(Headless::live_windows(), 1);
-    assert_eq!(fonts::registered_faces("Pico Tiny5"), 0, "Pico's face is released with Pico");
     for _ in 0..6 {
         rig.key(Key::F2);
         rig.until("switched", |r| r.shell.retiring() == 0);
     }
     assert_eq!(rig.shell.current_id(), Some("zone"));
-    assert_eq!(fonts::registered_faces("Pico Tiny5"), 0);
-    assert!(fonts::registered_faces("Anton") <= 1, "faces do not pile up: {}", fonts::registered_faces("Anton"));
+    // Each font file is registered once, however often its surface loads.
+    assert_eq!(fonts::registered_faces("Pico Tiny5"), 1);
+    assert_eq!(fonts::registered_faces("Anton"), 1);
 }
 
 #[test]

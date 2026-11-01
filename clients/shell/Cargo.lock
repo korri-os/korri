@@ -1692,8 +1692,6 @@ dependencies = [
 [[package]]
 name = "i-slint-core"
 version = "1.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed2ea15059d70bc31b1a8b1eb4c34f2c5df04cb7e53f36179b43c0261231d646"
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if",
@@ -1794,8 +1792,6 @@ dependencies = [
 [[package]]
 name = "i-slint-renderer-software"
 version = "1.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f8c641e138a2cc96537cac4481f5c7c8bb8dcc66d09acaed269329c8738628a"
 dependencies = [
  "bytemuck",
  "clru",

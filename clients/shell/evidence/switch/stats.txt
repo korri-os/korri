@@ -1,0 +1,28 @@
+SHELL_STATS package=zone compile_ms=63.579 logic_ms=9.859 korrid_ms=0.829 first_frame_ms=135.557
+SHELL_STATS package=pico compile_ms=29.327 logic_ms=7.570 korrid_ms=1.019 first_frame_ms=66.755
+SHELL_STATS package=zone compile_ms=48.287 logic_ms=8.685 korrid_ms=1.094 first_frame_ms=112.563
+SHELL_STATS fps=39.202 frames=196 seconds=5.000 heap_bytes=426516
+SHELL_STATS package=pico compile_ms=23.616 logic_ms=7.285 korrid_ms=0.766 first_frame_ms=54.710
+SHELL_STATS package=zone compile_ms=58.687 logic_ms=10.058 korrid_ms=1.078 first_frame_ms=106.107
+SHELL_STATS package=pico compile_ms=31.788 logic_ms=6.079 korrid_ms=0.940 first_frame_ms=53.695
+SHELL_STATS fps=35.602 frames=178 seconds=5.000 heap_bytes=342454
+SHELL_STATS package=zone compile_ms=55.876 logic_ms=8.971 korrid_ms=0.879 first_frame_ms=109.978
+SHELL_STATS package=pico compile_ms=24.894 logic_ms=7.764 korrid_ms=0.943 first_frame_ms=57.105
+SHELL_STATS package=zone compile_ms=47.068 logic_ms=6.933 korrid_ms=0.869 first_frame_ms=106.180
+SHELL_STATS fps=21.799 frames=109 seconds=5.000 heap_bytes=426516
+SHELL_STATS package=pico compile_ms=35.196 logic_ms=10.770 korrid_ms=1.117 first_frame_ms=76.498
+SHELL_STATS package=zone compile_ms=44.761 logic_ms=9.547 korrid_ms=1.577 first_frame_ms=110.091
+SHELL_STATS fps=40.204 frames=201 seconds=4.999 heap_bytes=426516
+SHELL_STATS package=pico compile_ms=33.316 logic_ms=7.799 korrid_ms=1.313 first_frame_ms=62.192
+SHELL_STATS package=zone compile_ms=50.113 logic_ms=9.188 korrid_ms=1.001 first_frame_ms=112.938
+SHELL_STATS package=pico compile_ms=26.047 logic_ms=5.814 korrid_ms=0.924 first_frame_ms=58.766
+SHELL_STATS fps=21.997 frames=110 seconds=5.001 heap_bytes=342454
+SHELL_STATS package=zone compile_ms=54.772 logic_ms=5.144 korrid_ms=0.785 first_frame_ms=93.863
+SHELL_STATS package=pico compile_ms=24.371 logic_ms=5.300 korrid_ms=0.738 first_frame_ms=47.570
+SHELL_STATS package=zone compile_ms=39.874 logic_ms=7.049 korrid_ms=1.189 first_frame_ms=89.626
+SHELL_STATS fps=35.599 frames=178 seconds=5.000 heap_bytes=426516
+SHELL_STATS package=pico compile_ms=29.926 logic_ms=7.282 korrid_ms=1.842 first_frame_ms=70.703
+SHELL_STATS package=zone compile_ms=67.121 logic_ms=8.815 korrid_ms=1.205 first_frame_ms=124.276
+SHELL_STATS package=pico compile_ms=27.679 logic_ms=7.490 korrid_ms=0.904 first_frame_ms=57.947
+SHELL_STATS fps=27.402 frames=137 seconds=5.000 heap_bytes=342454
+SHELL_STATS package=zone compile_ms=49.546 logic_ms=8.120 korrid_ms=1.252 first_frame_ms=105.629

@@ -1,0 +1,450 @@
+diff -ruN a/i-slint-core/partial_renderer.rs i-slint-core/partial_renderer.rs
+--- a/i-slint-core/partial_renderer.rs	2026-10-31 21:17:06.127003760 -0600
++++ b/i-slint-core/partial_renderer.rs	2026-10-31 20:42:35.791777877 -0600
+@@ -197,10 +197,16 @@
+     pub data: CachedItemBoundingBoxAndTransform,
+     /// The property tracker that should be used to evaluate whether the item needs to be re-rendered
+     pub tracker: Option<core::pin::Pin<Box<PropertyTracker>>>,
++    /// The item is a `Layer` whose children the actual renderer drew itself, from a cache, when
++    /// it last rendered it (its `visit_layer` returned `ContinueRenderingWithoutChildren`). The
++    /// tracker then covers every property the children's rendering read, so while it is clean
++    /// and the layer did not move, [`PartialRenderer::compute_dirty_regions`] needs not walk the
++    /// children.
++    pub cached_layer: bool,
+ }
+ impl PartialRenderingCachedData {
+     fn new(data: CachedItemBoundingBoxAndTransform) -> Self {
+-        Self { data, tracker: None }
++        Self { data, tracker: None, cached_layer: false }
+     }
+ }
+ 
+@@ -214,11 +220,18 @@
+     /// When a tree is destroyed, this is the region that needs to be repainted
+     /// (see [`PartialRenderingState::free_graphics_resources`]).
+     tree_screen_rects: alloc::collections::BTreeMap<usize, LogicalRect>,
++    /// Items visited by the last dirty-region computation (a statistic for tests and tools).
++    walked_items: usize,
+ }
+ 
+ impl Default for PartialRendererCache {
+     fn default() -> Self {
+-        Self { slab: Default::default(), generation: 1, tree_screen_rects: Default::default() }
++        Self {
++            slab: Default::default(),
++            generation: 1,
++            tree_screen_rects: Default::default(),
++            walked_items: 0,
++        }
+     }
+ }
+ 
+@@ -526,6 +539,7 @@
+ 
+                 let rendering_data = item.cached_rendering_data_offset();
+                 let mut cache = self.cache.borrow_mut();
++                cache.walked_items += 1;
+ 
+                 let tree_key = vtable::VRef::as_ptr(crate::item_tree::ItemTreeRc::borrow(component))
+                     .as_ptr() as usize;
+@@ -541,7 +555,7 @@
+                 }
+ 
+                 match rendering_data.get_entry(&mut cache) {
+-                    Some(PartialRenderingCachedData { data: cached_geom, tracker }) => {
++                    Some(PartialRenderingCachedData { data: cached_geom, tracker, cached_layer }) => {
+                         let rendering_dirty = tracker.as_ref().is_some_and(|tr| tr.is_dirty());
+ 
+                         // Repaint when the rank among the previously known siblings changed,
+@@ -624,6 +638,12 @@
+                                 self.dirty_region.add_rect(new_screen_rect);
+                             } else if let Some(tr) = &tracker {
+                                 tr.as_ref().register_as_dependency_to_current_binding();
++                                // A clean layer the renderer drew from its own cache: nothing
++                                // below it changed (its tracker would be dirty), so its children
++                                // add no dirty region. Skip the walk.
++                                if *cached_layer {
++                                    return ItemVisitorResult::SkipChildren;
++                                }
+                             }
+ 
+                             if let CachedItemBoundingBoxAndTransform::ClipItem {
+@@ -820,7 +840,24 @@
+ 
+     forward_rendering_call!(fn visit_clip(Clip) -> RenderingResult);
+     forward_rendering_call!(fn visit_opacity(Opacity) -> RenderingResult);
+-    forward_rendering_call!(fn visit_layer(Layer) -> RenderingResult);
++    fn visit_layer(
++        &mut self,
++        obj: Pin<&Layer>,
++        item_rc: &ItemRc,
++        size: LogicalSize,
++    ) -> RenderingResult {
++        let mut ret = None;
++        Self::do_rendering(&self.cache, &obj.cached_rendering_data, item_rc, || {
++            ret = Some(self.actual_renderer.visit_layer(obj, item_rc, size));
++        });
++        let ret = ret.unwrap_or_default();
++        // Remember whether the renderer drew the children from a layer cache, so that
++        // compute_dirty_regions() can skip walking them while the layer stays clean.
++        if let Some(entry) = obj.cached_rendering_data.get_entry(&mut self.cache.borrow_mut()) {
++            entry.cached_layer = matches!(ret, RenderingResult::ContinueRenderingWithoutChildren);
++        }
++        ret
++    }
+ 
+     fn combine_clip(&mut self, rect: LogicalRect, radius: LogicalBorderRadius) -> bool {
+         self.actual_renderer.combine_clip(rect, radius)
+@@ -902,6 +939,12 @@
+ }
+ 
+ impl PartialRenderingState {
++    /// How many items the last [`Self::apply_dirty_region`] visited to compute the dirty region.
++    #[doc(hidden)]
++    pub fn walked_items(&self) -> usize {
++        self.partial_cache.borrow().walked_items
++    }
++
+     /// Creates a partial renderer that's initialized with the partial rendering caches maintained in this state structure.
+     /// Call [`Self::apply_dirty_region`] after this function to compute the correct partial rendering region.
+     pub fn create_partial_renderer<T: ItemRenderer + ItemRendererFeatures>(
+@@ -922,6 +965,7 @@
+         logical_window_size: LogicalSize,
+         dirty_region_of_existing_buffer: Option<DirtyRegion>,
+     ) -> DirtyRegion {
++        self.partial_cache.borrow_mut().walked_items = 0;
+         for (component, origin) in components {
+             if let Some(component) = crate::item_tree::ItemTreeWeak::upgrade(component) {
+                 partial_renderer.compute_dirty_regions(&component, *origin, logical_window_size);
+diff -ruN a/i-slint-renderer-software/draw_functions.rs i-slint-renderer-software/draw_functions.rs
+--- a/i-slint-renderer-software/draw_functions.rs	2026-10-31 21:17:06.130354543 -0600
++++ b/i-slint-renderer-software/draw_functions.rs	2026-10-31 20:51:29.218561811 -0600
+@@ -248,6 +248,11 @@
+                 } else if alpha == 0xff {
+                     for pix in line_buffer {
+                         let pos = pos(4).0;
++                        // A fully transparent premultiplied pixel leaves the target unchanged.
++                        // Cached layers are mostly transparent, so skip the blend there.
++                        if data[pos + 3] == 0 {
++                            continue;
++                        }
+                         let c = PremultipliedRgbaColor {
+                             alpha: data[pos + 3],
+                             red: data[pos + 0],
+diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs i-slint-renderer-software/fonts/systemfonts.rs
+--- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-10-31 21:17:06.130562295 -0600
++++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-10-31 21:09:09.224255906 -0600
+@@ -79,7 +79,27 @@
+     path: &std::path::Path,
+ ) -> Result<(), alloc::boxed::Box<dyn std::error::Error>> {
+     let requested_path = path.canonicalize().unwrap_or_else(|_| path.into());
+-    let contents = std::fs::read(requested_path)?;
++    // The interpreter registers a file's imported fonts every time a component is created.
++    // Registering the same unchanged file again would add another copy of its faces, and
++    // SWASH_FONTS above keeps every registered blob alive for the life of the thread, so a
++    // program that creates components repeatedly would grow without bound. Register each
++    // unchanged file once; a file that changed on disk is registered again.
++    let metadata = std::fs::metadata(&requested_path)?;
++    let identity = (metadata.len(), metadata.modified().ok());
++    let unchanged = REGISTERED_FONT_FILES.with(|files| {
++        files.borrow().get(&requested_path).is_some_and(|known| *known == identity)
++    });
++    if unchanged {
++        return Ok(());
++    }
++    let contents = std::fs::read(&requested_path)?;
+     collection.register_fonts(contents.into(), None);
++    REGISTERED_FONT_FILES.with(|files| files.borrow_mut().insert(requested_path, identity));
+     Ok(())
+ }
++
++#[cfg(not(target_family = "wasm"))]
++i_slint_core::thread_local! {
++    /// Font files registered by path, with the size and modification time they had.
++    static REGISTERED_FONT_FILES: RefCell<HashMap<std::path::PathBuf, (u64, Option<std::time::SystemTime>)>> = Default::default();
++}
+diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
+--- a/i-slint-renderer-software/lib.rs	2026-10-31 21:17:06.130562295 -0600
++++ b/i-slint-renderer-software/lib.rs	2026-10-31 20:45:47.407086712 -0600
+@@ -44,7 +44,7 @@
+     RenderRectangle,
+ };
+ use i_slint_core::item_tree::ItemTreeWeak;
+-use i_slint_core::items::{ItemRc, TextOverflow, TextWrap};
++use i_slint_core::items::{ItemRc, RenderingResult, TextOverflow, TextWrap};
+ use i_slint_core::lengths::{
+     LogicalBorderRadius, LogicalLength, LogicalPoint, LogicalRect, LogicalSize, LogicalVector,
+     PhysicalPx, PointLengths, RectLengths, ScaleFactor, SizeLengths,
+@@ -419,6 +419,24 @@
+     pixel_stride: usize,
+ }
+ 
++/// A `Layer` (`cache-rendering-hint: true`) rendered once into an image: its children,
++/// premultiplied, over transparency.
++#[cfg(feature = "std")]
++struct CachedLayer {
++    /// The image's top-left corner relative to the layer item's origin, in physical pixels.
++    origin: euclid::Point2D<i32, PhysicalPx>,
++    /// The fractional part of the layer's physical screen position the image was rendered at.
++    /// The children are positioned with sub-pixel precision, so a layer that moved by a fraction
++    /// of a pixel is rendered again rather than shifted.
++    phase: euclid::Vector2D<f32, PhysicalPx>,
++    image: SharedPixelBuffer<Rgba8Pixel>,
++}
++
++/// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
++/// children's rendering read changes, and cleared when the scale factor or window size changes.
++#[cfg(feature = "std")]
++type LayerCache = i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>;
++
+ impl<'a, T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for TargetPixelSlice<'a, T> {
+     type TargetPixel = T;
+ 
+@@ -452,6 +470,11 @@
+     rendering_metrics_collector: Option<Rc<RenderingMetricsCollector>>,
+     #[cfg(feature = "systemfonts")]
+     text_layout_cache: sharedparley::TextLayoutCache,
++    #[cfg(feature = "std")]
++    layer_cache: LayerCache,
++    /// The window size the layer cache was filled for.
++    #[cfg(feature = "std")]
++    layer_cache_size: Cell<PhysicalSize>,
+ }
+ 
+ impl Default for SoftwareRenderer {
+@@ -465,6 +488,10 @@
+             repaint_buffer_type: Default::default(),
+             #[cfg(feature = "systemfonts")]
+             text_layout_cache: Default::default(),
++            #[cfg(feature = "std")]
++            layer_cache: Default::default(),
++            #[cfg(feature = "std")]
++            layer_cache_size: Default::default(),
+         }
+     }
+ }
+@@ -498,9 +525,17 @@
+     pub fn set_repaint_buffer_type(&self, repaint_buffer_type: RepaintBufferType) {
+         if self.repaint_buffer_type.replace(repaint_buffer_type) != repaint_buffer_type {
+             self.partial_rendering_state.clear_cache();
++            #[cfg(feature = "std")]
++            self.layer_cache.clear_all();
+         }
+     }
+ 
++    /// How many items the last partial render visited to compute its dirty region.
++    #[doc(hidden)]
++    pub fn dirty_region_walked_items(&self) -> usize {
++        self.partial_rendering_state.walked_items()
++    }
++
+     /// Returns the kind of buffer that must be passed to  [`Self::render`]
+     pub fn repaint_buffer_type(&self) -> RepaintBufferType {
+         self.repaint_buffer_type.get()
+@@ -588,6 +623,13 @@
+         if size.is_empty() {
+             return Default::default();
+         }
++        #[cfg(feature = "std")]
++        {
++            self.layer_cache.clear_cache_if_scale_factor_changed(window.window());
++            if self.layer_cache_size.replace(size) != size {
++                self.layer_cache.clear_all();
++            }
++        }
+         assert!(
+             if rotation.is_transpose() {
+                 pixels_per_line >= size.height as usize
+@@ -616,6 +658,8 @@
+             rotation,
+             #[cfg(feature = "systemfonts")]
+             &self.text_layout_cache,
++            #[cfg(feature = "std")]
++            Some(&self.layer_cache),
+         );
+         let mut renderer = self.partial_rendering_state.create_partial_renderer(buffer_renderer);
+         let window_adapter = renderer.window_adapter.clone();
+@@ -1161,6 +1205,8 @@
+     ) -> Result<(), i_slint_core::platform::PlatformError> {
+         #[cfg(feature = "systemfonts")]
+         self.text_layout_cache.component_destroyed(component);
++        #[cfg(feature = "std")]
++        self.layer_cache.component_destroyed(component);
+         self.partial_rendering_state.free_graphics_resources(component, items);
+         Ok(())
+     }
+@@ -1199,6 +1245,8 @@
+         *self.maybe_window_adapter.borrow_mut() = Some(Rc::downgrade(window_adapter));
+         #[cfg(feature = "systemfonts")]
+         self.text_layout_cache.clear_all();
++        #[cfg(feature = "std")]
++        self.layer_cache.clear_all();
+         self.partial_rendering_state.clear_cache();
+     }
+ 
+@@ -1480,6 +1528,9 @@
+         software_renderer.rotation.get(),
+         #[cfg(feature = "systemfonts")]
+         &software_renderer.text_layout_cache,
++        // Line-by-line rendering draws layers' children directly.
++        #[cfg(feature = "std")]
++        None,
+     );
+     let mut renderer =
+         software_renderer.partial_rendering_state.create_partial_renderer(prepare_scene);
+@@ -2200,6 +2251,10 @@
+     rotation: RotationInfo,
+     #[cfg(feature = "systemfonts")]
+     text_layout_cache: &'a sharedparley::TextLayoutCache,
++    /// Where `Layer`s with `cache-rendering-hint` keep their image. `None` renders their
++    /// children directly.
++    #[cfg(feature = "std")]
++    layer_cache: Option<&'a LayerCache>,
+ }
+ 
+ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
+@@ -2210,6 +2265,7 @@
+         processor: T,
+         orientation: RenderingRotation,
+         #[cfg(feature = "systemfonts")] text_layout_cache: &'a sharedparley::TextLayoutCache,
++        #[cfg(feature = "std")] layer_cache: Option<&'a LayerCache>,
+     ) -> Self {
+         Self {
+             processor,
+@@ -2227,7 +2283,112 @@
+             rotation: RotationInfo { orientation, screen_size },
+             #[cfg(feature = "systemfonts")]
+             text_layout_cache,
++            #[cfg(feature = "std")]
++            layer_cache,
++        }
++    }
++
++    /// Draw a `Layer`'s children from its cached image, rendering the image first if the
++    /// cache has none or anything it depends on changed.
++    #[cfg(feature = "std")]
++    fn draw_cached_layer(&mut self, cache: &'a LayerCache, item_rc: &ItemRc, size: LogicalSize) {
++        let scale = self.scale_factor;
++        let screen_offset = self.current_state.offset.cast::<f32>() * scale;
++        let phase = screen_offset.to_vector() - screen_offset.floor().to_vector();
++        let render = || self.render_layer_image(cache, item_rc, size, phase);
++        let mut layer = cache.get_or_update_cache_entry(item_rc, render);
++        if layer.as_ref().is_some_and(|layer| (layer.phase - phase).square_length() > 1e-6) {
++            cache.release(item_rc);
++            layer = cache.get_or_update_cache_entry(item_rc, || {
++                self.render_layer_image(cache, item_rc, size, phase)
++            });
++        }
++        let Some(layer) = layer else { return };
++        let (width, height) = (layer.image.width() as i32, layer.image.height() as i32);
++        let local = euclid::Rect::<i32, PhysicalPx>::new(layer.origin, euclid::size2(width, height));
++        let physical_clip = (self.current_state.clip.cast() * scale).round_out().cast::<i32>();
++        let Some(clipped) = local.intersection(&physical_clip) else { return };
++        let offset = screen_offset.floor().cast::<i32>().to_vector();
++        let t = target_pixel_buffer::DrawTextureArgs {
++            data: target_pixel_buffer::TextureDataContainer::Shared {
++                buffer: SharedBufferData::SharedImage(SharedImageBuffer::RGBA8Premultiplied(
++                    layer.image.clone(),
++                )),
++                source_rect: euclid::rect(0, 0, width, height).cast(),
++            },
++            colorize: None,
++            alpha: (self.current_state.alpha * 255.) as u8,
++            dst_x: (layer.origin.x + offset.x) as _,
++            dst_y: (layer.origin.y + offset.y) as _,
++            dst_width: width as _,
++            dst_height: height as _,
++            rotation: self.rotation.orientation,
++            tiling: None,
++        };
++        self.processor
++            .process_target_texture(&t, clipped.translate(offset).cast().transformed(self.rotation));
++    }
++
++    /// Render a `Layer`'s children, unrotated and at full opacity, into a premultiplied image
++    /// that covers the layer and every child, at the given sub-pixel phase.
++    #[cfg(feature = "std")]
++    fn render_layer_image(
++        &self,
++        cache: &'a LayerCache,
++        item_rc: &ItemRc,
++        size: LogicalSize,
++        phase: euclid::Vector2D<f32, PhysicalPx>,
++    ) -> Option<Rc<CachedLayer>> {
++        let window_adapter = self.window.window_adapter();
++        let scale = self.scale_factor;
++        let bounds = i_slint_core::item_rendering::item_children_bounding_rect(item_rc, &window_adapter)
++            .union(&LogicalRect::from_size(size));
++        let physical = (bounds.cast::<f32>() * scale).translate(phase).round_out();
++        let (width, height) = (physical.size.width as usize, physical.size.height as usize);
++        if width == 0 || height == 0 || width > i16::MAX as usize || height > i16::MAX as usize {
++            return None;
+         }
++        let mut pixels = alloc::vec![PremultipliedRgbaColor::default(); width * height];
++        {
++            let mut target = TargetPixelSlice { data: &mut pixels, pixel_stride: width };
++            let mut dirty_region = PhysicalRegion::default();
++            dirty_region.rectangles[0] = euclid::Box2D::new(
++                euclid::point2(0, 0),
++                euclid::point2(width as i16, height as i16),
++            );
++            dirty_region.count = 1;
++            let mut nested = SceneBuilder::new(
++                euclid::size2(width as i16, height as i16),
++                scale,
++                self.window,
++                RenderToBuffer {
++                    buffer: &mut target,
++                    dirty_range_cache: Vec::new(),
++                    dirty_region,
++                    scale_factor: scale,
++                },
++                RenderingRotation::NoRotation,
++                #[cfg(feature = "systemfonts")]
++                self.text_layout_cache,
++                Some(cache),
++            );
++            // Item coordinates map to the image: physical = (logical * scale + phase) - origin.
++            let image_origin = (physical.origin.to_vector() - phase) / scale;
++            let image_origin = LogicalPoint::new(image_origin.x as _, image_origin.y as _);
++            nested.current_state.offset = LogicalPoint::new(-image_origin.x, -image_origin.y);
++            nested.current_state.clip = LogicalRect::new(image_origin, (physical.size / scale).cast());
++            i_slint_core::item_rendering::render_item_children(
++                &mut nested,
++                &item_rc.item_tree(),
++                item_rc.index() as isize,
++                &window_adapter,
++            );
++        }
++        let mut image = SharedPixelBuffer::<Rgba8Pixel>::new(width as u32, height as u32);
++        for (to, from) in image.make_mut_slice().iter_mut().zip(&pixels) {
++            *to = Rgba8Pixel::new(from.red, from.green, from.blue, from.alpha);
++        }
++        Some(Rc::new(CachedLayer { origin: physical.origin.cast(), phase, image }))
+     }
+ 
+     fn should_draw(&self, rect: &LogicalRect) -> bool {
+@@ -3065,6 +3226,23 @@
+         // TODO
+     }
+ 
++    fn visit_layer(
++        &mut self,
++        layer: Pin<&i_slint_core::items::Layer>,
++        item_rc: &ItemRc,
++        size: LogicalSize,
++    ) -> RenderingResult {
++        #[cfg(feature = "std")]
++        if layer.cache_rendering_hint() {
++            if let Some(cache) = self.layer_cache {
++                self.draw_cached_layer(cache, item_rc, size);
++                return RenderingResult::ContinueRenderingWithoutChildren;
++            }
++        }
++        let _ = (layer, item_rc, size);
++        RenderingResult::ContinueRenderingChildren
++    }
++
+     fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {
+         match self.current_state.clip.intersection(&other) {
+             Some(r) => {

@@ -77,3 +77,9 @@ codegen-units = 4
 
 [profile.dev.package.rquickjs-sys]
 opt-level = 3
+
+# Slint 1.18.1's software renderer with layer caching for
+# `cache-rendering-hint: true` (vendor/README.md). Same versions, same API.
+[patch.crates-io]
+i-slint-core = { path = "vendor/i-slint-core" }
+i-slint-renderer-software = { path = "vendor/i-slint-renderer-software" }

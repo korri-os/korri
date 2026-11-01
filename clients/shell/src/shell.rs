@@ -17,7 +17,6 @@
 use crate::{
     backend::{Backend, FrameCounter, HostEvent, Placement},
     engine::{self, Engine, Limits, Violation},
-    fonts::{self, FontLease, FontLedger},
     images::ImageCache,
     input::{native::NativeEvent, Press, Router},
     korrid::{Korrid, WatchEvent},
@@ -40,7 +39,8 @@ use std::{
 /// Everything the shell reacts to.
 #[derive(Debug)]
 pub enum Event {
-    Host { generation: u64, event: HostEvent },
+    /// `window`: 0 for a surface's `Surface`, 1 for its `Overlay`.
+    Host { generation: u64, window: u8, event: HostEvent },
     Native(NativeEvent),
     Model { generation: u64, revision: Option<String>, model: String },
     Reconnected { generation: u64 },
@@ -89,7 +89,6 @@ struct Loaded {
     surface_binder: Binder,
     overlay: Option<(ComponentInstance, Binder)>,
     images: ImageCache,
-    fonts: FontLease,
     watch: Option<crate::korrid::Watch>,
     drawn: Rc<Cell<bool>>,
     gameplay_overlay: bool,
@@ -110,7 +109,6 @@ pub struct Shell {
     post: Arc<dyn Post>,
     options: Options,
     router: Router,
-    fonts: FontLedger,
     current: Option<Loaded>,
     retiring: Vec<Loaded>,
     previous: Option<String>,
@@ -120,6 +118,8 @@ pub struct Shell {
     frames: FrameCounter,
     repeat: Option<slint::Timer>,
     native_active: Option<Box<dyn Fn(bool)>>,
+    /// Shell windows that have keyboard focus; `None` until the first focus event.
+    focused: Option<std::collections::HashSet<(u64, u8)>>,
     quit: Option<Box<dyn Fn(Result<(), String>)>>,
     log: Vec<String>,
 }
@@ -147,7 +147,6 @@ impl Shell {
             post,
             options,
             router: Router::new(true),
-            fonts: FontLedger::default(),
             current: None,
             retiring: Vec::new(),
             previous: None,
@@ -157,6 +156,7 @@ impl Shell {
             frames: FrameCounter::default(),
             repeat: None,
             native_active: None,
+            focused: None,
             quit: None,
             log: Vec::new(),
         }
@@ -240,7 +240,7 @@ impl Shell {
 
     pub fn handle(&mut self, event: Event) {
         match event {
-            Event::Host { generation, event } => self.host(generation, event),
+            Event::Host { generation, window, event } => self.host(generation, window, event),
             Event::Native(event) => {
                 let now = self.now();
                 let presses = self.router.native(event, now);
@@ -260,7 +260,7 @@ impl Shell {
         }
     }
 
-    fn host(&mut self, generation: u64, event: HostEvent) {
+    fn host(&mut self, generation: u64, window: u8, event: HostEvent) {
         match event {
             HostEvent::FirstFrame => {
                 if let Some(current) = self.current.as_mut().filter(|c| c.generation == generation) {
@@ -287,18 +287,34 @@ impl Shell {
                 self.presses(presses);
             }
             HostEvent::Focus(focused) => {
-                let now = self.now();
-                let presses = self.router.set_active(focused, now);
-                self.presses(presses);
-                if let Some(callback) = &self.native_active {
-                    callback(focused);
+                let windows = self.focused.get_or_insert_with(Default::default);
+                if focused {
+                    windows.insert((generation, window));
+                } else {
+                    windows.remove(&(generation, window));
                 }
+                self.follow_focus();
             }
             HostEvent::Close => {
                 if let Some(quit) = &self.quit {
                     quit(Ok(()));
                 }
             }
+        }
+    }
+
+    /// Input is live while any shell window has focus (the portal's rule:
+    /// a page without focus receives no controller input).
+    fn follow_focus(&mut self) {
+        let active = self.focused.as_ref().is_none_or(|windows| !windows.is_empty());
+        if active == self.router.active() {
+            return;
+        }
+        let now = self.now();
+        let presses = self.router.set_active(active, now);
+        self.presses(presses);
+        if let Some(callback) = &self.native_active {
+            callback(active);
         }
     }
 
@@ -388,7 +404,10 @@ impl Shell {
     }
 
     fn unload(&mut self, loaded: Loaded) {
-        let Loaded { surface, overlay, fonts, watch, engine, images, .. } = loaded;
+        let Loaded { generation, surface, overlay, watch, engine, images, .. } = loaded;
+        if let Some(windows) = &mut self.focused {
+            windows.retain(|(g, _)| *g != generation);
+        }
         drop(watch);
         if !self.backend.shared_window() {
             let _ = surface.hide();
@@ -400,8 +419,6 @@ impl Shell {
         drop(surface);
         drop(engine);
         drop(images);
-        // Fonts last: their faces may be referenced until the components go.
-        self.fonts.release(fonts);
     }
 
     fn load(&mut self, index: usize) -> Result<Loaded> {
@@ -425,16 +442,14 @@ impl Shell {
 
         self.next_generation += 1;
         let generation = self.next_generation;
-        let fonts = self.fonts.acquire(fonts::package_families(&package.dir));
         let mut images = ImageCache::new(&package.dir);
         let surface = views.surface.create()?;
         let mut surface_binder = Binder::new(&views.surface);
         let drawn = Rc::new(Cell::new(false));
-        self.attach(surface.window(), generation);
+        self.attach(surface.window(), generation, 0);
         let applied = surface_binder.apply(&surface, &view, &mut images);
         if let Err(error) = applied {
             drop(surface);
-            self.fonts.release(fonts);
             return Err(error.context("view"));
         }
         self.backend.place(surface.window(), self.options.placement);
@@ -458,7 +473,6 @@ impl Shell {
             surface_binder,
             overlay: None,
             images,
-            fonts,
             watch: Some(watch),
             drawn,
             gameplay_overlay,
@@ -478,9 +492,9 @@ impl Shell {
         Ok(loaded)
     }
 
-    fn attach(&self, window: &slint::Window, generation: u64) {
+    fn attach(&self, window: &slint::Window, generation: u64, role: u8) {
         let post = self.post.clone();
-        self.backend.attach(window, Rc::new(move |event| post.post(Event::Host { generation, event })), self.frames.clone());
+        self.backend.attach(window, Rc::new(move |event| post.post(Event::Host { generation, window: role, event })), self.frames.clone());
     }
 
     /// Show, refresh or remove the Overlay to match the presentation.
@@ -488,6 +502,9 @@ impl Shell {
         let wanted = loaded.gameplay_overlay && loaded.overlay_definition.is_some() && loaded.engine.has_overlay();
         if !wanted {
             if let Some((overlay, _)) = loaded.overlay.take() {
+                if let Some(windows) = &mut self.focused {
+                    windows.remove(&(loaded.generation, 1));
+                }
                 if !self.backend.shared_window() {
                     overlay.hide()?;
                 } else {
@@ -500,7 +517,7 @@ impl Shell {
         if loaded.overlay.is_none() {
             let definition = loaded.overlay_definition.as_ref().expect("checked");
             let component = definition.create()?;
-            self.attach(component.window(), loaded.generation);
+            self.attach(component.window(), loaded.generation, 1);
             self.backend.place(component.window(), self.options.placement);
             let binder = Binder::new(definition);
             loaded.overlay = Some((component, binder));

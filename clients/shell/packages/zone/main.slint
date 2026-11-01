@@ -1549,6 +1549,7 @@ export component Surface inherits Window {
     property <length> strip-cy: top-h / 2;
     property <length> tabs-w: t0.span + t1.span + t2.span + 2 * strip-gap;
     t0 := TabSlot {
+        cache-rendering-hint: true;
         x: (root.width - root.tabs-w) / 2;
         y: root.strip-cy;
         tab: root.tabs[0];
@@ -1556,6 +1557,7 @@ export component Surface inherits Window {
         pad-y: root.least ? root.a : 5 * root.a;
     }
     t1 := TabSlot {
+        cache-rendering-hint: true;
         x: t0.x + t0.span + root.strip-gap;
         y: root.strip-cy;
         tab: root.tabs[1];
@@ -1563,6 +1565,7 @@ export component Surface inherits Window {
         pad-y: root.least ? root.a : 5 * root.a;
     }
     t2 := TabSlot {
+        cache-rendering-hint: true;
         x: t1.x + t1.span + root.strip-gap;
         y: root.strip-cy;
         tab: root.tabs[2];
@@ -1570,6 +1573,7 @@ export component Surface inherits Window {
         pad-y: root.least ? root.a : 5 * root.a;
     }
     Hint {
+        cache-rendering-hint: true;
         x: root.margin;
         y: root.strip-cy - self.height / 2;
         key: "B";
@@ -1580,6 +1584,7 @@ export component Surface inherits Window {
         pad: root.least ? 2 * root.a : 5 * root.a;
     }
     Hint {
+        cache-rendering-hint: true;
         x: root.width - root.margin - self.span;
         y: root.strip-cy - self.height / 2;
         key: "A";
@@ -1593,20 +1598,26 @@ export component Surface inherits Window {
     // ---- The band ----
     // Only the cards in view exist (a card beyond the count is not drawn:
     // ZoneCardBand.css data-beyond), so the frame's walk stays short.
-    for c[i] in root.cards: Rectangle {
-      x: 0;
-      y: 0;
-      width: 0;
-      height: 0;
-      if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0: CardView {
-        x: root.card-x(i + root.first-index);
-        width: root.card-w(i + root.first-index);
-        height: root.side-h + root.share(i + root.first-index) * (root.card-h - root.side-h);
-        y: root.band-cy - self.height / 2;
-        card: c;
-        focused: i == root.focused-card;
-        a: root.a;
-      }
+    // The whole band is one cached layer while it rests; each card is one
+    // too, so a snap re-renders only the cards whose size changes.
+    Rectangle {
+        cache-rendering-hint: true;
+        for c[i] in root.cards: Rectangle {
+          x: 0;
+          y: 0;
+          width: 0;
+          height: 0;
+          if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0: CardView {
+            cache-rendering-hint: true;
+            x: root.card-x(i + root.first-index);
+            width: root.card-w(i + root.first-index);
+            height: root.side-h + root.share(i + root.first-index) * (root.card-h - root.side-h);
+            y: root.band-cy - self.height / 2;
+            card: c;
+            focused: i == root.focused-card;
+            a: root.a;
+          }
+        }
     }
     // The cursor: two triangles beside the focused card, breathing toward
     // it; at an end of the band the one with nothing beyond it is the
@@ -1633,6 +1644,7 @@ export component Surface inherits Window {
 
     // ---- FIND: the body's top right corner ----
     if root.find-shown: Button {
+        cache-rendering-hint: true;
         x: root.width - 12 * root.a - self.span;
         y: root.body-y + 4 * root.a;
         label: root.find-label;
@@ -1650,6 +1662,7 @@ export component Surface inherits Window {
     property <length> facts-panel-w: facts-run + 2 * (facts-lean + 2 * a);
     property <length> facts-x: (root.width - facts-panel-w) / 2;
     if root.fact-count > 0: Panel {
+        cache-rendering-hint: true;
         x: root.facts-x;
         y: root.facts-y;
         width: root.facts-panel-w;
@@ -1658,30 +1671,35 @@ export component Surface inherits Window {
         ink: Z.black;
     }
     f0 := FactSlot {
+        cache-rendering-hint: true;
         x: root.facts-x + root.facts-lean + 2 * root.a;
         y: root.facts-y + 4 * root.a;
         fact: root.facts[0];
         a: root.a;
     }
     f1 := FactSlot {
+        cache-rendering-hint: true;
         x: f0.x + f0.span + root.fact-between;
         y: f0.y;
         fact: root.facts[1];
         a: root.a;
     }
     f2 := FactSlot {
+        cache-rendering-hint: true;
         x: f1.x + f1.span + root.fact-between;
         y: f0.y;
         fact: root.facts[2];
         a: root.a;
     }
     f3 := FactSlot {
+        cache-rendering-hint: true;
         x: f2.x + f2.span + root.fact-between;
         y: f0.y;
         fact: root.facts[3];
         a: root.a;
     }
     f4 := FactSlot {
+        cache-rendering-hint: true;
         x: f3.x + f3.span + root.fact-between;
         y: f0.y;
         fact: root.facts[4];
@@ -1720,6 +1738,7 @@ export component Surface inherits Window {
         return acts-top + (i < line-1 ? 0 : 2 * c1 + 4 * a);
     }
     b0 := Button {
+        cache-rendering-hint: true;
         visible: root.act-count > 0;
         x: root.act-x(0);
         y: root.act-y(0);
@@ -1730,6 +1749,7 @@ export component Surface inherits Window {
         nudge: root.nudge-button;
     }
     b1 := Button {
+        cache-rendering-hint: true;
         visible: root.act-count > 1;
         x: root.act-x(1);
         y: root.act-y(1);
@@ -1740,6 +1760,7 @@ export component Surface inherits Window {
         nudge: root.nudge-button;
     }
     b2 := Button {
+        cache-rendering-hint: true;
         visible: root.act-count > 2;
         x: root.act-x(2);
         y: root.act-y(2);
@@ -1750,6 +1771,7 @@ export component Surface inherits Window {
         nudge: root.nudge-button;
     }
     b3 := Button {
+        cache-rendering-hint: true;
         visible: root.act-count > 3;
         x: root.act-x(3);
         y: root.act-y(3);
@@ -1784,6 +1806,7 @@ export component Surface inherits Window {
     property <length> name-w: Math.max(0, signal-w - fixed-signal);
 
     if root.clock != "": Panel {
+        cache-rendering-hint: true;
         x: root.margin;
         y: root.py;
         width: root.timer-w;
@@ -1792,6 +1815,7 @@ export component Surface inherits Window {
         ink: Z.black;
     }
     time-word := Caps {
+        cache-rendering-hint: true;
         visible: root.clock != "";
         x: root.margin + root.foot-side;
         y: root.foot-cap-top;
@@ -1801,6 +1825,7 @@ export component Surface inherits Window {
         hud: true;
     }
     clock-word := Caps {
+        cache-rendering-hint: true;
         visible: root.clock != "";
         x: root.margin + root.foot-side + time-word.natural + 3 * root.a;
         y: root.foot-cap-top;
@@ -1809,6 +1834,7 @@ export component Surface inherits Window {
         a: root.a;
     }
     if root.signal.shown: Panel {
+        cache-rendering-hint: true;
         x: root.signal-x;
         y: root.py;
         width: root.signal-w;
@@ -1817,6 +1843,7 @@ export component Surface inherits Window {
         ink: Z.black;
     }
     ssid-word := Caps {
+        cache-rendering-hint: true;
         visible: root.signal.shown;
         x: root.signal-x + root.foot-side;
         y: root.foot-cap-top;
@@ -1837,6 +1864,7 @@ export component Surface inherits Window {
         background: i < root.signal.bars ? Z.white : Z.track;
     }
     strength-word := Caps {
+        cache-rendering-hint: true;
         visible: root.signal.shown;
         x: root.bars-x + 16 * root.a;
         y: root.foot-cap-top;
@@ -1845,6 +1873,7 @@ export component Surface inherits Window {
         a: root.a;
     }
     build-word := FlatCaps {
+        cache-rendering-hint: true;
         x: root.build-x;
         y: root.foot-cap-top;
         box: Math.max(1px, root.build-w);

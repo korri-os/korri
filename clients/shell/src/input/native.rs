@@ -256,6 +256,11 @@ fn serve(
         while let Ok(Command::Active(value)) = commands.try_recv() {
             *active = value;
         }
+        if *active && attachment.retired && attachment.request.is_none() {
+            // Focus came back while this attachment is retired: never reactivate it;
+            // reconnect for a fresh baseline.
+            return End::Fresh;
+        }
         if !*active && !attachment.retired {
             // Retire locally first, then ask korrid to release this generation.
             attachment.retired = true;

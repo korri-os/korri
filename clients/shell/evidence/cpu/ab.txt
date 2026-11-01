@@ -1,0 +1,9 @@
+# Zone GAMES idle, 640x480, Xvfb, 30 s each, interleaved on a busy workstation
+# (i9-11900H, load average 11-39 from other builds). Same binary; `before` is
+# Zone's main.slint without cache-rendering-hint, `after` with it.
+before zone-idle-640x480 cpu_one_core_percent=37.6
+after  zone-idle-640x480 cpu_one_core_percent=7.7
+after  zone-idle-640x480 cpu_one_core_percent=6.7
+before zone-idle-640x480 cpu_one_core_percent=32.0
+after  zone-idle-640x480 cpu_one_core_percent=8.1
+# First quiet-machine pair (20 s): before 27.5 (pre-patch binary), after 6.2-6.7.

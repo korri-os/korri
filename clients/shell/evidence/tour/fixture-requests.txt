@@ -1,0 +1,9 @@
+KORRID_ADDRESS=127.0.0.1:40369
+KORRID_PORTAL_ORIGIN=http://127.0.0.1:9
+{"request":{"_tag":"FocusGame","gameId":"hollow-knight"},"surface":"zone"}
+{"request":{"_tag":"FocusGame","gameId":"tetris"},"surface":"zone"}
+{"request":{"_tag":"FocusGame","gameId":"hollow-knight"},"surface":"zone"}
+{"request":{"_tag":"FocusGame","gameId":"celeste"},"surface":"pico"}
+{"request":{"_tag":"FocusGame","gameId":"hollow-knight"},"surface":"pico"}
+{"request":{"_tag":"DismissGameplayOverlay"},"surface":"pico"}
+{"pico.font":"tom-thumb"}

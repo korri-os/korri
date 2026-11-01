@@ -49,6 +49,8 @@ struct State {
     acks: Vec<(String, String)>,
     /// Native input frames to send to subscribers.
     input: VecDeque<String>,
+    /// Device frames every new subscription starts with, as korrid's snapshot.
+    devices: Vec<String>,
     input_subscribers: usize,
     calls: Vec<String>,
     generation: u64,
@@ -79,6 +81,7 @@ impl Fixture {
                 requests: Vec::new(),
                 acks: Vec::new(),
                 input: VecDeque::new(),
+                devices: Vec::new(),
                 input_subscribers: 0,
                 calls: Vec::new(),
                 generation: 0,
@@ -168,7 +171,14 @@ impl Fixture {
     pub fn send_input(&self, frames: &[Value]) {
         let (lock, changed) = &*self.shared;
         let mut state = lock.lock().unwrap();
-        state.input.extend(frames.iter().map(Value::to_string));
+        for frame in frames {
+            match frame["kind"].as_str() {
+                Some("device-added") | Some("device-state-complete") => state.devices.push(frame.to_string()),
+                Some("initialization-complete") => continue, // sent per subscription
+                _ => {}
+            }
+            state.input.push_back(frame.to_string());
+        }
         changed.notify_all();
     }
 
@@ -185,12 +195,12 @@ impl Fixture {
         }
     }
 
-    /// One gamepad with a neutral baseline, initialized.
+    /// One gamepad with a neutral baseline. It is part of every later
+    /// subscription's snapshot, as korrid would send it.
     pub fn gamepad_frames(device: &str) -> Vec<Value> {
         vec![
             json!({"kind": "device-added", "device": {"deviceId": device, "class": "gamepad", "name": "Fixture pad", "capabilities": []}}),
             json!({"kind": "device-state-complete", "deviceId": device}),
-            json!({"kind": "initialization-complete", "generation": "1"}),
         ]
     }
 
@@ -441,13 +451,20 @@ fn watch(mut socket: tungstenite::WebSocket<Replay>, shared: &Arc<(Mutex<State>,
 
 fn input(mut socket: tungstenite::WebSocket<Replay>, shared: &Arc<(Mutex<State>, Condvar)>) -> io::Result<()> {
     let (lock, changed) = &**shared;
-    {
+    let (snapshot, generation) = {
         let mut state = lock.lock().unwrap();
         state.input_subscribers += 1;
         state.generation += 1;
-    }
+        state.input.clear();
+        (state.devices.clone(), state.generation)
+    };
     socket.get_ref().stream.set_read_timeout(Some(Duration::from_millis(20)))?;
     let result = (|| -> io::Result<()> {
+        for frame in snapshot {
+            socket.send(Message::Text(frame.into())).map_err(io::Error::other)?;
+        }
+        let complete = json!({"kind": "initialization-complete", "generation": generation.to_string()}).to_string();
+        socket.send(Message::Text(complete.into())).map_err(io::Error::other)?;
         loop {
             let frames: Vec<String> = {
                 let mut state = lock.lock().unwrap();
@@ -461,6 +478,14 @@ fn input(mut socket: tungstenite::WebSocket<Replay>, shared: &Arc<(Mutex<State>,
             }
             match socket.read() {
                 Ok(Message::Close(_)) => return Ok(()),
+                Ok(Message::Text(text)) => {
+                    // A retire is answered as korrid answers it.
+                    let message: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                    if message["kind"] == "retire" {
+                        let retired = json!({"kind": "retired", "generation": message["generation"]}).to_string();
+                        socket.send(Message::Text(retired.into())).map_err(io::Error::other)?;
+                    }
+                }
                 Ok(_) => {}
                 Err(tungstenite::Error::Io(e)) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
                 Err(_) => return Ok(()),
