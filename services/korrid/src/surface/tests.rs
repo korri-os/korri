@@ -603,14 +603,29 @@ fn idle_outcomes(game_count: usize) -> HashMap<String, Value> {
 
 type Outcomes = Arc<std::sync::Mutex<HashMap<String, Value>>>;
 
+thread_local! {
+    /// The Home intent of the hub a test made last.
+    static INTENT: std::cell::RefCell<Option<Arc<crate::overlay_intent::OverlayIntent>>> = const { std::cell::RefCell::new(None) };
+}
+
 fn hub_with(outcomes: HashMap<String, Value>) -> (Arc<SurfaceHub>, Outcomes, tempfile::TempDir) {
     let outcomes = Arc::new(std::sync::Mutex::new(outcomes));
     let directory = tempfile::tempdir().unwrap();
+    let intent = Arc::new(crate::overlay_intent::OverlayIntent::default());
     let hub = SurfaceHub::new(
         in_memory_korrid(Arc::clone(&outcomes)),
         directory.path().join("private"),
+        intent.subscribe(),
     );
+    INTENT.with(|slot| *slot.borrow_mut() = Some(intent));
     (hub, outcomes, directory)
+}
+
+/// What a Home freeze does to korrid's intent.
+fn home_intent(launch_id: &str) {
+    INTENT.with(|slot| {
+        *slot.borrow().as_ref().unwrap().lock().unwrap() = Some(launch_id.into());
+    });
 }
 
 async fn settled(hub: &Arc<SurfaceHub>, surface: &str) -> SurfaceModel {
@@ -1065,6 +1080,7 @@ mod overlay {
         );
         let (hub, _, _directory) = hub_with(outcomes);
         hub.model("pico").unwrap();
+        home_intent("L1");
         let mut shown = None;
         for _ in 0..400 {
             let model = hub.model("pico").unwrap();

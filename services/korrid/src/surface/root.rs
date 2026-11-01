@@ -275,12 +275,12 @@ impl Root {
     }
 
     /// One inspection of korrid's Home intent while the catalog shows.
-    async fn inspect_overlay(self: &Arc<Self>) {
+    async fn inspect_overlay(self: &Arc<Self>, from_intent: bool) {
         let retained = match &*self.presentation.lock().expect("presentation poisoned") {
             Presentation::Catalog { retained_failure } => retained_failure.clone(),
             Presentation::Overlay(_) => return,
         };
-        let found = match &retained {
+        let found = match retained.as_ref().filter(|_| !from_intent) {
             // While the catalog stays in front after Open Korri, only the
             // exact launch's focus-failed phase reopens it.
             Some(launch_id) => {
@@ -288,6 +288,13 @@ impl Root {
             }
             None => focused_overlay_session(&self.korrid, true, None, 4).await,
         };
+        let found = found.filter(|active| {
+            // A Home intent for the launch the person left with Open Korri
+            // reopens it only when it is focus-failed.
+            !from_intent
+                || retained.as_ref() != Some(&active.launch_id)
+                || active.phase.as_deref() == Some("focus-failed")
+        });
         let Some(active) = found else { return };
         let still_catalog = matches!(
             &*self.presentation.lock().expect("presentation poisoned"),
@@ -299,7 +306,20 @@ impl Root {
     }
 
     /// Start every poll the portal ran while mounted.
-    pub fn start(self: &Arc<Self>) {
+    pub fn start(self: &Arc<Self>, mut overlay_intent: tokio::sync::watch::Receiver<u64>) {
+        // The overlay opens as soon as korrid's Home intent lands (the
+        // portal waited for its window's focus), and once at start for an
+        // intent recovered before any surface asked.
+        let this = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                overlay_intent.borrow_and_update();
+                this.inspect_overlay(true).await;
+                if overlay_intent.changed().await.is_err() {
+                    return;
+                }
+            }
+        });
         let this = Arc::clone(self);
         tokio::spawn(async move {
             let mut tick: u64 = 0;
@@ -310,6 +330,8 @@ impl Root {
                     // The overlay re-reads its launch every second.
                     Some(controller) if tick.is_multiple_of(4) => controller.refresh().await,
                     Some(_) => {}
+                    // After Open Korri the portal watched the exact launch's
+                    // focus-failed phase every 250 ms.
                     None => {
                         let retained = matches!(
                             &*this.presentation.lock().expect("presentation poisoned"),
@@ -317,8 +339,8 @@ impl Root {
                                 retained_failure: Some(_)
                             }
                         );
-                        if retained || tick.is_multiple_of(4) {
-                            this.inspect_overlay().await;
+                        if retained {
+                            this.inspect_overlay(false).await;
                         }
                     }
                 }
