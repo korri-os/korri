@@ -86,6 +86,22 @@ impl Korrid {
         Self { connection }
     }
 
+    /// Wait until korrid accepts connections, at most `limit`. The shell may
+    /// start before korrid: it does not order after korrid's network wait.
+    pub fn wait_until_listening(&self, limit: Duration) -> bool {
+        let deadline = std::time::Instant::now() + limit;
+        loop {
+            if TcpStream::connect_timeout(&loopback(self.connection.port), CONNECT_TIMEOUT).is_ok()
+            {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
     pub fn connection(&self) -> &Connection {
         &self.connection
     }

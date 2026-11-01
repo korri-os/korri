@@ -20,9 +20,12 @@ use std::{
 };
 
 const USAGE: &str = "usage:
-  korri-shell --packages DIR [--cache DIR] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--stats]
+  korri-shell --packages DIR [--cache DIR] [--installed] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--stats]
   korri-shell install --packages DIR [--cache DIR]
   korri-shell verify PACKAGE_DIR";
+
+/// How long the shell waits for korrid at start; systemd then restarts it.
+const KORRID_START_LIMIT: Duration = Duration::from_secs(60);
 
 struct Arguments {
     command: Command,
@@ -31,6 +34,8 @@ struct Arguments {
     surfaces: Option<Vec<String>>,
     placement: Placement,
     stats: bool,
+    /// Read the summaries `install` wrote; never verify at run time.
+    installed: bool,
 }
 
 #[derive(PartialEq)]
@@ -52,6 +57,7 @@ fn arguments() -> Result<Arguments, String> {
         surfaces: None,
         placement: Placement::Fullscreen,
         stats: false,
+        installed: false,
     };
     let mut first = true;
     while let Some(arg) = args.next() {
@@ -73,6 +79,7 @@ fn arguments() -> Result<Arguments, String> {
                     .ok_or("--placement is fullscreen or WxH")?
             }
             "--stats" => parsed.stats = true,
+            "--installed" => parsed.installed = true,
             _ => return Err(USAGE.to_owned()),
         }
         first = false;
@@ -180,7 +187,11 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
 
     let connection = Connection::from_environment().map_err(anyhow::Error::msg)?;
     config::scrub_environment();
-    let loadable = cache.loadable(&packages, limits)?;
+    let loadable = if arguments.installed {
+        cache.installed(&packages)
+    } else {
+        cache.loadable(&packages, limits)?
+    };
     anyhow::ensure!(
         !loadable.is_empty(),
         "no verified surface package in {}",
@@ -194,10 +205,16 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
         korri_shell::backend::sdl::Sdl::install(arguments.placement).map_err(anyhow::Error::msg)?,
     );
 
+    let korrid = Korrid::new(connection.clone());
+    anyhow::ensure!(
+        korrid.wait_until_listening(KORRID_START_LIMIT),
+        "korrid is not listening on 127.0.0.1:{}",
+        connection.port
+    );
     let post: Arc<dyn Post> = Arc::new(EventLoopPost);
     let mut shell = Shell::new(
         loadable,
-        Korrid::new(connection.clone()),
+        korrid,
         backend,
         post.clone(),
         Options {

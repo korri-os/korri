@@ -63,6 +63,14 @@ let
 in
 {
   inherit package;
+  # The surface packages, verified at build time (nix/installed.nix).
+  surfaces = import ./nix/installed.nix { inherit pkgs; };
+  moduleCheck =
+    { nixpkgs, korri }:
+    import ./nix/module-check.nix {
+      inherit pkgs nixpkgs korri;
+    };
+  freezerCheck = korrid: import ./nix/freezer-vm-test.nix { inherit pkgs korrid; };
 
   help = ''
 

@@ -521,22 +521,46 @@ impl Cache {
     /// Startup: the packages that may load, in id order. Reads the index and
     /// file metadata only; a package without a current entry is verified
     /// now, which also rebuilds a missing index.
+    /// The index entry for `package` when its files still match what was
+    /// verified and its summary exists.
+    fn unchanged<'a>(&self, index: &'a Index, package: &Package) -> Option<&'a Entry> {
+        let entry = index
+            .entries
+            .iter()
+            .find(|e| e.id == package.id && e.dir == package.dir)?;
+        let same = files(&package.dir).is_ok_and(|now| {
+            now.into_iter()
+                .map(|(p, (s, m))| (p, s, m))
+                .collect::<Vec<_>>()
+                == entry.files
+        });
+        (same && self.summary_path(&package.id).is_file()).then_some(entry)
+    }
+
+    /// The packages `install` passed and that have not changed since, without
+    /// verifying anything: a read-only, installed cache (the device image).
+    pub fn installed(&self, packages: &[Package]) -> Vec<Package> {
+        let index = self.read_index().unwrap_or_default();
+        let mut loadable = Vec::new();
+        for package in packages {
+            match self.unchanged(&index, package) {
+                Some(entry) if entry.pass => loadable.push(package.clone()),
+                Some(_) => eprintln!("korri-shell: {} failed verification at install", package.id),
+                None => eprintln!(
+                    "korri-shell: {} is not installed or changed since install; not loaded",
+                    package.id
+                ),
+            }
+        }
+        loadable
+    }
+
     pub fn loadable(&self, packages: &[Package], limits: Limits) -> Result<Vec<Package>> {
         let index = self.read_index().unwrap_or_default();
         let mut loadable = Vec::new();
         for package in packages {
-            let current = index
-                .entries
-                .iter()
-                .find(|e| e.id == package.id && e.dir == package.dir);
-            let unchanged = current.is_some_and(|entry| {
-                files(&package.dir).is_ok_and(|now| {
-                    now.into_iter()
-                        .map(|(p, (s, m))| (p, s, m))
-                        .collect::<Vec<_>>()
-                        == entry.files
-                }) && self.summary_path(&package.id).is_file()
-            });
+            let current = self.unchanged(&index, package);
+            let unchanged = current.is_some();
             let pass = if unchanged {
                 current.is_some_and(|e| e.pass)
             } else {
@@ -758,5 +782,34 @@ mod tests {
             1
         );
         assert!(cache.read_index().is_some());
+    }
+
+    #[test]
+    fn installed_reads_summaries_and_never_verifies() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = Cache::new(&root.path().join("cache"));
+        let package = planted(
+            &root.path().join("packages/demo"),
+            VIEW,
+            &logic("return { count: s.n }"),
+        );
+        // Nothing installed: nothing loads, and nothing is written.
+        assert!(cache.installed(std::slice::from_ref(&package)).is_empty());
+        assert!(cache.read_index().is_none());
+        cache.install(&package, Limits::default()).unwrap();
+        assert_eq!(
+            cache.installed(std::slice::from_ref(&package)),
+            vec![package.clone()]
+        );
+        // A changed file is refused, not re-verified.
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(
+            package.dir.join("logic.js"),
+            logic("return { count: s.n + 1 }"),
+        )
+        .unwrap();
+        let index = std::fs::read(cache.index_path()).unwrap();
+        assert!(cache.installed(std::slice::from_ref(&package)).is_empty());
+        assert_eq!(std::fs::read(cache.index_path()).unwrap(), index);
     }
 }
