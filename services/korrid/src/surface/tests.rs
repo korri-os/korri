@@ -616,6 +616,7 @@ fn hub_with(outcomes: HashMap<String, Value>) -> (Arc<SurfaceHub>, Outcomes, tem
         in_memory_korrid(Arc::clone(&outcomes)),
         directory.path().join("private"),
         intent.subscribe(),
+        Arc::default(),
     );
     INTENT.with(|slot| *slot.borrow_mut() = Some(intent));
     (hub, outcomes, directory)
@@ -883,8 +884,8 @@ async fn a_launch_request_reserves_and_starts_the_exact_local_game() {
 async fn watch_pushes_whole_models_and_waits_for_each_ack() {
     use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
     let (hub, _, _directory) = hub_with(idle_outcomes(60));
-    let slot: super::SurfaceSlot = Arc::new(std::sync::OnceLock::new());
-    let _ = slot.set(Arc::clone(&hub));
+    let slot: super::SurfaceSlot = Arc::default();
+    let _ = slot.hub.set(Arc::clone(&hub));
     let access = crate::PortalAccess::new(
         "watch-capability",
         "http://portal.test",
@@ -1467,4 +1468,53 @@ mod acquisition_gate {
         assert!(gate.dismiss());
         assert!(gate.status().is_none());
     }
+}
+
+/// The native input korrid publishes to the portal socket feeds `controllers`.
+#[tokio::test]
+async fn native_input_reports_controllers() {
+    use crate::native_input::*;
+    let link: super::SurfaceSlot = Arc::default();
+    let access = crate::PortalAccess::new("c", "http://portal.test", crate::PortalPermission::Full);
+    let (_router, source) =
+        crate::portal_input::router_with_surfaces(access, Arc::clone(&link), Default::default());
+    let device = |id: &str, class| NativeInputDeviceInfo {
+        device_id: id.into(),
+        class,
+        name: format!("{id} name"),
+        capabilities: Vec::new(),
+        axes: None,
+    };
+    source
+        .publish_device(device("pad", NativeInputDeviceClass::Gamepad), Vec::new())
+        .unwrap();
+    source
+        .publish_device(device("keys", NativeInputDeviceClass::Keyboard), Vec::new())
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(link.controllers.snapshot()).unwrap(),
+        json!([{ "id": "pad", "name": "pad name", "heard": false }])
+    );
+    source
+        .publish_frame(
+            "pad",
+            vec![NativeInputInput {
+                kind: NativeInputInputKind::Input,
+                device_id: "pad".into(),
+                class: NativeInputDeviceClass::Gamepad,
+                input_type: 1.0,
+                code: 304.0,
+                value: 1.0,
+                timestamp: 1.0,
+            }],
+        )
+        .unwrap();
+    assert!(link.controllers.snapshot()[0].heard);
+    source
+        .publish(NativeInputEvent::DeviceRemoved(NativeInputDeviceRemoved {
+            kind: NativeInputDeviceRemovedKind::DeviceRemoved,
+            device_id: "pad".into(),
+        }))
+        .unwrap();
+    assert!(link.controllers.snapshot().is_empty());
 }

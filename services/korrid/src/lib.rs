@@ -4602,7 +4602,10 @@ fn surface_accepted(result: Result<(), RpcFailure>) -> surface::SurfaceAcceptedO
 /// The native surface host for one portal router. It reaches korrid the way
 /// the portal did: the same typed requests, under the same capability and
 /// permission, handed to `dispatch` in process.
-fn surface_hub_for(browser: &AppState) -> Arc<surface::SurfaceHub> {
+fn surface_hub_for(
+    browser: &AppState,
+    controllers: Arc<surface::controllers::Controllers>,
+) -> Arc<surface::SurfaceHub> {
     let base = browser.clone();
     let send: surface::korrid::Send_ = Arc::new(move |request| {
         let state = base.clone();
@@ -4622,6 +4625,7 @@ fn surface_hub_for(browser: &AppState) -> Arc<surface::SurfaceHub> {
         surface::korrid::Korrid::new(send),
         browser.private_state_root().to_path_buf(),
         browser.overlay_intent.subscribe(),
+        controllers,
     )
 }
 
@@ -4907,9 +4911,14 @@ fn portal_router_from_state(state: AppState) -> Router {
 
 fn portal_router_with_surfaces(mut state: AppState, slot: Option<surface::SurfaceSlot>) -> Router {
     if state.surfaces.is_none() {
-        let hub = surface_hub_for(&state);
-        if let Some(slot) = slot {
-            let _ = slot.set(Arc::clone(&hub));
+        // Without a native-input router there are no controllers to report.
+        let controllers = slot
+            .as_ref()
+            .map(|link| Arc::clone(&link.controllers))
+            .unwrap_or_default();
+        let hub = surface_hub_for(&state, controllers);
+        if let Some(link) = slot {
+            let _ = link.hub.set(Arc::clone(&hub));
         }
         state.surfaces = Some(hub);
     }
@@ -5018,7 +5027,7 @@ pub fn host_routers_with_federation(
     portal_access: Option<PortalAccess>,
 ) -> (Router, Router, Router, host::HostRuntime) {
     let private_state_root = private_state_root.into();
-    let surfaces: surface::SurfaceSlot = Arc::new(std::sync::OnceLock::new());
+    let surfaces: surface::SurfaceSlot = Arc::default();
     let native = portal_access.clone().map(|access| {
         portal_input::router_with_surfaces(
             access,

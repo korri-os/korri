@@ -13,6 +13,7 @@
 
 pub mod acquisition_gate;
 pub mod catalog;
+pub mod controllers;
 pub mod downloads;
 pub mod korrid;
 pub mod launchables;
@@ -173,6 +174,7 @@ pub struct SurfaceHub {
     korrid: korrid::Korrid,
     /// Announces every change of korrid's Home intent.
     overlay_intent: tokio_watch::Receiver<u64>,
+    controllers: Arc<controllers::Controllers>,
     root: OnceLock<Arc<Root>>,
     /// Bumped by every controller publish.
     host_revision: Arc<AtomicU64>,
@@ -183,17 +185,27 @@ pub struct SurfaceHub {
     preferences: PreferenceStore,
 }
 
-/// Where the native-input router finds the hub its portal router made.
-pub type SurfaceSlot = Arc<OnceLock<Arc<SurfaceHub>>>;
+/// What a portal router and its native-input router share: the hub the
+/// portal router makes (the watch finds it here), and the controllers the
+/// native input feeds (the hub reads them).
+#[derive(Default)]
+pub struct SurfaceLink {
+    pub hub: OnceLock<Arc<SurfaceHub>>,
+    pub controllers: Arc<controllers::Controllers>,
+}
+
+pub type SurfaceSlot = Arc<SurfaceLink>;
 
 impl SurfaceHub {
     pub fn new(
         korrid: korrid::Korrid,
         private_state_root: PathBuf,
         overlay_intent: tokio_watch::Receiver<u64>,
+        controllers: Arc<controllers::Controllers>,
     ) -> Arc<Self> {
         let (revision, _) = tokio_watch::channel(0);
         Arc::new(Self {
+            controllers,
             overlay_intent,
             korrid,
             root: OnceLock::new(),
@@ -219,7 +231,17 @@ impl SurfaceHub {
                 host_revision.fetch_add(1, Ordering::SeqCst);
                 revision.send_modify(|revision| *revision += 1);
             });
-            let root = Root::new(self.korrid.clone(), notify);
+            let root = Root::new(
+                self.korrid.clone(),
+                notify.clone(),
+                Arc::clone(&self.controllers),
+            );
+            let mut controller_changes = self.controllers.subscribe();
+            tokio::spawn(async move {
+                while controller_changes.changed().await.is_ok() {
+                    notify();
+                }
+            });
             root.start(self.overlay_intent.clone());
             // Effects the portal ran when its state changed.
             let reacting = Arc::downgrade(&root);

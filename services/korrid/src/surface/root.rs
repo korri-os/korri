@@ -131,6 +131,8 @@ pub struct Root {
     pub starter_pack: Arc<StarterPack>,
     pub downloads: Arc<GameDownloads>,
     pub acquisition: Arc<AcquisitionGate>,
+    controllers: Arc<super::controllers::Controllers>,
+    onboarding_was_needed: std::sync::Mutex<Option<bool>>,
     clock: std::sync::Mutex<String>,
     last_local_ids: std::sync::Mutex<Option<Vec<String>>>,
     notify: Notify,
@@ -144,7 +146,11 @@ pub struct Facts {
 }
 
 impl Root {
-    pub fn new(korrid: Korrid, notify: Notify) -> Arc<Self> {
+    pub fn new(
+        korrid: Korrid,
+        notify: Notify,
+        controllers: Arc<super::controllers::Controllers>,
+    ) -> Arc<Self> {
         let launchables_korrid = korrid.clone();
         let network = NetworkOnboarding::new(korrid.clone(), notify.clone());
         let downloads =
@@ -227,6 +233,8 @@ impl Root {
             starter_pack,
             downloads,
             acquisition,
+            controllers,
+            onboarding_was_needed: std::sync::Mutex::new(None),
             clock: std::sync::Mutex::new(clock_label()),
             last_local_ids: std::sync::Mutex::new(None),
             notify,
@@ -372,6 +380,18 @@ impl Root {
         let state = self.launchables.state();
         let onboarding = self.network.snapshot().onboarding_needed;
         self.launchables.set_onboarding_needed(onboarding);
+        // Setup run again: `heard` counts input since setup began, so pads
+        // heard during the first run must not pass the second one unproven.
+        let previous = std::mem::replace(
+            &mut *self
+                .onboarding_was_needed
+                .lock()
+                .expect("onboarding poisoned"),
+            onboarding,
+        );
+        if previous == Some(false) && onboarding == Some(true) {
+            self.controllers.forget();
+        }
         self.starter_pack
             .set_needed(onboarding == Some(true) && self.owner_binding.snapshot().is_unsupported());
         // Which local games still need a download is re-read when the set
@@ -422,9 +442,7 @@ impl Root {
         }
         let onboarding = (onboarding_needed == Some(true) && owner.is_unsupported()).then(|| {
             SurfaceOnboarding {
-                // Controllers come from the native input stream, which the
-                // shell owns; korrid does not see them.
-                controllers: Vec::new(),
+                controllers: self.controllers.snapshot(),
                 starter_pack: self.starter_pack.snapshot(),
             }
         });
