@@ -28,6 +28,7 @@ pub mod saves;
 pub mod settings_model;
 pub mod shared_play;
 pub mod starter_pack;
+pub mod store;
 #[cfg(test)]
 mod tests;
 pub mod watch;
