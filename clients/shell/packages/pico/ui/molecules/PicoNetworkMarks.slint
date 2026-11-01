@@ -1,0 +1,15 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoPixelLock } from "../atoms/PicoPixelLock.slint";
+import { PicoSignalBars } from "../atoms/PicoSignalBars.slint";
+
+// A network's padlock, when it asks for a password, and its signal.
+export component PicoNetworkMarks inherits HorizontalLayout {
+    in property <bool> locked;
+    in property <int> bars;
+    in property <color> ink: P8.ink;
+    spacing: Tokens.p;
+    alignment: end;
+    if locked : PicoPixelLock { y: (root.height - self.height) / 2; ink: ink; }
+    PicoSignalBars { y: (root.height - self.height) / 2; bars: bars; ink: ink; }
+}

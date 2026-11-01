@@ -76,7 +76,6 @@ class SelectionTest(unittest.TestCase):
                 "cli",
                 "parity",
             },
-            "surfaces/pico/src/pico-settings-view.ts": {"pico"},
             "clients/shell/src/shell.rs": {"shell"},
             "clients/shell/packages/zone/logic.ts": {"shell", "parity"},
             "services/korrid/src/main.rs": {
@@ -142,7 +141,6 @@ class SelectionTest(unittest.TestCase):
     def test_known_frontend_changes_select_no_rust_compilation(self):
         rust = {"cli", "korrid", "inputd", "limitsd"}
         for path in [
-            "surfaces/pico/src/ui/atoms/PicoClock.css",
             "surfaces/zone/src/plan/options.ts",
             "clients/shell/packages/pico/main.slint",
             "clients/shell/packages/zone/logic.ts",
@@ -344,7 +342,7 @@ class SelectionTest(unittest.TestCase):
 
 class AggregateTest(unittest.TestCase):
     def setUp(self):
-        self.selection = ci.plan("affected", ["surfaces/pico/src/index.ts"], "test")
+        self.selection = ci.plan("affected", ["surfaces/zone/src/index.ts"], "test")
         self.needs = {"select": {"result": "success"}}
         self.needs.update(
             {
@@ -359,7 +357,7 @@ class AggregateTest(unittest.TestCase):
     def test_failure_skip_cancel_or_missing_selected_result_fails(self):
         for result in ["failure", "skipped", "cancelled", None, ""]:
             needs = copy.deepcopy(self.needs)
-            needs["pico"]["result"] = result
+            needs["zone"]["result"] = result
             with self.subTest(result=result), self.assertRaises(ValueError):
                 ci.aggregate(self.selection, needs)
 
@@ -367,7 +365,7 @@ class AggregateTest(unittest.TestCase):
         for change in ["missing", "extra", "unexpected_success"]:
             needs = copy.deepcopy(self.needs)
             if change == "missing":
-                del needs["pico"]
+                del needs["zone"]
             elif change == "extra":
                 needs["unknown"] = {"result": "success"}
             else:

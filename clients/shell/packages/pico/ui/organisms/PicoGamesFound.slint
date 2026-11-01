@@ -1,0 +1,35 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoBusyMeter } from "../atoms/PicoBusyMeter.slint";
+import { PicoRow } from "../atoms/PicoRow.slint";
+import { PicoCard } from "../molecules/PicoCard.slint";
+import { PicoSetupHeading, SetupView } from "../molecules/PicoSetupHeading.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoCart } from "../molecules/PicoCart.slint";
+import { PicoStarterPack } from "../molecules/PicoStarterPack.slint";
+
+// Setup's GAMES step: what Korri found on this device, and the Starter pack.
+export component PicoGamesFound {
+    in property <SetupView> setup;
+    preferred-height: card.preferred-height + 5 * Tokens.p;
+    min-height: self.preferred-height;
+    card := PicoCard {
+        x: 0;
+        y: 0;
+        width: root.width - 5 * Tokens.p;
+        height: max(self.min-height, self.preferred-height);
+        tone: setup.tone;
+        PicoSetupHeading { title: setup.title; message: setup.message; ink: P8.shell-ink(setup.tone); }
+        if setup.busy != "" : PicoBusyMeter { label: setup.busy; ink: P8.note(setup.tone); }
+        if setup.carts.length > 0 : HorizontalLayout {
+            alignment: start;
+            spacing: 4 * Tokens.p;
+            height: 34 * Tokens.p;
+            for cart in setup.carts : Rectangle { width: shell.shell-w; shell := PicoCart { x: 0; y: 34 * Tokens.p - self.shell-h; cart: cart; box-w: 16 * Tokens.p; box-h: 22 * Tokens.p; } }
+            if setup.more != "" : PicoLine { text: setup.more; color: P8.shell-ink(setup.tone); }
+        }
+        if setup.pack.shown : PicoStarterPack { tone: setup.pack.tone; title: setup.pack.title; message: setup.pack.message; answers: setup.pack.answers; }
+        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { button: a; kind: "card"; } }
+        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { button: a; kind: "card"; } }
+    }
+}

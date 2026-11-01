@@ -1,0 +1,91 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoReveal } from "../atoms/PicoReveal.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoBadge, ChipView } from "../atoms/PicoBadge.slint";
+import { PicoSegments, SegmentView } from "../atoms/PicoSegments.slint";
+import { PicoNetworkMarks } from "PicoNetworkMarks.slint";
+
+// One setting as Korri states it, and how it is changed.
+export struct RowView {
+    section: string,
+    label: string,
+    value: string,
+    description: string,
+    source: string,
+    device-only: bool,
+    kind: string,
+    focused: bool,
+    warn: bool,
+    state: string,
+    state-text: string,
+    segments: [SegmentView],
+    bars: int,
+    locked: bool,
+    chips: [ChipView],
+    plates-before: int,
+    lines-before: int,
+}
+
+// Its caption, the plate with label and value (a choice shown whole, a long
+// one between arrows, a network's marks), then where the value comes from,
+// what it does, and Korri's word on the last change.
+export component PicoSettingRow {
+    in property <RowView> item;
+    in property <color> ink: P8.ink-dark;
+    in property <length> plate-h: Tokens.md + 8 * Tokens.p;
+    in property <length> line-h: Tokens.sm * 1.5;
+    property <bool> under: item.source != "" || item.device-only;
+    property <length> top: item.section != "" ? line-h : 0;
+    height: top + plate-h + (under ? line-h : 0) + (item.description != "" ? line-h : 0) + (item.state-text != "" && item.state != "saving" ? line-h : 0);
+    if item.section != "" : PicoLine { x: 0; y: 0; width: root.width; line-height: line-h; text: item.section; color: ink; }
+    plate := Rectangle {
+        x: 0;
+        y: top;
+        width: root.width;
+        height: plate-h - 2 * Tokens.p;
+        if item.focused : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: parent.width; height: parent.height; background: Cycle.now; }
+        Rectangle { background: item.focused ? P8.pick : P8.ink-dark; }
+        property <color> value-ink: item.focused ? P8.pick-mark : P8.ink-quiet;
+        Text {
+            x: 3 * Tokens.p;
+            y: (parent.height - Tokens.md) / 2;
+            width: max(0, parent.width - 8 * Tokens.p - value.width);
+            height: Tokens.md;
+            text: item.label;
+            font-size: Tokens.md;
+            color: item.focused ? P8.pick-ink : item.warn ? P8.warn : item.kind == "fact" ? P8.ink-dim : P8.ink;
+            overflow: elide;
+        }
+        value := HorizontalLayout {
+            x: parent.width - 3 * Tokens.p - self.width;
+            y: (parent.height - Tokens.md) / 2;
+            height: Tokens.md;
+            width: min(self.preferred-width, parent.width * 60%);
+            spacing: 2 * Tokens.p;
+            if item.kind == "step" : Text { text: "◀"; font-size: Tokens.md; color: plate.value-ink; }
+            if item.segments.length == 0 && item.value != "" && item.value != "CONNECTED" : Text { text: item.value; font-size: Tokens.md; color: plate.value-ink; overflow: elide; }
+            if item.value == "CONNECTED" : PicoBadge { y: (Tokens.md - self.height) / 2; chip: { text: "CONNECTED", kind: "ok" }; }
+            if item.segments.length > 0 : PicoSegments { segments: item.segments; ink: plate.value-ink; }
+            if item.kind == "step" || item.kind == "pick" || item.kind == "text" || item.kind == "action" : Text { text: "▶"; font-size: Tokens.md; color: plate.value-ink; }
+            if item.kind == "network" : PicoNetworkMarks { width: 13 * Tokens.p; locked: item.locked; bars: item.bars; ink: item.focused ? P8.ink-dark : P8.ink; }
+            if item.state == "saving" : PicoBadge { y: (Tokens.md - self.height) / 2; chip: { text: "SAVING", kind: "info" }; }
+        }
+    }
+    VerticalLayout {
+        x: 0;
+        y: top + plate-h;
+        width: root.width;
+        height: root.height - self.y;
+        if under : HorizontalLayout {
+            height: line-h;
+            spacing: 2 * Tokens.p;
+            alignment: start;
+            if item.source != "" : PicoLine { line-height: line-h; text: item.source; color: ink; }
+            if item.device-only : PicoBadge { y: (line-h - self.height) / 2; chip: { text: "DEVICE-ONLY", kind: "info" }; }
+        }
+        if item.description != "" : PicoLine { line-height: line-h; text: item.description; color: ink; }
+        if item.state-text != "" && item.state != "saving" : PicoLine { line-height: line-h; text: item.state-text; color: item.state == "problem" ? P8.warn : P8.pick-mark; }
+    }
+    PicoReveal { x: plate.x; y: plate.y; width: plate.width; height: plate.height; focused: item.focused; }
+}

@@ -42,7 +42,7 @@ let
         cd "$KORRI_ROOT"
         for task in ci-plan-check korri-nix-cache-check rpminiv2-delivery-check \
           korrid-fmt-check korrid-treaty-check \
-          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check pico-check zone-check \
+          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check zone-check \
           shell-check korri-published-plugins-check; do
           nix run ".#$task"
         done
@@ -575,25 +575,6 @@ let
       ];
       script = ''
         bash "$KORRI_ROOT/brand/build-assets.sh"
-      '';
-    };
-
-    pico-check = {
-      description = "Run the Pico surface unit tests, gates, typecheck, and architecture lint.";
-      # Architecture tests launch oxlint directly through its env-node shebang.
-      runtimeInputs = [
-        pkgs.bun
-        pkgs.nodejs
-      ];
-      # The two-display browser test (test/pico-displays-browser.test.ts)
-      # runs in this Chromium; without CHROMIUM it is skipped.
-      env.CHROMIUM = "${pkgs.chromium}/bin/chromium";
-      script = ''
-        cd "$KORRI_ROOT/surfaces/pico"
-        bun install --frozen-lockfile --ignore-scripts
-        bun test
-        bun run typecheck
-        bun run lint
       '';
     };
 

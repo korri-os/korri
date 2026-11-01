@@ -1,0 +1,29 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoCart, CartView } from "../molecules/PicoCart.slint";
+
+export struct AttractView { shown: bool, carts: [CartView], chosen: int }
+
+// Attract: the screen goes black and the shelf parades one cart at a time,
+// with PRESS ANY BUTTON blinking under it.
+export component PicoAttract inherits Rectangle {
+    in property <AttractView> attract;
+    property <int> step;
+    Timer { interval: 2400ms; running: attract.shown && attract.carts.length > 0; triggered => { step = mod(step + 1, max(1, attract.carts.length)); } }
+    property <int> blink;
+    Timer { interval: 500ms; running: attract.shown; triggered => { blink = 1 - blink; } }
+    property <CartView> cart: attract.carts.length > 0 ? attract.carts[mod(attract.chosen + step, attract.carts.length)] : { };
+    background: P8.bg;
+    if attract.carts.length > 0 : Rectangle {
+        x: (root.width - shown.shell-w - 8 * Tokens.p) / 2;
+        y: (root.height - shown.shell-h - 8 * Tokens.p) / 2 - 8 * Tokens.p;
+        width: shown.shell-w + 8 * Tokens.p;
+        height: shown.shell-h + 8 * Tokens.p;
+        Rectangle { x: 8 * Tokens.p; y: 8 * Tokens.p; width: shown.shell-w; height: shown.shell-h; background: P8.cast-far; }
+        Rectangle { x: 4 * Tokens.p; y: 4 * Tokens.p; width: shown.shell-w; height: shown.shell-h; background: P8.cast-near; }
+        shown := PicoCart { x: 0; y: 0; cart: cart; still: true; box-w: min(root.width * 50%, 160 * Tokens.p); box-h: min(root.height * 45%, 160 * Tokens.p); initials-size: Tokens.xl; }
+    }
+    PicoLine { x: 0; y: 2 * Tokens.u; width: root.width; text: attract.carts.length > 0 ? cart.title : "korri"; font-size: Tokens.lg; horizontal-alignment: center; }
+    PicoLine { x: 0; y: root.height - 3 * Tokens.u - self.height; width: root.width; visible: blink == 0; text: "PRESS ANY BUTTON"; font-size: Tokens.md; color: P8.go; horizontal-alignment: center; }
+}

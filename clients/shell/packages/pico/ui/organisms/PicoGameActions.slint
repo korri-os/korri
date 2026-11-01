@@ -1,0 +1,17 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+
+// A game's own actions, as Korri publishes them for the focused game, each
+// with Korri's note under it.
+export component PicoGameActions inherits VerticalLayout {
+    alignment: start;
+    in property <[ButtonView]> actions;
+    spacing: 2 * Tokens.p;
+    if actions.length > 0 : PicoLine { text: "ACTIONS"; color: P8.ink-quiet; }
+    for action in actions : VerticalLayout {
+        PicoRow { button: { label: action.label, detail: "", focused: action.focused, disabled: action.disabled, warn: action.warn, lit: false }; }
+        if action.detail != "" : PicoLine { text: action.detail; color: P8.ink-dim; }
+    }
+}

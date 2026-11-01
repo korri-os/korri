@@ -1,0 +1,54 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoClock } from "../atoms/PicoClock.slint";
+import { PicoPaletteBar } from "../atoms/PicoPaletteBar.slint";
+
+// The header: where you are, in two words (the place in white, where in it
+// in the accent, a breadcrumb mark between when it is a path), the clock,
+// and the palette under them. The place yields first on a narrow bar.
+export component PicoStatusBar {
+    in property <string> place;
+    in property <bool> sep;
+    in property <string> label;
+    in property <string> clock;
+    property <length> line: Tokens.snap(Tokens.lg * 1.1);
+    property <bool> show-place: place != "" && root.width >= 75 * Tokens.sm * 4 / 7;
+    height: line + 2 * Tokens.p + 3 * Tokens.p;
+    place-text := Text {
+        x: 0;
+        y: Tokens.snap((line - Tokens.lg) / 2);
+        height: Tokens.lg;
+        visible: show-place;
+        text: place;
+        font-size: Tokens.lg;
+        color: P8.ink;
+    }
+    mark := Text {
+        x: place-text.preferred-width + Tokens.lg * 2 / 7;
+        y: place-text.y;
+        height: Tokens.lg;
+        visible: show-place && sep;
+        text: "›";
+        font-size: Tokens.lg;
+        color: P8.ink;
+    }
+    property <length> label-x: !show-place ? 0 : sep ? mark.x + mark.preferred-width + Tokens.lg * 2 / 7 : place-text.preferred-width + Tokens.lg * 2 / 7;
+    Text {
+        x: label-x;
+        y: place-text.y;
+        width: max(0, root.width - self.x - (clock != "" ? time.preferred-width + 2 * Tokens.u : 0));
+        height: Tokens.lg;
+        text: label;
+        font-size: Tokens.lg;
+        color: P8.accent;
+        overflow: elide;
+    }
+    time := PicoClock {
+        x: root.width - self.preferred-width;
+        y: place-text.y + Tokens.lg - Tokens.sm * 1.25;
+        width: self.preferred-width;
+        visible: clock != "";
+        label: clock;
+    }
+    PicoPaletteBar { x: 0; y: line + 2 * Tokens.p; width: root.width; }
+}

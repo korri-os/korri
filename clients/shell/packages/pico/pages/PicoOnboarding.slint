@@ -1,0 +1,37 @@
+import { P8 } from "../ui/palette.slint";
+import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { SetupView } from "../ui/molecules/PicoSetupHeading.slint";
+import { PicoSetupWelcome } from "../ui/organisms/PicoSetupWelcome.slint";
+import { PicoWifiSetup } from "../ui/organisms/PicoWifiSetup.slint";
+import { PicoIdentitySetup } from "../ui/organisms/PicoIdentitySetup.slint";
+import { PicoControllerCheck } from "../ui/organisms/PicoControllerCheck.slint";
+import { PicoGamesFound } from "../ui/organisms/PicoGamesFound.slint";
+import { PicoSetupDone } from "../ui/organisms/PicoSetupDone.slint";
+import { PicoTextEditor, EditorView } from "../ui/organisms/PicoTextEditor.slint";
+import { PicoIdentityDialog, IdentityView } from "../ui/organisms/PicoIdentityDialog.slint";
+import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slint";
+
+// First-boot setup: HELLO, WI-FI, NAME, YOU, PADS, GAMES, PLAY on the step
+// track; Pico's keyboard for a name or a password; the backup dialog.
+export component PicoOnboarding inherits Rectangle {
+    in property <FrameView> frame;
+    in property <SetupView> setup;
+    in property <EditorView> editor;
+    in property <IdentityView> identity;
+    in property <string> mode: "setup";
+    PicoScreenShell {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        frame: frame;
+        if mode == "editor" : PicoTextEditor { editor: editor; }
+        if mode == "identity" : PicoIdentityDialog { identity: identity; }
+        if mode == "setup" && setup.step == "hello" : PicoSetupWelcome { setup: setup; }
+        if mode == "setup" && setup.step == "wifi" : PicoWifiSetup { min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "you" : PicoIdentitySetup { min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "pads" : PicoControllerCheck { min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "games" : PicoGamesFound { min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "play" : PicoSetupDone { setup: setup; }
+    }
+}

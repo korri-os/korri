@@ -1,0 +1,13 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoChip } from "../atoms/PicoChip.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+import { PicoRail } from "../atoms/PicoRail.slint";
+
+// Which runner a layer's card shows: ANY RUNNER, a family, each runner.
+export component PicoScopeTabs inherits PicoRail {
+    in property <[ButtonView]> scopes;
+    in property <color> tone: P8.blue;
+    spacing: 2 * Tokens.p;
+    for scope in scopes : PicoChip { button: scope; ground: tone; ink: P8.ink-dark; lit-ground: P8.ink-dark; lit-ink: P8.ink; }
+}

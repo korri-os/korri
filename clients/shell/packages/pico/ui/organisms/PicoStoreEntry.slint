@@ -1,0 +1,51 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+import { ChipView } from "../atoms/PicoBadge.slint";
+import { CartView } from "../molecules/PicoCart.slint";
+import { CardView } from "../molecules/PicoNotice.slint";
+import { PicoGameDetail } from "PicoGameDetail.slint";
+import { PicoLaunchStage, LaunchStageView } from "PicoLaunchStage.slint";
+
+export struct StoreEntryView {
+    cart: CartView,
+    title: string,
+    subtitle: string,
+    chips: [ChipView],
+    description: string,
+    has-primary: bool,
+    primary: ButtonView,
+    others: [ButtonView],
+    inline: CardView,
+    launch: LaunchStageView,
+    working: bool,
+}
+
+// One game a provider has, on a game's own stage, with the provider's words
+// and where getting it stands; a download takes the launch stage.
+export component PicoStoreEntry {
+    in property <StoreEntryView> entry;
+    preferred-height: entry.working ? 80 * Tokens.p : detail.preferred-height;
+    min-height: self.preferred-height;
+    detail := PicoGameDetail {
+        visible: !entry.working;
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        detail: {
+            cart: entry.cart,
+            title: entry.title,
+            subtitle: entry.subtitle,
+            chips: entry.chips,
+            primary: entry.primary,
+            bar: { shown: false },
+            actions: entry.others,
+        };
+        description: entry.description;
+        has-primary: entry.has-primary;
+        mark: false;
+        inline: entry.inline;
+    }
+    if entry.working : PicoLaunchStage { x: 0; y: 0; width: root.width; height: root.height; launch: entry.launch; }
+}

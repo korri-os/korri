@@ -1,0 +1,96 @@
+import { P8 } from "../ui/palette.slint";
+import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { ButtonView } from "../ui/atoms/PicoRow.slint";
+import { ChipView } from "../ui/atoms/PicoBadge.slint";
+import { CartView } from "../ui/molecules/PicoCart.slint";
+import { InviteView } from "../ui/molecules/PicoInviteRow.slint";
+import { CardView } from "../ui/molecules/PicoNotice.slint";
+import { PicoCartShelf } from "../ui/organisms/PicoCartShelf.slint";
+import { PicoGameStage } from "../ui/organisms/PicoGameStage.slint";
+import { PicoCartGrid, GridSectionView } from "../ui/organisms/PicoCartGrid.slint";
+import { PicoGameHero } from "../ui/organisms/PicoGameHero.slint";
+import { PicoResumeList, ResumeView } from "../ui/organisms/PicoResumeList.slint";
+import { PicoPlayingNow } from "../ui/organisms/PicoPlayingNow.slint";
+import { PicoMenu } from "../ui/organisms/PicoMenu.slint";
+import { PicoLaunchStage, LaunchStageView } from "../ui/organisms/PicoLaunchStage.slint";
+import { PicoModal } from "../ui/organisms/PicoModal.slint";
+import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slint";
+
+export struct StageView { shown: bool, title: string, subtitle: string, kicker: string, chips: [ChipView], index: int, total: int, cart: CartView }
+
+export struct HeroView { title: string, subtitle: string, reason: string, chips: [ChipView], open: ButtonView, resume: [ResumeView] }
+
+export struct HomeView {
+    body: string,
+    mode: string,
+    carts: [CartView],
+    selected-index: int,
+    first-index: int,
+    total: int,
+    cursor-on-shelf: bool,
+    narrowest-art: float,
+    stage: StageView,
+    invites: [InviteView],
+    invites-label: string,
+    menu-open: bool,
+    menu: [ButtonView],
+    sections: [GridSectionView],
+    columns: int,
+    focus-row: int,
+    hero: HeroView,
+    launch: LaunchStageView,
+}
+
+// Home: PLAYING NOW over whichever layout is chosen (the shelf, the grid,
+// the hero), or Korri's launch stage, or Korri's notice; MENU's list over
+// the floor. The frame never moves.
+export component PicoHome inherits Rectangle {
+    in property <FrameView> frame;
+    in property <HomeView> home;
+    in property <CardView> card;
+    shell := PicoScreenShell {
+        frame: frame;
+        if home.body == "card" : PicoModal { min-height: self.preferred-height; card: card; }
+        if home.body != "card" : VerticalLayout {
+            spacing: Tokens.u;
+            if home.invites.length > 0 : PicoPlayingNow { invites: home.invites; count: home.invites-label; }
+            if home.body == "shelf" : Rectangle {
+                vertical-stretch: 1;
+                min-height: rack.rack-h + 6 * Tokens.sm;
+                if home.stage.shown : PicoGameStage {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height - rack.height;
+                    cart: home.stage.cart;
+                    kicker: home.stage.kicker;
+                    title: home.stage.title;
+                    subtitle: home.stage.subtitle;
+                    chips: home.stage.chips;
+                    index: home.stage.index;
+                    total: home.stage.total;
+                }
+                rack := PicoCartShelf {
+                    x: 0;
+                    y: parent.height - self.height;
+                    width: parent.width;
+                    carts: home.carts;
+                    first-index: home.first-index;
+                    total: home.total;
+                    selected-index: home.selected-index;
+                    narrowest-art: home.narrowest-art;
+                    small: shell.body-h < 30 * Tokens.sm;
+                }
+            }
+            if home.body == "grid" : PicoCartGrid { sections: home.sections; columns: home.columns; }
+            if home.body == "hero" : VerticalLayout {
+                spacing: Tokens.u;
+                PicoGameHero { title: home.hero.title; subtitle: home.hero.subtitle; open: home.hero.open; }
+                if home.hero.resume.length > 0 : PicoResumeList { games: home.hero.resume; }
+            }
+            if home.body == "stage" : PicoLaunchStage { vertical-stretch: 1; min-height: 60 * Tokens.p; launch: home.launch; }
+            if home.body == "grid" || home.body == "hero" : Rectangle { vertical-stretch: 1; }
+        }
+    }
+    if home.menu-open : PicoMenu { x: 2 * Tokens.u; y: shell.body-y + shell.body-h - self.height; entries: home.menu; }
+}

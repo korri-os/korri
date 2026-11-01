@@ -1,0 +1,96 @@
+// Pico's scale (surfaces/pico/src/pico-tokens.css), the one file allowed a
+// pixel literal. Everything is computed from the window's width and height,
+// which main.slint (and each preview) writes here, and from the rows of the
+// face shown.
+
+// Pico's ten faces, registered wherever the tokens are imported.
+import "../fonts/tiny5.ttf";
+import "../fonts/tom-thumb.ttf";
+import "../fonts/x11-4x6.ttf";
+import "../fonts/kenney-mini.ttf";
+import "../fonts/m3x6.ttf";
+import "../fonts/x11-5x7.ttf";
+import "../fonts/spleen-5x8.ttf";
+import "../fonts/m5x7.ttf";
+import "../fonts/monogram.ttf";
+import "../fonts/kenney-pixel.ttf";
+import { P8 } from "palette.slint";
+
+export global Tokens {
+    // The box Pico draws in: the window.
+    in-out property <length> width: 640px;
+    in-out property <length> height: 480px;
+    // The face shown and its glyph pixels in one em (Tiny5: 7).
+    in-out property <string> family: "Pico Tiny5";
+    in-out property <int> rows: 7;
+
+    // How many virtual pixels the short side holds, and the smallest pixel
+    // Pico draws with: below 2 device pixels a face stops being legible.
+    out property <int> pixel-rows: 360;
+    out property <length> pixel-min: 2px;
+    // The virtual pixel: whole device pixels, never under the minimum.
+    out property <length> p: max(pixel-min, floor(min(width, height) / pixel-rows / 1px) * 1px);
+    // The layout unit.
+    out property <length> u: 4 * p;
+    // Type, as whole glyph pixels: 1, 1.5, 2.5 and 3.5 virtual pixels.
+    out property <length> sm: p * rows;
+    out property <length> md: round(p * 1.5 / 1px) * 1px * rows;
+    out property <length> lg: round(p * 2.5 / 1px) * 1px * rows;
+    out property <length> xl: round(p * 3.5 / 1px) * 1px * rows;
+    // Hard shadows and focus edges.
+    out property <length> drop-sm: 2 * p;
+    out property <length> drop: 3 * p;
+    out property <length> drop-lg: 4 * p;
+    out property <length> edge: p;
+    // The window's size before a host places it.
+    out property <length> window-width: 640px;
+    out property <length> window-height: 480px;
+    // Heights in the box: the screen is short, or very short.
+    out property <bool> short: height / p < 200;
+    out property <bool> tiny: height / p < 150;
+
+    // A preview or the surface states the box it draws in.
+    public function fit(w: length, h: length) {
+        width = w;
+        height = h;
+    }
+
+    // A count of device pixels Korri stated (a display's rectangle), as a length.
+    public pure function px(count: int) -> length {
+        count * 1px
+    }
+
+    // A length on the device pixel grid.
+    public pure function snap(value: length) -> length {
+        round(value / 1px) * 1px
+    }
+    // A whole number of device pixels, rounded down.
+    public pure function floor-px(value: length) -> length {
+        floor(value / 1px) * 1px
+    }
+}
+
+// pico-cycle: focus walks red, orange, pink every 200 ms (pico-motion.css).
+export global Cycle {
+    in-out property <int> phase;
+    out property <color> now: phase == 0 ? P8.red : phase == 1 ? P8.orange : P8.pink;
+}
+
+// Where the cursor's control stands on screen, written by the focused control
+// when focus arrives; the screen shell scrolls its body to keep it in sight.
+export global Focus {
+    in-out property <length> x;
+    in-out property <length> y;
+    in-out property <length> w;
+    in-out property <length> h;
+    in-out property <int> serial;
+
+    // The focused control says where it stands.
+    public function reveal(left: length, top: length, wide: length, tall: length) {
+        x = left;
+        y = top;
+        w = wide;
+        h = tall;
+        serial += 1;
+    }
+}

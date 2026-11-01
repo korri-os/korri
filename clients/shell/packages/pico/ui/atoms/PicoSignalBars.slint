@@ -1,0 +1,18 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// Signal strength as four bars, from Korri's strengthPercent.
+export component PicoSignalBars {
+    in property <int> bars;
+    in property <color> ink: P8.ink-dark;
+    in property <color> off: P8.slate;
+    width: 7 * Tokens.p;
+    height: 5 * Tokens.p;
+    for i in 4 : Rectangle {
+        x: i * 2 * Tokens.p;
+        y: (4 - i - 1) * Tokens.p + Tokens.p;
+        width: Tokens.p;
+        height: (i + 1) * Tokens.p;
+        background: i < bars ? ink : off;
+    }
+}

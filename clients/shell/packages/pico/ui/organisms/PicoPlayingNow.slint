@@ -1,0 +1,20 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoInviteRow, InviteView } from "../molecules/PicoInviteRow.slint";
+
+// PLAYING NOW: every invite Korri publishes, counted, each with its actions.
+export component PicoPlayingNow inherits VerticalLayout {
+    alignment: start;
+    in property <[InviteView]> invites;
+    in property <string> count;
+    spacing: Tokens.p;
+    HorizontalLayout {
+        spacing: 2 * Tokens.p;
+        alignment: start;
+        Rectangle { width: 2 * Tokens.p; Rectangle { x: 0; y: (parent.height - 2 * Tokens.p) / 2; width: parent.width; height: 2 * Tokens.p; background: P8.ok; } }
+        PicoLine { text: "PLAYING NOW"; color: P8.go; overflow: clip; }
+        PicoLine { text: count; color: P8.ink-quiet; overflow: clip; }
+    }
+    for invite in invites : PicoInviteRow { invite: invite; }
+}

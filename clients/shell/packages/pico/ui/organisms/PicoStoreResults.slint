@@ -1,0 +1,39 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+import { CartView } from "../molecules/PicoCart.slint";
+import { PicoResultRow } from "../molecules/PicoResultRow.slint";
+import { PicoNotice, CardView } from "../molecules/PicoNotice.slint";
+
+export struct StoreResultView { cart: CartView, title: string, subtitle: string }
+
+// One provider's search: the SEARCH row with what was typed, and the games
+// it found as carts with their titles; or Korri's words when it failed.
+export component PicoStoreResults inherits VerticalLayout {
+    alignment: start;
+    in property <ButtonView> search;
+    in property <string> note;
+    in property <[StoreResultView]> results;
+    in property <int> focused-result;
+    in property <CardView> problem;
+    property <length> slot-w: 54 * Tokens.p;
+    spacing: 4 * Tokens.p;
+    HorizontalLayout { alignment: start; PicoRow { width: min(280 * Tokens.p, root.width); button: search; } }
+    if note != "" : PicoLine { text: note; color: P8.ink-dim; }
+    if problem.shown : PicoNotice { card: problem; }
+    if results.length > 0 : Rectangle {
+        min-height: 60 * Tokens.p;
+        clip: true;
+        property <length> scroll: max(0, min(results.length * slot-w - self.width, focused-result * slot-w - self.width / 2 + slot-w / 2));
+        for result[i] in results : PicoResultRow {
+            x: i * slot-w - parent.scroll;
+            y: 0;
+            width: slot-w - 4 * Tokens.p;
+            height: parent.height;
+            cart: result.cart;
+            title: result.title;
+            subtitle: result.subtitle;
+        }
+    }
+}

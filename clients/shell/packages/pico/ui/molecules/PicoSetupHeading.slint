@@ -1,0 +1,37 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+import { CartView } from "PicoCart.slint";
+import { RowView } from "PicoSettingRow.slint";
+
+export struct PackView { shown: bool, tone: string, title: string, message: string, answers: [ButtonView] }
+
+// One step of first-boot setup, as logic.js words it.
+export struct SetupView {
+    step: string,
+    layout: string,
+    tone: string,
+    kicker: string,
+    title: string,
+    message: string,
+    busy: string,
+    rows: [RowView],
+    carts: [CartView],
+    more: string,
+    answers: [ButtonView],
+    inline: bool,
+    go: ButtonView,
+    has-go: bool,
+    pack: PackView,
+}
+
+// A setup step's title and what it asks, in the card's ink.
+export component PicoSetupHeading inherits VerticalLayout {
+    in property <string> title;
+    in property <string> message;
+    in property <color> ink: P8.ink-dark;
+    spacing: 3 * Tokens.p;
+    if title != "" : PicoPara { text: title; font-size: Tokens.short ? Tokens.md : Tokens.lg; color: ink; }
+    if message != "" : PicoPara { text: message; font-size: Tokens.short ? Tokens.sm : Tokens.md; color: ink; }
+}

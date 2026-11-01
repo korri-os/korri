@@ -1,0 +1,20 @@
+import { P8 } from "../ui/palette.slint";
+import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { PicoPauseMenu } from "../ui/organisms/PicoPauseMenu.slint";
+import { PicoGameOverlay, SheetView } from "../ui/templates/PicoGameOverlay.slint";
+
+// RUNTIMES: the runners this device has for a game, their facts, and
+// Korri's actions, over the catalog.
+export component PicoRunnerPicker inherits Rectangle {
+    in property <SheetView> sheet;
+    PicoGameOverlay {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        kicker: sheet.kicker;
+        title: sheet.title;
+        hints: sheet.hints;
+        PicoPauseMenu { items: sheet.items; }
+    }
+}

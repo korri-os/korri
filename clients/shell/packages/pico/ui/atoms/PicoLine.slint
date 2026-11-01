@@ -1,0 +1,27 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// One line of text in a line box, its glyphs on the pixel grid: what CSS's
+// line-height gave every label in Pico's web build. Long words elide.
+export component PicoLine {
+    in property <string> text;
+    in property <length> font-size: Tokens.sm;
+    in property <color> color: P8.ink;
+    in property <length> line-height: font-size * 1.5;
+    in property <TextOverflow> overflow: elide;
+    in property <TextHorizontalAlignment> horizontal-alignment: left;
+    height: line-height;
+    preferred-width: t.preferred-width;
+    min-width: overflow == TextOverflow.elide ? 0 : t.preferred-width;
+    t := Text {
+        x: 0;
+        y: Tokens.snap((line-height - font-size) / 2);
+        width: root.width;
+        height: font-size;
+        text: root.text;
+        font-size: root.font-size;
+        color: root.color;
+        overflow: root.overflow;
+        horizontal-alignment: root.horizontal-alignment;
+    }
+}

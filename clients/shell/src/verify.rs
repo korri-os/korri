@@ -140,7 +140,7 @@ struct Sweep<'a> {
 }
 
 /// Two 640x480 touch displays, the main one above: the Anbernic RG DS as
-/// Pico's own fixture states it (`surfaces/pico/src/fixtures/displays.ts`).
+/// Pico's own fixture states it (`packages/pico/test/fixtures/displays.ts`).
 fn two_displays() -> Value {
     json!([
         {"id": "top", "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": true},

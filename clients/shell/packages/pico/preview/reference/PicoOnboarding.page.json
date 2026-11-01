@@ -1,0 +1,4420 @@
+{
+  "results": [
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "default",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.default.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "default",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.default.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "default",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.default.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "default",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.default.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "default",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.default.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "default",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.default.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "HelloOnCable",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.HelloOnCable.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "HelloOnCable",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.HelloOnCable.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "HelloOnCable",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.HelloOnCable.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "HelloOnCable",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.HelloOnCable.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "HelloOnCable",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.HelloOnCable.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "HelloOnCable",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.HelloOnCable.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiScanning",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiScanning.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiScanning",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiScanning.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiScanning",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiScanning.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiScanning",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiScanning.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiScanning",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiScanning.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiScanning",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiScanning.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworks",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworks.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworks",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworks.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworks",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworks.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworks",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworks.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworks",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworks.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworks",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworks.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPassword",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPassword.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPassword",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPassword.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPassword",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPassword.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPassword",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPassword.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPassword",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPassword.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPassword",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPassword.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPasswordShown",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPasswordShown.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPasswordShown",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPasswordShown.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPasswordShown",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPasswordShown.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPasswordShown",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPasswordShown.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPasswordShown",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPasswordShown.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiPasswordShown",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiPasswordShown.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnecting",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnecting.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnecting",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnecting.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnecting",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnecting.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnecting",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnecting.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnecting",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnecting.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnecting",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnecting.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnected",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnected.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnected",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnected.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnected",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnected.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnected",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnected.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnected",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnected.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiConnected",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiConnected.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiWrongPassword",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiWrongPassword.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiWrongPassword",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiWrongPassword.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiWrongPassword",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiWrongPassword.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiWrongPassword",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiWrongPassword.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiWrongPassword",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiWrongPassword.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiWrongPassword",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiWrongPassword.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCouldNotConnect",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCouldNotConnect.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCouldNotConnect",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCouldNotConnect.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCouldNotConnect",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCouldNotConnect.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCouldNotConnect",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCouldNotConnect.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCouldNotConnect",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCouldNotConnect.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCouldNotConnect",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCouldNotConnect.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarning",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarning.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarning",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarning.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarning",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarning.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarning",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarning.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarning",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarning.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarning",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarning.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoNetworks",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoNetworks.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoNetworks",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoNetworks.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoNetworks",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoNetworks.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoNetworks",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoNetworks.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoNetworks",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoNetworks.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoNetworks",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoNetworks.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarningNoNetworks",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarningNoNetworks.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarningNoNetworks",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarningNoNetworks.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarningNoNetworks",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarningNoNetworks.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarningNoNetworks",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarningNoNetworks.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarningNoNetworks",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarningNoNetworks.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiOfflineWarningNoNetworks",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiOfflineWarningNoNetworks.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCable",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCable.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCable",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCable.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCable",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCable.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCable",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCable.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCable",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCable.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiCable",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiCable.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoAdapter",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoAdapter.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoAdapter",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoAdapter.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoAdapter",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoAdapter.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoAdapter",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoAdapter.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoAdapter",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoAdapter.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNoAdapter",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNoAdapter.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenNetwork",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenNetwork.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenNetwork",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenNetwork.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenNetwork",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenNetwork.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenNetwork",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenNetwork.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenNetwork",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenNetwork.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenNetwork",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenNetwork.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenPassword",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenPassword.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenPassword",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenPassword.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenPassword",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenPassword.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenPassword",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenPassword.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenPassword",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenPassword.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiHiddenPassword",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiHiddenPassword.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworksWhileConnected",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworksWhileConnected.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworksWhileConnected",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworksWhileConnected.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworksWhileConnected",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworksWhileConnected.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworksWhileConnected",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworksWhileConnected.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworksWhileConnected",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworksWhileConnected.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "WifiNetworksWhileConnected",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.WifiNetworksWhileConnected.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Name",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Name.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Name",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Name.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Name",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Name.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Name",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Name.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Name",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Name.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Name",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Name.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameSaving",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameSaving.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameSaving",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameSaving.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameSaving",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameSaving.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameSaving",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameSaving.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameSaving",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameSaving.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameSaving",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameSaving.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameRefused",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameRefused.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameRefused",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameRefused.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameRefused",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameRefused.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameRefused",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameRefused.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameRefused",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameRefused.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "NameRefused",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.NameRefused.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 562,
+        "elements": [
+          {
+            "element": "div.pico-text-editor-keys",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2)",
+            "left": 16,
+            "top": 307.640625,
+            "right": 632,
+            "bottom": 561.953125
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(4) > button:nth-of-type(1)",
+            "left": 16,
+            "top": 478.875,
+            "right": 70,
+            "bottom": 527.953125
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(4) > button:nth-of-type(2)",
+            "left": 78,
+            "top": 478.875,
+            "right": 132,
+            "bottom": 527.953125
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(4) > button:nth-of-type(3)",
+            "left": 140,
+            "top": 478.875,
+            "right": 194,
+            "bottom": 527.953125
+          },
+          {
+            "element": "button.pico-key",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > main:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(4) > button:nth-of-type(4)",
+            "left": 202,
+            "top": 478.875,
+            "right": 256,
+            "bottom": 527.953125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoice",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoice.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoice",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoice.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoice",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoice.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoice",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoice.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoice",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoice.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoice",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoice.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoiceOffline",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoiceOffline.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoiceOffline",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoiceOffline.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoiceOffline",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoiceOffline.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoiceOffline",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoiceOffline.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoiceOffline",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoiceOffline.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityChoiceOffline",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityChoiceOffline.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityCreated",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityCreated.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityCreated",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityCreated.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityCreated",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityCreated.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityCreated",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityCreated.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityCreated",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityCreated.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityCreated",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityCreated.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityBackup",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityBackup.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityBackup",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityBackup.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityBackup",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityBackup.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityBackup",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityBackup.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityBackup",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityBackup.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityBackup",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityBackup.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestore",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestore.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestore",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestore.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestore",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestore.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestore",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestore.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestore",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestore.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestore",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestore.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreConfirmed",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreConfirmed.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreConfirmed",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreConfirmed.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreConfirmed",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreConfirmed.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreConfirmed",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreConfirmed.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreConfirmed",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreConfirmed.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreConfirmed",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreConfirmed.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreWorking",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreWorking.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreWorking",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreWorking.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreWorking",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreWorking.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreWorking",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreWorking.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreWorking",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreWorking.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreWorking",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreWorking.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreRefused",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreRefused.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreRefused",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreRefused.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreRefused",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreRefused.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreRefused",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreRefused.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreRefused",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreRefused.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestoreRefused",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestoreRefused.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestored",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestored.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestored",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestored.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestored",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestored.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestored",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestored.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestored",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestored.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityRestored",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityRestored.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySigner",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySigner.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySigner",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySigner.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySigner",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySigner.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySigner",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySigner.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySigner",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySigner.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySigner",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySigner.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySignerConfirmed",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySignerConfirmed.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySignerConfirmed",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySignerConfirmed.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySignerConfirmed",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySignerConfirmed.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySignerConfirmed",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySignerConfirmed.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySignerConfirmed",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySignerConfirmed.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentitySignerConfirmed",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentitySignerConfirmed.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityApproving",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityApproving.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityApproving",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityApproving.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityApproving",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityApproving.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityApproving",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityApproving.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityApproving",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityApproving.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "IdentityApproving",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.IdentityApproving.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonName",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonName.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonName",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonName.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonName",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonName.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonName",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonName.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonName",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonName.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonName",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonName.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameFilled",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameFilled.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameFilled",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameFilled.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameFilled",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameFilled.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameFilled",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameFilled.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameFilled",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameFilled.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameFilled",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameFilled.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameSaving",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameSaving.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameSaving",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameSaving.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameSaving",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameSaving.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameSaving",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameSaving.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameSaving",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameSaving.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "PersonNameSaving",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.PersonNameSaving.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Controllers",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Controllers.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Controllers",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Controllers.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Controllers",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Controllers.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Controllers",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Controllers.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Controllers",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Controllers.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Controllers",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Controllers.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersReady",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersReady.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersReady",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersReady.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersReady",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersReady.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersReady",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersReady.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersReady",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersReady.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersReady",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersReady.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersNone",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersNone.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersNone",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersNone.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersNone",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersNone.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersNone",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersNone.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersNone",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersNone.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "ControllersNone",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.ControllersNone.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesScanning",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesScanning.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesScanning",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesScanning.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesScanning",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesScanning.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesScanning",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesScanning.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesScanning",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesScanning.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesScanning",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesScanning.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Games",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Games.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Games",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Games.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Games",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Games.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Games",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Games.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Games",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Games.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Games",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Games.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesEmpty",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesEmpty.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesEmpty",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesEmpty.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesEmpty",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesEmpty.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesEmpty",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesEmpty.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesEmpty",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesEmpty.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesEmpty",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesEmpty.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOffered",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOffered.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOffered",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOffered.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOffered",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOffered.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOffered",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOffered.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOffered",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOffered.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOffered",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOffered.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWithLibrary",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWithLibrary.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWithLibrary",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWithLibrary.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWithLibrary",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWithLibrary.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWithLibrary",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWithLibrary.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWithLibrary",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWithLibrary.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWithLibrary",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWithLibrary.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWhileScanning",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWhileScanning.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWhileScanning",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWhileScanning.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWhileScanning",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWhileScanning.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWhileScanning",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWhileScanning.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWhileScanning",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWhileScanning.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackOfferedWhileScanning",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackOfferedWhileScanning.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalling",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalling.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalling",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalling.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalling",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalling.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalling",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalling.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalling",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalling.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalling",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalling.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstallingWhileScanning",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstallingWhileScanning.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstallingWhileScanning",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstallingWhileScanning.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstallingWhileScanning",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstallingWhileScanning.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstallingWhileScanning",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstallingWhileScanning.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstallingWhileScanning",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstallingWhileScanning.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstallingWhileScanning",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstallingWhileScanning.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalled",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalled.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalled",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalled.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalled",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalled.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalled",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalled.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalled",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalled.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackInstalled",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackInstalled.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailed",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailed.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailed",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailed.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailed",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailed.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailed",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailed.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailed",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailed.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailed",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailed.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailedLongMessage",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailedLongMessage.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailedLongMessage",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailedLongMessage.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailedLongMessage",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailedLongMessage.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailedLongMessage",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailedLongMessage.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailedLongMessage",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailedLongMessage.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "GamesStarterPackFailedLongMessage",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.GamesStarterPackFailedLongMessage.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Done",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Done.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Done",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Done.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Done",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Done.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Done",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Done.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Done",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Done.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "Done",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.Done.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "DoneOffline",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.DoneOffline.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "DoneOffline",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.DoneOffline.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "DoneOffline",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.DoneOffline.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "DoneOffline",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.DoneOffline.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "DoneOffline",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.DoneOffline.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoOnboarding.page.part.tsx",
+      "state": "DoneOffline",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoOnboarding.page/src-pages-PicoOnboarding.page.c60bd8e12d09.DoneOffline.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    }
+  ]
+}

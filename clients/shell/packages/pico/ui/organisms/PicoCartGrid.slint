@@ -1,0 +1,38 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoCart, CartView } from "../molecules/PicoCart.slint";
+
+export struct GridSectionView { title: string, row-start: int, carts: [CartView] }
+
+// Every collection Korri named, its carts in rows on a floor.
+export component PicoCartGrid inherits VerticalLayout {
+    alignment: start;
+    in property <[GridSectionView]> sections;
+    in property <int> columns: 1;
+    property <length> slot-w: 30 * Tokens.p;
+    property <length> row-h: 44 * Tokens.p;
+    spacing: Tokens.u;
+    for section in sections : VerticalLayout {
+        spacing: 2 * Tokens.p;
+        PicoLine { text: section.title; color: P8.accent; }
+        Rectangle {
+            height: ceil(section.carts.length / max(1, columns)) * row-h;
+            for cart[i] in section.carts : Rectangle {
+                x: mod(i, max(1, columns)) * (slot-w + 4 * Tokens.p);
+                y: floor(i / max(1, columns)) * row-h;
+                width: slot-w;
+                height: row-h;
+                if cart.focused : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                shell := PicoCart {
+                    x: 0;
+                    y: parent.height - 4 * Tokens.p - self.shell-h - (cart.hero ? 4 * Tokens.p : 0);
+                    cart: cart;
+                    box-w: 22 * Tokens.p;
+                    box-h: 30 * Tokens.p;
+                }
+            }
+        }
+        Rectangle { height: 2 * Tokens.p; background: P8.floor; }
+    }
+}

@@ -1,0 +1,10 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoModal } from "PicoModal.slint";
+import { CardView } from "../molecules/PicoNotice.slint";
+
+// PLAY WHERE?: the places Korri can start a game, one answer each.
+export component PicoLocationPicker inherits PicoModal {
+    in property <CardView> places;
+    card: { shown: true, tone: "ask", kicker: "PLAY WHERE?", title: places.title, message: "", lines: [], actions: places.actions, inline: false };
+}

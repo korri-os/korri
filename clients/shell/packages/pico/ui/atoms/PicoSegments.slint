@@ -1,0 +1,16 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// A short choice shown whole, the value in force lit green: INHERIT MGBA GPSP.
+export struct SegmentView { label: string, on: bool }
+
+export component PicoSegments inherits HorizontalLayout {
+    in property <[SegmentView]> segments;
+    in property <color> ink: P8.ink-quiet;
+    spacing: 2 * Tokens.p;
+    for seg in segments : Rectangle {
+        width: s.preferred-width + 2 * Tokens.p;
+        background: seg.on ? P8.ok : transparent;
+        s := Text { x: Tokens.p; y: 0; height: parent.height; vertical-alignment: center; text: seg.label; font-size: Tokens.md; color: seg.on ? P8.ink-dark : ink; }
+    }
+}

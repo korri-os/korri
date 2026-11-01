@@ -1,0 +1,544 @@
+{
+  "results": [
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "default",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.default.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1296,
+        "bottom": 480,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 19.296875,
+            "right": 1296,
+            "bottom": 188.953125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "default",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.default.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": -21,
+        "top": 0,
+        "right": 3819,
+        "bottom": 1080,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": -21.333335876464844,
+            "top": 117.625,
+            "right": 3818.666664123535,
+            "bottom": 372.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "default",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.default.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": -28,
+        "top": 0,
+        "right": 2452,
+        "bottom": 1080,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": -27.555557250976562,
+            "top": 117.625,
+            "right": 2452.4444427490234,
+            "bottom": 372.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "default",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.default.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": -8,
+        "top": 0,
+        "right": 1432,
+        "bottom": 720,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": -8.000000953674316,
+            "top": 79.296875,
+            "right": 1431.9999990463257,
+            "bottom": 248.953125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "default",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.default.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": -7,
+        "top": 0,
+        "right": 1289,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": -7.200000762939453,
+            "top": 139.296875,
+            "right": 1288.7999992370605,
+            "bottom": 308.953125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "default",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.default.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": -14,
+        "top": 0,
+        "right": 2546,
+        "bottom": 480,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": -14.222223281860352,
+            "top": 19.296875,
+            "right": 2545.7777767181396,
+            "bottom": 188.953125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "NoArtwork",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.NoArtwork.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": -7,
+        "top": 0,
+        "right": 1273,
+        "bottom": 480,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": -7.111111640930176,
+            "top": 50.125,
+            "right": 1272.8888883590698,
+            "bottom": 158.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "NoArtwork",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.NoArtwork.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 3840,
+        "bottom": 1080,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 163.875,
+            "right": 3840,
+            "bottom": 325.875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "NoArtwork",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.NoArtwork.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 2480,
+        "bottom": 1080,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 163.875,
+            "right": 2480,
+            "bottom": 325.875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "NoArtwork",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.NoArtwork.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 720,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 110.125,
+            "right": 1440,
+            "bottom": 218.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "NoArtwork",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.NoArtwork.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 170.125,
+            "right": 1280,
+            "bottom": 278.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "NoArtwork",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.NoArtwork.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 2560,
+        "bottom": 480,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 50.125,
+            "right": 2560,
+            "bottom": 158.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.EmptyLibrary.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 480,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 100.125,
+            "right": 1280,
+            "bottom": 108.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.EmptyLibrary.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 3840,
+        "bottom": 1080,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 238.875,
+            "right": 3840,
+            "bottom": 250.875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.EmptyLibrary.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 2480,
+        "bottom": 1080,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 238.875,
+            "right": 2480,
+            "bottom": 250.875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.EmptyLibrary.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1440,
+        "bottom": 720,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 160.125,
+            "right": 1440,
+            "bottom": 168.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.EmptyLibrary.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 220.125,
+            "right": 1280,
+            "bottom": 228.125
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoAttract.organism.part.tsx",
+      "state": "EmptyLibrary",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoAttract.organism/src-ui-organisms-PicoAttract.organism.2fcaf0e7a15a.EmptyLibrary.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 2560,
+        "bottom": 480,
+        "elements": [
+          {
+            "element": "div.pico-attract-rail",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1)",
+            "left": 0,
+            "top": 100.125,
+            "right": 2560,
+            "bottom": 108.125
+          }
+        ],
+        "complete": false
+      }
+    }
+  ]
+}

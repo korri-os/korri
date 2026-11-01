@@ -1,0 +1,33 @@
+import { P8 } from "../ui/palette.slint";
+import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { PicoEmptySlot } from "../ui/molecules/PicoEmptySlot.slint";
+import { PicoGameStage } from "../ui/organisms/PicoGameStage.slint";
+import { PicoLaunchStage } from "../ui/organisms/PicoLaunchStage.slint";
+import { HomeView } from "PicoHome.slint";
+
+// The display that shows, when there are two: the chosen game on its stage,
+// the launch under way without its actions, or an empty slot. No control.
+export component PicoShowcase inherits Rectangle {
+    in property <HomeView> home;
+    if home.body == "shelf" && home.stage.shown : PicoGameStage {
+        x: 2 * Tokens.u;
+        y: 2 * Tokens.u;
+        width: root.width - 4 * Tokens.u;
+        height: root.height - 4 * Tokens.u;
+        cart: home.stage.cart;
+        kicker: home.stage.kicker;
+        title: home.stage.title;
+        subtitle: home.stage.subtitle;
+        chips: home.stage.chips;
+        index: home.stage.index;
+        total: home.stage.total;
+    }
+    if home.body == "stage" : PicoLaunchStage {
+        x: 2 * Tokens.u;
+        y: 2 * Tokens.u;
+        width: root.width - 4 * Tokens.u;
+        height: root.height - 4 * Tokens.u;
+        launch: { kicker: home.launch.kicker, detail: home.launch.detail, bar: home.launch.bar, has-cart: home.launch.has-cart, cart: home.launch.cart, phase: home.launch.phase, actions: [] };
+    }
+    if !(home.body == "shelf" && home.stage.shown) && home.body != "stage" : PicoEmptySlot { x: 0; y: 0; width: root.width; height: root.height; }
+}

@@ -1,0 +1,48 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoReveal } from "../atoms/PicoReveal.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoSlider } from "../atoms/PicoSlider.slint";
+
+// One control of the pause menu: its label, its state between arrows or a
+// range as cells, and, under it, why it is off or what it does, in the
+// note colour of the card it stands on.
+export component PicoControlRow {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> focused;
+    in property <bool> disabled;
+    in property <bool> warn;
+    in property <bool> range;
+    in property <int> cells;
+    in property <bool> arrows;
+    in property <string> note;
+    in property <string> tone: "tell";
+    in property <length> row-h: Tokens.md + 6 * Tokens.p;
+    height: row-h + (note != "" ? Tokens.sm * 1.5 : 0);
+    if focused : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: row-h; background: Cycle.now; }
+    Rectangle { x: 0; y: 0; width: root.width; height: row-h; background: focused ? P8.pick : P8.ink-dark; }
+    property <color> ink: disabled ? P8.ink-quiet : warn ? P8.warn : focused ? P8.pick-ink : P8.ink;
+    Text { x: 3 * Tokens.p; y: (row-h - Tokens.md) / 2; width: root.width / 2; text: label; font-size: Tokens.md; color: ink; overflow: elide; }
+    if range : PicoSlider {
+        x: root.width - 3 * Tokens.p - self.width;
+        y: (row-h - Tokens.md) / 2;
+        width: self.preferred-width;
+        height: Tokens.md;
+        cells: cells;
+        value: value;
+        value-ink: focused ? P8.pick-mark : P8.ink-quiet;
+    }
+    if !range : HorizontalLayout {
+        x: root.width - 3 * Tokens.p - self.width;
+        y: (row-h - Tokens.md) / 2;
+        width: self.preferred-width;
+        height: Tokens.md;
+        spacing: 2 * Tokens.p;
+        if arrows : Text { text: "◀"; font-size: Tokens.md; color: P8.ink-quiet; }
+        if value != "" : Text { text: value; font-size: Tokens.md; color: focused ? P8.pick-mark : P8.ink-quiet; }
+        if arrows : Text { text: "▶"; font-size: Tokens.md; color: P8.ink-quiet; }
+    }
+    if note != "" : PicoLine { x: 0; y: row-h; width: root.width; text: note; color: P8.note(tone); }
+    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: focused; }
+}

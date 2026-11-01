@@ -1,0 +1,504 @@
+{
+  "results": [
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "default",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.default.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "default",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.default.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "default",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.default.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "default",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.default.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "default",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.default.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "default",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.default.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "OneInvite",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.OneInvite.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "OneInvite",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.OneInvite.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "OneInvite",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.OneInvite.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "OneInvite",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.OneInvite.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "OneInvite",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.OneInvite.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "OneInvite",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.OneInvite.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "SeveralInvites",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.SeveralInvites.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "SeveralInvites",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.SeveralInvites.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "SeveralInvites",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.SeveralInvites.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "SeveralInvites",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.SeveralInvites.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "SeveralInvites",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.SeveralInvites.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "SeveralInvites",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.SeveralInvites.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "ManyInvites",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.ManyInvites.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1214,
+        "bottom": 480,
+        "elements": [
+          {
+            "element": "div.pico-invite-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(4)",
+            "left": 612,
+            "top": 8,
+            "right": 912,
+            "bottom": 107.09375
+          },
+          {
+            "element": "div.pico-invite-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(5)",
+            "left": 612,
+            "top": 109.09375,
+            "right": 912,
+            "bottom": 208.1875
+          },
+          {
+            "element": "div.pico-invite-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(6)",
+            "left": 914,
+            "top": 8,
+            "right": 1214,
+            "bottom": 107.09375
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "ManyInvites",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.ManyInvites.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "ManyInvites",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.ManyInvites.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 1368,
+        "bottom": 1080,
+        "elements": [
+          {
+            "element": "div.pico-invite-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(5)",
+            "left": 918,
+            "top": 12,
+            "right": 1368,
+            "bottom": 164.5
+          },
+          {
+            "element": "div.pico-invite-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(6)",
+            "left": 918,
+            "top": 167.5,
+            "right": 1368,
+            "bottom": 320
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "ManyInvites",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.ManyInvites.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": {
+        "left": 0,
+        "top": 0,
+        "right": 912,
+        "bottom": 720,
+        "elements": [
+          {
+            "element": "div.pico-invite-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(5)",
+            "left": 612,
+            "top": 8,
+            "right": 912,
+            "bottom": 107.09375
+          },
+          {
+            "element": "div.pico-invite-notice",
+            "target": "#caliper-host > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(6)",
+            "left": 612,
+            "top": 109.09375,
+            "right": 912,
+            "bottom": 208.1875
+          }
+        ],
+        "complete": false
+      }
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "ManyInvites",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.ManyInvites.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "ManyInvites",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.ManyInvites.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "NoInvites",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.NoInvites.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "NoInvites",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.NoInvites.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "NoInvites",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.NoInvites.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "NoInvites",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.NoInvites.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "NoInvites",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.NoInvites.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/ui/organisms/PicoInviteNotices.organism.part.tsx",
+      "state": "NoInvites",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoInviteNotices.organism/src-ui-organisms-PicoInviteNotices.organism.d28174c359a1.NoInvites.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    }
+  ]
+}

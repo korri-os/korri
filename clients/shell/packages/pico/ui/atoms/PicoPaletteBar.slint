@@ -1,0 +1,14 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// The fifteen colours that are not black, edge to edge, under the header.
+export component PicoPaletteBar {
+    height: 3 * Tokens.p;
+    for cell in 15 : Rectangle {
+        x: Tokens.snap(cell * root.width / 15);
+        y: 0;
+        width: Tokens.snap((cell + 1) * root.width / 15) - self.x;
+        height: root.height;
+        background: P8.palette(cell);
+    }
+}

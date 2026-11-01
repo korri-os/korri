@@ -1,0 +1,61 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoDownloadBar, BarView } from "../atoms/PicoDownloadBar.slint";
+import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+import { PicoCart, CartView } from "../molecules/PicoCart.slint";
+
+export struct LaunchStageView {
+    kicker: string,
+    detail: string,
+    bar: BarView,
+    has-cart: bool,
+    cart: CartView,
+    phase: string,
+    actions: [ButtonView],
+}
+
+// Korri's launch: its word large, the meter (Korri's bytes, or the clock),
+// its detail, its actions, and the cart seated in its slot on the floor:
+// running sinks it, paused rests it with a pause mark.
+export component PicoLaunchStage {
+    in property <LaunchStageView> launch;
+    property <length> slot-y: root.height - 10 * Tokens.p;
+    property <bool> cart-room: root.height > 100 * Tokens.p;
+    VerticalLayout {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: cart-room ? min(root.height * 45%, 90 * Tokens.p) : root.height;
+        alignment: start;
+        spacing: Tokens.u;
+        PicoLine { text: launch.kicker; font-size: Tokens.short ? Tokens.md : Tokens.lg; horizontal-alignment: center; }
+        if launch.phase == "paused" : HorizontalLayout {
+            alignment: center;
+            spacing: 2 * Tokens.p;
+            Rectangle { width: 3 * Tokens.p; height: 9 * Tokens.p; background: P8.ink; }
+            Rectangle { width: 3 * Tokens.p; height: 9 * Tokens.p; background: P8.ink; }
+        }
+        if launch.bar.shown : HorizontalLayout {
+            alignment: center;
+            PicoDownloadBar { width: min(root.width - 8 * Tokens.u, 200 * Tokens.p); bar: launch.bar; }
+        }
+        if launch.detail != "" : PicoLine { text: launch.detail; color: P8.ink-dim; horizontal-alignment: center; }
+        if launch.actions.length > 0 : HorizontalLayout {
+            alignment: center;
+            spacing: 3 * Tokens.p;
+            for action in launch.actions : PicoRow { min-width: max(40 * Tokens.p, self.preferred-width); button: action; }
+        }
+    }
+    if launch.has-cart && cart-room : Rectangle {
+        property <length> sink: launch.phase == "running" ? 6 * Tokens.p : 0;
+        x: (root.width - seated.shell-w) / 2;
+        y: slot-y - seated.shell-h + sink;
+        width: seated.shell-w;
+        height: seated.shell-h;
+        Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: P8.cast-far; }
+        seated := PicoCart { x: 0; y: 0; cart: launch.cart; box-w: 60 * Tokens.p; box-h: min(84 * Tokens.p, slot-y - 100 * Tokens.p); }
+    }
+    if cart-room : Rectangle { x: 0; y: slot-y; width: root.width; height: 10 * Tokens.p; background: P8.floor; }
+    if cart-room : Rectangle { x: 0; y: slot-y; width: root.width; height: Tokens.p; background: P8.floor-edge; }
+}

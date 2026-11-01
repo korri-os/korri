@@ -1,0 +1,39 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
+import { PicoHint, HintView } from "../atoms/PicoHint.slint";
+import { PicoScroll } from "../atoms/PicoScroll.slint";
+import { PicoCard } from "../molecules/PicoCard.slint";
+import { SheetItem } from "../organisms/PicoPauseMenu.slint";
+
+// A tall blue card over everything, with its own list (the pause menu, the
+// runner picker).
+export struct SheetView { kicker: string, title: string, items: [SheetItem], focused-item: int, hints: [HintView] }
+
+// Over a running game or over the catalog: a tall blue card with its kicker
+// and title, the list in it scrolling to the cursor, and the hints below.
+export component PicoGameOverlay inherits Rectangle {
+    in property <string> kicker;
+    in property <string> title;
+    in property <[HintView]> hints;
+    property <length> foot: Tokens.snap(Tokens.sm * 1.5) + 2 * Tokens.u;
+    PicoCard {
+        x: 2 * Tokens.u;
+        y: 2 * Tokens.u;
+        width: root.width - 4 * Tokens.u - 5 * Tokens.p;
+        height: root.height - 2 * Tokens.u - foot - 5 * Tokens.p;
+        tone: "tell";
+        if kicker != "" : PicoLine { text: kicker; color: P8.shell-tell-kicker; }
+        if title != "" : PicoPara { text: title; font-size: Tokens.short ? Tokens.md : Tokens.lg; color: P8.shell-tell-ink; }
+        PicoScroll { vertical-stretch: 1; @children }
+    }
+    HorizontalLayout {
+        x: root.width - 2 * Tokens.u - self.preferred-width;
+        y: root.height - foot + Tokens.u;
+        width: self.preferred-width;
+        height: Tokens.snap(Tokens.sm * 1.5);
+        spacing: Tokens.snap(Tokens.u * 1.5);
+        for hint in hints : PicoHint { hint: hint; }
+    }
+}

@@ -1,0 +1,19 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// Tells the screen where the cursor's control stands, once it has been laid
+// out, so a scroll region can bring it into sight. Placed over the control,
+// the size of it; it draws nothing.
+export component PicoReveal {
+    in property <bool> focused;
+    property <bool> pending: focused;
+    changed focused => { pending = focused; }
+    Timer {
+        interval: 16ms;
+        running: pending;
+        triggered => {
+            pending = false;
+            Focus.reveal(root.absolute-position.x, root.absolute-position.y, root.width, root.height);
+        }
+    }
+}

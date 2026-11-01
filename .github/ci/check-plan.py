@@ -22,10 +22,9 @@ LANES = (
     "korrid",
     "inputd",
     "limitsd",
-    "pico",
     "zone",
 )
-SURFACES = {"pico", "zone"}
+SURFACES = {"zone"}
 # Inputs of the existing cache tests and delivery-workflow check. Shared Nix
 # trust/composition and unfamiliar helpers select all lanes in the requested profile.
 CACHE_POLICY_INPUTS = {

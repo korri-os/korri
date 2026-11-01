@@ -1,0 +1,10 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoPara } from "PicoPara.slint";
+
+// A title: large, wrapping; steps down a size when the box is short.
+export component PicoTitle inherits PicoPara {
+    in property <bool> large: true;
+    font-size: large && !Tokens.short ? Tokens.xl : Tokens.lg;
+    color: P8.ink;
+}

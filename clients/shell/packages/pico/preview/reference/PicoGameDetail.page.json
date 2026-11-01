@@ -1,0 +1,1096 @@
+{
+  "results": [
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "default",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.default.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "default",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.default.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "default",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.default.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "default",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.default.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "default",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.default.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "default",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.default.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NoArtOrHistory",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NoArtOrHistory.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NoArtOrHistory",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NoArtOrHistory.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NoArtOrHistory",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NoArtOrHistory.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NoArtOrHistory",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NoArtOrHistory.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NoArtOrHistory",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NoArtOrHistory.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NoArtOrHistory",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NoArtOrHistory.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "MultipleLocations",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.MultipleLocations.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "MultipleLocations",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.MultipleLocations.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "MultipleLocations",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.MultipleLocations.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "MultipleLocations",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.MultipleLocations.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "MultipleLocations",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.MultipleLocations.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "MultipleLocations",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.MultipleLocations.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ChooseLocation",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ChooseLocation.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ChooseLocation",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ChooseLocation.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ChooseLocation",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ChooseLocation.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ChooseLocation",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ChooseLocation.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ChooseLocation",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ChooseLocation.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ChooseLocation",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ChooseLocation.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NeedsDownload",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NeedsDownload.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NeedsDownload",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NeedsDownload.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NeedsDownload",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NeedsDownload.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NeedsDownload",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NeedsDownload.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NeedsDownload",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NeedsDownload.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NeedsDownload",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NeedsDownload.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NotDownloaded",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NotDownloaded.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NotDownloaded",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NotDownloaded.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NotDownloaded",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NotDownloaded.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NotDownloaded",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NotDownloaded.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NotDownloaded",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NotDownloaded.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "NotDownloaded",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.NotDownloaded.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadQueued",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadQueued.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadQueued",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadQueued.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadQueued",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadQueued.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadQueued",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadQueued.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadQueued",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadQueued.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadQueued",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadQueued.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloading",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloading.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloading",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloading.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloading",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloading.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloading",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloading.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloading",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloading.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloading",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloading.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Unpacking",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Unpacking.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Unpacking",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Unpacking.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Unpacking",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Unpacking.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Unpacking",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Unpacking.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Unpacking",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Unpacking.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Unpacking",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Unpacking.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadFailed",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadFailed.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadFailed",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadFailed.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadFailed",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadFailed.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadFailed",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadFailed.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadFailed",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadFailed.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "DownloadFailed",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.DownloadFailed.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloaded",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloaded.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloaded",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloaded.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloaded",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloaded.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloaded",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloaded.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloaded",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloaded.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "Downloaded",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.Downloaded.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoveDownload",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoveDownload.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoveDownload",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoveDownload.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoveDownload",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoveDownload.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoveDownload",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoveDownload.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoveDownload",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoveDownload.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoveDownload",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoveDownload.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoval",
+      "device": "rg353m",
+      "viewport": {
+        "width": 640,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoval.rg353m.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoval",
+      "device": "odin2portal",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoval.odin2portal.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoval",
+      "device": "rpminiv2",
+      "viewport": {
+        "width": 1240,
+        "height": 1080
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoval.rpminiv2.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoval",
+      "device": "r36tmax",
+      "viewport": {
+        "width": 720,
+        "height": 720
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoval.r36tmax.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoval",
+      "device": "rgds",
+      "viewport": {
+        "width": 640,
+        "height": 960
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoval.rgds.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    },
+    {
+      "part": "src/pages/PicoGameDetail.page.part.tsx",
+      "state": "ConfirmRemoval",
+      "device": "rgds-side",
+      "viewport": {
+        "width": 1280,
+        "height": 480
+      },
+      "frame": "Rendered",
+      "png": "/tmp/pico-ref/out/PicoGameDetail.page/src-pages-PicoGameDetail.page.23c16da5eba8.ConfirmRemoval.rgds-side.png",
+      "problems": [],
+      "console": [],
+      "spill": null
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoBadge, ChipView } from "../atoms/PicoBadge.slint";
+
+// The facts as a run of chips that wraps onto as many lines as it needs:
+// RESUME, the download, then the plays or NEVER PLAYED. Up to five chips.
+export component PicoStatRun {
+    in property <[ChipView]> chips;
+    property <length> gap: 3 * Tokens.p;
+    property <length> step: 12 * Tokens.p;
+    property <length> room: root.width;
+    height: chips.length == 0 ? 0 : (1 + (b.y > 0 ? 1 : 0) + (c.y > b.y ? 1 : 0) + (d.y > c.y ? 1 : 0) + (e.y > d.y ? 1 : 0)) * step - 2 * Tokens.p;
+    a := PicoBadge { x: 0; y: 0; visible: chips.length > 0; chip: chips.length > 0 ? chips[0] : { }; }
+    property <length> a-end: chips.length > 0 ? a.width + gap : 0;
+    b := PicoBadge {
+        property <bool> wrap: a-end > 0 && a-end + self.width > room;
+        x: wrap ? 0 : a-end;
+        y: wrap ? step : 0;
+        visible: chips.length > 1;
+        chip: chips.length > 1 ? chips[1] : { };
+    }
+    property <length> b-end: chips.length > 1 ? b.x + b.width + gap : a-end;
+    c := PicoBadge {
+        property <bool> wrap: b-end > 0 && b-end + self.width > room;
+        x: wrap ? 0 : b-end;
+        y: chips.length < 3 ? b.y : wrap ? b.y + step : b.y;
+        visible: chips.length > 2;
+        chip: chips.length > 2 ? chips[2] : { };
+    }
+    property <length> c-end: chips.length > 2 ? c.x + c.width + gap : b-end;
+    d := PicoBadge {
+        property <bool> wrap: c-end > 0 && c-end + self.width > room;
+        x: wrap ? 0 : c-end;
+        y: chips.length < 4 ? c.y : wrap ? c.y + step : c.y;
+        visible: chips.length > 3;
+        chip: chips.length > 3 ? chips[3] : { };
+    }
+    property <length> d-end: chips.length > 3 ? d.x + d.width + gap : c-end;
+    e := PicoBadge {
+        property <bool> wrap: d-end > 0 && d-end + self.width > room;
+        x: wrap ? 0 : d-end;
+        y: chips.length < 5 ? d.y : wrap ? d.y + step : d.y;
+        visible: chips.length > 4;
+        chip: chips.length > 4 ? chips[4] : { };
+    }
+}

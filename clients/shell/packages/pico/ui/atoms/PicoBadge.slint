@@ -1,0 +1,28 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "PicoLine.slint";
+
+// A condition or a fact as a small plate. `kind`: "ok" green, "info" navy,
+// "warn" red, "go" yellow, "empty" quiet, "stat" a figure with its caption.
+export struct ChipView { text: string, caption: string, kind: string }
+
+export component PicoBadge {
+    in property <ChipView> chip;
+    width: row.preferred-width;
+    height: 10 * Tokens.p;
+    Rectangle {
+        background: chip.kind == "ok" ? P8.ok : chip.kind == "warn" ? P8.warn : chip.kind == "go" ? P8.go : P8.plate;
+    }
+    row := HorizontalLayout {
+        padding-left: 3 * Tokens.p;
+        padding-right: 3 * Tokens.p;
+        spacing: 2 * Tokens.p;
+        PicoLine {
+            line-height: 10 * Tokens.p;
+            text: chip.text;
+            overflow: clip;
+            color: chip.kind == "ok" || chip.kind == "go" ? P8.ink-dark : chip.kind == "stat" || chip.kind == "warn" ? P8.ink : chip.kind == "empty" ? P8.ink-quiet : P8.plate-ink;
+        }
+        if chip.caption != "" : PicoLine { line-height: 10 * Tokens.p; text: chip.caption; overflow: clip; color: P8.ink-quiet; }
+    }
+}

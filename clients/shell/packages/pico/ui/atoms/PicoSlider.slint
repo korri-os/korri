@@ -1,0 +1,21 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+
+// A range as ten cells between arrows, the value at its end.
+export component PicoSlider inherits HorizontalLayout {
+    in property <int> cells;
+    in property <string> value;
+    in property <color> ink: P8.ink-quiet;
+    in property <color> value-ink: P8.ink-quiet;
+    spacing: 2 * Tokens.p;
+    Text { text: "◀"; font-size: Tokens.md; color: ink; vertical-alignment: center; }
+    HorizontalLayout {
+        spacing: Tokens.p;
+        for c in 10 : Rectangle {
+            width: Tokens.p;
+            Rectangle { x: 0; y: parent.height / 4; width: parent.width; height: parent.height / 2; background: c < cells ? P8.ok : P8.slate; }
+        }
+    }
+    if value != "" : Text { text: value; font-size: Tokens.md; color: value-ink; vertical-alignment: center; }
+    Text { text: "▶"; font-size: Tokens.md; color: ink; vertical-alignment: center; }
+}

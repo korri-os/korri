@@ -1,0 +1,31 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoCart, CartView } from "../molecules/PicoCart.slint";
+
+export struct ResumeView { cart: CartView, title: string, subtitle: string }
+
+// The games with a save waiting, each a cart with its title and system.
+export component PicoResumeList inherits VerticalLayout {
+    alignment: start;
+    in property <[ResumeView]> games;
+    spacing: 2 * Tokens.p;
+    PicoLine { text: "RESUME"; color: P8.ink-quiet; }
+    HorizontalLayout {
+        alignment: start;
+        spacing: 6 * Tokens.p;
+        for game in games : VerticalLayout {
+            width: 44 * Tokens.p;
+            alignment: start;
+            spacing: Tokens.p;
+            Rectangle {
+                height: 40 * Tokens.p;
+                if game.cart.focused : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                shell := PicoCart { x: 0; y: parent.height - self.shell-h - 2 * Tokens.p; cart: game.cart; box-w: 20 * Tokens.p; box-h: 28 * Tokens.p; }
+                Rectangle { x: 0; y: parent.height - 2 * Tokens.p; width: parent.width; height: 2 * Tokens.p; background: P8.floor; }
+            }
+            Text { text: game.title; font-size: Tokens.sm; color: P8.ink; wrap: word-wrap; }
+            PicoLine { text: game.subtitle; color: P8.ink-quiet; }
+        }
+    }
+}

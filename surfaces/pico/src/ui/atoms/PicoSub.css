@@ -1,8 +1,0 @@
-/* The line under a title that says where a game comes from. The accent is the
- * one warm colour on the facts, so the eye reads title, then this. */
-.pico-sub {
-	font-size: var(--pico-text);
-	line-height: 1.5;
-	color: var(--pico-accent);
-	overflow-wrap: anywhere;
-}

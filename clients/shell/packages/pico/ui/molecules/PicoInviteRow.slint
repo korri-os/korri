@@ -1,0 +1,30 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+
+// One game playing now on another device, with exactly Korri's actions.
+export struct InviteView { title: string, who: string, art: image, has-art: bool, actions: [ButtonView] }
+
+export component PicoInviteRow {
+    in property <InviteView> invite;
+    height: Tokens.md * 1.5 + Tokens.sm * 1.5 + 2 * Tokens.p;
+    HorizontalLayout {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height - Tokens.p;
+        spacing: 3 * Tokens.p;
+        if invite.has-art : Image { width: 22 * Tokens.p; source: invite.art; image-fit: contain; image-rendering: pixelated; }
+        VerticalLayout {
+            alignment: center;
+            PicoLine { text: invite.title; font-size: Tokens.md; }
+            PicoLine { text: invite.who; color: P8.ink-dim; }
+        }
+        for action in invite.actions : VerticalLayout {
+            alignment: center;
+            PicoRow { min-width: max(30 * Tokens.p, self.preferred-width); button: action; }
+        }
+    }
+    Rectangle { x: 0; y: root.height - Tokens.p; width: root.width; height: Tokens.p; background: P8.floor; }
+}

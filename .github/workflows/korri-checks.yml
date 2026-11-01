@@ -48,7 +48,6 @@ jobs:
       korrid: ${{ steps.plan.outputs.korrid }}
       inputd: ${{ steps.plan.outputs.inputd }}
       limitsd: ${{ steps.plan.outputs.limitsd }}
-      pico: ${{ steps.plan.outputs.pico }}
       zone: ${{ steps.plan.outputs.zone }}
     steps:
       - name: Check out the exact tested source
@@ -342,30 +341,6 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run limitsd-check
         run: nix run .#limitsd-check
-  pico:
-    name: Pico surface
-    needs: select
-    if: needs.select.outputs.pico == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - name: Check out the exact tested source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ inputs.source_sha || github.sha }}
-          persist-credentials: false
-      - name: Verify source identity
-        env:
-          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
-        run: |
-          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
-      - name: Install Nix
-        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run pico-check
-        run: nix run .#pico-check
   zone:
     name: Zone surface
     needs: select
@@ -393,7 +368,7 @@ jobs:
   check:
     name: Host, shell, and surface
     if: always()
-    needs: [select, policy, cache, fmt, treaty, shell, parity, cli, korrid, inputd, limitsd, pico, zone]
+    needs: [select, policy, cache, fmt, treaty, shell, parity, cli, korrid, inputd, limitsd, zone]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

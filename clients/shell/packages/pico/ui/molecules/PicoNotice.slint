@@ -1,0 +1,45 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
+import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+import { PicoCard } from "PicoCard.slint";
+import { PicoReveal } from "../atoms/PicoReveal.slint";
+
+export struct LineView { text: string, focused: bool }
+
+// A question or a notice: kicker, title, Korri's words, a report to read
+// line by line, and the answers, stacked or side by side.
+export struct CardView {
+    shown: bool,
+    tone: string,
+    kicker: string,
+    title: string,
+    message: string,
+    lines: [LineView],
+    actions: [ButtonView],
+    inline: bool,
+}
+
+export component PicoNotice inherits PicoCard {
+    in property <CardView> card;
+    in property <length> title-size: Tokens.short ? Tokens.md : Tokens.lg;
+    tone: card.tone;
+    if card.kicker != "" : PicoLine { text: card.kicker; color: P8.kicker(card.tone); }
+    if card.title != "" : PicoPara { text: card.title; font-size: title-size; color: P8.shell-ink(card.tone); }
+    if card.message != "" : PicoPara { text: card.message; font-size: Tokens.short ? Tokens.sm : Tokens.md; color: P8.shell-ink(card.tone); }
+    for line in card.lines : Rectangle {
+        min-height: l.preferred-height;
+        if line.focused : Rectangle { x: -Tokens.p; y: 0; width: parent.width + 2 * Tokens.p; height: parent.height; background: P8.pick; }
+        l := PicoPara { x: 0; y: 0; width: parent.width; text: line.text; font-size: Tokens.sm; color: line.focused ? P8.pick-ink : P8.note(card.tone); }
+        PicoReveal { x: 0; y: 0; width: parent.width; height: parent.height; focused: line.focused; }
+    }
+    if !card.inline : VerticalLayout {
+        spacing: 2 * Tokens.p;
+        for action in card.actions : PicoRow { button: action; kind: "card"; }
+    }
+    if card.inline : HorizontalLayout {
+        spacing: 2 * Tokens.p;
+        for action in card.actions : PicoRow { button: action; kind: "card"; }
+    }
+}

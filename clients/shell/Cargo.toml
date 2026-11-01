@@ -19,6 +19,9 @@ path = "src/main.rs"
 name = "fixture-korrid"
 required-features = ["fixture"]
 
+[[example]]
+name = "surface-probe"
+
 [dependencies]
 # Software renderer only. The window system comes from exactly one feature
 # below (`desktop`, the default, or `webos`). `unstable-fontique-011` gives the

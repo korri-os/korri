@@ -1,0 +1,28 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoReveal } from "../atoms/PicoReveal.slint";
+import { PicoBadge } from "../atoms/PicoBadge.slint";
+import { PicoNetworkMarks } from "PicoNetworkMarks.slint";
+
+// One network from Korri's scan, to join.
+export component PicoNetworkRow {
+    in property <string> ssid;
+    in property <int> bars;
+    in property <bool> locked;
+    in property <bool> connected;
+    in property <bool> focused;
+    height: Tokens.md + 6 * Tokens.p;
+    if focused : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
+    Rectangle { background: focused ? P8.pick : P8.ink-dark; }
+    Text { x: 3 * Tokens.p; y: 3 * Tokens.p; width: root.width - 30 * Tokens.p; text: ssid; font-size: Tokens.md; color: focused ? P8.pick-ink : P8.ink; overflow: elide; }
+    HorizontalLayout {
+        x: root.width - 3 * Tokens.p - self.width;
+        y: 3 * Tokens.p;
+        width: self.preferred-width;
+        height: Tokens.md;
+        spacing: 2 * Tokens.p;
+        if connected : PicoBadge { y: (Tokens.md - self.height) / 2; chip: { text: "CONNECTED", kind: "ok" }; }
+        PicoNetworkMarks { width: 13 * Tokens.p; locked: locked; bars: bars; ink: focused ? P8.ink-dark : P8.ink; }
+    }
+    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: focused; }
+}

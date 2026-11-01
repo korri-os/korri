@@ -1,0 +1,12 @@
+import { P8 } from "../palette.slint";
+import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+
+// Who plays on the stream, over the pause menu's controls.
+export component PicoStreamPlayers inherits VerticalLayout {
+    in property <[string]> names;
+    in property <color> ink: P8.ink-dark;
+    spacing: 0;
+    PicoLine { text: "ON THE STREAM"; color: P8.shell-tell-note; }
+    for name in names : PicoLine { text: name; font-size: Tokens.md; color: ink; }
+}

@@ -1,5 +1,0 @@
-.pico-network-marks {
-	display: inline-flex;
-	align-items: center;
-	gap: calc(var(--pico-px) * 2);
-}
