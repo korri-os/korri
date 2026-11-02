@@ -35,6 +35,9 @@ pub enum HostEvent {
     Close,
     /// The window finished drawing a frame. Sent once per window.
     FirstFrame,
+    /// The window's size or scale factor changed. The shell reads the new
+    /// logical size from the window when it handles this.
+    Resized,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

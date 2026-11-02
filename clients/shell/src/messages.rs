@@ -38,6 +38,12 @@ pub fn tick(idle_ms: u32) -> Value {
     json(SurfaceMessage::Tick { idle_ms })
 }
 
+/// Contract amendment A2 (section 8.1): the surface window's size in
+/// logical pixels.
+pub fn resized(width: f32, height: f32) -> Value {
+    json(SurfaceMessage::Resized { width, height })
+}
+
 /// How often the shell sends `Tick`.
 pub const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 

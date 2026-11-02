@@ -4,6 +4,8 @@ globalThis.surface = {
   init: (model, preferences) => ({ word: preferences["probe.word"], count: 0, stored: false, idle: -1, ticks: 0 }),
   update: (state, message, model) => {
     if (message._tag === "PreferenceStored") return { state: { ...state, stored: message.key === "probe.word" }, requests: [] };
+    // A2: the first Resized must come before the first view (views counts them).
+    if (message._tag === "Resized") return { state: { ...state, width: message.width, height: message.height, resizes: (state.resizes || 0) + 1, viewsBeforeFirstResize: state.resizes ? state.viewsBeforeFirstResize : (globalThis.views || 0) }, requests: [] };
     if (message._tag === "Tick") return { state: { ...state, idle: message.idleMs, ticks: state.ticks + 1 }, requests: [] };
     if (message._tag !== "Pressed") return { state, requests: [] };
     switch (message.button) {
@@ -18,7 +20,11 @@ globalThis.surface = {
       default: return { state, requests: [] };
     }
   },
-  view: (state, model) => ({
+  view: (state, model) => (globalThis.views = (globalThis.views || 0) + 1, {
+    widthSeen: state.width || 0,
+    heightSeen: state.height || 0,
+    resizes: state.resizes || 0,
+    viewsBeforeFirstResize: state.viewsBeforeFirstResize ?? -1,
     idleMs: state.idle,
     ticks: state.ticks,
     word: state.word,

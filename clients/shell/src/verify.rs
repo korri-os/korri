@@ -38,6 +38,16 @@ pub const VERIFIER: &str = "korri-shell-verify-3";
 pub const SLINT: &str = "1.18.1";
 pub const FIXTURE_GAMES: [usize; 3] = [0, 12, 10_000];
 pub const SEEDED_PRESSES: usize = 500;
+
+/// Contract A2 (8.3): every package is swept at these window sizes, in
+/// logical pixels.
+pub const RESIZED_SIZES: [(f32, f32); 5] = [
+    (320.0, 240.0),
+    (640.0, 480.0),
+    (480.0, 800.0),
+    (1280.0, 720.0),
+    (1920.0, 1080.0),
+];
 pub const SEED: u32 = 0x00c0_ffee;
 const FIXTURE_MODEL: &str = include_str!("../fixtures/model.json");
 
@@ -142,6 +152,15 @@ struct Sweep<'a> {
     displays: Option<Value>,
 }
 
+/// A display list larger than any swept window (A2 8.3): a package must lay
+/// out from `Resized`, never from `displays`.
+fn large_displays() -> Value {
+    json!([
+        {"id": "large", "main": true, "x": 0, "y": 0, "width": 3840, "height": 2160, "touch": false},
+        {"id": "side", "main": false, "x": 3840, "y": 0, "width": 2560, "height": 1440, "touch": false},
+    ])
+}
+
 /// Two 640x480 touch displays, the main one above: the Anbernic RG DS as
 /// Pico's own fixture states it (`packages/pico/test/fixtures/displays.ts`).
 fn two_displays() -> Value {
@@ -180,10 +199,12 @@ impl Checker<'_> {
     fn views(&mut self, sweep: &Sweep) -> Result<()> {
         let surface_view = self.engine.view()?;
         view::check(&surface_view, self.surface, &mut self.images).context("view()")?;
+        view::check_focus_plan(&surface_view).context("view() focus plan")?;
         self.run.views += 1;
         if sweep.overlay {
             if let (Some(types), Some(overlay)) = (self.overlay, self.engine.overlay()?) {
                 view::check(&overlay, types, &mut self.images).context("overlay()")?;
+                view::check_focus_plan(&overlay).context("overlay() focus plan")?;
                 self.run.views += 1;
             }
         }
@@ -327,6 +348,9 @@ fn sweep_one(
             engine::effective_preferences(checker.engine.declaration(), &BTreeMap::new());
         checker.engine.set_model(&sweep.model().to_string())?;
         checker.engine.init(&preferences)?;
+        // A2 (8.1): one Resized after init, before the first view.
+        let first = messages::resized(640.0, 480.0);
+        checker.engine.update(&first)?;
         checker.views(&sweep)?;
         let keys: Vec<String> = checker.engine.declaration().keys().cloned().collect();
         let mut every: Vec<Value> = messages::BUTTONS
@@ -335,6 +359,7 @@ fn sweep_one(
             .collect();
         every.push(messages::korri_published());
         every.extend([0, 1_000, 60_000, u32::MAX].map(messages::tick));
+        every.extend(RESIZED_SIZES.map(|(w, h)| messages::resized(w, h)));
         every.extend(keys.iter().map(|k| messages::preference_stored(k)));
         for message in every {
             checker.deliver(&mut sweep, message)?;
@@ -347,6 +372,10 @@ fn sweep_one(
             let button = messages::BUTTONS[seed as usize % messages::BUTTONS.len()];
             checker.deliver(&mut sweep, messages::pressed(button))?;
             // A tick between presses, as the shell sends once a second.
+            if seed.is_multiple_of(16) {
+                let (w, h) = RESIZED_SIZES[(seed >> 4) as usize % RESIZED_SIZES.len()];
+                checker.deliver(&mut sweep, messages::resized(w, h))?;
+            }
             if seed.is_multiple_of(4) {
                 let idle = (seed >> 8) % 600_000;
                 checker.deliver(&mut sweep, messages::tick(idle))?;
@@ -427,6 +456,16 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
                 &games,
                 false,
                 Some(two_displays()),
+                &mut peaks,
+            )?);
+        }
+        {
+            let games = catalog::games(&examples, 12);
+            summary.runs.push(sweep_one(
+                &plan,
+                &games,
+                false,
+                Some(large_displays()),
                 &mut peaks,
             )?);
         }
@@ -665,12 +704,14 @@ mod tests {
         assert!(summary.pass, "{:?}", summary.reasons);
         assert_eq!(
             summary.runs.iter().map(|r| r.games).collect::<Vec<_>>(),
-            vec![0, 12, 10_000]
+            vec![0, 12, 10_000, 12]
         );
+        // The last run lays out under a display list larger than the window.
+        assert_eq!(summary.runs[3].displays, 2);
         assert!(summary
             .runs
             .iter()
-            .all(|r| r.updates >= 9 + 1 + 4 + 1 + SEEDED_PRESSES));
+            .all(|r| r.updates >= 9 + 1 + 4 + RESIZED_SIZES.len() + 1 + SEEDED_PRESSES));
         assert!(summary.runs.iter().all(|r| r.requests > 0));
         assert_eq!(summary.preferences["demo.size"].initial, "m");
         assert!(
@@ -700,11 +741,11 @@ mod tests {
         assert_eq!(all.displays, Some(engine::Displays::All));
         assert_eq!(
             all.runs.iter().map(|r| r.displays).collect::<Vec<_>>(),
-            vec![0, 0, 0, 2]
+            vec![0, 0, 0, 2, 2]
         );
         let main = with("'main'");
         assert!(main.pass && main.displays == Some(engine::Displays::Main));
-        assert_eq!(main.runs.len(), 3);
+        assert_eq!(main.runs.len(), 4);
         for wrong in ["'both'", "true", "null"] {
             let summary = with(wrong);
             assert!(!summary.pass, "{wrong}");
