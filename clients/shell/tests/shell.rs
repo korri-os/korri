@@ -498,3 +498,32 @@ fn zone_pages_a_10000_game_catalog_and_keeps_its_focus() {
         json!(catalog::games(&verify::fixture().1, 10_000)[60]["id"])
     );
 }
+
+#[test]
+fn ticks_arrive_each_second_with_idle_time_that_a_press_and_a_switch_reset() {
+    let mut rig = rig(&["probe", "pico"], 12, Behaviour::default());
+    // Amendment A1: once a second, the time since the last press or load.
+    rig.until("first tick", |r| r.int("ticks") >= 1.0);
+    let first = rig.int("idle-ms");
+    assert!((900.0..2_000.0).contains(&first), "{first}");
+    rig.until("second tick", |r| r.int("ticks") >= 2.0);
+    assert!(
+        rig.int("idle-ms") >= first + 900.0,
+        "idle grows without presses"
+    );
+    // A press resets the count.
+    rig.key(Key::Right);
+    assert_eq!(rig.int("count"), 1.0);
+    let ticks = rig.int("ticks");
+    rig.until("tick after the press", |r| r.int("ticks") > ticks);
+    assert!(rig.int("idle-ms") < 1_100.0, "{}", rig.int("idle-ms"));
+    // A switch away and back loads the probe again: its count starts over.
+    rig.until("idle again", |r| r.int("idle-ms") >= 1_800.0);
+    rig.key(Key::F2);
+    rig.until("pico", |r| r.shell.current_id() == Some("pico"));
+    rig.key(Key::F2);
+    rig.until("probe again", |r| r.shell.current_id() == Some("probe"));
+    assert_eq!(rig.int("ticks"), 0.0, "a fresh load has seen no tick");
+    rig.until("first tick after the switch", |r| r.int("ticks") >= 1.0);
+    assert!(rig.int("idle-ms") < 1_100.0, "{}", rig.int("idle-ms"));
+}

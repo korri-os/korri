@@ -61,6 +61,8 @@ pub enum Event {
     },
     /// Repeat timer for held directions.
     Tick,
+    /// Once a second: send the active surface a `Tick` (amendment A1).
+    Idle,
 }
 
 /// Delivers events to the shell on the UI thread, later.
@@ -102,6 +104,8 @@ pub struct LoadTiming {
 
 struct Loaded {
     generation: u64,
+    /// The last `Pressed` delivered to this surface, or when it loaded.
+    last_press: Instant,
     package: Package,
     engine: Engine,
     overlay_definition: Option<ComponentDefinition>,
@@ -145,6 +149,8 @@ pub struct Shell {
     clock: Instant,
     frames: FrameCounter,
     repeat: Option<slint::Timer>,
+    /// Sends `Event::Idle` once a second while the shell runs.
+    idle_timer: Option<slint::Timer>,
     native_active: Option<Box<dyn Fn(bool)>>,
     /// Shell windows that have keyboard focus; `None` until the first focus event.
     focused: Option<std::collections::HashSet<(u64, u8)>>,
@@ -195,6 +201,7 @@ impl Shell {
             clock: Instant::now(),
             frames: FrameCounter::default(),
             repeat: None,
+            idle_timer: None,
             native_active: None,
             focused: None,
             quit: None,
@@ -273,6 +280,14 @@ impl Shell {
             match self.load(index) {
                 Ok(loaded) => {
                     self.current = Some(loaded);
+                    let timer = slint::Timer::default();
+                    let post = self.post.clone();
+                    timer.start(
+                        slint::TimerMode::Repeated,
+                        messages::TICK_INTERVAL,
+                        move || post.post(Event::Idle),
+                    );
+                    self.idle_timer = Some(timer);
                     return Ok(());
                 }
                 Err(error) => {
@@ -318,6 +333,7 @@ impl Shell {
                 outcome,
             } => self.request_done(generation, request, outcome),
             Event::Tick => self.tick(),
+            Event::Idle => self.idle(),
         }
     }
 
@@ -411,7 +427,23 @@ impl Shell {
         }
     }
 
+    /// Send the active surface `Tick` with the time since its last press.
+    fn idle(&mut self) {
+        let Some(current) = self.current.as_ref() else {
+            return;
+        };
+        let idle = current
+            .last_press
+            .elapsed()
+            .as_millis()
+            .min(u32::MAX as u128) as u32;
+        self.update(&messages::tick(idle));
+    }
+
     pub fn press(&mut self, button: Button) {
+        if let Some(current) = self.current.as_mut() {
+            current.last_press = Instant::now();
+        }
         self.update(&messages::pressed(button));
     }
 
@@ -605,6 +637,7 @@ impl Shell {
         );
         let mut loaded = Loaded {
             generation,
+            last_press: Instant::now(),
             package,
             engine,
             overlay_definition: views.overlay,

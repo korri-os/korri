@@ -1,9 +1,10 @@
 // A test package for the shell's integration tests. Plain JavaScript, no bundle.
 globalThis.surface = {
   preferences: { "probe.word": { mark: "device", initial: "first" } },
-  init: (model, preferences) => ({ word: preferences["probe.word"], count: 0, stored: false }),
+  init: (model, preferences) => ({ word: preferences["probe.word"], count: 0, stored: false, idle: -1, ticks: 0 }),
   update: (state, message, model) => {
     if (message._tag === "PreferenceStored") return { state: { ...state, stored: message.key === "probe.word" }, requests: [] };
+    if (message._tag === "Tick") return { state: { ...state, idle: message.idleMs, ticks: state.ticks + 1 }, requests: [] };
     if (message._tag !== "Pressed") return { state, requests: [] };
     switch (message.button) {
       case "right": return { state: { ...state, count: state.count + 1 }, requests: [] };
@@ -18,6 +19,8 @@ globalThis.surface = {
     }
   },
   view: (state, model) => ({
+    idleMs: state.idle,
+    ticks: state.ticks,
     word: state.word,
     count: state.count,
     total: model.catalog._tag === "Ready" ? model.catalog.total : 0,

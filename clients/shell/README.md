@@ -40,6 +40,11 @@ the model watch is a root WebSocket (`Origin`, then `Bearer CAP`, then
 `app.surface.watch`), one push per ack. Treaty values go through the
 `korri-surface-treaty` crate (`contracts/surface/`).
 
+Once a second the shell sends the active surface `{"_tag":"Tick","idleMs":N}`
+(contract amendment A1, section 7.1): `N` is the time since the last `Pressed`
+it delivered to that surface, or since the surface loaded. Each `Tick` is an
+`update` call under the 50 ms budget. The verifier's sweep includes ticks.
+
 ## Windows and placement
 
 Only one shell window is mapped at a time: the Surface, or the Overlay during
