@@ -240,3 +240,38 @@ Both platform workers build against exactly this, so they can work in parallel.
 - It is added, optional, to the Busy, ChooseSave and Paused statuses.
 - korrid publishes a cancel action, and marks it, for the busy states that offer none today: acquisition "Checking", saves Checking, Reading and Picking. Each cancels what the portal's Back cancelled (`git show main:clients/portal/src/surface/SurfaceRoot.tsx`, lines 334–348).
 - A surface's Back runs the marked action, if any, before its own Back handling. Surfaces never infer meaning from action ids.
+
+## 8. Amendment A2 (owner, 2026-11-02): the logic knows its container
+
+Owner: "the correct systemic holistic approach so that the d-pad works just as
+a user would expect and that every design follows intrinsic design values."
+
+### 8.1 Resized
+- New message: `SurfaceMessage::Resized { width: f32, height: f32 }`, the
+  surface window's size in logical pixels (the same units `.slint` lays out
+  in). JSON: `{"_tag":"Resized","width":640,"height":480}`.
+- The shell sends it once before the first `view()` of every load and switch,
+  then on every window size or scale-factor change. `init` keeps its signature;
+  the first `Resized` follows it immediately.
+- `SurfaceModel.displays` stays as it is: facts about displays for placement
+  and for "all" surfaces, never a stand-in for the window.
+
+### 8.2 One plan drives both layout and focus
+- A surface computes its layout plan in logic as a pure function of
+  (width, height): column counts, which regions sit beside or above each
+  other, what is visible. That is the intrinsic-design rule. Its focus graph
+  and its `view()` both read that one plan.
+- `view()` passes the plan's decisions (columns, arrangement) to `.slint`,
+  which draws them. `.slint` may size and space from its own window, but it
+  never makes a structural decision that the focus graph does not know.
+- Result: a d-pad press always moves to the item drawn in that direction, at
+  every size.
+
+### 8.3 Proof required of every surface
+- The verifier sweeps `Resized` at 320x240, 640x480, 480x800, 1280x720 and
+  1920x1080, including a display list larger than the window.
+- For each size, a geometric test: from every focus target, each direction
+  moves to the target the plan draws in that direction (nearest along the
+  pressed axis, as `spatial-focus.ts` defined it), or stays when none exists.
+  This extends the existing "focus is visible" walks; it does not replace
+  them.
