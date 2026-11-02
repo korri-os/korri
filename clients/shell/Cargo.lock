@@ -2229,6 +2229,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "fontique",
+ "i-slint-backend-testing",
  "i-slint-compiler",
  "image",
  "korri-surface-treaty",

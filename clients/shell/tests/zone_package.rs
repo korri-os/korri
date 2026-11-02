@@ -9,6 +9,19 @@
 //!   played through logic.js, then walked with every direction; after each
 //!   press the focused control's mark (Zone's pink drop or edge) is drawn
 //!   inside the window. Screens that hold no focus by design are listed.
+//! - Every direction goes where contract 8.4 says: the shell sends
+//!   `Resized` before the first view; before each direction press the walk
+//!   reads what is drawn (each focus target's place and label, from its
+//!   accessible properties: `accessible-item-selectable` marks a target,
+//!   `accessible-item-selected` the focused one) and the view's regions
+//!   (`focusRegion`, `focusActive`, `focusPlan`). Inside the focused
+//!   target's region the press must reach the target drawn nearest that way
+//!   (spatial-focus.ts: ahead by more than 1 px, then along + 3 x across);
+//!   with none there, the region's declared exit and its entry rule
+//!   (`first`: top to bottom, then left to right; `active`; `remembered`),
+//!   or no move without one. The clock is the test's own, stepped past every
+//!   motion before anything is read. This is Zone's own gate until the
+//!   shell's probe judges the same convention.
 //!
 //! `ZONE_PREVIEW_OUT=DIR` writes every frame as a PNG there.
 
@@ -32,6 +45,14 @@ const SIZES: [(u32, u32); 5] = [
     (1920, 1080),
 ];
 
+/// Time the test has stepped its clock past: every motion ends inside it.
+static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Step the clock past every motion (the longest, the title card's, is 700 ms).
+fn settle() {
+    SKIPPED.fetch_add(2_000, std::sync::atomic::Ordering::Relaxed);
+}
+
 thread_local! {
     static WINDOW: RefCell<Option<Rc<MinimalSoftwareWindow>>> = const { RefCell::new(None) };
 }
@@ -47,11 +68,14 @@ impl Platform for Headless {
         Ok(window)
     }
     fn duration_since_start(&self) -> std::time::Duration {
-        self.started.elapsed()
+        self.started.elapsed() + std::time::Duration::from_millis(SKIPPED.load(std::sync::atomic::Ordering::Relaxed))
     }
 }
 
 fn install() {
+    // The walk reads what is drawn through the element tree: it needs the
+    // compiler's debug info (i_slint_compiler reads this when it configures).
+    std::env::set_var("SLINT_EMIT_DEBUG_INFO", "1");
     let _ = slint::platform::set_platform(Box::new(Headless {
         started: std::time::Instant::now(),
     }));
@@ -120,6 +144,7 @@ fn every_preview_state_draws_at_every_size() {
     assert!(files.len() >= 55, "only {} preview files", files.len());
     let mut failures = Vec::new();
     let mut drawn = 0;
+    let planned: BTreeMap<(u32, u32), Value> = SIZES.iter().map(|&(w, h)| ((w, h), plan_for(&root, w, h))).collect();
     for file in &files {
         let result =
             pollster::block_on(slint_interpreter::Compiler::default().build_from_path(file));
@@ -143,6 +168,8 @@ fn every_preview_state_draws_at_every_size() {
                 instance
                     .window()
                     .set_size(slint::PhysicalSize::new(width, height));
+                // The logic's plan for this size, as main.slint gets it.
+                let _ = instance.set_property("screen", screen_value(&planned[&(width, height)]));
                 instance.show().unwrap();
                 render(width, height);
                 let pixels = render(width, height);
@@ -160,11 +187,163 @@ fn every_preview_state_draws_at_every_size() {
     assert!(drawn >= 5 * 100, "only {drawn} frames");
 }
 
+/// The logic's plan for a window: its view's `screen` after Resized.
+fn plan_for(root: &Path, width: u32, height: u32) -> Value {
+    let source = std::fs::read_to_string(root.join("logic.js")).unwrap();
+    let mut engine = engine::Engine::load(&source, engine::Limits { call: std::time::Duration::from_secs(5), ..engine::Limits::default() }).unwrap();
+    let scenario: Value = serde_json::from_str(&std::fs::read_to_string(root.join("preview/scenarios/games.json")).unwrap()).unwrap();
+    let korri = Korri::new(scenario["models"][0].clone());
+    engine.set_model(&korri.published()).unwrap();
+    let preferences = engine::effective_preferences(engine.declaration(), &BTreeMap::new());
+    engine.init(&preferences).unwrap();
+    engine.update(&json!({"_tag": "Resized", "width": width, "height": height})).unwrap();
+    engine.view().unwrap()["screen"].clone()
+}
+
+/// The plan's `screen` as the Screen struct (ui/types.slint).
+fn screen_value(screen: &Value) -> slint_interpreter::Value {
+    use slint_interpreter::Value as V;
+    let mut out = slint_interpreter::Struct::default();
+    for (key, value) in screen.as_object().unwrap() {
+        let kebab: String = key.chars().flat_map(|c| if c.is_uppercase() { vec!['-', c.to_ascii_lowercase()] } else { vec![c] }).collect();
+        let value = match value {
+            Value::Bool(b) => V::Bool(*b),
+            Value::Number(n) => V::Number(n.as_f64().unwrap()),
+            _ => unreachable!(),
+        };
+        out.set_field(kebab, value);
+    }
+    V::Struct(out)
+}
+
 /// RGB565 of Zone's pink (#ce6584): the focus drop and edge.
 const PINK: u16 = (0xce >> 3) << 11 | (0x65 >> 2) << 5 | (0x84 >> 3);
 
 fn focus_marks(pixels: &[u16]) -> usize {
     pixels.iter().filter(|&&p| p == PINK).count()
+}
+
+/// One focus target as drawn: its label, its box, whether it holds the focus.
+#[derive(Clone, Debug)]
+struct Target {
+    label: String,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    selected: bool,
+}
+
+impl Target {
+    fn key(&self) -> (String, i64, i64) {
+        (self.label.clone(), self.x.round() as i64, self.y.round() as i64)
+    }
+    fn centre(&self) -> (f32, f32) {
+        (self.x + self.w / 2.0, self.y + self.h / 2.0)
+    }
+}
+
+fn target_of(element: &i_slint_backend_testing::ElementHandle) -> Target {
+    let at = element.absolute_position();
+    let size = element.size();
+    Target {
+        label: element.accessible_label().unwrap_or_default().to_string(),
+        x: at.x,
+        y: at.y,
+        w: size.width,
+        h: size.height,
+        selected: element.accessible_item_selected() == Some(true),
+    }
+}
+
+/// What is drawn: every focus target, in its place.
+fn drawn(instance: &slint_interpreter::ComponentInstance) -> Vec<Target> {
+    use i_slint_backend_testing::ElementRoot;
+    instance
+        .root_element()
+        .query_descendants()
+        .match_predicate(|e| e.accessible_item_selectable() == Some(true))
+        .find_all()
+        .iter()
+        .map(target_of)
+        .filter(|t| t.w > 0.0 || t.h >= 0.0)
+        .collect()
+}
+
+/// The view's focus entries: label to region, and each region's active label.
+struct Regions {
+    of: Vec<(String, String)>,
+    active: BTreeMap<String, String>,
+    focused: Option<(String, String)>,
+}
+
+fn regions(view: &Value) -> Regions {
+    fn walk(value: &Value, out: &mut Regions) {
+        match value {
+            Value::Array(items) => items.iter().for_each(|item| walk(item, out)),
+            Value::Object(entry) => {
+                if let Some(region) = entry.get("focusRegion").and_then(Value::as_str) {
+                    let label = ["label", "title", "header"]
+                        .iter()
+                        .find_map(|key| entry.get(*key).and_then(Value::as_str))
+                        .unwrap_or("")
+                        .to_owned();
+                    let label = match (entry.get("seat").and_then(Value::as_str), entry.get("name").and_then(Value::as_str)) {
+                        (Some(seat), Some(name)) => format!("{seat} {name}"),
+                        _ => label,
+                    };
+                    out.of.push((label.clone(), region.to_owned()));
+                    if entry.get("focusActive").and_then(Value::as_bool) == Some(true) {
+                        out.active.insert(region.to_owned(), label.clone());
+                    }
+                    if entry.get("focused").and_then(Value::as_bool) == Some(true) {
+                        out.focused = Some((label, region.to_owned()));
+                    }
+                }
+                entry.values().for_each(|inner| walk(inner, out));
+            }
+            _ => {}
+        }
+    }
+    let mut out = Regions { of: Vec::new(), active: BTreeMap::new(), focused: None };
+    walk(view, &mut out);
+    out
+}
+
+/// The view without the keys the shell strips before it binds (contract 8.4).
+fn stripped(view: &Value) -> Value {
+    match view {
+        Value::Array(items) => Value::Array(items.iter().map(stripped).collect()),
+        Value::Object(entry) => Value::Object(
+            entry
+                .iter()
+                .filter(|(key, _)| !matches!(key.as_str(), "focusRegion" | "focusActive" | "focusPlan"))
+                .map(|(key, inner)| (key.clone(), stripped(inner)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// spatial-focus.ts's choice: ahead by more than 1 px, then along + 3 x across.
+fn nearest(from: &Target, reach: &[Target], direction: &str) -> Option<Target> {
+    let (fx, fy) = from.centre();
+    reach
+        .iter()
+        .filter(|t| t.key() != from.key() && t.w > 0.0)
+        .filter_map(|t| {
+            let (cx, cy) = t.centre();
+            let (dx, dy) = (cx - fx, cy - fy);
+            let (along, across) = match direction {
+                "left" => (-dx, dy.abs()),
+                "right" => (dx, dy.abs()),
+                "up" => (-dy, dx.abs()),
+                _ => (dy, dx.abs()),
+            };
+            (along > 1.0).then(|| (along + across * 3.0, t))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, t)| t.clone())
 }
 
 /// A mini korrid for the walk: the scenario's model, the cursor window over
@@ -253,6 +432,8 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
     scenarios.sort();
     let mut failures = Vec::new();
     let mut checked = 0;
+    let mut directions = 0;
+    let mut wrong_way = Vec::new();
     for path in &scenarios {
         let name = path.file_stem().unwrap().to_string_lossy().to_string();
         if NO_FOCUS.contains(&name.as_str()) {
@@ -304,6 +485,8 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                     }
                 }
             };
+            // The shell's Resized comes before the first view (A2, 8.1).
+            deliver(&mut engine, &mut korri, json!({"_tag": "Resized", "width": width, "height": height}));
             deliver(&mut engine, &mut korri, json!({"_tag": "KorriPublished"}));
             let press = |button: &str| json!({"_tag": "Pressed", "button": button});
             for step in &steps {
@@ -321,14 +504,15 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                     deliver(&mut engine, &mut korri, press(step));
                 }
             }
-            let mut check = |engine: &mut engine::Engine, label: &str| {
+            let mut check = |engine: &mut engine::Engine, label: &str| -> Value {
                 let view = if overlay {
                     engine.overlay().unwrap().unwrap()
                 } else {
                     engine.view().unwrap()
                 };
-                binder.apply(&instance, &view, &mut images).unwrap();
+                binder.apply(&instance, &stripped(&view), &mut images).unwrap();
                 render(width, height);
+                settle();
                 let pixels = render(width, height);
                 checked += 1;
                 if focus_marks(&pixels) < 12 {
@@ -337,18 +521,58 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                         "{name} {width}x{height} after {label}: no focus mark in the window"
                     ));
                 }
+                save(&pixels, width, height, &format!("walk.{name}.{label}"));
+                view
             };
-            check(&mut engine, "steps");
+            let mut view = check(&mut engine, "steps");
+            let mut remembered: BTreeMap<String, String> = BTreeMap::new();
             for (direction, times) in [("down", 8), ("right", 6), ("up", 8), ("left", 6)] {
                 for n in 0..times {
+                    let targets = drawn(&instance);
+                    let known = regions(&view);
+                    let region_of = |t: &Target| known.of.iter().filter(|(label, _)| *label == t.label).map(|(_, r)| r.clone()).collect::<Vec<_>>();
+                    let from = targets.iter().find(|t| t.selected).cloned();
+                    let plan = view.get("focusPlan").cloned().unwrap_or(json!({}));
                     deliver(&mut engine, &mut korri, press(direction));
-                    check(&mut engine, &format!("{direction}{n}"));
+                    view = check(&mut engine, &format!("{direction}{n}"));
+                    let (Some(from), Some((_, region))) = (from, known.focused.clone()) else { continue };
+                    remembered.insert(region.clone(), from.label.clone());
+                    let inside: Vec<Target> = targets.iter().filter(|t| region_of(t).contains(&region)).cloned().collect();
+                    let want = match nearest(&from, &inside, direction) {
+                        Some(t) => format!("{} (in {region})", t.label),
+                        None => match plan.pointer(&format!("/{region}/{direction}")) {
+                            None => format!("{} (stays)", from.label),
+                            Some(exit) => {
+                                let to = exit["to"].as_str().unwrap_or("").to_owned();
+                                let entry = exit["entry"].as_str().unwrap_or("");
+                                let mut there: Vec<Target> = targets.iter().filter(|t| region_of(t).contains(&to)).cloned().collect();
+                                there.sort_by(|a, b| a.y.total_cmp(&b.y).then(a.x.total_cmp(&b.x)));
+                                let first = there.first().map(|t| t.label.clone()).unwrap_or_default();
+                                let label = match entry {
+                                    "active" => known.active.get(&to).cloned().unwrap_or_default(),
+                                    "remembered" => remembered.get(&to).cloned().unwrap_or(first),
+                                    _ => first,
+                                };
+                                format!("{label} (exit to {to}, {entry})")
+                            }
+                        },
+                    };
+                    directions += 1;
+                    let after = regions(&view).focused.map(|(label, _)| label).unwrap_or_else(|| "nothing".into());
+                    if !want.starts_with(&format!("{after} (")) {
+                        wrong_way.push(format!(
+                            "{name} {width}x{height}: {direction}{n} from {:?} in {region} went to {after:?}, want {want}",
+                            from.label
+                        ));
+                    }
                 }
             }
             instance.hide().unwrap();
         }
     }
     assert!(checked > 1000, "only {checked} frames checked");
+    assert!(directions > 1000, "only {directions} directions checked");
+    failures.extend(wrong_way);
     assert!(
         failures.is_empty(),
         "{} of {checked} frames:\n{}",
@@ -380,4 +604,52 @@ fn logic_loads_well_inside_the_call_budget() {
     }
     eprintln!("logic.js loads in {best:?} at best");
     assert!(best < std::time::Duration::from_millis(25), "{best:?}");
+}
+
+/// The plan measures words as .slint draws them (src/plan/measure.ts against
+/// ZoneMeasure): every entry of preview/evidence/measures.json, written by
+/// test/write-measures.ts, in every look and face, within a quarter px.
+#[test]
+fn the_plan_measures_words_as_slint_draws_them() {
+    install();
+    let root = package();
+    let source = r#"
+        import { Tokens } from "ui/tokens.slint";
+        import { ZoneMeasure } from "ui/atoms/ZoneMeasure.slint";
+        export component Measure {
+            in property <string> look;
+            in property <string> words;
+            in property <length> cap;
+            in property <string> face;
+            out property <length> drawn: m.preferred-width;
+            changed look => { Tokens.look = self.look; }
+            m := ZoneMeasure { text: root.words; cap: root.cap; face: root.face; }
+        }
+    "#;
+    let result = pollster::block_on(
+        slint_interpreter::Compiler::default()
+            .build_from_source(source.into(), root.join("measure.slint")),
+    );
+    assert!(!result.has_errors(), "{:?}", result.diagnostics().collect::<Vec<_>>());
+    let instance = result.component("Measure").unwrap().create().unwrap();
+    let measures: Vec<Value> = serde_json::from_str(
+        &std::fs::read_to_string(root.join("preview/evidence/measures.json")).unwrap(),
+    )
+    .unwrap();
+    let mut wrong = Vec::new();
+    for m in &measures {
+        use slint_interpreter::Value as V;
+        instance.set_property("look", V::String(m["look"].as_str().unwrap().into())).unwrap();
+        // A changed callback runs before the next frame: let it write Tokens.look.
+        slint::platform::update_timers_and_animations();
+        instance.set_property("face", V::String(m["face"].as_str().unwrap().into())).unwrap();
+        instance.set_property("cap", V::Number(m["cap"].as_f64().unwrap())).unwrap();
+        instance.set_property("words", V::String(m["text"].as_str().unwrap().into())).unwrap();
+        let V::Number(drawn) = instance.get_property("drawn").unwrap() else { panic!() };
+        let planned = m["width"].as_f64().unwrap();
+        if (drawn - planned).abs() > 0.25 {
+            wrong.push(format!("{} {} {} {:?}: planned {planned:.2}, drawn {drawn:.2}", m["look"], m["face"], m["cap"], m["text"]));
+        }
+    }
+    assert!(wrong.is_empty(), "{} of {}:\n{}", wrong.len(), measures.len(), wrong.join("\n"));
 }

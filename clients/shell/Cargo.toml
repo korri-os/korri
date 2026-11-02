@@ -60,6 +60,8 @@ korri-window-sdl = { path = "window-sdl", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+# The Zone walk reads what is drawn: each focus target's place and its selected flag.
+i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 
 [features]
 default = ["desktop"]
