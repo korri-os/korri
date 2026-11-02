@@ -89,79 +89,26 @@ impl fmt::Display for Violation {
 
 impl std::error::Error for Violation {}
 
-/// One declared preference (contract 3.6).
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Preference {
-    pub mark: Mark,
-    pub initial: String,
-}
+// Contract 3.6: the treaty's preference types, limits and checks.
+pub use korri_surface_treaty::{
+    valid_preference_key, SurfacePreferenceDeclaration as Preference,
+    SurfacePreferenceMark as Mark, PREFERENCE_MAX_KEYS as MAX_PREFERENCES,
+    PREFERENCE_MAX_VALUE_BYTES as MAX_PREFERENCE_BYTES,
+};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Mark {
-    Shared,
-    Device,
-}
-
-pub const MAX_PREFERENCES: usize = 16;
-pub const MAX_PREFERENCE_BYTES: usize = 256;
-
-/// `[a-z0-9.-]{1,32}`.
-pub fn valid_preference_key(key: &str) -> bool {
-    (1..=32).contains(&key.len())
-        && key
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-')
-}
-
+/// A package's declaration, in key order.
 pub type Declaration = BTreeMap<String, Preference>;
 
-/// Check a `preferences` declaration against contract 3.6.
+/// Check a `preferences` declaration against contract 3.6, through the
+/// treaty's own parse and `check_preference_declarations`.
 pub fn check_declaration(value: &Value) -> Result<Declaration, String> {
-    let object = value.as_object().ok_or("preferences must be an object")?;
-    if object.len() > MAX_PREFERENCES {
-        return Err(format!("at most {MAX_PREFERENCES} preferences"));
-    }
-    let mut declaration = Declaration::new();
-    for (key, entry) in object {
-        if !valid_preference_key(key) {
-            return Err(format!("preference key {key:?} is not [a-z0-9.-]{{1,32}}"));
-        }
-        let entry = entry
-            .as_object()
-            .ok_or_else(|| format!("preference {key} must be an object"))?;
-        if entry.keys().any(|k| k != "mark" && k != "initial") {
-            return Err(format!(
-                "preference {key} has a key other than mark and initial"
-            ));
-        }
-        let mark = match entry.get("mark").and_then(Value::as_str) {
-            Some("shared") => Mark::Shared,
-            Some("device") => Mark::Device,
-            _ => {
-                return Err(format!(
-                    "preference {key} mark must be \"shared\" or \"device\""
-                ))
-            }
-        };
-        let initial = entry
-            .get("initial")
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("preference {key} initial must be a string"))?;
-        if initial.len() > MAX_PREFERENCE_BYTES {
-            return Err(format!(
-                "preference {key} initial is over {MAX_PREFERENCE_BYTES} bytes"
-            ));
-        }
-        declaration.insert(
-            key.clone(),
-            Preference {
-                mark,
-                initial: initial.to_owned(),
-            },
-        );
-    }
-    Ok(declaration)
+    let declarations: korri_surface_treaty::SurfacePreferenceDeclarations =
+        serde_json::from_value(value.clone()).map_err(|error| {
+            format!("preferences must map keys to {{ mark: \"shared\" | \"device\", initial: string }}: {error}")
+        })?;
+    korri_surface_treaty::check_preference_declarations(&declarations)
+        .map_err(|refusal| refusal.to_string())?;
+    Ok(declarations.into_iter().collect())
 }
 
 /// Stored values where korrid has them, the declared initial otherwise.

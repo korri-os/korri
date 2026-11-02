@@ -2,13 +2,13 @@
 
 Zone's GAMES page, Modern look, as plain files the surface shell loads at
 run time (`../../CONTRACT.md`). No Rust: `main.slint` draws everything,
-`logic.js` (bundled from `logic.ts`) runs Zone's own state code.
+`logic.js` runs Zone's own state code. `logic.ts` was deleted with the web surfaces and the old TS treaty (2026-11-02); `logic.js` is a frozen bundle.
 It starts from `clients/zone-native-spike/`.
 
 | File | What |
 | --- | --- |
 | `main.slint` | `export component Surface inherits Window`. No callbacks, no key handling, no `init`. Imports only `fonts/Anton-latin.ttf`. |
-| `logic.ts`, `logic.js` | `globalThis.surface = { init, update, view }`, pure. Bundled with the contract's bun command. |
+| `logic.js` (frozen bundle) | `globalThis.surface = { init, update, view }`, pure. Bundled with the contract's bun command. |
 | `fonts/` | Anton (OFL), converted from Zone's woff2 by the native spike. |
 | `preview/` | The proof without the shell: scripts, view JSON and images. |
 

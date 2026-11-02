@@ -115,6 +115,11 @@ struct Loaded {
     /// Whether the Surface window is mapped. Only one of Surface and Overlay
     /// is mapped at a time: korrid places the one window its kiosk unit owns.
     surface_shown: bool,
+    /// The `app.surface.declare` preferences payload, sent again once this
+    /// surface's window is the only one, so korrid places that window.
+    declaration: Value,
+    /// Declared again after its first frame, with no other window left.
+    placed: bool,
     started: Instant,
     timing: LoadTiming,
 }
@@ -434,6 +439,8 @@ impl Shell {
                 Err(error) => {
                     let id = self.packages[index].id.clone();
                     self.say(format!("{id} not loaded, current surface kept: {error:#}"));
+                    // Its declare may already have moved korrid's placement.
+                    self.redeclare();
                 }
             }
         }
@@ -445,7 +452,13 @@ impl Shell {
             .iter()
             .position(|p| p.id == id)
             .with_context(|| format!("no package {id}"))?;
-        let loaded = self.load(index)?;
+        let loaded = match self.load(index) {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                self.redeclare();
+                return Err(error);
+            }
+        };
         self.replace(loaded);
         Ok(())
     }
@@ -459,12 +472,42 @@ impl Shell {
             // One window: the new component already replaced the old one's
             // content, so the old one can go at once.
             self.retire_all();
+            self.place_current();
         }
     }
 
     fn retire_drawn(&mut self) {
         if self.current.as_ref().is_some_and(|c| c.drawn.get()) {
             self.retire_all();
+            self.place_current();
+        }
+    }
+
+    /// Declare the current surface again once its window is the only one.
+    /// The first declare ran before that window existed (preferences need
+    /// it); korrid places the window on every declare.
+    fn place_current(&mut self) {
+        if self.current.as_ref().is_some_and(|c| !c.placed) {
+            if let Some(current) = self.current.as_mut() {
+                current.placed = true;
+            }
+            self.redeclare();
+        }
+    }
+
+    /// Send the current surface's declare again with the same payload. It
+    /// changes no preference; korrid places its window and restores its
+    /// displays.
+    fn redeclare(&mut self) {
+        let Some(current) = self.current.as_ref() else {
+            return;
+        };
+        let id = current.package.id.clone();
+        if let Err(error) =
+            self.korrid
+                .declare(&id, &current.declaration, current.engine.displays())
+        {
+            self.say(format!("{id} declare again failed: {error:#}"));
         }
     }
 
@@ -573,6 +616,8 @@ impl Shell {
             drawn,
             gameplay_overlay,
             surface_shown: false,
+            declaration,
+            placed: false,
             started,
             timing: LoadTiming {
                 compile: compiled,

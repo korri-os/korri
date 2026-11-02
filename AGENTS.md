@@ -42,19 +42,18 @@ the `legacy` branch apply here unless this file says so.
 clients/shell/     the host on every Linux device: a native Rust shell that
                    loads surface packages (Slint views + QuickJS logic), carries
                    korrid's SurfaceModel to them and their requests back, and
-                   delivers input it receives from korrid; packages/ holds the
-                   surface packages, verified at image build time
-surfaces/          the web sources Pico and Zone were ported from; they go when
-                   the native packages stop importing them. A surface may import
-                   contracts/surface/ (types only) and nothing else from Korri
+                   delivers semantic buttons from the input korrid gives it
+clients/shell/packages/
+                   the surface packages (Pico, Zone), one per directory, each
+                   self-contained and verified at image build time. A package
+                   may import contracts/generated/surface.ts (types only) and
+                   nothing else from Korri
 packages/          shared, product-agnostic packages consumable by surfaces
 contracts/         treaties between deployables; imports nothing outside
                    contracts/; when sides disagree, the contract file wins.
                    contracts/surface/ is the hand-written Rust crate
                    korri-surface-treaty; contracts/generated/ is Typeshare
-                   output from Rust (read-only), surface.ts from that crate.
-                   korri-surface.ts in contracts/surface/ is the removed web
-                   portal's treaty and goes with surfaces/
+                   output from Rust (read-only), surface.ts from that crate
 services/korrid/   Rust brain, one per device. Ships as a standalone binary
                    with a configured bind, serving capability-bound RPC on
                    localhost
@@ -211,9 +210,11 @@ repositories, and no Korri client ships an outside repository address.
   The host owns facts, effects, and input delivery; the surface owns every
   pixel, including how it presents data Korri does not have. Keep the treaty
   small enough that a surface could ship from another repository unchanged.
-- Surfaces are focus-driven. They render native focusable controls and react to
-  focus; translating devices into directional movement and confirmation is the
-  host's job (`clients/shell/src/input/`), never the surface's.
+- Surfaces own focus. A package keeps its own focus in its state and moves it
+  in `update` on `Pressed { button }` messages (contract sections 2 and 3.2);
+  the shell has no focus model. The host's job ends at turning devices into
+  semantic buttons with repeat (`clients/shell/src/input/`); a package never
+  sees a key code or a device.
 - The shell's brain is always the korrid on its own device at
   `http://127.0.0.1:<port>`; the shell never talks to another device's korrid
   or any other backend directly. systemd hands it the capability through

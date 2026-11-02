@@ -266,8 +266,18 @@ fn a_refused_declaration_keeps_the_current_surface() {
         ..Default::default()
     };
     let mut rig = rig(&["probe", "pico"], 12, behaviour);
+    rig.until("probe placed", |r| r.fixture.declarations().len() == 2);
     rig.key(Key::F2);
     assert_eq!(rig.shell.current_id(), Some("probe"));
+    // The failed switch declared pico; probe is declared again so korrid
+    // puts its displays back.
+    let ids: Vec<String> = rig
+        .fixture
+        .declarations()
+        .iter()
+        .map(|d| d["surfaceId"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids, ["probe", "probe", "pico", "probe"]);
     assert!(
         rig.shell
             .log()
@@ -304,6 +314,7 @@ fn declare_carries_the_declared_displays_and_only_all_gets_model_displays() {
     rig.until("zone", |r| r.shell.current_id() == Some("zone"));
     rig.key(Key::F2);
     rig.until("probe", |r| r.shell.current_id() == Some("probe"));
+    rig.until("probe placed", |r| r.fixture.declarations().len() == 6);
     let displays: Vec<(String, Option<Value>)> = rig
         .fixture
         .declarations()
@@ -318,10 +329,20 @@ fn declare_carries_the_declared_displays_and_only_all_gets_model_displays() {
     assert_eq!(
         displays,
         vec![
+            // Each surface declares before its preferences, then once more
+            // after its first frame, when its window is the only one.
+            ("pico".into(), Some(json!("all"))),
             ("pico".into(), Some(json!("all"))),
             ("zone".into(), Some(json!("main"))),
+            ("zone".into(), Some(json!("main"))),
+            ("probe".into(), None),
             ("probe".into(), None),
         ]
+    );
+    let declarations = rig.fixture.declarations();
+    assert_eq!(
+        declarations[2], declarations[3],
+        "the second declare repeats the first"
     );
     assert!(rig.fixture.model("pico").get("displays").is_some());
     assert!(rig.fixture.model("zone").get("displays").is_none());

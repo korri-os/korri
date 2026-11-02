@@ -8,7 +8,7 @@ at run time (`../../CONTRACT.md`). Throwaway, like the rest of the spike.
 | `main.slint` | `Surface`: header, stage, shelf, floor row. A port of `PicoHome`, `PicoScreenShell`, `PicoCartShelf`, `PicoGameStage`, `PicoGameFacts` and their CSS. |
 | `cart.slint` | One cartridge (`PicoCart.css`): shell, system silhouette, ridges, art or initials sticker, NEW band, resume tab. |
 | `palette.slint` | PICO-8's sixteen and Pico's roles (`pico-tokens.css`). |
-| `logic.ts`, `logic.js` | Pico's own `update`, `initialNavigation` and `shownScreen`, with an adapter from the shell's `Pressed` messages. `logic.js` is the bun bundle; rebuild it after any change. |
+| `logic.js` (frozen bundle; its `logic.ts` source was deleted with the web surfaces) | Pico's own `update`, `initialNavigation` and `shownScreen`, with an adapter from the shell's `Pressed` messages. `logic.js` is the bun bundle; rebuild it after any change. |
 | `fonts/tiny5.ttf` | Pico's default face, converted from `surfaces/pico/src/fonts/tiny5.woff2` with fontTools. Licence beside it. |
 | `preview/` | Renders without the shell, and the Caliper reference. |
 
