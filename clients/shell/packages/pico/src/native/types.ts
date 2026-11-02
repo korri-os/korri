@@ -36,9 +36,6 @@ export interface State {
   readonly asked: string | undefined
   /** Sections seen in Korri's windows, in order (Find's collection chips). */
   readonly sections: readonly string[]
-  /** The clock Korri showed last, and how many times it changed with no press. */
-  readonly clock: string | undefined
-  readonly quiet: number
   /** Pico's keyboard over a form field. */
   readonly typing: Typing | undefined
   /** Counts the invite notices raised, so main.slint restarts their 8 s. */

@@ -64,6 +64,11 @@ export function update(nav: PicoNavigation, message: PicoMessage, korri: Surface
 }
 
 function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
+  if (message._tag === "PressedBack") {
+    const onStatus = picoBackOnStatus(korri.status)
+    if (onStatus._tag === "Run") return ask(nav, { _tag: "RunAction", actionId: onStatus.actionId })
+    if (onStatus._tag === "Swallow") return stay(nav)
+  }
   // The runner picker covers everything Pico draws. Back cancels it; the other
   // host buttons wait for it to close.
   if (runnerOpen(korri) && isHostButton(message)) {
@@ -94,14 +99,11 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
 
   // Input acts on what is shown. While Korri shows a launch, a running game
   // or a failure, the host buttons do not change the screens hidden below it.
-  // Back acknowledges a failure, and a session that ended under this device;
-  // on work Korri lets cancel, or a question it asks, Back is the cancel or
-  // the answer that declines, as the portal's host made it.
+  // Back acknowledges a failure, and a session that ended under this device.
   if (isHostButton(message) && korri.status._tag !== "Browsing") {
-    if (message._tag !== "PressedBack") return stay(nav)
-    if (korri.status._tag === "Problem" || korri.status._tag === "Ended") return ask(nav, { _tag: "DismissProblem" })
-    const declined = picoBackAction(korri.status)
-    return declined === undefined ? stay(nav) : ask(nav, { _tag: "RunAction", actionId: declined })
+    return message._tag === "PressedBack" && (korri.status._tag === "Problem" || korri.status._tag === "Ended")
+      ? ask(nav, { _tag: "DismissProblem" })
+      : stay(nav)
   }
 
   switch (message._tag) {
@@ -446,48 +448,25 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
 }
 
 /**
- * What Back does on Korri's status, as the portal's host did before a
- * surface heard it (clients/portal SurfaceRoot): the action Korri published
- * that cancels or declines, and only while Korri offers it enabled.
- *
- * - A question (a download to confirm, the plugin review): the answer Korri
- *   names as declining, else its cancel.
- * - Choosing which save to keep: the one action besides the sides (Korri
- *   publishes exactly one, so Back always has a meaning).
- * - Work under way (a download, a launch starting, shared play connecting):
- *   its cancel; with none on offer, nothing.
- * - A paused stream: Leave, the one action Korri publishes there.
+ * Back on Korri's status, before any of Pico's own Back (contract A1, 7.2):
+ * korrid marks the answer that declines or cancels (`declineActionId`) on a
+ * question, on work under way, on the save question and on a paused stream.
+ * With a mark, Back runs that action. Busy with no mark (a write under way,
+ * such as a save being picked) swallows Back, as the portal's host did.
+ * Otherwise Back is Pico's own. Pico never reads meaning from action ids.
  */
-export function picoBackAction(status: SurfaceModel["status"]): string | undefined {
-  const enabled = (actions: readonly { readonly id: string; readonly enabled: boolean }[] | undefined) =>
-    (actions ?? []).filter(action => action.enabled)
-  const cancel = (actions: readonly { readonly id: string; readonly enabled: boolean }[] | undefined) => {
-    const on = enabled(actions)
-    const named = on.find(action => isCancel(action.id))
-    return named?.id ?? (on.length === 1 ? on[0]?.id : undefined)
-  }
-  switch (status._tag) {
-    case "Confirm": {
-      const decline = status.declineActionId === undefined ? undefined
-        : enabled(status.actions).find(action => action.id === status.declineActionId)
-      return decline?.id ?? enabled(status.actions).find(action => isCancel(action.id))?.id
-    }
-    case "ChooseSave":
-      return enabled(status.actions)[0]?.id
-    case "Busy":
-      return cancel(status.actions)
-    case "Paused":
-      return cancel(status.actions)
-    case "Browsing":
-    case "Running":
-    case "Problem":
-    case "Ended":
-      return undefined
-  }
-}
+export type PicoBackOnStatus =
+  | { readonly _tag: "Run"; readonly actionId: string }
+  | { readonly _tag: "Swallow" }
+  | { readonly _tag: "Pico" }
 
-/** An action id Korri uses for a cancel: `cancel-launch`, `…:cancel`, `cancel`. */
-const isCancel = (id: string): boolean => id === "cancel" || id === "cancel-launch" || id.endsWith(":cancel")
+export function picoBackOnStatus(status: SurfaceModel["status"]): PicoBackOnStatus {
+  const decline = status._tag === "Busy" || status._tag === "Confirm" || status._tag === "ChooseSave" || status._tag === "Paused"
+    ? status.declineActionId
+    : undefined
+  if (decline !== undefined) return { _tag: "Run", actionId: decline }
+  return status._tag === "Busy" ? { _tag: "Swallow" } : { _tag: "Pico" }
+}
 
 /**
  * Any press, on any screen and under any cover, ends the invite notices on

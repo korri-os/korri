@@ -17,6 +17,7 @@ class Korri {
   count = 50
   focused: string | undefined
   status: KorriModel["status"] = { _tag: "Browsing" }
+  clock = "10:24"
   requests: SurfaceRequest[] = []
   constructor(public games: SurfaceGame[]) {}
 
@@ -47,6 +48,7 @@ class Korri {
         query,
       },
       ...(this.focused === undefined ? {} : { focusedGame: { gameId: this.focused, actions: [] } }),
+      clockLabel: this.clock,
     } as KorriModel
   }
 
@@ -82,6 +84,7 @@ function run(korri: Korri) {
   }
   deliver({ _tag: "KorriPublished" })
   return {
+    deliver,
     press: (...buttons: readonly string[]) => {
       for (const button of buttons) deliver({ _tag: "Pressed", button } as Parameters<typeof update>[1])
     },
@@ -143,5 +146,34 @@ describe("the hero", () => {
     const home = pico.view()["home"] as { hero: { title: string; resume: { title: string }[] } }
     expect(home.hero.title).toBe("Game 087")
     expect(home.hero.resume.map(game => game.title)).toContain("Game 087")
+  })
+})
+
+describe("attract", () => {
+  test("starts when the shell's Tick reports 45 s with no press, and a press only wakes it", () => {
+    const korri = new Korri(fixtureGames.map(game => ({ ...game })))
+    const pico = run(korri)
+    const tick = (idleMs: number) => pico.deliver({ _tag: "Tick", idleMs })
+    tick(44_999)
+    expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(false)
+    tick(45_000)
+    expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(true)
+    // The waking press does nothing else: the cursor stays on the first cart.
+    const before = pico.state().nav.home.selectedGameId
+    pico.press("right")
+    expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(false)
+    pico.press("confirm")
+    expect(pico.state().nav.detail?.gameId).toBeDefined()
+    void before
+  })
+
+  test("the clock label changing is not idleness", () => {
+    const korri = new Korri(fixtureGames.map(game => ({ ...game })))
+    const pico = run(korri)
+    for (const minute of ["10:25", "10:26", "10:27"]) {
+      ;(korri as unknown as { clock: string }).clock = minute
+      pico.publish()
+    }
+    expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(false)
   })
 })
