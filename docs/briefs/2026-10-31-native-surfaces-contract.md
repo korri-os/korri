@@ -225,3 +225,18 @@ Both platform workers build against exactly this, so they can work in parallel.
 - `app.surface.preferences { surface_id }` → stored preference values.
 - surface_id is the package folder id (`pico`, `zone`).
 - The capability and port are injected exactly as the portal gets them today; never in a URL, file, log or asset.
+
+## 7. Amendment A1 (owner, 2026-11-02, during review round 1)
+
+### 7.1 Tick (idle time signal)
+- New message: `SurfaceMessage::Tick { idle_ms: u32 }`. JSON: `{"_tag":"Tick","idleMs":31000}`.
+- The shell sends it to the active surface once a second.
+- `idle_ms` is the time since the last `Pressed` it delivered to that surface, or since the surface loaded if none came after. Any `Pressed` resets it to 0.
+- Each surface owns its own threshold: Zone 30 s, Pico 45 s, as the portal had. Slint never enters attract or idle on its own; attract shows only while the logic says so.
+- The verifier sweeps Tick values in its seeded sequence.
+
+### 7.2 Back cancels (decline marking)
+- `decline_action_id: Option<String>` (`declineActionId`), today present only on shared play's Confirm, is set by korrid on every Confirm.
+- It is added, optional, to the Busy, ChooseSave and Paused statuses.
+- korrid publishes a cancel action, and marks it, for the busy states that offer none today: acquisition "Checking", saves Checking, Reading and Picking. Each cancels what the portal's Back cancelled (`git show main:clients/portal/src/surface/SurfaceRoot.tsx`, lines 334–348).
+- A surface's Back runs the marked action, if any, before its own Back handling. Surfaces never infer meaning from action ids.
