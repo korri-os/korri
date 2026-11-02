@@ -170,6 +170,7 @@ fn model_for(launch_id: &str, title: Option<String>) -> SurfaceModel {
             detail: None,
             progress: None,
             actions: None,
+            decline_action_id: None,
             game_id: None,
         },
         save_history: None,

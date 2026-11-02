@@ -255,12 +255,8 @@ pub fn clock_label() -> String {
 struct Displays {
     /// The scope of the package declared last; None before any.
     scope: Option<korri_surface_treaty::SurfacePackageDisplays>,
-    /// Scope, overlay and launch of the last placement asked for.
-    placed: Option<(
-        korri_surface_treaty::SurfacePackageDisplays,
-        bool,
-        Option<String>,
-    )>,
+    /// Which placement succeeded, which is in flight, which waits.
+    placement: super::placement::Placement,
     facts: Option<Vec<korri_surface_treaty::SurfaceDisplay>>,
     /// A game held the displays; restore the catalog's after it is gone.
     restore: bool,
@@ -628,7 +624,9 @@ impl Root {
         {
             let mut displays = self.displays.lock().expect("displays poisoned");
             displays.scope = Some(scope);
-            displays.placed = None;
+            // The shell declares once its new window has mapped: a
+            // placement from before, failed or in flight, was for the old one.
+            displays.placement.redeclare();
             displays.facts = None;
         }
         self.place();
@@ -643,20 +641,32 @@ impl Root {
             .flatten()
     }
 
-    /// Place the window for the current package and presentation, once per
-    /// change of either, as the portal's effect did.
-    fn place(self: &Arc<Self>) {
+    /// Place the window for the current package and presentation. It counts
+    /// as placed only once the effect succeeded; a failure is tried again on
+    /// the next presentation change or window event, after its backoff.
+    pub(super) fn place(self: &Arc<Self>) {
         let overlay_launch = self.overlay().map(|overlay| overlay.launch_id().to_owned());
-        let key = {
+        let (key, attempt) = {
             let mut displays = self.displays.lock().expect("displays poisoned");
             let Some(scope) = displays.scope else { return };
             let key = (scope, overlay_launch.is_some(), overlay_launch);
-            if displays.placed.as_ref() == Some(&key) {
-                return;
+            match displays.placement.want(&key, std::time::Instant::now()) {
+                super::placement::Next::Nothing => return,
+                super::placement::Next::RetryAt(at) => {
+                    let weak = Arc::downgrade(self);
+                    tokio::spawn(async move {
+                        tokio::time::sleep_until(at.into()).await;
+                        if let Some(root) = weak.upgrade() {
+                            root.place();
+                        }
+                    });
+                    return;
+                }
+                super::placement::Next::Attempt(attempt) => {
+                    displays.facts = None;
+                    (key, attempt)
+                }
             }
-            displays.placed = Some(key.clone());
-            displays.facts = None;
-            key
         };
         let this = Arc::clone(self);
         tokio::spawn(async move {
@@ -664,9 +674,20 @@ impl Root {
                 .korrid
                 .surface_displays(host_scope(key.0), key.1, key.2.clone())
                 .await;
-            if let crate::host::display_placement::SurfaceDisplaysOutcome::Ok(facts) = outcome {
+            let facts = match outcome {
+                crate::host::display_placement::SurfaceDisplaysOutcome::Ok(facts) => facts,
+                crate::host::display_placement::SurfaceDisplaysOutcome::Err(_) => {
+                    this.displays
+                        .lock()
+                        .expect("displays poisoned")
+                        .placement
+                        .failed(attempt, std::time::Instant::now());
+                    return;
+                }
+            };
+            {
                 let mut displays = this.displays.lock().expect("displays poisoned");
-                if displays.placed.as_ref() != Some(&key) {
+                if !displays.placement.succeeded(attempt) {
                     return;
                 }
                 displays.facts = Some(

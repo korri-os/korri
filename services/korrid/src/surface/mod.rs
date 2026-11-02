@@ -23,6 +23,7 @@ pub mod model;
 pub mod network_onboarding;
 pub mod overlay;
 pub mod owner_binding;
+pub mod placement;
 pub mod plugins;
 pub mod preferences;
 pub mod root;
