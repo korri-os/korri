@@ -310,9 +310,9 @@ function back(steps: Steps, korri: SurfaceModel): void {
     steps.put("status", updateStatus(state.status, message, korri.status))
     return
   }
-  // Korri's work is cancelled by the action it publishes, never by Back,
-  // and its question is answered only by its own actions.
-  if (korri.status._tag === "Busy" || korri.status._tag === "Confirm") return
+  // Korri's question is answered only by its own actions. Busy never reaches
+  // here: logic.ts's backRoute runs its declineActionId or swallows Back.
+  if (korri.status._tag === "Confirm") return
   switch (zoneShown(state, korri)) {
     case "paused":
       if (korri.presentation.kind === "gameplay-overlay") {

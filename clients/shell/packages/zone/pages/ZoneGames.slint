@@ -48,7 +48,7 @@ export component ZoneGames {
     in property <LaunchCard> launch-card;
     in property <Tally> tally;
     in property <bool> attract;
-    in property <float> idle-ms;
+    in property <int> attract-card;
     property <length> a: Tokens.a;
     property <bool> has-games: catalog == "Ready" && cards.length > 0;
     shell := ZoneShell {
@@ -213,7 +213,6 @@ export component ZoneGames {
         width: root.width;
         height: root.height;
         cards: root.cards;
-        start: root.focused-card;
-        idle-ms: root.idle-ms;
+        index: root.attract-card;
     }
 }

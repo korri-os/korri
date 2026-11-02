@@ -484,7 +484,10 @@ export function view(state: ZoneSurfaceState, korri: SurfaceModel) {
     getShown: korri.store !== undefined && catalog._tag !== "Error",
     getFocused: onGames && layer === "none" && (nav.zone === "get" || (nav.zone === "cards" && band.length === 0 && catalog._tag !== "Ready" && korri.store !== undefined)),
     typing: onGames && layer === "keyboard",
-    idleAllowed: onGames && layer === "none" && nav.launch === undefined && nav.tally === undefined && korri.status._tag === "Browsing" && band.length > 0,
+    // Zone's idle layer (navigation.ts), opened by the shell's Tick: the attract
+    // shows the game at idleCard (in catalog order) and moves on with each IdleTicked.
+    attract: onGames && layer === "idle" && band.length > 0,
+    attractCard: Math.min(nav.idleCard, Math.max(0, band.length - 1)),
     // GAME OPTS.
     optsShown,
     optsTitle: game?.title ?? "",
