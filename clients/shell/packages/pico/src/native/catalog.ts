@@ -169,14 +169,6 @@ const statusActions = (actions: readonly SurfaceAction[] | undefined, focused: s
     focused: focused === `status:${action.id}`,
   }))
 
-/** Columns of the home grid at this width: the rack's carts at their pitch. */
-export function gridColumns(width: number): number {
-  // As PicoCartGrid fits them: 30-pixel slots 4 apart, in the body (the
-  // window less 8 a side). The display's width is the best guess the logic
-  // has of the window; main.slint fits the grid to the window it is given.
-  return Math.max(1, Math.floor((width - 16 + 4) / 34))
-}
-
 export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>): Screen {
   const { s, korri, model } = ctx
   const view = shown.view
@@ -284,7 +276,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     }
   } else if (view._tag === "Shelf" && home.mode === "grid") {
     body = "grid"
-    const columns = gridColumns(ctx.plan.width)
+    const columns = ctx.plan.columns
     let rowStart = 0
     sections = picoCollectionsFrom(games).map((collection, index) => {
       const section = {
@@ -426,6 +418,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
         menuOpen,
         menu: entries.map(entry => button(entry.label, { detail: entry.detail, focused: focused === `menu:${entry.label}` })),
         sections,
+        columns: ctx.plan.columns,
         focusRow: focusedRow(targets, focused),
         hero,
         launch,
@@ -579,6 +572,7 @@ export function detailScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Detail
       frame: frame({ place: "LIBRARY", sep: true, label: game.title, clock: korri.clockLabel ?? "", hints: [A("PLAY"), B("BACK")] }),
       card: shownCard,
       detail: {
+        stacked: ctx.plan.detailStacked,
         cart: cartView({ ...shown.game, ...(game.artUrl === undefined ? {} : { artUrl: game.artUrl }) }, { hero: true }),
         title: game.title,
         subtitle: [game.subtitle, game.profile].filter(part => part !== undefined && part !== "").join(" · "),

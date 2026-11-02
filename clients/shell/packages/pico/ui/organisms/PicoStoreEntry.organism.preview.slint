@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoStoreEntry { height: 180 * Tokens.p; entry: { cart: { id: "cc", title: "Celeste Classic", has-art: false, art-ratio: 1, initials: "CC", system: "pico8", shell: 8, sticker: 1, sticker-ink-light: false, progress: "new", hero: false, focused: false }, title: "Celeste Classic 2", subtitle: "PICO-8 · PICO-8 BBS", chips: [{ text: "NOT ON THIS DEVICE", kind: "empty" }], description: "Madeline climbs again.", has-primary: true, primary: { label: "GET", detail: "", focused: true, disabled: false, warn: false, lit: false } }; }
+        PicoStoreEntry { height: 180 * Tokens.p; entry: { stacked: Tokens.width < 256 * Tokens.p, cart: { id: "cc", title: "Celeste Classic", has-art: false, art-ratio: 1, initials: "CC", system: "pico8", shell: 8, sticker: 1, sticker-ink-light: false, progress: "new", hero: false, focused: false }, title: "Celeste Classic 2", subtitle: "PICO-8 · PICO-8 BBS", chips: [{ text: "NOT ON THIS DEVICE", kind: "empty" }], description: "Madeline climbs again.", has-primary: true, primary: { label: "GET", detail: "", focused: true, disabled: false, warn: false, lit: false } }; }
     }
 }

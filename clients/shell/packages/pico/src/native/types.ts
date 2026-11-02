@@ -1,3 +1,4 @@
+import type { PicoLayoutPlan, PicoWindow } from "../pico-display-plan"
 /**
  * The native package's own state around Pico's programs, and what a screen
  * hands back: a view for main.slint and the focus targets on it.
@@ -40,6 +41,8 @@ export interface State {
   readonly typing: Typing | undefined
   /** Counts the invite notices raised, so main.slint restarts their 8 s. */
   readonly noticeRound: number
+  /** The window, from the shell's last `Resized` (contract A2, 8.1). */
+  readonly window: PicoWindow
 }
 
 export type Dispatch =
@@ -55,13 +58,8 @@ export const nav = (message: PicoMessage): Dispatch => ({ to: "nav", message })
 export const setup = (message: OnboardingMessage): Dispatch => ({ to: "setup", message })
 export const local = (change: (state: State) => State): Dispatch => ({ to: "local", change })
 
-/** The screen's size on the focus plan: the main display, in virtual pixels. */
-export interface Plan {
-  readonly width: number
-  readonly height: number
-  /** The virtual pixel in device pixels (pico-tokens.css). */
-  readonly p: number
-}
+/** Pico's one layout plan, from the window (src/pico-display-plan.ts). */
+export type Plan = PicoLayoutPlan
 
 export interface Ctx {
   readonly s: State

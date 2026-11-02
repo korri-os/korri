@@ -76,8 +76,6 @@ export function stacked(rows: readonly RowView[]): RowView[] {
 /** The spines' colours, in turn (PicoPanelScreen). */
 export const SPINE_TONES = ["blue", "pink", "orange", "yellow", "lime", "peach"] as const
 
-/** Spines stand beside the card when the screen is this wide, in virtual pixels. */
-export const SPINES_BESIDE = 400
 
 export function rowView(row: PicoSettingRowView, focused: boolean): RowView {
   const control = row.control
@@ -430,7 +428,7 @@ export function settingsScreen(ctx: Ctx, layer: Settings): Screen {
       view: { page: "settings", frame: base, panel: { ...EMPTY_PANEL }, ...asked.screen.view },
     }
   }
-  const parts = panelParts(settings, layer.group, focused, plan.width >= SPINES_BESIDE, 0)
+  const parts = panelParts(settings, layer.group, focused, plan.spinesBeside, 0)
   const problem = model.settingsStatus._tag === "Problem" ? model.settingsStatus : undefined
   const empty = settings.groups.length === 0
   return {
@@ -502,7 +500,7 @@ export function launchScreen(ctx: Ctx, launch: PicoLaunchView, layer: Settings):
       view: { page: "settings", frame: { ...base, hasLead: false }, panel: { ...EMPTY_PANEL }, card: placed.card },
     }
   }
-  const beside = plan.width >= SPINES_BESIDE
+  const beside = plan.spinesBeside
   const parts = panelParts(shown, layer.group, focused, beside, 20)
   const current = launch.layers[Math.max(0, Math.min(layer.group, launch.layers.length - 1))]
   const scopeAt = picoLaunchScope(current, layer.scope)

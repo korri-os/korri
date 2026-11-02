@@ -50,35 +50,39 @@ function models(): string {
 
 interface Planned {
   readonly name: string
+  readonly size: string
   readonly states: number
   readonly targets: readonly string[]
 }
 
-/** Each model's walk: as far as its last new focus target. */
+/** Each model's walk at each size: as far as its last new focus target. */
 function plan(gen: string): Planned[] {
-  const reached = new Set<string>()
   const planned: Planned[] = []
-  for (const name of MODELS) {
-    const file = JSON.parse(readFileSync(join(gen, `${name}.json`), "utf8"))
-    // The large display changes the logic's plan, so its targets are its own.
-    const known = name === "home-big-display" ? new Set<string>() : reached
-    let states = 0
-    const targets: string[] = []
-    walkStates(file, REFERENCE).forEach((state, i) => {
-      if (state.target !== undefined && !known.has(state.target)) {
-        known.add(state.target)
-        targets.push(state.target)
-        states = i + 1
-      }
-    })
-    if (states > 0) planned.push({ name, states, targets })
+  for (const size of FIVE_SIZES.split(",")) {
+    const [width, height] = size.split("x").map(Number) as [number, number]
+    const reached = new Set<string>()
+    for (const name of MODELS) {
+      const file = JSON.parse(readFileSync(join(gen, `${name}.json`), "utf8"))
+      // The large display must change nothing: its targets are its own.
+      const known = name === "home-big-display" ? new Set<string>() : reached
+      let states = 0
+      const targets: string[] = []
+      walkStates(file, REFERENCE, { width, height }).forEach((state, i) => {
+        if (state.target !== undefined && !known.has(state.target)) {
+          known.add(state.target)
+          targets.push(state.target)
+          states = i + 1
+        }
+      })
+      if (states > 0) planned.push({ name, size, states, targets })
+    }
   }
   return planned
 }
 
 /** Run the walks side by side; the probe mostly waits for frames to settle. */
 async function walks(gen: string, planned: readonly Planned[]): Promise<string[]> {
-  const jobs = planned.flatMap(walk => FIVE_SIZES.split(",").map(size => ({ ...walk, size })))
+  const jobs = planned
   const failures: string[] = []
   const width = Math.max(1, Number(process.env["PICO_WALK_JOBS"] ?? Math.min(16, availableParallelism() * 2)))
   let next = 0
@@ -103,13 +107,15 @@ async function walks(gen: string, planned: readonly Planned[]): Promise<string[]
 
 test("the plan keeps MENU's list, with and without GET GAMES, and the large display", () => {
   const planned = plan(models())
-  const targets = planned.flatMap(walk => walk.targets)
   // Down puts the cursor on MENU; confirm opens the list. The store's
   // providers add GET GAMES, one entry more.
-  expect(targets.filter(target => /^home:[^|]*:menu\|\.home\.menu\.\d+$/.test(target)).length).toBeGreaterThanOrEqual(4)
-  expect(planned.find(walk => walk.name === "home-big-display")).toBeDefined()
+  for (const size of FIVE_SIZES.split(",")) {
+    const at = planned.filter(walk => walk.size === size).flatMap(walk => walk.targets)
+    expect(new Set(at.filter(target => /^home:[^|]*:menu\|\.home\.menu\.\d+$/.test(target))).size).toBeGreaterThanOrEqual(4)
+  }
+  expect(planned.filter(walk => walk.name === "home-big-display").length).toBe(5)
   // The plan walks far fewer states than the full walk.
-  expect(planned.reduce((sum, walk) => sum + walk.states, 0)).toBeLessThan(MODELS.length * REFERENCE)
+  expect(planned.reduce((sum, walk) => sum + walk.states, 0)).toBeLessThan(5 * MODELS.length * REFERENCE)
 }, 120_000)
 
 test.skipIf(PROBE === undefined)("every focus target the logic can reach is inside the window, under any display", async () => {

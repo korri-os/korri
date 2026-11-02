@@ -6,9 +6,9 @@
  * a second of wall time at every size. Many views repeat a focus target
  * already seen: the same control, on the same screen, with other facts
  * changed. This file runs the same walk on the logic alone, in
- * milliseconds. Pico's logic does not depend on the window, so the walk is
- * the same at every size. It finds the fewest states that still reach every
- * focus target the full walk reaches.
+ * milliseconds, at each window size: the shell's `Resized` (contract A2)
+ * follows `init`. It finds the fewest states that still reach every focus
+ * target the full walk reaches.
  *
  * The probe's walk is mirrored step by step:
  * - fresh logic per path;
@@ -149,6 +149,34 @@ function focusedPaths(value: unknown, path: string, into: string[]): string[] {
   return into
 }
 
+/** Pico as the probe runs it: korrid answering, one message at a time. */
+export function session(file: Json) {
+  const overlaid = (file["presentation"] as Json | undefined)?.["kind"] === "gameplay-overlay"
+  const korri = new Korri(file)
+  let state: State = init(korri.model(), { [PICO_FONT_KEY]: PICO_DEFAULT_FONT })
+  const deliver = (first: unknown) => {
+    const pending = [first]
+    for (let rounds = 0; pending.length > 0; rounds++) {
+      if (rounds >= 16) throw new Error("requests keep causing requests")
+      const step = update(state, pending.pop() as Parameters<typeof update>[1], korri.model())
+      state = step.state
+      if (korri.answer(step.requests as unknown as Json[])) pending.push({ _tag: "KorriPublished" })
+    }
+  }
+  return {
+    deliver,
+    resize: (width: number, height: number) => deliver({ _tag: "Resized", width, height }),
+    press: (...buttons: readonly string[]) => {
+      for (const button of buttons) deliver({ _tag: "Pressed", button })
+    },
+    state: () => state,
+    view: () => (overlaid ? (overlay(state, korri.model()) ?? {}) : view(state, korri.model())) as Json,
+  }
+}
+
+/** Every focused control in a view, by its path. */
+export const focusedIn = (shown: unknown): string[] => focusedPaths(shown, "", []).sort()
+
 /** One state of the walk: its presses, and the focus target it shows, if any. */
 export interface WalkState {
   readonly path: readonly string[]
@@ -156,50 +184,23 @@ export interface WalkState {
 }
 
 /** The probe's walk on the logic alone, up to `max` distinct views. */
-export function walkStates(file: Json, max: number): WalkState[] {
-  const overlaid = (file["presentation"] as Json | undefined)?.["kind"] === "gameplay-overlay"
+export function walkStates(file: Json, max: number, window: { readonly width: number; readonly height: number }): WalkState[] {
   const queue: string[][] = [[]]
   const seen = new Set<string>()
   const states: WalkState[] = []
   while (queue.length > 0 && states.length < max) {
     const path = queue.shift() as string[]
-    const korri = new Korri(file)
-    let state: State = init(korri.model(), { [PICO_FONT_KEY]: PICO_DEFAULT_FONT })
-    const deliver = (first: unknown) => {
-      const pending = [first]
-      for (let rounds = 0; pending.length > 0; rounds++) {
-        if (rounds >= 16) throw new Error("requests keep causing requests")
-        const step = update(state, pending.pop() as Parameters<typeof update>[1], korri.model())
-        state = step.state
-        if (korri.answer(step.requests as unknown as Json[])) pending.push({ _tag: "KorriPublished" })
-      }
-    }
-    deliver({ _tag: "KorriPublished" })
-    for (const button of path) deliver({ _tag: "Pressed", button })
-    const shown = overlaid ? (overlay(state, korri.model()) ?? {}) : view(state, korri.model())
+    const pico = session(file)
+    pico.resize(window.width, window.height)
+    pico.deliver({ _tag: "KorriPublished" })
+    pico.press(...path)
+    const shown = pico.view()
     const key = JSON.stringify(shown)
     if (seen.has(key)) continue
     seen.add(key)
-    const focused = focusedPaths(shown, "", [])
-    states.push({ path, target: focused.length === 0 ? undefined : `${state.screen}|${focused.sort().join(",")}` })
+    const focused = focusedIn(shown)
+    states.push({ path, target: focused.length === 0 ? undefined : `${pico.state().screen}|${focused.join(",")}` })
     if (path.length < 40) for (const button of PRESSES) queue.push([...path, button])
   }
   return states
-}
-
-/**
- * The fewest states whose walk reaches every focus target that a walk of
- * `reference` states reaches.
- */
-export function statesNeeded(file: Json, reference: number): { readonly states: number; readonly targets: number } {
-  const states = walkStates(file, reference)
-  const targets = new Set<string>()
-  let needed = 1
-  states.forEach((state, i) => {
-    if (state.target !== undefined && !targets.has(state.target)) {
-      targets.add(state.target)
-      needed = i + 1
-    }
-  })
-  return { states: needed, targets: targets.size }
 }

@@ -32,7 +32,7 @@ import { PICO_ALL_SECTIONS } from "../pico-library-view"
 import { PICO_ATTRACT_AFTER_MS } from "../pico-attract"
 import { picoLaunchViewFromModel } from "../pico-launch-view"
 import { picoOverlayViewFrom } from "../pico-overlay-view"
-import { picoDisplayPlan } from "../pico-display-plan"
+import { PICO_WINDOW_BEFORE_RESIZED, picoLayoutPlan, type PicoDisplayPlan } from "../pico-display-plan"
 import type { PicoMessage } from "../state/messages"
 import { initialNavigation, topLayer } from "../state/navigation"
 import { initialOnboarding } from "../state/onboarding"
@@ -56,13 +56,9 @@ import type { Act, Ctx, Dispatch, Plan, Screen, State } from "./types"
 export const WINDOW = 50
 const EDGE = 8
 
-export function planFor(korri: KorriModel): Plan {
-  const displays = korri.displays ?? []
-  const main = displays.find(display => display.main) ?? displays[0]
-  const width = main?.width ?? 640
-  const height = main?.height ?? 480
-  const p = Math.max(2, Math.floor(Math.min(width, height) / 360))
-  return { width: Math.floor(width / p), height: Math.floor(height / p), p }
+/** The layout plan the focus graph and the view share (contract A2, 8.2). */
+export function planFor(s: State, korri: KorriModel): Plan {
+  return picoLayoutPlan(s.window, korri.displays)
 }
 
 export function init(korri: KorriModel, preferences: Readonly<Record<string, string>>): State {
@@ -79,6 +75,7 @@ export function init(korri: KorriModel, preferences: Readonly<Record<string, str
     sections: sectionsOf(korri, []),
     typing: undefined,
     noticeRound: 0,
+    window: PICO_WINDOW_BEFORE_RESIZED,
   }
 }
 
@@ -178,7 +175,7 @@ const run = (step: Step, act: Act | undefined, korri: KorriModel): Step =>
 /** What the catalog presentation shows now, as a view and focus targets. */
 export function catalogScreen(s: State, korri: KorriModel): Screen {
   const model = picoModelFrom(korri)
-  const ctx: Ctx = { s, korri, model, plan: planFor(korri) }
+  const ctx: Ctx = { s, korri, model, plan: planFor(s, korri) }
   if (model.onboarding !== undefined) return onPage(setupScreen(ctx), "setup")
   const runner = model.runnerChoice
   if (runner !== undefined && runner._tag !== "Closed") return runnerScreen(runner, s.focus)
@@ -427,6 +424,10 @@ export function update(state: State, message: SurfaceMessage, korri: KorriModel)
       break
     case "PreferenceStored":
       break
+    case "Resized":
+      // The plan follows the window; the cursor keeps its target by id.
+      step = { ...step, state: { ...step.state, window: { width: message.width, height: message.height } } }
+      break
     case "Tick":
       // The shell's idle clock (contract A1, 7.1): attract after
       // PICO_ATTRACT_AFTER_MS with no press. `update` starts it only over a
@@ -460,8 +461,7 @@ export function view(s: State, korri: KorriModel) {
   const notices = model.onboarding === undefined ? inviteNotices(s.nav, model) : []
   const shown = shownScreen(s.nav, model)
   const attract = model.onboarding === undefined && attractShowing(s.nav, model) && shown._tag === "Home" && shown.view._tag === "Shelf"
-  const displays = korri.displays ?? []
-  const plan = splitPlan(picoDisplayPlan(displays))
+  const plan = splitPlan(planFor(s, korri).split)
   return {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
@@ -482,7 +482,7 @@ export function view(s: State, korri: KorriModel) {
 }
 
 /** Where Pico's display plan (src/pico-display-plan.ts) puts the two screens, for main.slint. */
-function splitPlan(plan: ReturnType<typeof picoDisplayPlan>) {
+function splitPlan(plan: PicoDisplayPlan | undefined) {
   if (plan === undefined) return undefined
   const { show, choose } = plan
   return { on: true, showX: show.x, showY: show.y, showW: show.width, showH: show.height, chooseX: choose.x, chooseY: choose.y, chooseW: choose.width, chooseH: choose.height }

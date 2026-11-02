@@ -112,6 +112,7 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
   const game = picoStoreResult(entry)
   const cart = cartView(game, { hero: true })
   const entryBase = {
+    stacked: ctx.plan.detailStacked,
     cart,
     title: entry.title,
     subtitle: [entry.system, providerTitle].filter(part => part !== undefined && part !== "").join(" · "),

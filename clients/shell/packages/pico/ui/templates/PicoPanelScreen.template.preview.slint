@@ -17,6 +17,7 @@ export component Default inherits Window {
         width: parent.width;
         height: parent.height;
         spines: [{ label: "DEVICE", detail: "", focused: true, disabled: false, warn: false, lit: true }, { label: "GAMES", detail: "", focused: false, disabled: false, warn: false, lit: false }];
+        beside: self.width >= 384 * Tokens.p;
         Text { text: "A group of settings"; font-size: Tokens.md; }
     }
 }
@@ -33,6 +34,7 @@ export component Beside inherits Window {
         width: parent.width;
         height: parent.height;
         spines: [{ label: "DEVICE", detail: "", focused: false, disabled: false, warn: false, lit: true }, { label: "GAMES", detail: "", focused: false, disabled: false, warn: false, lit: false }];
+        beside: self.width >= 384 * Tokens.p;
         Text { text: "A group of settings"; font-size: Tokens.md; }
     }
 }
