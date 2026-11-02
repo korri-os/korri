@@ -45,6 +45,13 @@ Once a second the shell sends the active surface `{"_tag":"Tick","idleMs":N}`
 it delivered to that surface, or since the surface loaded. Each `Tick` is an
 `update` call under the 50 ms budget. The verifier's sweep includes ticks.
 
+Right after `init`, before the first `view()`, and on every window size or
+scale-factor change, the shell sends `{"_tag":"Resized","width":W,"height":H}`
+in logical pixels (amendment A2, section 8.1). The verifier sweeps 320x240,
+640x480, 480x800, 1280x720 and 1920x1080, and runs once under a display list
+larger than the window. `examples/surface-probe.rs walk` checks every d-pad
+direction against the drawn geometry (section 8.3).
+
 ## Windows and placement
 
 Only one shell window is mapped at a time: the Surface, or the Overlay during
