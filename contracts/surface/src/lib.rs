@@ -1397,7 +1397,7 @@ pub enum SurfaceButton {
 ///
 /// Directional repeat: the first repeat after 400 ms, then every 100 ms.
 #[typeshare(serialized_as = "SurfaceMessageWire")]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "_tag", rename_all_fields = "camelCase")]
 pub enum SurfaceMessage {
     /// A button was pressed, or repeats while held.
@@ -1411,6 +1411,9 @@ pub enum SurfaceMessage {
     /// since the surface loaded if none came after; any `Pressed` resets it
     /// to 0. Each surface owns its own idle threshold.
     Tick { idle_ms: u32 },
+    /// The surface window's size in logical pixels. Sent once after init,
+    /// before the first view, and on every size or scale change.
+    Resized { width: f32, height: f32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -1724,6 +1727,20 @@ mod tests {
         assert_eq!(
             serde_json::to_value(SurfaceMessage::Tick { idle_ms: 31000 }).unwrap(),
             json!({"_tag": "Tick", "idleMs": 31000})
+        );
+        let resized: SurfaceMessage =
+            serde_json::from_value(json!({"_tag": "Resized", "width": 640, "height": 480}))
+                .unwrap();
+        assert_eq!(
+            resized,
+            SurfaceMessage::Resized {
+                width: 640.0,
+                height: 480.0
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&resized).unwrap(),
+            json!({"_tag": "Resized", "width": 640.0, "height": 480.0})
         );
         assert_eq!(
             serde_json::to_value(SurfaceStatus::Busy {
