@@ -175,6 +175,29 @@ const run = (step: Step, act: Act | undefined, korri: KorriModel): Step =>
 
 /** What the catalog presentation shows now, as a view and focus targets. */
 export function catalogScreen(s: State, korri: KorriModel): Screen {
+  return drawnOnly(screenOf(s, korri))
+}
+
+/**
+ * Only targets the view draws: a target with no entry in the view (a list
+ * not shown yet) is no place for the cursor, and no region for an exit.
+ */
+function drawnOnly(screen: Screen): Screen {
+  const drawn = new Set<string>()
+  const collect = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(collect)
+    else if (value !== null && typeof value === "object") {
+      const entry = value as Record<string, unknown>
+      if (typeof entry["focusId"] === "string") drawn.add(entry["focusId"])
+      for (const item of Object.values(entry)) collect(item)
+    }
+  }
+  collect(screen.view)
+  const targets = screen.targets.filter(target => drawn.has(target.id))
+  return targets.length === screen.targets.length ? screen : { ...screen, targets }
+}
+
+function screenOf(s: State, korri: KorriModel): Screen {
   const model = picoModelFrom(korri)
   const ctx: Ctx = { s, korri, model, plan: planFor(s, korri) }
   if (model.onboarding !== undefined) return onPage(setupScreen(ctx), "setup")
@@ -217,7 +240,7 @@ function onPage(screen: Screen, page: "setup" | "launch" | "settings" | "store")
 
 function overlayView(s: State, korri: KorriModel): Screen | undefined {
   if (korri.presentation.kind !== "gameplay-overlay") return undefined
-  return overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status), s.overlay, s.overlayFocus)
+  return drawnOnly(overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status), s.overlay, s.overlayFocus))
 }
 
 /** Keep the cursor on a target of the screen shown, starting where the
