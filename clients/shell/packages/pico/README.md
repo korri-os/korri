@@ -18,7 +18,7 @@ imports.
 | Path | What |
 |---|---|
 | `main.slint` | The binding: the one file that knows the view. `Surface` (catalog and setup) and `Overlay` (pause menu). |
-| `ui/palette.slint`, `ui/tokens.slint` | The only globals: PICO-8's sixteen and Pico's roles; the scale (`Tokens`, from the window's width and height), the focus cycle, where the cursor stands (`Focus`). The ten faces are imported here. |
+| `ui/palette.slint`, `ui/tokens.slint` | The only globals: PICO-8's sixteen and Pico's roles; the scale (`Tokens`, from the window's width and height) and the focus cycle. The ten faces are imported here. |
 | `ui/atoms`, `ui/molecules`, `ui/organisms`, `ui/templates`, `pages/` | One component per file, one per React component of the web Pico at the same layer (`test/inventory.ts`), each with `<Name>.<layer>.preview.slint` beside it. |
 | `logic.ts` → `logic.js` | `globalThis.surface`. Rebuild with `./build.sh` (bun). |
 | `src/state`, `src/pico-*.ts` | Pico's behaviour, from the web Pico. |
@@ -49,6 +49,17 @@ imports.
 - **Displays.** `displays: "all"`. With two or more displays the plan
   (`src/pico-display-plan.ts`) puts the showcase on the main one and every
   control on the other.
+- **Known gap: the focus graph guesses the window.** Slint lays out from
+  the window only: the grid's columns (`PicoCartGrid`) and whether the
+  settings spines stand beside the rows (`PicoPanelScreen`). The logic
+  moves the cursor and cannot see the window: the contract gives it no
+  window size. So the grid's up/down step (`gridColumns` in
+  `src/native/catalog.ts`) and the spines' directions (`SPINES_BESIDE` in
+  `src/native/panel.ts`) come from the main display, or 640x480 with
+  none. In a window smaller than its display, a press can move the
+  cursor differently from what is drawn; the cursor stays visible
+  (`focus-visible` walks a 1920x1080 display at every window size). A
+  treaty message with the window's size would close the gap.
 - **Cover art.** `{"$image": url, "pico8": "vivid"}`.
 - **Time.** The shell sends `Tick { idleMs }` once a second (contract A1,
   7.1); attract starts when `idleMs` reaches 45 s (`pico-attract.ts`), and
@@ -69,7 +80,7 @@ Ported from the web Pico's gates and run with `bun test`:
 | `authoring-gate` | No colour outside the palette, which is PICO-8's sixteen; no blend; no pixel literal outside the tokens; the virtual pixel derives from width and height. |
 | `contrast-gate` | A note on a card's plastic reaches 4.5:1; a card's large ink 3:1; components draw notes in the note role. |
 | `previews` | Every preview state renders at 320x240, 640x480, 480x800, 1280x720 and 1920x1080. |
-| `focus-visible` | Every focus target the logic reaches (breadth-first over every button, on 16 models) is drawn inside the window at those five sizes. |
+| `focus-visible` | Every focus target the logic reaches (breadth-first over every button, on 17 models and one with a 1920x1080 display) is drawn inside the window at those five sizes. `test/walk-plan.ts` runs the same walk on the logic alone first: each model walks only as far as its last target no earlier model reached, and the probes run side by side (`PICO_WALK_JOBS`, `PICO_FOCUS_STATES`). |
 
 The last two run the shell's headless probe
 (`clients/shell/examples/surface-probe.rs`); build it with

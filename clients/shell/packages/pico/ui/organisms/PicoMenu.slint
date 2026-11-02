@@ -13,7 +13,8 @@ export component PicoMenu inherits Rectangle {
     in property <length> room-width;
     in property <length> room-height;
     width: min(110 * Tokens.p, room-width);
-    height: min(list.preferred-height, room-height);
+    // Its entries' own height (a scrolling region has none of its own).
+    height: min(rows.preferred-height + 2 * pad, room-height);
     property <length> pad: 4 * Tokens.p;
     Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: root.width; height: root.height; background: P8.cast-near; }
     Rectangle { background: P8.shell-tell; }
@@ -26,7 +27,7 @@ export component PicoMenu inherits Rectangle {
         padding-right: 7 * Tokens.p;
         scroll := PicoScroll {
             margin: Tokens.p;
-            VerticalLayout {
+            rows := VerticalLayout {
                 spacing: 3 * Tokens.p;
                 padding-bottom: Tokens.drop-sm;
                 for entry in entries : PicoRow { reveal(left, top, wide, tall) => { scroll.show(left, top, wide, tall); } button: entry; kind: "card"; }

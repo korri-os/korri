@@ -20,7 +20,7 @@ export component PicoGameDetail inherits Rectangle {
         width: root.width;
         height: root.height;
         frame: frame;
-        if question == "" : GameDetail { min-height: self.preferred-height; detail: detail; }
+        if question == "" : GameDetail { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; detail: detail; }
         if question == "location" : PicoLocationPicker { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; places: card; }
         if question == "modal" : PicoModal { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
     }
