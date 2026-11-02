@@ -12,7 +12,7 @@ fixtures' words and look are Zone's.
 | `ui/types.slint` | The view's structs. |
 | `ui/atoms`, `ui/molecules`, `ui/organisms`, `ui/templates`, `pages/` | One component per file, at the layer of its React component in `surfaces/zone/src` (the mapping, and every merge with its reason, is `test/decomposition-gate.test.ts`). Each has its preview states beside it, `<Name>.<layer>.preview.slint`. |
 | `ui/preview-frame.slint` | The window a preview state inherits; it feeds `Tokens` as `main.slint` does. |
-| `logic.ts` → `logic.js` | The adapter around Zone's own program (`src/state/`, `src/plan/`, ported to the generated treaty types). `bun run zone:build` in `clients/shell`. |
+| `logic.ts` → `logic.js` | The adapter around Zone's own program (`src/state/`, `src/plan/`, ported to the generated treaty types). `bun run zone:build` in `clients/shell`, with the flake's bun (`nix shell --inputs-from . nixpkgs#bun`): `zone-check` rebuilds it and fails on any difference. |
 | `src/press.ts` | Focus in the model: each press becomes the fact Zone's page reported in the browser. |
 | `src/view.ts`, `src/rows.ts` | The view. |
 | `src/keys.ts`, `src/qr.ts` | The keyboard's grid; the backup's QR code (own encoder, held equal to `qrcode` by test). |
