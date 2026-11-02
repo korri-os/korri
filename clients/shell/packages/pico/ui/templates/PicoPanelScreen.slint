@@ -11,7 +11,9 @@ export component PicoPanelScreen inherits Rectangle {
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <[ButtonView]> spines;
     in property <int> spine-tone;
-    in property <bool> beside;
+    // The spines stand beside the card when the box is this wide (the
+    // container's width, not the display's).
+    property <bool> beside: root.width >= 384 * Tokens.p;
     property <length> spines-w: beside ? 64 * Tokens.p : 0;
     property <length> tabs-h: beside || spines.length == 0 ? 0 : Tokens.md + 4 * Tokens.p;
     preferred-height: tabs-h + 3 * Tokens.p + card.preferred-height + 5 * Tokens.p;

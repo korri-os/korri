@@ -5,7 +5,7 @@
 //!     Every exported component of every *.preview.slint under DIR, at each
 //!     size: OUT/<file>.<Component>.<W>x<H>.png. Fails a preview that does not
 //!     compile or draws nothing but its background.
-//! surface-probe walk PACKAGE --model FILE --sizes 640x480,… [--max N] [--out OUT]
+//! surface-probe walk PACKAGE --model FILE --sizes 640x480,… [--display WxH] [--start KEY,…] [--max N] [--out OUT]
 //!     Run the package's logic on FILE (a SurfaceModel; a Ready catalog's
 //!     `games` are the games), answer MoveCatalog and FocusGame as korrid does,
 //!     and press every button from every state reached, up to N states. At
@@ -32,7 +32,7 @@ use slint::ComponentHandle;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-fn sizes(text: &str) -> Vec<(u32, u32)> {
+fn sizes_of(text: &str) -> Vec<(u32, u32)> {
     text.split(',')
         .filter_map(|s| {
             let (w, h) = s.split_once('x')?;
@@ -229,9 +229,12 @@ fn walk(
     dir: &Path,
     model_file: &Path,
     size: (u32, u32),
+    display: Option<(u32, u32)>,
+    start: &[&str],
     max: usize,
     out: &Path,
 ) -> Result<(usize, Vec<String>)> {
+    let shown = display.unwrap_or(size);
     let package = Package::at(dir)?;
     let views = package::compile(&package)?;
     let source = package.logic_source()?;
@@ -254,7 +257,7 @@ fn walk(
         from: json!({"_tag": "Start"}),
         count: catalog::DEFAULT_COUNT,
         focused: None,
-        displays: json!([{"id": "probe", "main": true, "x": 0, "y": 0, "width": size.0, "height": size.1, "touch": false}]),
+        displays: json!([{"id": "probe", "main": true, "x": 0, "y": 0, "width": shown.0, "height": shown.1, "touch": false}]),
     };
     let definition = if overlay {
         views.overlay.clone().context("no Overlay")?
@@ -267,7 +270,7 @@ fn walk(
     let presses: Vec<&str> = vec![
         "up", "down", "left", "right", "confirm", "back", "menu", "options",
     ];
-    let mut queue: VecDeque<Vec<&str>> = VecDeque::from([vec![]]);
+    let mut queue: VecDeque<Vec<&str>> = VecDeque::from([start.to_vec()]);
     let mut seen: HashSet<String> = HashSet::new();
     let mut failures = Vec::new();
     let mut states = 0;
@@ -390,7 +393,7 @@ fn main() -> Result<()> {
             .cloned()
     };
     let out = PathBuf::from(flag("--out").unwrap_or_else(|| "/tmp/surface-probe".into()));
-    let sizes = sizes(&flag("--sizes").unwrap_or_else(|| "640x480".into()));
+    let sizes = sizes_of(&flag("--sizes").unwrap_or_else(|| "640x480".into()));
     match args.first().map(String::as_str) {
         Some("previews") => previews(Path::new(args.get(1).context("DIR")?), &sizes, &out),
         Some("load") => {
@@ -410,10 +413,15 @@ fn main() -> Result<()> {
         Some("walk") => {
             let dir = PathBuf::from(args.get(1).context("PACKAGE")?);
             let max = flag("--max").and_then(|m| m.parse().ok()).unwrap_or(300);
+            // The display korrid reports, when it is not the window (a window
+            // smaller than its display), and presses to start from.
+            let display = flag("--display").and_then(|d| sizes_of(&d).first().copied());
+            let start_keys = flag("--start").unwrap_or_default();
+            let start: Vec<&str> = start_keys.split(',').filter(|k| !k.is_empty()).collect();
             let mut all = Vec::new();
             for model in flag("--model").context("--model FILE[,FILE…]")?.split(',') {
                 for &size in &sizes {
-                    let (states, failures) = walk(&dir, Path::new(model), size, max, &out)?;
+                    let (states, failures) = walk(&dir, Path::new(model), size, display, &start, max, &out)?;
                     println!("{model} {}x{}: {states} states, {} unseen", size.0, size.1, failures.len());
                     all.extend(failures);
                 }

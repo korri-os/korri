@@ -284,7 +284,7 @@ class WorkflowContractTest(unittest.TestCase):
 
     def test_architecture_lint_apps_declare_the_node_launcher_runtime(self):
         tasks = (ROOT / "nix/tasks.nix").read_text()
-        for surface in ["zone"]:
+        for surface in ["zone", "pico"]:
             with self.subTest(surface=surface):
                 task = tasks.split(f"    {surface}-check = {{", 1)[1].split(
                     "\n    };", 1

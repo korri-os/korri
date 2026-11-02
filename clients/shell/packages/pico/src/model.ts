@@ -21,7 +21,13 @@ export type SurfaceCatalog =
   | { readonly _tag: "Loading" }
   | { readonly _tag: "Error"; readonly message: string }
   | { readonly _tag: "Empty" }
-  | { readonly _tag: "Ready"; readonly games: readonly SurfaceGame[] }
+  | {
+      readonly _tag: "Ready"
+      readonly games: readonly SurfaceGame[]
+      /** The window holds every game of its query: a game missing from it
+       * is gone. Absent (a whole list, as Pico's fixtures give): complete. */
+      readonly complete?: boolean
+    }
 
 export type SurfaceModel = Omit<KorriModel, "catalog"> & { readonly catalog: SurfaceCatalog }
 
@@ -35,7 +41,11 @@ export function picoModelFrom(model: KorriModel): SurfaceModel {
   const cached = cache.get(model)
   if (cached !== undefined) return cached
   const catalog: SurfaceCatalog = model.catalog._tag === "Ready"
-    ? { _tag: "Ready", games: model.catalog.window }
+    ? {
+        _tag: "Ready",
+        games: model.catalog.window,
+        complete: model.catalog.before === undefined && model.catalog.after === undefined,
+      }
     : model.catalog
   const shaped: SurfaceModel = { ...model, catalog }
   cache.set(model, shaped)

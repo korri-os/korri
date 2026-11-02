@@ -282,12 +282,17 @@ function sectionsOf(korri: KorriModel, seen: readonly string[]): readonly string
 }
 
 const DEFAULT_QUERY: CatalogQuery = { text: "", order: "korri" }
+/** The hero is the game played last in the whole library: the first of a
+ * window in Korri's `recent` order (contract 3.4), whose resumable games are
+ * the RESUME list under it. */
+export const HERO_QUERY: CatalogQuery = { text: "", order: "recent" }
 
 /** The query Pico's screen needs answered, and the game to keep in the window. */
 function wanted(s: State, model: SurfaceModel): { readonly query: CatalogQuery; readonly anchor: string | undefined } {
-  const query = s.nav.find ? findQuery(s.nav.search) : DEFAULT_QUERY
+  const hero = !s.nav.find && s.nav.home.mode === "hero"
+  const query = s.nav.find ? findQuery(s.nav.search) : hero ? HERO_QUERY : DEFAULT_QUERY
   const cursor = cursorGame(s.focus)
-  const anchor = s.nav.detail?.gameId ?? cursor ?? (s.nav.find ? undefined : s.nav.home.selectedGameId)
+  const anchor = s.nav.detail?.gameId ?? (hero ? undefined : cursor) ?? (s.nav.find || hero ? undefined : s.nav.home.selectedGameId)
   void model
   return { query, anchor }
 }
@@ -306,7 +311,7 @@ function sync(step: Step, korri: KorriModel): Step {
       const sameAsked = sameQuery(catalog.query, query)
       let move: SurfaceRequest | undefined
       if (!sameAsked) {
-        move = { _tag: "MoveCatalog", query, from: anchor === undefined || state.nav.find ? { _tag: "Start" } : { _tag: "Around", gameId: anchor }, count: WINDOW }
+        move = { _tag: "MoveCatalog", query, from: anchor === undefined || state.nav.find || query.order === "recent" ? { _tag: "Start" } : { _tag: "Around", gameId: anchor }, count: WINDOW }
       } else if (anchor !== undefined && at === -1 && cursorGame(state.focus) === undefined) {
         // A game's own screen, or the shelf's kept cart, outside the window.
         move = { _tag: "MoveCatalog", query, from: { _tag: "Around", gameId: anchor }, count: WINDOW }

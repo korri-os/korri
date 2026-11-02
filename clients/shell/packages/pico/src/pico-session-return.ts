@@ -42,17 +42,42 @@ export function picoSessionReturnFromModel(
   if (catalog._tag !== "Ready" || status._tag !== "Browsing") return state
   const resumable = catalog.games.filter(game => game.resumable === true)
 
+  // A cursor window that does not hold every game says nothing about a game
+  // it leaves out: only a game seen without its session, or a complete
+  // window without it, is evidence.
+  const complete = catalog.complete !== false
+
   if (state._tag === "Watching") {
-    if (catalog.games.some(game => game.id === state.sessionId)) return state
+    const session = catalog.games.find(game => game.id === state.sessionId)
+    if (session === undefined && !complete) return state
+    if (session !== undefined) return state
     return resumable.length === 0 ? { _tag: "ReturnToLibrary" } : idle
   }
   if (state._tag === "AwaitingSession") {
-    if (catalog === state.catalog) return state
-    const added = resumable.filter(game => !state.catalog.games.some(old => old.id === game.id))
+    // A new model is not a new catalog: Korri republishes for many reasons
+    // (the focused game's actions, the clock). Only a change in the games
+    // that resume counts.
+    if (sameSessions(catalog, state.catalog)) return state
+    const added = resumable.filter(game => {
+      const before = state.catalog.games.find(old => old.id === game.id)
+      return before === undefined ? complete : before.resumable !== true
+    })
     const session = added.length === 1 ? added[0] : undefined
     return session === undefined ? idle : { _tag: "Watching", viewingId, sessionId: session.id }
   }
   return resumable.some(game => game.id === viewingId)
     ? { _tag: "Watching", viewingId, sessionId: viewingId }
     : idle
+}
+
+/** The same games resume in both catalogs, by id, where both hold them. */
+function sameSessions(a: ReadyCatalog, b: ReadyCatalog): boolean {
+  if (a === b) return true
+  const resumes = (catalog: ReadyCatalog) => new Map(catalog.games.map(game => [game.id, game.resumable === true]))
+  const left = resumes(a)
+  const right = resumes(b)
+  for (const [id, on] of left) if (right.has(id) && right.get(id) !== on) return false
+  for (const [id, on] of right) if (on && !left.has(id) && a.complete !== false) return false
+  for (const [id, on] of left) if (on && !right.has(id) && b.complete !== false) return false
+  return true
 }

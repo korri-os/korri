@@ -31,7 +31,6 @@ export component PicoSettingsPanel inherits Rectangle {
         height: root.height;
         spines: panel.spines;
         spine-tone: panel.spine-tone;
-        beside: panel.beside;
         if panel.scopes.length > 0 : PicoScopeTabs { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  scopes: panel.scopes; tone: P8.spine(panel.spine-tone); }
         if panel.message != "" : PicoPara { text: panel.message; font-size: Tokens.sm; color: P8.shell-warn; }
         for note in panel.notes : PicoPara { text: note; font-size: Tokens.sm; color: P8.ink-dark; }

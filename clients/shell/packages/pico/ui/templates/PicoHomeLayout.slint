@@ -33,7 +33,6 @@ export struct HomeView {
     menu-open: bool,
     menu: [ButtonView],
     sections: [GridSectionView],
-    columns: int,
     focus-row: int,
     hero: HeroView,
     launch: LaunchStageView,
@@ -81,7 +80,7 @@ export component PicoHomeLayout inherits VerticalLayout {
                 small: room < 30 * Tokens.sm;
             }
         }
-        if home.body == "grid" : PicoCartGrid { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  sections: home.sections; columns: home.columns; }
+        if home.body == "grid" : PicoCartGrid { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  sections: home.sections; }
         if home.body == "hero" : VerticalLayout {
             spacing: Tokens.u;
             PicoGameHero { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  title: home.hero.title; subtitle: home.hero.subtitle; open: home.hero.open; }

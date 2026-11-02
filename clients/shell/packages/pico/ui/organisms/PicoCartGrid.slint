@@ -5,13 +5,16 @@ import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 
 export struct GridSectionView { title: string, row-start: int, carts: [CartView] }
 
-// Every collection Korri named, its carts in rows on a floor.
+// Every collection Korri named, its carts in rows on a floor, as many to a
+// row as the box holds.
 export component PicoCartGrid inherits VerticalLayout {
     callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <[GridSectionView]> sections;
-    in property <int> columns: 1;
     property <length> slot-w: 30 * Tokens.p;
+    // As many columns as the box it is given holds: the grid answers its
+    // container, not the display.
+    property <int> columns: max(1, floor((root.width + 4 * Tokens.p) / (slot-w + 4 * Tokens.p)));
     property <length> row-h: 44 * Tokens.p;
     spacing: Tokens.u;
     for section in sections : VerticalLayout {
