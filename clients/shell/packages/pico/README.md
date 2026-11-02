@@ -59,6 +59,17 @@ imports.
   `detail.stacked`), which draws them and decides no structure itself.
   `displays` only place the two screens of a split. A resize keeps the
   cursor on its control.
+- **Regions and exits (contract 8.4).** Every focus target belongs to a
+  region (`src/native/focus.ts`): `floor`, `menu`, `invites`, `shelf`,
+  `grid`, `hero`, `resume`, `card`, `stage`, `sections`, `orders`, `keys`,
+  `results`, `search`, `actions`, `spines`, `scopes`, `rows`, `answers`,
+  `list`, `pack`, `go`. Inside a region a press moves to the nearest target
+  ahead. Leaving one follows `picoExits` in `src/pico-display-plan.ts`,
+  which the plan computes per size (spines beside the rows or above them).
+  `view()` emits the convention: `focusRegion` on every entry that is a
+  target, `focusActive` on a region's active one (the chosen cart, the open
+  tab, the chosen order), and `focusPlan`. An entry that is no target drops
+  `focused`. The shell strips these keys before Slint.
 - **Cover art.** `{"$image": url, "pico8": "vivid"}`.
 - **Time.** The shell sends `Tick { idleMs }` once a second (contract A1,
   7.1); attract starts when `idleMs` reaches 45 s (`pico-attract.ts`), and
@@ -80,6 +91,7 @@ Ported from the web Pico's gates and run with `bun test`:
 | `contrast-gate` | A note on a card's plastic reaches 4.5:1; a card's large ink 3:1; components draw notes in the note role. |
 | `previews` | Every preview state renders at 320x240, 640x480, 480x800, 1280x720 and 1920x1080. |
 | `layout-plan` | The plan from the window alone at the five sizes; the grid's rows and the spines' arrangement drawn as the plan says and moved through by it; a resize keeps the cursor. |
+| `focus-convention` | On the logic alone, at 320x240 and 1280x720: every entry with `focused` names its region, one active target per region at most, every exit leads to a region the view has, and every press that leaves a region goes where `focusPlan` says. |
 | `focus-visible` | Every focus target the logic reaches (breadth-first over every button, on 17 models and one with a 1920x1080 display, with `Resized` at each size) is drawn inside the window at those five sizes. `test/walk-plan.ts` runs the same walk on the logic alone first: each model walks, at each size, only as far as its last target no earlier model reached, and the probes run side by side (`PICO_WALK_JOBS`, `PICO_FOCUS_STATES`). |
 
 The last two run the shell's headless probe

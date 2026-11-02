@@ -11,16 +11,28 @@ import type { PicoShelfGame } from "../pico-shelf-game"
 
 export interface HintView { readonly key: "a" | "b" | "lr"; readonly label: string }
 
-export interface ButtonView {
+/**
+ * The target a view entry stands for. view() turns it into the convention's
+ * `focusRegion` and `focusActive` (contract 8.4), or drops `focused` from an
+ * entry that is no target.
+ */
+export interface Focusable {
+  readonly focused: boolean
+  readonly focusId?: string
+}
+
+/** A view entry's focus: whether the cursor is on target `id`. */
+export const mark = (id: string, focused: string | undefined) => ({ focused: focused === id, focusId: id })
+
+export interface ButtonView extends Focusable {
   readonly label: string
   readonly detail: string
-  readonly focused: boolean
   readonly disabled: boolean
   readonly warn: boolean
   readonly lit: boolean
 }
 
-export interface LineView { readonly text: string; readonly focused: boolean }
+export interface LineView extends Focusable { readonly text: string }
 export interface ChipView { readonly text: string; readonly caption: string; readonly kind: string }
 
 export interface CardView {
@@ -36,9 +48,8 @@ export interface CardView {
 
 export interface BarView { readonly shown: boolean; readonly cells: number; readonly walking: boolean; readonly label: string }
 
-export interface KeyView {
+export interface KeyView extends Focusable {
   readonly cap: string
-  readonly focused: boolean
   readonly lit: boolean
   readonly row: number
   readonly col: number
@@ -47,7 +58,7 @@ export interface KeyView {
 
 export interface ImageRef { readonly $image: string; readonly pico8: "vivid" | "flat" }
 
-export interface CartView {
+export interface CartView extends Focusable {
   readonly id: string
   readonly title: string
   readonly art?: ImageRef
@@ -61,8 +72,6 @@ export interface CartView {
   readonly progress: "new" | "played" | "resume"
   /** Lifted: the chosen cart on a shelf. */
   readonly hero: boolean
-  /** The cursor is on it. */
-  readonly focused: boolean
 }
 
 export const button = (label: string, options: Partial<ButtonView> = {}): ButtonView => ({
@@ -108,7 +117,7 @@ export const art = (url: string | undefined): ImageRef | undefined =>
 /** One game as a cartridge. */
 export function cartView(
   game: Pick<PicoShelfGame, "id" | "title" | "subtitle" | "artUrl" | "resumable" | "playCount" | "totalPlaytimeSeconds">,
-  options: { readonly hero?: boolean; readonly focused?: boolean; readonly band?: boolean } = {},
+  options: { readonly hero?: boolean; readonly focused?: boolean; readonly focusId?: string; readonly band?: boolean } = {},
 ): CartView {
   const look = picoCartLookFor(game.id, game.subtitle)
   const cover = art(game.artUrl)
@@ -128,6 +137,7 @@ export function cartView(
     progress,
     hero: options.hero === true,
     focused: options.focused === true,
+    ...(options.focusId === undefined ? {} : { focusId: options.focusId }),
   }
 }
 

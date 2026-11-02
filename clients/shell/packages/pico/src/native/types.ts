@@ -43,6 +43,8 @@ export interface State {
   readonly noticeRound: number
   /** The window, from the shell's last `Resized` (contract A2, 8.1). */
   readonly window: PicoWindow
+  /** Each region's last focused target, for an exit that enters by `remembered`. */
+  readonly remembered: Readonly<Record<string, string>>
 }
 
 export type Dispatch =
@@ -75,6 +77,9 @@ export interface Screen {
   readonly targets: readonly Target<Act>[]
   /** Where the cursor starts, or goes when its target leaves. */
   readonly fallback?: string
+  /** Each region's active target (the chosen cart, the open tab), for an
+   * exit that enters by `active` (contract 8.4). */
+  readonly active?: Readonly<Record<string, string>>
   /** Left and right do this instead of moving, whatever is focused. */
   readonly horizontal?: { readonly left: Act; readonly right: Act }
 }

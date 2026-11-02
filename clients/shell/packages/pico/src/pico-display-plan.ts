@@ -1,4 +1,5 @@
 import type { SurfaceDisplay } from "./model"
+import type { Entry, ExitChoices } from "./native/focus"
 
 /**
  * Where Pico draws when the host gives it more than one display.
@@ -77,6 +78,8 @@ export interface PicoLayoutPlan {
   readonly spinesBeside: boolean
   /** A game's screen puts its cart over its facts, not beside them. */
   readonly detailStacked: boolean
+  /** Where the cursor goes on leaving each region (contract 8.4). */
+  readonly exits: ExitChoices
 }
 
 export function picoLayoutPlan(window: PicoWindow, displays: readonly SurfaceDisplay[] | undefined): PicoLayoutPlan {
@@ -97,5 +100,76 @@ export function picoLayoutPlan(window: PicoWindow, displays: readonly SurfaceDis
     columns: Math.max(1, Math.floor((body + 4) / 34)),
     spinesBeside: width >= PICO_SPINES_BESIDE,
     detailStacked: body < 240,
+    exits: picoExits(width >= PICO_SPINES_BESIDE),
+  }
+}
+
+const to = (region: string, entry: Entry) => ({ to: region, entry })
+
+/**
+ * Every region Pico draws, and its exits (contract 8.4). Inside a region the
+ * nearest target ahead wins; at its edge the cursor leaves by the first
+ * exit listed for that direction whose region the screen has. A direction
+ * with none stays.
+ *
+ * - `floor`: MENU on home, RELOAD on launch settings, under everything.
+ * - `menu`: MENU's list. `invites`: PLAYING NOW's buttons, at the top.
+ * - `shelf`, `grid`, `hero` and `resume`: home's three ways to show the
+ *   library. `card`: a notice's or question's answers. `stage`: the
+ *   buttons of a launch or a download under way.
+ * - Find: `sections` over `orders` over the `keys`, then the `results`.
+ * - A panel: `spines` and `rows`, with launch settings' `scopes` over the
+ *   rows. Beside, the spines are a column left of the rows; above, they
+ *   are tabs.
+ * - `keys` over `answers` in the editor; setup's `list`, `pack` answers,
+ *   `answers` and `go`, top to bottom; the store's `search` over its
+ *   `results`, and an entry's `actions` over its `card`.
+ */
+export function picoExits(spinesBeside: boolean): ExitChoices {
+  const spines = spinesBeside
+    ? { right: [to("rows", "first")] }
+    : { down: [to("scopes", "active"), to("rows", "first")] }
+  const scopes = spinesBeside
+    ? { left: [to("spines", "active")], down: [to("rows", "first")] }
+    : { up: [to("spines", "active")], down: [to("rows", "first")] }
+  const rows = spinesBeside
+    ? { left: [to("spines", "active")], up: [to("scopes", "active")], down: [to("floor", "first")] }
+    : { up: [to("scopes", "active"), to("spines", "active")], down: [to("floor", "first")] }
+  return {
+    floor: {
+      up: [
+        to("menu", "remembered"), to("shelf", "active"), to("grid", "remembered"), to("resume", "remembered"),
+        to("hero", "first"), to("card", "remembered"), to("rows", "remembered"), to("invites", "remembered"),
+      ],
+    },
+    menu: { down: [to("floor", "first")] },
+    invites: {
+      down: [
+        to("shelf", "active"), to("grid", "remembered"), to("hero", "first"), to("resume", "first"),
+        to("card", "first"), to("floor", "first"),
+      ],
+    },
+    shelf: { up: [to("invites", "remembered")], down: [to("floor", "first")] },
+    grid: { up: [to("invites", "remembered")], down: [to("floor", "first")] },
+    hero: { up: [to("invites", "remembered")], down: [to("resume", "first"), to("floor", "first")] },
+    resume: { up: [to("hero", "first"), to("invites", "remembered")], down: [to("floor", "first")] },
+    card: {
+      up: [to("actions", "remembered"), to("search", "first"), to("invites", "remembered")],
+      down: [to("floor", "first")],
+    },
+    stage: { down: [to("floor", "first")] },
+    sections: { down: [to("orders", "active")] },
+    orders: { up: [to("sections", "active")], down: [to("keys", "first")] },
+    keys: { up: [to("orders", "active")], down: [to("results", "remembered"), to("answers", "first")] },
+    results: { up: [to("keys", "remembered"), to("search", "first")] },
+    search: { down: [to("results", "first"), to("card", "first")] },
+    actions: { down: [to("card", "first")] },
+    spines,
+    scopes,
+    rows,
+    answers: { up: [to("keys", "remembered"), to("pack", "remembered"), to("list", "remembered")], down: [to("go", "first")] },
+    list: { down: [to("pack", "first"), to("answers", "first"), to("go", "first")] },
+    pack: { up: [to("list", "remembered")], down: [to("answers", "first"), to("go", "first")] },
+    go: { up: [to("answers", "remembered"), to("pack", "remembered"), to("list", "remembered")] },
   }
 }

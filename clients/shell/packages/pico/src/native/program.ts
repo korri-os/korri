@@ -42,7 +42,7 @@ import type { PicoRequest } from "../state/requests"
 import { attractShowing, inviteNotices, launchOpen, runnerOpen, shownScreen } from "../state/shown"
 import { update as picoUpdate } from "../state/update"
 import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScreen, sameQuery } from "./catalog"
-import { type Direction, moveFocus, settleFocus } from "./focus"
+import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus } from "./focus"
 import { cartView } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
 import { qrPath } from "./qr"
@@ -76,6 +76,7 @@ export function init(korri: KorriModel, preferences: Readonly<Record<string, str
     typing: undefined,
     noticeRound: 0,
     window: PICO_WINDOW_BEFORE_RESIZED,
+    remembered: {},
   }
 }
 
@@ -356,7 +357,7 @@ function pressed(step: Step, button: string, korri: KorriModel): Step {
         if ((direction === "left" || direction === "right") && current?.horizontal !== undefined) {
           return run(step, direction === "left" ? current.horizontal.left : current.horizontal.right, korri)
         }
-        const next = moveFocus(screen.targets, s.overlayFocus, direction)
+        const next = moveFocus(screen.targets, s.overlayFocus, direction, focusPlanOf(s, korri, screen), screen.active, s.remembered)
         if (next === undefined || next === s.overlayFocus) return step
         const leaving: Act = current?.horizontal === undefined || korri.presentation.kind !== "gameplay-overlay" ? [] : leftRange(current.id, korri)
         return run({ ...step, state: { ...s, overlayFocus: next } }, leaving, korri)
@@ -397,7 +398,7 @@ function pressed(step: Step, button: string, korri: KorriModel): Step {
   const current = screen.targets.find(target => target.id === s.focus)
   const horizontal = (direction === "left" || direction === "right") ? current?.horizontal ?? screen.horizontal : undefined
   if (horizontal !== undefined) return run(step, direction === "left" ? horizontal.left : horizontal.right, korri)
-  const next = moveFocus(screen.targets, s.focus, direction)
+  const next = moveFocus(screen.targets, s.focus, direction, focusPlanOf(s, korri, screen), screen.active, s.remembered)
   // A d-pad press is activity, and wakes attract; the move itself stands.
   const moved: Act = model.onboarding === undefined ? [{ to: "nav", message: { _tag: "MovedFocus" } }] : []
   if (next === undefined || next === s.focus) return run(step, moved, korri)
@@ -447,12 +448,56 @@ export function update(state: State, message: SurfaceMessage, korri: KorriModel)
   }
   step = settle(step, korri)
   step = sync(step, korri)
+  step = { ...step, state: remember(step.state, korri) }
   return { state: step.state, requests: step.requests }
 }
 
 // ---- view ----
 
 const fontFor = (id: State["font"]) => PICO_FONTS.find(font => font.id === id) ?? PICO_FONTS.find(font => font.id === PICO_DEFAULT_FONT)
+
+/** The plan's exits for the regions on this screen: the view's `focusPlan`. */
+function focusPlanOf(s: State, korri: KorriModel, screen: Screen): FocusPlan {
+  return resolveExits(planFor(s, korri).exits, screen.targets)
+}
+
+/** Each region's last focused target, kept for `remembered` exits. */
+function remember(s: State, korri: KorriModel): State {
+  const overlaid = overlayView(s, korri)
+  const screen = overlaid ?? catalogScreen(s, korri)
+  const focus = overlaid === undefined ? s.focus : s.overlayFocus
+  const region = screen.targets.find(target => target.id === focus)?.region
+  if (region === undefined || focus === undefined || s.remembered[region] === focus) return s
+  return { ...s, remembered: { ...s.remembered, [region]: focus } }
+}
+
+/**
+ * The focus convention (contract 8.4): every entry that stands for a target
+ * carries its region, and a region's active target says so; an entry that
+ * is no target (a disabled button, a cart drawn for show) drops `focused`.
+ * The shell strips these keys before Slint sees the view.
+ */
+function marked(value: unknown, screen: Screen): unknown {
+  if (Array.isArray(value)) return value.map(item => marked(item, screen))
+  if (value === null || typeof value !== "object") return value
+  const entry = value as Record<string, unknown>
+  if ("$image" in entry) return entry
+  const out: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(entry)) {
+    if (key !== "focusId") out[key] = marked(item, screen)
+  }
+  if ("focused" in entry) {
+    const id = entry["focusId"]
+    const target = typeof id === "string" ? screen.targets.find(candidate => candidate.id === id) : undefined
+    if (target === undefined) {
+      delete out["focused"]
+    } else {
+      out["focusRegion"] = target.region
+      if (screen.active?.[target.region] === target.id) out["focusActive"] = true
+    }
+  }
+  return out
+}
 
 export function view(s: State, korri: KorriModel) {
   const model = picoModelFrom(korri)
@@ -462,7 +507,7 @@ export function view(s: State, korri: KorriModel) {
   const shown = shownScreen(s.nav, model)
   const attract = model.onboarding === undefined && attractShowing(s.nav, model) && shown._tag === "Home" && shown.view._tag === "Shelf"
   const plan = splitPlan(planFor(s, korri).split)
-  return {
+  const drawn = {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
     layer: model.onboarding === undefined ? "catalog" : "setup",
@@ -479,6 +524,7 @@ export function view(s: State, korri: KorriModel) {
     },
     split: plan ?? { on: false, showX: 0, showY: 0, showW: 0, showH: 0, chooseX: 0, chooseY: 0, chooseW: 0, chooseH: 0 },
   }
+  return { ...(marked(drawn, screen) as typeof drawn), focusPlan: focusPlanOf(s, korri, screen) }
 }
 
 /** Where Pico's display plan (src/pico-display-plan.ts) puts the two screens, for main.slint. */
@@ -491,11 +537,12 @@ function splitPlan(plan: PicoDisplayPlan | undefined) {
 export function overlay(s: State, korri: KorriModel) {
   const shown = overlayView(s, korri)
   const font = fontFor(s.font)
-  return {
+  const drawn = {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
     ...(shown?.view ?? {}),
   }
+  return shown === undefined ? drawn : { ...(marked(drawn, shown) as typeof drawn), focusPlan: focusPlanOf(s, korri, shown) }
 }
 
 export { PICO_ALL_SECTIONS }
