@@ -333,6 +333,7 @@ impl Inner {
             detail: None,
             progress: None,
             actions,
+            decline_action_id: None,
             game_id: game_id.clone(),
         };
         Some(match &self.phase {
@@ -341,6 +342,7 @@ impl Inner {
             Phase::Reading(_) => busy("Reading both saves…", None),
             Phase::Picking(_) => busy("Continuing from that save…", None),
             Phase::Choosing { sides, offline, .. } => SurfaceStatus::ChooseSave {
+                decline_action_id: None,
                 game_id: game_id.clone().unwrap_or_default(),
                 kicker: "Saves split between two devices".into(),
                 detail: offline.then(|| "No other device answered. Your pick syncs to them when they are next in reach.".into()),

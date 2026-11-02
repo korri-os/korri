@@ -70,6 +70,7 @@ pub fn stream_status_from(state: &LaunchablesState) -> Option<SurfaceStatus> {
                 "Leave",
                 true,
             )],
+            decline_action_id: None,
             game_id: game_entry_id(state, session.game_id.as_deref()),
         });
     }
@@ -210,6 +211,7 @@ pub fn netplay_status_from(
             detail,
             progress,
             actions,
+            decline_action_id: None,
             game_id: game_id.clone(),
         }
     };
@@ -241,6 +243,7 @@ pub fn netplay_status_from(
                 "Leave",
                 true,
             )],
+            decline_action_id: None,
             game_id: game_id.clone(),
         },
         NetplayPhase::Playing => return None,
@@ -620,6 +623,7 @@ pub fn shared_play_status(model: &SharedPlay) -> Option<SurfaceStatus> {
         detail: None,
         progress: None,
         actions,
+        decline_action_id: None,
         game_id: None,
     };
     match model {

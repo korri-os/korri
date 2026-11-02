@@ -556,8 +556,12 @@ pub struct SurfaceSaveSide {
 /// - `Confirm`: Korri needs the user's say-so before it does something, such
 ///   as a large download. The surface renders exactly the host's actions and
 ///   reports the chosen one through `RunAction`. `declineActionId` is the id
-///   of the action that declines, when a stray press must never agree; a
+///   of the action that declines; Korri sets it on every `Confirm`, and a
 ///   surface puts its cursor there first.
+/// - `declineActionId` on `Busy`, `ChooseSave` and `Paused`, and on
+///   `Confirm`: the id of the action that backs out. A surface's Back runs
+///   it, when present, before its own Back handling. Surfaces never infer
+///   meaning from action ids.
 /// - `ChooseSave`: a save split needs a choice before this game can launch.
 ///   Side action ids go unchanged to `RunAction`. At least two sides.
 /// - `Running`: a launch is live. `gameId` is present when Korri knows which.
@@ -582,6 +586,8 @@ pub enum SurfaceStatus {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         actions: Option<Vec<SurfaceAction>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        decline_action_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         game_id: Option<String>,
     },
     Confirm {
@@ -600,6 +606,8 @@ pub enum SurfaceStatus {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
         actions: Vec<SurfaceAction>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        decline_action_id: Option<String>,
         sides: Vec<SurfaceSaveSide>,
     },
     Running {
@@ -612,6 +620,8 @@ pub enum SurfaceStatus {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
         actions: Vec<SurfaceAction>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        decline_action_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         game_id: Option<String>,
     },
@@ -1386,7 +1396,7 @@ pub enum SurfaceButton {
 /// Directional repeat: the first repeat after 400 ms, then every 100 ms.
 #[typeshare(serialized_as = "SurfaceMessageWire")]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "_tag")]
+#[serde(tag = "_tag", rename_all_fields = "camelCase")]
 pub enum SurfaceMessage {
     /// A button was pressed, or repeats while held.
     Pressed { button: SurfaceButton },
@@ -1394,6 +1404,11 @@ pub enum SurfaceMessage {
     KorriPublished,
     /// A `RememberPreference` completed.
     PreferenceStored { key: String },
+    /// The shell sends it to the active surface once a second. `idle_ms` is
+    /// the time since the last `Pressed` it delivered to that surface, or
+    /// since the surface loaded if none came after; any `Pressed` resets it
+    /// to 0. Each surface owns its own idle threshold.
+    Tick { idle_ms: u32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -1703,6 +1718,24 @@ mod tests {
             })
             .unwrap(),
             json!({"_tag": "Pressed", "button": "up"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceMessage::Tick { idle_ms: 31000 }).unwrap(),
+            json!({"_tag": "Tick", "idleMs": 31000})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceStatus::Busy {
+                kicker: "Checking saves…".into(),
+                detail: None,
+                progress: None,
+                actions: Some(vec![SurfaceAction::new("saves:cancel", "Cancel", true)]),
+                decline_action_id: Some("saves:cancel".into()),
+                game_id: None,
+            })
+            .unwrap(),
+            json!({"_tag": "Busy", "kicker": "Checking saves…",
+                "actions": [{"id": "saves:cancel", "label": "Cancel", "enabled": true}],
+                "declineActionId": "saves:cancel"})
         );
         let request: SurfaceRequest = serde_json::from_value(json!({
             "_tag": "MoveCatalog",

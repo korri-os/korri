@@ -147,6 +147,7 @@ pub fn acquiring_status(
             detail,
             progress,
             actions,
+            decline_action_id: None,
             game_id: Some(game_id.into()),
         }
     };
@@ -273,6 +274,7 @@ impl AcquisitionGate {
             detail: Some(detail.into()),
             progress: None,
             actions: None,
+            decline_action_id: None,
             game_id: Some(launch.game.surface_id.clone()),
         };
         Some(match phase {
