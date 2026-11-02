@@ -11,7 +11,7 @@
 // follows from it: the layout is a function of width and height alone.
 
 import { P8 } from "ui/palette.slint";
-import { Tokens, Cycle } from "ui/tokens.slint";
+import { Tokens } from "ui/tokens.slint";
 import { HintView } from "ui/atoms/PicoHint.slint";
 import { ButtonView } from "ui/atoms/PicoRow.slint";
 import { ChipView } from "ui/atoms/PicoBadge.slint";
@@ -39,7 +39,9 @@ import { NoticeView, PicoInviteNotices } from "ui/organisms/PicoInviteNotices.sl
 import { FrameView } from "ui/templates/PicoScreenShell.slint";
 import { SheetView } from "ui/templates/PicoGameOverlay.slint";
 import { SplitView, PicoDisplays } from "ui/templates/PicoDisplays.slint";
-import { PicoHome, HomeView, StageView, HeroView } from "pages/PicoHome.slint";
+import { HomeView, StageView, HeroView } from "ui/templates/PicoHomeLayout.slint";
+import { PicoMenu } from "ui/organisms/PicoMenu.slint";
+import { PicoHome } from "pages/PicoHome.slint";
 import { PicoLibrary } from "pages/PicoLibrary.slint";
 import { PicoGameDetail } from "pages/PicoGameDetail.slint";
 import { PicoSettings } from "pages/PicoSettings.slint";
@@ -100,11 +102,6 @@ export component Surface inherits Window {
     changed font-rows => { Tokens.rows = font-rows; }
     changed font-family => { Tokens.family = font-family; }
 
-    Timer {
-        interval: 200ms;
-        running: true;
-        triggered => { Cycle.phase = Cycle.phase >= 2 ? 0 : Cycle.phase + 1; }
-    }
 
     displays := PicoDisplays {
         split: split;
@@ -123,6 +120,14 @@ export component Surface inherits Window {
             if page == "setup" : PicoOnboarding { frame: frame; setup: setup; editor: editor; identity: identity; mode: mode; }
             if page == "runner" : PicoRunnerPicker { sheet: sheet; }
             if attract.shown : PicoAttract { attract: attract; }
+            // MENU's list at window level: over every screen, never clipped by one.
+            if page == "home" && home.menu-open : PicoMenu {
+                x: 2 * Tokens.u;
+                y: max(Tokens.u, parent.height - Tokens.floor-band - self.height);
+                room-width: parent.width - 4 * Tokens.u;
+                room-height: parent.height - Tokens.floor-band - Tokens.u;
+                entries: home.menu;
+            }
             if !split.on && notices.length > 0 : PicoInviteNotices { notices: notices; round: notice-round; }
         }
         if split.on : Rectangle {
@@ -159,10 +164,5 @@ export component Overlay inherits Window {
     changed height => { Tokens.fit(self.width, self.height); }
     changed font-rows => { Tokens.rows = font-rows; }
 
-    Timer {
-        interval: 200ms;
-        running: true;
-        triggered => { Cycle.phase = Cycle.phase >= 2 ? 0 : Cycle.phase + 1; }
-    }
     PicoOverlay { sheet: sheet; card: card; }
 }

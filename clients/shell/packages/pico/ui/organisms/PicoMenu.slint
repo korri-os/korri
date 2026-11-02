@@ -1,13 +1,20 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
+import { PicoScroll } from "../atoms/PicoScroll.slint";
 
-// MENU's list, standing on the floor over the MENU key: FIND, GET GAMES,
-// SETTINGS and VIEW.
+// MENU's list over the floor's MENU key: FIND, GET GAMES, SETTINGS and VIEW.
+// It is mounted at window level, never clipped by a screen. It is as wide as
+// the window allows; a window too short for every entry scrolls the list to
+// the cursor's entry.
 export component PicoMenu inherits Rectangle {
     in property <[ButtonView]> entries;
-    width: min(110 * Tokens.p, 60 * Tokens.u);
-    height: list.preferred-height;
+    // The room the window leaves it.
+    in property <length> room-width;
+    in property <length> room-height;
+    width: min(110 * Tokens.p, room-width);
+    height: min(list.preferred-height, room-height);
+    property <length> pad: 4 * Tokens.p;
     Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: root.width; height: root.height; background: P8.cast-near; }
     Rectangle { background: P8.shell-tell; }
     list := VerticalLayout {
@@ -15,9 +22,15 @@ export component PicoMenu inherits Rectangle {
         y: 0;
         width: root.width;
         height: root.height;
-        padding: 4 * Tokens.p;
+        padding: pad;
         padding-right: 7 * Tokens.p;
-        spacing: 3 * Tokens.p;
-        for entry in entries : PicoRow { button: entry; kind: "card"; reveal: false; }
+        scroll := PicoScroll {
+            margin: Tokens.p;
+            VerticalLayout {
+                spacing: 3 * Tokens.p;
+                padding-bottom: Tokens.drop-sm;
+                for entry in entries : PicoRow { reveal(left, top, wide, tall) => { scroll.show(left, top, wide, tall); } button: entry; kind: "card"; }
+            }
+        }
     }
 }

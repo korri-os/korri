@@ -1,0 +1,92 @@
+import { P8 } from "../palette.slint";
+import { Tokens } from "../tokens.slint";
+import { ButtonView } from "../atoms/PicoRow.slint";
+import { ChipView } from "../atoms/PicoBadge.slint";
+import { CartView } from "../molecules/PicoCart.slint";
+import { InviteView } from "../molecules/PicoInviteRow.slint";
+import { CardView } from "../molecules/PicoNotice.slint";
+import { PicoCartShelf } from "../organisms/PicoCartShelf.slint";
+import { PicoGameStage } from "../organisms/PicoGameStage.slint";
+import { PicoCartGrid, GridSectionView } from "../organisms/PicoCartGrid.slint";
+import { PicoGameHero } from "../organisms/PicoGameHero.slint";
+import { PicoResumeList, ResumeView } from "../organisms/PicoResumeList.slint";
+import { PicoPlayingNow } from "../organisms/PicoPlayingNow.slint";
+import { PicoLaunchStage, LaunchStageView } from "../organisms/PicoLaunchStage.slint";
+import { PicoModal } from "../organisms/PicoModal.slint";
+
+export struct StageView { shown: bool, title: string, subtitle: string, kicker: string, chips: [ChipView], index: int, total: int, cart: CartView }
+
+export struct HeroView { title: string, subtitle: string, reason: string, chips: [ChipView], open: ButtonView, resume: [ResumeView] }
+
+export struct HomeView {
+    body: string,
+    mode: string,
+    carts: [CartView],
+    selected-index: int,
+    first-index: int,
+    total: int,
+    cursor-on-shelf: bool,
+    narrowest-art: float,
+    stage: StageView,
+    invites: [InviteView],
+    invites-label: string,
+    menu-open: bool,
+    menu: [ButtonView],
+    sections: [GridSectionView],
+    focus-row: int,
+    hero: HeroView,
+    launch: LaunchStageView,
+}
+
+// How home's body is arranged: PLAYING NOW over whichever layout is chosen
+// (the stage over the rack, the grid, the hero over the games to resume),
+// or Korri's launch stage, or Korri's notice. The rack packs smaller carts
+// when the body (`room`) is short. A body too short for its content grows,
+// and the screen shell scrolls it to the cursor.
+export component PicoHomeLayout inherits VerticalLayout {
+    callback reveal(left: length, top: length, wide: length, tall: length);
+    in property <HomeView> home;
+    in property <CardView> card;
+    in property <length> room;
+    if home.body == "card" : PicoModal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
+    if home.body != "card" : VerticalLayout {
+        spacing: Tokens.u;
+        if home.invites.length > 0 : PicoPlayingNow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  invites: home.invites; count: home.invites-label; }
+        if home.body == "shelf" : Rectangle {
+            vertical-stretch: 1;
+            min-height: rack.rack-h + 6 * Tokens.sm;
+            if home.stage.shown : PicoGameStage { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height - rack.height;
+                cart: home.stage.cart;
+                kicker: home.stage.kicker;
+                title: home.stage.title;
+                subtitle: home.stage.subtitle;
+                chips: home.stage.chips;
+                index: home.stage.index;
+                total: home.stage.total;
+            }
+            rack := PicoCartShelf { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+                x: 0;
+                y: parent.height - self.height;
+                width: parent.width;
+                carts: home.carts;
+                first-index: home.first-index;
+                total: home.total;
+                selected-index: home.selected-index;
+                narrowest-art: home.narrowest-art;
+                small: room < 30 * Tokens.sm;
+            }
+        }
+        if home.body == "grid" : PicoCartGrid { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  sections: home.sections; }
+        if home.body == "hero" : VerticalLayout {
+            spacing: Tokens.u;
+            PicoGameHero { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  title: home.hero.title; subtitle: home.hero.subtitle; open: home.hero.open; }
+            if home.hero.resume.length > 0 : PicoResumeList { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  games: home.hero.resume; }
+        }
+        if home.body == "stage" : PicoLaunchStage { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  vertical-stretch: 1; min-height: 60 * Tokens.p; launch: home.launch; }
+        if home.body == "grid" || home.body == "hero" : Rectangle { vertical-stretch: 1; }
+    }
+}

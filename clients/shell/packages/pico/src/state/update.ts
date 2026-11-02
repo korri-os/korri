@@ -64,6 +64,11 @@ export function update(nav: PicoNavigation, message: PicoMessage, korri: Surface
 }
 
 function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
+  if (message._tag === "PressedBack") {
+    const onStatus = picoBackOnStatus(korri.status)
+    if (onStatus._tag === "Run") return ask(nav, { _tag: "RunAction", actionId: onStatus.actionId })
+    if (onStatus._tag === "Swallow") return stay(nav)
+  }
   // The runner picker covers everything Pico draws. Back cancels it; the other
   // host buttons wait for it to close.
   if (runnerOpen(korri) && isHostButton(message)) {
@@ -440,6 +445,27 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
         ? { ...nav, invites: { ...nav.invites, showing: nav.invites.showing.filter(notice => notice.token !== message.token) } }
         : nav)
   }
+}
+
+/**
+ * Back on Korri's status, before any of Pico's own Back (contract A1, 7.2):
+ * korrid marks the answer that declines or cancels (`declineActionId`) on a
+ * question, on work under way, on the save question and on a paused stream.
+ * With a mark, Back runs that action. Busy with no mark (a write under way,
+ * such as a save being picked) swallows Back, as the portal's host did.
+ * Otherwise Back is Pico's own. Pico never reads meaning from action ids.
+ */
+export type PicoBackOnStatus =
+  | { readonly _tag: "Run"; readonly actionId: string }
+  | { readonly _tag: "Swallow" }
+  | { readonly _tag: "Pico" }
+
+export function picoBackOnStatus(status: SurfaceModel["status"]): PicoBackOnStatus {
+  const decline = status._tag === "Busy" || status._tag === "Confirm" || status._tag === "ChooseSave" || status._tag === "Paused"
+    ? status.declineActionId
+    : undefined
+  if (decline !== undefined) return { _tag: "Run", actionId: decline }
+  return status._tag === "Busy" ? { _tag: "Swallow" } : { _tag: "Pico" }
 }
 
 /**

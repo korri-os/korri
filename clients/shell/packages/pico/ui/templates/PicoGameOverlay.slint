@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoPara } from "../atoms/PicoPara.slint";
 import { PicoHint, HintView } from "../atoms/PicoHint.slint";
@@ -18,6 +18,10 @@ export component PicoGameOverlay inherits Rectangle {
     in property <string> title;
     in property <[HintView]> hints;
     property <length> foot: Tokens.snap(Tokens.sm * 1.5) + 2 * Tokens.u;
+    // What the list holds reports its focused control here.
+    public function show(left: length, top: length, wide: length, tall: length) {
+        list.show(left, top, wide, tall);
+    }
     PicoCard {
         x: 2 * Tokens.u;
         y: 2 * Tokens.u;
@@ -26,7 +30,7 @@ export component PicoGameOverlay inherits Rectangle {
         tone: "tell";
         if kicker != "" : PicoLine { text: kicker; color: P8.shell-tell-kicker; }
         if title != "" : PicoPara { text: title; font-size: Tokens.short ? Tokens.md : Tokens.lg; color: P8.shell-tell-ink; }
-        PicoScroll { vertical-stretch: 1; @children }
+        list := PicoScroll { vertical-stretch: 1; @children }
     }
     HorizontalLayout {
         x: root.width - 2 * Tokens.u - self.preferred-width;

@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 import { PicoGameFacts } from "../molecules/PicoGameFacts.slint";
 import { ChipView } from "../atoms/PicoBadge.slint";
@@ -8,6 +8,7 @@ import { ChipView } from "../atoms/PicoBadge.slint";
 // about it. A short stage drops the art; a choice drops the cart 12 pixels
 // into place in 4 steps (pico-land).
 export component PicoGameStage {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CartView> cart;
     in property <string> kicker;
     in property <string> title;
@@ -29,7 +30,7 @@ export component PicoGameStage {
         height: still.shell-h + 8 * Tokens.p;
         Rectangle { x: 8 * Tokens.p; y: 8 * Tokens.p; width: still.shell-w; height: still.shell-h; background: P8.cast-far; }
         Rectangle { x: 4 * Tokens.p; y: 4 * Tokens.p; width: still.shell-w; height: still.shell-h; background: P8.cast-near; }
-        still := PicoCart { x: 0; y: 0; cart: cart; still: true; box-w: box-w; box-h: box-h; initials-size: Tokens.xl; }
+        still := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; cart: cart; still: true; box-w: box-w; box-h: box-h; initials-size: Tokens.xl; }
     }
     PicoGameFacts {
         x: no-art ? 0 : box-w + 18 * Tokens.p;

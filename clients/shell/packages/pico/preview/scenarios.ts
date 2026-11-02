@@ -167,13 +167,8 @@ export const SCENARIOS: readonly Scenario[] = [
   { name: "overlay-confirm-quit", ref: "PicoOverlay.page/ConfirmQuit", model: { ...base, presentation: fixtureOverlay }, keys: ["Down", "Return"] },
   // Two displays: the showcase on the main one
   { name: "showcase", ref: "PicoDisplays.template/Shelf", model: base, displays: rgdsDisplays },
-  // Attract: the clock moves twice with no press
-  {
-    name: "attract",
-    ref: "PicoAttract.organism/default",
-    model: base,
-    then: [{ ...base, clockLabel: "10:25" } as SurfaceModel, { ...base, clockLabel: "10:26" } as SurfaceModel],
-  },
+  // Attract: the shell's Tick reaches 45 s with no press (wait 46 s)
+  { name: "attract", ref: "PicoAttract.organism/default", model: base },
 ]
 
 if (import.meta.main) {

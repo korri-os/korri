@@ -11,8 +11,8 @@
  *    Pico's own cursor (src/native/focus.ts); confirm as the focused
  *    control's press;
  *  - turns Pico's requests into Korri's (`SurfaceRequest`), and answers the
- *    two that were Pico's host's own: a QR code is drawn here, and a wait is
- *    kept by Korri's clock (see `time` below);
+ *    two that were Pico's host's own: a QR code is drawn here, and the idle
+ *    wait is kept by the shell's `Tick` (contract A1, 7.1);
  *  - keeps the catalog window on what Pico shows: Find's query, section and
  *    order go to Korri as `MoveCatalog`, the window follows the cursor with
  *    `Around`, and the game under the cursor is reported with `FocusGame`.
@@ -29,6 +29,7 @@ import { picoModelFrom, type SurfaceModel } from "../model"
 import { picoFontFrom, PICO_FONT_KEY } from "../pico-font-preference"
 import { PICO_FONTS, PICO_DEFAULT_FONT } from "../pico-fonts"
 import { PICO_ALL_SECTIONS } from "../pico-library-view"
+import { PICO_ATTRACT_AFTER_MS } from "../pico-attract"
 import { picoLaunchViewFromModel } from "../pico-launch-view"
 import { picoOverlayViewFrom } from "../pico-overlay-view"
 import { picoDisplayPlan } from "../pico-display-plan"
@@ -55,13 +56,6 @@ import type { Act, Ctx, Dispatch, Plan, Screen, State } from "./types"
 export const WINDOW = 50
 const EDGE = 8
 
-/**
- * Pico's waits, kept without a timer. The contract gives a surface no clock
- * of its own; Korri's `clockLabel` changes once a minute. Attract starts on
- * the second change with no press (60 to 120 s; Pico's own wait was 45 s).
- */
-const ATTRACT_AFTER_CLOCK_CHANGES = 2
-
 export function planFor(korri: KorriModel): Plan {
   const displays = korri.displays ?? []
   const main = displays.find(display => display.main) ?? displays[0]
@@ -83,8 +77,6 @@ export function init(korri: KorriModel, preferences: Readonly<Record<string, str
     reported: null,
     asked: undefined,
     sections: sectionsOf(korri, []),
-    clock: korri.clockLabel,
-    quiet: 0,
     typing: undefined,
     noticeRound: 0,
   }
@@ -282,12 +274,17 @@ function sectionsOf(korri: KorriModel, seen: readonly string[]): readonly string
 }
 
 const DEFAULT_QUERY: CatalogQuery = { text: "", order: "korri" }
+/** The hero is the game played last in the whole library: the first of a
+ * window in Korri's `recent` order (contract 3.4), whose resumable games are
+ * the RESUME list under it. */
+export const HERO_QUERY: CatalogQuery = { text: "", order: "recent" }
 
 /** The query Pico's screen needs answered, and the game to keep in the window. */
 function wanted(s: State, model: SurfaceModel): { readonly query: CatalogQuery; readonly anchor: string | undefined } {
-  const query = s.nav.find ? findQuery(s.nav.search) : DEFAULT_QUERY
+  const hero = !s.nav.find && s.nav.home.mode === "hero"
+  const query = s.nav.find ? findQuery(s.nav.search) : hero ? HERO_QUERY : DEFAULT_QUERY
   const cursor = cursorGame(s.focus)
-  const anchor = s.nav.detail?.gameId ?? cursor ?? (s.nav.find ? undefined : s.nav.home.selectedGameId)
+  const anchor = s.nav.detail?.gameId ?? (hero ? undefined : cursor) ?? (s.nav.find || hero ? undefined : s.nav.home.selectedGameId)
   void model
   return { query, anchor }
 }
@@ -306,7 +303,7 @@ function sync(step: Step, korri: KorriModel): Step {
       const sameAsked = sameQuery(catalog.query, query)
       let move: SurfaceRequest | undefined
       if (!sameAsked) {
-        move = { _tag: "MoveCatalog", query, from: anchor === undefined || state.nav.find ? { _tag: "Start" } : { _tag: "Around", gameId: anchor }, count: WINDOW }
+        move = { _tag: "MoveCatalog", query, from: anchor === undefined || state.nav.find || query.order === "recent" ? { _tag: "Start" } : { _tag: "Around", gameId: anchor }, count: WINDOW }
       } else if (anchor !== undefined && at === -1 && cursorGame(state.focus) === undefined) {
         // A game's own screen, or the shelf's kept cart, outside the window.
         move = { _tag: "MoveCatalog", query, from: { _tag: "Around", gameId: anchor }, count: WINDOW }
@@ -418,18 +415,6 @@ function leftRange(id: string, korri: KorriModel): Act {
   return control === undefined ? [] : [{ to: "overlay", message: { _tag: "LeftRange", control } }]
 }
 
-/** Korri's clock moved. A screen left alone long enough starts attract. */
-function time(step: Step, korri: KorriModel): Step {
-  const s = step.state
-  if (korri.clockLabel === s.clock) return step
-  const quiet = s.quiet + 1
-  let next: Step = { ...step, state: { ...s, clock: korri.clockLabel, quiet } }
-  if (quiet >= ATTRACT_AFTER_CLOCK_CHANGES && s.nav.idle._tag === "Awake") {
-    next = run(next, [{ to: "nav", message: { _tag: "IdleElapsed" } }], korri)
-  }
-  return next
-}
-
 export function update(state: State, message: SurfaceMessage, korri: KorriModel): { state: State; requests: SurfaceRequest[] } {
   let step: Step = { state, requests: [] }
   const model = picoModelFrom(korri)
@@ -439,12 +424,19 @@ export function update(state: State, message: SurfaceMessage, korri: KorriModel)
       step = run(step, [{ to: "nav", message: { _tag: "KorriPublished" } }], korri)
       if (model.onboarding !== undefined) step = run(step, [{ to: "setup", message: { _tag: "KorriPublished" } }], korri)
       if (korri.presentation.kind === "gameplay-overlay") step = run(step, [{ to: "overlay", message: { _tag: "KorriPublished" } }], korri)
-      step = time(step, korri)
       break
     case "PreferenceStored":
       break
+    case "Tick":
+      // The shell's idle clock (contract A1, 7.1): attract after
+      // PICO_ATTRACT_AFTER_MS with no press. `update` starts it only over a
+      // screen that allows it.
+      if (message.idleMs >= PICO_ATTRACT_AFTER_MS && step.state.nav.idle._tag === "Awake") {
+        step = run(step, [{ to: "nav", message: { _tag: "IdleElapsed" } }], korri)
+      }
+      break
     case "Pressed":
-      step = pressed({ ...step, state: { ...step.state, quiet: 0 } }, message.button, korri)
+      step = pressed(step, message.button, korri)
       break
   }
   // A new notice restarts main.slint's 8 s (PICO_INVITE_NOTICE_MS).

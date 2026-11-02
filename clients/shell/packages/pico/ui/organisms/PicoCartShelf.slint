@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens, Cycle } from "../tokens.slint";
 import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 
 // Every game a small cartridge on one floor. Every slot is as tall as the
@@ -7,6 +7,7 @@ import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 // shadow that cycles under the cursor. The rack scrolls only as far as it
 // must to keep the chosen cart in view, with one cart of margin each side.
 export component PicoCartShelf inherits Rectangle {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <[CartView]> carts;
     in property <int> first-index;
     in property <int> total;
@@ -41,7 +42,7 @@ export component PicoCartShelf inherits Rectangle {
             width: shell.shell-w;
             height: shell.shell-h;
             if cart.hero || cart.focused : Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: cart.focused ? Cycle.now : P8.ink; }
-            shell := PicoCart { x: 0; y: 0; cart: cart; box-w: art-w; box-h: art-h; }
+            shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; cart: cart; box-w: art-w; box-h: art-h; }
         }
     }
     Rectangle { x: 0; y: rack-h - 3 * Tokens.p; width: root.width; height: 3 * Tokens.p; background: P8.floor; }

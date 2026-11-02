@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens, Cycle } from "../tokens.slint";
 import { PicoReveal } from "PicoReveal.slint";
 import { PicoLine } from "PicoLine.slint";
 
@@ -19,12 +19,11 @@ export struct ButtonView {
 // is black with white ink, inside a coloured card. The cursor turns it white
 // with black ink and a cycling hard shadow. A detail stands at its end.
 export component PicoRow {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> button;
     in property <string> kind: "plate";
     in property <length> font-size: Tokens.md;
     in property <bool> wrap;
-    // A row over the body (MENU's list) does not scroll the body to itself.
-    in property <bool> reveal: true;
     property <color> ground: button.focused ? P8.pick : kind == "card" ? P8.ink-dark : P8.plate;
     property <color> ink: button.disabled ? P8.ink-quiet : button.warn ? P8.warn : button.focused ? P8.pick-ink : kind == "card" ? P8.ink : P8.plate-ink;
     min-height: font-size + 6 * Tokens.p;
@@ -41,20 +40,24 @@ export component PicoRow {
     label := Text {
         x: 4 * Tokens.p;
         y: 3 * Tokens.p;
-        width: max(0, root.width - 8 * Tokens.p - (button.detail != "" ? detail.preferred-width + 4 * Tokens.p : 0));
+        width: max(0, root.width - 8 * Tokens.p - (button.detail != "" ? detail.width + 4 * Tokens.p : 0));
         text: button.label;
         font-size: root.font-size;
         color: ink;
         wrap: root.wrap ? word-wrap : no-wrap;
         overflow: elide;
     }
+    // A readout yields to the control: the detail takes at most two fifths of
+    // the row and elides; the label keeps the rest.
     detail := Text {
-        x: root.width - 4 * Tokens.p - self.preferred-width;
+        width: min(self.preferred-width, max(0, root.width - 8 * Tokens.p) * 40%);
+        x: root.width - 4 * Tokens.p - self.width;
+        overflow: elide;
         y: 3 * Tokens.p;
         visible: button.detail != "";
         text: button.detail;
         font-size: root.font-size;
         color: button.focused ? P8.pick-mark : P8.ink-quiet;
     }
-    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: reveal && button.focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
 }

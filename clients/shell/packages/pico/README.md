@@ -50,11 +50,14 @@ imports.
   (`src/pico-display-plan.ts`) puts the showcase on the main one and every
   control on the other.
 - **Cover art.** `{"$image": url, "pico8": "vivid"}`.
-- **Time.** The contract gives a surface no clock. Attract starts on the
-  second change of Korri's `clockLabel` with no press (60 to 120 s; the web
-  Pico waited 45 s). An invite notice hides after 8 s in `main.slint` and
-  ends at the next press in the logic. A range in the pause menu sends each
-  step at once.
+- **Time.** The shell sends `Tick { idleMs }` once a second (contract A1,
+  7.1); attract starts when `idleMs` reaches 45 s (`pico-attract.ts`), and
+  nothing in Slint decides idleness. An invite notice hides after 8 s in
+  `main.slint` and ends at the next press in the logic. A range in the
+  pause menu sends each step at once.
+- **Back.** Before any of Pico's own Back (contract A1, 7.2): a status that
+  carries `declineActionId` runs it; Busy with none swallows Back; anything
+  else is Pico's own Back. Pico reads no meaning from action ids.
 
 ## Gates
 

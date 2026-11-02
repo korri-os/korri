@@ -1,5 +1,5 @@
 import { P8 } from "../ui/palette.slint";
-import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { Tokens } from "../ui/tokens.slint";
 import { SetupView } from "../ui/molecules/PicoSetupHeading.slint";
 import { PicoSetupWelcome } from "../ui/organisms/PicoSetupWelcome.slint";
 import { PicoWifiSetup } from "../ui/organisms/PicoWifiSetup.slint";
@@ -19,19 +19,19 @@ export component PicoOnboarding inherits Rectangle {
     in property <EditorView> editor;
     in property <IdentityView> identity;
     in property <string> mode: "setup";
-    PicoScreenShell {
+    shell := PicoScreenShell {
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
-        if mode == "editor" : PicoTextEditor { editor: editor; }
-        if mode == "identity" : PicoIdentityDialog { identity: identity; }
-        if mode == "setup" && setup.step == "hello" : PicoSetupWelcome { setup: setup; }
-        if mode == "setup" && setup.step == "wifi" : PicoWifiSetup { min-height: 60 * Tokens.p; setup: setup; }
-        if mode == "setup" && setup.step == "you" : PicoIdentitySetup { min-height: 60 * Tokens.p; setup: setup; }
-        if mode == "setup" && setup.step == "pads" : PicoControllerCheck { min-height: 60 * Tokens.p; setup: setup; }
-        if mode == "setup" && setup.step == "games" : PicoGamesFound { min-height: 60 * Tokens.p; setup: setup; }
-        if mode == "setup" && setup.step == "play" : PicoSetupDone { setup: setup; }
+        if mode == "editor" : PicoTextEditor { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }
+        if mode == "identity" : PicoIdentityDialog { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  identity: identity; }
+        if mode == "setup" && setup.step == "hello" : PicoSetupWelcome { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  setup: setup; }
+        if mode == "setup" && setup.step == "wifi" : PicoWifiSetup { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "you" : PicoIdentitySetup { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "pads" : PicoControllerCheck { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "games" : PicoGamesFound { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "play" : PicoSetupDone { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  setup: setup; }
     }
 }

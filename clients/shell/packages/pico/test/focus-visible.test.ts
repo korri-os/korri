@@ -25,13 +25,31 @@ const MODELS = [
   "settings-identity", "settings-plugins",
 ]
 
-test.skipIf(PROBE === undefined)("every focus target the logic can reach is inside the window", () => {
+/** Write the scenario models once. */
+function models(): string {
   const gen = mkdtempSync(join(tmpdir(), "pico-models-"))
   const write = Bun.spawnSync(["bun", join(ROOT, "preview", "scenarios.ts"), gen], { cwd: ROOT })
   expect(write.exitCode).toBe(0)
-  const models = MODELS.map(name => join(gen, `${name}.json`)).join(",")
+  return gen
+}
+
+function walk(gen: string, names: readonly string[], extra: readonly string[] = []) {
   const max = process.env["PICO_FOCUS_STATES"] ?? "80"
-  const run = probe(["walk", "pico", "--model", models, "--sizes", FIVE_SIZES, "--max", max, "--out", join(gen, "unseen")])
+  const run = probe(["walk", "pico", "--model", names.map(name => join(gen, `${name}.json`)).join(","), "--sizes", FIVE_SIZES, "--max", max, "--out", join(gen, "unseen"), ...extra])
   expect(run.out.split("\n").filter(line => line.startsWith("FAIL"))).toEqual([])
   expect(run.code).toBe(0)
+}
+
+test.skipIf(PROBE === undefined)("every focus target the logic can reach is inside the window", () => {
+  walk(models(), MODELS)
 }, 7_200_000)
+
+test.skipIf(PROBE === undefined)("MENU's list, with and without GET GAMES, is inside the window", () => {
+  // Down puts the cursor on MENU; confirm opens the list.
+  walk(models(), ["home-ready", "store-providers"], ["--start", "down,confirm"])
+}, 3_600_000)
+
+test.skipIf(PROBE === undefined)("the grid fits the window, not a larger display", () => {
+  // Korri reports a 1920x1080 display; the window is each of the five sizes.
+  walk(models(), ["home-ready"], ["--start", "menu", "--display", "1920x1080"])
+}, 3_600_000)

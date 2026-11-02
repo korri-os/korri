@@ -171,8 +171,10 @@ const statusActions = (actions: readonly SurfaceAction[] | undefined, focused: s
 
 /** Columns of the home grid at this width: the rack's carts at their pitch. */
 export function gridColumns(width: number): number {
-  // A shelf slot is 37 virtual pixels with its gap; the rack keeps 8 a side.
-  return Math.max(1, Math.floor((width - 16 + 4) / 41))
+  // As PicoCartGrid fits them: 30-pixel slots 4 apart, in the body (the
+  // window less 8 a side). The display's width is the best guess the logic
+  // has of the window; main.slint fits the grid to the window it is given.
+  return Math.max(1, Math.floor((width - 16 + 4) / 34))
 }
 
 export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>): Screen {
@@ -307,7 +309,10 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     })
   } else if (view._tag === "Shelf" && home.mode === "hero") {
     body = "hero"
-    const pick = picoHeroPick(games)
+    // Only once Korri answers in `recent` order is the window's first game the
+    // one played last in the whole library (program.ts, HERO_QUERY).
+    const answered = catalog._tag === "Ready" && catalog.query.order === "recent" && catalog.query.text === "" && catalog.query.section == null
+    const pick = answered ? picoHeroPick(games) : undefined
     const resumable = games.filter(game => game.resumable === true)
     if (pick !== undefined && !menuOpen) {
       targets.push({ id: "hero:open", box: { x: 0, y: 100, w: 30, h: 10 }, act: [nav({ _tag: "OpenedGame", gameId: pick.game.id })], enter: aimAt(undefined) })
@@ -421,7 +426,6 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
         menuOpen,
         menu: entries.map(entry => button(entry.label, { detail: entry.detail, focused: focused === `menu:${entry.label}` })),
         sections,
-        columns: gridColumns(ctx.plan.width),
         focusRow: focusedRow(targets, focused),
         hero,
         launch,
