@@ -85,6 +85,7 @@ pub fn owner_binding_status(
             detail: Some("Choose the same person key as your other Korri devices and approve this device's owner binding.".into()),
             progress: None,
             actions: None,
+            decline_action_id: None,
             game_id: None,
         });
     }
