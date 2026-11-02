@@ -810,6 +810,78 @@ async fn preferences_follow_the_declaration() {
     );
 }
 
+/// The shell declares twice per switch: before init, and again once its old
+/// window retired. Each declare places anew, even with the same surface and
+/// scope; the second leaves preferences as they were.
+#[tokio::test]
+async fn a_second_declare_places_the_new_window_and_keeps_preferences() {
+    let declarations = || -> korri_surface_treaty::SurfacePreferenceDeclarations {
+        [(
+            "zone.look".to_owned(),
+            SurfacePreferenceDeclaration {
+                mark: SurfacePreferenceMark::Shared,
+                initial: "modern".into(),
+            },
+        )]
+        .into()
+    };
+    let window = |id: &str| json!({ "_tag": "Ok", "payload": [{ "id": id, "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false }] });
+    let shown = |hub: &Arc<SurfaceHub>| {
+        hub.model("zone").unwrap().displays.map(|displays| {
+            displays
+                .into_iter()
+                .map(|display| display.id)
+                .collect::<Vec<_>>()
+        })
+    };
+    let no_window = json!({ "_tag": "Err", "payload": { "code": "SurfacePlacementFailed", "message": "no unique portal window" } });
+    // The first placement finds no window, or the old one.
+    for first in [no_window, window("old-window")] {
+        let mut outcomes = idle_outcomes(1);
+        outcomes.insert("app.surface.displays".into(), first.clone());
+        let (hub, outcomes, _directory) = hub_with(outcomes);
+        hub.declare(
+            "zone",
+            declarations(),
+            korri_surface_treaty::SurfacePackageDisplays::All,
+        )
+        .unwrap();
+        hub.request(
+            "zone",
+            SurfaceRequest::RememberPreference {
+                key: "zone.look".into(),
+                value: "retro".into(),
+            },
+        )
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        if first["_tag"] == "Ok" {
+            assert_eq!(shown(&hub), Some(vec!["old-window".to_owned()]));
+        } else {
+            assert_eq!(shown(&hub), None);
+        }
+        // The old window retired; the new one is the only one. The same
+        // declaration again must place it, whatever the first attempt did.
+        outcomes
+            .lock()
+            .unwrap()
+            .insert("app.surface.displays".into(), window("new-window"));
+        hub.declare(
+            "zone",
+            declarations(),
+            korri_surface_treaty::SurfacePackageDisplays::All,
+        )
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            shown(&hub),
+            Some(vec!["new-window".to_owned()]),
+            "after {first}"
+        );
+        assert_eq!(hub.preferences("zone").unwrap()["zone.look"], "retro");
+    }
+}
+
 #[tokio::test]
 async fn a_launch_request_reserves_and_starts_the_exact_local_game() {
     let mut outcomes = idle_outcomes(2);
@@ -2883,6 +2955,129 @@ mod plugin_repositories {
             natural_compare("2026.10.2", "2026.9.30"),
             std::cmp::Ordering::Greater
         );
+    }
+}
+
+mod placement {
+    //! The surface window counts as placed only after korrid placed it.
+    use super::acquisition_gate::{push, scripted};
+    use super::*;
+    use crate::surface::{placement::backoff, root::Root};
+    use korri_surface_treaty::SurfacePackageDisplays;
+
+    const DISPLAYS: &str = "app.surface.displays";
+
+    fn placed(id: &str) -> Value {
+        json!({ "_tag": "Ok", "payload": [{ "id": id, "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false }] })
+    }
+    fn no_window() -> Value {
+        json!({ "_tag": "Err", "payload": { "code": "SurfacePlacementFailed", "message": "no unique portal window" } })
+    }
+    fn shown(root: &Root) -> Option<Vec<String>> {
+        root.display_facts()
+            .map(|facts| facts.into_iter().map(|display| display.id).collect())
+    }
+    async fn settle() {
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    #[tokio::test]
+    async fn a_failed_placement_is_retried_after_its_backoff() {
+        let (korrid, script) = scripted();
+        push(&script, DISPLAYS, no_window());
+        push(&script, DISPLAYS, placed("DSI-1"));
+        let root = Root::new(korrid, Arc::new(|| {}), Arc::default());
+        root.show_package(SurfacePackageDisplays::All);
+        settle().await;
+        assert_eq!(shown(&root), None);
+        // The next presentation change or window event comes inside the
+        // backoff: korrid asks again once it has passed, not at once.
+        root.place();
+        settle().await;
+        assert_eq!(
+            script
+                .lock()
+                .unwrap()
+                .calls
+                .iter()
+                .filter(|(tag, _)| tag == DISPLAYS)
+                .count(),
+            1
+        );
+        tokio::time::sleep(backoff(1)).await;
+        settle().await;
+        assert_eq!(
+            script
+                .lock()
+                .unwrap()
+                .calls
+                .iter()
+                .filter(|(tag, _)| tag == DISPLAYS)
+                .count(),
+            2
+        );
+        assert_eq!(shown(&root), Some(vec!["DSI-1".to_owned()]));
+        // Placed: later events place nothing more.
+        root.place();
+        settle().await;
+        assert_eq!(
+            script
+                .lock()
+                .unwrap()
+                .calls
+                .iter()
+                .filter(|(tag, _)| tag == DISPLAYS)
+                .count(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn a_redeclaration_after_a_failed_switch_applies_its_displays() {
+        let (korrid, script) = scripted();
+        // The switch's placement fails: the new window is not mapped yet.
+        push(&script, DISPLAYS, no_window());
+        push(&script, DISPLAYS, placed("DSI-2"));
+        let root = Root::new(korrid, Arc::new(|| {}), Arc::default());
+        root.show_package(SurfacePackageDisplays::All);
+        settle().await;
+        assert_eq!(shown(&root), None);
+        // The shell declares again once its window has mapped: placed at
+        // once, inside the failure's backoff.
+        root.show_package(SurfacePackageDisplays::All);
+        settle().await;
+        let calls: Vec<Value> = script
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|(tag, _)| tag == DISPLAYS)
+            .map(|(_, payload)| payload.clone())
+            .collect();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1]["displays"], json!("all"));
+        assert_eq!(shown(&root), Some(vec!["DSI-2".to_owned()]));
+    }
+
+    #[tokio::test]
+    async fn a_placement_answered_after_a_redeclaration_counts_for_nothing() {
+        let (korrid, script) = scripted();
+        script
+            .lock()
+            .unwrap()
+            .delays
+            .insert(DISPLAYS.into(), Duration::from_millis(30));
+        push(&script, DISPLAYS, placed("old-window"));
+        push(&script, DISPLAYS, placed("new-window"));
+        let root = Root::new(korrid, Arc::new(|| {}), Arc::default());
+        root.show_package(SurfacePackageDisplays::All);
+        tokio::task::yield_now().await;
+        root.show_package(SurfacePackageDisplays::All);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(shown(&root), Some(vec!["new-window".to_owned()]));
     }
 }
 
