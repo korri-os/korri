@@ -70,7 +70,7 @@ pub fn stream_status_from(state: &LaunchablesState) -> Option<SurfaceStatus> {
                 "Leave",
                 true,
             )],
-            decline_action_id: None,
+            decline_action_id: Some(format!("{LEAVE}{}", session.launch_id)),
             game_id: game_entry_id(state, session.game_id.as_deref()),
         });
     }
@@ -210,8 +210,12 @@ pub fn netplay_status_from(
             kicker,
             detail,
             progress,
+            // Every action shared play puts on a Busy status cancels.
+            decline_action_id: actions
+                .as_ref()
+                .and_then(|actions| actions.first())
+                .map(|action| action.id.clone()),
             actions,
-            decline_action_id: None,
             game_id: game_id.clone(),
         }
     };
@@ -243,7 +247,7 @@ pub fn netplay_status_from(
                 "Leave",
                 true,
             )],
-            decline_action_id: None,
+            decline_action_id: Some(format!("{NETPLAY_LEAVE}{}", observation.launch_id)),
             game_id: game_id.clone(),
         },
         NetplayPhase::Playing => return None,
@@ -622,8 +626,11 @@ pub fn shared_play_status(model: &SharedPlay) -> Option<SurfaceStatus> {
         kicker,
         detail: None,
         progress: None,
+        decline_action_id: actions
+            .as_ref()
+            .and_then(|actions| actions.first())
+            .map(|action| action.id.clone()),
         actions,
-        decline_action_id: None,
         game_id: None,
     };
     match model {

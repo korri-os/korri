@@ -556,12 +556,14 @@ pub struct SurfaceSaveSide {
 /// - `Confirm`: Korri needs the user's say-so before it does something, such
 ///   as a large download. The surface renders exactly the host's actions and
 ///   reports the chosen one through `RunAction`. `declineActionId` is the id
-///   of the action that declines; Korri sets it on every `Confirm`, and a
-///   surface puts its cursor there first.
+///   of the action that declines; Korri sets it on every `Confirm` that has
+///   one, and a surface puts its cursor there first.
 /// - `declineActionId` on `Busy`, `ChooseSave` and `Paused`, and on
 ///   `Confirm`: the id of the action that backs out. A surface's Back runs
 ///   it, when present, before its own Back handling. Surfaces never infer
-///   meaning from action ids.
+///   meaning from action ids. `Busy` without `declineActionId`: Back is
+///   swallowed. `Confirm` without `declineActionId`: nothing to decline;
+///   Back goes to the surface's own handling.
 /// - `ChooseSave`: a save split needs a choice before this game can launch.
 ///   Side action ids go unchanged to `RunAction`. At least two sides.
 /// - `Running`: a launch is live. `gameId` is present when Korri knows which.

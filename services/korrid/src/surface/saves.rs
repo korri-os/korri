@@ -328,21 +328,30 @@ impl Inner {
 
     fn status_for(&self, local: &HashSet<String>) -> Option<SurfaceStatus> {
         let game_id = self.phase.flow().map(|flow| flow.game.surface_id.clone());
-        let busy = |kicker: &str, actions: Option<Vec<SurfaceAction>>| SurfaceStatus::Busy {
-            kicker: kicker.into(),
-            detail: None,
-            progress: None,
-            actions,
-            decline_action_id: None,
-            game_id: game_id.clone(),
-        };
+        // Back closed the flow while korrid checked or read: a marked Cancel.
+        let cancel = self.action("cancel", "Cancel");
+        let busy =
+            |kicker: &str, mut actions: Vec<SurfaceAction>, back: bool| SurfaceStatus::Busy {
+                kicker: kicker.into(),
+                detail: None,
+                progress: None,
+                decline_action_id: back.then(|| cancel.id.clone()),
+                actions: {
+                    if back {
+                        actions.push(cancel.clone());
+                    }
+                    (!actions.is_empty()).then_some(actions)
+                },
+                game_id: game_id.clone(),
+            };
         Some(match &self.phase {
             Phase::Idle => return None,
-            Phase::Checking(_) => busy("Checking other devices…", Some(vec![self.action("skip", "Skip")])),
-            Phase::Reading(_) => busy("Reading both saves…", None),
-            Phase::Picking(_) => busy("Continuing from that save…", None),
+            Phase::Checking(_) => busy("Checking other devices…", vec![self.action("skip", "Skip")], true),
+            Phase::Reading(_) => busy("Reading both saves…", Vec::new(), true),
+            // The pick is a korrid write under way: Back cancelled nothing.
+            Phase::Picking(_) => busy("Continuing from that save…", Vec::new(), false),
             Phase::Choosing { sides, offline, .. } => SurfaceStatus::ChooseSave {
-                decline_action_id: None,
+                decline_action_id: Some(self.action("not-now", "Not now").id),
                 game_id: game_id.clone().unwrap_or_default(),
                 kicker: "Saves split between two devices".into(),
                 detail: offline.then(|| "No other device answered. Your pick syncs to them when they are next in reach.".into()),
@@ -365,7 +374,7 @@ impl Inner {
                     kicker,
                     detail: (!detail.is_empty()).then_some(detail),
                     actions: vec![self.action("launch-anyway", "Launch anyway"), self.action("cancel", "Cancel")],
-                    decline_action_id: None,
+                    decline_action_id: Some(self.action("cancel", "Cancel").id),
                     game_id,
                 }
             }
@@ -994,6 +1003,7 @@ impl SaveSync {
         let phase = self.lock().phase.clone();
         match phase {
             // Skip ends the wait here; korrid still enforces the split.
+            Phase::Checking(flow) | Phase::Reading(flow) if rest == "cancel" => self.close(&flow),
             Phase::Checking(flow) if rest == "skip" => {
                 self.bump();
                 self.unanswered(flow);

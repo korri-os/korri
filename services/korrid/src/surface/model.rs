@@ -511,7 +511,9 @@ pub fn status_from(state: &LaunchablesState) -> SurfaceStatus {
                 },
                 !*cancelling || *cancel_retry_available == Some(true),
             )]),
-            decline_action_id: None,
+            // Back cancelled the launch, while cancelling is on offer.
+            decline_action_id: (!*cancelling || *cancel_retry_available == Some(true))
+                .then(|| "cancel-launch".into()),
             game_id,
         },
         Phase::Stopping { .. } => busy(

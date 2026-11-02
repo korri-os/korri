@@ -146,8 +146,12 @@ pub fn acquiring_status(
             kicker,
             detail,
             progress,
+            // Back is the cancel on offer, as the portal's Back was.
+            decline_action_id: actions
+                .as_ref()
+                .and_then(|actions| actions.first())
+                .map(|action| action.id.clone()),
             actions,
-            decline_action_id: None,
             game_id: Some(game_id.into()),
         }
     };
@@ -279,11 +283,18 @@ impl AcquisitionGate {
         };
         Some(match phase {
             Phase::Idle => return None,
-            Phase::Checking(launch) => busy(
-                format!("Starting {}…", launch.game.title),
-                "Checking what it needs",
-                launch,
-            ),
+            // Back abandoned the launch while korrid checked: the same cancel.
+            Phase::Checking(launch) => {
+                let cancel = action("cancel", "Cancel");
+                SurfaceStatus::Busy {
+                    kicker: format!("Starting {}…", launch.game.title),
+                    detail: Some("Checking what it needs".into()),
+                    progress: None,
+                    decline_action_id: Some(cancel.id.clone()),
+                    actions: Some(vec![cancel]),
+                    game_id: Some(launch.game.surface_id.clone()),
+                }
+            }
             Phase::Confirming(launch, artifacts) => SurfaceStatus::Confirm {
                 kicker: "Needs a download".into(),
                 detail: Some(confirm_detail(
@@ -293,7 +304,7 @@ impl AcquisitionGate {
                         .collect::<Vec<_>>(),
                 )),
                 actions: vec![action("download", "Download"), action("cancel", "Cancel")],
-                decline_action_id: None,
+                decline_action_id: Some(action("cancel", "Cancel").id),
                 game_id: Some(launch.game.surface_id.clone()),
             },
             Phase::Acquiring {
@@ -710,6 +721,7 @@ impl AcquisitionGate {
         }
         let kind = action_id.rsplit(':').next().unwrap_or_default();
         match self.phase() {
+            Phase::Checking(launch) if kind == "cancel" => self.abandon(&launch),
             Phase::Confirming(launch, artifacts) => {
                 if kind == "download" {
                     tokio::spawn(Arc::clone(self).start(launch, artifacts));

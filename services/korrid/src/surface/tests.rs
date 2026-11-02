@@ -1315,6 +1315,88 @@ mod acquisition_gate {
             .id
     }
 
+    fn decline(status: &Option<SurfaceStatus>) -> Option<String> {
+        match status {
+            Some(SurfaceStatus::Busy {
+                decline_action_id, ..
+            })
+            | Some(SurfaceStatus::Confirm {
+                decline_action_id, ..
+            }) => decline_action_id.clone(),
+            _ => None,
+        }
+    }
+
+    /// A1 7.2: while korrid checks, Back abandoned the launch; the check now
+    /// publishes that cancel and marks it.
+    #[tokio::test]
+    async fn a_check_under_way_marks_its_cancel_and_running_it_abandons_the_launch() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![rootfs(missing())]),
+        );
+        script
+            .lock()
+            .unwrap()
+            .delays
+            .insert("app.acquisition.status".into(), Duration::from_millis(80));
+        let gate = gate(korrid);
+        let proceeded = Arc::new(AtomicUsize::new(0));
+        let abandoned = Arc::new(AtomicUsize::new(0));
+        let (on_proceed, on_abandon) = (Arc::clone(&proceeded), Arc::clone(&abandoned));
+        gate.launch(
+            game(),
+            Arc::new(move || {
+                on_proceed.fetch_add(1, Ordering::SeqCst);
+            }),
+            Arc::new(move || {
+                on_abandon.fetch_add(1, Ordering::SeqCst);
+            }),
+        );
+        tokio::task::yield_now().await;
+        let status = gate.status();
+        assert!(
+            matches!(&status, Some(SurfaceStatus::Busy { detail: Some(detail), .. }) if detail == "Checking what it needs")
+        );
+        assert_eq!(decline(&status), Some(action_id(status.clone(), "Cancel")));
+        assert!(gate.act(&decline(&status).unwrap()));
+        assert_eq!(abandoned.load(Ordering::SeqCst), 1);
+        assert!(gate.status().is_none());
+        // The late check changes nothing.
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert!(gate.status().is_none());
+        assert_eq!(proceeded.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn a_download_confirm_marks_cancel_and_running_it_abandons_the_launch() {
+        let (korrid, script) = scripted();
+        push(
+            &script,
+            "app.acquisition.status",
+            ok(vec![rootfs(missing())]),
+        );
+        let gate = gate(korrid);
+        let abandoned = Arc::new(AtomicUsize::new(0));
+        let on_abandon = Arc::clone(&abandoned);
+        gate.launch(
+            game(),
+            Arc::new(|| {}),
+            Arc::new(move || {
+                on_abandon.fetch_add(1, Ordering::SeqCst);
+            }),
+        );
+        settle().await;
+        let status = gate.status();
+        assert!(matches!(&status, Some(SurfaceStatus::Confirm { .. })));
+        assert_eq!(decline(&status), Some(action_id(status.clone(), "Cancel")));
+        assert!(gate.act(&decline(&status).unwrap()));
+        assert_eq!(abandoned.load(Ordering::SeqCst), 1);
+        assert!(gate.status().is_none());
+    }
+
     #[test]
     fn formatting_reads_the_way_the_contract_shows_it() {
         assert_eq!(format_bytes(612_000_000.0), "612 MB");
@@ -1429,6 +1511,7 @@ mod acquisition_gate {
             json!({ "_tag": "Busy", "kicker": "Downloading FEX rootfs", "detail": "116 MB of 1.2 GB · 6.4 MB/s · 2:43 left",
                 "progress": { "done": 116_000_000.0, "total": 1_160_000_000.0 },
                 "actions": [{ "id": action_id(gate.status(), "Cancel"), "label": "Cancel", "enabled": true }],
+                "declineActionId": action_id(gate.status(), "Cancel"),
                 "gameId": "game:steam:1" })
         );
         push(
@@ -1957,6 +2040,178 @@ mod save_sync {
                 .clone(),
             other => panic!("no actions on {other:?}"),
         }
+    }
+
+    fn declined(status: &Option<SurfaceStatus>) -> Option<String> {
+        match status {
+            Some(SurfaceStatus::Busy {
+                decline_action_id, ..
+            })
+            | Some(SurfaceStatus::Confirm {
+                decline_action_id, ..
+            })
+            | Some(SurfaceStatus::ChooseSave {
+                decline_action_id, ..
+            }) => decline_action_id.clone(),
+            _ => None,
+        }
+    }
+
+    fn split(script: &Arc<std::sync::Mutex<super::acquisition_gate::Script>>) {
+        push(
+            script,
+            "app.saves.status",
+            json!({ "_tag": "Ok", "payload": { "games": [{ "gameId": "wl4", "status": "Split", "heads": ["b", "c"] }] } }),
+        );
+        push(
+            script,
+            "app.saves.check",
+            json!({ "_tag": "Ok", "payload": { "warnings": [], "status": "Split", "inUse": [] } }),
+        );
+        let history = json!({ "_tag": "Ok", "payload": { "records": [
+            entry("a", HERE, "2026-10-01T00:00:00.000Z", &[]),
+            entry("b", ZAO, "2026-10-03T00:00:00.000Z", &["a"]),
+            entry("c", HERE, "2026-10-02T00:00:00.000Z", &["a"])
+        ] } });
+        push(script, "app.saves.history", history.clone());
+        push(script, "app.saves.choose", history);
+    }
+
+    /// A1 7.2: Back closed the flow while korrid checked other devices;
+    /// Checking now publishes that Cancel beside Skip and marks it.
+    #[tokio::test]
+    async fn checking_marks_a_cancel_that_closes_the_flow() {
+        let (sync, script) = sync();
+        push(
+            &script,
+            "app.saves.status",
+            json!({ "_tag": "Ok", "payload": { "games": [] } }),
+        );
+        push(
+            &script,
+            "app.saves.check",
+            json!({ "_tag": "Ok", "payload": { "warnings": [], "status": "Synced", "inUse": [] } }),
+        );
+        script
+            .lock()
+            .unwrap()
+            .delays
+            .insert("app.saves.check".into(), Duration::from_millis(150));
+        sync.refresh().await;
+        let (proceeded, proceed) = counter();
+        let (abandoned, abandon) = counter();
+        sync.launch(game(), proceed, abandon);
+        settle().await;
+        let status = sync.status();
+        assert!(
+            matches!(&status, Some(SurfaceStatus::Busy { kicker, .. }) if kicker == "Checking other devices…")
+        );
+        assert_eq!(declined(&status), Some(action(&status, "Cancel")));
+        assert_ne!(declined(&status), Some(action(&status, "Skip")));
+        sync.act(&declined(&status).unwrap());
+        assert!(sync.status().is_none());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            (
+                proceeded.load(Ordering::SeqCst),
+                abandoned.load(Ordering::SeqCst)
+            ),
+            (0, 1)
+        );
+    }
+
+    /// Reading both sides of a split: the marked Cancel closes the flow.
+    /// The split question marks Not now; a pick under way marks nothing,
+    /// since the portal's Back cancelled nothing there.
+    #[tokio::test]
+    async fn reading_marks_cancel_choosing_marks_not_now_and_picking_marks_nothing() {
+        let (sync, script) = sync();
+        split(&script);
+        script
+            .lock()
+            .unwrap()
+            .delays
+            .insert("app.saves.history".into(), Duration::from_millis(100));
+        let (proceeded, proceed) = counter();
+        let (abandoned, abandon) = counter();
+        sync.launch(game(), proceed, abandon);
+        settle().await;
+        let status = sync.status();
+        assert!(
+            matches!(&status, Some(SurfaceStatus::Busy { kicker, .. }) if kicker == "Reading both saves…"),
+            "{status:?}"
+        );
+        assert_eq!(declined(&status), Some(action(&status, "Cancel")));
+        sync.act(&declined(&status).unwrap());
+        assert!(sync.status().is_none());
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(sync.status().is_none());
+        assert_eq!(
+            (
+                proceeded.load(Ordering::SeqCst),
+                abandoned.load(Ordering::SeqCst)
+            ),
+            (0, 1)
+        );
+
+        let (sync, script) = self::sync();
+        split(&script);
+        script
+            .lock()
+            .unwrap()
+            .delays
+            .insert("app.saves.choose".into(), Duration::from_millis(100));
+        let (_, proceed) = counter();
+        let (abandoned, abandon) = counter();
+        sync.launch(game(), proceed, abandon);
+        settle().await;
+        let status = sync.status();
+        let Some(SurfaceStatus::ChooseSave { sides, .. }) = &status else {
+            panic!("{status:?}")
+        };
+        assert_eq!(declined(&status), Some(action(&status, "Not now")));
+        let pick = sides[0].action_id.clone();
+        sync.act(&pick);
+        settle().await;
+        let picking = sync.status();
+        assert!(
+            matches!(&picking, Some(SurfaceStatus::Busy { kicker, actions: None, decline_action_id: None, .. }) if kicker == "Continuing from that save…"),
+            "{picking:?}"
+        );
+        assert_eq!(abandoned.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn an_in_use_confirm_marks_cancel_and_running_it_closes_the_flow() {
+        let (sync, script) = sync();
+        push(
+            &script,
+            "app.saves.status",
+            json!({ "_tag": "Ok", "payload": { "games": [] } }),
+        );
+        push(
+            &script,
+            "app.saves.check",
+            json!({ "_tag": "Ok", "payload": { "warnings": [], "status": "Synced",
+            "inUse": [{ "device": ZAO, "since": 1_000_000u64 }] } }),
+        );
+        sync.refresh().await;
+        let (proceeded, proceed) = counter();
+        let (abandoned, abandon) = counter();
+        sync.launch(game(), proceed, abandon);
+        settle().await;
+        let status = sync.status();
+        assert!(matches!(&status, Some(SurfaceStatus::Confirm { .. })));
+        assert_eq!(declined(&status), Some(action(&status, "Cancel")));
+        sync.act(&declined(&status).unwrap());
+        assert!(sync.status().is_none());
+        assert_eq!(
+            (
+                proceeded.load(Ordering::SeqCst),
+                abandoned.load(Ordering::SeqCst)
+            ),
+            (0, 1)
+        );
     }
 
     #[test]
@@ -3150,14 +3405,21 @@ mod shared_play {
             ))
             .unwrap(),
             json!({ "_tag": "Busy", "kicker": "Copying Turtles from Odin", "detail": "50% of 1 GB", "progress": { "done": 512_000_000.0, "total": 1_024_000_000.0 },
-                "actions": [{ "id": "netplay:cancel", "label": "Cancel", "enabled": true }], "gameId": "game:t" })
+                "actions": [{ "id": "netplay:cancel", "label": "Cancel", "enabled": true }],
+                "declineActionId": "netplay:cancel", "gameId": "game:t" })
         );
+        // Back leaves a paused session, as the portal's Back did.
         assert!(
-            matches!(netplay_status_from(&netplay(json!({ "_tag": "HolderLeft" })), None), Some(SurfaceStatus::Paused { actions, .. }) if actions[0].id == "netplay:leave:N1")
+            matches!(netplay_status_from(&netplay(json!({ "_tag": "HolderLeft" })), None), Some(SurfaceStatus::Paused { actions, decline_action_id: Some(decline), .. }) if actions[0].id == "netplay:leave:N1" && decline == "netplay:leave:N1")
         );
+        // A drop is korrid's to retry: nothing to back out of, Back is swallowed.
         assert!(matches!(
             netplay_status_from(&netplay(json!({ "_tag": "Reconnecting" })), None),
-            Some(SurfaceStatus::Busy { actions: None, .. })
+            Some(SurfaceStatus::Busy {
+                actions: None,
+                decline_action_id: None,
+                ..
+            })
         ));
         assert!(netplay_status_from(&netplay(json!({ "_tag": "Playing" })), None).is_none());
     }
