@@ -32,6 +32,17 @@ pub fn korri_published() -> Value {
     json(SurfaceMessage::KorriPublished)
 }
 
+/// Contract amendment A1 (section 7.1): once a second, the time since the
+/// last `Pressed` delivered to the surface, or since it loaded.
+/// Written to the agreed JSON shape until the treaty crate has
+/// `SurfaceMessage::Tick`.
+pub fn tick(idle_ms: u32) -> Value {
+    serde_json::json!({"_tag": "Tick", "idleMs": idle_ms})
+}
+
+/// How often the shell sends `Tick`.
+pub const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
 pub fn preference_stored(key: &str) -> Value {
     json(SurfaceMessage::PreferenceStored {
         key: key.to_owned(),

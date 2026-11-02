@@ -61,6 +61,8 @@ pub enum Event {
     },
     /// Repeat timer for held directions.
     Tick,
+    /// Once a second: send the active surface a `Tick` (amendment A1).
+    Idle,
 }
 
 /// Delivers events to the shell on the UI thread, later.
@@ -102,6 +104,8 @@ pub struct LoadTiming {
 
 struct Loaded {
     generation: u64,
+    /// The last `Pressed` delivered to this surface, or when it loaded.
+    last_press: Instant,
     package: Package,
     engine: Engine,
     overlay_definition: Option<ComponentDefinition>,
@@ -115,6 +119,11 @@ struct Loaded {
     /// Whether the Surface window is mapped. Only one of Surface and Overlay
     /// is mapped at a time: korrid places the one window its kiosk unit owns.
     surface_shown: bool,
+    /// The `app.surface.declare` preferences payload, sent again once this
+    /// surface's window is the only one, so korrid places that window.
+    declaration: Value,
+    /// Declared again after its first frame, with no other window left.
+    placed: bool,
     started: Instant,
     timing: LoadTiming,
 }
@@ -140,6 +149,8 @@ pub struct Shell {
     clock: Instant,
     frames: FrameCounter,
     repeat: Option<slint::Timer>,
+    /// Sends `Event::Idle` once a second while the shell runs.
+    idle_timer: Option<slint::Timer>,
     native_active: Option<Box<dyn Fn(bool)>>,
     /// Shell windows that have keyboard focus; `None` until the first focus event.
     focused: Option<std::collections::HashSet<(u64, u8)>>,
@@ -190,6 +201,7 @@ impl Shell {
             clock: Instant::now(),
             frames: FrameCounter::default(),
             repeat: None,
+            idle_timer: None,
             native_active: None,
             focused: None,
             quit: None,
@@ -268,6 +280,14 @@ impl Shell {
             match self.load(index) {
                 Ok(loaded) => {
                     self.current = Some(loaded);
+                    let timer = slint::Timer::default();
+                    let post = self.post.clone();
+                    timer.start(
+                        slint::TimerMode::Repeated,
+                        messages::TICK_INTERVAL,
+                        move || post.post(Event::Idle),
+                    );
+                    self.idle_timer = Some(timer);
                     return Ok(());
                 }
                 Err(error) => {
@@ -313,6 +333,7 @@ impl Shell {
                 outcome,
             } => self.request_done(generation, request, outcome),
             Event::Tick => self.tick(),
+            Event::Idle => self.idle(),
         }
     }
 
@@ -406,7 +427,23 @@ impl Shell {
         }
     }
 
+    /// Send the active surface `Tick` with the time since its last press.
+    fn idle(&mut self) {
+        let Some(current) = self.current.as_ref() else {
+            return;
+        };
+        let idle = current
+            .last_press
+            .elapsed()
+            .as_millis()
+            .min(u32::MAX as u128) as u32;
+        self.update(&messages::tick(idle));
+    }
+
     pub fn press(&mut self, button: Button) {
+        if let Some(current) = self.current.as_mut() {
+            current.last_press = Instant::now();
+        }
         self.update(&messages::pressed(button));
     }
 
@@ -434,6 +471,8 @@ impl Shell {
                 Err(error) => {
                     let id = self.packages[index].id.clone();
                     self.say(format!("{id} not loaded, current surface kept: {error:#}"));
+                    // Its declare may already have moved korrid's placement.
+                    self.redeclare();
                 }
             }
         }
@@ -445,7 +484,13 @@ impl Shell {
             .iter()
             .position(|p| p.id == id)
             .with_context(|| format!("no package {id}"))?;
-        let loaded = self.load(index)?;
+        let loaded = match self.load(index) {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                self.redeclare();
+                return Err(error);
+            }
+        };
         self.replace(loaded);
         Ok(())
     }
@@ -459,12 +504,42 @@ impl Shell {
             // One window: the new component already replaced the old one's
             // content, so the old one can go at once.
             self.retire_all();
+            self.place_current();
         }
     }
 
     fn retire_drawn(&mut self) {
         if self.current.as_ref().is_some_and(|c| c.drawn.get()) {
             self.retire_all();
+            self.place_current();
+        }
+    }
+
+    /// Declare the current surface again once its window is the only one.
+    /// The first declare ran before that window existed (preferences need
+    /// it); korrid places the window on every declare.
+    fn place_current(&mut self) {
+        if self.current.as_ref().is_some_and(|c| !c.placed) {
+            if let Some(current) = self.current.as_mut() {
+                current.placed = true;
+            }
+            self.redeclare();
+        }
+    }
+
+    /// Send the current surface's declare again with the same payload. It
+    /// changes no preference; korrid places its window and restores its
+    /// displays.
+    fn redeclare(&mut self) {
+        let Some(current) = self.current.as_ref() else {
+            return;
+        };
+        let id = current.package.id.clone();
+        if let Err(error) =
+            self.korrid
+                .declare(&id, &current.declaration, current.engine.displays())
+        {
+            self.say(format!("{id} declare again failed: {error:#}"));
         }
     }
 
@@ -562,6 +637,7 @@ impl Shell {
         );
         let mut loaded = Loaded {
             generation,
+            last_press: Instant::now(),
             package,
             engine,
             overlay_definition: views.overlay,
@@ -573,6 +649,8 @@ impl Shell {
             drawn,
             gameplay_overlay,
             surface_shown: false,
+            declaration,
+            placed: false,
             started,
             timing: LoadTiming {
                 compile: compiled,

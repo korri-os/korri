@@ -11,7 +11,6 @@ BUN=${BUN:-bun}
 VIEWER=${SLINT_VIEWER:-slint-viewer}
 REF=../../../zone-native-spike/evidence
 
-"$BUN" build logic.ts --format=iife --target=browser --outfile=logic.js >/dev/null
 "$BUN" preview/run-logic.ts --write >/dev/null
 "$BUN" preview/gen-preview.ts >/dev/null
 

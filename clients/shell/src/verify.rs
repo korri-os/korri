@@ -334,6 +334,7 @@ fn sweep_one(
             .map(|b| messages::pressed(*b))
             .collect();
         every.push(messages::korri_published());
+        every.extend([0, 1_000, 60_000, u32::MAX].map(messages::tick));
         every.extend(keys.iter().map(|k| messages::preference_stored(k)));
         for message in every {
             checker.deliver(&mut sweep, message)?;
@@ -345,6 +346,11 @@ fn sweep_one(
             seed ^= seed << 5;
             let button = messages::BUTTONS[seed as usize % messages::BUTTONS.len()];
             checker.deliver(&mut sweep, messages::pressed(button))?;
+            // A tick between presses, as the shell sends once a second.
+            if seed.is_multiple_of(4) {
+                let idle = (seed >> 8) % 600_000;
+                checker.deliver(&mut sweep, messages::tick(idle))?;
+            }
         }
         Ok(())
     })();
@@ -664,7 +670,7 @@ mod tests {
         assert!(summary
             .runs
             .iter()
-            .all(|r| r.updates >= 9 + 1 + 1 + SEEDED_PRESSES));
+            .all(|r| r.updates >= 9 + 1 + 4 + 1 + SEEDED_PRESSES));
         assert!(summary.runs.iter().all(|r| r.requests > 0));
         assert_eq!(summary.preferences["demo.size"].initial, "m");
         assert!(

@@ -268,7 +268,16 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
             .collect();
         for (width, height) in SIZES {
             let mut korri = Korri::new(scenario["models"][0].clone());
-            let mut engine = engine::Engine::load(&source, engine::Limits::default()).unwrap();
+            // A focus test, not a timing test: a busy machine must not fail it.
+            // The verifier and the shell hold the 50 ms call budget.
+            let mut engine = engine::Engine::load(
+                &source,
+                engine::Limits {
+                    call: std::time::Duration::from_secs(5),
+                    ..engine::Limits::default()
+                },
+            )
+            .unwrap();
             engine.set_model(&korri.published()).unwrap();
             let preferences = engine::effective_preferences(engine.declaration(), &BTreeMap::new());
             engine.init(&preferences).unwrap();

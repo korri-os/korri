@@ -8,7 +8,8 @@ lost on the RG35XX SP?
 
 ## What runs
 
-`harness.ts` imports Zone's real, unchanged `update`, `zoneShown` and
+`harness.ts` (deleted 2026-11-02 with the web surfaces; `zone-logic.js` is its
+frozen bundle) imported Zone's real, unchanged `update`, `zoneShown` and
 `zoneSurfaceStart` (`surfaces/zone/src/state/surface.ts`) and Zone's own
 fixtures. bun bundles it into `zone-logic.js` (one IIFE, 24 modules,
 119 KB). The Rust host (`src/main.rs`) loads that bundle into a fresh

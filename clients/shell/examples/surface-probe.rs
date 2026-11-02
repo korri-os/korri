@@ -12,7 +12,10 @@
 //!     each state with a focused control, render the view twice: as it is,
 //!     and with every `focused` flag cleared. The focused control is visible
 //!     inside the window when the two differ; a state where they do not is a
-//!     failure, written to OUT with the presses that reached it.
+//!     failure, written to OUT with the presses that reached it. FILE's own
+//!     `displays` reach the logic unchanged: only the window takes each size,
+//!     so a package that sizes itself from a display instead of its window
+//!     fails here.
 //! ```
 //!
 //! Same Slint software renderer and view conversion as the shell.
@@ -150,7 +153,6 @@ struct Korri {
     from: Value,
     count: usize,
     focused: Option<String>,
-    displays: Value,
 }
 
 impl Korri {
@@ -160,7 +162,6 @@ impl Korri {
             Some(catalog) => catalog.clone(),
             None => catalog::window(&self.games, &self.query, &self.from, self.count),
         };
-        model["displays"] = self.displays.clone();
         if let Some(id) = &self.focused {
             let actions = self.base["fixtureGameActions"][id].clone();
             model["focusedGame"] = json!({"gameId": id, "actions": if actions.is_array() { actions } else { json!([]) }});
@@ -254,7 +255,6 @@ fn walk(
         from: json!({"_tag": "Start"}),
         count: catalog::DEFAULT_COUNT,
         focused: None,
-        displays: json!([{"id": "probe", "main": true, "x": 0, "y": 0, "width": size.0, "height": size.1, "touch": false}]),
     };
     let definition = if overlay {
         views.overlay.clone().context("no Overlay")?
@@ -376,7 +376,6 @@ fn clone_korri(k: &Korri) -> Korri {
         from: k.from.clone(),
         count: k.count,
         focused: k.focused.clone(),
-        displays: k.displays.clone(),
     }
 }
 

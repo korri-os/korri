@@ -137,8 +137,8 @@ of image 03 is at
 
 ## Treaty position
 
-`contracts/surface/korri-surface.ts` mounts a surface into an `HTMLElement`
-and drives DOM focus. This window does not implement or extend that treaty.
+The old web treaty (`contracts/surface/korri-surface.ts`, deleted) mounted a
+surface into an `HTMLElement` and drove DOM focus. This window does not implement or extend that treaty.
 It is a standalone host spike in `clients/`, not in `surfaces/`. A
 production native presentation needs its own contract decision first.
 

@@ -15,7 +15,7 @@ the RG35XX SP, so that it feels good?
 ```
 clients/surface-shell-spike/
   CONTRACT.md            this file
-  fixtures/model.json    one SurfaceModel (contracts/surface/korri-surface.ts),
+  fixtures/model.json    one SurfaceModel (the old TS treaty, since deleted),
                          generated from Zone's fixtureReadyModel by gen-model.ts
   Cargo.toml, src/, package.nix, device/     the shell (shell worker only)
   surfaces/zone/         the Zone package (Zone worker only)
