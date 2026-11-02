@@ -10,6 +10,7 @@ pub mod fonts;
 pub mod images;
 pub mod input;
 pub mod korrid;
+pub mod memory;
 pub mod messages;
 pub mod package;
 pub mod pico8;

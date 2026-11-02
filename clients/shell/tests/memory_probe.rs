@@ -4,7 +4,7 @@
 
 use korri_shell::{
     backend::headless::Headless,
-    engine, fonts,
+    engine, fonts, memory,
     package::{self, Package},
 };
 use slint::ComponentHandle;
@@ -30,6 +30,9 @@ fn trim() {
 
 #[test]
 fn memory_stays_flat_over_20_rounds_of_both_packages() {
+    // As korri-shell's main does: without it a freed frame buffer pair can
+    // stay in the heap and show as one 2.5 MiB step in a random round.
+    memory::fix_mmap_threshold();
     Headless::install();
     let zone = Package::at(&Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/zone")).unwrap();
     let pico = Package::at(&Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/pico")).unwrap();

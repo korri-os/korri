@@ -125,6 +125,7 @@ fn main() -> ExitCode {
         eprintln!("korri-shell: refusing to start: effective user is root");
         return ExitCode::from(2);
     }
+    korri_shell::memory::fix_mmap_threshold();
     let arguments = match arguments() {
         Ok(arguments) => arguments,
         Err(usage) => {
