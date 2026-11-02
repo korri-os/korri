@@ -275,3 +275,18 @@ a user would expect and that every design follows intrinsic design values."
   pressed axis, as `spatial-focus.ts` defined it), or stays when none exists.
   This extends the existing "focus is visible" walks; it does not replace
   them.
+
+### 8.4 Regions and exits (refines 8.3; decided 2026-11-02)
+- Focus targets are grouped into regions that the plan declares: a row of
+  buttons, the tabs, a key grid, a list, the card band.
+- Inside a region, a press moves to the target drawn nearest along the pressed
+  axis (spatial-focus.ts's rule), or stays when there is none.
+- Leaving a region follows the region's declared exits, per direction. An exit
+  names a target region and an entry rule: `remembered` (the target the region
+  last had focused), `active` (for example the active tab), or `first`. A
+  direction with no exit stays.
+- Exits are decided by the plan, so they may differ by size. The probe judges
+  in-region moves geometrically, and judges exits against the declared exits.
+- How a surface declares regions and exits to the probe is set by the shell (a
+  generic convention, identical for every surface). Surfaces never write
+  their own judge.
