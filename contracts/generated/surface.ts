@@ -66,7 +66,7 @@ export type SurfaceLaunchSettingsScopeKind = "any" | "family" | "runner";
  *
  * Directional repeat: the first repeat after 400 ms, then every 100 ms.
  */
-export type SurfaceMessage = { _tag: "Pressed"; button: SurfaceButton } | { _tag: "KorriPublished" } | { _tag: "PreferenceStored"; key: string };
+export type SurfaceMessage = { _tag: "Pressed"; button: SurfaceButton } | { _tag: "KorriPublished" } | { _tag: "PreferenceStored"; key: string } | { _tag: "Tick"; idleMs: number };
 
 /**
  * How this device reaches the network right now. Grounded in legacy
@@ -177,8 +177,14 @@ export type SurfaceStarterPack = { _tag: "Offered"; actions: SurfaceAction[] } |
  * - `Confirm`: Korri needs the user's say-so before it does something, such
  * as a large download. The surface renders exactly the host's actions and
  * reports the chosen one through `RunAction`. `declineActionId` is the id
- * of the action that declines, when a stray press must never agree; a
- * surface puts its cursor there first.
+ * of the action that declines; Korri sets it on every `Confirm` that has
+ * one, and a surface puts its cursor there first.
+ * - `declineActionId` on `Busy`, `ChooseSave` and `Paused`, and on
+ * `Confirm`: the id of the action that backs out. A surface's Back runs
+ * it, when present, before its own Back handling. Surfaces never infer
+ * meaning from action ids. `Busy` without `declineActionId`: Back is
+ * swallowed. `Confirm` without `declineActionId`: nothing to decline;
+ * Back goes to the surface's own handling.
  * - `ChooseSave`: a save split needs a choice before this game can launch.
  * Side action ids go unchanged to `RunAction`. At least two sides.
  * - `Running`: a launch is live. `gameId` is present when Korri knows which.
@@ -190,7 +196,7 @@ export type SurfaceStarterPack = { _tag: "Offered"; actions: SurfaceAction[] } |
  * already user-facing copy. `gameId` and `gameTitle` name the game the
  * failure belongs to, when it belongs to exactly one.
  */
-export type SurfaceStatus = { _tag: "Browsing" } | { _tag: "Busy"; kicker: string; detail?: string; progress?: SurfaceProgress; actions?: SurfaceAction[]; gameId?: string } | { _tag: "Confirm"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "ChooseSave"; gameId: string; kicker: string; detail?: string; actions: SurfaceAction[]; sides: SurfaceSaveSide[] } | { _tag: "Running"; kicker: string; gameId?: string } | { _tag: "Paused"; kicker: string; detail?: string; actions: SurfaceAction[]; gameId?: string } | { _tag: "Ended"; kicker: string; reason: string; gameId?: string; gameTitle?: string } | { _tag: "Problem"; kicker: string; reason: string; canRetry: boolean; gameId?: string; gameTitle?: string };
+export type SurfaceStatus = { _tag: "Browsing" } | { _tag: "Busy"; kicker: string; detail?: string; progress?: SurfaceProgress; actions?: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Confirm"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "ChooseSave"; gameId: string; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; sides: SurfaceSaveSide[] } | { _tag: "Running"; kicker: string; gameId?: string } | { _tag: "Paused"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Ended"; kicker: string; reason: string; gameId?: string; gameTitle?: string } | { _tag: "Problem"; kicker: string; reason: string; canRetry: boolean; gameId?: string; gameTitle?: string };
 
 export type SurfaceStoreDetails = { _tag: "Closed" } | { _tag: "Loading"; entry: SurfaceStoreEntry } | { _tag: "Problem"; entry: SurfaceStoreEntry; message: string; actions: SurfaceAction[] } | { _tag: "Ready"; entry: SurfaceStoreEntry; description?: string; get: SurfaceStoreGet };
 

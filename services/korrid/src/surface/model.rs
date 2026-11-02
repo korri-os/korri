@@ -371,6 +371,7 @@ fn busy(kicker: String, detail: Option<String>, game_id: Option<String>) -> Surf
         detail,
         progress: None,
         actions: None,
+        decline_action_id: None,
         game_id,
     }
 }
@@ -479,6 +480,7 @@ pub fn status_from(state: &LaunchablesState) -> SurfaceStatus {
                     })
                     .collect(),
             ),
+            decline_action_id: None,
             game_id: None,
         },
         Phase::Starting {
@@ -509,6 +511,9 @@ pub fn status_from(state: &LaunchablesState) -> SurfaceStatus {
                 },
                 !*cancelling || *cancel_retry_available == Some(true),
             )]),
+            // Back cancelled the launch, while cancelling is on offer.
+            decline_action_id: (!*cancelling || *cancel_retry_available == Some(true))
+                .then(|| "cancel-launch".into()),
             game_id,
         },
         Phase::Stopping { .. } => busy(
