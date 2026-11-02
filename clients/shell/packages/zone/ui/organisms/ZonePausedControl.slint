@@ -16,6 +16,11 @@ import { Row } from "../types.slint";
 
 export component ZonePausedControl {
     in property <Row> it;
+    // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
+    accessible-role: button;
+    accessible-item-selectable: root.it.kind == "item" || root.it.kind == "range";
+    accessible-item-selected: root.it.focused;
+    accessible-label: root.it.label;
     in property <length> cap: Tokens.c2;
     in property <float> nudge: Tokens.nudge-button;
     property <length> a: Tokens.a;

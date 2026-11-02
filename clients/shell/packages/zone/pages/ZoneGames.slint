@@ -35,11 +35,10 @@ export component ZoneGames {
     in property <[Fact]> facts;
     in property <[Btn]> actions;
     in property <bool> find-shown;
-    in property <string> find-label: "Find";
-    in property <bool> find-focused;
+    in property <Btn> find;
     in property <string> kept;
     in property <bool> get-shown;
-    in property <bool> get-focused;
+    in property <Btn> get;
     in property <bool> typing;
     in property <Keyboard> keyboard;
     in property <bool> opts-shown;
@@ -141,13 +140,13 @@ export component ZoneGames {
             cache-rendering-hint: true;
             x: root.width - 12 * root.a - self.span;
             y: 4 * root.a;
-            btn: { label: root.find-label, focused: root.find-focused };
+            btn: root.find;
         }
         if root.get-shown && !root.typing: ZoneButton {
             cache-rendering-hint: true;
             x: 21 * root.a;
             y: 4 * root.a;
-            btn: { label: "Get games", focused: root.get-focused };
+            btn: root.get;
         }
         if root.kept != "": Rectangle {
             x: 12 * root.a;

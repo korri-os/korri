@@ -11,6 +11,11 @@ import { Tab } from "../types.slint";
 // focused tab lifts 2 art px with the snap and wears the pink drop.
 export component ZoneTab {
     in property <Tab> tab;
+    // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
+    accessible-role: button;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.tab.focused;
+    accessible-label: root.tab.label;
     property <length> a: Tokens.a;
     in property <length> pad-y;
     property <length> c1: 10 * a;

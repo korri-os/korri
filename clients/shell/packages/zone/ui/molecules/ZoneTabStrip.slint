@@ -35,7 +35,8 @@ export component ZoneTabStrip {
         height: parent.height;
         cache-rendering-hint: true;
         property <length> tabs-w: t0.span + t1.span + t2.span + 2 * root.gap;
-        property <bool> wraps: root.stacked && self.tabs-w > root.width - 4 * root.a;
+        // The plan's (src/plan/screen.ts tabsPlan).
+        property <bool> wraps: Tokens.screen.tabs-wrap;
         property <int> active: root.tabs[0].active ? 0 : root.tabs[1].active ? 1 : 2;
         // The inactive pair on the third row: their spans and where the pair starts.
         property <length> pair-w: (self.active == 0 ? t1.span + t2.span : self.active == 1 ? t0.span + t2.span : t0.span + t1.span) + root.gap;

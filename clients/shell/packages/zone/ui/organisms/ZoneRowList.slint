@@ -32,13 +32,13 @@ export component ZoneRowList inherits Rectangle {
         spacing: 0;
         for r in root.rows: VerticalLayout {
             init => {
-                if (r.focused) {
+                if (r.focused || r.holds) {
                     root.focus-y = self.y;
                     root.focus-h = self.preferred-height;
                 }
             }
             changed y => {
-                if (r.focused) {
+                if (r.focused || r.holds) {
                     root.focus-y = self.y;
                     root.focus-h = self.preferred-height;
                 }

@@ -15,6 +15,9 @@ import { ZoneDialog } from "../molecules/ZoneDialog.slint";
 import { Busy, Dialog, Hud } from "../types.slint";
 
 export component ZoneStatusLayer {
+    // A focus trap: the walk keeps a press inside the layer that holds the focus.
+    accessible-role: groupbox;
+    accessible-label: "zone-trap";
     in property <Busy> busy;
     in property <Dialog> dialog;
     in property <Hud> hud;

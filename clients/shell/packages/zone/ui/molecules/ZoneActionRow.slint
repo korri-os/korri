@@ -1,6 +1,7 @@
 // ZoneActionRow: buttons in Korri's order, each line centred; a button that
 // does not fit beside the one before starts the next line (ZoneActionRow.css
-// wraps), so no button is cut at any width. Up to six.
+// wraps), so no button is cut at any width. Up to six. The plan decides the
+// lines (src/plan/screen.ts buttonRow): each button's `line`.
 
 import { Tokens } from "../../ui/tokens.slint";
 import { ZoneButton } from "../atoms/ZoneButton.slint";
@@ -13,32 +14,26 @@ export component ZoneActionRow {
     property <int> count: Math.min(6, buttons.length);
     // Between two buttons: their triangles and their nudge.
     property <length> gap: 2 * cap + 10 * a;
-    // The row keeps room for the first and last buttons' triangles.
-    property <length> room: root.width - 2 * 11 * a;
     pure function span(i: int) -> length {
         return i >= count ? 0 : i == 0 ? b0.span : i == 1 ? b1.span : i == 2 ? b2.span : i == 3 ? b3.span : i == 4 ? b4.span : b5.span;
     }
     pure function btn(i: int) -> Btn {
         return i < count ? buttons[i] : { label: "" };
     }
-    // Greedy lines: each button's line, and its offset in that line.
-    property <int> l0: 0;
+    // Each button's line is the plan's (src/plan/screen.ts buttonRow, the
+    // view's `line`); its offset follows the one before it on that line.
+    property <int> l0: btn(0).line;
     property <length> o0: 0;
-    property <bool> n1: o0 + span(0) + gap + span(1) > room;
-    property <int> l1: l0 + (n1 ? 1 : 0);
-    property <length> o1: n1 ? 0 : o0 + span(0) + gap;
-    property <bool> n2: o1 + span(1) + gap + span(2) > room;
-    property <int> l2: l1 + (n2 ? 1 : 0);
-    property <length> o2: n2 ? 0 : o1 + span(1) + gap;
-    property <bool> n3: o2 + span(2) + gap + span(3) > room;
-    property <int> l3: l2 + (n3 ? 1 : 0);
-    property <length> o3: n3 ? 0 : o2 + span(2) + gap;
-    property <bool> n4: o3 + span(3) + gap + span(4) > room;
-    property <int> l4: l3 + (n4 ? 1 : 0);
-    property <length> o4: n4 ? 0 : o3 + span(3) + gap;
-    property <bool> n5: o4 + span(4) + gap + span(5) > room;
-    property <int> l5: l4 + (n5 ? 1 : 0);
-    property <length> o5: n5 ? 0 : o4 + span(4) + gap;
+    property <int> l1: btn(1).line;
+    property <length> o1: l1 != l0 ? 0 : o0 + span(0) + gap;
+    property <int> l2: btn(2).line;
+    property <length> o2: l2 != l1 ? 0 : o1 + span(1) + gap;
+    property <int> l3: btn(3).line;
+    property <length> o3: l3 != l2 ? 0 : o2 + span(2) + gap;
+    property <int> l4: btn(4).line;
+    property <length> o4: l4 != l3 ? 0 : o3 + span(3) + gap;
+    property <int> l5: btn(5).line;
+    property <length> o5: l5 != l4 ? 0 : o4 + span(4) + gap;
     pure function line(i: int) -> int {
         return i == 0 ? l0 : i == 1 ? l1 : i == 2 ? l2 : i == 3 ? l3 : i == 4 ? l4 : l5;
     }
@@ -61,10 +56,10 @@ export component ZoneActionRow {
         return line(i) * (2 * cap + 5 * a);
     }
     height: needed;
-    b0 := ZoneButton { visible: root.count > 0; x: root.bx(0); y: root.by(0); btn: root.btn(0); cap: root.cap; }
-    b1 := ZoneButton { visible: root.count > 1; x: root.bx(1); y: root.by(1); btn: root.btn(1); cap: root.cap; }
-    b2 := ZoneButton { visible: root.count > 2; x: root.bx(2); y: root.by(2); btn: root.btn(2); cap: root.cap; }
-    b3 := ZoneButton { visible: root.count > 3; x: root.bx(3); y: root.by(3); btn: root.btn(3); cap: root.cap; }
-    b4 := ZoneButton { visible: root.count > 4; x: root.bx(4); y: root.by(4); btn: root.btn(4); cap: root.cap; }
-    b5 := ZoneButton { visible: root.count > 5; x: root.bx(5); y: root.by(5); btn: root.btn(5); cap: root.cap; }
+    b0 := ZoneButton { visible: root.count > 0; target: root.visible; x: root.bx(0); y: root.by(0); btn: root.btn(0); cap: root.cap; }
+    b1 := ZoneButton { visible: root.count > 1; target: root.visible; x: root.bx(1); y: root.by(1); btn: root.btn(1); cap: root.cap; }
+    b2 := ZoneButton { visible: root.count > 2; target: root.visible; x: root.bx(2); y: root.by(2); btn: root.btn(2); cap: root.cap; }
+    b3 := ZoneButton { visible: root.count > 3; target: root.visible; x: root.bx(3); y: root.by(3); btn: root.btn(3); cap: root.cap; }
+    b4 := ZoneButton { visible: root.count > 4; target: root.visible; x: root.bx(4); y: root.by(4); btn: root.btn(4); cap: root.cap; }
+    b5 := ZoneButton { visible: root.count > 5; target: root.visible; x: root.bx(5); y: root.by(5); btn: root.btn(5); cap: root.cap; }
 }

@@ -144,6 +144,10 @@ export component ZoneKeyboard {
     }
     property <length> keys-y: slab-y + slab-h + pad;
     for k in root.board.keys: Rectangle {
+        accessible-role: button;
+        accessible-item-selectable: true;
+        accessible-item-selected: k.focused;
+        accessible-label: k.label;
         x: root.keys-x + k.at * (root.unit + root.gap);
         y: root.keys-y + k.row * (root.key-h + root.gap);
         width: k.units * root.unit + (k.units - 1) * root.gap;

@@ -45,7 +45,8 @@ export component ZoneSaveData {
             retired: root.retired;
         }
         // The code takes the largest square the slab's least room leaves (save-data.ts).
-        property <bool> beside: root.width >= shell.body-h;
+        // The plan's (src/plan/save-data.ts planSaveData).
+        property <bool> beside: Tokens.screen.save-beside;
         property <length> side: Math.max(0, self.beside ? Math.min(shell.body-h - 16 * root.a, root.width - 236 * root.a) : Math.min(root.width - 16 * root.a, shell.body-h - 146 * root.a));
         if root.qr-shown: ZoneQrWell {
             x: 8 * root.a;

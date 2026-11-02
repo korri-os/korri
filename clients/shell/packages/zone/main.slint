@@ -12,7 +12,7 @@
 // cursor's triangles move.
 
 import { Tokens } from "ui/tokens.slint";
-import { Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud } from "ui/types.slint";
+import { Screen, Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud } from "ui/types.slint";
 import { ZoneStatusLayer } from "ui/organisms/ZoneStatusLayer.slint";
 import { ZoneGames } from "pages/ZoneGames.slint";
 import { ZoneOptions } from "pages/ZoneOptions.slint";
@@ -23,7 +23,7 @@ import { ZoneLaunchSettings } from "pages/ZoneLaunchSettings.slint";
 import { ZoneOnboarding } from "pages/ZoneOnboarding.slint";
 import { ZonePaused } from "pages/ZonePaused.slint";
 
-export { Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud }
+export { Screen, Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud }
 
 export component Surface inherits Window {
     title: "Zone";
@@ -31,6 +31,7 @@ export component Surface inherits Window {
 
     // ---- From logic.ts's view() ----
     in property <string> look: "blend";
+    in property <Screen> screen: Tokens.screen;
     in property <string> page: "games";
     in property <string> ground: "games";
     in property <bool> tabs-shown: true;
@@ -50,11 +51,10 @@ export component Surface inherits Window {
     in property <[Fact]> facts;
     in property <[Btn]> actions;
     in property <bool> find-shown;
-    in property <string> find-label: "Find";
-    in property <bool> find-focused;
+    in property <Btn> find;
     in property <string> kept;
     in property <bool> get-shown;
-    in property <bool> get-focused;
+    in property <Btn> get;
     in property <bool> typing;
     in property <bool> attract;
     in property <int> attract-card;
@@ -71,7 +71,7 @@ export component Surface inherits Window {
     in property <bool> qr-shown;
     in property <image> qr;
     in property <string> secret;
-    in property <bool> slab-focused;
+    in property <Btn> slab;
     in property <[Seat]> seats;
     in property <string> seat-name;
     in property <bool> versus;
@@ -91,6 +91,10 @@ export component Surface inherits Window {
         Tokens.height = self.height;
         Tokens.look = self.look;
         Tokens.ground = self.ground;
+        Tokens.screen = self.screen;
+    }
+    changed screen => {
+        Tokens.screen = self.screen;
     }
     changed width => {
         Tokens.width = self.width;
@@ -122,11 +126,10 @@ export component Surface inherits Window {
         facts: root.facts;
         actions: root.actions;
         find-shown: root.find-shown;
-        find-label: root.find-label;
-        find-focused: root.find-focused;
+        find: root.find;
         kept: root.kept;
         get-shown: root.get-shown;
-        get-focused: root.get-focused;
+        get: root.get;
         typing: root.typing;
         keyboard: root.keyboard;
         opts-shown: root.opts-shown;
@@ -202,7 +205,7 @@ export component Surface inherits Window {
         qr-shown: root.qr-shown;
         qr: root.qr;
         secret: root.secret;
-        slab-focused: root.slab-focused;
+        slab-focused: root.slab.focused;
         keyboard: root.keyboard;
     }
     if root.page == "onboarding": ZoneOnboarding {
@@ -240,6 +243,7 @@ export component Overlay inherits Window {
     title: "Zone overlay";
     background: Tokens.ground-paused;
     in property <string> look: "blend";
+    in property <Screen> screen: Tokens.screen;
     in property <string> heading: "Paused";
     in property <bool> korri-heading;
     in property <bool> has-art;
@@ -254,6 +258,10 @@ export component Overlay inherits Window {
         Tokens.height = self.height;
         Tokens.look = self.look;
         Tokens.ground = "paused";
+        Tokens.screen = self.screen;
+    }
+    changed screen => {
+        Tokens.screen = self.screen;
     }
     changed width => {
         Tokens.width = self.width;

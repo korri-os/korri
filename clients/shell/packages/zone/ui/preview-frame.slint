@@ -4,10 +4,13 @@
 // preview renderer (clients/shell/tests/package_previews.rs) sets the size.
 
 import { Tokens } from "tokens.slint";
+import { Screen } from "types.slint";
 
 export component ZonePreview inherits Window {
     in property <string> look: "blend";
     in property <string> ground: "games";
+    // The logic's plan for the frame's size (the preview renderer writes it).
+    in property <Screen> screen: Tokens.screen;
     preferred-width: 640px;
     preferred-height: 480px;
     background: Tokens.ground-fill;
@@ -16,6 +19,10 @@ export component ZonePreview inherits Window {
         Tokens.height = self.height;
         Tokens.look = self.look;
         Tokens.ground = self.ground;
+        Tokens.screen = self.screen;
+    }
+    changed screen => {
+        Tokens.screen = self.screen;
     }
     changed width => {
         Tokens.width = self.width;

@@ -18,6 +18,9 @@
  *                  at ZONE_IDLE_AFTER_MS, then its IdleTicked every
  *                  ZONE_IDLE_CYCLE_MS, so the attract is Zone's own layer and
  *                  the first press only wakes it
+ *     Resized      the window's size (contract 8, A2): Zone's plan for it
+ *                  (src/plan/screen.ts), which the focus graph and view()
+ *                  both read
  *     Pressed back by backRoute (contract 7.2): Korri's declineActionId as
  *                  RunAction; an unmarked Busy swallows it; else Zone's Back
  *
@@ -47,6 +50,7 @@ import type {
   SurfaceRequest as Request,
 } from "../../../../contracts/generated/surface"
 import { isZoneLook, ZONE_DEFAULT_LOOK } from "./src/plan/look"
+import { zoneScreen, ZONE_DEFAULT_SIZE, type ZoneScreen } from "./src/plan/screen"
 import { press } from "./src/press"
 import { bandGames, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS } from "./src/state/navigation"
 import type { ZoneRequest } from "./src/state/requests"
@@ -61,7 +65,12 @@ export interface State {
   readonly moving: boolean
   /** The idle turns already sent: 0 awake, 1 after IdleElapsed, then one more per IdleTicked. */
   readonly idleTurns: number
+  /** The window, from the shell's Resized (logical px). */
+  readonly size: { readonly width: number; readonly height: number }
 }
+
+/** Zone's plan for the window and the look it is drawn in. */
+export const screenOf = (state: State): ZoneScreen => zoneScreen(state.size.width, state.size.height, state.zone.look)
 
 /**
  * The action Korri marks as Back's on its status (contract 7, A1): every
@@ -137,7 +146,7 @@ const query = (text: string, model: Model): CatalogQuery => {
 export function init(model: Model, preferences: Readonly<Record<string, string>>): State {
   const stored = preferences[LOOK_KEY]
   const zone = zoneSurfaceStart(model, isZoneLook(stored) ? stored : ZONE_DEFAULT_LOOK)
-  return { zone, reported: null, moving: false, idleTurns: 0 }
+  return { zone, reported: null, moving: false, idleTurns: 0, size: ZONE_DEFAULT_SIZE }
 }
 
 export function update(state: State, message: Message, model: Model): { state: State; requests: Request[] } {
@@ -145,7 +154,11 @@ export function update(state: State, message: Message, model: Model): { state: S
   let zone = state.zone
   let moving = state.moving
   let idleTurns = state.idleTurns
+  let size = state.size
   switch (message._tag) {
+    case "Resized":
+      size = { width: Math.max(0, message.width), height: Math.max(0, message.height) }
+      break
     case "Tick": {
       // Zone's idle: the attract opens after ZONE_IDLE_AFTER_MS without a
       // press and moves to the next game every ZONE_IDLE_CYCLE_MS.
@@ -180,7 +193,7 @@ export function update(state: State, message: Message, model: Model): { state: S
         if (route._tag === "Swallow") break
       }
       const before = zone
-      press(before, message.button, model, inner => {
+      press(before, message.button, model, screenOf(state), inner => {
         zone = run(zone, inner, model, out)
       })
       break
@@ -208,15 +221,15 @@ export function update(state: State, message: Message, model: Model): { state: S
       }
     }
   }
-  return { state: { zone, reported: focused, moving, idleTurns }, requests: out }
+  return { state: { zone, reported: focused, moving, idleTurns, size }, requests: out }
 }
 
 export function view(state: State, model: Model) {
-  return zoneView(state.zone, model)
+  return zoneView(state.zone, model, screenOf(state))
 }
 
 export function overlay(state: State, model: Model) {
-  return overlayView(state.zone, model)
+  return overlayView(state.zone, model, screenOf(state))
 }
 
 // The look follows the person (ADR 0018's rule by kind): `shared`.

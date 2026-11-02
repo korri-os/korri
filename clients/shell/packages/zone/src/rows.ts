@@ -30,6 +30,8 @@ export interface Btn {
   readonly lit: boolean
   readonly disabled: boolean
   readonly danger: boolean
+  /** Its line in its row of buttons (src/focus.ts sets it from the plan). */
+  readonly line: number
 }
 
 export interface Tag {
@@ -60,6 +62,8 @@ export interface Row {
   readonly bars: number
   readonly buttons: readonly Btn[]
   readonly tags: readonly Tag[]
+  /** A row of buttons holds the cursor on one of its buttons: the list keeps it in view. */
+  readonly holds: boolean
 }
 
 const NONE: Row = {
@@ -76,11 +80,12 @@ const NONE: Row = {
   bars: -1,
   buttons: [],
   tags: [],
+  holds: false,
 }
 
 export const row = (fields: Partial<Row>): Row => ({ ...NONE, ...fields })
 export const btn = (label: string, fields: Partial<Btn> = {}): Btn =>
-  ({ label, focused: false, lit: false, disabled: false, danger: false, ...fields })
+  ({ label, focused: false, lit: false, disabled: false, danger: false, line: 0, ...fields })
 export const tag = (label: string, kind: string, korri = false): Tag => ({ label, kind, korri })
 
 /** ZoneBars' rule: one bar a quarter, never none while connected. */
@@ -161,7 +166,7 @@ export function actionButtons(actions: readonly SurfaceAction[], focused: string
   return row({
     kind: "buttons",
     // The row holds the cursor when one of its buttons does: the list keeps it in view.
-    focused: actions.some(action => action.id === focused),
+    holds: actions.some(action => action.id === focused),
     buttons: actions.map(action => btn(action.label, {
       focused: action.id === focused,
       lit: action.id === lit,
@@ -295,7 +300,7 @@ export function storeRows(state: ZoneSurfaceState, korri: SurfaceModel): StoreSh
           for (const entry of entries) ids.push({ id: entry.id, row: at })
           rows.push(row({
             kind: "buttons",
-            focused: entries.some(entry => focusRow(entry.id)),
+            holds: entries.some(entry => focusRow(entry.id)),
             buttons: entries.map(entry => btn(entry.label, { focused: focusRow(entry.id), lit: entry.id === lit, disabled: entry.disabled })),
           }))
         }
