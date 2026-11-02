@@ -34,10 +34,8 @@ pub fn korri_published() -> Value {
 
 /// Contract amendment A1 (section 7.1): once a second, the time since the
 /// last `Pressed` delivered to the surface, or since it loaded.
-/// Written to the agreed JSON shape until the treaty crate has
-/// `SurfaceMessage::Tick`.
 pub fn tick(idle_ms: u32) -> Value {
-    serde_json::json!({"_tag": "Tick", "idleMs": idle_ms})
+    json(SurfaceMessage::Tick { idle_ms })
 }
 
 /// How often the shell sends `Tick`.
@@ -100,6 +98,10 @@ mod tests {
         assert_eq!(
             korri_published().to_string(),
             r#"{"_tag":"KorriPublished"}"#
+        );
+        assert_eq!(
+            tick(31_000).to_string(),
+            r#"{"_tag":"Tick","idleMs":31000}"#
         );
         assert_eq!(
             preference_stored("zone.look").to_string(),
