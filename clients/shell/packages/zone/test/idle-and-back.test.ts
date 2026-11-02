@@ -12,7 +12,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import type { SurfaceModel, SurfaceStatus } from "../../../../../contracts/generated/surface"
+import type { SurfaceButton, SurfaceMessage, SurfaceModel, SurfaceStatus } from "../../../../../contracts/generated/surface"
 import { backRoute, init, update, view, type State } from "../logic"
 
 /** Zone's fixture library as korrid publishes it: a cursor window over the whole. */
@@ -27,8 +27,8 @@ function model(status: SurfaceStatus = { _tag: "Browsing" }): SurfaceModel {
   }
 }
 
-const tick = (idleMs: number) => ({ _tag: "Tick", idleMs }) as never
-const press = (button: string) => ({ _tag: "Pressed", button }) as never
+const tick = (idleMs: number): SurfaceMessage => ({ _tag: "Tick", idleMs })
+const press = (button: SurfaceButton): SurfaceMessage => ({ _tag: "Pressed", button })
 
 function start(status?: SurfaceStatus): { state: State; korri: SurfaceModel } {
   const korri = model(status)
@@ -84,17 +84,17 @@ describe("Back runs Korri's marked decline", () => {
     ["Confirm (acquisition)", { _tag: "Confirm", kicker: "Needs a download", actions: [action("acquisition:1:download", "Download"), action("acquisition:1:cancel", "Cancel")], declineActionId: "acquisition:1:cancel" }],
     ["Confirm (save question)", { _tag: "Confirm", kicker: "Saves differ", actions: [action("saves:1:launch-anyway", "Launch anyway"), action("saves:1:cancel", "Cancel")], declineActionId: "saves:1:cancel" }],
     ["Confirm (shared play)", { _tag: "Confirm", kicker: "Join netplay?", actions: [action("netplay:join", "Join"), action("netplay:cancel", "Cancel")], declineActionId: "netplay:cancel" }],
-    ["Busy (acquiring)", { _tag: "Busy", kicker: "Downloading", actions: [action("acquisition:2:cancel", "Cancel")], declineActionId: "acquisition:2:cancel" } as SurfaceStatus],
-    ["Busy (checking, a marked cancel with no button)", { _tag: "Busy", kicker: "Checking what it needs", declineActionId: "acquisition:3:back" } as SurfaceStatus],
-    ["Busy (startup)", { _tag: "Busy", kicker: "Starting", actions: [action("cancel-launch", "Cancel")], declineActionId: "cancel-launch" } as SurfaceStatus],
-    ["ChooseSave", { _tag: "ChooseSave", gameId: "celeste", kicker: "Saves split", actions: [action("saves:4:not-now", "Not now")], sides: [], declineActionId: "saves:4:not-now" } as SurfaceStatus],
-    ["Paused (stream)", { _tag: "Paused", kicker: "Paused on zao", actions: [action("stream-play:leave:7", "Leave")], declineActionId: "stream-play:leave:7" } as SurfaceStatus],
+    ["Busy (acquiring)", { _tag: "Busy", kicker: "Downloading", actions: [action("acquisition:2:cancel", "Cancel")], declineActionId: "acquisition:2:cancel" }],
+    ["Busy (checking, a marked cancel with no button)", { _tag: "Busy", kicker: "Checking what it needs", declineActionId: "acquisition:3:back" }],
+    ["Busy (startup)", { _tag: "Busy", kicker: "Starting", actions: [action("cancel-launch", "Cancel")], declineActionId: "cancel-launch" }],
+    ["ChooseSave", { _tag: "ChooseSave", gameId: "celeste", kicker: "Saves split", actions: [action("saves:4:not-now", "Not now")], sides: [], declineActionId: "saves:4:not-now" }],
+    ["Paused (stream)", { _tag: "Paused", kicker: "Paused on zao", actions: [action("stream-play:leave:7", "Leave")], declineActionId: "stream-play:leave:7" }],
   ]
   for (const [name, status] of cases) {
     test(`${name}: Back sends RunAction with the marked id and nothing else`, () => {
       const { state, korri } = start(status)
       const step = update(state, press("back"), korri)
-      const decline = (status as { declineActionId: string }).declineActionId
+      const decline = (status as { declineActionId?: string }).declineActionId
       expect(step.requests.filter(request => request._tag !== "FocusGame")).toEqual([{ _tag: "RunAction", actionId: decline }])
     })
   }

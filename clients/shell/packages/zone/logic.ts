@@ -64,20 +64,12 @@ export interface State {
 }
 
 /**
- * The shell's idle clock (contract 7, A1): the time since the last
- * delivered press. Written to the amendment's JSON shape; the generated
- * treaty gains the type with korrid's commit.
- */
-type Tick = { readonly _tag: "Tick"; readonly idleMs: number }
-
-/**
  * The action Korri marks as Back's on its status (contract 7, A1): every
  * Confirm, and Busy, ChooseSave and Paused. Read by its field, never inferred
  * from an action's id or label.
  */
 export function declineOf(status: SurfaceStatus): string | undefined {
-  const decline = (status as { readonly declineActionId?: unknown }).declineActionId
-  return typeof decline === "string" && decline !== "" ? decline : undefined
+  return "declineActionId" in status && status.declineActionId !== undefined && status.declineActionId !== "" ? status.declineActionId : undefined
 }
 
 /**
@@ -148,12 +140,11 @@ export function init(model: Model, preferences: Readonly<Record<string, string>>
   return { zone, reported: null, moving: false, idleTurns: 0 }
 }
 
-export function update(state: State, incoming: Message | Tick, model: Model): { state: State; requests: Request[] } {
+export function update(state: State, message: Message, model: Model): { state: State; requests: Request[] } {
   const out: Request[] = []
   let zone = state.zone
   let moving = state.moving
   let idleTurns = state.idleTurns
-  const message = incoming as Message | Tick
   switch (message._tag) {
     case "Tick": {
       // Zone's idle: the attract opens after ZONE_IDLE_AFTER_MS without a
