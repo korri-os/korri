@@ -33,7 +33,6 @@ export component Surface inherits Window {
     in property <string> look: "blend";
     in property <string> page: "games";
     in property <string> ground: "games";
-    in property <int> presses;
     in property <bool> tabs-shown: true;
     in property <string> banner;
     in property <int> pips;
@@ -57,7 +56,8 @@ export component Surface inherits Window {
     in property <bool> get-shown;
     in property <bool> get-focused;
     in property <bool> typing;
-    in property <bool> idle-allowed;
+    in property <bool> attract;
+    in property <int> attract-card;
     in property <bool> opts-shown;
     in property <string> opts-title;
     in property <[Row]> opts-rows;
@@ -105,14 +105,6 @@ export component Surface inherits Window {
         Tokens.ground = self.ground;
     }
 
-    // Idle: the view's own clock since the last press (the contract has no timer message).
-    property <float> last-press: 0;
-    changed presses => {
-        self.last-press = Tokens.clock-ms;
-    }
-    property <float> idle-ms: Math.max(0, Tokens.clock-ms - last-press);
-    property <bool> idle: idle-allowed && page == "games" && idle-ms >= Tokens.idle-after-ms;
-
     if root.page == "games": ZoneGames {
         x: 0;
         y: 0;
@@ -142,8 +134,8 @@ export component Surface inherits Window {
         opts-rows: root.opts-rows;
         launch-card: root.launch-card;
         tally: root.tally;
-        attract: root.idle;
-        idle-ms: root.idle-ms;
+        attract: root.attract;
+        attract-card: root.attract-card;
     }
     if root.page == "options" || root.page == "join": ZoneOptions {
         x: 0;

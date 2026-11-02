@@ -128,7 +128,7 @@ STATES = {
                                 ("LongTitle", f'{FILL} title: "The Legend of Zelda: Oracle of Seasons"; system: "GBC"; act: 1;', 'ground: "titlecard";')],
     # organisms
     "organisms/ZoneGround": [(g.capitalize(), FILL, f'ground: "{g}";') for g in ["games", "options", "savedata", "paused", "titlecard"]],
-    "organisms/ZoneAttract": [("TitleTurn", f'{FILL} cards: {CARDS}; start: 1; idle-ms: 30200;', ""), ("Stage", f'{FILL} cards: {CARDS}; start: 1; idle-ms: 34000;', "")],
+    "organisms/ZoneAttract": [("TitleTurn", f'{FILL} cards: {CARDS}; index: 1; hold-ms: 200;', ""), ("Stage", f'{FILL} cards: {CARDS}; index: 1; hold-ms: 4000;', "")],
     "organisms/ZoneControllerCard": [("Heard", f'{centred(f"82 * {A}", f"100 * {A}")} width: 82 * {A}; height: 100 * {A}; seat: {{ seat: "1P", name: "Xbox Wireless Controller", heard: true, focused: true }};', ""),
                                      ("Waiting", f'{centred(f"82 * {A}", f"100 * {A}")} width: 82 * {A}; height: 100 * {A}; seat: {{ seat: "" }};', "")],
     "organisms/ZoneGameOpts": [("Default", f'{FILL} title: "Spelunky"; rows: [{{ kind: "item", label: "Verify files", value: "Run", focused: true, choice: true, bars: -1 }}, {{ kind: "note", label: "Check the game\'s files against the library", label-fact: true }}, {{ kind: "item", label: "Delete save", value: "Run", danger: true, choice: true, bars: -1 }}, {{ kind: "item", label: "Copy to zao", value: "Run", disabled: true, choice: true, bars: -1 }}, {{ kind: "note", label: "zao is not on the network", label-fact: true }}];', 'ground: "gameopts";')],

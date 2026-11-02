@@ -14,6 +14,12 @@
  *                  it, where the portal's spatial focus did before)
  *     KorriPublished  Zone's KorriPublished, then the band keeps its game
  *     PreferenceStored  nothing: the look is already Zone's state
+ *     Tick         the shell's idle clock (contract 7, A1): Zone's IdleElapsed
+ *                  at ZONE_IDLE_AFTER_MS, then its IdleTicked every
+ *                  ZONE_IDLE_CYCLE_MS, so the attract is Zone's own layer and
+ *                  the first press only wakes it
+ *     Pressed back by backRoute (contract 7.2): Korri's declineActionId as
+ *                  RunAction; an unmarked Busy swallows it; else Zone's Back
  *
  *   Zone's requests → SurfaceRequests
  *     RememberLook   RememberPreference { key: "zone.look" }
@@ -27,22 +33,22 @@
  *     MoveCatalog    the FIND draft as the query's text, and a window around
  *                    the focused game near either end of the window
  *
- * Zone's timers (idle, the tally's count and close, the moments' ways out)
- * have no message in the contract: the attract and the count are drawn by
- * main.slint on its own clock, and a moment that starts to leave is let go
- * at once.
+ * Zone's other timers (the tally's count and close, the moments' ways out)
+ * have no message: the count is drawn by main.slint on its own clock, and a
+ * moment that starts to leave is let go at once.
  *
  * Pure: no timers, no Date, no randomness.
  */
 import type {
   CatalogQuery,
+  SurfaceStatus,
   SurfaceMessage as Message,
   SurfaceModel as Model,
   SurfaceRequest as Request,
 } from "../../../../contracts/generated/surface"
 import { isZoneLook, ZONE_DEFAULT_LOOK } from "./src/plan/look"
 import { press } from "./src/press"
-import { bandGames } from "./src/state/navigation"
+import { bandGames, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS } from "./src/state/navigation"
 import type { ZoneRequest } from "./src/state/requests"
 import { update as zoneUpdate, zoneShown, zoneSurfaceStart, type ZoneSurfaceMessage, type ZoneSurfaceState } from "./src/state/surface"
 import { overlayView, view as zoneView } from "./src/view"
@@ -53,8 +59,42 @@ export interface State {
   readonly reported: string | null
   /** A MoveCatalog is out; no second one until Korri publishes. */
   readonly moving: boolean
-  /** Presses so far: main.slint restarts its idle clock when this changes. */
-  readonly presses: number
+  /** The idle turns already sent: 0 awake, 1 after IdleElapsed, then one more per IdleTicked. */
+  readonly idleTurns: number
+}
+
+/**
+ * The shell's idle clock (contract 7, A1): the time since the last
+ * delivered press. Written to the amendment's JSON shape; the generated
+ * treaty gains the type with korrid's commit.
+ */
+type Tick = { readonly _tag: "Tick"; readonly idleMs: number }
+
+/**
+ * The action Korri marks as Back's on its status (contract 7, A1): every
+ * Confirm, and Busy, ChooseSave and Paused. Read by its field, never inferred
+ * from an action's id or label.
+ */
+export function declineOf(status: SurfaceStatus): string | undefined {
+  const decline = (status as { readonly declineActionId?: unknown }).declineActionId
+  return typeof decline === "string" && decline !== "" ? decline : undefined
+}
+
+/**
+ * Where Back goes (contract 7.2, A1), in this order:
+ *   1. the status carries declineActionId: run it;
+ *   2. Busy with no declineActionId (a korrid write under way, such as saves'
+ *      Picking): swallow it, not even Zone's own navigation;
+ *   3. anything else, including a Confirm with no declineActionId (owner
+ *      binding's single-action Confirms): Zone's own Back, as under the portal.
+ */
+export type BackRoute = { readonly _tag: "Decline"; readonly actionId: string } | { readonly _tag: "Swallow" } | { readonly _tag: "Zone" }
+
+export function backRoute(status: SurfaceStatus): BackRoute {
+  const decline = declineOf(status)
+  if (decline !== undefined) return { _tag: "Decline", actionId: decline }
+  if (status._tag === "Busy") return { _tag: "Swallow" }
+  return { _tag: "Zone" }
 }
 
 const LOOK_KEY = "zone.look"
@@ -105,15 +145,27 @@ const query = (text: string, model: Model): CatalogQuery => {
 export function init(model: Model, preferences: Readonly<Record<string, string>>): State {
   const stored = preferences[LOOK_KEY]
   const zone = zoneSurfaceStart(model, isZoneLook(stored) ? stored : ZONE_DEFAULT_LOOK)
-  return { zone, reported: null, moving: false, presses: 0 }
+  return { zone, reported: null, moving: false, idleTurns: 0 }
 }
 
-export function update(state: State, message: Message, model: Model): { state: State; requests: Request[] } {
+export function update(state: State, incoming: Message | Tick, model: Model): { state: State; requests: Request[] } {
   const out: Request[] = []
   let zone = state.zone
   let moving = state.moving
-  let presses = state.presses
+  let idleTurns = state.idleTurns
+  const message = incoming as Message | Tick
   switch (message._tag) {
+    case "Tick": {
+      // Zone's idle: the attract opens after ZONE_IDLE_AFTER_MS without a
+      // press and moves to the next game every ZONE_IDLE_CYCLE_MS.
+      const due = message.idleMs < ZONE_IDLE_AFTER_MS ? 0 : 1 + Math.floor((message.idleMs - ZONE_IDLE_AFTER_MS) / ZONE_IDLE_CYCLE_MS)
+      if (due === 0) idleTurns = 0
+      while (idleTurns < due) {
+        zone = run(zone, { _tag: "Games", message: { _tag: idleTurns === 0 ? "IdleElapsed" : "IdleTicked" } }, model, out)
+        idleTurns += 1
+      }
+      break
+    }
     case "KorriPublished": {
       moving = false
       zone = run(zone, { _tag: "KorriPublished" }, model, out)
@@ -127,7 +179,15 @@ export function update(state: State, message: Message, model: Model): { state: S
     case "PreferenceStored":
       break
     case "Pressed": {
-      presses += 1
+      idleTurns = 0
+      if (message.button === "back") {
+        const route = backRoute(model.status)
+        if (route._tag === "Decline") {
+          out.push({ _tag: "RunAction", actionId: route.actionId })
+          break
+        }
+        if (route._tag === "Swallow") break
+      }
       const before = zone
       press(before, message.button, model, inner => {
         zone = run(zone, inner, model, out)
@@ -157,11 +217,11 @@ export function update(state: State, message: Message, model: Model): { state: S
       }
     }
   }
-  return { state: { zone, reported: focused, moving, presses }, requests: out }
+  return { state: { zone, reported: focused, moving, idleTurns }, requests: out }
 }
 
 export function view(state: State, model: Model) {
-  return { ...zoneView(state.zone, model), presses: state.presses }
+  return zoneView(state.zone, model)
 }
 
 export function overlay(state: State, model: Model) {
