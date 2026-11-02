@@ -65,7 +65,7 @@ export const PICO_SPINES_BESIDE = 400
  * stand in for the window.
  */
 export interface PicoLayoutPlan {
-  /** The two screens' rectangles, or `undefined` for one screen. */
+  /** The two screens' rectangles in the window, or `undefined` for one screen. */
   readonly split: PicoDisplayPlan | undefined
   /** The virtual pixel, in logical pixels: as `Tokens.p` in ui/tokens.slint. */
   readonly p: number
@@ -82,8 +82,37 @@ export interface PicoLayoutPlan {
   readonly exits: ExitChoices
 }
 
+/**
+ * The split's two rectangles in the window. Pico draws on every display
+ * (`displays: "all"`), so its window covers them all: each display's
+ * rectangle is scaled from the displays' union onto the window, whatever
+ * size the window is. The rectangles are whole logical pixels.
+ */
+export function picoSplitInWindow(plan: PicoDisplayPlan | undefined, displays: readonly SurfaceDisplay[] | undefined, window: PicoWindow): PicoDisplayPlan | undefined {
+  if (plan === undefined) return undefined
+  const all = (displays ?? []).filter(display => display.width > 0 && display.height > 0)
+  const left = Math.min(...all.map(display => display.x))
+  const top = Math.min(...all.map(display => display.y))
+  const wide = Math.max(...all.map(display => display.x + display.width)) - left
+  const tall = Math.max(...all.map(display => display.y + display.height)) - top
+  const sx = window.width / wide
+  const sy = window.height / tall
+  const fit = (display: SurfaceDisplay): SurfaceDisplay => {
+    const x = Math.floor((display.x - left) * sx)
+    const y = Math.floor((display.y - top) * sy)
+    return {
+      ...display,
+      x,
+      y,
+      width: Math.max(1, Math.floor((display.x - left + display.width) * sx) - x),
+      height: Math.max(1, Math.floor((display.y - top + display.height) * sy) - y),
+    }
+  }
+  return { show: fit(plan.show), choose: fit(plan.choose) }
+}
+
 export function picoLayoutPlan(window: PicoWindow, displays: readonly SurfaceDisplay[] | undefined): PicoLayoutPlan {
-  const split = picoDisplayPlan(displays)
+  const split = picoSplitInWindow(picoDisplayPlan(displays), displays, window)
   // As Tokens.fit: the virtual pixel from the whole window.
   const p = Math.max(2, Math.floor(Math.min(window.width, window.height) / 360))
   const box = split === undefined ? window : split.choose

@@ -57,6 +57,24 @@ describe("the plan is a function of the window alone", () => {
       expect(picoLayoutPlan({ width: w, height: h }, BIG_DISPLAY as never)).toEqual(plain)
     }
   })
+
+  test("two displays larger than the window split the window, not the displays", () => {
+    const two = [
+      { id: "large", main: true, x: 0, y: 0, width: 3840, height: 2160, touch: false },
+      { id: "side", main: false, x: 3840, y: 0, width: 2560, height: 1440, touch: false },
+    ]
+    for (const [w, h] of FIVE) {
+      const plan = picoLayoutPlan({ width: w, height: h }, two as never)
+      const { show, choose } = plan.split ?? { show: undefined, choose: undefined }
+      for (const rect of [show, choose]) {
+        expect(rect).toBeDefined()
+        expect(rect!.x + rect!.width).toBeLessThanOrEqual(w)
+        expect(rect!.y + rect!.height).toBeLessThanOrEqual(h)
+      }
+      // The chooser's columns fit the chooser's rectangle.
+      expect(plan.width).toBe(Math.floor(choose!.width / plan.p))
+    }
+  })
 })
 
 describe("the view draws the plan the focus graph moves by", () => {
