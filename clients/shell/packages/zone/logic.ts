@@ -52,7 +52,7 @@ import type {
 import { isZoneLook, ZONE_DEFAULT_LOOK } from "./src/plan/look"
 import { zoneScreen, ZONE_DEFAULT_SIZE, type ZoneScreen } from "./src/plan/screen"
 import { press } from "./src/press"
-import { bandGames, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS } from "./src/state/navigation"
+import { bandGames, cardCount, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS } from "./src/state/navigation"
 import type { ZoneRequest } from "./src/state/requests"
 import { update as zoneUpdate, zoneShown, zoneSurfaceStart, type ZoneSurfaceMessage, type ZoneSurfaceState } from "./src/state/surface"
 import { overlayView, view as zoneView } from "./src/view"
@@ -164,10 +164,16 @@ export function update(state: State, message: Message, model: Model): { state: S
       // press and moves to the next game every ZONE_IDLE_CYCLE_MS.
       const due = message.idleMs < ZONE_IDLE_AFTER_MS ? 0 : 1 + Math.floor((message.idleMs - ZONE_IDLE_AFTER_MS) / ZONE_IDLE_CYCLE_MS)
       if (due === 0) idleTurns = 0
-      while (idleTurns < due) {
-        zone = run(zone, { _tag: "Games", message: { _tag: idleTurns === 0 ? "IdleElapsed" : "IdleTicked" } }, model, out)
-        idleTurns += 1
+      if (idleTurns === 0 && due > 0) {
+        zone = run(zone, { _tag: "Games", message: { _tag: "IdleElapsed" } }, model, out)
+        idleTurns = 1
       }
+      // The attract turns through the cards in a circle: a long wait costs at most one lap.
+      const lap = Math.max(1, cardCount(model))
+      let turns = due - idleTurns
+      if (turns > lap) turns = turns % lap
+      for (let turn = 0; turn < turns; turn++) zone = run(zone, { _tag: "Games", message: { _tag: "IdleTicked" } }, model, out)
+      idleTurns = Math.max(idleTurns, due)
       break
     }
     case "KorriPublished": {

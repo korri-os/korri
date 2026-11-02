@@ -37,18 +37,27 @@ function lines<T extends Btnish>(buttons: readonly T[], width: number, cap: numb
   return buttons.map((button, index) => ({ ...button, line: row.lines[index] ?? 0 }))
 }
 
-/** Mark every entry with `focused` under `value` as standing in `region`. */
+/**
+ * Mark every entry with `focused` under `value` as standing in `region`.
+ * The view's entries are made fresh by each view() call, so this writes
+ * into them rather than copying the tree (QuickJS pays for every copy).
+ */
 function regionOf<T>(value: T, region: string, active?: (entry: Json) => boolean): T {
-  if (Array.isArray(value)) return value.map(item => regionOf(item, region, active)) as T
-  if (value === null || typeof value !== "object") return value
-  const entry = value as Json
-  const out: Json = {}
-  for (const [key, inner] of Object.entries(entry)) out[key] = Array.isArray(inner) || (inner !== null && typeof inner === "object" && !("$image" in (inner as Json))) ? regionOf(inner, region, active) : inner
-  if ("focused" in entry) {
-    out.focusRegion = region
-    if (active?.(entry) === true) out.focusActive = true
+  if (Array.isArray(value)) {
+    for (const item of value) regionOf(item, region, active)
+    return value
   }
-  return out as T
+  if (value === null || typeof value !== "object" || "$image" in (value as Json)) return value
+  const entry = value as Json
+  for (const key in entry) {
+    const inner = entry[key]
+    if (inner !== null && typeof inner === "object") regionOf(inner, region, active)
+  }
+  if ("focused" in entry) {
+    entry.focusRegion = region
+    if (active?.(entry) === true) entry.focusActive = true
+  }
+  return value
 }
 
 /** Whether an entry under `value` has the focus. */
@@ -66,14 +75,20 @@ function unfocused<T>(value: T): T {
   return out as T
 }
 
+/** An entry that can take the cursor: it has `focused`, words, and is not a list's heading or note. */
+const NOT_TARGETS = new Set(["title", "caption", "note", "problem", "text", "tags", "word", "buttons"])
+const isTarget = (entry: Json): boolean =>
+  "focused" in entry && entry.label !== "" && !(typeof entry.kind === "string" && NOT_TARGETS.has(entry.kind))
+    && !("shown" in entry && entry.shown === false)
+
 /** A region holds a target when it has an entry that can take the cursor. */
 const hasTargets = (value: unknown): boolean => {
   if (Array.isArray(value)) return value.some(hasTargets)
-  if (value === null || typeof value !== "object") return false
+  if (value === null || typeof value !== "object" || "$image" in (value as Json)) return false
   const entry = value as Json
-  if ("focused" in entry && (entry.label === undefined || entry.label !== "") && entry.kind !== "title" && entry.kind !== "caption" && entry.kind !== "note"
-    && entry.kind !== "problem" && entry.kind !== "text" && entry.kind !== "tags" && entry.kind !== "word" && entry.kind !== "buttons") return true
-  return Object.values(entry).some(hasTargets)
+  if (isTarget(entry)) return true
+  for (const key in entry) if (hasTargets(entry[key])) return true
+  return false
 }
 
 /** The row regions of a page whose rows each take their own region (RUN WITH, GET GAMES). */
@@ -242,12 +257,15 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   }
   // Every exit names a region with targets in this view.
   const regions = new Set<string>()
-  const collect = (value: unknown) => {
-    if (Array.isArray(value)) return value.forEach(collect)
-    if (value === null || typeof value !== "object") return
+  const collect = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) collect(item)
+      return
+    }
+    if (value === null || typeof value !== "object" || "$image" in (value as Json)) return
     const entry = value as Json
-    if (typeof entry.focusRegion === "string" && hasTargets({ ...entry, buttons: undefined })) regions.add(entry.focusRegion)
-    Object.values(entry).forEach(collect)
+    if (typeof entry.focusRegion === "string" && isTarget(entry)) regions.add(entry.focusRegion)
+    for (const key in entry) collect(entry[key])
   }
   collect(view)
   const focusPlan: Record<string, ZoneExits> = {}
