@@ -9,6 +9,7 @@
 //! | array | model |
 //! | string, number, boolean | string, int or float by the declared type, bool |
 //! | `null` or a missing key | the property or field keeps its value |
+//! | `focusPlan` (top level), `focusRegion`, `focusActive` (in a focus target) | not bound: the focus plan for the probe (contract 8.4) |
 //!
 //! Conversion follows the declared type (`i_slint_compiler::langtype::Type`,
 //! from the pinned interpreter's `internal` metadata), so `int` and `float`
@@ -23,6 +24,101 @@ use serde_json::Value as Json;
 use slint::{Model, ModelRc, VecModel};
 use slint_interpreter::{ComponentDefinition, ComponentInstance, Struct, Value};
 use std::collections::{BTreeMap, HashMap};
+
+/// Contract 8.4, the shell's convention: the region of a focus target (an
+/// entry with `focused`).
+pub const FOCUS_REGION: &str = "focusRegion";
+/// The region's active target (for example the active tab).
+pub const FOCUS_ACTIVE: &str = "focusActive";
+/// Top level: `{ region: { direction: { to: region, entry: rule } } }`.
+pub const FOCUS_PLAN: &str = "focusPlan";
+/// The entry rules an exit may name.
+pub const ENTRY_RULES: [&str; 3] = ["remembered", "active", "first"];
+pub const DIRECTIONS: [&str; 4] = ["up", "down", "left", "right"];
+
+/// The focus plan's keys are never bound to Slint.
+fn reserved(name: &str, top: bool) -> bool {
+    (top && name == FOCUS_PLAN) || (!top && (name == FOCUS_REGION || name == FOCUS_ACTIVE))
+}
+
+/// Check a view's focus plan (contract 8.4): every focus target names its
+/// region, at most one target per region is active, and every exit names a
+/// direction, a region with targets in this view, and an entry rule.
+pub fn check_focus_plan(view: &Json) -> Result<()> {
+    fn walk(value: &Json, path: &str, regions: &mut BTreeMap<String, usize>) -> Result<()> {
+        match value {
+            Json::Object(map) => {
+                if map.contains_key("focused") {
+                    let region = map
+                        .get(FOCUS_REGION)
+                        .and_then(Json::as_str)
+                        .filter(|r| !r.is_empty())
+                        .with_context(|| format!("{path}: a focus target needs {FOCUS_REGION}"))?;
+                    let active = match map.get(FOCUS_ACTIVE) {
+                        None | Some(Json::Null) | Some(Json::Bool(false)) => 0,
+                        Some(Json::Bool(true)) => 1,
+                        Some(_) => bail!("{path}: {FOCUS_ACTIVE} must be a boolean"),
+                    };
+                    let count = regions.entry(region.to_owned()).or_default();
+                    *count += active;
+                    if *count > 1 {
+                        bail!("{path}: region {region:?} has more than one {FOCUS_ACTIVE} target");
+                    }
+                }
+                for (k, v) in map {
+                    if k != FOCUS_PLAN {
+                        walk(v, &format!("{path}.{k}"), regions)?;
+                    }
+                }
+            }
+            Json::Array(items) => {
+                for (i, v) in items.iter().enumerate() {
+                    walk(v, &format!("{path}[{i}]"), regions)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    let mut regions = BTreeMap::new();
+    walk(view, "view", &mut regions)?;
+    let Some(plan) = view.get(FOCUS_PLAN).filter(|p| !p.is_null()) else {
+        return Ok(());
+    };
+    for (region, exits) in plan
+        .as_object()
+        .with_context(|| format!("{FOCUS_PLAN} must be an object"))?
+    {
+        for (direction, exit) in exits
+            .as_object()
+            .with_context(|| format!("{FOCUS_PLAN}.{region} must be an object"))?
+        {
+            if !DIRECTIONS.contains(&direction.as_str()) {
+                bail!("{FOCUS_PLAN}.{region}: {direction:?} is not up, down, left or right");
+            }
+            let to = exit
+                .get("to")
+                .and_then(Json::as_str)
+                .with_context(|| format!("{FOCUS_PLAN}.{region}.{direction}: needs \"to\""))?;
+            if !regions.contains_key(to) {
+                bail!("{FOCUS_PLAN}.{region}.{direction}: region {to:?} has no focus target in this view");
+            }
+            let entry = exit.get("entry").and_then(Json::as_str).unwrap_or_default();
+            if !ENTRY_RULES.contains(&entry) {
+                bail!(
+                    "{FOCUS_PLAN}.{region}.{direction}: entry must be remembered, active or first"
+                );
+            }
+            if let Some(key) = exit
+                .as_object()
+                .and_then(|o| o.keys().find(|k| *k != "to" && *k != "entry"))
+            {
+                bail!("{FOCUS_PLAN}.{region}.{direction}: unknown key {key:?}");
+            }
+        }
+    }
+    Ok(())
+}
 
 /// `fooBar` → `foo-bar`.
 pub fn kebab(name: &str) -> String {
@@ -132,6 +228,9 @@ pub fn convert(
                 _ => Struct::default(),
             };
             for (name, json) in fields {
+                if reserved(name, false) {
+                    continue;
+                }
                 let field = kebab(name);
                 let ty = declared
                     .fields
@@ -162,6 +261,9 @@ fn short(json: &Json) -> String {
 /// Check a whole view against declared properties without a component.
 pub fn check(view: &Json, types: &BTreeMap<String, Type>, images: &mut ImageCache) -> Result<()> {
     for (name, value) in view.as_object().context("view must return an object")? {
+        if reserved(name, true) {
+            continue;
+        }
         let property = kebab(name);
         let ty = types
             .get(&property)
@@ -196,7 +298,7 @@ impl Binder {
         let fields = view.as_object().context("view must return an object")?;
         let mut changed = 0;
         for (name, json) in fields {
-            if json.is_null() {
+            if json.is_null() || reserved(name, true) {
                 continue;
             }
             let property = kebab(name);
@@ -246,6 +348,55 @@ mod tests {
             in property <image> art;
             in property <bool> lit;
         }"#;
+
+    #[test]
+    fn the_focus_plan_is_checked_and_never_bound() -> Result<()> {
+        let source = r#"
+            export struct Row { label: string, focused: bool }
+            export component Surface inherits Window { in property <[Row]> rows; in property <[Row]> tabs; }"#;
+        let definition = compile(source);
+        let dir = tempfile::tempdir()?;
+        let mut images = ImageCache::new(dir.path());
+        let view = json!({
+            "tabs": [
+                {"label": "Games", "focused": false, "focusRegion": "tabs", "focusActive": true},
+                {"label": "Options", "focused": false, "focusRegion": "tabs"}
+            ],
+            "rows": [{"label": "A", "focused": true, "focusRegion": "rows"}],
+            "focusPlan": {
+                "rows": {"up": {"to": "tabs", "entry": "active"}},
+                "tabs": {"down": {"to": "rows", "entry": "remembered"}}
+            }
+        });
+        check_focus_plan(&view)?;
+        check(&view, &declared(&definition), &mut images)?;
+        crate::backend::headless::Headless::install();
+        let instance = definition.create()?;
+        Binder::new(&definition).apply(&instance, &view, &mut images)?;
+        let refused = |change: &dyn Fn(&mut Json)| {
+            let mut bad = view.clone();
+            change(&mut bad);
+            check_focus_plan(&bad).unwrap_err().to_string()
+        };
+        assert!(refused(&|v| {
+            v["rows"][0].as_object_mut().unwrap().remove("focusRegion");
+        })
+        .contains("needs focusRegion"));
+        assert!(refused(&|v| v["tabs"][1]["focusActive"] = json!(true)).contains("more than one"));
+        assert!(
+            refused(&|v| v["focusPlan"]["rows"]["up"]["to"] = json!("keys"))
+                .contains("no focus target")
+        );
+        assert!(
+            refused(&|v| v["focusPlan"]["rows"]["up"]["entry"] = json!("last"))
+                .contains("entry must be")
+        );
+        assert!(refused(
+            &|v| v["focusPlan"]["rows"]["north"] = json!({"to": "tabs", "entry": "first"})
+        )
+        .contains("not up, down"));
+        Ok(())
+    }
 
     #[test]
     fn kebab_follows_the_contract() {

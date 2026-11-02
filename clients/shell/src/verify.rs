@@ -199,10 +199,12 @@ impl Checker<'_> {
     fn views(&mut self, sweep: &Sweep) -> Result<()> {
         let surface_view = self.engine.view()?;
         view::check(&surface_view, self.surface, &mut self.images).context("view()")?;
+        view::check_focus_plan(&surface_view).context("view() focus plan")?;
         self.run.views += 1;
         if sweep.overlay {
             if let (Some(types), Some(overlay)) = (self.overlay, self.engine.overlay()?) {
                 view::check(&overlay, types, &mut self.images).context("overlay()")?;
+                view::check_focus_plan(&overlay).context("overlay() focus plan")?;
                 self.run.views += 1;
             }
         }

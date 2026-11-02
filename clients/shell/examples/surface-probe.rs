@@ -17,11 +17,12 @@
 //!     Contract A2 (8.3): the logic gets `Resized` with each size right after
 //!     `init`, and `displays` larger than any window, so a package that sizes
 //!     itself from a display instead of its window fails. At each size the
-//!     walk then checks every direction from every focused state: the press
-//!     must move focus to the target drawn nearest in that direction (the
-//!     portal's spatial-focus rule: distance along the pressed axis plus three
-//!     times the distance across it, ahead by more than 1 px), or leave it
-//!     where it is when no target lies that way. A focus target is a view
+//!     walk then checks every direction from every focused state (contract
+//!     8.4, with the regions and exits each view declares; clients/shell/
+//!     README.md, Focus plan): inside the focused target's region, the press
+//!     must reach the target drawn nearest (spatial-focus.ts: along + 3 x
+//!     across, ahead by more than 1 px); with none that way, the region's
+//!     declared exit by its entry rule; with no exit, focus stays. A focus target is a view
 //!     entry with a `focused` field. Its drawn box: render the view with that
 //!     entry alone focused and with none focused; the largest connected group
 //!     of changed pixels. (The element tree has no per-target boxes: packages
@@ -42,7 +43,7 @@ use korri_shell::{
     images::ImageCache,
     messages,
     package::{self, Package},
-    view::Binder,
+    view::{self, Binder},
 };
 use serde_json::{json, Value};
 use slint::ComponentHandle;
@@ -255,8 +256,13 @@ fn has_focus(view: &Value) -> bool {
 #[derive(Clone, Debug)]
 struct Drawn {
     rect: Rect,
-    /// The view entry without `focused` and booleans, plus its occurrence.
+    /// The view entry without `focused`, the plan keys and booleans, plus
+    /// its occurrence.
     identity: String,
+    /// `focusRegion` (contract 8.4).
+    region: String,
+    /// `focusActive`.
+    active: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -310,7 +316,9 @@ fn identity(entry: &Value) -> String {
     match entry {
         Value::Object(map) => Value::Object(
             map.iter()
-                .filter(|(k, v)| k.as_str() != "focused" && !v.is_boolean())
+                .filter(|(k, v)| {
+                    k.as_str() != "focused" && k.as_str() != view::FOCUS_REGION && !v.is_boolean()
+                })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
         )
@@ -381,6 +389,43 @@ struct State {
     targets: Vec<Drawn>,
     /// The focused target, when it is drawn.
     focused: Option<usize>,
+    /// The view's `focusPlan`: region, direction, `{to, entry}`.
+    plan: Value,
+    /// Per region, the identity of the target it last had focused before
+    /// this state, along this state's path.
+    remembered: HashMap<String, String>,
+}
+
+impl State {
+    /// The target a region is entered at, by the exit's entry rule.
+    fn entry(&self, region: &str, rule: &str) -> Option<usize> {
+        let first = || {
+            self.targets
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.region == region)
+                .min_by(|(_, a), (_, b)| {
+                    let (ax, ay) = a.rect.center();
+                    let (bx, by) = b.rect.center();
+                    ay.round()
+                        .total_cmp(&by.round())
+                        .then(ax.round().total_cmp(&bx.round()))
+                })
+                .map(|(i, _)| i)
+        };
+        match rule {
+            "active" => self
+                .targets
+                .iter()
+                .position(|t| t.region == region && t.active),
+            "remembered" => self
+                .remembered
+                .get(region)
+                .and_then(|id| self.targets.iter().position(|t| &t.identity == id))
+                .or_else(first),
+            _ => first(),
+        }
+    }
 }
 
 /// The portal's spatial-focus rule (spatial-focus.ts): the target ahead by
@@ -389,9 +434,10 @@ struct State {
 fn nearest(state: &State, from: usize, direction: &str) -> Option<usize> {
     const OFF_AXIS_PENALTY: f32 = 3.0;
     let (fx, fy) = state.targets[from].rect.center();
+    let region = &state.targets[from].region;
     let mut best: Option<(usize, f32)> = None;
     for (i, candidate) in state.targets.iter().enumerate() {
-        if i == from {
+        if i == from || &candidate.region != region {
             continue;
         }
         let (cx, cy) = candidate.rect.center();
@@ -541,11 +587,35 @@ fn walk(
         if let Some(parent) = parent {
             edges.push((parent, pressed, index));
         }
+        // The region memory along this path: the parent's, with the
+        // parent's focus.
+        let remembered = parent
+            .map(|p| {
+                let parent: &State = &walked[p];
+                let mut memory = parent.remembered.clone();
+                if let Some(f) = parent.focused {
+                    let t = &parent.targets[f];
+                    memory.insert(t.region.clone(), t.identity.clone());
+                }
+                memory
+            })
+            .unwrap_or_default();
         let mut state = State {
             path: path.clone(),
             targets: Vec::new(),
             focused: None,
+            plan: view.get(view::FOCUS_PLAN).cloned().unwrap_or(Value::Null),
+            remembered,
         };
+        if let Err(error) = view::check_focus_plan(&view) {
+            failures.push(format!(
+                "{} at {}x{}: [{}]: {error:#}",
+                model_file.display(),
+                size.0,
+                size.1,
+                path.join(" ")
+            ));
+        }
         if has_focus(&view) {
             let mut binder = Binder::new(&definition);
             binder.apply(&instance, &view, &mut images)?;
@@ -592,6 +662,11 @@ fn walk(
                         state.targets.push(Drawn {
                             rect,
                             identity: format!("{base}#{n}"),
+                            region: entry[view::FOCUS_REGION]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_owned(),
+                            active: entry[view::FOCUS_ACTIVE] == json!(true),
                         });
                     }
                 }
@@ -630,12 +705,50 @@ fn directions(
         let (Some(focused), Some(now)) = (before.focused, after.focused) else {
             continue;
         };
-        let expected = nearest(before, focused, pressed);
+        // 8.4: inside the region, the nearest drawn target; else the
+        // region's declared exit; else stay.
+        let region = before.targets[focused].region.clone();
+        let (expected, why) = match nearest(before, focused, pressed) {
+            Some(i) => (
+                Some(i),
+                format!("the nearest {pressed} in region {region:?}"),
+            ),
+            None => match before
+                .plan
+                .get(&region)
+                .and_then(|exits| exits.get(pressed))
+            {
+                Some(exit) => {
+                    let to = exit["to"].as_str().unwrap_or_default();
+                    let rule = exit["entry"].as_str().unwrap_or_default();
+                    match before.entry(to, rule) {
+                        Some(i) => (
+                            Some(i),
+                            format!("region {region:?}'s {pressed} exit to {to:?} ({rule})"),
+                        ),
+                        None => {
+                            failures.push(format!(
+                                "{} at {}x{}: [{}] region {region:?}'s {pressed} exit to {to:?} ({rule}) finds no drawn target",
+                                model_file.display(),
+                                size.0,
+                                size.1,
+                                before.path.join(" ")
+                            ));
+                            continue;
+                        }
+                    }
+                }
+                None => (
+                    None,
+                    format!("none in region {region:?} and no {pressed} exit, so focus stays"),
+                ),
+            },
+        };
         let want = expected.map_or(&before.targets[focused], |i| &before.targets[i]);
         let got = &after.targets[now];
         if want.identity != got.identity {
             failures.push(format!(
-                "{} at {}x{}: [{}] then {pressed} focuses {} at ({:.0},{:.0}); the nearest {pressed} is {}",
+                "{} at {}x{}: [{}] then {pressed} focuses {} at ({:.0},{:.0}); expected {} at ({:.0},{:.0}): {why}",
                 model_file.display(),
                 size.0,
                 size.1,
@@ -643,10 +756,9 @@ fn directions(
                 got.identity,
                 got.rect.x,
                 got.rect.y,
-                match expected {
-                    Some(_) => format!("{} at ({:.0},{:.0})", want.identity, want.rect.x, want.rect.y),
-                    None => format!("none, so focus stays on {}", want.identity),
-                }
+                want.identity,
+                want.rect.x,
+                want.rect.y,
             ));
         }
     }

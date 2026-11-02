@@ -33,6 +33,42 @@ previews and walks its focus at five sizes.
 it in `app.surface.declare` and korrid publishes `model.displays` only for
 `"all"`. Zone declares `"main"`, Pico `"all"`, as the portal registry does.
 
+## Focus plan
+
+Contract 8.4: a surface groups its focus targets into regions and declares
+how focus leaves each region. A package shows this in its view, in three
+reserved keys that the shell never binds to Slint (so `.slint` does not
+declare them):
+
+| Key | Where | Value |
+|---|---|---|
+| `focusRegion` | every view entry that has `focused` | the target's region id, a non-empty string (for example `"tabs"`, `"band"`) |
+| `focusActive` | optional, on a target | `true` on the region's active target (for example the active tab); at most one per region |
+| `focusPlan` | top level of `view()` or `overlay()` | `{ "<region>": { "up" \| "down" \| "left" \| "right": { "to": "<region>", "entry": "remembered" \| "active" \| "first" } } }` |
+
+The plan computes `focusPlan`, so the exits may differ by size. A direction a
+region does not list has no exit: focus stays. The verifier fails a package
+whose view has a focus target without `focusRegion`, more than one active
+target in a region, a direction other than the four, an entry rule other
+than the three, or an exit whose `to` region has no target in that view.
+
+`examples/surface-probe.rs walk` judges every d-pad press, at 320x240,
+640x480, 480x800, 1280x720 and 1920x1080, with a display list larger than the
+window:
+
+- Inside the focused target's region: the target drawn nearest in the pressed
+  direction (spatial-focus.ts: distance along the axis plus 3 x the distance
+  across, ahead by more than 1 px).
+- None that way: the region's exit. `first` is the destination's target drawn
+  first, top to bottom then left to right by box centre; `active` is its
+  `focusActive` target; `remembered` is the target that region last had
+  focused along the walked path, or `first` if it never had focus.
+- No exit: focus stays.
+
+A target's drawn box comes from pixels: the view rendered with that entry
+alone focused against the view with none focused. Its identity across states
+is its entry without `focused`, `focusRegion` and booleans.
+
 ## Wire
 
 `POST /rpc` with `app.surface.declare`, `.preferences`, `.model`, `.request`;
