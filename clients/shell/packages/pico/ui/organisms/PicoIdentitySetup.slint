@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoBusyMeter } from "../atoms/PicoBusyMeter.slint";
 import { PicoRow } from "../atoms/PicoRow.slint";
 import { PicoCard } from "../molecules/PicoCard.slint";
@@ -8,6 +8,7 @@ import { PicoSetupHeading, SetupView } from "../molecules/PicoSetupHeading.slint
 // Setup's YOU step: a new identity, one from a backup, or a signer; the
 // backup's fields open the keyboard.
 export component PicoIdentitySetup {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SetupView> setup;
     preferred-height: card.preferred-height + 5 * Tokens.p;
     min-height: self.preferred-height;
@@ -20,7 +21,7 @@ export component PicoIdentitySetup {
         PicoSetupHeading { title: setup.title; message: setup.message; ink: P8.shell-ink(setup.tone); }
         if setup.busy != "" : PicoBusyMeter { label: setup.busy; ink: P8.note(setup.tone); }
 
-        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { button: a; kind: "card"; } }
-        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { button: a; kind: "card"; } }
+        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
+        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
     }
 }

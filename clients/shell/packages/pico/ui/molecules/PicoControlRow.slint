@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens, Cycle } from "../tokens.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoSlider } from "../atoms/PicoSlider.slint";
@@ -8,6 +8,7 @@ import { PicoSlider } from "../atoms/PicoSlider.slint";
 // range as cells, and, under it, why it is off or what it does, in the
 // note colour of the card it stands on.
 export component PicoControlRow {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <string> label;
     in property <string> value;
     in property <bool> focused;
@@ -44,5 +45,5 @@ export component PicoControlRow {
         if arrows : Text { text: "▶"; font-size: Tokens.md; color: P8.ink-quiet; }
     }
     if note != "" : PicoLine { x: 0; y: row-h; width: root.width; text: note; color: P8.note(tone); }
-    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: focused; }
 }

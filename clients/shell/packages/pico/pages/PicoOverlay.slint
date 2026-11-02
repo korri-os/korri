@@ -1,5 +1,5 @@
 import { P8 } from "../ui/palette.slint";
-import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { Tokens } from "../ui/tokens.slint";
 import { CardView } from "../ui/molecules/PicoNotice.slint";
 import { PicoPauseMenu } from "../ui/organisms/PicoPauseMenu.slint";
 import { PicoModal } from "../ui/organisms/PicoModal.slint";
@@ -8,13 +8,14 @@ import { PicoGameOverlay, SheetView } from "../ui/templates/PicoGameOverlay.slin
 // The pause menu over a running game, and its question before a destructive
 // control.
 export component PicoOverlay inherits Rectangle {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SheetView> sheet;
     in property <CardView> card;
-    if !card.shown : PicoGameOverlay {
+    if !card.shown : overlay := PicoGameOverlay {
         kicker: sheet.kicker;
         title: sheet.title;
         hints: sheet.hints;
-        PicoPauseMenu { items: sheet.items; }
+        PicoPauseMenu { reveal(left, top, wide, tall) => { overlay.show(left, top, wide, tall); }  items: sheet.items; }
     }
-    if card.shown : PicoModal { card: card; }
+    if card.shown : PicoModal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  card: card; }
 }

@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoBusyMeter } from "../atoms/PicoBusyMeter.slint";
 import { PicoRow } from "../atoms/PicoRow.slint";
 import { PicoCard } from "../molecules/PicoCard.slint";
@@ -10,6 +10,7 @@ import { PicoStarterPack } from "../molecules/PicoStarterPack.slint";
 
 // Setup's GAMES step: what Korri found on this device, and the Starter pack.
 export component PicoGamesFound {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SetupView> setup;
     preferred-height: card.preferred-height + 5 * Tokens.p;
     min-height: self.preferred-height;
@@ -25,11 +26,11 @@ export component PicoGamesFound {
             alignment: start;
             spacing: 4 * Tokens.p;
             height: 34 * Tokens.p;
-            for cart in setup.carts : Rectangle { width: shell.shell-w; shell := PicoCart { x: 0; y: 34 * Tokens.p - self.shell-h; cart: cart; box-w: 16 * Tokens.p; box-h: 22 * Tokens.p; } }
+            for cart in setup.carts : Rectangle { width: shell.shell-w; shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 34 * Tokens.p - self.shell-h; cart: cart; box-w: 16 * Tokens.p; box-h: 22 * Tokens.p; } }
             if setup.more != "" : PicoLine { text: setup.more; color: P8.shell-ink(setup.tone); }
         }
-        if setup.pack.shown : PicoStarterPack { tone: setup.pack.tone; title: setup.pack.title; message: setup.pack.message; answers: setup.pack.answers; }
-        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { button: a; kind: "card"; } }
-        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { button: a; kind: "card"; } }
+        if setup.pack.shown : PicoStarterPack { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  tone: setup.pack.tone; title: setup.pack.title; message: setup.pack.message; answers: setup.pack.answers; }
+        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
+        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
     }
 }

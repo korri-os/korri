@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens, Cycle } from "../tokens.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoBadge, ChipView } from "../atoms/PicoBadge.slint";
@@ -31,6 +31,7 @@ export struct RowView {
 // one between arrows, a network's marks), then where the value comes from,
 // what it does, and Korri's word on the last change.
 export component PicoSettingRow {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <RowView> item;
     in property <color> ink: P8.ink-dark;
     in property <length> plate-h: Tokens.md + 8 * Tokens.p;
@@ -87,5 +88,5 @@ export component PicoSettingRow {
         if item.description != "" : PicoLine { line-height: line-h; text: item.description; color: ink; }
         if item.state-text != "" && item.state != "saving" : PicoLine { line-height: line-h; text: item.state-text; color: item.state == "problem" ? P8.warn : P8.pick-mark; }
     }
-    PicoReveal { x: plate.x; y: plate.y; width: plate.width; height: plate.height; focused: item.focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: plate.x; y: plate.y; width: plate.width; height: plate.height; focused: item.focused; }
 }

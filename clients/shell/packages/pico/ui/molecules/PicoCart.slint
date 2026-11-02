@@ -4,7 +4,7 @@
 // the art's shape. Every size is whole virtual pixels.
 
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 import { PicoCoverArt } from "../atoms/PicoCoverArt.slint";
 
@@ -28,6 +28,7 @@ export struct CartView {
 }
 
 export component PicoCart {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CartView> cart;
     property <length> p: Tokens.p;
     // `still` is the large cartridge on the stage; otherwise a shelf cart.
@@ -207,5 +208,5 @@ export component PicoCart {
             color: P8.ink-dark;
         }
     }
-    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: cart.focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: cart.focused; }
 }

@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoPara } from "../atoms/PicoPara.slint";
 import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
@@ -22,6 +22,7 @@ export struct CardView {
 }
 
 export component PicoNotice inherits PicoCard {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CardView> card;
     in property <length> title-size: Tokens.short ? Tokens.md : Tokens.lg;
     tone: card.tone;
@@ -32,14 +33,14 @@ export component PicoNotice inherits PicoCard {
         min-height: l.preferred-height;
         if line.focused : Rectangle { x: -Tokens.p; y: 0; width: parent.width + 2 * Tokens.p; height: parent.height; background: P8.pick; }
         l := PicoPara { x: 0; y: 0; width: parent.width; text: line.text; font-size: Tokens.sm; color: line.focused ? P8.pick-ink : P8.note(card.tone); }
-        PicoReveal { x: 0; y: 0; width: parent.width; height: parent.height; focused: line.focused; }
+        PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: parent.width; height: parent.height; focused: line.focused; }
     }
     if !card.inline : VerticalLayout {
         spacing: 2 * Tokens.p;
-        for action in card.actions : PicoRow { button: action; kind: "card"; }
+        for action in card.actions : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: action; kind: "card"; }
     }
     if card.inline : HorizontalLayout {
         spacing: 2 * Tokens.p;
-        for action in card.actions : PicoRow { button: action; kind: "card"; }
+        for action in card.actions : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: action; kind: "card"; }
     }
 }

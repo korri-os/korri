@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoPara } from "../atoms/PicoPara.slint";
 import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
 
@@ -17,6 +17,7 @@ export struct IdentityView {
 // text, and the form: fields that open the keyboard, the records choice, the
 // statement to tick, and the answer.
 export component PicoIdentityDialog inherits HorizontalLayout {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <IdentityView> identity;
     property <length> qr-side: identity.qr == "" ? 0 : min(150 * Tokens.p, 40 * Tokens.u);
     spacing: Tokens.u;
@@ -44,6 +45,6 @@ export component PicoIdentityDialog inherits HorizontalLayout {
         if identity.problem != "" : PicoPara { text: identity.problem; font-size: Tokens.sm; color: P8.warn; }
         if identity.note != "" : PicoPara { text: identity.note; font-size: Tokens.sm; color: P8.ink-dim; }
         if identity.secret != "" : PicoPara { text: identity.secret; font-size: Tokens.sm; color: P8.peach; }
-        for row in identity.rows : PicoRow { button: row; }
+        for row in identity.rows : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: row; }
     }
 }

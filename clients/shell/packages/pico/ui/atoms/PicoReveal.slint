@@ -1,11 +1,13 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 
-// Tells the screen where the cursor's control stands, once it has been laid
-// out, so a scroll region can bring it into sight. Placed over the control,
-// the size of it; it draws nothing.
+// Says where the cursor's control stands, once it has been laid out, through
+// `reveal` (window coordinates), so whatever holds it (a PicoRail, a
+// PicoScroll) can bring it into sight. Placed over the control, the size of
+// it; it draws nothing and keeps no state but the wait for layout.
 export component PicoReveal {
     in property <bool> focused;
+    callback reveal(left: length, top: length, wide: length, tall: length);
     property <bool> pending: focused;
     changed focused => { pending = focused; }
     Timer {
@@ -13,7 +15,7 @@ export component PicoReveal {
         running: pending;
         triggered => {
             pending = false;
-            Focus.reveal(root.absolute-position.x, root.absolute-position.y, root.width, root.height);
+            root.reveal(root.absolute-position.x, root.absolute-position.y, root.width, root.height);
         }
     }
 }

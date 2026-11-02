@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoTitle } from "../atoms/PicoTitle.slint";
 import { PicoSub } from "../atoms/PicoSub.slint";
 import { PicoButton } from "../atoms/PicoButton.slint";
@@ -7,6 +7,7 @@ import { ButtonView } from "../atoms/PicoRow.slint";
 
 // The game played last, named large, and OPEN.
 export component PicoGameHero inherits VerticalLayout {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <string> title;
     in property <string> subtitle;
@@ -14,5 +15,5 @@ export component PicoGameHero inherits VerticalLayout {
     spacing: Tokens.u;
     PicoTitle { text: title; large: false; }
     if subtitle != "" : PicoSub { text: subtitle; }
-    HorizontalLayout { alignment: start; PicoButton { button: open; mark: false; } }
+    HorizontalLayout { alignment: start; PicoButton { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: open; mark: false; } }
 }

@@ -1,15 +1,16 @@
 import { P8 } from "../ui/palette.slint";
-import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { Tokens } from "../ui/tokens.slint";
 import { PicoEmptySlot } from "../ui/molecules/PicoEmptySlot.slint";
 import { PicoGameStage } from "../ui/organisms/PicoGameStage.slint";
 import { PicoLaunchStage } from "../ui/organisms/PicoLaunchStage.slint";
-import { HomeView } from "PicoHome.slint";
+import { HomeView } from "../ui/templates/PicoHomeLayout.slint";
 
 // The display that shows, when there are two: the chosen game on its stage,
 // the launch under way without its actions, or an empty slot. No control.
 export component PicoShowcase inherits Rectangle {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <HomeView> home;
-    if home.body == "shelf" && home.stage.shown : PicoGameStage {
+    if home.body == "shelf" && home.stage.shown : PicoGameStage { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: 2 * Tokens.u;
         y: 2 * Tokens.u;
         width: root.width - 4 * Tokens.u;
@@ -22,7 +23,7 @@ export component PicoShowcase inherits Rectangle {
         index: home.stage.index;
         total: home.stage.total;
     }
-    if home.body == "stage" : PicoLaunchStage {
+    if home.body == "stage" : PicoLaunchStage { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: 2 * Tokens.u;
         y: 2 * Tokens.u;
         width: root.width - 4 * Tokens.u;

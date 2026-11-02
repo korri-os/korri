@@ -1,15 +1,16 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoCart, CartView } from "PicoCart.slint";
 
 // One game in a rack with its title under it, lit under the cursor: Find's
 // results and the store's.
 export component PicoResultRow {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CartView> cart;
     in property <string> title;
     in property <string> subtitle;
     in property <length> cart-h: 30 * Tokens.p;
-    PicoCart {
+    PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: (root.width - self.width) / 2;
         y: cart-h - self.shell-h - (cart.hero ? 4 * Tokens.p : 0);
         cart: cart;

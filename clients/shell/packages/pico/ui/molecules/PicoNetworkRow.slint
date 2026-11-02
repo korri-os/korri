@@ -1,11 +1,12 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens, Cycle } from "../tokens.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 import { PicoBadge } from "../atoms/PicoBadge.slint";
 import { PicoNetworkMarks } from "PicoNetworkMarks.slint";
 
 // One network from Korri's scan, to join.
 export component PicoNetworkRow {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <string> ssid;
     in property <int> bars;
     in property <bool> locked;
@@ -24,5 +25,5 @@ export component PicoNetworkRow {
         if connected : PicoBadge { y: (Tokens.md - self.height) / 2; chip: { text: "CONNECTED", kind: "ok" }; }
         PicoNetworkMarks { width: 13 * Tokens.p; locked: locked; bars: bars; ink: focused ? P8.ink-dark : P8.ink; }
     }
-    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: focused; }
 }

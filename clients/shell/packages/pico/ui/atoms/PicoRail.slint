@@ -1,26 +1,28 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 
 // A row that keeps its items at their own width and slides sideways to keep
 // the cursor's item in sight: tabs and filters that do not fit their row.
+// Its items report their focused control to `show`.
 export component PicoRail inherits Rectangle {
     in property <length> spacing: 3 * Tokens.p;
     in property <length> margin: Tokens.u;
     property <length> scroll: 0;
     property <length> limit: max(0, row.width - root.width);
-    property <int> serial: Focus.serial;
-    changed serial => {
-        let left = Focus.x - root.absolute-position.x + min(scroll, limit);
-        let top = Focus.y - root.absolute-position.y;
-        // Only an item of this row moves it.
-        if (top < 0 || top >= root.height || left < 0 || left > row.width) {
-            return;
+    // The control's place is passed on to whatever holds the row.
+    callback reveal(left: length, top: length, wide: length, tall: length);
+    // Slide to bring an item of this row into sight, then pass it on.
+    public function show(left: length, top: length, wide: length, tall: length) {
+        let at = left - root.absolute-position.x + min(scroll, limit);
+        let down = top - root.absolute-position.y;
+        if (down >= 0 && down < root.height && at >= 0 && at <= row.width) {
+            if (at < min(scroll, limit) + margin) {
+                scroll = max(0, at - margin);
+            } else if (at + wide > min(scroll, limit) + root.width - margin) {
+                scroll = min(limit, at + wide - root.width + margin);
+            }
         }
-        if (left < min(scroll, limit) + margin) {
-            scroll = max(0, left - margin);
-        } else if (left + Focus.w > min(scroll, limit) + root.width - margin) {
-            scroll = min(limit, left + Focus.w - root.width + margin);
-        }
+        root.reveal(left, top, wide, tall);
     }
     clip: true;
     height: row.preferred-height;

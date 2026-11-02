@@ -1,11 +1,12 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens, Cycle } from "../tokens.slint";
 import { PicoReveal } from "PicoReveal.slint";
 import { ButtonView } from "PicoRow.slint";
 
 // A filter or a tab: a plate in its colour, lit when chosen, white with a
 // cycling drop under the cursor.
 export component PicoChip {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> button;
     in property <color> lit-ground: P8.go;
     in property <color> lit-ink: P8.ink-dark;
@@ -26,5 +27,5 @@ export component PicoChip {
         overflow: elide;
         color: button.focused || button.lit ? lit-ink : button.disabled ? P8.ink-quiet : ink;
     }
-    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
 }
