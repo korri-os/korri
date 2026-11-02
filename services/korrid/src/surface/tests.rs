@@ -951,6 +951,69 @@ async fn a_launch_request_reserves_and_starts_the_exact_local_game() {
     panic!("the handoff never resolved the launch");
 }
 
+/// A1 7.2: the starting launch's Busy marks `cancel-launch`, the portal's
+/// Back while starting; running it cancels the exact launch.
+#[tokio::test]
+async fn a_starting_launch_marks_cancel_launch_and_running_it_cancels() {
+    let mut outcomes = idle_outcomes(2);
+    outcomes.insert(
+        "app.session.reserve".into(),
+        json!({ "_tag": "Ok", "payload": { "gameId": "g00001", "launchId": "exact" } }),
+    );
+    outcomes.insert(
+        "app.session.start".into(),
+        json!({ "_tag": "Ok", "payload": { "session": { "gameId": "g00001", "launchId": "exact" }, "warnings": [] } }),
+    );
+    let (hub, outcomes, _directory) = hub_with(outcomes);
+    settled(&hub, "pico").await;
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "pendingLaunches": [
+            { "session": { "gameId": "g00001", "launchId": "exact" }, "phase": "committing" }
+        ] } }),
+    );
+    hub.request(
+        "pico",
+        SurfaceRequest::LaunchGame {
+            game_id: "game:g00001".into(),
+            launch_location_id: None,
+        },
+    )
+    .unwrap();
+    let mut decline = None;
+    for _ in 0..200 {
+        if let SurfaceStatus::Busy {
+            kicker,
+            decline_action_id,
+            ..
+        } = hub.model("pico").unwrap().status
+        {
+            if kicker == "Starting Game 00001…" {
+                decline = Some(decline_action_id);
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let decline = decline
+        .expect("the launch shows as Busy")
+        .expect("a marked cancel");
+    assert_eq!(decline, "cancel-launch");
+    hub.request("pico", SurfaceRequest::RunAction { action_id: decline })
+        .unwrap();
+    let SurfaceStatus::Busy {
+        kicker,
+        decline_action_id,
+        ..
+    } = hub.model("pico").unwrap().status
+    else {
+        panic!("{:?}", hub.model("pico").unwrap().status)
+    };
+    assert_eq!(kicker, "Cancelling launch…");
+    // Cancelling is under way: nothing more to back out of.
+    assert_eq!(decline_action_id, None);
+}
+
 /// The watch rides the native-input socket: Origin, Bearer, then the watch
 /// frame. Pushes wait for their exact ack.
 #[tokio::test]
