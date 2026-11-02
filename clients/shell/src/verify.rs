@@ -34,7 +34,7 @@ use std::{
 };
 
 /// Changes whenever the checks change; older summaries are re-derived.
-pub const VERIFIER: &str = "korri-shell-verify-2";
+pub const VERIFIER: &str = "korri-shell-verify-3";
 pub const SLINT: &str = "1.18.1";
 pub const FIXTURE_GAMES: [usize; 3] = [0, 12, 10_000];
 pub const SEEDED_PRESSES: usize = 500;
@@ -79,6 +79,9 @@ pub struct Summary {
     pub has_overlay: bool,
     pub runs: Vec<FixtureRun>,
     pub max_call_ms: f64,
+    /// The slowest load measured: bundle evaluation through `init`, against
+    /// the 2 s load budget.
+    pub load_ms: f64,
     pub peak_heap_bytes: usize,
     pub pass: bool,
     pub reasons: Vec<String>,
@@ -272,6 +275,7 @@ struct Plan<'a> {
 struct Peaks {
     heap: usize,
     call: Duration,
+    load: Duration,
 }
 
 fn sweep_one(
@@ -346,6 +350,7 @@ fn sweep_one(
     })();
     peaks.heap = peaks.heap.max(checker.engine.heap_bytes());
     peaks.call = peaks.call.max(checker.engine.max_call());
+    peaks.load = peaks.load.max(checker.engine.load_time());
     outcome.map(|()| checker.run.clone()).with_context(|| {
         format!(
             "{} games{}",
@@ -372,6 +377,7 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         has_overlay: false,
         runs: Vec::new(),
         max_call_ms: 0.0,
+        load_ms: 0.0,
         peak_heap_bytes: 0,
         pass: false,
         reasons: Vec::new(),
@@ -427,6 +433,7 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         Ok(())
     })();
     summary.max_call_ms = peaks.call.as_secs_f64() * 1e3;
+    summary.load_ms = peaks.load.as_secs_f64() * 1e3;
     summary.peak_heap_bytes = peaks.heap;
     match outcome {
         Ok(()) => summary.pass = true,
@@ -660,6 +667,11 @@ mod tests {
             .all(|r| r.updates >= 9 + 1 + 1 + SEEDED_PRESSES));
         assert!(summary.runs.iter().all(|r| r.requests > 0));
         assert_eq!(summary.preferences["demo.size"].initial, "m");
+        assert!(
+            summary.load_ms > 0.0 && summary.load_ms < 2_000.0,
+            "{}",
+            summary.load_ms
+        );
     }
 
     #[test]

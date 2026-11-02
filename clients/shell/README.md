@@ -50,8 +50,17 @@ the old one is removed.
 
 ## Limits and performance
 
-64 MiB QuickJS heap and 50 ms per call; a violation unloads the package and
-restores the previous one. Slint is patched (`vendor/README.md`) to cache
+Each surface's logic runs under three limits (`src/engine.rs`):
+
+| Constant | Value | Covers |
+|---|---|---|
+| `HEAP_LIMIT` | 64 MiB | the surface's QuickJS heap |
+| `LOAD_BUDGET` | 2,000 ms | one load: evaluating `logic.js`, reading its declarations and first model, and `init`, together; once per load or switch |
+| `CALL_BUDGET` | 50 ms | each `update`, `view` and `overlay` call, and each later model |
+
+A violation unloads the package and restores the previous one. The verifier
+records the slowest load as `loadMs` and the slowest call as `maxCallMs` in
+each package's summary. Slint is patched (`vendor/README.md`) to cache
 still layers. Numbers and screenshots: `evidence/`.
 
 ## Development tools

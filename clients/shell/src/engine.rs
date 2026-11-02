@@ -22,13 +22,20 @@ use std::{
 
 /// Contract 3.9: QuickJS heap per surface.
 pub const HEAP_LIMIT: usize = 64 * 1024 * 1024;
-/// Contract 3.9: wall time per logic call.
+/// Contract 3.9: wall time per `update`, `view` and `overlay` call (and per
+/// `setModel` after the surface loaded).
 pub const CALL_BUDGET: Duration = Duration::from_millis(50);
+/// Wall time for one surface load: evaluating `logic.js`, reading its
+/// declarations, the first model and `init`, together. Once per load or switch.
+pub const LOAD_BUDGET: Duration = Duration::from_millis(2_000);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     pub heap: usize,
+    /// Per `update`, `view` and `overlay` call.
     pub call: Duration,
+    /// Bundle evaluation through `init`, once.
+    pub load: Duration,
 }
 
 impl Default for Limits {
@@ -36,6 +43,7 @@ impl Default for Limits {
         Self {
             heap: HEAP_LIMIT,
             call: CALL_BUDGET,
+            load: LOAD_BUDGET,
         }
     }
 }
@@ -236,6 +244,10 @@ pub struct Engine {
     displays: Option<Displays>,
     has_overlay: bool,
     max_call: Duration,
+    /// While loading (until `init` returns): when the load started. Every call
+    /// in that phase shares `limits.load`, measured from this instant.
+    loading: Option<Instant>,
+    load_time: Duration,
 }
 
 impl Engine {
@@ -247,7 +259,7 @@ impl Engine {
         })?;
         runtime.set_memory_limit(limits.heap);
         runtime.set_max_stack_size(1024 * 1024);
-        let deadline = Rc::new(Cell::new(Instant::now() + limits.call));
+        let deadline = Rc::new(Cell::new(Instant::now() + limits.load));
         let clock = deadline.clone();
         runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= clock.get())));
         let context = Context::full(&runtime).map_err(|e| Violation::Exception {
@@ -255,7 +267,7 @@ impl Engine {
             message: e.to_string(),
         })?;
         let started = Instant::now();
-        deadline.set(started + limits.call);
+        deadline.set(started + limits.load);
         let dispatch = context.with(|ctx| -> Result<Persistent<Object<'static>>, Violation> {
             let run = || -> rquickjs::Result<Persistent<Object<'static>>> {
                 ctx.eval::<(), _>(SANDBOX)?;
@@ -275,6 +287,8 @@ impl Engine {
             displays: None,
             has_overlay: false,
             max_call: Duration::ZERO,
+            loading: Some(started),
+            load_time: Duration::ZERO,
         };
         engine.over_budget("load", started)?;
         let declaration = engine.call_string("preferences", &[])?;
@@ -315,7 +329,12 @@ impl Engine {
         self.has_overlay
     }
 
-    /// The slowest call so far.
+    /// Load time: bundle evaluation through `init`. Zero until `init` returned.
+    pub fn load_time(&self) -> Duration {
+        self.load_time
+    }
+
+    /// The slowest `update`, `view`, `overlay` or later `setModel` call so far.
     pub fn max_call(&self) -> Duration {
         self.max_call
     }
@@ -336,7 +355,11 @@ impl Engine {
 
     pub fn init(&mut self, preferences: &BTreeMap<String, String>) -> Result<(), Violation> {
         let text = serde_json::to_string(preferences).expect("string map serialises");
-        self.call_unit("init", &text)
+        self.call_unit("init", &text)?;
+        if let Some(started) = self.loading.take() {
+            self.load_time = started.elapsed();
+        }
+        Ok(())
     }
 
     /// Run `update`; returns the requests it asked for.
@@ -403,8 +426,9 @@ impl Engine {
         name: &'static str,
         call: impl for<'js> FnOnce(Function<'js>) -> rquickjs::Result<T>,
     ) -> Result<T, Violation> {
-        let started = Instant::now();
-        self.deadline.set(started + self.limits.call);
+        let started = self.loading.unwrap_or_else(Instant::now);
+        let budget = self.budget();
+        self.deadline.set(started + budget);
         let dispatch = self.dispatch.clone();
         let result = self.context.with(|ctx| {
             let object = dispatch
@@ -413,15 +437,25 @@ impl Engine {
             let function: Function = object.get(name).map_err(|e| classify(name, e, &ctx))?;
             call(function).map_err(|e| classify(name, e, &ctx))
         });
-        let elapsed = started.elapsed();
-        self.max_call = self.max_call.max(elapsed);
+        if self.loading.is_none() {
+            self.max_call = self.max_call.max(started.elapsed());
+        }
         self.over_budget(name, started)?;
         result
     }
 
+    /// The load budget while loading, then the per-call budget.
+    fn budget(&self) -> Duration {
+        if self.loading.is_some() {
+            self.limits.load
+        } else {
+            self.limits.call
+        }
+    }
+
     fn over_budget(&self, call: &'static str, started: Instant) -> Result<(), Violation> {
         let elapsed = started.elapsed();
-        if elapsed > self.limits.call {
+        if elapsed > self.budget() {
             return Err(Violation::Time {
                 call,
                 millis: elapsed.as_millis(),
@@ -517,6 +551,70 @@ mod tests {
         Ok(())
     }
 
+    /// Busy-waits `ms` milliseconds inside QuickJS (`Date.now` is withdrawn).
+    fn spin(ms: u32) -> String {
+        format!(
+            "{{ const t0 = new Date().getTime(); while (new Date().getTime() - t0 < {ms}) {{}} }}"
+        )
+    }
+
+    #[test]
+    fn a_slow_bundle_and_init_share_the_load_budget_not_the_call_budget() {
+        // 60 ms of evaluation and 60 ms of init: over the 50 ms call budget,
+        // inside the 2 s load budget.
+        let source = format!(
+            "{}\nglobalThis.surface = {{ init: () => {{ {} return 0; }}, update: (s) => ({{ state: s, requests: [] }}), view: () => ({{}}) }};",
+            spin(60),
+            spin(60)
+        );
+        let mut engine = Engine::load(&source, Limits::default()).expect("a 60 ms load succeeds");
+        engine.set_model("{}").expect("model");
+        engine
+            .init(&BTreeMap::new())
+            .expect("init inside the load budget");
+        assert!(
+            engine.load_time() >= Duration::from_millis(110),
+            "{:?}",
+            engine.load_time()
+        );
+        assert!(
+            engine.max_call() < CALL_BUDGET,
+            "load calls are not per-call calls"
+        );
+        // After init, every call is back on the 50 ms budget.
+        engine
+            .update(&json!({"_tag": "KorriPublished"}))
+            .expect("update");
+    }
+
+    #[test]
+    fn a_load_over_two_seconds_is_refused() {
+        let started = Instant::now();
+        let error = Engine::load("while (true) {}", Limits::default())
+            .err()
+            .expect("refused");
+        assert_eq!(error.kind(), "time", "{error}");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= LOAD_BUDGET && elapsed < LOAD_BUDGET + Duration::from_millis(500),
+            "{elapsed:?}"
+        );
+        // The budget covers evaluation and init together.
+        let source = format!(
+            "{}\nglobalThis.surface = {{ init: () => {{ while (true) {{}} }}, update: (s) => ({{ state: s, requests: [] }}), view: () => ({{}}) }};",
+            spin(1500)
+        );
+        let mut engine = Engine::load(&source, Limits::default()).expect("1.5 s evaluation fits");
+        engine.set_model("{}").expect("model");
+        let started = Instant::now();
+        let error = engine.init(&BTreeMap::new()).unwrap_err();
+        assert_eq!(error.kind(), "time", "{error}");
+        assert!(
+            started.elapsed() < Duration::from_millis(1_000),
+            "init gets only what evaluation left"
+        );
+    }
+
     #[test]
     fn a_runaway_call_breaks_the_time_budget() {
         let source = "globalThis.surface = { init: () => 0, update: (s) => { while (true) {} }, view: () => ({}) };";
@@ -537,6 +635,7 @@ mod tests {
         let limits = Limits {
             heap: 16 * 1024 * 1024,
             call: Duration::from_secs(5),
+            ..Limits::default()
         };
         let mut engine = Engine::load(source, limits).expect("load");
         engine.set_model("{}").expect("model");
