@@ -316,6 +316,10 @@ pub(super) fn draw_texture_line(
             TexturePixelFormat::AlphaMap => {
                 for pix in line_buffer {
                     let pos = pos(1).0;
+                    // No coverage (most of a glyph's box): blending leaves the target unchanged.
+                    if data[pos] == 0 {
+                        continue;
+                    }
                     let c = PremultipliedRgbaColor::premultiply(Color::from_argb_u8(
                         ((data[pos] as u16 * alpha as u16) / 255) as u8,
                         color.red(),

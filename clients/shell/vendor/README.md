@@ -1,14 +1,14 @@
 # Vendored Slint 1.18.1 crates, patched
 
-Two crates from crates.io, version **1.18.1**, unchanged except for the
-changes listed below: `i-slint-core` and `i-slint-renderer-software`.
-`../Cargo.toml` substitutes them through `[patch.crates-io]`. Every other
-Slint crate is the published 1.18.1. The whole difference is
-`layer-cache.patch` (about 250 changed lines). The public API is unchanged.
-Nothing in it is specific to Korri.
+Three crates from crates.io, version **1.18.1**, unchanged except for the
+changes listed below: `i-slint-core`, `i-slint-renderer-software` and
+`slint-interpreter`. `../Cargo.toml` substitutes them through
+`[patch.crates-io]`. Every other Slint crate is the published 1.18.1. The
+whole difference is `slint.patch`. The public API is unchanged. Nothing in it
+is specific to Korri.
 
 Drop this directory once upstream Slint has an equivalent. To move to a new
-Slint version, apply `layer-cache.patch` to the new crates, run
+Slint version, apply `slint.patch` to the new crates, run
 `cargo test --release --features fixture --test layer_cache --test memory_probe`,
 and run the Zone CPU proof (`../README.md`, Performance).
 
@@ -48,12 +48,19 @@ standard mechanisms did not reach the software renderer:
 | `i-slint-renderer-software/lib.rs` | `SoftwareRenderer::dirty_region_walked_items` (doc-hidden) | Exposes the walk count for tests. |
 | `i-slint-renderer-software/draw_functions.rs` | `fetch_blend_pixel`, premultiplied RGBA at full opacity | Skips fully transparent source pixels. Blending one leaves the target unchanged, and a cached layer is mostly transparent. |
 | `i-slint-renderer-software/fonts/systemfonts.rs` | `register_font_from_path`, `REGISTERED_FONT_FILES` | Registers each unchanged font file (same canonical path, size and modification time) once per thread. A changed file is registered again. |
+| `i-slint-renderer-software/lib.rs` | `SceneBuilder::draw_cached_layer`, `CachedLayer::shifted_at`, `LayerCache::shifted` | A layer at a new sub-pixel phase is blitted shifted by whole pixels (it may be moving) and its area is drawn again next frame; once drawn twice at the same position it is rendered again at its exact phase. A sliding layer is no longer re-rendered every frame; still frames stay pixel-identical. |
+| `i-slint-renderer-software/lib.rs` | `SceneBuilder::visit_layer`, `LayerCache::{frame, rendered, direct}`, `LAYER_CHURN_FRAMES` | A layer whose image was rendered in two consecutive frames (an animation inside it) is drawn directly for 8 frames, then its area is drawn once more and cached again. Same pixels; no image rendered and thrown away each frame. |
+| `i-slint-renderer-software/lib.rs` | `SoftwareRenderer::last_frame_phases` (doc-hidden), `render_buffer_impl` | Records the last render's dirty-walk and raster times for `korri-shell bench`. |
+| `i-slint-renderer-software/draw_functions.rs` | `draw_texture_line` | Direct-row fast path for an unscaled, unrotated, premultiplied texture at full opacity and a whole-pixel offset (cached layers): skip transparent, store opaque, blend the rest. |
+| `i-slint-renderer-software/draw_functions.rs` | `fetch_blend_pixel` (premultiplied, alpha map) | An opaque premultiplied pixel is stored; a glyph pixel with no coverage is skipped. |
+| `slint-interpreter/item_tree_vtable.rs` | `item_geometry` | A geometry that is a struct literal is evaluated field by field instead of as a `Struct` value (a hash map). The renderer's dirty walk asks every item for it every frame. |
+| `slint-interpreter/Cargo.toml` | `[[test]]` | The crate's own tests are not vendored. |
 
 ## Verification
 
 | Test (`../tests/`) | What it shows |
 | --- | --- |
-| `layer_cache.rs::a_cached_layer_matches_direct_rendering_through_every_change` | Two windows render the same tree under partial rendering (`ReusedBuffer`), one with the hint and one without. The pixels are equal for a still subtree, for an item moving under and over the layer, for a text and a colour change inside the layer, for a growing repeater, for whole and fractional layer moves, after a resize, and at scale factor 2. A one-pixel blit offset fails this test (checked by planting it). |
+| `layer_cache.rs::a_cached_layer_matches_direct_rendering_through_every_change` | Two windows render the same tree under partial rendering (`ReusedBuffer`), one with the hint and one without. The pixels are equal for a still subtree, for an item moving under and over the layer, for a text and a colour change inside the layer, for a growing repeater, for whole and fractional layer moves (once settled: a moved layer is first shifted by whole pixels and drawn exactly the next frame), after a resize, and at scale factor 2. A one-pixel blit offset fails this test (checked by planting it). |
 | `layer_cache.rs::a_clean_cached_layer_is_not_walked` | With 300 children in the layer, the direct window walks more than 300 items a frame and the cached window fewer than 20. A change inside walks it once, and then it is clean again. |
 | `memory_probe.rs` | 20 rounds of compiling, creating, showing and dropping Zone and Pico grow by less than 48 KiB a round. The measured growth is 0 to 10 KiB a round; before the change it was 153 KiB a round. |
 

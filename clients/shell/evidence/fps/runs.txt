@@ -1,0 +1,8 @@
+--surface zone --frames 600 --pref zone.look=modern
+--surface zone --frames 600 --pref zone.look=blend
+--surface zone --frames 600 --pref zone.look=retro
+--surface zone --frames 600 --pref zone.look=modern --press right,right,down,up,left,left
+--surface zone --frames 300 --pref zone.look=modern --full
+--surface pico --frames 600
+--surface pico --frames 600 --press right,right,down,up,left,left
+--surface pico --frames 300 --full

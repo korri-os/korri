@@ -1,6 +1,6 @@
-diff -ruN a/i-slint-core/partial_renderer.rs i-slint-core/partial_renderer.rs
---- a/i-slint-core/partial_renderer.rs	2026-10-31 21:17:06.127003760 -0600
-+++ b/i-slint-core/partial_renderer.rs	2026-10-31 20:42:35.791777877 -0600
+diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
+--- a/i-slint-core/partial_renderer.rs	2026-11-02 19:13:22.505558442 -0700
++++ b/i-slint-core/partial_renderer.rs	2026-11-02 19:13:22.509268734 -0700
 @@ -197,10 +197,16 @@
      pub data: CachedItemBoundingBoxAndTransform,
      /// The property tracker that should be used to evaluate whether the item needs to be re-rendered
@@ -116,10 +116,51 @@ diff -ruN a/i-slint-core/partial_renderer.rs i-slint-core/partial_renderer.rs
          for (component, origin) in components {
              if let Some(component) = crate::item_tree::ItemTreeWeak::upgrade(component) {
                  partial_renderer.compute_dirty_regions(&component, *origin, logical_window_size);
-diff -ruN a/i-slint-renderer-software/draw_functions.rs i-slint-renderer-software/draw_functions.rs
---- a/i-slint-renderer-software/draw_functions.rs	2026-10-31 21:17:06.130354543 -0600
-+++ b/i-slint-renderer-software/draw_functions.rs	2026-10-31 20:51:29.218561811 -0600
-@@ -248,6 +248,11 @@
+diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-software/draw_functions.rs
+--- a/i-slint-renderer-software/draw_functions.rs	2026-11-02 19:13:22.511292777 -0700
++++ b/i-slint-renderer-software/draw_functions.rs	2026-11-02 19:13:22.512690847 -0700
+@@ -32,6 +32,40 @@
+         extra: super::SceneTextureExtra { colorize, alpha, rotation, dx, dy, off_x, off_y },
+     } = *texture;
+ 
++    // Fast path: an unscaled, unrotated premultiplied texture at full opacity and a whole-pixel
++    // offset (cached layers): read the source row directly; skip transparent pixels, store
++    // opaque ones, blend the rest. Same result as the general path below.
++    if format == TexturePixelFormat::RgbaPremultiplied
++        && colorize.alpha() == 0
++        && alpha == 0xff
++        && rotation == super::RenderingRotation::NoRotation
++        && dx.0 == 0x100
++        && dy.0 == 0x100
++        && off_x.0 & 0xf == 0
++        && off_y.0 & 0xf == 0
++    {
++        let source = texture.source_size();
++        let y = (line - span.origin.y_length()).get() as usize + (off_y.0 >> 4) as usize;
++        let x = (off_x.0 >> 4) as usize + extra_clip_begin.max(0) as usize;
++        if y < source.height as usize && x + line_buffer.len() <= source.width as usize {
++            let start = (y * pixel_stride as usize + x) * 4;
++            let row = &data[start..start + line_buffer.len() * 4];
++            for (pix, p) in line_buffer.iter_mut().zip(row.chunks_exact(4)) {
++                match p[3] {
++                    0 => {}
++                    0xff => *pix = TargetPixel::from_rgb(p[0], p[1], p[2]),
++                    a => pix.blend(PremultipliedRgbaColor {
++                        alpha: a,
++                        red: p[0],
++                        green: p[1],
++                        blue: p[2],
++                    }),
++                }
++            }
++            return;
++        }
++    }
++
+     let source_size = texture.source_size().cast::<i32>();
+     let len = line_buffer.len();
+     let y = line - span.origin.y_length();
+@@ -248,6 +282,16 @@
                  } else if alpha == 0xff {
                      for pix in line_buffer {
                          let pos = pos(4).0;
@@ -128,12 +169,28 @@ diff -ruN a/i-slint-renderer-software/draw_functions.rs i-slint-renderer-softwar
 +                        if data[pos + 3] == 0 {
 +                            continue;
 +                        }
++                        // An opaque premultiplied pixel replaces the target.
++                        if data[pos + 3] == 0xff {
++                            *pix = TargetPixel::from_rgb(data[pos], data[pos + 1], data[pos + 2]);
++                            continue;
++                        }
                          let c = PremultipliedRgbaColor {
                              alpha: data[pos + 3],
                              red: data[pos + 0],
-diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs i-slint-renderer-software/fonts/systemfonts.rs
---- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-10-31 21:17:06.130562295 -0600
-+++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-10-31 21:09:09.224255906 -0600
+@@ -272,6 +316,10 @@
+             TexturePixelFormat::AlphaMap => {
+                 for pix in line_buffer {
+                     let pos = pos(1).0;
++                    // No coverage (most of a glyph's box): blending leaves the target unchanged.
++                    if data[pos] == 0 {
++                        continue;
++                    }
+                     let c = PremultipliedRgbaColor::premultiply(Color::from_argb_u8(
+                         ((data[pos] as u16 * alpha as u16) / 255) as u8,
+                         color.red(),
+diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs b/i-slint-renderer-software/fonts/systemfonts.rs
+--- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-02 19:13:22.511473120 -0700
++++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-02 19:13:22.512860012 -0700
 @@ -79,7 +79,27 @@
      path: &std::path::Path,
  ) -> Result<(), alloc::boxed::Box<dyn std::error::Error>> {
@@ -163,9 +220,9 @@ diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs i-slint-renderer-soft
 +    /// Font files registered by path, with the size and modification time they had.
 +    static REGISTERED_FONT_FILES: RefCell<HashMap<std::path::PathBuf, (u64, Option<std::time::SystemTime>)>> = Default::default();
 +}
-diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
---- a/i-slint-renderer-software/lib.rs	2026-10-31 21:17:06.130562295 -0600
-+++ b/i-slint-renderer-software/lib.rs	2026-10-31 20:45:47.407086712 -0600
+diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
+--- a/i-slint-renderer-software/lib.rs	2026-11-02 19:13:22.511473120 -0700
++++ b/i-slint-renderer-software/lib.rs	2026-11-02 19:13:22.512860012 -0700
 @@ -44,7 +44,7 @@
      RenderRectangle,
  };
@@ -175,7 +232,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
  use i_slint_core::lengths::{
      LogicalBorderRadius, LogicalLength, LogicalPoint, LogicalRect, LogicalSize, LogicalVector,
      PhysicalPx, PointLengths, RectLengths, ScaleFactor, SizeLengths,
-@@ -419,6 +419,24 @@
+@@ -419,6 +419,58 @@
      pixel_stride: usize,
  }
  
@@ -186,21 +243,55 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
 +    /// The image's top-left corner relative to the layer item's origin, in physical pixels.
 +    origin: euclid::Point2D<i32, PhysicalPx>,
 +    /// The fractional part of the layer's physical screen position the image was rendered at.
-+    /// The children are positioned with sub-pixel precision, so a layer that moved by a fraction
-+    /// of a pixel is rendered again rather than shifted.
++    /// The children are positioned with sub-pixel precision. A layer drawn at another phase is
++    /// shifted by whole pixels while it moves, and rendered again at its exact phase once it
++    /// stops (see `SceneBuilder::draw_cached_layer`).
 +    phase: euclid::Vector2D<f32, PhysicalPx>,
++    /// Where the layer was last drawn shifted (its physical screen offset), if it was.
++    shifted_at: Cell<Option<euclid::Point2D<f32, PhysicalPx>>>,
 +    image: SharedPixelBuffer<Rgba8Pixel>,
 +}
 +
 +/// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
 +/// children's rendering read changes, and cleared when the scale factor or window size changes.
 +#[cfg(feature = "std")]
-+type LayerCache = i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>;
++#[derive(Default)]
++struct LayerCache {
++    items: i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>,
++    /// Screen areas of layers drawn shifted this frame: drawn again next frame, so a layer that
++    /// stopped moving is rendered at its exact phase.
++    shifted: RefCell<DirtyRegion>,
++    /// Frames rendered by this renderer, to tell consecutive frames apart.
++    frame: Cell<u64>,
++    /// Per layer item: the last frame its image was rendered.
++    rendered: RefCell<std::collections::HashMap<(usize, u32), u64>>,
++    /// Layers whose content changed in consecutive frames (an animation inside them): drawn
++    /// directly, without an image, until the frame stored here, with their last screen area.
++    direct: RefCell<std::collections::HashMap<(usize, u32), (u64, LogicalRect)>>,
++}
++
++/// How long a layer whose content changes every frame is drawn without its image: rendering
++/// an image the next frame throws away costs more than drawing the children directly.
++#[cfg(feature = "std")]
++const LAYER_CHURN_FRAMES: u64 = 8;
++
++#[cfg(feature = "std")]
++fn layer_key(item_rc: &ItemRc) -> (usize, u32) {
++    (&(**item_rc.item_tree()) as *const _ as *const u8 as usize, item_rc.index())
++}
++
++#[cfg(feature = "std")]
++impl core::ops::Deref for LayerCache {
++    type Target = i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>;
++    fn deref(&self) -> &Self::Target {
++        &self.items
++    }
++}
 +
  impl<'a, T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for TargetPixelSlice<'a, T> {
      type TargetPixel = T;
  
-@@ -452,6 +470,11 @@
+@@ -452,6 +504,14 @@
      rendering_metrics_collector: Option<Rc<RenderingMetricsCollector>>,
      #[cfg(feature = "systemfonts")]
      text_layout_cache: sharedparley::TextLayoutCache,
@@ -209,10 +300,13 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
 +    /// The window size the layer cache was filled for.
 +    #[cfg(feature = "std")]
 +    layer_cache_size: Cell<PhysicalSize>,
++    /// The last render's phases: dirty-region walk and rasterisation.
++    #[cfg(feature = "std")]
++    last_phases: Cell<(std::time::Duration, std::time::Duration)>,
  }
  
  impl Default for SoftwareRenderer {
-@@ -465,6 +488,10 @@
+@@ -465,6 +525,12 @@
              repaint_buffer_type: Default::default(),
              #[cfg(feature = "systemfonts")]
              text_layout_cache: Default::default(),
@@ -220,10 +314,12 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
 +            layer_cache: Default::default(),
 +            #[cfg(feature = "std")]
 +            layer_cache_size: Default::default(),
++            #[cfg(feature = "std")]
++            last_phases: Default::default(),
          }
      }
  }
-@@ -498,9 +525,17 @@
+@@ -498,9 +564,25 @@
      pub fn set_repaint_buffer_type(&self, repaint_buffer_type: RepaintBufferType) {
          if self.repaint_buffer_type.replace(repaint_buffer_type) != repaint_buffer_type {
              self.partial_rendering_state.clear_cache();
@@ -238,10 +334,18 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
 +        self.partial_rendering_state.walked_items()
 +    }
 +
++    /// The last render's time in the dirty-region walk (property and layout
++    /// evaluation included) and in rasterisation.
++    #[doc(hidden)]
++    #[cfg(feature = "std")]
++    pub fn last_frame_phases(&self) -> (std::time::Duration, std::time::Duration) {
++        self.last_phases.get()
++    }
++
      /// Returns the kind of buffer that must be passed to  [`Self::render`]
      pub fn repaint_buffer_type(&self) -> RepaintBufferType {
          self.repaint_buffer_type.get()
-@@ -588,6 +623,13 @@
+@@ -588,6 +670,13 @@
          if size.is_empty() {
              return Default::default();
          }
@@ -255,7 +359,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
          assert!(
              if rotation.is_transpose() {
                  pixels_per_line >= size.height as usize
-@@ -616,6 +658,8 @@
+@@ -616,6 +705,8 @@
              rotation,
              #[cfg(feature = "systemfonts")]
              &self.text_layout_cache,
@@ -264,16 +368,68 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
          );
          let mut renderer = self.partial_rendering_state.create_partial_renderer(buffer_renderer);
          let window_adapter = renderer.window_adapter.clone();
-@@ -1161,6 +1205,8 @@
+@@ -623,6 +714,8 @@
+         window_inner
+             .draw_contents(|components, post_render| {
+                 let logical_size = (size.cast() / factor).cast();
++                #[cfg(feature = "std")]
++                let walk_started = std::time::Instant::now();
+ 
+                 match self.repaint_buffer_type.get() {
+                     RepaintBufferType::NewBuffer => {
+@@ -649,6 +742,8 @@
+                     }
+                 }
+ 
++                #[cfg(feature = "std")]
++                let (walk, raster_started) = (walk_started.elapsed(), std::time::Instant::now());
+                 let rotation = RotationInfo { orientation: rotation, screen_size: size };
+                 let screen_rect = PhysicalRect::from_size(size);
+                 let mut i = renderer.dirty_region.iter().filter_map(|r| {
+@@ -702,6 +797,28 @@
+                     post_render(&mut renderer.actual_renderer);
+                 }
+ 
++                #[cfg(feature = "std")]
++                {
++                    // Layers drawn shifted are drawn again next frame, at their exact phase
++                    // if they stopped moving.
++                    let mut shifted = self.layer_cache.shifted.take();
++                    let frame = self.layer_cache.frame.get() + 1;
++                    self.layer_cache.frame.set(frame);
++                    // A layer drawn directly for its period is drawn once more, cached again.
++                    self.layer_cache.direct.borrow_mut().retain(|_, (until, area)| {
++                        if *until > frame {
++                            return true;
++                        }
++                        shifted.add_rect(*area);
++                        false
++                    });
++                    if shifted.iter().next().is_some() {
++                        self.partial_rendering_state.mark_dirty_region(shifted);
++                        window.window().request_redraw();
++                    }
++                }
++                #[cfg(feature = "std")]
++                self.last_phases.set((walk, raster_started.elapsed()));
+                 self.measure_frame_rendered(&mut renderer);
+ 
+                 dirty_region
+@@ -1161,6 +1278,13 @@
      ) -> Result<(), i_slint_core::platform::PlatformError> {
          #[cfg(feature = "systemfonts")]
          self.text_layout_cache.component_destroyed(component);
 +        #[cfg(feature = "std")]
-+        self.layer_cache.component_destroyed(component);
++        {
++            self.layer_cache.component_destroyed(component);
++            let destroyed = &*component as *const _ as *const u8 as usize;
++            self.layer_cache.rendered.borrow_mut().retain(|key, _| key.0 != destroyed);
++            self.layer_cache.direct.borrow_mut().retain(|key, _| key.0 != destroyed);
++        }
          self.partial_rendering_state.free_graphics_resources(component, items);
          Ok(())
      }
-@@ -1199,6 +1245,8 @@
+@@ -1199,6 +1323,8 @@
          *self.maybe_window_adapter.borrow_mut() = Some(Rc::downgrade(window_adapter));
          #[cfg(feature = "systemfonts")]
          self.text_layout_cache.clear_all();
@@ -282,7 +438,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
          self.partial_rendering_state.clear_cache();
      }
  
-@@ -1480,6 +1528,9 @@
+@@ -1480,6 +1606,9 @@
          software_renderer.rotation.get(),
          #[cfg(feature = "systemfonts")]
          &software_renderer.text_layout_cache,
@@ -292,7 +448,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
      );
      let mut renderer =
          software_renderer.partial_rendering_state.create_partial_renderer(prepare_scene);
-@@ -2200,6 +2251,10 @@
+@@ -2200,6 +2329,10 @@
      rotation: RotationInfo,
      #[cfg(feature = "systemfonts")]
      text_layout_cache: &'a sharedparley::TextLayoutCache,
@@ -303,7 +459,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
  }
  
  impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
-@@ -2210,6 +2265,7 @@
+@@ -2210,6 +2343,7 @@
          processor: T,
          orientation: RenderingRotation,
          #[cfg(feature = "systemfonts")] text_layout_cache: &'a sharedparley::TextLayoutCache,
@@ -311,36 +467,72 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
      ) -> Self {
          Self {
              processor,
-@@ -2227,7 +2283,112 @@
+@@ -2227,9 +2361,156 @@
              rotation: RotationInfo { orientation, screen_size },
              #[cfg(feature = "systemfonts")]
              text_layout_cache,
 +            #[cfg(feature = "std")]
 +            layer_cache,
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /// Draw a `Layer`'s children from its cached image, rendering the image first if the
 +    /// cache has none or anything it depends on changed.
 +    #[cfg(feature = "std")]
-+    fn draw_cached_layer(&mut self, cache: &'a LayerCache, item_rc: &ItemRc, size: LogicalSize) {
++    /// Returns whether the layer's image was rendered for this frame.
++    fn draw_cached_layer(
++        &mut self,
++        cache: &'a LayerCache,
++        item_rc: &ItemRc,
++        size: LogicalSize,
++    ) -> bool {
 +        let scale = self.scale_factor;
 +        let screen_offset = self.current_state.offset.cast::<f32>() * scale;
 +        let phase = screen_offset.to_vector() - screen_offset.floor().to_vector();
-+        let render = || self.render_layer_image(cache, item_rc, size, phase);
++        let rendered = Cell::new(false);
++        let render = || {
++            rendered.set(true);
++            self.render_layer_image(cache, item_rc, size, phase)
++        };
 +        let mut layer = cache.get_or_update_cache_entry(item_rc, render);
-+        if layer.as_ref().is_some_and(|layer| (layer.phase - phase).square_length() > 1e-6) {
-+            cache.release(item_rc);
-+            layer = cache.get_or_update_cache_entry(item_rc, || {
-+                self.render_layer_image(cache, item_rc, size, phase)
-+            });
++        // A layer at another sub-pixel phase: while it moves, shift the image by whole pixels
++        // (rendering its children again every frame of a slide is what costs); once it is drawn
++        // twice at the same position, render it again at its exact phase.
++        let mut shifted = false;
++        if let Some(cached) =
++            layer.as_ref().filter(|layer| (layer.phase - phase).square_length() > 1e-6)
++        {
++            let stopped = cached
++                .shifted_at
++                .get()
++                .is_some_and(|at| (at - screen_offset).square_length() <= 1e-6);
++            if stopped {
++                cache.release(item_rc);
++                layer = cache.get_or_update_cache_entry(item_rc, || {
++                    self.render_layer_image(cache, item_rc, size, phase)
++                });
++            } else {
++                cached.shifted_at.set(Some(screen_offset));
++                shifted = true;
++            }
 +        }
-+        let Some(layer) = layer else { return };
++        let Some(layer) = layer else { return rendered.get() };
++        let offset = if shifted {
++            (screen_offset - layer.phase).round().cast::<i32>().to_vector()
++        } else {
++            screen_offset.floor().cast::<i32>().to_vector()
++        };
 +        let (width, height) = (layer.image.width() as i32, layer.image.height() as i32);
 +        let local = euclid::Rect::<i32, PhysicalPx>::new(layer.origin, euclid::size2(width, height));
 +        let physical_clip = (self.current_state.clip.cast() * scale).round_out().cast::<i32>();
-+        let Some(clipped) = local.intersection(&physical_clip) else { return };
-+        let offset = screen_offset.floor().cast::<i32>().to_vector();
++        let Some(clipped) = local.intersection(&physical_clip) else { return rendered.get() };
++        if shifted {
++            let screen = clipped.translate(offset).cast::<f32>() / scale;
++            cache.shifted.borrow_mut().add_rect(LogicalRect::new(
++                LogicalPoint::new(screen.origin.x as _, screen.origin.y as _),
++                LogicalSize::new(screen.size.width as _, screen.size.height as _),
++            ).round_out());
++        }
 +        let t = target_pixel_buffer::DrawTextureArgs {
 +            data: target_pixel_buffer::TextureDataContainer::Shared {
 +                buffer: SharedBufferData::SharedImage(SharedImageBuffer::RGBA8Premultiplied(
@@ -359,6 +551,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
 +        };
 +        self.processor
 +            .process_target_texture(&t, clipped.translate(offset).cast().transformed(self.rotation));
++        rendered.get()
 +    }
 +
 +    /// Render a `Layer`'s children, unrotated and at full opacity, into a premultiplied image
@@ -379,7 +572,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
 +        let (width, height) = (physical.size.width as usize, physical.size.height as usize);
 +        if width == 0 || height == 0 || width > i16::MAX as usize || height > i16::MAX as usize {
 +            return None;
-         }
++        }
 +        let mut pixels = alloc::vec![PremultipliedRgbaColor::default(); width * height];
 +        {
 +            let mut target = TargetPixelSlice { data: &mut pixels, pixel_stride: width };
@@ -420,11 +613,18 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
 +        for (to, from) in image.make_mut_slice().iter_mut().zip(&pixels) {
 +            *to = Rgba8Pixel::new(from.red, from.green, from.blue, from.alpha);
 +        }
-+        Some(Rc::new(CachedLayer { origin: physical.origin.cast(), phase, image }))
-     }
- 
++        Some(Rc::new(CachedLayer {
++            origin: physical.origin.cast(),
++            phase,
++            shifted_at: Cell::new(None),
++            image,
++        }))
++    }
++
      fn should_draw(&self, rect: &LogicalRect) -> bool {
-@@ -3065,6 +3226,23 @@
+         !rect.size.is_empty()
+             && self.current_state.alpha > 0.01
+@@ -3065,6 +3346,42 @@
          // TODO
      }
  
@@ -437,7 +637,26 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
 +        #[cfg(feature = "std")]
 +        if layer.cache_rendering_hint() {
 +            if let Some(cache) = self.layer_cache {
-+                self.draw_cached_layer(cache, item_rc, size);
++                let key = layer_key(item_rc);
++                let frame = cache.frame.get();
++                let direct = cache.direct.borrow().get(&key).map(|(until, _)| *until);
++                if direct.is_some_and(|until| frame < until) {
++                    // Content changing every frame: draw the children directly. Remember where,
++                    // so the area is drawn again (and cached) when the period ends.
++                    let area = LogicalRect::new(self.current_state.offset, size);
++                    if let Some(entry) = cache.direct.borrow_mut().get_mut(&key) {
++                        entry.1 = area;
++                    }
++                    return RenderingResult::ContinueRenderingChildren;
++                }
++                if self.draw_cached_layer(cache, item_rc, size) {
++                    let previous = cache.rendered.borrow_mut().insert(key, frame);
++                    if previous == Some(frame.wrapping_sub(1)) {
++                        cache.release(item_rc);
++                        let area = LogicalRect::new(self.current_state.offset, size);
++                        cache.direct.borrow_mut().insert(key, (frame + LAYER_CHURN_FRAMES, area));
++                    }
++                }
 +                return RenderingResult::ContinueRenderingWithoutChildren;
 +            }
 +        }
@@ -448,3 +667,50 @@ diff -ruN a/i-slint-renderer-software/lib.rs i-slint-renderer-software/lib.rs
      fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {
          match self.current_state.clip.intersection(&other) {
              Some(r) => {
+diff -ruN a/slint-interpreter/Cargo.toml b/slint-interpreter/Cargo.toml
+--- a/slint-interpreter/Cargo.toml	2026-11-02 19:13:22.513879234 -0700
++++ b/slint-interpreter/Cargo.toml	2026-11-02 19:13:22.515438387 -0700
+@@ -153,17 +153,8 @@
+ name = "slint_interpreter"
+ path = "lib.rs"
+ 
+-[[test]]
+-name = "public_api"
+-path = "tests/public_api.rs"
+ 
+-[[test]]
+-name = "system_tray_show_hide"
+-path = "tests/system_tray_show_hide.rs"
+ 
+-[[test]]
+-name = "window_adapter_creation_error"
+-path = "tests/window_adapter_creation_error.rs"
+ 
+ [dependencies.derive_more]
+ version = "2.0.0"
+diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_vtable.rs
+--- a/slint-interpreter/item_tree_vtable.rs	2026-11-02 19:13:22.513982637 -0700
++++ b/slint-interpreter/item_tree_vtable.rs	2026-11-02 19:13:22.515540995 -0700
+@@ -297,6 +297,22 @@
+         };
+         let expr = expr_cell.borrow();
+         let mut ctx = crate::eval::EvalContext::new(ctx_owner);
++        // The geometry is usually a struct literal of x, y, width and height. Evaluate its four
++        // fields directly instead of building a `Struct` value (a hash map) for every item the
++        // renderer's dirty-region walk visits.
++        if let i_slint_compiler::llr::Expression::Struct { values, .. } = &*expr {
++            let mut field = |name: &str| -> f32 {
++                match values.get(name).map(|e| crate::eval::eval_expression(&mut ctx, e)) {
++                    Some(crate::Value::Number(n)) => n as f32,
++                    _ => 0.0,
++                }
++            };
++            let (x, y, width, height) = (field("x"), field("y"), field("width"), field("height"));
++            return LogicalRect::new(
++                i_slint_core::lengths::LogicalPoint::new(x, y),
++                i_slint_core::lengths::LogicalSize::new(width, height),
++            );
++        }
+         let crate::Value::Struct(s) = crate::eval::eval_expression(&mut ctx, &expr) else {
+             return LogicalRect::default();
+         };
