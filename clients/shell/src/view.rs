@@ -178,6 +178,21 @@ pub fn convert(
     images: &mut ImageCache,
     path: &str,
 ) -> Result<Value> {
+    convert_from(json, ty, previous, None, images, path)
+}
+
+/// `convert`, given the JSON that `previous` was converted from (`before`).
+/// An array whose model the shell made from `before` is brought up to date
+/// in place (`update_rows`), so a repeater over it keeps the instances of
+/// the rows that did not change.
+fn convert_from(
+    json: &Json,
+    ty: &Type,
+    previous: &Value,
+    before: Option<&Json>,
+    images: &mut ImageCache,
+    path: &str,
+) -> Result<Value> {
     if json.is_null() {
         return Ok(previous.clone());
     }
@@ -203,6 +218,18 @@ pub fn convert(
                 Value::Model(model) => Some(model),
                 _ => None,
             };
+            if let (Some(model), Some(Json::Array(before))) = (old, before) {
+                if let Some(rows) = model
+                    .as_any()
+                    .downcast_ref::<VecModel<Value>>()
+                    .filter(|rows| rows.row_count() == before.len())
+                {
+                    update_rows(rows, items, before, |i, json, prior| {
+                        convert_from(json, item, prior, None, images, &format!("{path}[{i}]"))
+                    })?;
+                    return Ok(Value::Model(model.clone()));
+                }
+            }
             let values = items
                 .iter()
                 .enumerate()
@@ -237,7 +264,9 @@ pub fn convert(
                     .get(field.as_str())
                     .with_context(|| format!("{path}: undeclared field {field}"))?;
                 let prior = value.get_field(&field).cloned().unwrap_or_default();
-                let converted = convert(json, ty, &prior, images, &format!("{path}.{field}"))?;
+                let before = before.and_then(|b| b.get(name));
+                let converted =
+                    convert_from(json, ty, &prior, before, images, &format!("{path}.{field}"))?;
                 value.set_field(field, converted);
             }
             // A declared field the object omits and that has no value yet
@@ -251,6 +280,40 @@ pub fn convert(
         }
         _ => bail!("{path}: wrong type, expected {ty}, got {}", short(json)),
     })
+}
+
+/// Brings `rows`, a model the shell converted from the JSON array `before`,
+/// to the JSON array `items`. A row whose JSON is the same keeps its value
+/// and its repeater instance. A row whose JSON changed is converted from its
+/// previous value and replaced (removed and inserted), so a repeater drops
+/// its instance and creates a new one, as for a new model. Rows past the new
+/// length are removed; new rows are added at the end.
+fn update_rows(
+    rows: &VecModel<Value>,
+    items: &[Json],
+    before: &[Json],
+    mut convert_row: impl FnMut(usize, &Json, &Value) -> Result<Value>,
+) -> Result<()> {
+    // Convert first: an error leaves the model as it was.
+    let mut changed = Vec::new();
+    for (i, json) in items.iter().enumerate() {
+        if before.get(i) != Some(json) {
+            let prior = rows.row_data(i).unwrap_or_default();
+            changed.push((i, convert_row(i, json, &prior)?));
+        }
+    }
+    while rows.row_count() > items.len() {
+        rows.remove(rows.row_count() - 1);
+    }
+    for (i, value) in changed {
+        if i < rows.row_count() {
+            rows.remove(i);
+            rows.insert(i, value);
+        } else {
+            rows.push(value);
+        }
+    }
+    Ok(())
 }
 
 /// A type's default value, recursively for structs: what Slint gives a
@@ -312,10 +375,16 @@ pub fn check(view: &Json, types: &BTreeMap<String, Type>, images: &mut ImageCach
 
 /// Applies views to one component instance. It remembers the last JSON of
 /// each property and leaves unchanged properties alone, so models are not
-/// rebuilt and repeaters not re-instantiated when nothing changed.
+/// rebuilt and repeaters not re-instantiated when nothing changed. A changed
+/// array keeps its model and the rows whose JSON did not change (see
+/// `update_rows`).
 pub struct Binder {
     types: BTreeMap<String, Type>,
-    last: HashMap<String, Json>,
+    /// Per property: the JSON last applied, and the value it was set to.
+    last: HashMap<String, (Json, Value)>,
+    /// Whether a changed array keeps its model (the default); off, every changed array gets
+    /// a new model, as before. For tests and benchmarks that compare the two.
+    reuse_models: bool,
     /// The last `apply`'s time converting JSON to Slint values, and setting them.
     pub timing: (std::time::Duration, std::time::Duration),
 }
@@ -325,8 +394,14 @@ impl Binder {
         Self {
             types: declared(definition),
             last: HashMap::new(),
+            reuse_models: true,
             timing: Default::default(),
         }
+    }
+
+    /// See `reuse_models`.
+    pub fn set_reuse_models(&mut self, reuse: bool) {
+        self.reuse_models = reuse;
     }
 
     pub fn apply(
@@ -343,7 +418,7 @@ impl Binder {
                 continue;
             }
             let property = kebab(name);
-            if self.last.get(&property) == Some(json) {
+            if self.last.get(&property).map(|(last, _)| last) == Some(json) {
                 continue;
             }
             let ty = self
@@ -352,14 +427,21 @@ impl Binder {
                 .with_context(|| format!("undeclared property {property}"))?;
             let started = std::time::Instant::now();
             let previous = component.get_property(&property)?;
-            let value = convert(json, ty, &previous, images, &property)?;
+            // Its models are the shell's, made from that JSON, only while the
+            // property still holds the value the shell set.
+            let before = self
+                .last
+                .get(&property)
+                .filter(|(_, set)| self.reuse_models && *set == previous)
+                .map(|(last, _)| last);
+            let value = convert_from(json, ty, &previous, before, images, &property)?;
             let converted = std::time::Instant::now();
             component
-                .set_property(&property, value)
+                .set_property(&property, value.clone())
                 .with_context(|| format!("set {property}"))?;
             self.timing.0 += converted - started;
             self.timing.1 += converted.elapsed();
-            self.last.insert(property, json.clone());
+            self.last.insert(property, (json.clone(), value));
             changed += 1;
         }
         Ok(changed)
@@ -524,6 +606,58 @@ mod tests {
         };
         assert_eq!(item.get_field("item-count"), Some(&Value::Number(3.0)));
         assert_eq!(item.get_field("fraction"), Some(&Value::Number(1.5)));
+        Ok(())
+    }
+
+    #[test]
+    fn a_changed_array_keeps_its_model_and_its_unchanged_rows() -> Result<()> {
+        crate::backend::headless::Headless::install();
+        let definition = compile(SOURCE);
+        let instance = definition.create()?;
+        let dir = tempfile::tempdir()?;
+        let mut images = ImageCache::new(dir.path());
+        let mut binder = Binder::new(&definition);
+        let row = |n: f64| json!({"itemCount": n, "fraction": 0.5, "label": format!("r{n}")});
+        binder.apply(
+            &instance,
+            &json!({"items": [row(1.0), row(2.0), row(3.0)]}),
+            &mut images,
+        )?;
+        let Value::Model(first) = instance.get_property("items")? else {
+            panic!("model")
+        };
+        // Row 1 changes, a row is added: same model, row 0 untouched.
+        binder.apply(
+            &instance,
+            &json!({"items": [row(1.0), row(9.0), row(3.0), row(4.0)]}),
+            &mut images,
+        )?;
+        let Value::Model(second) = instance.get_property("items")? else {
+            panic!("model")
+        };
+        assert!(first == second, "the model is kept");
+        let counts: Vec<_> = (0..second.row_count())
+            .map(|i| match second.row_data(i) {
+                Some(Value::Struct(s)) => s.get_field("item-count").cloned(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            counts,
+            [1.0, 9.0, 3.0, 4.0]
+                .map(|n| Some(Value::Number(n)))
+                .to_vec()
+        );
+        // Shorter: rows removed at the end.
+        binder.apply(&instance, &json!({"items": [row(1.0)]}), &mut images)?;
+        assert_eq!(second.row_count(), 1);
+        // Off: a new model, as before.
+        binder.set_reuse_models(false);
+        binder.apply(&instance, &json!({"items": [row(5.0)]}), &mut images)?;
+        let Value::Model(third) = instance.get_property("items")? else {
+            panic!("model")
+        };
+        assert!(second != third);
         Ok(())
     }
 
