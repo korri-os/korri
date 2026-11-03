@@ -215,11 +215,17 @@ pub fn run(options: Options) -> Result<String> {
                     queue.push(messages::korri_published());
                 }
             }
-            let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
-            frame.logic = logic.elapsed().as_secs_f64() * 1e6;
-            binder.apply(&surface, &view, &mut images)?;
-            frame.convert = binder.timing.0.as_secs_f64() * 1e6;
-            frame.set = binder.timing.1.as_secs_f64() * 1e6;
+            // As the shell: view() only when the state or model changed.
+            if engine.view_stale() {
+                engine.views_drawn();
+                let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
+                frame.logic = logic.elapsed().as_secs_f64() * 1e6;
+                binder.apply(&surface, &view, &mut images)?;
+                frame.convert = binder.timing.0.as_secs_f64() * 1e6;
+                frame.set = binder.timing.1.as_secs_f64() * 1e6;
+            } else {
+                frame.logic = logic.elapsed().as_secs_f64() * 1e6;
+            }
         }
         let animate = Instant::now();
         slint::platform::update_timers_and_animations();

@@ -426,16 +426,33 @@ struct CachedLayer {
     /// The image's top-left corner relative to the layer item's origin, in physical pixels.
     origin: euclid::Point2D<i32, PhysicalPx>,
     /// The fractional part of the layer's physical screen position the image was rendered at.
-    /// The children are positioned with sub-pixel precision, so a layer that moved by a fraction
-    /// of a pixel is rendered again rather than shifted.
+    /// The children are positioned with sub-pixel precision. A layer drawn at another phase is
+    /// shifted by whole pixels while it moves, and rendered again at its exact phase once it
+    /// stops (see `SceneBuilder::draw_cached_layer`).
     phase: euclid::Vector2D<f32, PhysicalPx>,
+    /// Where the layer was last drawn shifted (its physical screen offset), if it was.
+    shifted_at: Cell<Option<euclid::Point2D<f32, PhysicalPx>>>,
     image: SharedPixelBuffer<Rgba8Pixel>,
 }
 
 /// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
 /// children's rendering read changes, and cleared when the scale factor or window size changes.
 #[cfg(feature = "std")]
-type LayerCache = i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>;
+#[derive(Default)]
+struct LayerCache {
+    items: i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>,
+    /// Screen areas of layers drawn shifted this frame: drawn again next frame, so a layer that
+    /// stopped moving is rendered at its exact phase.
+    shifted: RefCell<DirtyRegion>,
+}
+
+#[cfg(feature = "std")]
+impl core::ops::Deref for LayerCache {
+    type Target = i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>;
+    fn deref(&self) -> &Self::Target {
+        &self.items
+    }
+}
 
 impl<'a, T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for TargetPixelSlice<'a, T> {
     type TargetPixel = T;
@@ -763,6 +780,16 @@ impl SoftwareRenderer {
                     post_render(&mut renderer.actual_renderer);
                 }
 
+                #[cfg(feature = "std")]
+                {
+                    // Layers drawn shifted are drawn again next frame, at their exact phase
+                    // if they stopped moving.
+                    let shifted = self.layer_cache.shifted.take();
+                    if shifted.iter().next().is_some() {
+                        self.partial_rendering_state.mark_dirty_region(shifted);
+                        window.window().request_redraw();
+                    }
+                }
                 #[cfg(feature = "std")]
                 self.last_phases.set((walk, raster_started.elapsed()));
                 self.measure_frame_rendered(&mut renderer);
@@ -2316,18 +2343,44 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         let phase = screen_offset.to_vector() - screen_offset.floor().to_vector();
         let render = || self.render_layer_image(cache, item_rc, size, phase);
         let mut layer = cache.get_or_update_cache_entry(item_rc, render);
-        if layer.as_ref().is_some_and(|layer| (layer.phase - phase).square_length() > 1e-6) {
-            cache.release(item_rc);
-            layer = cache.get_or_update_cache_entry(item_rc, || {
-                self.render_layer_image(cache, item_rc, size, phase)
-            });
+        // A layer at another sub-pixel phase: while it moves, shift the image by whole pixels
+        // (rendering its children again every frame of a slide is what costs); once it is drawn
+        // twice at the same position, render it again at its exact phase.
+        let mut shifted = false;
+        if let Some(cached) =
+            layer.as_ref().filter(|layer| (layer.phase - phase).square_length() > 1e-6)
+        {
+            let stopped = cached
+                .shifted_at
+                .get()
+                .is_some_and(|at| (at - screen_offset).square_length() <= 1e-6);
+            if stopped {
+                cache.release(item_rc);
+                layer = cache.get_or_update_cache_entry(item_rc, || {
+                    self.render_layer_image(cache, item_rc, size, phase)
+                });
+            } else {
+                cached.shifted_at.set(Some(screen_offset));
+                shifted = true;
+            }
         }
         let Some(layer) = layer else { return };
+        let offset = if shifted {
+            (screen_offset - layer.phase).round().cast::<i32>().to_vector()
+        } else {
+            screen_offset.floor().cast::<i32>().to_vector()
+        };
         let (width, height) = (layer.image.width() as i32, layer.image.height() as i32);
         let local = euclid::Rect::<i32, PhysicalPx>::new(layer.origin, euclid::size2(width, height));
         let physical_clip = (self.current_state.clip.cast() * scale).round_out().cast::<i32>();
         let Some(clipped) = local.intersection(&physical_clip) else { return };
-        let offset = screen_offset.floor().cast::<i32>().to_vector();
+        if shifted {
+            let screen = clipped.translate(offset).cast::<f32>() / scale;
+            cache.shifted.borrow_mut().add_rect(LogicalRect::new(
+                LogicalPoint::new(screen.origin.x as _, screen.origin.y as _),
+                LogicalSize::new(screen.size.width as _, screen.size.height as _),
+            ).round_out());
+        }
         let t = target_pixel_buffer::DrawTextureArgs {
             data: target_pixel_buffer::TextureDataContainer::Shared {
                 buffer: SharedBufferData::SharedImage(SharedImageBuffer::RGBA8Premultiplied(
@@ -2407,7 +2460,12 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         for (to, from) in image.make_mut_slice().iter_mut().zip(&pixels) {
             *to = Rgba8Pixel::new(from.red, from.green, from.blue, from.alpha);
         }
-        Some(Rc::new(CachedLayer { origin: physical.origin.cast(), phase, image }))
+        Some(Rc::new(CachedLayer {
+            origin: physical.origin.cast(),
+            phase,
+            shifted_at: Cell::new(None),
+            image,
+        }))
     }
 
     fn should_draw(&self, rect: &LogicalRect) -> bool {

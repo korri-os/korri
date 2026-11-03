@@ -152,8 +152,10 @@ const BOOTSTRAP: &str = r#"(() => {
       const step = s.update(state, JSON.parse(message), model);
       if (step === null || typeof step !== "object" || !("state" in step) || !Array.isArray(step.requests))
         throw new TypeError(CONTRACT + "update must return { state, requests }");
+      // "1": update returned a new state object, so view() may differ.
+      const changed = step.state !== state;
       state = step.state;
-      return text(step.requests, "update requests");
+      return (changed ? "1" : "0") + text(step.requests, "update requests");
     },
     view: () => text(s.view(state, model), "view"),
     overlay: () => text(s.overlay(state, model), "overlay"),
@@ -190,6 +192,8 @@ pub struct Engine {
     declaration: Declaration,
     displays: Option<Displays>,
     has_overlay: bool,
+    /// See `view_stale`.
+    stale: bool,
     max_call: Duration,
     /// While loading (until `init` returns): when the load started. Every call
     /// in that phase shares `limits.load`, measured from this instant.
@@ -233,6 +237,7 @@ impl Engine {
             declaration: Declaration::new(),
             displays: None,
             has_overlay: false,
+            stale: true,
             max_call: Duration::ZERO,
             loading: Some(started),
             load_time: Duration::ZERO,
@@ -297,6 +302,7 @@ impl Engine {
 
     /// Replace the model the logic sees. Parsed once per publish.
     pub fn set_model(&mut self, model_json: &str) -> Result<(), Violation> {
+        self.stale = true;
         self.call_unit("setModel", model_json)
     }
 
@@ -311,9 +317,13 @@ impl Engine {
 
     /// Run `update`; returns the requests it asked for.
     pub fn update(&mut self, message: &Value) -> Result<Vec<Value>, Violation> {
-        let requests = self.call_string("update", &[&message.to_string()])?;
+        let reply = self.call_string("update", &[&message.to_string()])?;
+        let (changed, requests) = reply.split_at(1.min(reply.len()));
+        if changed != "0" {
+            self.stale = true;
+        }
         let requests: Vec<Value> =
-            serde_json::from_str(&requests).map_err(|e| Violation::Contract {
+            serde_json::from_str(requests).map_err(|e| Violation::Contract {
                 call: "update",
                 message: e.to_string(),
             })?;
@@ -322,6 +332,18 @@ impl Engine {
 
     pub fn view(&mut self) -> Result<Value, Violation> {
         self.call_json("view")
+    }
+
+    /// Whether `view()` and `overlay()` may differ from their last results:
+    /// the model was replaced, or an `update` returned a new state object
+    /// (both are pure functions of state and model, contract 3.1).
+    pub fn view_stale(&self) -> bool {
+        self.stale
+    }
+
+    /// The views were drawn from the current state and model.
+    pub fn views_drawn(&mut self) {
+        self.stale = false;
     }
 
     /// `None` when the package has no `overlay`.

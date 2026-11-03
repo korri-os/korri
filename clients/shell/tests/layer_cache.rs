@@ -178,11 +178,14 @@ fn a_cached_layer_matches_direct_rendering_through_every_change() {
     pair.set("count", Value::Number(5.0));
     pair.render();
     pair.assert_same("repeater grew");
-    // The layer moves, by whole and by fractional pixels.
+    // The layer moves, by whole and by fractional pixels. A layer at a new
+    // sub-pixel phase is first shifted by whole pixels (it may be moving) and
+    // asks for one more frame, which renders it at its exact phase.
     for x in [40.0, 40.5, 41.25] {
         pair.set("layer-x", Value::Number(x));
         pair.render();
-        pair.assert_same(&format!("layer at {x}"));
+        pair.render();
+        pair.assert_same(&format!("layer at {x}, settled"));
     }
     // The window is resized, and the scale factor changes.
     pair.resize(260, 150);
