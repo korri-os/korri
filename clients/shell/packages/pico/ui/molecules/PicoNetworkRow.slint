@@ -6,6 +6,12 @@ import { PicoNetworkMarks } from "PicoNetworkMarks.slint";
 
 // One network from Korri's scan, to join.
 export component PicoNetworkRow {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.list-item;
+    accessible-label: ssid;
+    accessible-item-selectable: true;
+    accessible-item-selected: focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <string> ssid;
     in property <int> bars;

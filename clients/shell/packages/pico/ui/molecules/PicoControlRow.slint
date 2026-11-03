@@ -8,6 +8,12 @@ import { PicoSlider } from "../atoms/PicoSlider.slint";
 // range as cells, and, under it, why it is off or what it does, in the
 // note colour of the card it stands on.
 export component PicoControlRow {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.list-item;
+    accessible-label: label;
+    accessible-item-selectable: true;
+    accessible-item-selected: focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <string> label;
     in property <string> value;

@@ -6,6 +6,12 @@ import { ButtonView } from "PicoRow.slint";
 // The floor's lead control: MENU with its three bars, or a quiet word (RELOAD).
 // It stands on the floor, never in a scrolled body, so it reveals nothing.
 export component PicoMenuKey {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: button.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: button.focused;
     in property <ButtonView> button;
     in property <bool> menu: true;
     width: row.preferred-width;

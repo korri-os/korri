@@ -7,6 +7,12 @@ import { ButtonView } from "PicoRow.slint";
 // The one thing the screen wants pressed: yellow, a play mark, a brown hard
 // shadow that cycles under the cursor.
 export component PicoButton {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: button.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: button.focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> button;
     in property <length> font-size: Tokens.lg;

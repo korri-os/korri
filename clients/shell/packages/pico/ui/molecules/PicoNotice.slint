@@ -31,6 +31,10 @@ export component PicoNotice inherits PicoCard {
     if card.message != "" : PicoPara { text: card.message; font-size: Tokens.short ? Tokens.sm : Tokens.md; color: P8.shell-ink(card.tone); }
     for line in card.lines : Rectangle {
         min-height: l.preferred-height;
+        accessible-role: AccessibleRole.list-item;
+        accessible-label: line.text;
+        accessible-item-selectable: true;
+        accessible-item-selected: line.focused;
         if line.focused : Rectangle { x: -Tokens.p; y: 0; width: parent.width + 2 * Tokens.p; height: parent.height; background: P8.pick; }
         l := PicoPara { x: 0; y: 0; width: parent.width; text: line.text; font-size: Tokens.sm; color: line.focused ? P8.pick-ink : P8.note(card.tone); }
         PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: parent.width; height: parent.height; focused: line.focused; }

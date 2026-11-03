@@ -6,6 +6,12 @@ import { ButtonView } from "PicoRow.slint";
 // A filter or a tab: a plate in its colour, lit when chosen, white with a
 // cycling drop under the cursor.
 export component PicoChip {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: button.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: button.focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> button;
     in property <color> lit-ground: P8.go;

@@ -7,6 +7,12 @@ import { PicoReveal } from "PicoReveal.slint";
 export struct KeyView { cap: string, focused: bool, lit: bool, row: int, col: int, cols: int }
 
 export component PicoKey {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: key.cap;
+    accessible-item-selectable: true;
+    accessible-item-selected: key.focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <KeyView> key;
     Rectangle { x: Tokens.p; y: Tokens.p; width: root.width; height: root.height; background: key.focused ? Cycle.now : P8.plate-shadow; }

@@ -19,6 +19,12 @@ export struct ButtonView {
 // is black with white ink, inside a coloured card. The cursor turns it white
 // with black ink and a cycling hard shadow. A detail stands at its end.
 export component PicoRow {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: button.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: button.focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> button;
     in property <string> kind: "plate";

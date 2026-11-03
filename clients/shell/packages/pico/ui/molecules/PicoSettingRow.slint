@@ -31,6 +31,12 @@ export struct RowView {
 // one between arrows, a network's marks), then where the value comes from,
 // what it does, and Korri's word on the last change.
 export component PicoSettingRow {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.list-item;
+    accessible-label: item.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: item.focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <RowView> item;
     in property <color> ink: P8.ink-dark;
