@@ -162,6 +162,8 @@ pub fn run(options: Options) -> Result<String> {
     let mut buffer = vec![PremultipliedRgbaColor::default(); (width * height) as usize];
     let mut frames = Vec::with_capacity(options.frames);
     let mut last_press = 0usize;
+    // KORRI_BENCH_FRAMES=1: one line per frame on stderr.
+    let log_frames = std::env::var_os("KORRI_BENCH_FRAMES").is_some();
     // Warm up: the first frames fill caches; they are not reported.
     let warm = 10;
     for n in 0..options.frames + warm {
@@ -242,6 +244,12 @@ pub fn run(options: Options) -> Result<String> {
         });
         frame.total = started.elapsed().as_secs_f64() * 1e6;
         if n >= warm {
+            if log_frames {
+                eprintln!(
+                    "FRAME {n} logic={:.0} set={:.0} walk={:.0} raster={:.0} total={:.0} px={:.0}",
+                    frame.logic, frame.set, frame.walk, frame.raster, frame.total, frame.dirty_px
+                );
+            }
             frames.push(frame);
         }
     }

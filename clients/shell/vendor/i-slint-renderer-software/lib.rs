@@ -444,6 +444,23 @@ struct LayerCache {
     /// Screen areas of layers drawn shifted this frame: drawn again next frame, so a layer that
     /// stopped moving is rendered at its exact phase.
     shifted: RefCell<DirtyRegion>,
+    /// Frames rendered by this renderer, to tell consecutive frames apart.
+    frame: Cell<u64>,
+    /// Per layer item: the last frame its image was rendered.
+    rendered: RefCell<std::collections::HashMap<(usize, u32), u64>>,
+    /// Layers whose content changed in consecutive frames (an animation inside them): drawn
+    /// directly, without an image, until the frame stored here, with their last screen area.
+    direct: RefCell<std::collections::HashMap<(usize, u32), (u64, LogicalRect)>>,
+}
+
+/// How long a layer whose content changes every frame is drawn without its image: rendering
+/// an image the next frame throws away costs more than drawing the children directly.
+#[cfg(feature = "std")]
+const LAYER_CHURN_FRAMES: u64 = 8;
+
+#[cfg(feature = "std")]
+fn layer_key(item_rc: &ItemRc) -> (usize, u32) {
+    (&(**item_rc.item_tree()) as *const _ as *const u8 as usize, item_rc.index())
 }
 
 #[cfg(feature = "std")]
@@ -784,7 +801,17 @@ impl SoftwareRenderer {
                 {
                     // Layers drawn shifted are drawn again next frame, at their exact phase
                     // if they stopped moving.
-                    let shifted = self.layer_cache.shifted.take();
+                    let mut shifted = self.layer_cache.shifted.take();
+                    let frame = self.layer_cache.frame.get() + 1;
+                    self.layer_cache.frame.set(frame);
+                    // A layer drawn directly for its period is drawn once more, cached again.
+                    self.layer_cache.direct.borrow_mut().retain(|_, (until, area)| {
+                        if *until > frame {
+                            return true;
+                        }
+                        shifted.add_rect(*area);
+                        false
+                    });
                     if shifted.iter().next().is_some() {
                         self.partial_rendering_state.mark_dirty_region(shifted);
                         window.window().request_redraw();
@@ -1252,7 +1279,12 @@ impl RendererSealed for SoftwareRenderer {
         #[cfg(feature = "systemfonts")]
         self.text_layout_cache.component_destroyed(component);
         #[cfg(feature = "std")]
-        self.layer_cache.component_destroyed(component);
+        {
+            self.layer_cache.component_destroyed(component);
+            let destroyed = &*component as *const _ as *const u8 as usize;
+            self.layer_cache.rendered.borrow_mut().retain(|key, _| key.0 != destroyed);
+            self.layer_cache.direct.borrow_mut().retain(|key, _| key.0 != destroyed);
+        }
         self.partial_rendering_state.free_graphics_resources(component, items);
         Ok(())
     }
@@ -2337,11 +2369,21 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
     /// Draw a `Layer`'s children from its cached image, rendering the image first if the
     /// cache has none or anything it depends on changed.
     #[cfg(feature = "std")]
-    fn draw_cached_layer(&mut self, cache: &'a LayerCache, item_rc: &ItemRc, size: LogicalSize) {
+    /// Returns whether the layer's image was rendered for this frame.
+    fn draw_cached_layer(
+        &mut self,
+        cache: &'a LayerCache,
+        item_rc: &ItemRc,
+        size: LogicalSize,
+    ) -> bool {
         let scale = self.scale_factor;
         let screen_offset = self.current_state.offset.cast::<f32>() * scale;
         let phase = screen_offset.to_vector() - screen_offset.floor().to_vector();
-        let render = || self.render_layer_image(cache, item_rc, size, phase);
+        let rendered = Cell::new(false);
+        let render = || {
+            rendered.set(true);
+            self.render_layer_image(cache, item_rc, size, phase)
+        };
         let mut layer = cache.get_or_update_cache_entry(item_rc, render);
         // A layer at another sub-pixel phase: while it moves, shift the image by whole pixels
         // (rendering its children again every frame of a slide is what costs); once it is drawn
@@ -2364,7 +2406,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 shifted = true;
             }
         }
-        let Some(layer) = layer else { return };
+        let Some(layer) = layer else { return rendered.get() };
         let offset = if shifted {
             (screen_offset - layer.phase).round().cast::<i32>().to_vector()
         } else {
@@ -2373,7 +2415,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         let (width, height) = (layer.image.width() as i32, layer.image.height() as i32);
         let local = euclid::Rect::<i32, PhysicalPx>::new(layer.origin, euclid::size2(width, height));
         let physical_clip = (self.current_state.clip.cast() * scale).round_out().cast::<i32>();
-        let Some(clipped) = local.intersection(&physical_clip) else { return };
+        let Some(clipped) = local.intersection(&physical_clip) else { return rendered.get() };
         if shifted {
             let screen = clipped.translate(offset).cast::<f32>() / scale;
             cache.shifted.borrow_mut().add_rect(LogicalRect::new(
@@ -2399,6 +2441,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         };
         self.processor
             .process_target_texture(&t, clipped.translate(offset).cast().transformed(self.rotation));
+        rendered.get()
     }
 
     /// Render a `Layer`'s children, unrotated and at full opacity, into a premultiplied image
@@ -3312,7 +3355,26 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         #[cfg(feature = "std")]
         if layer.cache_rendering_hint() {
             if let Some(cache) = self.layer_cache {
-                self.draw_cached_layer(cache, item_rc, size);
+                let key = layer_key(item_rc);
+                let frame = cache.frame.get();
+                let direct = cache.direct.borrow().get(&key).map(|(until, _)| *until);
+                if direct.is_some_and(|until| frame < until) {
+                    // Content changing every frame: draw the children directly. Remember where,
+                    // so the area is drawn again (and cached) when the period ends.
+                    let area = LogicalRect::new(self.current_state.offset, size);
+                    if let Some(entry) = cache.direct.borrow_mut().get_mut(&key) {
+                        entry.1 = area;
+                    }
+                    return RenderingResult::ContinueRenderingChildren;
+                }
+                if self.draw_cached_layer(cache, item_rc, size) {
+                    let previous = cache.rendered.borrow_mut().insert(key, frame);
+                    if previous == Some(frame.wrapping_sub(1)) {
+                        cache.release(item_rc);
+                        let area = LogicalRect::new(self.current_state.offset, size);
+                        cache.direct.borrow_mut().insert(key, (frame + LAYER_CHURN_FRAMES, area));
+                    }
+                }
                 return RenderingResult::ContinueRenderingWithoutChildren;
             }
         }
