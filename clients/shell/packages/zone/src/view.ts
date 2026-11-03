@@ -480,7 +480,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
     pips: page === "onboarding" ? ZONE_ONBOARDING_STEPS.length : 0,
     pip: ZONE_ONBOARDING_STEPS.indexOf(state.onboarding.step),
     // The tabs hold the cursor unless a keyboard or a modal question covers them (GAMES' catalog error leaves them reachable).
-    tabs: ZONE_TABS.map(tab => ({ label: TAB_WORDS[tab], active: tab === nav.tab, focused: tabbed && nav.zone === "tabs" && tab === nav.tabCursor && !keyboard.shown && (!dialog.shown || (onGames && catalog._tag === "Error" && !status.dialog.shown)) })),
+    tabs: ZONE_TABS.map(tab => ({ label: TAB_WORDS[tab], active: tab === nav.tab, focused: tabbed && nav.zone === "tabs" && tab === nav.tabCursor && (!onGames || layer === "none") && !keyboard.shown && (!dialog.shown || (onGames && catalog._tag === "Error" && !status.dialog.shown)) })),
     hints: { back: "Back", confirm: "Confirm" },
     foot: {
       shown: page !== "onboarding" && page !== "paused",
@@ -524,6 +524,8 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
     saveCards: save.cards.map((entry, index) => ({ ...entry, focused: save.marked && index === save.focus && state.identity.flow._tag !== "retired" })),
     saveFocus: save.focus,
     saveMarked: save.marked,
+    // The cursor is on a retired key's buttons: its card stays marked.
+    saveLit: save.marked && state.identity.flow._tag === "retired",
     retired: save.retired,
     qrShown: save.qr !== undefined,
     ...(save.qr === undefined ? {} : { qr: { $image: save.qr } }),

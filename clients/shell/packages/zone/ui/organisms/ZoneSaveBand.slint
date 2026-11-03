@@ -15,6 +15,8 @@ export component ZoneSaveBand {
     in property <[SaveCard]> cards;
     in property <int> at;
     in property <bool> marked;
+    // The cursor stands on the focused retired key's buttons: its card stays marked.
+    in property <bool> lit;
     in property <[Btn]> retired;
     property <length> a: Tokens.a;
     property <length> row-h: retired.length > 0 ? 2 * Tokens.c1 + 12 * a : 0;
@@ -37,7 +39,8 @@ export component ZoneSaveBand {
             width: root.card-w;
             height: root.card-h;
             card: c;
-            focused: root.marked && i == root.at;
+            // The card's own focus (the view's), or its buttons' (`lit`).
+            focused: c.focused || (root.lit && i == root.at);
         }
     }
     if root.marked: ZoneTriangle {

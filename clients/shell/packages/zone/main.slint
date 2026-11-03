@@ -68,6 +68,7 @@ export component Surface inherits Window {
     in property <[SaveCard]> save-cards;
     in property <int> save-focus;
     in property <bool> save-marked;
+    in property <bool> save-lit;
     in property <[Btn]> retired;
     in property <bool> qr-shown;
     in property <image> qr;
@@ -203,6 +204,7 @@ export component Surface inherits Window {
         cards: root.save-cards;
         at: root.save-focus;
         marked: root.save-marked;
+        lit: root.save-lit;
         retired: root.retired;
         qr-shown: root.qr-shown;
         qr: root.qr;

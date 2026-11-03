@@ -7,7 +7,7 @@ import { ZoneSaveData } from "./ZoneSaveData.slint";
 
 export component Band inherits ZonePreview {
     ground: "savedata";
-    ZoneSaveData { x: 0; y: 0; width: parent.width; height: parent.height; tabs: [{ label: "Games" }, { label: "Options" }, { label: "Save data", active: true }]; hints: { back: "Back", confirm: "Confirm" }; foot: { shown: true, time-label: "Time", clock: "21:47", device: "mini", signal: { shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }, build: "korri 0.4.1 · 9a1fb22" }; cards: [{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open" }, { header: "Switch", word: "From backup", emblem: "restore" }, { header: "Switch", word: "Bunker", emblem: "link" }, { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }]; marked: true; }
+    ZoneSaveData { x: 0; y: 0; width: parent.width; height: parent.height; tabs: [{ label: "Games" }, { label: "Options" }, { label: "Save data", active: true }]; hints: { back: "Back", confirm: "Confirm" }; foot: { shown: true, time-label: "Time", clock: "21:47", device: "mini", signal: { shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }, build: "korri 0.4.1 · 9a1fb22" }; cards: [{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open", focused: true }, { header: "Switch", word: "From backup", emblem: "restore" }, { header: "Switch", word: "Bunker", emblem: "link" }, { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }]; marked: true; }
 }
 
 export component Backup inherits ZonePreview {

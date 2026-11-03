@@ -19,6 +19,7 @@ export component ZoneSaveData {
     in property <[SaveCard]> cards;
     in property <int> at;
     in property <bool> marked;
+    in property <bool> lit;
     in property <[Btn]> retired;
     in property <bool> qr-shown;
     in property <image> qr;
@@ -42,6 +43,7 @@ export component ZoneSaveData {
             cards: root.cards;
             at: root.at;
             marked: root.marked;
+            lit: root.lit;
             retired: root.retired;
         }
         // The code takes the largest square the slab's least room leaves (save-data.ts).

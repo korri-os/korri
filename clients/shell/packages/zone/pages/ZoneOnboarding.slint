@@ -86,7 +86,7 @@ export component ZoneOnboarding {
             width: Math.floor(self.height * 0.7 / root.a) * root.a;
             x: (root.width - self.width) / 2;
             y: (shell.stage-h - self.height) / 2;
-            card: { header: "New", word: "Start", emblem: "key", foot: root.new-save.started ? "Ready" : "", foot-kind: "saved" };
+            card: { header: "New", word: "Start", emblem: "key", foot: root.new-save.started ? "Ready" : "", foot-kind: "saved", focused: root.new-save.focused };
             focused: root.new-save.focused;
         }
         ZoneButton {

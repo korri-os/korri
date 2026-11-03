@@ -14,11 +14,15 @@
 //!   reads what is drawn (each focus target's place and label, from its
 //!   accessible properties: `accessible-item-selectable` marks a target,
 //!   `accessible-item-selected` the focused one) and the view's regions
-//!   (`focusRegion`, `focusActive`, `focusPlan`). Inside the focused
+//!   (`focusRegion`, `focusActive`, `focusPlan`). A drawn target is its
+//!   view entry by label; a label that stands in several regions (two rows
+//!   of the same buttons, a card and a button with the same word) is told
+//!   apart by drawing each of its entries alone focused. Inside the focused
 //!   target's region the press must reach the target drawn nearest that way
 //!   (spatial-focus.ts: ahead by more than 1 px, then along + 3 x across);
 //!   with none there, the region's declared exit and its entry rule
-//!   (`first`: top to bottom, then left to right; `active`; `remembered`),
+//!   (`first`: top to bottom, then left to right, by centre; `active`;
+//!   `remembered`),
 //!   or no move without one. The clock is the test's own, stepped past every
 //!   motion before anything is read. This is Zone's own gate until the
 //!   shell's probe judges the same convention.
@@ -257,7 +261,7 @@ fn target_of(element: &i_slint_backend_testing::ElementHandle) -> Target {
 }
 
 /// What is drawn: every focus target, in its place.
-fn drawn(instance: &slint_interpreter::ComponentInstance) -> Vec<Target> {
+fn drawn_targets(instance: &slint_interpreter::ComponentInstance) -> Vec<Target> {
     use i_slint_backend_testing::ElementRoot;
     instance
         .root_element()
@@ -270,17 +274,28 @@ fn drawn(instance: &slint_interpreter::ComponentInstance) -> Vec<Target> {
         .collect()
 }
 
-/// The view's focus entries: label to region, and each region's active label.
+/// The view's focus entries. Each is named `label#k`, the k-th entry with
+/// that label in the view, so two rows of buttons with the same words, or a
+/// card and a button with the same word, stay apart.
 struct Regions {
-    of: Vec<(String, String)>,
+    /// Every entry: its path in the view, label and name.
+    entries: Vec<(Vec<Value>, String, String)>,
+    /// Name to region.
+    of: BTreeMap<String, String>,
+    /// Region to the name of its active entry.
     active: BTreeMap<String, String>,
+    /// The focused entry's name and region.
     focused: Option<(String, String)>,
 }
 
 fn regions(view: &Value) -> Regions {
-    fn walk(value: &Value, out: &mut Regions) {
+    fn walk(value: &Value, path: &mut Vec<Value>, out: &mut Regions, seen: &mut BTreeMap<String, usize>) {
         match value {
-            Value::Array(items) => items.iter().for_each(|item| walk(item, out)),
+            Value::Array(items) => items.iter().enumerate().for_each(|(i, item)| {
+                path.push(json!(i));
+                walk(item, path, out, seen);
+                path.pop();
+            }),
             Value::Object(entry) => {
                 if let Some(region) = entry.get("focusRegion").and_then(Value::as_str) {
                     let label = ["label", "title", "header"]
@@ -292,21 +307,118 @@ fn regions(view: &Value) -> Regions {
                         (Some(seat), Some(name)) => format!("{seat} {name}"),
                         _ => label,
                     };
-                    out.of.push((label.clone(), region.to_owned()));
+                    let k = seen.entry(label.clone()).or_default();
+                    *k += 1;
+                    let name = format!("{label}#{k}");
+                    out.entries.push((path.clone(), label, name.clone()));
+                    out.of.insert(name.clone(), region.to_owned());
                     if entry.get("focusActive").and_then(Value::as_bool) == Some(true) {
-                        out.active.insert(region.to_owned(), label.clone());
+                        out.active.insert(region.to_owned(), name.clone());
                     }
                     if entry.get("focused").and_then(Value::as_bool) == Some(true) {
-                        out.focused = Some((label, region.to_owned()));
+                        out.focused = Some((name, region.to_owned()));
                     }
                 }
-                entry.values().for_each(|inner| walk(inner, out));
+                entry.iter().for_each(|(key, inner)| {
+                    path.push(json!(key));
+                    walk(inner, path, out, seen);
+                    path.pop();
+                });
             }
             _ => {}
         }
     }
-    let mut out = Regions { of: Vec::new(), active: BTreeMap::new(), focused: None };
-    walk(view, &mut out);
+    let mut out = Regions { entries: Vec::new(), of: BTreeMap::new(), active: BTreeMap::new(), focused: None };
+    walk(view, &mut Vec::new(), &mut out, &mut BTreeMap::new());
+    // A label several entries of one region carry: `label#*`, any of them.
+    for (_, label, name) in &out.entries {
+        if !name.ends_with("#1") {
+            let region = out.of[name].clone();
+            let one = out.entries.iter().filter(|(_, l, _)| l == label).all(|(_, _, n)| out.of[n] == region);
+            if one {
+                out.of.insert(format!("{label}#*"), region);
+            }
+        }
+    }
+    out
+}
+
+/// Two names of the same target: equal, or the same label where one is `label#*`.
+fn same(a: &str, b: &str) -> bool {
+    let label = |n: &str| n.rsplit_once('#').map_or(n.to_owned(), |(l, _)| l.to_owned());
+    a == b || ((a.ends_with("#*") || b.ends_with("#*")) && label(a) == label(b))
+}
+
+/// Every `focused` in a view, false.
+fn unfocused(view: &Value) -> Value {
+    match view {
+        Value::Array(items) => Value::Array(items.iter().map(unfocused).collect()),
+        Value::Object(entry) => Value::Object(
+            entry.iter().map(|(key, inner)| (key.clone(), if key == "focused" { json!(false) } else { unfocused(inner) })).collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// Each drawn target's view entry, by name. A label one entry and one
+/// drawn target carry is matched by it; otherwise the walk draws the view
+/// with each entry of that label alone focused and sees which target is
+/// drawn selected (then draws the view again as it was).
+fn names(
+    targets: &[Target],
+    known: &Regions,
+    view: &Value,
+    instance: &slint_interpreter::ComponentInstance,
+    binder: &mut view::Binder,
+    images: &mut ImageCache,
+) -> Vec<String> {
+    let mut out: Vec<String> = targets.iter().map(|t| format!("{}#?", t.label)).collect();
+    let mut labels: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (i, (_, label, _)) in known.entries.iter().enumerate() {
+        labels.entry(label.as_str()).or_default().push(i);
+    }
+    let mut lit = false;
+    for (label, entries) in labels {
+        let drawn: Vec<usize> = (0..targets.len()).filter(|&i| targets[i].label == label).collect();
+        if entries.len() == 1 {
+            for &i in &drawn {
+                out[i] = known.entries[entries[0]].2.clone();
+            }
+            continue;
+        }
+        let star = format!("{label}#*");
+        if known.of.contains_key(&star) {
+            for &i in &drawn {
+                out[i] = star.clone();
+            }
+            continue;
+        }
+        // The label stands in several regions: light each entry alone.
+        for &e in &entries {
+            let mut alone = unfocused(view);
+            let mut at = &mut alone;
+            for step in &known.entries[e].0 {
+                at = match step {
+                    Value::String(key) => &mut at[key.as_str()],
+                    Value::Number(i) => &mut at[i.as_u64().unwrap() as usize],
+                    _ => unreachable!(),
+                };
+            }
+            at["focused"] = json!(true);
+            binder.apply(instance, &stripped(&alone), images).unwrap();
+            lit = true;
+            let now = drawn_targets(instance);
+            if let Some(i) = now.iter().position(|t| t.selected) {
+                // The same element: the i-th target drawn now is the i-th before.
+                if i < out.len() && now.len() == targets.len() {
+                    out[i] = known.entries[e].2.clone();
+                }
+            }
+        }
+    }
+    if lit {
+        binder.apply(instance, &stripped(view), images).unwrap();
+    }
     out
 }
 
@@ -326,12 +438,14 @@ fn stripped(view: &Value) -> Value {
 }
 
 /// spatial-focus.ts's choice: ahead by more than 1 px, then along + 3 x across.
-fn nearest(from: &Target, reach: &[Target], direction: &str) -> Option<Target> {
+/// The index in `reach` of the target chosen; the first on a tie.
+fn nearest(from: &Target, reach: &[Target], direction: &str) -> Option<usize> {
     let (fx, fy) = from.centre();
     reach
         .iter()
-        .filter(|t| t.key() != from.key() && t.w > 0.0)
-        .filter_map(|t| {
+        .enumerate()
+        .filter(|(_, t)| t.key() != from.key() && t.w > 0.0)
+        .filter_map(|(i, t)| {
             let (cx, cy) = t.centre();
             let (dx, dy) = (cx - fx, cy - fy);
             let (along, across) = match direction {
@@ -340,10 +454,10 @@ fn nearest(from: &Target, reach: &[Target], direction: &str) -> Option<Target> {
                 "up" => (-dy, dx.abs()),
                 _ => (dy, dx.abs()),
             };
-            (along > 1.0).then(|| (along + across * 3.0, t))
+            (along > 1.0).then_some((along + across * 3.0, i))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, t)| t.clone())
+        .map(|(_, i)| i)
 }
 
 /// A mini korrid for the walk: the scenario's model, the cursor window over
@@ -439,6 +553,10 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
         if NO_FOCUS.contains(&name.as_str()) {
             continue;
         }
+        // ZONE_GATE_ONLY=a,b walks only those scenarios (while working on them).
+        if std::env::var("ZONE_GATE_ONLY").is_ok_and(|only| !only.split(',').any(|o| o == name)) {
+            continue;
+        }
         let scenario: Value =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let steps: Vec<String> = scenario["steps"]
@@ -475,6 +593,9 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
             instance.show().unwrap();
             let mut binder = view::Binder::new(&definition);
             let mut images = ImageCache::new(&root);
+            // Draws a view with one entry alone focused, to tell apart targets with the same label.
+            let mut matcher = view::Binder::new(&definition);
+            let mut matcher_images = ImageCache::new(&root);
             let deliver = |engine: &mut engine::Engine, korri: &mut Korri, message: Value| {
                 let mut queue = vec![message];
                 while let Some(message) = queue.pop() {
@@ -528,26 +649,41 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
             let mut remembered: BTreeMap<String, String> = BTreeMap::new();
             for (direction, times) in [("down", 8), ("right", 6), ("up", 8), ("left", 6)] {
                 for n in 0..times {
-                    let targets = drawn(&instance);
+                    let targets = drawn_targets(&instance);
                     let known = regions(&view);
-                    let region_of = |t: &Target| known.of.iter().filter(|(label, _)| *label == t.label).map(|(_, r)| r.clone()).collect::<Vec<_>>();
-                    let from = targets.iter().find(|t| t.selected).cloned();
+                    let named = names(&targets, &known, &view, &instance, &mut matcher, &mut matcher_images);
+                    let region_of = |i: usize| known.of.get(&named[i]).cloned();
+                    let from = targets.iter().position(|t| t.selected);
                     let plan = view.get("focusPlan").cloned().unwrap_or(json!({}));
                     deliver(&mut engine, &mut korri, press(direction));
                     view = check(&mut engine, &format!("{direction}{n}"));
-                    let (Some(from), Some((_, region))) = (from, known.focused.clone()) else { continue };
-                    remembered.insert(region.clone(), from.label.clone());
-                    let inside: Vec<Target> = targets.iter().filter(|t| region_of(t).contains(&region)).cloned().collect();
-                    let want = match nearest(&from, &inside, direction) {
-                        Some(t) => format!("{} (in {region})", t.label),
+                    let (Some(from), Some((focused, region))) = (from, known.focused.clone()) else { continue };
+                    if !same(&named[from], &focused) {
+                        wrong_way.push(format!("{name} {width}x{height}: {direction}{n}: the drawn focus {:?} is not the view's {focused:?}", named[from]));
+                        if std::env::var_os("ZONE_GATE_DEBUG").is_some() {
+                            for (i, t) in targets.iter().enumerate() {
+                                eprintln!("  drawn {} at ({:.0},{:.0}) {}x{} {}", named[i], t.x, t.y, t.w, t.h, if t.selected { "SELECTED" } else { "" });
+                            }
+                            eprintln!("  view {:?}", known.of);
+                        }
+                        continue;
+                    }
+                    remembered.insert(region.clone(), named[from].clone());
+                    let inside: Vec<usize> = (0..targets.len()).filter(|&i| region_of(i).as_ref() == Some(&region)).collect();
+                    let want = match nearest(&targets[from], &inside.iter().map(|&i| targets[i].clone()).collect::<Vec<_>>(), direction) {
+                        Some(t) => format!("{} (in {region})", named[inside[t]]),
                         None => match plan.pointer(&format!("/{region}/{direction}")) {
-                            None => format!("{} (stays)", from.label),
+                            None => format!("{} (stays)", named[from]),
                             Some(exit) => {
                                 let to = exit["to"].as_str().unwrap_or("").to_owned();
                                 let entry = exit["entry"].as_str().unwrap_or("");
-                                let mut there: Vec<Target> = targets.iter().filter(|t| region_of(t).contains(&to)).cloned().collect();
-                                there.sort_by(|a, b| a.y.total_cmp(&b.y).then(a.x.total_cmp(&b.x)));
-                                let first = there.first().map(|t| t.label.clone()).unwrap_or_default();
+                                // `first`: top to bottom, then left to right, by the box's centre.
+                                let mut there: Vec<usize> = (0..targets.len()).filter(|&i| region_of(i).as_ref() == Some(&to)).collect();
+                                there.sort_by(|&a, &b| {
+                                    let ((ax, ay), (bx, by)) = (targets[a].centre(), targets[b].centre());
+                                    ay.round().total_cmp(&by.round()).then(ax.round().total_cmp(&bx.round()))
+                                });
+                                let first = there.first().map(|&i| named[i].clone()).unwrap_or_default();
                                 let label = match entry {
                                     "active" => known.active.get(&to).cloned().unwrap_or_default(),
                                     "remembered" => remembered.get(&to).cloned().unwrap_or(first),
@@ -558,11 +694,12 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                         },
                     };
                     directions += 1;
-                    let after = regions(&view).focused.map(|(label, _)| label).unwrap_or_else(|| "nothing".into());
-                    if !want.starts_with(&format!("{after} (")) {
+                    let after = regions(&view).focused.map(|(name, _)| name).unwrap_or_else(|| "nothing".into());
+                    let wanted = want.split(" (").next().unwrap_or_default();
+                    if !same(wanted, &after) {
                         wrong_way.push(format!(
                             "{name} {width}x{height}: {direction}{n} from {:?} in {region} went to {after:?}, want {want}",
-                            from.label
+                            named[from]
                         ));
                     }
                 }
@@ -570,8 +707,10 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
             instance.hide().unwrap();
         }
     }
-    assert!(checked > 1000, "only {checked} frames checked");
-    assert!(directions > 1000, "only {directions} directions checked");
+    if std::env::var("ZONE_GATE_ONLY").is_err() {
+        assert!(checked > 1000, "only {checked} frames checked");
+        assert!(directions > 1000, "only {directions} directions checked");
+    }
     failures.extend(wrong_way);
     assert!(
         failures.is_empty(),
