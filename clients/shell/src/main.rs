@@ -302,6 +302,7 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
     let _stats = arguments.stats.then(|| {
         let timer = slint::Timer::default();
         let last = RefCell::new((Instant::now(), frames.get()));
+        let frames = frames.clone();
         timer.start(
             slint::TimerMode::Repeated,
             Duration::from_secs(5),
@@ -310,8 +311,9 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
                 let now = (Instant::now(), frames.get());
                 let seconds = now.0.duration_since(then).as_secs_f64();
                 let heap = SHELL.with(|s| s.borrow().as_ref().map_or(0, |s| s.heap_bytes()));
+                let (p50, p95, max) = frames.take_intervals().unwrap_or_default();
                 eprintln!(
-                    "SHELL_STATS fps={:.3} frames={} seconds={seconds:.3} heap_bytes={heap}",
+                    "SHELL_STATS fps={:.3} frames={} seconds={seconds:.3} heap_bytes={heap} interval_ms_p50={p50:.1} p95={p95:.1} max={max:.1}",
                     (now.1 - count) as f64 / seconds,
                     now.1 - count
                 );

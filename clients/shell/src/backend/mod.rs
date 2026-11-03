@@ -60,14 +60,41 @@ impl Placement {
 
 /// Counts every frame drawn by any window, for `--stats`.
 #[derive(Clone, Default)]
-pub struct FrameCounter(Rc<std::cell::Cell<u64>>);
+pub struct FrameCounter(Rc<std::cell::Cell<u64>>, Rc<std::cell::RefCell<Intervals>>);
+
+/// Times between frames, for `--stats`: a frame that takes 4 ms to draw but
+/// arrives every 33 ms waits somewhere else (present, compositor, vsync).
+#[derive(Default)]
+struct Intervals {
+    last: Option<std::time::Instant>,
+    millis: Vec<f32>,
+}
 
 impl FrameCounter {
     pub fn add(&self) {
         self.0.set(self.0.get() + 1);
+        let mut intervals = self.1.borrow_mut();
+        let now = std::time::Instant::now();
+        if let Some(last) = intervals.last.replace(now) {
+            let ms = now.duration_since(last).as_secs_f32() * 1000.0;
+            if intervals.millis.len() < 4096 {
+                intervals.millis.push(ms);
+            }
+        }
     }
     pub fn get(&self) -> u64 {
         self.0.get()
+    }
+    /// p50, p95 and max of the frame intervals since the last call, in ms.
+    pub fn take_intervals(&self) -> Option<(f32, f32, f32)> {
+        let mut intervals = self.1.borrow_mut();
+        let mut values = std::mem::take(&mut intervals.millis);
+        if values.is_empty() {
+            return None;
+        }
+        values.sort_by(f32::total_cmp);
+        let at = |p: f32| values[((values.len() - 1) as f32 * p).round() as usize];
+        Some((at(0.5), at(0.95), *values.last().expect("not empty")))
     }
 }
 
