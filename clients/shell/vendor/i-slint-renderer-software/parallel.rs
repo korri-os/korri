@@ -23,9 +23,13 @@ use std::sync::Arc;
 /// One recorded draw call. Every field is plain data, or shared data
 /// (`SharedBufferData`, `SharedVector`, `'static` texture slices) that the
 /// replay only reads: no reference count is touched off the UI thread.
+#[derive(Clone)]
 pub(super) enum Op {
     /// The window background for the dirty region.
     Background(Color),
+    /// Restrict the ops that follow to this rectangle, or lift the restriction: a cached
+    /// layer's ops inside its clip.
+    SetClip(Option<PhysicalRect>),
     Texture(PhysicalRect, SceneTexture<'static>),
     SharedTexture(PhysicalRect, SharedBufferCommand),
     Rectangle(PhysicalRect, PremultipliedRgbaColor),
@@ -51,6 +55,52 @@ pub(super) enum Op {
         join: i_slint_core::items::LineJoin,
         miter_limit: f32,
     },
+}
+
+impl Op {
+    /// The op drawn `delta` pixels further.
+    pub(super) fn translated(&self, delta: euclid::Vector2D<i16, PhysicalPx>) -> Op {
+        let mut op = self.clone();
+        match &mut op {
+            Op::Background(_) => {}
+            Op::SetClip(clip) => {
+                if let Some(clip) = clip {
+                    *clip = clip.translate(delta);
+                }
+            }
+            Op::Texture(geometry, _)
+            | Op::SharedTexture(geometry, _)
+            | Op::Rectangle(geometry, _)
+            | Op::RoundedRectangle(geometry, _)
+            | Op::LinearGradient(geometry, _)
+            | Op::RadialGradient(geometry, _)
+            | Op::ConicGradient(geometry, _) => *geometry = geometry.translate(delta),
+            #[cfg(feature = "path")]
+            Op::FilledPath { path, clip, .. } | Op::StrokedPath { path, clip, .. } => {
+                *path = path.translate(delta);
+                *clip = clip.translate(delta);
+            }
+        }
+        op
+    }
+
+    /// The pixels the op can touch.
+    pub(super) fn bounds(&self) -> PhysicalRect {
+        match self {
+            Op::Background(_) | Op::SetClip(_) => {
+                PhysicalRect::new(PhysicalPoint::new(i16::MIN / 2, i16::MIN / 2), PhysicalSize::new(i16::MAX, i16::MAX))
+            }
+            Op::Texture(geometry, _)
+            | Op::SharedTexture(geometry, _)
+            | Op::Rectangle(geometry, _)
+            | Op::RoundedRectangle(geometry, _)
+            | Op::LinearGradient(geometry, _)
+            | Op::RadialGradient(geometry, _)
+            | Op::ConicGradient(geometry, _) => *geometry,
+            #[cfg(feature = "path")]
+            Op::FilledPath { clip, .. } | Op::StrokedPath { clip, .. } => *clip,
+        }
+    }
 }
 
 /// Ops published to the band threads at a time.
@@ -209,6 +259,18 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
     /// Draw one recorded op, as the matching `ProcessScene` call would have.
     pub(super) fn replay(&mut self, op: &Op) {
         match op {
+            Op::SetClip(Some(clip)) => {
+                let whole = self.unclipped.take().unwrap_or_else(|| self.dirty_region.clone());
+                self.dirty_region = whole.intersection(clip);
+                self.unclipped = Some(whole);
+                self.dirty_range_cache.clear();
+            }
+            Op::SetClip(None) => {
+                if let Some(whole) = self.unclipped.take() {
+                    self.dirty_region = whole;
+                    self.dirty_range_cache.clear();
+                }
+            }
             Op::Background(color) => {
                 let mut bg = <B::TargetPixel>::background();
                 TargetPixel::blend(&mut bg, (*color).into());
@@ -347,6 +409,7 @@ fn band_renderer<'b, 'a, T: TargetPixel>(
         dirty_region,
         scale_factor,
         recording: None,
+        unclipped: None,
     })
 }
 

@@ -312,6 +312,7 @@ pub enum SceneCommand {
     },
 }
 
+#[derive(Clone)]
 pub struct SceneTexture<'a> {
     /// This should have a size so that the entire slice is ((height - 1) * pixel_stride + width) * bpp
     pub data: &'a [u8],
@@ -458,6 +459,7 @@ impl SharedBufferData {
     }
 }
 
+#[derive(Clone)]
 pub struct SharedBufferCommand {
     pub buffer: SharedBufferData,
     /// The source rectangle that is mapped into this command span
@@ -511,7 +513,7 @@ pub fn compute_range_in_buffer(
     start..end
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RoundedRectangle {
     pub radius: PhysicalBorderRadius,
     /// the border's width
@@ -532,7 +534,7 @@ pub struct RoundedRectangle {
 /// depending of `flags & 0b1`
 ///  - if false: on the left side, goes from `start` to 1, on the right side, goes from 0 to `1-start`
 ///  - if true: on the left side, goes from 0 to `1-start`, on the right side, goes from `start` to `1`
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LinearGradientCommand {
     pub color1: PremultipliedRgbaColor,
     pub color2: PremultipliedRgbaColor,
@@ -554,7 +556,7 @@ pub struct LinearGradientCommand {
 /// Unlike LinearGradientCommand, radial gradients don't have clipping fields
 /// because they radiate uniformly in all directions from the center point.
 /// The gradient is naturally clipped by the rectangle bounds during rendering.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RadialGradientCommand {
     /// The gradient stops (colors and positions)
     pub stops: i_slint_core::SharedVector<i_slint_core::graphics::GradientStop>,
@@ -572,7 +574,7 @@ pub struct RadialGradientCommand {
 /// rectangle being drawn. The angle positions are specified in the gradient stops,
 /// where 0 = 0 degrees (north) and 1 = 360 degrees. Colors are interpolated based
 /// on the angle from north, going clockwise.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConicGradientCommand {
     /// The gradient stops (colors and normalized angle positions)
     /// Position 0 = 0 degrees (north), 1 = 360 degrees

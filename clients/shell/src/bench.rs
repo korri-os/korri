@@ -45,6 +45,12 @@ pub struct Options {
     pub full: bool,
     /// Rasterising threads; `None` keeps the renderer's default (online cores, at most 4).
     pub threads: Option<usize>,
+    /// The property system's equality cut-off (vendor/README.md); `false` evaluates every
+    /// dependent binding again, as upstream Slint.
+    pub cutoff: bool,
+    /// The view binder keeps the models of changed arrays (`view::Binder`); `false` sets a
+    /// new model for every changed array, as before.
+    pub reuse_models: bool,
 }
 
 const FRAME: Duration = Duration::from_nanos(16_666_667);
@@ -182,6 +188,14 @@ pub fn parse_presses(text: &str) -> Result<Vec<Button>> {
 }
 
 pub fn run(options: Options) -> Result<String> {
+    run_captured(options, false).map(|(report, _)| report)
+}
+
+/// `run`, and with `capture` every reported frame's pixels (premultiplied RGBA, 4 bytes a
+/// pixel). Each call needs a thread of its own: Slint's platform and clock are per thread.
+pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<u8>>)> {
+    slint::platform::software_renderer::SoftwareRenderer::new().set_equality_cutoff(options.cutoff);
+    let mut captured = Vec::new();
     let kind = if options.full {
         RepaintBufferType::NewBuffer
     } else {
@@ -229,6 +243,7 @@ pub fn run(options: Options) -> Result<String> {
         .update(&messages::resized(logical.width, logical.height))
         .map_err(|v| anyhow!("logic: {v}"))?;
     let mut binder = Binder::new(&views.surface);
+    binder.set_reuse_models(options.reuse_models);
     let mut images = ImageCache::new(&package.dir);
     let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
     binder.apply(&surface, &view, &mut images)?;
@@ -394,6 +409,14 @@ pub fn run(options: Options) -> Result<String> {
             }
         });
         frame.total = started.elapsed().as_secs_f64() * 1e6;
+        if n >= warm && capture {
+            captured.push(
+                buffer
+                    .iter()
+                    .flat_map(|p| [p.red, p.green, p.blue, p.alpha])
+                    .collect(),
+            );
+        }
         if n >= warm {
             if log_frames {
                 eprintln!(
@@ -424,7 +447,7 @@ pub fn run(options: Options) -> Result<String> {
     if profile {
         out += &profile_report(&frames, &raster_sizes);
     }
-    Ok(out)
+    Ok((out, captured))
 }
 
 type ProfilePhase = (&'static str, fn(&Profile) -> f64);

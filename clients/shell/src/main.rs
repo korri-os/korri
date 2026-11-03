@@ -207,6 +207,8 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
             preferences: arguments.preferences.clone(),
             full: arguments.full,
             threads: arguments.threads,
+            cutoff: std::env::var_os("KORRI_BENCH_NO_CUTOFF").is_none(),
+            reuse_models: std::env::var_os("KORRI_BENCH_NEW_MODELS").is_none(),
         })?;
         print!("{report}");
         return Ok(());
