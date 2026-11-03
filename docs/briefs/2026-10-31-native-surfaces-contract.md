@@ -290,3 +290,16 @@ a user would expect and that every design follows intrinsic design values."
 - How a surface declares regions and exits to the probe is set by the shell (a
   generic convention, identical for every surface). Surfaces never write
   their own judge.
+
+## 9. Amendment A3 (owner, 2026-11-02): no design compromise for hardware
+
+- Every surface runs as designed at 60 fps or more on every device Korri
+  supports, idle and while the person presses buttons.
+- A surface never trims motion, effects or detail to fit weaker hardware.
+  Performance is the shell's and the code's job: the renderer, the shell, and
+  each package's logic and view cost.
+- The pass mark in section 4 becomes: 0 frames over 16.7 ms, idle and with
+  presses, on the RG353M and the RG35XX SP, measured with `korri-shell bench`
+  on the device.
+- The RG353M's 61 % CPU default is removed (owner: "the artificial cap was a
+  mistake in the first place").
