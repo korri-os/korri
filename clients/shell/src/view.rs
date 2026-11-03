@@ -316,6 +316,8 @@ pub fn check(view: &Json, types: &BTreeMap<String, Type>, images: &mut ImageCach
 pub struct Binder {
     types: BTreeMap<String, Type>,
     last: HashMap<String, Json>,
+    /// The last `apply`'s time converting JSON to Slint values, and setting them.
+    pub timing: (std::time::Duration, std::time::Duration),
 }
 
 impl Binder {
@@ -323,6 +325,7 @@ impl Binder {
         Self {
             types: declared(definition),
             last: HashMap::new(),
+            timing: Default::default(),
         }
     }
 
@@ -334,6 +337,7 @@ impl Binder {
     ) -> Result<usize> {
         let fields = view.as_object().context("view must return an object")?;
         let mut changed = 0;
+        self.timing = Default::default();
         for (name, json) in fields {
             if json.is_null() || reserved(name, true) {
                 continue;
@@ -346,11 +350,15 @@ impl Binder {
                 .types
                 .get(&property)
                 .with_context(|| format!("undeclared property {property}"))?;
+            let started = std::time::Instant::now();
             let previous = component.get_property(&property)?;
             let value = convert(json, ty, &previous, images, &property)?;
+            let converted = std::time::Instant::now();
             component
                 .set_property(&property, value)
                 .with_context(|| format!("set {property}"))?;
+            self.timing.0 += converted - started;
+            self.timing.1 += converted.elapsed();
             self.last.insert(property, json.clone());
             changed += 1;
         }

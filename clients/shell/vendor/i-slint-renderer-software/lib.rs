@@ -475,6 +475,9 @@ pub struct SoftwareRenderer {
     /// The window size the layer cache was filled for.
     #[cfg(feature = "std")]
     layer_cache_size: Cell<PhysicalSize>,
+    /// The last render's phases: dirty-region walk and rasterisation.
+    #[cfg(feature = "std")]
+    last_phases: Cell<(std::time::Duration, std::time::Duration)>,
 }
 
 impl Default for SoftwareRenderer {
@@ -492,6 +495,8 @@ impl Default for SoftwareRenderer {
             layer_cache: Default::default(),
             #[cfg(feature = "std")]
             layer_cache_size: Default::default(),
+            #[cfg(feature = "std")]
+            last_phases: Default::default(),
         }
     }
 }
@@ -534,6 +539,14 @@ impl SoftwareRenderer {
     #[doc(hidden)]
     pub fn dirty_region_walked_items(&self) -> usize {
         self.partial_rendering_state.walked_items()
+    }
+
+    /// The last render's time in the dirty-region walk (property and layout
+    /// evaluation included) and in rasterisation.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_frame_phases(&self) -> (std::time::Duration, std::time::Duration) {
+        self.last_phases.get()
     }
 
     /// Returns the kind of buffer that must be passed to  [`Self::render`]
@@ -667,6 +680,8 @@ impl SoftwareRenderer {
         window_inner
             .draw_contents(|components, post_render| {
                 let logical_size = (size.cast() / factor).cast();
+                #[cfg(feature = "std")]
+                let walk_started = std::time::Instant::now();
 
                 match self.repaint_buffer_type.get() {
                     RepaintBufferType::NewBuffer => {
@@ -693,6 +708,8 @@ impl SoftwareRenderer {
                     }
                 }
 
+                #[cfg(feature = "std")]
+                let (walk, raster_started) = (walk_started.elapsed(), std::time::Instant::now());
                 let rotation = RotationInfo { orientation: rotation, screen_size: size };
                 let screen_rect = PhysicalRect::from_size(size);
                 let mut i = renderer.dirty_region.iter().filter_map(|r| {
@@ -746,6 +763,8 @@ impl SoftwareRenderer {
                     post_render(&mut renderer.actual_renderer);
                 }
 
+                #[cfg(feature = "std")]
+                self.last_phases.set((walk, raster_started.elapsed()));
                 self.measure_frame_rendered(&mut renderer);
 
                 dirty_region

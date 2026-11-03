@@ -3,6 +3,7 @@
 //! `docs/briefs/2026-10-31-native-surfaces-contract.md`.
 
 pub mod backend;
+pub mod bench;
 pub mod catalog;
 pub mod config;
 pub mod engine;
