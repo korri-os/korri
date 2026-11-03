@@ -11,7 +11,7 @@
 //! with the one shaping function every path must share.
 
 use super::layout::RetainedLineBreaking;
-use super::shaping::TextParagraph;
+use super::shaping::{ShapingInputs, TextParagraph};
 use super::*;
 
 /// Shaped paragraphs together with the wrap mode they were shaped with.
@@ -25,6 +25,8 @@ use super::*;
 /// handled by the cache as a whole.
 struct CachedParagraphs {
     wrap: TextWrap,
+    /// What the paragraphs were shaped from.
+    inputs: ShapingInputs,
     /// What [`super::layout::layout`] derived when it last broke these paragraphs, so an
     /// unchanged-input call can skip the breaking. `None` after a reshape (fresh entries
     /// start without one) and while checked out through the guard.
@@ -212,20 +214,25 @@ impl Drop for CachedParagraphsGuard<'_> {
 /// paragraphs shaped for the same wrap mode and none of the properties `shape` read have changed
 /// since. Without a cache or item it just shapes, so the caller doesn't need to special-case that.
 ///
-/// `shape` runs inside the entry's dependency tracker, so everything it reads (the text and the
+/// `inputs` runs inside the entry's dependency tracker, so everything it reads (the text and the
 /// font request, at least) invalidates the entry when it changes. Properties evaluated by the
 /// caller before this point are clean by then and thus can't re-enter here.
+///
+/// A property is marked dirty when anything it depends on changes, also when its own value then
+/// comes out the same (a clamped font size under an animated size, for example). So an
+/// invalidated entry reads its inputs again and keeps its paragraphs, and their line breaking,
+/// when the inputs are equal; it only shapes again when one of them differs.
 pub(super) fn cached_paragraphs<'a>(
     cache: Option<&'a TextLayoutCache>,
     item_rc: Option<&crate::item_tree::ItemRc>,
     wrap: TextWrap,
     window: &crate::api::Window,
     font_context: &mut parley::FontContext,
-    shape: &dyn Fn(&mut parley::FontContext) -> Vec<TextParagraph>,
+    inputs: &dyn Fn() -> ShapingInputs,
 ) -> CachedParagraphsGuard<'a> {
     let Some((cache, item_rc)) = cache.zip(item_rc) else {
         return CachedParagraphsGuard {
-            paragraphs: Some(shape(font_context)),
+            paragraphs: Some(inputs().shape(font_context)),
             line_breaking: None,
             container: None,
         };
@@ -254,12 +261,34 @@ pub(super) fn cached_paragraphs<'a>(
     }
 
     let mut entry = cache.inner.get_or_update_cache_entry_ref(item_rc, || {
+        let inputs = inputs();
+        // The entry (if any) is not checked out while its tracker evaluates this closure.
+        let unchanged = cache
+            .inner
+            .with_entry_mut(item_rc, |entry| {
+                if !entry.inputs.same_as(&inputs) {
+                    return None;
+                }
+                let paragraphs = entry.paragraphs.take()?;
+                Some((paragraphs, entry.line_breaking.take()))
+            })
+            .flatten();
+        if let Some((paragraphs, line_breaking)) = unchanged {
+            return CachedParagraphs {
+                wrap,
+                inputs,
+                paragraphs: Some(paragraphs),
+                line_breaking,
+                last_used: 0, // stamped right below
+            };
+        }
         #[cfg(feature = "testing")]
         cache.cache_miss_count.set(cache.cache_miss_count.get() + 1);
         cache.entry_count_estimate.set(cache.entry_count_estimate.get() + 1);
         CachedParagraphs {
             wrap,
-            paragraphs: Some(shape(font_context)),
+            paragraphs: Some(inputs.shape(font_context)),
+            inputs,
             line_breaking: None,
             last_used: 0, // stamped right below, for both a hit and this miss
         }

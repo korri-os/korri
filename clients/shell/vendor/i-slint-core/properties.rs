@@ -1366,6 +1366,12 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
         r
     }
 
+    /// Mark the tracker clean without evaluating anything: it keeps the dependencies of its
+    /// last evaluation, so it becomes dirty again when one of them changes again.
+    pub fn acknowledge_dirty(self: Pin<&Self>) {
+        self.holder.dirty.set(false);
+    }
+
     /// Call [`Self::evaluate`] if and only if it is dirty.
     /// But register a dependency in any case.
     pub fn evaluate_if_dirty<R>(self: Pin<&Self>, f: impl FnOnce() -> R) -> Option<R> {

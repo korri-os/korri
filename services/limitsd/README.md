@@ -108,8 +108,7 @@ cpuidle disables, never CPU governors or frequency limits.
 `services.korri.limits` exposes `enable`, read-only `socketPath`,
 `defaults.cpu.{min,max}`, `defaults.gpu.{min,max}`, `defaults.governor`, and
 `gpuDevfreqNodes`. CPU/GPU defaults are 0/100. Governor and GPU node defaults
-use the existing `services.korri.clockGovernor` hardware facts. Only the RG353M
-sets a different CPU default (61% max). Runtime device values live in korrid;
+use the existing `services.korri.clockGovernor` hardware facts. Runtime device values live in korrid;
 limitsd does not persist a competing copy.
 
 Run `nix run .#limitsd-check` for Rust tests, format and clippy checks.

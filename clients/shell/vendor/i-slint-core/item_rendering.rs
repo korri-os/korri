@@ -107,6 +107,39 @@ impl<T> ItemCache<T> {
             .and_then(|entry| callback(&entry.data))
     }
 
+    /// Whether the entry of `item_rc` is dirty: `None` without an entry.
+    pub fn is_dirty(&self, item_rc: &ItemRc) -> Option<bool> {
+        self.with_tracker(item_rc, |tracker| tracker.is_dirty())
+    }
+
+    /// Mark the entry of `item_rc` clean, keeping its data and its dependencies: it becomes
+    /// dirty again when one of them changes again (see `PropertyTracker::acknowledge_dirty`).
+    pub fn acknowledge_dirty(&self, item_rc: &ItemRc) {
+        self.with_tracker(item_rc, |tracker| tracker.acknowledge_dirty());
+    }
+
+    fn with_tracker<U>(
+        &self,
+        item_rc: &ItemRc,
+        f: impl FnOnce(Pin<&crate::properties::PropertyTracker>) -> U,
+    ) -> Option<U> {
+        let component = &(**item_rc.item_tree()) as *const _;
+        let map = self.map.borrow();
+        let tracker = map.get(&component)?.get(&item_rc.index())?.dependency_tracker.as_ref()?;
+        Some(f(tracker.as_ref()))
+    }
+
+    /// Calls `callback` with the entry of `item_rc`, if there is one, mutably. The cache stays
+    /// borrowed during the call, so `callback` must not evaluate properties.
+    pub fn with_entry_mut<U>(&self, item_rc: &ItemRc, callback: impl FnOnce(&mut T) -> U) -> Option<U> {
+        let component = &(**item_rc.item_tree()) as *const _;
+        self.map
+            .borrow_mut()
+            .get_mut(&component)
+            .and_then(|per_component_entries| per_component_entries.get_mut(&item_rc.index()))
+            .map(|entry| callback(&mut entry.data))
+    }
+
     /// Clears the cache if the window's scale factor has changed since the last call.
     pub fn clear_cache_if_scale_factor_changed(&self, window: &crate::api::Window) {
         if self.window_scale_factor_tracker.is_dirty() {

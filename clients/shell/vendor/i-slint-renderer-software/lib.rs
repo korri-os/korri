@@ -22,6 +22,8 @@ mod minimal_software_window;
 #[cfg(feature = "path")]
 mod path;
 mod scene;
+#[cfg(feature = "std")]
+mod parallel;
 
 use self::fonts::GlyphRenderer;
 pub use self::minimal_software_window::MinimalSoftwareWindow;
@@ -426,16 +428,57 @@ struct CachedLayer {
     /// The image's top-left corner relative to the layer item's origin, in physical pixels.
     origin: euclid::Point2D<i32, PhysicalPx>,
     /// The fractional part of the layer's physical screen position the image was rendered at.
-    /// The children are positioned with sub-pixel precision, so a layer that moved by a fraction
-    /// of a pixel is rendered again rather than shifted.
+    /// The children are positioned with sub-pixel precision. A layer drawn at another phase is
+    /// shifted by whole pixels while it moves, and rendered again at its exact phase once it
+    /// stops (see `SceneBuilder::draw_cached_layer`).
     phase: euclid::Vector2D<f32, PhysicalPx>,
+    /// Where the layer was last drawn shifted (its physical screen offset), if it was.
+    shifted_at: Cell<Option<euclid::Point2D<f32, PhysicalPx>>>,
     image: SharedPixelBuffer<Rgba8Pixel>,
 }
 
 /// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
 /// children's rendering read changes, and cleared when the scale factor or window size changes.
 #[cfg(feature = "std")]
-type LayerCache = i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>;
+#[derive(Default)]
+struct LayerCache {
+    items: i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>,
+    /// Screen areas of layers drawn shifted this frame: drawn again next frame, so a layer that
+    /// stopped moving is rendered at its exact phase.
+    shifted: RefCell<DirtyRegion>,
+    /// This frame's layer images: how many were rendered, their pixels, and the time.
+    renders: Cell<(u32, u64, std::time::Duration)>,
+    /// Whether this frame rendered a layer image: a frame renders one, so that the end of an
+    /// animation does not render every layer at once.
+    rendering: Cell<bool>,
+    /// Threads a layer image is rasterised with: the renderer's `render` threads this frame.
+    threads: Cell<usize>,
+    /// Layers drawn directly because their content changed (`visit_layer`).
+    direct: RefCell<std::collections::HashMap<(usize, u32), DirectLayer>>,
+}
+
+/// A layer drawn directly because its content changed: the item, its last screen area, and
+/// whether the change was seen this frame. Once its content stays the same for a frame, its
+/// area is drawn again, and `visit_layer` renders its image.
+#[cfg(feature = "std")]
+struct DirectLayer {
+    item: i_slint_core::item_tree::ItemWeak,
+    area: LogicalRect,
+    changed_this_frame: bool,
+}
+
+#[cfg(feature = "std")]
+fn layer_key(item_rc: &ItemRc) -> (usize, u32) {
+    (&(**item_rc.item_tree()) as *const _ as *const u8 as usize, item_rc.index())
+}
+
+#[cfg(feature = "std")]
+impl core::ops::Deref for LayerCache {
+    type Target = i_slint_core::item_rendering::ItemCache<Option<Rc<CachedLayer>>>;
+    fn deref(&self) -> &Self::Target {
+        &self.items
+    }
+}
 
 impl<'a, T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for TargetPixelSlice<'a, T> {
     type TargetPixel = T;
@@ -475,6 +518,15 @@ pub struct SoftwareRenderer {
     /// The window size the layer cache was filled for.
     #[cfg(feature = "std")]
     layer_cache_size: Cell<PhysicalSize>,
+    /// The last render's phases: dirty-region walk and rasterisation.
+    #[cfg(feature = "std")]
+    last_phases: Cell<(std::time::Duration, std::time::Duration)>,
+    /// Threads `render` rasterises with (`parallel`).
+    #[cfg(feature = "std")]
+    render_threads: Cell<usize>,
+    /// Of the last raster phase: the banded replay (`parallel`).
+    #[cfg(feature = "std")]
+    last_replay: Cell<std::time::Duration>,
 }
 
 impl Default for SoftwareRenderer {
@@ -492,6 +544,12 @@ impl Default for SoftwareRenderer {
             layer_cache: Default::default(),
             #[cfg(feature = "std")]
             layer_cache_size: Default::default(),
+            #[cfg(feature = "std")]
+            last_phases: Default::default(),
+            #[cfg(feature = "std")]
+            render_threads: Cell::new(parallel::default_threads()),
+            #[cfg(feature = "std")]
+            last_replay: Default::default(),
         }
     }
 }
@@ -536,6 +594,22 @@ impl SoftwareRenderer {
         self.partial_rendering_state.walked_items()
     }
 
+    /// The last render's time in the dirty-region walk (property and layout
+    /// evaluation included) and in rasterisation.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_frame_phases(&self) -> (std::time::Duration, std::time::Duration) {
+        self.last_phases.get()
+    }
+
+    /// The last render's layer images: how many were rendered, their pixels (a nested layer's
+    /// also in its parent's), and the time (part of the raster phase).
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_frame_layer_renders(&self) -> (u32, u64, std::time::Duration) {
+        self.layer_cache.renders.get()
+    }
+
     /// Returns the kind of buffer that must be passed to  [`Self::render`]
     pub fn repaint_buffer_type(&self) -> RepaintBufferType {
         self.repaint_buffer_type.get()
@@ -571,7 +645,85 @@ impl SoftwareRenderer {
     /// Returns the physical dirty region for this frame, excluding the extra_draw_region,
     /// in the window frame of reference. It is affected by the screen rotation.
     pub fn render(&self, buffer: &mut [impl TargetPixel], pixel_stride: usize) -> PhysicalRegion {
+        #[cfg(feature = "std")]
+        self.layer_cache.threads.set(self.render_threads.get());
+        #[cfg(feature = "std")]
+        if self.render_threads.get() > 1 {
+            // Walk the items here and record the draw calls. Once the dirty region is known,
+            // band threads start and rasterise the recorded calls while the walk goes on
+            // (`parallel`); a small region is drawn here once the walk ended.
+            let threads = self.render_threads.get();
+            let lines = buffer.len() / pixel_stride.max(1);
+            let stream = std::sync::Arc::new(parallel::OpStream::new());
+            let shared = &*stream;
+            let mut scratch = LinesOnly::like(buffer, pixel_stride, lines);
+            let (region, started) = std::thread::scope(|scope| {
+                let mut unclaimed = Some(&mut *buffer);
+                let mut start = |region: &PhysicalRegion, scale_factor: ScaleFactor| {
+                    let pixels: usize = region
+                        .iter()
+                        .map(|(_, size)| size.width as usize * size.height as usize)
+                        .sum();
+                    if pixels < parallel::MIN_PARALLEL_PIXELS {
+                        return None;
+                    }
+                    let buffer = unclaimed.take().expect("one frame starts its bands once");
+                    // The UI thread keeps recording: one band thread fewer than threads.
+                    let bands = (threads - 1).max(1);
+                    parallel::stream_into_bands(
+                        scope,
+                        shared,
+                        buffer,
+                        pixel_stride,
+                        region,
+                        scale_factor,
+                        bands,
+                    );
+                    Some(stream.clone())
+                };
+                let (region, recorded) =
+                    self.render_buffer_inner(&mut scratch, true, Some(&mut start));
+                drop(start);
+                let started = std::time::Instant::now();
+                if let Some(recorded) = recorded {
+                    match unclaimed.take() {
+                        None => shared.publish(recorded.ops, true),
+                        Some(buffer) => {
+                            let mut ops = shared.take_ops();
+                            ops.extend(recorded.ops);
+                            let recorded = parallel::Recorded { ops, ..recorded };
+                            parallel::replay_in_bands(&recorded, buffer, pixel_stride, 1);
+                        }
+                    }
+                } else {
+                    shared.publish(Vec::new(), true);
+                }
+                (region, started)
+            });
+            // The scope waited for the band threads: their tail counts as replay.
+            let replay = started.elapsed();
+            let (walk, record) = self.last_phases.get();
+            self.last_phases.set((walk, record + replay));
+            self.last_replay.set(replay);
+            return region;
+        }
         self.render_buffer_impl(&mut TargetPixelSlice { data: buffer, pixel_stride })
+    }
+
+    /// Of the last raster phase, the time replaying the recorded draw calls in bands; zero
+    /// when the frame was drawn on one thread without recording.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_frame_replay(&self) -> std::time::Duration {
+        self.last_replay.get()
+    }
+
+    /// How many threads `render` rasterises a frame with. The default is the
+    /// online cores, at most 4; 1 draws on the calling thread only.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_render_threads(&self, threads: usize) {
+        self.render_threads.set(threads.max(1));
     }
 
     /// Render the window to the given frame buffer.
@@ -595,13 +747,31 @@ impl SoftwareRenderer {
         &self,
         buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
     ) -> PhysicalRegion {
+        self.render_buffer_inner(buffer, false, None).0
+    }
+
+    /// Render, or with `record` walk the items and return the frame's draw
+    /// calls instead of drawing them.
+    ///
+    /// While recording, `start_bands` is called once the dirty region is known; when it
+    /// started band threads, it returns their stream, and the recorded calls go to it.
+    fn render_buffer_inner(
+        &self,
+        buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
+        #[allow(unused)] record: bool,
+        #[allow(unused)] mut start_bands: Option<&mut StartBands<'_>>,
+    ) -> (PhysicalRegion, Option<parallel::Recorded>) {
+        #[cfg(feature = "std")]
+        let mut recorded = None;
+        #[cfg(not(feature = "std"))]
+        let recorded = None;
         let pixels_per_line = buffer.line_slice(0).len();
         let num_lines = buffer.num_lines();
         let buffer_pixel_count = num_lines * pixels_per_line;
 
         let Some(window) = self.maybe_window_adapter.borrow().as_ref().and_then(|w| w.upgrade())
         else {
-            return Default::default();
+            return (Default::default(), None);
         };
         let window_inner = WindowInner::from_pub(window.window());
         let factor = ScaleFactor::new(window_inner.scale_factor());
@@ -621,7 +791,7 @@ impl SoftwareRenderer {
             (euclid::size2(pixels_per_line as _, num_lines as _), Brush::default())
         };
         if size.is_empty() {
-            return Default::default();
+            return (Default::default(), None);
         }
         #[cfg(feature = "std")]
         {
@@ -654,6 +824,8 @@ impl SoftwareRenderer {
                 dirty_range_cache: Vec::new(),
                 dirty_region: Default::default(),
                 scale_factor: factor,
+                #[cfg(feature = "std")]
+                recording: None,
             },
             rotation,
             #[cfg(feature = "systemfonts")]
@@ -662,11 +834,17 @@ impl SoftwareRenderer {
             Some(&self.layer_cache),
         );
         let mut renderer = self.partial_rendering_state.create_partial_renderer(buffer_renderer);
+        #[cfg(feature = "std")]
+        if record {
+            renderer.actual_renderer.processor.recording = Some(parallel::Recorder::new());
+        }
         let window_adapter = renderer.window_adapter.clone();
 
-        window_inner
+        let region = window_inner
             .draw_contents(|components, post_render| {
                 let logical_size = (size.cast() / factor).cast();
+                #[cfg(feature = "std")]
+                let walk_started = std::time::Instant::now();
 
                 match self.repaint_buffer_type.get() {
                     RepaintBufferType::NewBuffer => {
@@ -693,6 +871,13 @@ impl SoftwareRenderer {
                     }
                 }
 
+                #[cfg(feature = "std")]
+                let (walk, raster_started) = (walk_started.elapsed(), std::time::Instant::now());
+                #[cfg(feature = "std")]
+                {
+                    self.layer_cache.renders.set(Default::default());
+                    self.layer_cache.rendering.set(false);
+                }
                 let rotation = RotationInfo { orientation: rotation, screen_size: size };
                 let screen_rect = PhysicalRect::from_size(size);
                 let mut i = renderer.dirty_region.iter().filter_map(|r| {
@@ -711,6 +896,28 @@ impl SoftwareRenderer {
                 drop(i);
 
                 renderer.actual_renderer.processor.dirty_region = dirty_region.clone();
+                #[cfg(feature = "std")]
+                if let Some(recorder) = &mut renderer.actual_renderer.processor.recording {
+                    if let Some(stream) = start_bands.as_mut().and_then(|start| start(&dirty_region, factor)) {
+                        recorder.stream_to(stream);
+                    }
+                    recorder.push(parallel::Op::Background(background.color()));
+                } else if !renderer
+                    .actual_renderer
+                    .processor
+                    .buffer
+                    .fill_background(&background, &dirty_region)
+                {
+                    let mut bg = TargetPixel::background();
+                    TargetPixel::blend(&mut bg, background.color().into());
+                    renderer.actual_renderer.processor.foreach_ranges(
+                        &dirty_region.bounding_rect(),
+                        |_, buffer, _, _| {
+                            buffer.fill(bg);
+                        },
+                    );
+                }
+                #[cfg(not(feature = "std"))]
                 if !renderer
                     .actual_renderer
                     .processor
@@ -746,11 +953,51 @@ impl SoftwareRenderer {
                     post_render(&mut renderer.actual_renderer);
                 }
 
+                #[cfg(feature = "std")]
+                {
+                    // Layers drawn shifted are drawn again next frame, at their exact phase
+                    // if they stopped moving.
+                    let mut shifted = self.layer_cache.shifted.take();
+                    // A layer drawn directly whose content did not change since is drawn again
+                    // next frame, to render its image. One that changed is drawn again anyway.
+                    let mut check_again = false;
+                    for layer in self.layer_cache.direct.borrow_mut().values_mut() {
+                        let changed = core::mem::take(&mut layer.changed_this_frame);
+                        check_again |= changed;
+                        let stable = !changed
+                            && layer
+                                .item
+                                .upgrade()
+                                .is_some_and(|item| self.layer_cache.is_dirty(&item) != Some(true));
+                        if stable {
+                            shifted.add_rect(layer.area);
+                        }
+                    }
+                    // A layer that changed this frame: the next frame tells whether it stays.
+                    if check_again {
+                        window.window().request_redraw();
+                    }
+                    if shifted.iter().next().is_some() {
+                        self.partial_rendering_state.mark_dirty_region(shifted);
+                        window.window().request_redraw();
+                    }
+                }
+                #[cfg(feature = "std")]
+                self.last_phases.set((walk, raster_started.elapsed()));
                 self.measure_frame_rendered(&mut renderer);
+                #[cfg(feature = "std")]
+                if let Some(recorder) = renderer.actual_renderer.processor.recording.take() {
+                    recorded = Some(parallel::Recorded {
+                        ops: recorder.into_ops(),
+                        dirty_region: dirty_region.clone(),
+                        scale_factor: factor,
+                    });
+                }
 
                 dirty_region
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        (region, recorded)
     }
 
     fn measure_frame_rendered(&self, renderer: &mut dyn ItemRenderer) {
@@ -1206,7 +1453,11 @@ impl RendererSealed for SoftwareRenderer {
         #[cfg(feature = "systemfonts")]
         self.text_layout_cache.component_destroyed(component);
         #[cfg(feature = "std")]
-        self.layer_cache.component_destroyed(component);
+        {
+            self.layer_cache.component_destroyed(component);
+            let destroyed = &*component as *const _ as *const u8 as usize;
+            self.layer_cache.direct.borrow_mut().retain(|key, _| key.0 != destroyed);
+        }
         self.partial_rendering_state.free_graphics_resources(component, items);
         Ok(())
     }
@@ -1887,14 +2138,58 @@ fn process_rectangle_impl(
     }
 }
 
+/// Starts a frame's band threads once its dirty region is known (`render_buffer_inner`).
+#[cfg(feature = "std")]
+type StartBands<'a> =
+    dyn FnMut(&PhysicalRegion, ScaleFactor) -> Option<std::sync::Arc<parallel::OpStream>> + 'a;
+#[cfg(not(feature = "std"))]
+type StartBands<'a> = dyn FnMut(&PhysicalRegion, ScaleFactor) -> Option<()> + 'a;
+
+/// A buffer with lines of the right width and count and no pixels: what the walk renders
+/// into while it records (`render`), so that the band threads own the real buffer.
+#[cfg(feature = "std")]
+struct LinesOnly<T> {
+    line: Vec<T>,
+    lines: usize,
+}
+
+#[cfg(feature = "std")]
+impl<T: TargetPixel> LinesOnly<T> {
+    fn like(_buffer: &[T], width: usize, lines: usize) -> Self {
+        Self { line: alloc::vec![T::background(); width], lines }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for LinesOnly<T> {
+    type TargetPixel = T;
+    fn line_slice(&mut self, _line_number: usize) -> &mut [T] {
+        &mut self.line
+    }
+    fn num_lines(&self) -> usize {
+        self.lines
+    }
+}
+
 struct RenderToBuffer<'a, TargetPixelBuffer> {
     buffer: &'a mut TargetPixelBuffer,
     dirty_range_cache: Vec<core::ops::Range<i16>>,
     dirty_region: PhysicalRegion,
     scale_factor: ScaleFactor,
+    /// When set, draw calls are recorded here instead of drawn (`parallel`).
+    #[cfg(feature = "std")]
+    recording: Option<parallel::Recorder>,
 }
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
+    /// `clip` intersected with each rectangle of the dirty region.
+    fn dirty_clips(&self, clip: &PhysicalRect) -> Vec<PhysicalRect> {
+        self.dirty_region
+            .iter_box()
+            .filter_map(|b| clip.intersection(&b.to_rect()))
+            .collect()
+    }
+
     fn foreach_ranges(
         &mut self,
         geometry: &PhysicalRect,
@@ -1955,6 +2250,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<'_, B> {
     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::Texture(geometry, texture));
+            return;
+        }
         self.process_texture_impl(geometry, texture);
     }
 
@@ -1963,6 +2263,30 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         texture: &target_pixel_buffer::DrawTextureArgs,
         clip: PhysicalRect,
     ) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            // As `PrepareScene` keeps it: a static slice, or the shared buffer.
+            let Some((extra, geometry)) = SceneTextureExtra::from_target_texture(texture, &clip)
+            else {
+                return;
+            };
+            match &texture.data {
+                target_pixel_buffer::TextureDataContainer::Static(data) => {
+                    let pixel_stride = (data.byte_stride / data.pixel_format.bpp()) as u16;
+                    ops.push(parallel::Op::Texture(
+                        geometry,
+                        SceneTexture { data: data.data, format: data.pixel_format, pixel_stride, extra },
+                    ));
+                }
+                target_pixel_buffer::TextureDataContainer::Shared { buffer, source_rect } => {
+                    ops.push(parallel::Op::SharedTexture(
+                        geometry,
+                        SharedBufferCommand { buffer: buffer.clone(), source_rect: *source_rect, extra },
+                    ));
+                }
+            }
+            return;
+        }
         if self.buffer.draw_texture(texture, &self.dirty_region.intersection(&clip)) {
             return;
         }
@@ -1979,7 +2303,12 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         args: &target_pixel_buffer::DrawRectangleArgs,
         clip: PhysicalRect,
     ) {
-        if self.buffer.draw_rectangle(args, &self.dirty_region.intersection(&clip)) {
+        // Recording: the rectangle's primitives come back here and are recorded.
+        #[cfg(feature = "std")]
+        let recording = self.recording.is_some();
+        #[cfg(not(feature = "std"))]
+        let recording = false;
+        if !recording && self.buffer.draw_rectangle(args, &self.dirty_region.intersection(&clip)) {
             return;
         }
 
@@ -1988,6 +2317,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
     }
 
     fn process_rounded_rectangle(&mut self, geometry: PhysicalRect, rr: RoundedRectangle) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::RoundedRectangle(geometry, rr));
+            return;
+        }
         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
             draw_functions::draw_rounded_rectangle_line(
                 &geometry,
@@ -2001,12 +2335,22 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
     }
 
     fn process_simple_rectangle(&mut self, geometry: PhysicalRect, color: PremultipliedRgbaColor) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::Rectangle(geometry, color));
+            return;
+        }
         self.foreach_ranges(&geometry, |_line, buffer, _extra_left_clip, _extra_right_clip| {
             <B::TargetPixel>::blend_slice(buffer, color)
         });
     }
 
     fn process_linear_gradient(&mut self, geometry: PhysicalRect, g: LinearGradientCommand) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::LinearGradient(geometry, g));
+            return;
+        }
         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, _extra_right_clip| {
             draw_functions::draw_linear_gradient(
                 &geometry,
@@ -2018,6 +2362,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         });
     }
     fn process_radial_gradient(&mut self, geometry: PhysicalRect, g: RadialGradientCommand) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::RadialGradient(geometry, g));
+            return;
+        }
         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
             draw_functions::draw_radial_gradient(
                 &geometry,
@@ -2030,6 +2379,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         });
     }
     fn process_conic_gradient(&mut self, geometry: PhysicalRect, g: ConicGradientCommand) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::ConicGradient(geometry, g));
+            return;
+        }
         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
             draw_functions::draw_conic_gradient(
                 &geometry,
@@ -2050,7 +2404,16 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         commands: alloc::vec::Vec<path::Command>,
         color: PremultipliedRgbaColor,
     ) {
-        path::render_filled_path(&commands, &path_geometry, &clip_geometry, color, self.buffer);
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::FilledPath { path: path_geometry, clip: clip_geometry, commands, color });
+            return;
+        }
+        // Only inside the dirty region: drawing the path over unchanged pixels
+        // would blend its anti-aliased edges twice.
+        for clip in self.dirty_clips(&clip_geometry) {
+            path::render_filled_path(&commands, &path_geometry, &clip, color, self.buffer);
+        }
     }
 
     #[cfg(feature = "path")]
@@ -2065,17 +2428,33 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         stroke_line_join: i_slint_core::items::LineJoin,
         stroke_miter_limit: f32,
     ) {
-        path::render_stroked_path(
-            &commands,
-            &path_geometry,
-            &clip_geometry,
-            color,
-            stroke_width,
-            stroke_line_cap,
-            stroke_line_join,
-            stroke_miter_limit,
-            self.buffer,
-        );
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::StrokedPath {
+                path: path_geometry,
+                clip: clip_geometry,
+                commands,
+                color,
+                width: stroke_width,
+                cap: stroke_line_cap,
+                join: stroke_line_join,
+                miter_limit: stroke_miter_limit,
+            });
+            return;
+        }
+        for clip in self.dirty_clips(&clip_geometry) {
+            path::render_stroked_path(
+                &commands,
+                &path_geometry,
+                &clip,
+                color,
+                stroke_width,
+                stroke_line_cap,
+                stroke_line_join,
+                stroke_miter_limit,
+                self.buffer,
+            );
+        }
     }
 }
 
@@ -2255,6 +2634,9 @@ struct SceneBuilder<'a, T> {
     /// children directly.
     #[cfg(feature = "std")]
     layer_cache: Option<&'a LayerCache>,
+    /// This builder renders a layer's image: the layers nested in it render theirs too.
+    #[cfg(feature = "std")]
+    nested_in_layer_image: bool,
 }
 
 impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
@@ -2285,6 +2667,8 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             text_layout_cache,
             #[cfg(feature = "std")]
             layer_cache,
+            #[cfg(feature = "std")]
+            nested_in_layer_image: false,
         }
     }
 
@@ -2297,18 +2681,44 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         let phase = screen_offset.to_vector() - screen_offset.floor().to_vector();
         let render = || self.render_layer_image(cache, item_rc, size, phase);
         let mut layer = cache.get_or_update_cache_entry(item_rc, render);
-        if layer.as_ref().is_some_and(|layer| (layer.phase - phase).square_length() > 1e-6) {
-            cache.release(item_rc);
-            layer = cache.get_or_update_cache_entry(item_rc, || {
-                self.render_layer_image(cache, item_rc, size, phase)
-            });
+        // A layer at another sub-pixel phase: while it moves, shift the image by whole pixels
+        // (rendering its children again every frame of a slide is what costs); once it is drawn
+        // twice at the same position, render it again at its exact phase.
+        let mut shifted = false;
+        if let Some(cached) =
+            layer.as_ref().filter(|layer| (layer.phase - phase).square_length() > 1e-6)
+        {
+            let stopped = cached
+                .shifted_at
+                .get()
+                .is_some_and(|at| (at - screen_offset).square_length() <= 1e-6);
+            if stopped {
+                cache.release(item_rc);
+                layer = cache.get_or_update_cache_entry(item_rc, || {
+                    self.render_layer_image(cache, item_rc, size, phase)
+                });
+            } else {
+                cached.shifted_at.set(Some(screen_offset));
+                shifted = true;
+            }
         }
         let Some(layer) = layer else { return };
+        let offset = if shifted {
+            (screen_offset - layer.phase).round().cast::<i32>().to_vector()
+        } else {
+            screen_offset.floor().cast::<i32>().to_vector()
+        };
         let (width, height) = (layer.image.width() as i32, layer.image.height() as i32);
         let local = euclid::Rect::<i32, PhysicalPx>::new(layer.origin, euclid::size2(width, height));
         let physical_clip = (self.current_state.clip.cast() * scale).round_out().cast::<i32>();
         let Some(clipped) = local.intersection(&physical_clip) else { return };
-        let offset = screen_offset.floor().cast::<i32>().to_vector();
+        if shifted {
+            let screen = clipped.translate(offset).cast::<f32>() / scale;
+            cache.shifted.borrow_mut().add_rect(LogicalRect::new(
+                LogicalPoint::new(screen.origin.x as _, screen.origin.y as _),
+                LogicalSize::new(screen.size.width as _, screen.size.height as _),
+            ).round_out());
+        }
         let t = target_pixel_buffer::DrawTextureArgs {
             data: target_pixel_buffer::TextureDataContainer::Shared {
                 buffer: SharedBufferData::SharedImage(SharedImageBuffer::RGBA8Premultiplied(
@@ -2339,6 +2749,23 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         size: LogicalSize,
         phase: euclid::Vector2D<f32, PhysicalPx>,
     ) -> Option<Rc<CachedLayer>> {
+        let started = std::time::Instant::now();
+        cache.rendering.set(true);
+        let image = self.render_layer_image_inner(cache, item_rc, size, phase);
+        let (count, pixels, time) = cache.renders.get();
+        let area = image.as_ref().map_or(0, |l| l.image.width() as u64 * l.image.height() as u64);
+        cache.renders.set((count + 1, pixels + area, time + started.elapsed()));
+        image
+    }
+
+    #[cfg(feature = "std")]
+    fn render_layer_image_inner(
+        &self,
+        cache: &'a LayerCache,
+        item_rc: &ItemRc,
+        size: LogicalSize,
+        phase: euclid::Vector2D<f32, PhysicalPx>,
+    ) -> Option<Rc<CachedLayer>> {
         let window_adapter = self.window.window_adapter();
         let scale = self.scale_factor;
         let bounds = i_slint_core::item_rendering::item_children_bounding_rect(item_rc, &window_adapter)
@@ -2349,7 +2776,11 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             return None;
         }
         let mut pixels = alloc::vec![PremultipliedRgbaColor::default(); width * height];
-        {
+        // A large image is rasterised like a frame: the children's draw calls are recorded
+        // here and replayed in bands on the render threads (`parallel`).
+        let threads = cache.threads.get();
+        let record = threads > 1 && width * height >= parallel::MIN_PARALLEL_PIXELS;
+        let recorded = {
             let mut target = TargetPixelSlice { data: &mut pixels, pixel_stride: width };
             let mut dirty_region = PhysicalRegion::default();
             dirty_region.rectangles[0] = euclid::Box2D::new(
@@ -2364,8 +2795,9 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 RenderToBuffer {
                     buffer: &mut target,
                     dirty_range_cache: Vec::new(),
-                    dirty_region,
+                    dirty_region: dirty_region.clone(),
                     scale_factor: scale,
+                    recording: record.then(parallel::Recorder::new),
                 },
                 RenderingRotation::NoRotation,
                 #[cfg(feature = "systemfonts")]
@@ -2375,6 +2807,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             // Item coordinates map to the image: physical = (logical * scale + phase) - origin.
             let image_origin = (physical.origin.to_vector() - phase) / scale;
             let image_origin = LogicalPoint::new(image_origin.x as _, image_origin.y as _);
+            nested.nested_in_layer_image = true;
             nested.current_state.offset = LogicalPoint::new(-image_origin.x, -image_origin.y);
             nested.current_state.clip = LogicalRect::new(image_origin, (physical.size / scale).cast());
             i_slint_core::item_rendering::render_item_children(
@@ -2383,12 +2816,25 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 item_rc.index() as isize,
                 &window_adapter,
             );
+            nested.processor.recording.take().map(|recorder| parallel::Recorded {
+                ops: recorder.into_ops(),
+                dirty_region,
+                scale_factor: scale,
+            })
+        };
+        if let Some(recorded) = recorded {
+            parallel::replay_in_bands(&recorded, &mut pixels, width, threads);
         }
         let mut image = SharedPixelBuffer::<Rgba8Pixel>::new(width as u32, height as u32);
         for (to, from) in image.make_mut_slice().iter_mut().zip(&pixels) {
             *to = Rgba8Pixel::new(from.red, from.green, from.blue, from.alpha);
         }
-        Some(Rc::new(CachedLayer { origin: physical.origin.cast(), phase, image }))
+        Some(Rc::new(CachedLayer {
+            origin: physical.origin.cast(),
+            phase,
+            shifted_at: Cell::new(None),
+            image,
+        }))
     }
 
     fn should_draw(&self, rect: &LogicalRect) -> bool {
@@ -3234,7 +3680,46 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
     ) -> RenderingResult {
         #[cfg(feature = "std")]
         if layer.cache_rendering_hint() {
+            // A layer inside a layer's image is drawn into that image.
+            if self.nested_in_layer_image {
+                if let Some(cache) = self.layer_cache {
+                    cache.direct.borrow_mut().remove(&layer_key(item_rc));
+                }
+                return RenderingResult::ContinueRenderingChildren;
+            }
             if let Some(cache) = self.layer_cache {
+                // An image is rendered only from content that stayed the same for a frame: a
+                // layer whose content changed is drawn directly, and its image entry is marked
+                // clean while keeping its dependencies, so the next frame tells whether the
+                // content changed again. An animation inside a layer renders no image that the
+                // next frame throws away; once it ends, the image is rendered once.
+                let key = layer_key(item_rc);
+                let state = cache.is_dirty(item_rc);
+                let changed = state == Some(true);
+                let direct = cache.direct.borrow().contains_key(&key);
+                let area = LogicalRect::new(self.current_state.offset, size);
+                if changed {
+                    cache.acknowledge_dirty(item_rc);
+                    let layer =
+                        DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: true };
+                    cache.direct.borrow_mut().insert(key, layer);
+                    return RenderingResult::ContinueRenderingChildren;
+                }
+                // Its content stayed the same for a frame, or it has no image yet. A frame
+                // renders one image: another such layer is drawn directly once more.
+                if direct || state.is_none() {
+                    if cache.rendering.get() {
+                        let layer =
+                            DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: false };
+                        cache.direct.borrow_mut().insert(key, layer);
+                        return RenderingResult::ContinueRenderingChildren;
+                    }
+                    if direct {
+                        // Its image is of the content before the change.
+                        cache.direct.borrow_mut().remove(&key);
+                        cache.release(item_rc);
+                    }
+                }
                 self.draw_cached_layer(cache, item_rc, size);
                 return RenderingResult::ContinueRenderingWithoutChildren;
             }

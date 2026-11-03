@@ -22,7 +22,8 @@ use std::{
 const USAGE: &str = "usage:
   korri-shell --packages DIR [--cache DIR] [--installed] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--stats]
   korri-shell install --packages DIR [--cache DIR]
-  korri-shell verify PACKAGE_DIR";
+  korri-shell verify PACKAGE_DIR
+  korri-shell bench --packages DIR --surface ID [--size WxH] [--frames N] [--games N] [--press SEQ] [--pref KEY=VALUE]… [--full] [--threads N]";
 
 /// How long the shell waits for korrid at start; systemd then restarts it.
 const KORRID_START_LIMIT: Duration = Duration::from_secs(60);
@@ -36,6 +37,14 @@ struct Arguments {
     stats: bool,
     /// Read the summaries `install` wrote; never verify at run time.
     installed: bool,
+    surface: Option<String>,
+    size: (u32, u32),
+    frames: usize,
+    games: usize,
+    presses: String,
+    preferences: std::collections::BTreeMap<String, String>,
+    full: bool,
+    threads: Option<usize>,
 }
 
 #[derive(PartialEq)]
@@ -43,6 +52,7 @@ enum Command {
     Run,
     Install,
     Verify(PathBuf),
+    Bench,
 }
 
 fn arguments() -> Result<Arguments, String> {
@@ -58,6 +68,14 @@ fn arguments() -> Result<Arguments, String> {
         placement: Placement::Fullscreen,
         stats: false,
         installed: false,
+        surface: None,
+        size: (640, 480),
+        frames: 600,
+        games: 12,
+        presses: String::new(),
+        preferences: Default::default(),
+        full: false,
+        threads: None,
     };
     let mut first = true;
     while let Some(arg) = args.next() {
@@ -80,6 +98,28 @@ fn arguments() -> Result<Arguments, String> {
             }
             "--stats" => parsed.stats = true,
             "--installed" => parsed.installed = true,
+            "bench" if first => parsed.command = Command::Bench,
+            "--surface" => parsed.surface = Some(value("--surface")?),
+            "--size" => {
+                let text = value("--size")?;
+                let (w, h) = text.split_once('x').ok_or("--size is WxH")?;
+                parsed.size = (
+                    w.parse().map_err(|_| "--size is WxH")?,
+                    h.parse().map_err(|_| "--size is WxH")?,
+                );
+            }
+            "--frames" => parsed.frames = value("--frames")?.parse().map_err(|_| "--frames N")?,
+            "--games" => parsed.games = value("--games")?.parse().map_err(|_| "--games N")?,
+            "--press" => parsed.presses = value("--press")?,
+            "--pref" => {
+                let text = value("--pref")?;
+                let (k, v) = text.split_once('=').ok_or("--pref KEY=VALUE")?;
+                parsed.preferences.insert(k.to_owned(), v.to_owned());
+            }
+            "--full" => parsed.full = true,
+            "--threads" => {
+                parsed.threads = Some(value("--threads")?.parse().map_err(|_| "--threads N")?)
+            }
             _ => return Err(USAGE.to_owned()),
         }
         first = false;
@@ -148,6 +188,27 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
         let summary = verify::verify(&Package::at(dir)?, limits);
         println!("{}", serde_json::to_string_pretty(&summary)?);
         anyhow::ensure!(summary.pass, "{} failed verification", summary.surface_id);
+        return Ok(());
+    }
+    if arguments.command == Command::Bench {
+        let report = korri_shell::bench::run(korri_shell::bench::Options {
+            packages: arguments
+                .packages
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("--packages is required"))?,
+            surface: arguments
+                .surface
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("--surface is required"))?,
+            size: arguments.size,
+            frames: arguments.frames,
+            games: arguments.games,
+            presses: korri_shell::bench::parse_presses(&arguments.presses)?,
+            preferences: arguments.preferences.clone(),
+            full: arguments.full,
+            threads: arguments.threads,
+        })?;
+        print!("{report}");
         return Ok(());
     }
     let root = arguments
@@ -247,6 +308,7 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
     let _stats = arguments.stats.then(|| {
         let timer = slint::Timer::default();
         let last = RefCell::new((Instant::now(), frames.get()));
+        let frames = frames.clone();
         timer.start(
             slint::TimerMode::Repeated,
             Duration::from_secs(5),
@@ -255,8 +317,9 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
                 let now = (Instant::now(), frames.get());
                 let seconds = now.0.duration_since(then).as_secs_f64();
                 let heap = SHELL.with(|s| s.borrow().as_ref().map_or(0, |s| s.heap_bytes()));
+                let (p50, p95, max) = frames.take_intervals().unwrap_or_default();
                 eprintln!(
-                    "SHELL_STATS fps={:.3} frames={} seconds={seconds:.3} heap_bytes={heap}",
+                    "SHELL_STATS fps={:.3} frames={} seconds={seconds:.3} heap_bytes={heap} interval_ms_p50={p50:.1} p95={p95:.1} max={max:.1}",
                     (now.1 - count) as f64 / seconds,
                     now.1 - count
                 );

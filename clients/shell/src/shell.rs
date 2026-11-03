@@ -818,6 +818,12 @@ impl Shell {
     }
 
     fn render(&mut self, current: &mut Loaded) -> std::result::Result<(), Failure> {
+        // Same state object and model: view() and overlay() would return the
+        // same views, so skip them (a Tick that changes nothing costs one call).
+        if !current.engine.view_stale() {
+            return Ok(());
+        }
+        current.engine.views_drawn();
         let view = current.engine.view()?;
         current
             .surface_binder
