@@ -23,7 +23,7 @@ const USAGE: &str = "usage:
   korri-shell --packages DIR [--cache DIR] [--installed] [--surfaces ID,ID…] [--placement fullscreen|WxH] [--stats]
   korri-shell install --packages DIR [--cache DIR]
   korri-shell verify PACKAGE_DIR
-  korri-shell bench --packages DIR --surface ID [--size WxH] [--frames N] [--games N] [--press SEQ] [--pref KEY=VALUE]… [--full]";
+  korri-shell bench --packages DIR --surface ID [--size WxH] [--frames N] [--games N] [--press SEQ] [--pref KEY=VALUE]… [--full] [--threads N]";
 
 /// How long the shell waits for korrid at start; systemd then restarts it.
 const KORRID_START_LIMIT: Duration = Duration::from_secs(60);
@@ -44,6 +44,7 @@ struct Arguments {
     presses: String,
     preferences: std::collections::BTreeMap<String, String>,
     full: bool,
+    threads: Option<usize>,
 }
 
 #[derive(PartialEq)]
@@ -74,6 +75,7 @@ fn arguments() -> Result<Arguments, String> {
         presses: String::new(),
         preferences: Default::default(),
         full: false,
+        threads: None,
     };
     let mut first = true;
     while let Some(arg) = args.next() {
@@ -115,6 +117,9 @@ fn arguments() -> Result<Arguments, String> {
                 parsed.preferences.insert(k.to_owned(), v.to_owned());
             }
             "--full" => parsed.full = true,
+            "--threads" => {
+                parsed.threads = Some(value("--threads")?.parse().map_err(|_| "--threads N")?)
+            }
             _ => return Err(USAGE.to_owned()),
         }
         first = false;
@@ -201,6 +206,7 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
             presses: korri_shell::bench::parse_presses(&arguments.presses)?,
             preferences: arguments.preferences.clone(),
             full: arguments.full,
+            threads: arguments.threads,
         })?;
         print!("{report}");
         return Ok(());

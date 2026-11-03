@@ -1,6 +1,6 @@
 diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
---- a/i-slint-core/partial_renderer.rs	2026-11-02 19:13:22.505558442 -0700
-+++ b/i-slint-core/partial_renderer.rs	2026-11-02 19:13:22.509268734 -0700
+--- a/i-slint-core/partial_renderer.rs	2026-11-02 19:51:45.680944055 -0700
++++ b/i-slint-core/partial_renderer.rs	2026-11-02 19:51:45.684678863 -0700
 @@ -197,10 +197,16 @@
      pub data: CachedItemBoundingBoxAndTransform,
      /// The property tracker that should be used to evaluate whether the item needs to be re-rendered
@@ -117,8 +117,8 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
              if let Some(component) = crate::item_tree::ItemTreeWeak::upgrade(component) {
                  partial_renderer.compute_dirty_regions(&component, *origin, logical_window_size);
 diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-software/draw_functions.rs
---- a/i-slint-renderer-software/draw_functions.rs	2026-11-02 19:13:22.511292777 -0700
-+++ b/i-slint-renderer-software/draw_functions.rs	2026-11-02 19:13:22.512690847 -0700
+--- a/i-slint-renderer-software/draw_functions.rs	2026-11-02 19:51:45.686963496 -0700
++++ b/i-slint-renderer-software/draw_functions.rs	2026-11-02 19:51:45.688497082 -0700
 @@ -32,6 +32,40 @@
          extra: super::SceneTextureExtra { colorize, alpha, rotation, dx, dy, off_x, off_y },
      } = *texture;
@@ -189,8 +189,8 @@ diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-softw
                          ((data[pos] as u16 * alpha as u16) / 255) as u8,
                          color.red(),
 diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs b/i-slint-renderer-software/fonts/systemfonts.rs
---- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-02 19:13:22.511473120 -0700
-+++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-02 19:13:22.512860012 -0700
+--- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-02 19:51:45.687179471 -0700
++++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-02 19:51:45.688665828 -0700
 @@ -79,7 +79,27 @@
      path: &std::path::Path,
  ) -> Result<(), alloc::boxed::Box<dyn std::error::Error>> {
@@ -221,9 +221,18 @@ diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs b/i-slint-renderer-so
 +    static REGISTERED_FONT_FILES: RefCell<HashMap<std::path::PathBuf, (u64, Option<std::time::SystemTime>)>> = Default::default();
 +}
 diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
---- a/i-slint-renderer-software/lib.rs	2026-11-02 19:13:22.511473120 -0700
-+++ b/i-slint-renderer-software/lib.rs	2026-11-02 19:13:22.512860012 -0700
-@@ -44,7 +44,7 @@
+--- a/i-slint-renderer-software/lib.rs	2026-11-02 19:51:45.687179471 -0700
++++ b/i-slint-renderer-software/lib.rs	2026-11-02 19:51:45.688665828 -0700
+@@ -22,6 +22,8 @@
+ #[cfg(feature = "path")]
+ mod path;
+ mod scene;
++#[cfg(feature = "std")]
++mod parallel;
+ 
+ use self::fonts::GlyphRenderer;
+ pub use self::minimal_software_window::MinimalSoftwareWindow;
+@@ -44,7 +46,7 @@
      RenderRectangle,
  };
  use i_slint_core::item_tree::ItemTreeWeak;
@@ -232,7 +241,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
  use i_slint_core::lengths::{
      LogicalBorderRadius, LogicalLength, LogicalPoint, LogicalRect, LogicalSize, LogicalVector,
      PhysicalPx, PointLengths, RectLengths, ScaleFactor, SizeLengths,
-@@ -419,6 +419,58 @@
+@@ -419,6 +421,60 @@
      pixel_stride: usize,
  }
  
@@ -263,6 +272,8 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +    shifted: RefCell<DirtyRegion>,
 +    /// Frames rendered by this renderer, to tell consecutive frames apart.
 +    frame: Cell<u64>,
++    /// Threads a layer image is rasterised with: the renderer's `render` threads this frame.
++    threads: Cell<usize>,
 +    /// Per layer item: the last frame its image was rendered.
 +    rendered: RefCell<std::collections::HashMap<(usize, u32), u64>>,
 +    /// Layers whose content changed in consecutive frames (an animation inside them): drawn
@@ -291,7 +302,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
  impl<'a, T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for TargetPixelSlice<'a, T> {
      type TargetPixel = T;
  
-@@ -452,6 +504,14 @@
+@@ -452,6 +508,20 @@
      rendering_metrics_collector: Option<Rc<RenderingMetricsCollector>>,
      #[cfg(feature = "systemfonts")]
      text_layout_cache: sharedparley::TextLayoutCache,
@@ -303,10 +314,16 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +    /// The last render's phases: dirty-region walk and rasterisation.
 +    #[cfg(feature = "std")]
 +    last_phases: Cell<(std::time::Duration, std::time::Duration)>,
++    /// Threads `render` rasterises with (`parallel`).
++    #[cfg(feature = "std")]
++    render_threads: Cell<usize>,
++    /// Of the last raster phase: the banded replay (`parallel`).
++    #[cfg(feature = "std")]
++    last_replay: Cell<std::time::Duration>,
  }
  
  impl Default for SoftwareRenderer {
-@@ -465,6 +525,12 @@
+@@ -465,6 +535,16 @@
              repaint_buffer_type: Default::default(),
              #[cfg(feature = "systemfonts")]
              text_layout_cache: Default::default(),
@@ -316,10 +333,14 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +            layer_cache_size: Default::default(),
 +            #[cfg(feature = "std")]
 +            last_phases: Default::default(),
++            #[cfg(feature = "std")]
++            render_threads: Cell::new(parallel::default_threads()),
++            #[cfg(feature = "std")]
++            last_replay: Default::default(),
          }
      }
  }
-@@ -498,9 +564,25 @@
+@@ -498,9 +578,25 @@
      pub fn set_repaint_buffer_type(&self, repaint_buffer_type: RepaintBufferType) {
          if self.repaint_buffer_type.replace(repaint_buffer_type) != repaint_buffer_type {
              self.partial_rendering_state.clear_cache();
@@ -345,21 +366,111 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      /// Returns the kind of buffer that must be passed to  [`Self::render`]
      pub fn repaint_buffer_type(&self) -> RepaintBufferType {
          self.repaint_buffer_type.get()
-@@ -588,6 +670,13 @@
+@@ -536,9 +632,52 @@
+     /// Returns the physical dirty region for this frame, excluding the extra_draw_region,
+     /// in the window frame of reference. It is affected by the screen rotation.
+     pub fn render(&self, buffer: &mut [impl TargetPixel], pixel_stride: usize) -> PhysicalRegion {
++        #[cfg(feature = "std")]
++        self.layer_cache.threads.set(self.render_threads.get());
++        if self.render_threads.get() > 1 {
++            // Walk the items here, record the draw calls, then rasterise the
++            // dirty region in bands of lines on several threads (`parallel`).
++            let (region, recorded) =
++                self.render_buffer_inner(&mut TargetPixelSlice { data: buffer, pixel_stride }, true);
++            if let Some(recorded) = recorded {
++                let pixels: usize = recorded
++                    .dirty_region
++                    .iter()
++                    .map(|(_, size)| size.width as usize * size.height as usize)
++                    .sum();
++                let threads = if pixels < parallel::MIN_PARALLEL_PIXELS {
++                    1
++                } else {
++                    self.render_threads.get()
++                };
++                let started = std::time::Instant::now();
++                parallel::replay_in_bands(&recorded, buffer, pixel_stride, threads);
++                let replay = started.elapsed();
++                let (walk, record) = self.last_phases.get();
++                self.last_phases.set((walk, record + replay));
++                self.last_replay.set(replay);
++            }
++            return region;
++        }
+         self.render_buffer_impl(&mut TargetPixelSlice { data: buffer, pixel_stride })
+     }
+ 
++    /// Of the last raster phase, the time replaying the recorded draw calls in bands; zero
++    /// when the frame was drawn on one thread without recording.
++    #[doc(hidden)]
++    #[cfg(feature = "std")]
++    pub fn last_frame_replay(&self) -> std::time::Duration {
++        self.last_replay.get()
++    }
++
++    /// How many threads `render` rasterises a frame with. The default is the
++    /// online cores, at most 4; 1 draws on the calling thread only.
++    #[doc(hidden)]
++    #[cfg(feature = "std")]
++    pub fn set_render_threads(&self, threads: usize) {
++        self.render_threads.set(threads.max(1));
++    }
++
+     /// Render the window to the given frame buffer.
+     ///
+     /// The renderer uses a cache internally and will only render the part of the window
+@@ -560,13 +699,27 @@
+         &self,
+         buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
+     ) -> PhysicalRegion {
++        self.render_buffer_inner(buffer, false).0
++    }
++
++    /// Render, or with `record` walk the items and return the frame's draw
++    /// calls instead of drawing them.
++    fn render_buffer_inner(
++        &self,
++        buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
++        #[allow(unused)] record: bool,
++    ) -> (PhysicalRegion, Option<parallel::Recorded>) {
++        #[cfg(feature = "std")]
++        let mut recorded = None;
++        #[cfg(not(feature = "std"))]
++        let recorded = None;
+         let pixels_per_line = buffer.line_slice(0).len();
+         let num_lines = buffer.num_lines();
+         let buffer_pixel_count = num_lines * pixels_per_line;
+ 
+         let Some(window) = self.maybe_window_adapter.borrow().as_ref().and_then(|w| w.upgrade())
+         else {
+-            return Default::default();
++            return (Default::default(), None);
+         };
+         let window_inner = WindowInner::from_pub(window.window());
+         let factor = ScaleFactor::new(window_inner.scale_factor());
+@@ -586,7 +739,14 @@
+             (euclid::size2(pixels_per_line as _, num_lines as _), Brush::default())
+         };
          if size.is_empty() {
-             return Default::default();
-         }
+-            return Default::default();
++            return (Default::default(), None);
++        }
 +        #[cfg(feature = "std")]
 +        {
 +            self.layer_cache.clear_cache_if_scale_factor_changed(window.window());
 +            if self.layer_cache_size.replace(size) != size {
 +                self.layer_cache.clear_all();
 +            }
-+        }
+         }
          assert!(
              if rotation.is_transpose() {
-                 pixels_per_line >= size.height as usize
-@@ -616,6 +705,8 @@
+@@ -612,17 +772,27 @@
+                 dirty_range_cache: Vec::new(),
+                 dirty_region: Default::default(),
+                 scale_factor: factor,
++                #[cfg(feature = "std")]
++                recording: None,
+             },
              rotation,
              #[cfg(feature = "systemfonts")]
              &self.text_layout_cache,
@@ -367,9 +478,14 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +            Some(&self.layer_cache),
          );
          let mut renderer = self.partial_rendering_state.create_partial_renderer(buffer_renderer);
++        #[cfg(feature = "std")]
++        if record {
++            renderer.actual_renderer.processor.recording = Some(Vec::new());
++        }
          let window_adapter = renderer.window_adapter.clone();
-@@ -623,6 +714,8 @@
-         window_inner
+ 
+-        window_inner
++        let region = window_inner
              .draw_contents(|components, post_render| {
                  let logical_size = (size.cast() / factor).cast();
 +                #[cfg(feature = "std")]
@@ -377,7 +493,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
  
                  match self.repaint_buffer_type.get() {
                      RepaintBufferType::NewBuffer => {
-@@ -649,6 +742,8 @@
+@@ -649,6 +819,8 @@
                      }
                  }
  
@@ -386,7 +502,33 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
                  let rotation = RotationInfo { orientation: rotation, screen_size: size };
                  let screen_rect = PhysicalRect::from_size(size);
                  let mut i = renderer.dirty_region.iter().filter_map(|r| {
-@@ -702,6 +797,28 @@
+@@ -667,6 +839,25 @@
+                 drop(i);
+ 
+                 renderer.actual_renderer.processor.dirty_region = dirty_region.clone();
++                #[cfg(feature = "std")]
++                if let Some(ops) = &mut renderer.actual_renderer.processor.recording {
++                    ops.push(parallel::Op::Background(background.color()));
++                } else if !renderer
++                    .actual_renderer
++                    .processor
++                    .buffer
++                    .fill_background(&background, &dirty_region)
++                {
++                    let mut bg = TargetPixel::background();
++                    TargetPixel::blend(&mut bg, background.color().into());
++                    renderer.actual_renderer.processor.foreach_ranges(
++                        &dirty_region.bounding_rect(),
++                        |_, buffer, _, _| {
++                            buffer.fill(bg);
++                        },
++                    );
++                }
++                #[cfg(not(feature = "std"))]
+                 if !renderer
+                     .actual_renderer
+                     .processor
+@@ -702,11 +893,42 @@
                      post_render(&mut renderer.actual_renderer);
                  }
  
@@ -413,9 +555,24 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                #[cfg(feature = "std")]
 +                self.last_phases.set((walk, raster_started.elapsed()));
                  self.measure_frame_rendered(&mut renderer);
++                #[cfg(feature = "std")]
++                if let Some(ops) = renderer.actual_renderer.processor.recording.take() {
++                    recorded = Some(parallel::Recorded {
++                        ops,
++                        dirty_region: dirty_region.clone(),
++                        scale_factor: factor,
++                    });
++                }
  
                  dirty_region
-@@ -1161,6 +1278,13 @@
+             })
+-            .unwrap_or_default()
++            .unwrap_or_default();
++        (region, recorded)
+     }
+ 
+     fn measure_frame_rendered(&self, renderer: &mut dyn ItemRenderer) {
+@@ -1161,6 +1383,13 @@
      ) -> Result<(), i_slint_core::platform::PlatformError> {
          #[cfg(feature = "systemfonts")]
          self.text_layout_cache.component_destroyed(component);
@@ -429,7 +586,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.partial_rendering_state.free_graphics_resources(component, items);
          Ok(())
      }
-@@ -1199,6 +1323,8 @@
+@@ -1199,6 +1428,8 @@
          *self.maybe_window_adapter.borrow_mut() = Some(Rc::downgrade(window_adapter));
          #[cfg(feature = "systemfonts")]
          self.text_layout_cache.clear_all();
@@ -438,7 +595,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.partial_rendering_state.clear_cache();
      }
  
-@@ -1480,6 +1606,9 @@
+@@ -1480,6 +1711,9 @@
          software_renderer.rotation.get(),
          #[cfg(feature = "systemfonts")]
          &software_renderer.text_layout_cache,
@@ -448,7 +605,207 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      );
      let mut renderer =
          software_renderer.partial_rendering_state.create_partial_renderer(prepare_scene);
-@@ -2200,6 +2329,10 @@
+@@ -1841,9 +2075,20 @@
+     dirty_range_cache: Vec<core::ops::Range<i16>>,
+     dirty_region: PhysicalRegion,
+     scale_factor: ScaleFactor,
++    /// When set, draw calls are recorded here instead of drawn (`parallel`).
++    #[cfg(feature = "std")]
++    recording: Option<Vec<parallel::Op>>,
+ }
+ 
+ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
++    /// `clip` intersected with each rectangle of the dirty region.
++    fn dirty_clips(&self, clip: &PhysicalRect) -> Vec<PhysicalRect> {
++        self.dirty_region
++            .iter_box()
++            .filter_map(|b| clip.intersection(&b.to_rect()))
++            .collect()
++    }
++
+     fn foreach_ranges(
+         &mut self,
+         geometry: &PhysicalRect,
+@@ -1904,6 +2149,11 @@
+ 
+ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<'_, B> {
+     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>) {
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            ops.push(parallel::Op::Texture(geometry, texture));
++            return;
++        }
+         self.process_texture_impl(geometry, texture);
+     }
+ 
+@@ -1912,6 +2162,30 @@
+         texture: &target_pixel_buffer::DrawTextureArgs,
+         clip: PhysicalRect,
+     ) {
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            // As `PrepareScene` keeps it: a static slice, or the shared buffer.
++            let Some((extra, geometry)) = SceneTextureExtra::from_target_texture(texture, &clip)
++            else {
++                return;
++            };
++            match &texture.data {
++                target_pixel_buffer::TextureDataContainer::Static(data) => {
++                    let pixel_stride = (data.byte_stride / data.pixel_format.bpp()) as u16;
++                    ops.push(parallel::Op::Texture(
++                        geometry,
++                        SceneTexture { data: data.data, format: data.pixel_format, pixel_stride, extra },
++                    ));
++                }
++                target_pixel_buffer::TextureDataContainer::Shared { buffer, source_rect } => {
++                    ops.push(parallel::Op::SharedTexture(
++                        geometry,
++                        SharedBufferCommand { buffer: buffer.clone(), source_rect: *source_rect, extra },
++                    ));
++                }
++            }
++            return;
++        }
+         if self.buffer.draw_texture(texture, &self.dirty_region.intersection(&clip)) {
+             return;
+         }
+@@ -1928,7 +2202,12 @@
+         args: &target_pixel_buffer::DrawRectangleArgs,
+         clip: PhysicalRect,
+     ) {
+-        if self.buffer.draw_rectangle(args, &self.dirty_region.intersection(&clip)) {
++        // Recording: the rectangle's primitives come back here and are recorded.
++        #[cfg(feature = "std")]
++        let recording = self.recording.is_some();
++        #[cfg(not(feature = "std"))]
++        let recording = false;
++        if !recording && self.buffer.draw_rectangle(args, &self.dirty_region.intersection(&clip)) {
+             return;
+         }
+ 
+@@ -1937,6 +2216,11 @@
+     }
+ 
+     fn process_rounded_rectangle(&mut self, geometry: PhysicalRect, rr: RoundedRectangle) {
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            ops.push(parallel::Op::RoundedRectangle(geometry, rr));
++            return;
++        }
+         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
+             draw_functions::draw_rounded_rectangle_line(
+                 &geometry,
+@@ -1950,12 +2234,22 @@
+     }
+ 
+     fn process_simple_rectangle(&mut self, geometry: PhysicalRect, color: PremultipliedRgbaColor) {
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            ops.push(parallel::Op::Rectangle(geometry, color));
++            return;
++        }
+         self.foreach_ranges(&geometry, |_line, buffer, _extra_left_clip, _extra_right_clip| {
+             <B::TargetPixel>::blend_slice(buffer, color)
+         });
+     }
+ 
+     fn process_linear_gradient(&mut self, geometry: PhysicalRect, g: LinearGradientCommand) {
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            ops.push(parallel::Op::LinearGradient(geometry, g));
++            return;
++        }
+         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, _extra_right_clip| {
+             draw_functions::draw_linear_gradient(
+                 &geometry,
+@@ -1967,6 +2261,11 @@
+         });
+     }
+     fn process_radial_gradient(&mut self, geometry: PhysicalRect, g: RadialGradientCommand) {
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            ops.push(parallel::Op::RadialGradient(geometry, g));
++            return;
++        }
+         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
+             draw_functions::draw_radial_gradient(
+                 &geometry,
+@@ -1979,6 +2278,11 @@
+         });
+     }
+     fn process_conic_gradient(&mut self, geometry: PhysicalRect, g: ConicGradientCommand) {
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            ops.push(parallel::Op::ConicGradient(geometry, g));
++            return;
++        }
+         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
+             draw_functions::draw_conic_gradient(
+                 &geometry,
+@@ -1999,7 +2303,16 @@
+         commands: alloc::vec::Vec<path::Command>,
+         color: PremultipliedRgbaColor,
+     ) {
+-        path::render_filled_path(&commands, &path_geometry, &clip_geometry, color, self.buffer);
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            ops.push(parallel::Op::FilledPath { path: path_geometry, clip: clip_geometry, commands, color });
++            return;
++        }
++        // Only inside the dirty region: drawing the path over unchanged pixels
++        // would blend its anti-aliased edges twice.
++        for clip in self.dirty_clips(&clip_geometry) {
++            path::render_filled_path(&commands, &path_geometry, &clip, color, self.buffer);
++        }
+     }
+ 
+     #[cfg(feature = "path")]
+@@ -2014,17 +2327,33 @@
+         stroke_line_join: i_slint_core::items::LineJoin,
+         stroke_miter_limit: f32,
+     ) {
+-        path::render_stroked_path(
+-            &commands,
+-            &path_geometry,
+-            &clip_geometry,
+-            color,
+-            stroke_width,
+-            stroke_line_cap,
+-            stroke_line_join,
+-            stroke_miter_limit,
+-            self.buffer,
+-        );
++        #[cfg(feature = "std")]
++        if let Some(ops) = &mut self.recording {
++            ops.push(parallel::Op::StrokedPath {
++                path: path_geometry,
++                clip: clip_geometry,
++                commands,
++                color,
++                width: stroke_width,
++                cap: stroke_line_cap,
++                join: stroke_line_join,
++                miter_limit: stroke_miter_limit,
++            });
++            return;
++        }
++        for clip in self.dirty_clips(&clip_geometry) {
++            path::render_stroked_path(
++                &commands,
++                &path_geometry,
++                &clip,
++                color,
++                stroke_width,
++                stroke_line_cap,
++                stroke_line_join,
++                stroke_miter_limit,
++                self.buffer,
++            );
++        }
+     }
+ }
+ 
+@@ -2200,6 +2529,10 @@
      rotation: RotationInfo,
      #[cfg(feature = "systemfonts")]
      text_layout_cache: &'a sharedparley::TextLayoutCache,
@@ -459,7 +816,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
  }
  
  impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
-@@ -2210,6 +2343,7 @@
+@@ -2210,6 +2543,7 @@
          processor: T,
          orientation: RenderingRotation,
          #[cfg(feature = "systemfonts")] text_layout_cache: &'a sharedparley::TextLayoutCache,
@@ -467,15 +824,15 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      ) -> Self {
          Self {
              processor,
-@@ -2227,9 +2361,156 @@
+@@ -2227,7 +2561,167 @@
              rotation: RotationInfo { orientation, screen_size },
              #[cfg(feature = "systemfonts")]
              text_layout_cache,
 +            #[cfg(feature = "std")]
 +            layer_cache,
-         }
-     }
- 
++        }
++    }
++
 +    /// Draw a `Layer`'s children from its cached image, rendering the image first if the
 +    /// cache has none or anything it depends on changed.
 +    #[cfg(feature = "std")]
@@ -574,7 +931,11 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +            return None;
 +        }
 +        let mut pixels = alloc::vec![PremultipliedRgbaColor::default(); width * height];
-+        {
++        // A large image is rasterised like a frame: the children's draw calls are recorded
++        // here and replayed in bands on the render threads (`parallel`).
++        let threads = cache.threads.get();
++        let record = threads > 1 && width * height >= parallel::MIN_PARALLEL_PIXELS;
++        let recorded = {
 +            let mut target = TargetPixelSlice { data: &mut pixels, pixel_stride: width };
 +            let mut dirty_region = PhysicalRegion::default();
 +            dirty_region.rectangles[0] = euclid::Box2D::new(
@@ -589,8 +950,9 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                RenderToBuffer {
 +                    buffer: &mut target,
 +                    dirty_range_cache: Vec::new(),
-+                    dirty_region,
++                    dirty_region: dirty_region.clone(),
 +                    scale_factor: scale,
++                    recording: record.then(Vec::new),
 +                },
 +                RenderingRotation::NoRotation,
 +                #[cfg(feature = "systemfonts")]
@@ -608,7 +970,15 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                item_rc.index() as isize,
 +                &window_adapter,
 +            );
-+        }
++            nested.processor.recording.take().map(|ops| parallel::Recorded {
++                ops,
++                dirty_region,
++                scale_factor: scale,
++            })
++        };
++        if let Some(recorded) = recorded {
++            parallel::replay_in_bands(&recorded, &mut pixels, width, threads);
+         }
 +        let mut image = SharedPixelBuffer::<Rgba8Pixel>::new(width as u32, height as u32);
 +        for (to, from) in image.make_mut_slice().iter_mut().zip(&pixels) {
 +            *to = Rgba8Pixel::new(from.red, from.green, from.blue, from.alpha);
@@ -619,12 +989,10 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +            shifted_at: Cell::new(None),
 +            image,
 +        }))
-+    }
-+
+     }
+ 
      fn should_draw(&self, rect: &LogicalRect) -> bool {
-         !rect.size.is_empty()
-             && self.current_state.alpha > 0.01
-@@ -3065,6 +3346,42 @@
+@@ -3065,6 +3559,42 @@
          // TODO
      }
  
@@ -667,9 +1035,275 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {
          match self.current_state.clip.intersection(&other) {
              Some(r) => {
+diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/parallel.rs
+--- a/i-slint-renderer-software/parallel.rs	1969-12-31 17:00:00.000000000 -0700
++++ b/i-slint-renderer-software/parallel.rs	2026-11-02 19:51:45.688665828 -0700
+@@ -0,0 +1,262 @@
++// Copyright © SixtyFPS GmbH <info@slint.dev>
++// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
++
++//! Rasterising one frame on several threads.
++//!
++//! The item walk stays on the UI thread: the scene builder's draw calls are
++//! recorded as [`Op`]s instead of being drawn. The frame's dirty region is then
++//! split into horizontal bands of buffer lines, and one scoped thread per band
++//! replays every op through a [`RenderToBuffer`] clipped to its band. Bands own
++//! disjoint lines, and each op draws a pixel exactly as the single-threaded
++//! renderer does, so the result is the same image.
++
++#![allow(unsafe_code)] // Two marker impls, justified where they are written.
++
++use super::*;
++
++/// One recorded draw call. Every field is plain data, or shared data
++/// (`SharedBufferData`, `SharedVector`, `'static` texture slices) that the
++/// replay only reads: no reference count is touched off the UI thread.
++pub(super) enum Op {
++    /// The window background for the dirty region.
++    Background(Color),
++    Texture(PhysicalRect, SceneTexture<'static>),
++    SharedTexture(PhysicalRect, SharedBufferCommand),
++    Rectangle(PhysicalRect, PremultipliedRgbaColor),
++    RoundedRectangle(PhysicalRect, RoundedRectangle),
++    LinearGradient(PhysicalRect, LinearGradientCommand),
++    RadialGradient(PhysicalRect, RadialGradientCommand),
++    ConicGradient(PhysicalRect, ConicGradientCommand),
++    #[cfg(feature = "path")]
++    FilledPath {
++        path: PhysicalRect,
++        clip: PhysicalRect,
++        commands: alloc::vec::Vec<path::Command>,
++        color: PremultipliedRgbaColor,
++    },
++    #[cfg(feature = "path")]
++    StrokedPath {
++        path: PhysicalRect,
++        clip: PhysicalRect,
++        commands: alloc::vec::Vec<path::Command>,
++        color: PremultipliedRgbaColor,
++        width: f32,
++        cap: i_slint_core::items::LineCap,
++        join: i_slint_core::items::LineJoin,
++        miter_limit: f32,
++    },
++}
++
++/// The ops of one frame and the region they draw.
++pub(super) struct Recorded {
++    pub ops: Vec<Op>,
++    pub dirty_region: PhysicalRegion,
++    pub scale_factor: ScaleFactor,
++}
++
++/// A frame whose dirty region is smaller than this is drawn on one thread:
++/// starting threads costs more than it saves.
++pub(super) const MIN_PARALLEL_PIXELS: usize = 16 * 1024;
++
++/// How many threads rasterise a frame by default: the online cores, at most 4.
++pub(super) fn default_threads() -> usize {
++    std::thread::available_parallelism().map_or(1, |n| n.get().min(4))
++}
++
++/// A band of buffer lines `[first, first + lines)`, borrowed mutably from the frame buffer.
++struct Band<'a, T> {
++    data: &'a mut [T],
++    pixel_stride: usize,
++    first: usize,
++    total_lines: usize,
++    /// Returned for a line outside the band. Callers only read its length
++    /// (path rendering asks line 0 for the width); nothing drawn there is kept.
++    outside: Vec<T>,
++}
++
++impl<T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for Band<'_, T> {
++    type TargetPixel = T;
++
++    fn line_slice(&mut self, line_number: usize) -> &mut [T] {
++        let lines = self.data.len() / self.pixel_stride;
++        if line_number < self.first || line_number >= self.first + lines {
++            if self.outside.len() != self.pixel_stride {
++                self.outside = alloc::vec![T::background(); self.pixel_stride];
++            }
++            return &mut self.outside;
++        }
++        let offset = (line_number - self.first) * self.pixel_stride;
++        &mut self.data[offset..offset + self.pixel_stride]
++    }
++
++    fn num_lines(&self) -> usize {
++        self.total_lines
++    }
++}
++
++/// Shares the ops with the band threads. Sound because the replay only reads
++/// them: it borrows texture slices and gradient stops and never clones or
++/// drops a reference-counted value. The UI thread waits for every band.
++struct SharedOps<'a>(&'a Recorded);
++unsafe impl Sync for SharedOps<'_> {}
++
++/// A band's lines, sent to its thread. Target pixels are plain values.
++struct SendBand<'a, T>(Band<'a, T>);
++unsafe impl<T> Send for SendBand<'_, T> {}
++
++impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
++    /// Draw one recorded op, as the matching `ProcessScene` call would have.
++    pub(super) fn replay(&mut self, op: &Op) {
++        match op {
++            Op::Background(color) => {
++                let mut bg = <B::TargetPixel>::background();
++                TargetPixel::blend(&mut bg, (*color).into());
++                let bounds = self.dirty_region.bounding_rect();
++                self.foreach_ranges(&bounds, |_, buffer, _, _| buffer.fill(bg));
++            }
++            Op::Texture(geometry, texture) => {
++                let texture = SceneTexture { ..*texture };
++                self.process_texture_impl(*geometry, texture);
++            }
++            Op::SharedTexture(geometry, command) => {
++                self.process_texture_impl(*geometry, command.as_texture());
++            }
++            Op::Rectangle(geometry, color) => {
++                let color = *color;
++                self.foreach_ranges(geometry, |_, buffer, _, _| {
++                    <B::TargetPixel>::blend_slice(buffer, color)
++                });
++            }
++            Op::RoundedRectangle(geometry, rr) => {
++                self.foreach_ranges(geometry, |line, buffer, left, right| {
++                    draw_functions::draw_rounded_rectangle_line(
++                        geometry,
++                        PhysicalLength::new(line),
++                        rr,
++                        buffer,
++                        left,
++                        right,
++                    );
++                });
++            }
++            Op::LinearGradient(geometry, g) => {
++                self.foreach_ranges(geometry, |line, buffer, left, _| {
++                    draw_functions::draw_linear_gradient(
++                        geometry,
++                        PhysicalLength::new(line),
++                        g,
++                        buffer,
++                        left,
++                    );
++                });
++            }
++            Op::RadialGradient(geometry, g) => {
++                self.foreach_ranges(geometry, |line, buffer, left, right| {
++                    draw_functions::draw_radial_gradient(
++                        geometry,
++                        PhysicalLength::new(line),
++                        g,
++                        buffer,
++                        left,
++                        right,
++                    );
++                });
++            }
++            Op::ConicGradient(geometry, g) => {
++                self.foreach_ranges(geometry, |line, buffer, left, right| {
++                    draw_functions::draw_conic_gradient(
++                        geometry,
++                        PhysicalLength::new(line),
++                        g,
++                        buffer,
++                        left,
++                        right,
++                    );
++                });
++            }
++            #[cfg(feature = "path")]
++            Op::FilledPath { path, clip, commands, color } => {
++                // As on one thread: inside the dirty region, here this band's part of it.
++                for clip in self.dirty_clips(clip) {
++                    path::render_filled_path(commands, path, &clip, *color, self.buffer);
++                }
++            }
++            #[cfg(feature = "path")]
++            Op::StrokedPath { path, clip, commands, color, width, cap, join, miter_limit } => {
++                for clip in self.dirty_clips(clip) {
++                    path::render_stroked_path(
++                        commands,
++                        path,
++                        &clip,
++                        *color,
++                        *width,
++                        *cap,
++                        *join,
++                        *miter_limit,
++                        self.buffer,
++                    );
++                }
++            }
++        }
++    }
++}
++
++/// Replay `recorded` into `buffer` on `threads` threads, one band of lines each.
++pub(super) fn replay_in_bands<T: TargetPixel>(
++    recorded: &Recorded,
++    buffer: &mut [T],
++    pixel_stride: usize,
++    threads: usize,
++) {
++    let total_lines = buffer.len() / pixel_stride;
++    let bounds = recorded.dirty_region.bounding_rect();
++    let (top, bottom) = (bounds.min_y().max(0) as usize, (bounds.max_y().max(0) as usize).min(total_lines));
++    if top >= bottom {
++        return;
++    }
++    let threads = threads.clamp(1, bottom - top);
++    let per_band = (bottom - top).div_ceil(threads);
++    let mut bands = Vec::with_capacity(threads);
++    let (_, mut rest) = buffer.split_at_mut(top * pixel_stride);
++    let mut first = top;
++    while first < bottom {
++        let lines = per_band.min(bottom - first);
++        let (band, tail) = rest.split_at_mut((lines * pixel_stride).min(rest.len()));
++        bands.push(SendBand(Band { data: band, pixel_stride, first, total_lines, outside: Vec::new() }));
++        rest = tail;
++        first += lines;
++    }
++    let shared = SharedOps(recorded);
++    let shared = &shared;
++    let draw = move |band: SendBand<'_, T>| {
++        let recorded = shared.0;
++        let mut band = band.0;
++        let rect = PhysicalRect::new(
++            PhysicalPoint::new(i16::MIN / 2, band.first as i16),
++            PhysicalSize::new(i16::MAX, (band.data.len() / band.pixel_stride) as i16),
++        );
++        let mut renderer = RenderToBuffer {
++            buffer: &mut band,
++            dirty_range_cache: Vec::new(),
++            dirty_region: recorded.dirty_region.intersection(&rect),
++            scale_factor: recorded.scale_factor,
++            recording: None,
++        };
++        if renderer.dirty_region.count == 0 {
++            return;
++        }
++        for op in &recorded.ops {
++            renderer.replay(op);
++        }
++    };
++    std::thread::scope(|scope| {
++        let mut bands = bands.into_iter();
++        let mine = bands.next();
++        for band in bands {
++            scope.spawn(move || draw(band));
++        }
++        if let Some(band) = mine {
++            draw(band);
++        }
++    });
++}
 diff -ruN a/slint-interpreter/Cargo.toml b/slint-interpreter/Cargo.toml
---- a/slint-interpreter/Cargo.toml	2026-11-02 19:13:22.513879234 -0700
-+++ b/slint-interpreter/Cargo.toml	2026-11-02 19:13:22.515438387 -0700
+--- a/slint-interpreter/Cargo.toml	2026-11-02 19:51:45.689951673 -0700
++++ b/slint-interpreter/Cargo.toml	2026-11-02 19:51:45.691601566 -0700
 @@ -153,17 +153,8 @@
  name = "slint_interpreter"
  path = "lib.rs"
@@ -688,10 +1322,52 @@ diff -ruN a/slint-interpreter/Cargo.toml b/slint-interpreter/Cargo.toml
  
  [dependencies.derive_more]
  version = "2.0.0"
+diff -ruN a/slint-interpreter/eval.rs b/slint-interpreter/eval.rs
+--- a/slint-interpreter/eval.rs	2026-11-02 19:51:45.690068130 -0700
++++ b/slint-interpreter/eval.rs	2026-11-02 19:51:45.691688114 -0700
+@@ -439,7 +439,9 @@
+                 panic!("invoke_function on non-function global reference")
+             };
+             let function = &global.compilation_unit.globals[global.global_idx].functions[*idx];
+-            let code = function.code.borrow().clone();
++            // Evaluate the body in place: nothing mutates compiled code at run time, and a
++            // deep copy of the expression tree on every call costs more than the call.
++            let code = function.code.borrow();
+             let mut inner_ctx =
+                 EvalContext::for_global(ctx.globals.clone(), global.compilation_unit.clone());
+             inner_ctx.function_arg_types = function.args.clone();
+@@ -455,7 +457,7 @@
+             };
+             let sc = &instance.compilation_unit.sub_components[instance.sub_component_idx];
+             let function = &sc.functions[*idx];
+-            let code = function.code.borrow().clone();
++            let code = function.code.borrow();
+             let mut inner_ctx = EvalContext::with_arguments(instance.clone(), args);
+             inner_ctx.function_arg_types = function.args.clone();
+             eval_expression(&mut inner_ctx, &code)
 diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_vtable.rs
---- a/slint-interpreter/item_tree_vtable.rs	2026-11-02 19:13:22.513982637 -0700
-+++ b/slint-interpreter/item_tree_vtable.rs	2026-11-02 19:13:22.515540995 -0700
-@@ -297,6 +297,22 @@
+--- a/slint-interpreter/item_tree_vtable.rs	2026-11-02 19:51:45.690068130 -0700
++++ b/slint-interpreter/item_tree_vtable.rs	2026-11-02 19:51:45.691688114 -0700
+@@ -281,22 +281,39 @@
+             parent_sc
+                 .geometries
+                 .get(placement_idx)
+-                .and_then(|g| g.clone())
++                .and_then(|g| g.as_ref())
+                 .map(|expr| (expr, parent_rc))
+         } else {
+             None
+         };
++        // Borrow the compiled geometry; cloning a `MutExpression` deep-copies its tree.
+         let (expr_cell, ctx_owner) = if let Some(pair) = parent_placement {
+             pair
+         } else {
+             let tree_local_idx = item.index_in_tree as usize;
+             match sc.geometries.get(tree_local_idx) {
+-                Some(Some(expr)) => (expr.clone(), owner_rc),
++                Some(Some(expr)) => (expr, owner_rc),
+                 _ => return LogicalRect::default(),
+             }
          };
          let expr = expr_cell.borrow();
          let mut ctx = crate::eval::EvalContext::new(ctx_owner);

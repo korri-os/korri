@@ -43,6 +43,8 @@ pub struct Options {
     /// Redraw the whole window every frame (a compositor that gives back a
     /// fresh buffer: softbuffer's buffer age 0).
     pub full: bool,
+    /// Rasterising threads; `None` keeps the renderer's default (online cores, at most 4).
+    pub threads: Option<usize>,
 }
 
 const FRAME: Duration = Duration::from_nanos(16_666_667);
@@ -75,23 +77,28 @@ impl Platform for BenchPlatform {
 #[derive(Default, Clone, Copy)]
 struct Frame {
     logic: f64,
+    /// Of `logic`: the `view()` call.
+    view: f64,
     convert: f64,
     set: f64,
     animate: f64,
     walk: f64,
     raster: f64,
+    /// Of `raster`: replaying the recorded draw calls on the band threads.
+    replay: f64,
     total: f64,
     dirty_px: f64,
 }
 
 type Phase = (&'static str, fn(&Frame) -> f64);
-const PHASES: [Phase; 8] = [
+const PHASES: [Phase; 9] = [
     ("logic (Tick/update/view)", |f| f.logic),
     ("view to properties: convert", |f| f.convert),
     ("view to properties: set", |f| f.set),
     ("timers and animations", |f| f.animate),
     ("dirty walk and layout", |f| f.walk),
     ("rasterisation", |f| f.raster),
+    ("  of which banded replay", |f| f.replay),
     ("frame total", |f| f.total),
     ("dirty region (px)", |f| f.dirty_px),
 ];
@@ -164,6 +171,8 @@ pub fn run(options: Options) -> Result<String> {
     let mut last_press = 0usize;
     // KORRI_BENCH_FRAMES=1: one line per frame on stderr.
     let log_frames = std::env::var_os("KORRI_BENCH_FRAMES").is_some();
+    // KORRI_BENCH_DUMP=DIR: every drawn frame as a PNG, dirty rectangles outlined in red.
+    let dump = std::env::var_os("KORRI_BENCH_DUMP").map(std::path::PathBuf::from);
     // Warm up: the first frames fill caches; they are not reported.
     let warm = 10;
     for n in 0..options.frames + warm {
@@ -220,7 +229,9 @@ pub fn run(options: Options) -> Result<String> {
             // As the shell: view() only when the state or model changed.
             if engine.view_stale() {
                 engine.views_drawn();
+                let view_started = Instant::now();
                 let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
+                frame.view = view_started.elapsed().as_secs_f64() * 1e6;
                 frame.logic = logic.elapsed().as_secs_f64() * 1e6;
                 binder.apply(&surface, &view, &mut images)?;
                 frame.convert = binder.timing.0.as_secs_f64() * 1e6;
@@ -233,21 +244,29 @@ pub fn run(options: Options) -> Result<String> {
         slint::platform::update_timers_and_animations();
         frame.animate = animate.elapsed().as_secs_f64() * 1e6;
         window.draw_if_needed(|renderer| {
+            if let Some(threads) = options.threads {
+                renderer.set_render_threads(threads);
+            }
             let region = renderer.render(&mut buffer, width as usize);
             let (walk, raster) = renderer.last_frame_phases();
             frame.walk = walk.as_secs_f64() * 1e6;
             frame.raster = raster.as_secs_f64() * 1e6;
+            frame.replay = renderer.last_frame_replay().as_secs_f64() * 1e6;
             frame.dirty_px = region
                 .iter()
                 .map(|(_, size)| size.width as f64 * size.height as f64)
                 .sum();
+            if let Some(dir) = &dump {
+                let rects: Vec<_> = region.iter().collect();
+                save_frame(dir, n, &buffer, width, height, &rects);
+            }
         });
         frame.total = started.elapsed().as_secs_f64() * 1e6;
         if n >= warm {
             if log_frames {
                 eprintln!(
-                    "FRAME {n} logic={:.0} set={:.0} walk={:.0} raster={:.0} total={:.0} px={:.0}",
-                    frame.logic, frame.set, frame.walk, frame.raster, frame.total, frame.dirty_px
+                    "FRAME {n} logic={:.0} view={:.0} set={:.0} walk={:.0} raster={:.0} replay={:.0} total={:.0} px={:.0}",
+                    frame.logic, frame.view, frame.set, frame.walk, frame.raster, frame.replay, frame.total, frame.dirty_px
                 );
             }
             frames.push(frame);
@@ -267,7 +286,7 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 
 fn report(options: &Options, frames: &[Frame]) -> String {
     let mut out = format!(
-        "bench {} {}x{} frames={} games={} presses={} prefs={:?} buffer={}\n",
+        "bench {} {}x{} frames={} games={} presses={} prefs={:?} buffer={} threads={}\n",
         options.surface,
         options.size.0,
         options.size.1,
@@ -275,7 +294,10 @@ fn report(options: &Options, frames: &[Frame]) -> String {
         options.games,
         options.presses.len(),
         options.preferences,
-        if options.full { "new" } else { "reused" }
+        if options.full { "new" } else { "reused" },
+        options
+            .threads
+            .map_or("default".to_owned(), |t| t.to_string())
     );
     out += &format!(
         "{:<30} {:>10} {:>10} {:>10}\n",
@@ -294,4 +316,39 @@ fn report(options: &Options, frames: &[Frame]) -> String {
     let over = frames.iter().filter(|f| f.total > 16_667.0).count();
     out += &format!("frames over 16.7 ms: {over} of {}\n", frames.len());
     out
+}
+
+fn save_frame(
+    dir: &std::path::Path,
+    n: usize,
+    buffer: &[PremultipliedRgbaColor],
+    width: u32,
+    height: u32,
+    rects: &[(slint::PhysicalPosition, slint::PhysicalSize)],
+) {
+    let mut img = image::RgbImage::new(width, height);
+    for (i, p) in buffer.iter().enumerate() {
+        img.put_pixel(
+            i as u32 % width,
+            i as u32 / width,
+            image::Rgb([p.red, p.green, p.blue]),
+        );
+    }
+    for (pos, size) in rects {
+        let (x0, y0) = (pos.x.max(0) as u32, pos.y.max(0) as u32);
+        let (x1, y1) = (
+            (x0 + size.width).min(width) - 1,
+            (y0 + size.height).min(height) - 1,
+        );
+        for x in x0..=x1 {
+            img.put_pixel(x, y0, image::Rgb([255, 0, 0]));
+            img.put_pixel(x, y1, image::Rgb([255, 0, 0]));
+        }
+        for y in y0..=y1 {
+            img.put_pixel(x0, y, image::Rgb([255, 0, 0]));
+            img.put_pixel(x1, y, image::Rgb([255, 0, 0]));
+        }
+    }
+    let _ = std::fs::create_dir_all(dir);
+    let _ = img.save(dir.join(format!("frame-{n:04}.png")));
 }

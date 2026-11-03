@@ -281,17 +281,18 @@ impl i_slint_core::item_tree::ItemTree for Instance {
             parent_sc
                 .geometries
                 .get(placement_idx)
-                .and_then(|g| g.clone())
+                .and_then(|g| g.as_ref())
                 .map(|expr| (expr, parent_rc))
         } else {
             None
         };
+        // Borrow the compiled geometry; cloning a `MutExpression` deep-copies its tree.
         let (expr_cell, ctx_owner) = if let Some(pair) = parent_placement {
             pair
         } else {
             let tree_local_idx = item.index_in_tree as usize;
             match sc.geometries.get(tree_local_idx) {
-                Some(Some(expr)) => (expr.clone(), owner_rc),
+                Some(Some(expr)) => (expr, owner_rc),
                 _ => return LogicalRect::default(),
             }
         };

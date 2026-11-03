@@ -22,6 +22,8 @@ mod minimal_software_window;
 #[cfg(feature = "path")]
 mod path;
 mod scene;
+#[cfg(feature = "std")]
+mod parallel;
 
 use self::fonts::GlyphRenderer;
 pub use self::minimal_software_window::MinimalSoftwareWindow;
@@ -446,6 +448,8 @@ struct LayerCache {
     shifted: RefCell<DirtyRegion>,
     /// Frames rendered by this renderer, to tell consecutive frames apart.
     frame: Cell<u64>,
+    /// Threads a layer image is rasterised with: the renderer's `render` threads this frame.
+    threads: Cell<usize>,
     /// Per layer item: the last frame its image was rendered.
     rendered: RefCell<std::collections::HashMap<(usize, u32), u64>>,
     /// Layers whose content changed in consecutive frames (an animation inside them): drawn
@@ -512,6 +516,12 @@ pub struct SoftwareRenderer {
     /// The last render's phases: dirty-region walk and rasterisation.
     #[cfg(feature = "std")]
     last_phases: Cell<(std::time::Duration, std::time::Duration)>,
+    /// Threads `render` rasterises with (`parallel`).
+    #[cfg(feature = "std")]
+    render_threads: Cell<usize>,
+    /// Of the last raster phase: the banded replay (`parallel`).
+    #[cfg(feature = "std")]
+    last_replay: Cell<std::time::Duration>,
 }
 
 impl Default for SoftwareRenderer {
@@ -531,6 +541,10 @@ impl Default for SoftwareRenderer {
             layer_cache_size: Default::default(),
             #[cfg(feature = "std")]
             last_phases: Default::default(),
+            #[cfg(feature = "std")]
+            render_threads: Cell::new(parallel::default_threads()),
+            #[cfg(feature = "std")]
+            last_replay: Default::default(),
         }
     }
 }
@@ -618,7 +632,50 @@ impl SoftwareRenderer {
     /// Returns the physical dirty region for this frame, excluding the extra_draw_region,
     /// in the window frame of reference. It is affected by the screen rotation.
     pub fn render(&self, buffer: &mut [impl TargetPixel], pixel_stride: usize) -> PhysicalRegion {
+        #[cfg(feature = "std")]
+        self.layer_cache.threads.set(self.render_threads.get());
+        if self.render_threads.get() > 1 {
+            // Walk the items here, record the draw calls, then rasterise the
+            // dirty region in bands of lines on several threads (`parallel`).
+            let (region, recorded) =
+                self.render_buffer_inner(&mut TargetPixelSlice { data: buffer, pixel_stride }, true);
+            if let Some(recorded) = recorded {
+                let pixels: usize = recorded
+                    .dirty_region
+                    .iter()
+                    .map(|(_, size)| size.width as usize * size.height as usize)
+                    .sum();
+                let threads = if pixels < parallel::MIN_PARALLEL_PIXELS {
+                    1
+                } else {
+                    self.render_threads.get()
+                };
+                let started = std::time::Instant::now();
+                parallel::replay_in_bands(&recorded, buffer, pixel_stride, threads);
+                let replay = started.elapsed();
+                let (walk, record) = self.last_phases.get();
+                self.last_phases.set((walk, record + replay));
+                self.last_replay.set(replay);
+            }
+            return region;
+        }
         self.render_buffer_impl(&mut TargetPixelSlice { data: buffer, pixel_stride })
+    }
+
+    /// Of the last raster phase, the time replaying the recorded draw calls in bands; zero
+    /// when the frame was drawn on one thread without recording.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_frame_replay(&self) -> std::time::Duration {
+        self.last_replay.get()
+    }
+
+    /// How many threads `render` rasterises a frame with. The default is the
+    /// online cores, at most 4; 1 draws on the calling thread only.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_render_threads(&self, threads: usize) {
+        self.render_threads.set(threads.max(1));
     }
 
     /// Render the window to the given frame buffer.
@@ -642,13 +699,27 @@ impl SoftwareRenderer {
         &self,
         buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
     ) -> PhysicalRegion {
+        self.render_buffer_inner(buffer, false).0
+    }
+
+    /// Render, or with `record` walk the items and return the frame's draw
+    /// calls instead of drawing them.
+    fn render_buffer_inner(
+        &self,
+        buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
+        #[allow(unused)] record: bool,
+    ) -> (PhysicalRegion, Option<parallel::Recorded>) {
+        #[cfg(feature = "std")]
+        let mut recorded = None;
+        #[cfg(not(feature = "std"))]
+        let recorded = None;
         let pixels_per_line = buffer.line_slice(0).len();
         let num_lines = buffer.num_lines();
         let buffer_pixel_count = num_lines * pixels_per_line;
 
         let Some(window) = self.maybe_window_adapter.borrow().as_ref().and_then(|w| w.upgrade())
         else {
-            return Default::default();
+            return (Default::default(), None);
         };
         let window_inner = WindowInner::from_pub(window.window());
         let factor = ScaleFactor::new(window_inner.scale_factor());
@@ -668,7 +739,7 @@ impl SoftwareRenderer {
             (euclid::size2(pixels_per_line as _, num_lines as _), Brush::default())
         };
         if size.is_empty() {
-            return Default::default();
+            return (Default::default(), None);
         }
         #[cfg(feature = "std")]
         {
@@ -701,6 +772,8 @@ impl SoftwareRenderer {
                 dirty_range_cache: Vec::new(),
                 dirty_region: Default::default(),
                 scale_factor: factor,
+                #[cfg(feature = "std")]
+                recording: None,
             },
             rotation,
             #[cfg(feature = "systemfonts")]
@@ -709,9 +782,13 @@ impl SoftwareRenderer {
             Some(&self.layer_cache),
         );
         let mut renderer = self.partial_rendering_state.create_partial_renderer(buffer_renderer);
+        #[cfg(feature = "std")]
+        if record {
+            renderer.actual_renderer.processor.recording = Some(Vec::new());
+        }
         let window_adapter = renderer.window_adapter.clone();
 
-        window_inner
+        let region = window_inner
             .draw_contents(|components, post_render| {
                 let logical_size = (size.cast() / factor).cast();
                 #[cfg(feature = "std")]
@@ -762,6 +839,25 @@ impl SoftwareRenderer {
                 drop(i);
 
                 renderer.actual_renderer.processor.dirty_region = dirty_region.clone();
+                #[cfg(feature = "std")]
+                if let Some(ops) = &mut renderer.actual_renderer.processor.recording {
+                    ops.push(parallel::Op::Background(background.color()));
+                } else if !renderer
+                    .actual_renderer
+                    .processor
+                    .buffer
+                    .fill_background(&background, &dirty_region)
+                {
+                    let mut bg = TargetPixel::background();
+                    TargetPixel::blend(&mut bg, background.color().into());
+                    renderer.actual_renderer.processor.foreach_ranges(
+                        &dirty_region.bounding_rect(),
+                        |_, buffer, _, _| {
+                            buffer.fill(bg);
+                        },
+                    );
+                }
+                #[cfg(not(feature = "std"))]
                 if !renderer
                     .actual_renderer
                     .processor
@@ -820,10 +916,19 @@ impl SoftwareRenderer {
                 #[cfg(feature = "std")]
                 self.last_phases.set((walk, raster_started.elapsed()));
                 self.measure_frame_rendered(&mut renderer);
+                #[cfg(feature = "std")]
+                if let Some(ops) = renderer.actual_renderer.processor.recording.take() {
+                    recorded = Some(parallel::Recorded {
+                        ops,
+                        dirty_region: dirty_region.clone(),
+                        scale_factor: factor,
+                    });
+                }
 
                 dirty_region
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        (region, recorded)
     }
 
     fn measure_frame_rendered(&self, renderer: &mut dyn ItemRenderer) {
@@ -1970,9 +2075,20 @@ struct RenderToBuffer<'a, TargetPixelBuffer> {
     dirty_range_cache: Vec<core::ops::Range<i16>>,
     dirty_region: PhysicalRegion,
     scale_factor: ScaleFactor,
+    /// When set, draw calls are recorded here instead of drawn (`parallel`).
+    #[cfg(feature = "std")]
+    recording: Option<Vec<parallel::Op>>,
 }
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
+    /// `clip` intersected with each rectangle of the dirty region.
+    fn dirty_clips(&self, clip: &PhysicalRect) -> Vec<PhysicalRect> {
+        self.dirty_region
+            .iter_box()
+            .filter_map(|b| clip.intersection(&b.to_rect()))
+            .collect()
+    }
+
     fn foreach_ranges(
         &mut self,
         geometry: &PhysicalRect,
@@ -2033,6 +2149,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<'_, B> {
     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::Texture(geometry, texture));
+            return;
+        }
         self.process_texture_impl(geometry, texture);
     }
 
@@ -2041,6 +2162,30 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         texture: &target_pixel_buffer::DrawTextureArgs,
         clip: PhysicalRect,
     ) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            // As `PrepareScene` keeps it: a static slice, or the shared buffer.
+            let Some((extra, geometry)) = SceneTextureExtra::from_target_texture(texture, &clip)
+            else {
+                return;
+            };
+            match &texture.data {
+                target_pixel_buffer::TextureDataContainer::Static(data) => {
+                    let pixel_stride = (data.byte_stride / data.pixel_format.bpp()) as u16;
+                    ops.push(parallel::Op::Texture(
+                        geometry,
+                        SceneTexture { data: data.data, format: data.pixel_format, pixel_stride, extra },
+                    ));
+                }
+                target_pixel_buffer::TextureDataContainer::Shared { buffer, source_rect } => {
+                    ops.push(parallel::Op::SharedTexture(
+                        geometry,
+                        SharedBufferCommand { buffer: buffer.clone(), source_rect: *source_rect, extra },
+                    ));
+                }
+            }
+            return;
+        }
         if self.buffer.draw_texture(texture, &self.dirty_region.intersection(&clip)) {
             return;
         }
@@ -2057,7 +2202,12 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         args: &target_pixel_buffer::DrawRectangleArgs,
         clip: PhysicalRect,
     ) {
-        if self.buffer.draw_rectangle(args, &self.dirty_region.intersection(&clip)) {
+        // Recording: the rectangle's primitives come back here and are recorded.
+        #[cfg(feature = "std")]
+        let recording = self.recording.is_some();
+        #[cfg(not(feature = "std"))]
+        let recording = false;
+        if !recording && self.buffer.draw_rectangle(args, &self.dirty_region.intersection(&clip)) {
             return;
         }
 
@@ -2066,6 +2216,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
     }
 
     fn process_rounded_rectangle(&mut self, geometry: PhysicalRect, rr: RoundedRectangle) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::RoundedRectangle(geometry, rr));
+            return;
+        }
         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
             draw_functions::draw_rounded_rectangle_line(
                 &geometry,
@@ -2079,12 +2234,22 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
     }
 
     fn process_simple_rectangle(&mut self, geometry: PhysicalRect, color: PremultipliedRgbaColor) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::Rectangle(geometry, color));
+            return;
+        }
         self.foreach_ranges(&geometry, |_line, buffer, _extra_left_clip, _extra_right_clip| {
             <B::TargetPixel>::blend_slice(buffer, color)
         });
     }
 
     fn process_linear_gradient(&mut self, geometry: PhysicalRect, g: LinearGradientCommand) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::LinearGradient(geometry, g));
+            return;
+        }
         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, _extra_right_clip| {
             draw_functions::draw_linear_gradient(
                 &geometry,
@@ -2096,6 +2261,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         });
     }
     fn process_radial_gradient(&mut self, geometry: PhysicalRect, g: RadialGradientCommand) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::RadialGradient(geometry, g));
+            return;
+        }
         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
             draw_functions::draw_radial_gradient(
                 &geometry,
@@ -2108,6 +2278,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         });
     }
     fn process_conic_gradient(&mut self, geometry: PhysicalRect, g: ConicGradientCommand) {
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::ConicGradient(geometry, g));
+            return;
+        }
         self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
             draw_functions::draw_conic_gradient(
                 &geometry,
@@ -2128,7 +2303,16 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         commands: alloc::vec::Vec<path::Command>,
         color: PremultipliedRgbaColor,
     ) {
-        path::render_filled_path(&commands, &path_geometry, &clip_geometry, color, self.buffer);
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::FilledPath { path: path_geometry, clip: clip_geometry, commands, color });
+            return;
+        }
+        // Only inside the dirty region: drawing the path over unchanged pixels
+        // would blend its anti-aliased edges twice.
+        for clip in self.dirty_clips(&clip_geometry) {
+            path::render_filled_path(&commands, &path_geometry, &clip, color, self.buffer);
+        }
     }
 
     #[cfg(feature = "path")]
@@ -2143,17 +2327,33 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         stroke_line_join: i_slint_core::items::LineJoin,
         stroke_miter_limit: f32,
     ) {
-        path::render_stroked_path(
-            &commands,
-            &path_geometry,
-            &clip_geometry,
-            color,
-            stroke_width,
-            stroke_line_cap,
-            stroke_line_join,
-            stroke_miter_limit,
-            self.buffer,
-        );
+        #[cfg(feature = "std")]
+        if let Some(ops) = &mut self.recording {
+            ops.push(parallel::Op::StrokedPath {
+                path: path_geometry,
+                clip: clip_geometry,
+                commands,
+                color,
+                width: stroke_width,
+                cap: stroke_line_cap,
+                join: stroke_line_join,
+                miter_limit: stroke_miter_limit,
+            });
+            return;
+        }
+        for clip in self.dirty_clips(&clip_geometry) {
+            path::render_stroked_path(
+                &commands,
+                &path_geometry,
+                &clip,
+                color,
+                stroke_width,
+                stroke_line_cap,
+                stroke_line_join,
+                stroke_miter_limit,
+                self.buffer,
+            );
+        }
     }
 }
 
@@ -2464,7 +2664,11 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             return None;
         }
         let mut pixels = alloc::vec![PremultipliedRgbaColor::default(); width * height];
-        {
+        // A large image is rasterised like a frame: the children's draw calls are recorded
+        // here and replayed in bands on the render threads (`parallel`).
+        let threads = cache.threads.get();
+        let record = threads > 1 && width * height >= parallel::MIN_PARALLEL_PIXELS;
+        let recorded = {
             let mut target = TargetPixelSlice { data: &mut pixels, pixel_stride: width };
             let mut dirty_region = PhysicalRegion::default();
             dirty_region.rectangles[0] = euclid::Box2D::new(
@@ -2479,8 +2683,9 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 RenderToBuffer {
                     buffer: &mut target,
                     dirty_range_cache: Vec::new(),
-                    dirty_region,
+                    dirty_region: dirty_region.clone(),
                     scale_factor: scale,
+                    recording: record.then(Vec::new),
                 },
                 RenderingRotation::NoRotation,
                 #[cfg(feature = "systemfonts")]
@@ -2498,6 +2703,14 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 item_rc.index() as isize,
                 &window_adapter,
             );
+            nested.processor.recording.take().map(|ops| parallel::Recorded {
+                ops,
+                dirty_region,
+                scale_factor: scale,
+            })
+        };
+        if let Some(recorded) = recorded {
+            parallel::replay_in_bands(&recorded, &mut pixels, width, threads);
         }
         let mut image = SharedPixelBuffer::<Rgba8Pixel>::new(width as u32, height as u32);
         for (to, from) in image.make_mut_slice().iter_mut().zip(&pixels) {

@@ -439,7 +439,9 @@ pub fn invoke_function(ctx: &EvalContext, mr: &MemberReference, args: Vec<Value>
                 panic!("invoke_function on non-function global reference")
             };
             let function = &global.compilation_unit.globals[global.global_idx].functions[*idx];
-            let code = function.code.borrow().clone();
+            // Evaluate the body in place: nothing mutates compiled code at run time, and a
+            // deep copy of the expression tree on every call costs more than the call.
+            let code = function.code.borrow();
             let mut inner_ctx =
                 EvalContext::for_global(ctx.globals.clone(), global.compilation_unit.clone());
             inner_ctx.function_arg_types = function.args.clone();
@@ -455,7 +457,7 @@ pub fn invoke_function(ctx: &EvalContext, mr: &MemberReference, args: Vec<Value>
             };
             let sc = &instance.compilation_unit.sub_components[instance.sub_component_idx];
             let function = &sc.functions[*idx];
-            let code = function.code.borrow().clone();
+            let code = function.code.borrow();
             let mut inner_ctx = EvalContext::with_arguments(instance.clone(), args);
             inner_ctx.function_arg_types = function.args.clone();
             eval_expression(&mut inner_ctx, &code)

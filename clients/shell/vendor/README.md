@@ -54,6 +54,13 @@ standard mechanisms did not reach the software renderer:
 | `i-slint-renderer-software/draw_functions.rs` | `draw_texture_line` | Direct-row fast path for an unscaled, unrotated, premultiplied texture at full opacity and a whole-pixel offset (cached layers): skip transparent, store opaque, blend the rest. |
 | `i-slint-renderer-software/draw_functions.rs` | `fetch_blend_pixel` (premultiplied, alpha map) | An opaque premultiplied pixel is stored; a glyph pixel with no coverage is skipped. |
 | `slint-interpreter/item_tree_vtable.rs` | `item_geometry` | A geometry that is a struct literal is evaluated field by field instead of as a `Struct` value (a hash map). The renderer's dirty walk asks every item for it every frame. |
+| `i-slint-renderer-software/parallel.rs` (new), `mod parallel` | `Op`, `Recorded`, `RenderToBuffer::replay`, `replay_in_bands`, `default_threads`, `MIN_PARALLEL_PIXELS` | Banded rasterisation. The item walk stays on the UI thread and records each draw call (rectangle, texture, gradient, path) with its clip. Scoped threads then replay the whole list, each into its own horizontal band of the buffer, so no two threads write the same line. The same draw functions run in the same order on every pixel, so the result equals one thread. |
+| `i-slint-renderer-software/lib.rs` | `RenderToBuffer::recording`, every `ProcessScene` method, `render_buffer_inner`, `render` | With more than one thread and a dirty area of at least 16 Ki pixels, `render` records the frame and replays it in bands; otherwise it draws on one thread as before. |
+| `i-slint-renderer-software/lib.rs` | `SoftwareRenderer::render_threads`, `set_render_threads` and `last_frame_replay` (doc-hidden) | The thread count: online cores (`available_parallelism`), at most 4, 1 on a single core. Tests and `korri-shell bench` set it. |
+| `i-slint-renderer-software/lib.rs` | `SceneBuilder::render_layer_image`, `LayerCache::threads` | A layer image of at least 16 Ki pixels is recorded and replayed in bands the same way. |
+| `i-slint-renderer-software/lib.rs` | `RenderToBuffer::{process_filled_path, process_stroked_path}`, `dirty_clips` | A path is drawn once per dirty rectangle, inside it. It was drawn over the whole clip, so its anti-aliased edges were blended again over pixels outside the dirty region. A band replays the same per-rectangle clips. |
+| `slint-interpreter/eval.rs` | `invoke_function` | Evaluates the function body through a borrow instead of a deep copy of its expression tree on every call. |
+| `slint-interpreter/item_tree_vtable.rs` | `item_geometry` | Borrows the compiled geometry expression instead of deep-copying it on every call. |
 | `slint-interpreter/Cargo.toml` | `[[test]]` | The crate's own tests are not vendored. |
 
 ## Verification
@@ -62,6 +69,7 @@ standard mechanisms did not reach the software renderer:
 | --- | --- |
 | `layer_cache.rs::a_cached_layer_matches_direct_rendering_through_every_change` | Two windows render the same tree under partial rendering (`ReusedBuffer`), one with the hint and one without. The pixels are equal for a still subtree, for an item moving under and over the layer, for a text and a colour change inside the layer, for a growing repeater, for whole and fractional layer moves (once settled: a moved layer is first shifted by whole pixels and drawn exactly the next frame), after a resize, and at scale factor 2. A one-pixel blit offset fails this test (checked by planting it). |
 | `layer_cache.rs::a_clean_cached_layer_is_not_walked` | With 300 children in the layer, the direct window walks more than 300 items a frame and the cached window fewer than 20. A change inside walks it once, and then it is clean again. |
+| `parallel_render.rs` | Windows on 1 thread and on 4 (and 3) threads render the same tree (gradients, a path, text, a cached layer, opacity, moves, a resize to 500x333): every frame is pixel-identical. A band replay that skips one draw call fails it (checked by planting it). |
 | `memory_probe.rs` | 20 rounds of compiling, creating, showing and dropping Zone and Pico grow by less than 48 KiB a round. The measured growth is 0 to 10 KiB a round; before the change it was 153 KiB a round. |
 
 Zone on the workstation (Xvfb, 640x480, Zone marks its still parts with
@@ -78,6 +86,9 @@ the hint): 27.5–37.6 % of one core before, 6.2–8.1 % after
   Without the hint, the software renderer applied it to each child.
 - The image covers the item and all its children. A very large layer costs its
   area in memory: 4 bytes a physical pixel.
+- Banded rasterisation parallelises the replay only. The item walk, property
+  evaluation and text shaping stay on the UI thread. A path's coverage mask
+  is computed again in each band it crosses.
 - Font files: a font registered by path stays registered until the process
   ends. Unregistering it would not return its memory while the swash cache
   holds the blob.
