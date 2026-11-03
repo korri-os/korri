@@ -2230,6 +2230,7 @@ dependencies = [
  "base64 0.22.1",
  "fontique",
  "i-slint-compiler",
+ "i-slint-renderer-software",
  "image",
  "korri-surface-treaty",
  "korri-window-sdl",

@@ -78,7 +78,7 @@ use cache::cached_paragraphs;
 use layout::{Layout, LayoutOptions, layout};
 use selection::{SelectionRendering, SelectionSpans};
 use shaping::{
-    Brush, LayoutWithoutLineBreaksBuilder, create_text_paragraphs, shape_paragraphs,
+    Brush, LayoutWithoutLineBreaksBuilder, create_text_paragraphs, ShapingInputs,
     shaping_builder,
 };
 
@@ -109,8 +109,8 @@ fn with_text_layout<R>(
     let text_wrap = layout_builder.text_wrap;
     let scale_factor = layout_builder.scale_factor;
     let mut guard =
-        cached_paragraphs(cache, item_rc, text_wrap, window, &mut font_ctx, &|font_context| {
-            shape_paragraphs(text, item_rc, text_wrap, scale_factor, font_context)
+        cached_paragraphs(cache, item_rc, text_wrap, window, &mut font_ctx, &|| {
+            ShapingInputs::read(text, item_rc, text_wrap, scale_factor)
         });
 
     let line_breaking = guard.take_line_breaking();
@@ -449,7 +449,7 @@ fn text_size_impl(
 ) -> Option<LogicalSize> {
     let scale_factor = scale_factor?;
 
-    // Evaluate the properties that `shape_paragraphs` reads before borrowing font_context: they
+    // Evaluate the properties that `ShapingInputs::read` reads before borrowing font_context: they
     // can trigger property bindings that re-enter text_size for other elements, which would panic
     // on a second borrow_mut(). Afterwards they are clean, so shaping can read them again -- now
     // without re-entering -- inside the cache entry's dependency tracker.

@@ -9,7 +9,7 @@ is specific to Korri.
 
 Drop this directory once upstream Slint has an equivalent. To move to a new
 Slint version, apply `slint.patch` to the new crates, run
-`cargo test --release --features fixture --test layer_cache --test memory_probe`,
+`cargo test --release --features fixture --test layer_cache --test parallel_render --test text_reshape --test memory_probe`,
 and run the Zone CPU proof (`../README.md`, Performance).
 
 ## Why
@@ -59,6 +59,8 @@ standard mechanisms did not reach the software renderer:
 | `i-slint-renderer-software/lib.rs` | `SoftwareRenderer::render_threads`, `set_render_threads` and `last_frame_replay` (doc-hidden) | The thread count: online cores (`available_parallelism`), at most 4, 1 on a single core. Tests and `korri-shell bench` set it. |
 | `i-slint-renderer-software/lib.rs` | `SceneBuilder::render_layer_image`, `LayerCache::threads` | A layer image of at least 16 Ki pixels is recorded and replayed in bands the same way. |
 | `i-slint-renderer-software/lib.rs` | `RenderToBuffer::{process_filled_path, process_stroked_path}`, `dirty_clips` | A path is drawn once per dirty rectangle, inside it. It was drawn over the whole clip, so its anti-aliased edges were blended again over pixels outside the dirty region. A band replays the same per-rectangle clips. |
+| `i-slint-core/textlayout/sharedparley/shaping.rs`, `cache.rs`, `sharedparley.rs` | `ShapingInputs`, `CachedParagraphs::inputs`, `cached_paragraphs` | A text's cache entry keeps the inputs it was shaped from (text, font request, wrap, stroke, link colour, scale). A property is marked dirty whenever something it depends on changes, also when its value then comes out the same. So an invalidated entry reads its inputs again and keeps its paragraphs and line breaking when they are equal. Zone's cards (size animated, font size clamped) reshaped 43 texts a frame; now none. |
+| `i-slint-core/item_rendering.rs` | `ItemCache::with_entry_mut` | Mutable access to one entry, for the above. |
 | `slint-interpreter/eval.rs` | `invoke_function` | Evaluates the function body through a borrow instead of a deep copy of its expression tree on every call. |
 | `slint-interpreter/item_tree_vtable.rs` | `item_geometry` | Borrows the compiled geometry expression instead of deep-copying it on every call. |
 | `slint-interpreter/Cargo.toml` | `[[test]]` | The crate's own tests are not vendored. |
@@ -70,6 +72,7 @@ standard mechanisms did not reach the software renderer:
 | `layer_cache.rs::a_cached_layer_matches_direct_rendering_through_every_change` | Two windows render the same tree under partial rendering (`ReusedBuffer`), one with the hint and one without. The pixels are equal for a still subtree, for an item moving under and over the layer, for a text and a colour change inside the layer, for a growing repeater, for whole and fractional layer moves (once settled: a moved layer is first shifted by whole pixels and drawn exactly the next frame), after a resize, and at scale factor 2. A one-pixel blit offset fails this test (checked by planting it). |
 | `layer_cache.rs::a_clean_cached_layer_is_not_walked` | With 300 children in the layer, the direct window walks more than 300 items a frame and the cached window fewer than 20. A change inside walks it once, and then it is clean again. |
 | `parallel_render.rs` | Windows on 1 thread and on 4 (and 3) threads render the same tree (gradients, a path, text, a cached layer, opacity, moves, a resize to 500x333): every frame is pixel-identical. A band replay that skips one draw call fails it (checked by planting it). |
+| `text_reshape.rs` | Six texts whose width, text and font size depend on an animated size, with the text and size values unchanged: no text is shaped again over four size steps, and each frame equals a fresh window at that size. A new font size shapes all six again. Comparing nothing (always reshaping) fails it (checked by planting it). |
 | `memory_probe.rs` | 20 rounds of compiling, creating, showing and dropping Zone and Pico grow by less than 48 KiB a round. The measured growth is 0 to 10 KiB a round; before the change it was 153 KiB a round. |
 
 Zone on the workstation (Xvfb, 640x480, Zone marks its still parts with
