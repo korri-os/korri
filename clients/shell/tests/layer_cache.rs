@@ -221,11 +221,16 @@ fn a_clean_cached_layer_is_not_walked() {
         cached < 20,
         "the clean cached layer is skipped: walked {cached}"
     );
-    // A change inside makes it walk again, once.
+    // A change inside draws the layer directly, walking it. The next frame finds
+    // the content unchanged and draws its area again; that frame renders the
+    // image. Then it is clean again.
     pair.set("word", Value::String("AGAIN".into()));
     let [cached, _] = pair.render();
     assert!(cached > 300, "a dirty layer is walked: {cached}");
     pair.assert_same("after the change");
+    pair.render();
+    pair.render();
+    pair.assert_same("image rendered after the change");
     pair.set("mover-x", Value::Number(30.0));
     let [cached, _] = pair.render();
     assert!(cached < 20, "clean again: walked {cached}");

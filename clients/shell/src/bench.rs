@@ -86,12 +86,16 @@ struct Frame {
     raster: f64,
     /// Of `raster`: replaying the recorded draw calls on the band threads.
     replay: f64,
+    /// Of `raster`: layer images rendered, their pixels, and the time.
+    layers: f64,
+    layer_px: f64,
+    layer_time: f64,
     total: f64,
     dirty_px: f64,
 }
 
 type Phase = (&'static str, fn(&Frame) -> f64);
-const PHASES: [Phase; 9] = [
+const PHASES: [Phase; 10] = [
     ("logic (Tick/update/view)", |f| f.logic),
     ("view to properties: convert", |f| f.convert),
     ("view to properties: set", |f| f.set),
@@ -99,6 +103,7 @@ const PHASES: [Phase; 9] = [
     ("dirty walk and layout", |f| f.walk),
     ("rasterisation", |f| f.raster),
     ("  of which banded replay", |f| f.replay),
+    ("  of which layer images", |f| f.layer_time),
     ("frame total", |f| f.total),
     ("dirty region (px)", |f| f.dirty_px),
 ];
@@ -252,6 +257,10 @@ pub fn run(options: Options) -> Result<String> {
             frame.walk = walk.as_secs_f64() * 1e6;
             frame.raster = raster.as_secs_f64() * 1e6;
             frame.replay = renderer.last_frame_replay().as_secs_f64() * 1e6;
+            let (layers, layer_px, layer_time) = renderer.last_frame_layer_renders();
+            frame.layers = layers as f64;
+            frame.layer_px = layer_px as f64;
+            frame.layer_time = layer_time.as_secs_f64() * 1e6;
             frame.dirty_px = region
                 .iter()
                 .map(|(_, size)| size.width as f64 * size.height as f64)
@@ -265,8 +274,9 @@ pub fn run(options: Options) -> Result<String> {
         if n >= warm {
             if log_frames {
                 eprintln!(
-                    "FRAME {n} logic={:.0} view={:.0} set={:.0} walk={:.0} raster={:.0} replay={:.0} total={:.0} px={:.0}",
-                    frame.logic, frame.view, frame.set, frame.walk, frame.raster, frame.replay, frame.total, frame.dirty_px
+                    "FRAME {n} logic={:.0} view={:.0} set={:.0} walk={:.0} raster={:.0} replay={:.0} layers={:.0}/{:.0}px/{:.0}us total={:.0} px={:.0}",
+                    frame.logic, frame.view, frame.set, frame.walk, frame.raster, frame.replay,
+                    frame.layers, frame.layer_px, frame.layer_time, frame.total, frame.dirty_px
                 );
             }
             frames.push(frame);

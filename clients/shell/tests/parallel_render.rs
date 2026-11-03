@@ -1,7 +1,8 @@
 //! The vendored software renderer's parallel rasterisation (vendor/README.md,
 //! `parallel.rs`): a frame rasterised in bands on several threads has the
 //! same pixels as the same frame drawn on one thread, through full and
-//! partial frames, every primitive kind, cached layers, moves and resizes.
+//! partial frames, every primitive kind, cached layers, moves and resizes,
+//! with the draw calls streamed to the band threads in several chunks.
 
 use slint::platform::{
     software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
@@ -61,6 +62,9 @@ export component Surface inherits Window {
         }
     }
     for i in 20: Rectangle { x: Math.mod(i, 10) * 64px; y: 420px + Math.floor(i / 10) * 30px; width: 60px; height: 26px; background: i == 7 ? #ffffff : #406080; }
+    // More draw calls than one chunk of the stream (`parallel::CHUNK`), so that
+    // band threads replay chunks while the walk records the next.
+    for i in 200: Rectangle { x: Math.mod(i, 40) * 16px; y: 360px + Math.floor(i / 40) * 11px; width: 12px; height: 8px; background: Math.mod(i, 3) == 0 ? #ff00ff80 : #00ffff; }
 }
 "#;
 
@@ -172,4 +176,9 @@ fn bands_on_four_threads_match_one_thread() {
 #[test]
 fn bands_on_three_threads_match_one_thread() {
     scenario([1, 3]);
+}
+
+#[test]
+fn one_band_thread_beside_the_walk_matches_one_thread() {
+    scenario([1, 2]);
 }

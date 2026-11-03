@@ -446,21 +446,26 @@ struct LayerCache {
     /// Screen areas of layers drawn shifted this frame: drawn again next frame, so a layer that
     /// stopped moving is rendered at its exact phase.
     shifted: RefCell<DirtyRegion>,
-    /// Frames rendered by this renderer, to tell consecutive frames apart.
-    frame: Cell<u64>,
+    /// This frame's layer images: how many were rendered, their pixels, and the time.
+    renders: Cell<(u32, u64, std::time::Duration)>,
+    /// Whether this frame rendered a layer image: a frame renders one, so that the end of an
+    /// animation does not render every layer at once.
+    rendering: Cell<bool>,
     /// Threads a layer image is rasterised with: the renderer's `render` threads this frame.
     threads: Cell<usize>,
-    /// Per layer item: the last frame its image was rendered.
-    rendered: RefCell<std::collections::HashMap<(usize, u32), u64>>,
-    /// Layers whose content changed in consecutive frames (an animation inside them): drawn
-    /// directly, without an image, until the frame stored here, with their last screen area.
-    direct: RefCell<std::collections::HashMap<(usize, u32), (u64, LogicalRect)>>,
+    /// Layers drawn directly because their content changed (`visit_layer`).
+    direct: RefCell<std::collections::HashMap<(usize, u32), DirectLayer>>,
 }
 
-/// How long a layer whose content changes every frame is drawn without its image: rendering
-/// an image the next frame throws away costs more than drawing the children directly.
+/// A layer drawn directly because its content changed: the item, its last screen area, and
+/// whether the change was seen this frame. Once its content stays the same for a frame, its
+/// area is drawn again, and `visit_layer` renders its image.
 #[cfg(feature = "std")]
-const LAYER_CHURN_FRAMES: u64 = 8;
+struct DirectLayer {
+    item: i_slint_core::item_tree::ItemWeak,
+    area: LogicalRect,
+    changed_this_frame: bool,
+}
 
 #[cfg(feature = "std")]
 fn layer_key(item_rc: &ItemRc) -> (usize, u32) {
@@ -597,6 +602,14 @@ impl SoftwareRenderer {
         self.last_phases.get()
     }
 
+    /// The last render's layer images: how many were rendered, their pixels (a nested layer's
+    /// also in its parent's), and the time (part of the raster phase).
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_frame_layer_renders(&self) -> (u32, u64, std::time::Duration) {
+        self.layer_cache.renders.get()
+    }
+
     /// Returns the kind of buffer that must be passed to  [`Self::render`]
     pub fn repaint_buffer_type(&self) -> RepaintBufferType {
         self.repaint_buffer_type.get()
@@ -634,29 +647,64 @@ impl SoftwareRenderer {
     pub fn render(&self, buffer: &mut [impl TargetPixel], pixel_stride: usize) -> PhysicalRegion {
         #[cfg(feature = "std")]
         self.layer_cache.threads.set(self.render_threads.get());
+        #[cfg(feature = "std")]
         if self.render_threads.get() > 1 {
-            // Walk the items here, record the draw calls, then rasterise the
-            // dirty region in bands of lines on several threads (`parallel`).
-            let (region, recorded) =
-                self.render_buffer_inner(&mut TargetPixelSlice { data: buffer, pixel_stride }, true);
-            if let Some(recorded) = recorded {
-                let pixels: usize = recorded
-                    .dirty_region
-                    .iter()
-                    .map(|(_, size)| size.width as usize * size.height as usize)
-                    .sum();
-                let threads = if pixels < parallel::MIN_PARALLEL_PIXELS {
-                    1
-                } else {
-                    self.render_threads.get()
+            // Walk the items here and record the draw calls. Once the dirty region is known,
+            // band threads start and rasterise the recorded calls while the walk goes on
+            // (`parallel`); a small region is drawn here once the walk ended.
+            let threads = self.render_threads.get();
+            let lines = buffer.len() / pixel_stride.max(1);
+            let stream = std::sync::Arc::new(parallel::OpStream::new());
+            let shared = &*stream;
+            let mut scratch = LinesOnly::like(buffer, pixel_stride, lines);
+            let (region, started) = std::thread::scope(|scope| {
+                let mut unclaimed = Some(&mut *buffer);
+                let mut start = |region: &PhysicalRegion, scale_factor: ScaleFactor| {
+                    let pixels: usize = region
+                        .iter()
+                        .map(|(_, size)| size.width as usize * size.height as usize)
+                        .sum();
+                    if pixels < parallel::MIN_PARALLEL_PIXELS {
+                        return None;
+                    }
+                    let buffer = unclaimed.take().expect("one frame starts its bands once");
+                    // The UI thread keeps recording: one band thread fewer than threads.
+                    let bands = (threads - 1).max(1);
+                    parallel::stream_into_bands(
+                        scope,
+                        shared,
+                        buffer,
+                        pixel_stride,
+                        region,
+                        scale_factor,
+                        bands,
+                    );
+                    Some(stream.clone())
                 };
+                let (region, recorded) =
+                    self.render_buffer_inner(&mut scratch, true, Some(&mut start));
+                drop(start);
                 let started = std::time::Instant::now();
-                parallel::replay_in_bands(&recorded, buffer, pixel_stride, threads);
-                let replay = started.elapsed();
-                let (walk, record) = self.last_phases.get();
-                self.last_phases.set((walk, record + replay));
-                self.last_replay.set(replay);
-            }
+                if let Some(recorded) = recorded {
+                    match unclaimed.take() {
+                        None => shared.publish(recorded.ops, true),
+                        Some(buffer) => {
+                            let mut ops = shared.take_ops();
+                            ops.extend(recorded.ops);
+                            let recorded = parallel::Recorded { ops, ..recorded };
+                            parallel::replay_in_bands(&recorded, buffer, pixel_stride, 1);
+                        }
+                    }
+                } else {
+                    shared.publish(Vec::new(), true);
+                }
+                (region, started)
+            });
+            // The scope waited for the band threads: their tail counts as replay.
+            let replay = started.elapsed();
+            let (walk, record) = self.last_phases.get();
+            self.last_phases.set((walk, record + replay));
+            self.last_replay.set(replay);
             return region;
         }
         self.render_buffer_impl(&mut TargetPixelSlice { data: buffer, pixel_stride })
@@ -699,15 +747,19 @@ impl SoftwareRenderer {
         &self,
         buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
     ) -> PhysicalRegion {
-        self.render_buffer_inner(buffer, false).0
+        self.render_buffer_inner(buffer, false, None).0
     }
 
     /// Render, or with `record` walk the items and return the frame's draw
     /// calls instead of drawing them.
+    ///
+    /// While recording, `start_bands` is called once the dirty region is known; when it
+    /// started band threads, it returns their stream, and the recorded calls go to it.
     fn render_buffer_inner(
         &self,
         buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
         #[allow(unused)] record: bool,
+        #[allow(unused)] mut start_bands: Option<&mut StartBands<'_>>,
     ) -> (PhysicalRegion, Option<parallel::Recorded>) {
         #[cfg(feature = "std")]
         let mut recorded = None;
@@ -784,7 +836,7 @@ impl SoftwareRenderer {
         let mut renderer = self.partial_rendering_state.create_partial_renderer(buffer_renderer);
         #[cfg(feature = "std")]
         if record {
-            renderer.actual_renderer.processor.recording = Some(Vec::new());
+            renderer.actual_renderer.processor.recording = Some(parallel::Recorder::new());
         }
         let window_adapter = renderer.window_adapter.clone();
 
@@ -821,6 +873,11 @@ impl SoftwareRenderer {
 
                 #[cfg(feature = "std")]
                 let (walk, raster_started) = (walk_started.elapsed(), std::time::Instant::now());
+                #[cfg(feature = "std")]
+                {
+                    self.layer_cache.renders.set(Default::default());
+                    self.layer_cache.rendering.set(false);
+                }
                 let rotation = RotationInfo { orientation: rotation, screen_size: size };
                 let screen_rect = PhysicalRect::from_size(size);
                 let mut i = renderer.dirty_region.iter().filter_map(|r| {
@@ -840,8 +897,11 @@ impl SoftwareRenderer {
 
                 renderer.actual_renderer.processor.dirty_region = dirty_region.clone();
                 #[cfg(feature = "std")]
-                if let Some(ops) = &mut renderer.actual_renderer.processor.recording {
-                    ops.push(parallel::Op::Background(background.color()));
+                if let Some(recorder) = &mut renderer.actual_renderer.processor.recording {
+                    if let Some(stream) = start_bands.as_mut().and_then(|start| start(&dirty_region, factor)) {
+                        recorder.stream_to(stream);
+                    }
+                    recorder.push(parallel::Op::Background(background.color()));
                 } else if !renderer
                     .actual_renderer
                     .processor
@@ -898,16 +958,25 @@ impl SoftwareRenderer {
                     // Layers drawn shifted are drawn again next frame, at their exact phase
                     // if they stopped moving.
                     let mut shifted = self.layer_cache.shifted.take();
-                    let frame = self.layer_cache.frame.get() + 1;
-                    self.layer_cache.frame.set(frame);
-                    // A layer drawn directly for its period is drawn once more, cached again.
-                    self.layer_cache.direct.borrow_mut().retain(|_, (until, area)| {
-                        if *until > frame {
-                            return true;
+                    // A layer drawn directly whose content did not change since is drawn again
+                    // next frame, to render its image. One that changed is drawn again anyway.
+                    let mut check_again = false;
+                    for layer in self.layer_cache.direct.borrow_mut().values_mut() {
+                        let changed = core::mem::take(&mut layer.changed_this_frame);
+                        check_again |= changed;
+                        let stable = !changed
+                            && layer
+                                .item
+                                .upgrade()
+                                .is_some_and(|item| self.layer_cache.is_dirty(&item) != Some(true));
+                        if stable {
+                            shifted.add_rect(layer.area);
                         }
-                        shifted.add_rect(*area);
-                        false
-                    });
+                    }
+                    // A layer that changed this frame: the next frame tells whether it stays.
+                    if check_again {
+                        window.window().request_redraw();
+                    }
                     if shifted.iter().next().is_some() {
                         self.partial_rendering_state.mark_dirty_region(shifted);
                         window.window().request_redraw();
@@ -917,9 +986,9 @@ impl SoftwareRenderer {
                 self.last_phases.set((walk, raster_started.elapsed()));
                 self.measure_frame_rendered(&mut renderer);
                 #[cfg(feature = "std")]
-                if let Some(ops) = renderer.actual_renderer.processor.recording.take() {
+                if let Some(recorder) = renderer.actual_renderer.processor.recording.take() {
                     recorded = Some(parallel::Recorded {
-                        ops,
+                        ops: recorder.into_ops(),
                         dirty_region: dirty_region.clone(),
                         scale_factor: factor,
                     });
@@ -1387,7 +1456,6 @@ impl RendererSealed for SoftwareRenderer {
         {
             self.layer_cache.component_destroyed(component);
             let destroyed = &*component as *const _ as *const u8 as usize;
-            self.layer_cache.rendered.borrow_mut().retain(|key, _| key.0 != destroyed);
             self.layer_cache.direct.borrow_mut().retain(|key, _| key.0 != destroyed);
         }
         self.partial_rendering_state.free_graphics_resources(component, items);
@@ -2070,6 +2138,39 @@ fn process_rectangle_impl(
     }
 }
 
+/// Starts a frame's band threads once its dirty region is known (`render_buffer_inner`).
+#[cfg(feature = "std")]
+type StartBands<'a> =
+    dyn FnMut(&PhysicalRegion, ScaleFactor) -> Option<std::sync::Arc<parallel::OpStream>> + 'a;
+#[cfg(not(feature = "std"))]
+type StartBands<'a> = dyn FnMut(&PhysicalRegion, ScaleFactor) -> Option<()> + 'a;
+
+/// A buffer with lines of the right width and count and no pixels: what the walk renders
+/// into while it records (`render`), so that the band threads own the real buffer.
+#[cfg(feature = "std")]
+struct LinesOnly<T> {
+    line: Vec<T>,
+    lines: usize,
+}
+
+#[cfg(feature = "std")]
+impl<T: TargetPixel> LinesOnly<T> {
+    fn like(_buffer: &[T], width: usize, lines: usize) -> Self {
+        Self { line: alloc::vec![T::background(); width], lines }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for LinesOnly<T> {
+    type TargetPixel = T;
+    fn line_slice(&mut self, _line_number: usize) -> &mut [T] {
+        &mut self.line
+    }
+    fn num_lines(&self) -> usize {
+        self.lines
+    }
+}
+
 struct RenderToBuffer<'a, TargetPixelBuffer> {
     buffer: &'a mut TargetPixelBuffer,
     dirty_range_cache: Vec<core::ops::Range<i16>>,
@@ -2077,7 +2178,7 @@ struct RenderToBuffer<'a, TargetPixelBuffer> {
     scale_factor: ScaleFactor,
     /// When set, draw calls are recorded here instead of drawn (`parallel`).
     #[cfg(feature = "std")]
-    recording: Option<Vec<parallel::Op>>,
+    recording: Option<parallel::Recorder>,
 }
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
@@ -2533,6 +2634,9 @@ struct SceneBuilder<'a, T> {
     /// children directly.
     #[cfg(feature = "std")]
     layer_cache: Option<&'a LayerCache>,
+    /// This builder renders a layer's image: the layers nested in it render theirs too.
+    #[cfg(feature = "std")]
+    nested_in_layer_image: bool,
 }
 
 impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
@@ -2563,27 +2667,19 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             text_layout_cache,
             #[cfg(feature = "std")]
             layer_cache,
+            #[cfg(feature = "std")]
+            nested_in_layer_image: false,
         }
     }
 
     /// Draw a `Layer`'s children from its cached image, rendering the image first if the
     /// cache has none or anything it depends on changed.
     #[cfg(feature = "std")]
-    /// Returns whether the layer's image was rendered for this frame.
-    fn draw_cached_layer(
-        &mut self,
-        cache: &'a LayerCache,
-        item_rc: &ItemRc,
-        size: LogicalSize,
-    ) -> bool {
+    fn draw_cached_layer(&mut self, cache: &'a LayerCache, item_rc: &ItemRc, size: LogicalSize) {
         let scale = self.scale_factor;
         let screen_offset = self.current_state.offset.cast::<f32>() * scale;
         let phase = screen_offset.to_vector() - screen_offset.floor().to_vector();
-        let rendered = Cell::new(false);
-        let render = || {
-            rendered.set(true);
-            self.render_layer_image(cache, item_rc, size, phase)
-        };
+        let render = || self.render_layer_image(cache, item_rc, size, phase);
         let mut layer = cache.get_or_update_cache_entry(item_rc, render);
         // A layer at another sub-pixel phase: while it moves, shift the image by whole pixels
         // (rendering its children again every frame of a slide is what costs); once it is drawn
@@ -2606,7 +2702,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 shifted = true;
             }
         }
-        let Some(layer) = layer else { return rendered.get() };
+        let Some(layer) = layer else { return };
         let offset = if shifted {
             (screen_offset - layer.phase).round().cast::<i32>().to_vector()
         } else {
@@ -2615,7 +2711,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         let (width, height) = (layer.image.width() as i32, layer.image.height() as i32);
         let local = euclid::Rect::<i32, PhysicalPx>::new(layer.origin, euclid::size2(width, height));
         let physical_clip = (self.current_state.clip.cast() * scale).round_out().cast::<i32>();
-        let Some(clipped) = local.intersection(&physical_clip) else { return rendered.get() };
+        let Some(clipped) = local.intersection(&physical_clip) else { return };
         if shifted {
             let screen = clipped.translate(offset).cast::<f32>() / scale;
             cache.shifted.borrow_mut().add_rect(LogicalRect::new(
@@ -2641,13 +2737,29 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         };
         self.processor
             .process_target_texture(&t, clipped.translate(offset).cast().transformed(self.rotation));
-        rendered.get()
     }
 
     /// Render a `Layer`'s children, unrotated and at full opacity, into a premultiplied image
     /// that covers the layer and every child, at the given sub-pixel phase.
     #[cfg(feature = "std")]
     fn render_layer_image(
+        &self,
+        cache: &'a LayerCache,
+        item_rc: &ItemRc,
+        size: LogicalSize,
+        phase: euclid::Vector2D<f32, PhysicalPx>,
+    ) -> Option<Rc<CachedLayer>> {
+        let started = std::time::Instant::now();
+        cache.rendering.set(true);
+        let image = self.render_layer_image_inner(cache, item_rc, size, phase);
+        let (count, pixels, time) = cache.renders.get();
+        let area = image.as_ref().map_or(0, |l| l.image.width() as u64 * l.image.height() as u64);
+        cache.renders.set((count + 1, pixels + area, time + started.elapsed()));
+        image
+    }
+
+    #[cfg(feature = "std")]
+    fn render_layer_image_inner(
         &self,
         cache: &'a LayerCache,
         item_rc: &ItemRc,
@@ -2685,7 +2797,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                     dirty_range_cache: Vec::new(),
                     dirty_region: dirty_region.clone(),
                     scale_factor: scale,
-                    recording: record.then(Vec::new),
+                    recording: record.then(parallel::Recorder::new),
                 },
                 RenderingRotation::NoRotation,
                 #[cfg(feature = "systemfonts")]
@@ -2695,6 +2807,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             // Item coordinates map to the image: physical = (logical * scale + phase) - origin.
             let image_origin = (physical.origin.to_vector() - phase) / scale;
             let image_origin = LogicalPoint::new(image_origin.x as _, image_origin.y as _);
+            nested.nested_in_layer_image = true;
             nested.current_state.offset = LogicalPoint::new(-image_origin.x, -image_origin.y);
             nested.current_state.clip = LogicalRect::new(image_origin, (physical.size / scale).cast());
             i_slint_core::item_rendering::render_item_children(
@@ -2703,8 +2816,8 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 item_rc.index() as isize,
                 &window_adapter,
             );
-            nested.processor.recording.take().map(|ops| parallel::Recorded {
-                ops,
+            nested.processor.recording.take().map(|recorder| parallel::Recorded {
+                ops: recorder.into_ops(),
                 dirty_region,
                 scale_factor: scale,
             })
@@ -3567,27 +3680,47 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
     ) -> RenderingResult {
         #[cfg(feature = "std")]
         if layer.cache_rendering_hint() {
+            // A layer inside a layer's image is drawn into that image.
+            if self.nested_in_layer_image {
+                if let Some(cache) = self.layer_cache {
+                    cache.direct.borrow_mut().remove(&layer_key(item_rc));
+                }
+                return RenderingResult::ContinueRenderingChildren;
+            }
             if let Some(cache) = self.layer_cache {
+                // An image is rendered only from content that stayed the same for a frame: a
+                // layer whose content changed is drawn directly, and its image entry is marked
+                // clean while keeping its dependencies, so the next frame tells whether the
+                // content changed again. An animation inside a layer renders no image that the
+                // next frame throws away; once it ends, the image is rendered once.
                 let key = layer_key(item_rc);
-                let frame = cache.frame.get();
-                let direct = cache.direct.borrow().get(&key).map(|(until, _)| *until);
-                if direct.is_some_and(|until| frame < until) {
-                    // Content changing every frame: draw the children directly. Remember where,
-                    // so the area is drawn again (and cached) when the period ends.
-                    let area = LogicalRect::new(self.current_state.offset, size);
-                    if let Some(entry) = cache.direct.borrow_mut().get_mut(&key) {
-                        entry.1 = area;
-                    }
+                let state = cache.is_dirty(item_rc);
+                let changed = state == Some(true);
+                let direct = cache.direct.borrow().contains_key(&key);
+                let area = LogicalRect::new(self.current_state.offset, size);
+                if changed {
+                    cache.acknowledge_dirty(item_rc);
+                    let layer =
+                        DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: true };
+                    cache.direct.borrow_mut().insert(key, layer);
                     return RenderingResult::ContinueRenderingChildren;
                 }
-                if self.draw_cached_layer(cache, item_rc, size) {
-                    let previous = cache.rendered.borrow_mut().insert(key, frame);
-                    if previous == Some(frame.wrapping_sub(1)) {
+                // Its content stayed the same for a frame, or it has no image yet. A frame
+                // renders one image: another such layer is drawn directly once more.
+                if direct || state.is_none() {
+                    if cache.rendering.get() {
+                        let layer =
+                            DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: false };
+                        cache.direct.borrow_mut().insert(key, layer);
+                        return RenderingResult::ContinueRenderingChildren;
+                    }
+                    if direct {
+                        // Its image is of the content before the change.
+                        cache.direct.borrow_mut().remove(&key);
                         cache.release(item_rc);
-                        let area = LogicalRect::new(self.current_state.offset, size);
-                        cache.direct.borrow_mut().insert(key, (frame + LAYER_CHURN_FRAMES, area));
                     }
                 }
+                self.draw_cached_layer(cache, item_rc, size);
                 return RenderingResult::ContinueRenderingWithoutChildren;
             }
         }

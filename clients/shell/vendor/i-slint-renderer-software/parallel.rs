@@ -4,15 +4,21 @@
 //! Rasterising one frame on several threads.
 //!
 //! The item walk stays on the UI thread: the scene builder's draw calls are
-//! recorded as [`Op`]s instead of being drawn. The frame's dirty region is then
+//! recorded as [`Op`]s instead of being drawn. The frame's dirty region is
 //! split into horizontal bands of buffer lines, and one scoped thread per band
 //! replays every op through a [`RenderToBuffer`] clipped to its band. Bands own
 //! disjoint lines, and each op draws a pixel exactly as the single-threaded
 //! renderer does, so the result is the same image.
+//!
+//! A frame streams its ops: the band threads start once the dirty region is
+//! known and replay each chunk of [`CHUNK`] ops as the UI thread publishes it,
+//! so they draw while the UI thread is still walking the items. A layer image
+//! records all its ops first and then replays them ([`replay_in_bands`]).
 
 #![allow(unsafe_code)] // Two marker impls, justified where they are written.
 
 use super::*;
+use std::sync::Arc;
 
 /// One recorded draw call. Every field is plain data, or shared data
 /// (`SharedBufferData`, `SharedVector`, `'static` texture slices) that the
@@ -45,6 +51,101 @@ pub(super) enum Op {
         join: i_slint_core::items::LineJoin,
         miter_limit: f32,
     },
+}
+
+/// Ops published to the band threads at a time.
+pub(super) const CHUNK: usize = 128;
+
+/// Where the scene builder records: the ops, and the stream that takes them in chunks.
+pub(super) struct Recorder {
+    ops: Vec<Op>,
+    stream: Option<Arc<OpStream>>,
+}
+
+impl Recorder {
+    pub(super) fn new() -> Self {
+        Self { ops: Vec::new(), stream: None }
+    }
+
+    /// From now on, publish every full chunk to `stream`.
+    pub(super) fn stream_to(&mut self, stream: Arc<OpStream>) {
+        self.stream = Some(stream);
+    }
+
+    pub(super) fn push(&mut self, op: Op) {
+        self.ops.push(op);
+        if self.ops.len() >= CHUNK {
+            if let Some(stream) = &self.stream {
+                stream.publish(core::mem::replace(&mut self.ops, Vec::with_capacity(CHUNK)), false);
+            }
+        }
+    }
+
+    /// The ops not published yet: all of them without a stream.
+    pub(super) fn into_ops(self) -> Vec<Op> {
+        self.ops
+    }
+}
+
+/// The chunks of one frame's ops, published by the UI thread and replayed by
+/// every band thread in order.
+pub(super) struct OpStream {
+    state: std::sync::Mutex<StreamState>,
+    published: std::sync::Condvar,
+}
+
+#[derive(Default)]
+struct StreamState {
+    chunks: Vec<Arc<Vec<Op>>>,
+    done: bool,
+}
+
+// Sound for the same reason as `SharedOps`: band threads only read the ops,
+// never clone or drop a reference-counted value in them. A band thread drops
+// its `Arc` of a chunk while the stream still holds one, so every op is
+// dropped on the UI thread, with the stream, after the band threads ended.
+unsafe impl Sync for OpStream {}
+unsafe impl Send for OpStream {}
+
+impl OpStream {
+    pub(super) fn new() -> Self {
+        Self { state: Default::default(), published: std::sync::Condvar::new() }
+    }
+
+    /// Publish `ops`; `done` when they are the frame's last.
+    pub(super) fn publish(&self, ops: Vec<Op>, done: bool) {
+        let mut state = self.state.lock().unwrap();
+        if !ops.is_empty() {
+            state.chunks.push(Arc::new(ops));
+        }
+        state.done |= done;
+        drop(state);
+        self.published.notify_all();
+    }
+
+    /// The chunk at `index`, waiting until it is published; `None` after the last.
+    fn chunk(&self, index: usize) -> Option<Arc<Vec<Op>>> {
+        let mut state = self.state.lock().unwrap();
+        loop {
+            if let Some(chunk) = state.chunks.get(index) {
+                return Some(chunk.clone());
+            }
+            if state.done {
+                return None;
+            }
+            state = self.published.wait(state).unwrap();
+        }
+    }
+
+    /// Every published op, for a frame drawn without band threads.
+    pub(super) fn take_ops(&self) -> Vec<Op> {
+        let mut state = self.state.lock().unwrap();
+        let mut ops = Vec::new();
+        for chunk in state.chunks.drain(..) {
+            ops.extend(Arc::try_unwrap(chunk).ok().expect("no band thread holds a chunk"));
+        }
+        ops
+    }
 }
 
 /// The ops of one frame and the region they draw.
@@ -201,18 +302,18 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
     }
 }
 
-/// Replay `recorded` into `buffer` on `threads` threads, one band of lines each.
-pub(super) fn replay_in_bands<T: TargetPixel>(
-    recorded: &Recorded,
-    buffer: &mut [T],
+/// `buffer`'s lines under `region`, split into at most `threads` bands.
+fn split_bands<'a, T>(
+    buffer: &'a mut [T],
     pixel_stride: usize,
+    region: &PhysicalRegion,
     threads: usize,
-) {
+) -> Vec<SendBand<'a, T>> {
     let total_lines = buffer.len() / pixel_stride;
-    let bounds = recorded.dirty_region.bounding_rect();
+    let bounds = region.bounding_rect();
     let (top, bottom) = (bounds.min_y().max(0) as usize, (bounds.max_y().max(0) as usize).min(total_lines));
     if top >= bottom {
-        return;
+        return Vec::new();
     }
     let threads = threads.clamp(1, bottom - top);
     let per_band = (bottom - top).div_ceil(threads);
@@ -226,25 +327,76 @@ pub(super) fn replay_in_bands<T: TargetPixel>(
         rest = tail;
         first += lines;
     }
+    bands
+}
+
+/// A renderer that draws into `band`, inside its part of `region`; `None` when the band has none.
+fn band_renderer<'b, 'a, T: TargetPixel>(
+    band: &'b mut Band<'a, T>,
+    region: &PhysicalRegion,
+    scale_factor: ScaleFactor,
+) -> Option<RenderToBuffer<'b, Band<'a, T>>> {
+    let rect = PhysicalRect::new(
+        PhysicalPoint::new(i16::MIN / 2, band.first as i16),
+        PhysicalSize::new(i16::MAX, (band.data.len() / band.pixel_stride) as i16),
+    );
+    let dirty_region = region.intersection(&rect);
+    (dirty_region.count > 0).then(|| RenderToBuffer {
+        buffer: band,
+        dirty_range_cache: Vec::new(),
+        dirty_region,
+        scale_factor,
+        recording: None,
+    })
+}
+
+/// Start one thread per band of `buffer` under `region`; each replays the
+/// chunks of `stream` as they are published, until the last.
+pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    stream: &'scope OpStream,
+    buffer: &'scope mut [T],
+    pixel_stride: usize,
+    region: &PhysicalRegion,
+    scale_factor: ScaleFactor,
+    threads: usize,
+) {
+    for band in split_bands(buffer, pixel_stride, region, threads) {
+        let region = region.clone();
+        scope.spawn(move || {
+            let band = band; // the whole `SendBand`, not its field
+            let mut band = band.0;
+            let Some(mut renderer) = band_renderer(&mut band, &region, scale_factor) else {
+                return;
+            };
+            let mut index = 0;
+            while let Some(chunk) = stream.chunk(index) {
+                for op in chunk.iter() {
+                    renderer.replay(op);
+                }
+                index += 1;
+            }
+        });
+    }
+}
+
+/// Replay `recorded` into `buffer` on `threads` threads, one band of lines each.
+pub(super) fn replay_in_bands<T: TargetPixel>(
+    recorded: &Recorded,
+    buffer: &mut [T],
+    pixel_stride: usize,
+    threads: usize,
+) {
+    let bands = split_bands(buffer, pixel_stride, &recorded.dirty_region, threads);
     let shared = SharedOps(recorded);
     let shared = &shared;
     let draw = move |band: SendBand<'_, T>| {
         let recorded = shared.0;
         let mut band = band.0;
-        let rect = PhysicalRect::new(
-            PhysicalPoint::new(i16::MIN / 2, band.first as i16),
-            PhysicalSize::new(i16::MAX, (band.data.len() / band.pixel_stride) as i16),
-        );
-        let mut renderer = RenderToBuffer {
-            buffer: &mut band,
-            dirty_range_cache: Vec::new(),
-            dirty_region: recorded.dirty_region.intersection(&rect),
-            scale_factor: recorded.scale_factor,
-            recording: None,
-        };
-        if renderer.dirty_region.count == 0 {
+        let Some(mut renderer) = band_renderer(&mut band, &recorded.dirty_region, recorded.scale_factor)
+        else {
             return;
-        }
+        };
         for op in &recorded.ops {
             renderer.replay(op);
         }
