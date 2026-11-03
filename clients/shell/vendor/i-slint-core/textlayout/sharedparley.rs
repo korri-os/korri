@@ -5,6 +5,17 @@
 pub use parley;
 pub use parley::fontique;
 
+/// Evaluates `$e`, timed under the frame profile's counter `$field` when it is on.
+macro_rules! profiled {
+    ($field:ident, $e:expr) => {{
+        #[cfg(feature = "std")]
+        let result = crate::frame_profile::time(|p| &mut p.$field, || $e);
+        #[cfg(not(feature = "std"))]
+        let result = $e;
+        result
+    }};
+}
+
 use crate::{
     Color,
     graphics::FontRequest,
@@ -132,6 +143,16 @@ fn with_text_layout<R>(
 }
 
 pub fn draw_text(
+    item_renderer: &mut impl GlyphRenderer,
+    text: Pin<&dyn crate::item_rendering::RenderText>,
+    item_rc: Option<&crate::item_tree::ItemRc>,
+    size: LogicalSize,
+    cache: Option<&TextLayoutCache>,
+) {
+    profiled!(text_draw, draw_text_impl(item_renderer, text, item_rc, size, cache))
+}
+
+fn draw_text_impl(
     item_renderer: &mut impl GlyphRenderer,
     text: Pin<&dyn crate::item_rendering::RenderText>,
     item_rc: Option<&crate::item_tree::ItemRc>,
@@ -463,7 +484,7 @@ fn text_size_impl(
     // Only `layout()`'s elision glyph reads this, and `TextOverflow::Clip` never asks for one.
     let layout_builder = shaping_builder(text_item, Some(item_rc), text_wrap, scale_factor);
 
-    with_text_layout(
+    profiled!(text_measure, with_text_layout(
         cache,
         Some(item_rc),
         text_item,
@@ -478,7 +499,7 @@ fn text_size_impl(
         },
         window_adapter.window(),
         |layout| PhysicalSize::from_lengths(layout.max_width, layout.height) / scale_factor,
-    )
+    ))
 }
 
 /// The content widths of the text. See [`crate::renderer::ContentWidths`].

@@ -767,11 +767,15 @@ impl PropertyHandle {
 
                 // clear all the nodes so that we can start from scratch
                 unsafe { *(*binding_ptr).dep_nodes.get() = Default::default() };
-                let r = unsafe {
+                let evaluate = || unsafe {
                     current_binding_storage::set(Some(binding_ptr), || {
                         ((*binding_ptr).vtable.evaluate)(binding_ptr, value as *mut c_void)
                     })
                 };
+                #[cfg(feature = "std")]
+                let r = crate::frame_profile::binding(evaluate);
+                #[cfg(not(feature = "std"))]
+                let r = evaluate();
                 unsafe { (*binding_ptr).dirty.set(false) };
                 if r == BindingResult::RemoveBinding {
                     return true;

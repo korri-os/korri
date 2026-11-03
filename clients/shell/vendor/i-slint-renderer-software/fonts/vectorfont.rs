@@ -194,6 +194,8 @@ impl VectorFont {
                 return Some(entry.clone());
             }
 
+            #[cfg(feature = "std")]
+            let started = i_slint_core::frame_profile::enabled().then(std::time::Instant::now);
             let subpixel_offset_x = subpixel_bin as f32 / SUBPIXEL_BIN_COUNT as f32;
 
             let glyph = {
@@ -225,6 +227,19 @@ impl VectorFont {
 
             if let Some(ref glyph) = glyph {
                 cache.put_with_weight(cache_key, glyph.clone()).ok();
+            }
+            #[cfg(feature = "std")]
+            if let Some(started) = started {
+                let elapsed = started.elapsed();
+                let size = self.pixel_size.get();
+                i_slint_core::frame_profile::record(|p| {
+                    p.glyph_raster.count += 1;
+                    p.glyph_raster.time += elapsed;
+                    match p.raster_sizes.iter_mut().find(|(s, _)| *s == size) {
+                        Some((_, n)) => *n += 1,
+                        None => p.raster_sizes.push((size, 1)),
+                    }
+                });
             }
             glyph
         })

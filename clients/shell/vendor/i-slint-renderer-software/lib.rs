@@ -453,6 +453,9 @@ struct LayerCache {
     rendering: Cell<bool>,
     /// Threads a layer image is rasterised with: the renderer's `render` threads this frame.
     threads: Cell<usize>,
+    /// This frame's cached layers: invalidated (content changed, drawn directly), drawn
+    /// directly while waiting for their turn to render an image, and drawn from an image.
+    visits: Cell<(u32, u32, u32)>,
     /// Layers drawn directly because their content changed (`visit_layer`).
     direct: RefCell<std::collections::HashMap<(usize, u32), DirectLayer>>,
 }
@@ -527,6 +530,9 @@ pub struct SoftwareRenderer {
     /// Of the last raster phase: the banded replay (`parallel`).
     #[cfg(feature = "std")]
     last_replay: Cell<std::time::Duration>,
+    /// The last render's frame profile of the dirty-region walk, when profiling is on.
+    #[cfg(feature = "std")]
+    walk_profile: RefCell<i_slint_core::frame_profile::FrameProfile>,
 }
 
 impl Default for SoftwareRenderer {
@@ -550,6 +556,8 @@ impl Default for SoftwareRenderer {
             render_threads: Cell::new(parallel::default_threads()),
             #[cfg(feature = "std")]
             last_replay: Default::default(),
+            #[cfg(feature = "std")]
+            walk_profile: Default::default(),
         }
     }
 }
@@ -608,6 +616,41 @@ impl SoftwareRenderer {
     #[cfg(feature = "std")]
     pub fn last_frame_layer_renders(&self) -> (u32, u64, std::time::Duration) {
         self.layer_cache.renders.get()
+    }
+
+    /// Turns the calling thread's frame profile (`i_slint_core::frame_profile`) on or off:
+    /// text shaping, line breaking, measuring and drawing, glyph rasterisation and image draws,
+    /// timed. For benchmarks; off by default.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_frame_profile(&self, enabled: bool) {
+        i_slint_core::frame_profile::set_enabled(enabled);
+    }
+
+    /// The calling thread's frame profile since the last call; resets it. After a render:
+    /// its raster phase (the walk's part is in [`Self::last_walk_profile`]).
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn take_frame_profile(&self) -> i_slint_core::frame_profile::FrameProfile {
+        i_slint_core::frame_profile::take()
+    }
+
+    /// The frame profile of the last render's dirty-region walk, when profiling is on. The
+    /// profile from before the render up to the walk's end, so take the profile right before
+    /// rendering.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_walk_profile(&self) -> i_slint_core::frame_profile::FrameProfile {
+        self.walk_profile.take()
+    }
+
+    /// The last render's cached layers (`cache-rendering-hint`): invalidated (drawn directly
+    /// because their content changed), drawn directly while another layer rendered its image,
+    /// and drawn from their image (part of the raster phase).
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_frame_layer_visits(&self) -> (u32, u32, u32) {
+        self.layer_cache.visits.get()
     }
 
     /// Returns the kind of buffer that must be passed to  [`Self::render`]
@@ -874,8 +917,13 @@ impl SoftwareRenderer {
                 #[cfg(feature = "std")]
                 let (walk, raster_started) = (walk_started.elapsed(), std::time::Instant::now());
                 #[cfg(feature = "std")]
+                if i_slint_core::frame_profile::enabled() {
+                    *self.walk_profile.borrow_mut() = i_slint_core::frame_profile::take();
+                }
+                #[cfg(feature = "std")]
                 {
                     self.layer_cache.renders.set(Default::default());
+                    self.layer_cache.visits.set(Default::default());
                     self.layer_cache.rendering.set(false);
                 }
                 let rotation = RotationInfo { orientation: rotation, screen_size: size };
@@ -2837,6 +2885,89 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         }))
     }
 
+    #[cfg(feature = "path")]
+    fn draw_path_inner(
+        &mut self,
+        path: Pin<&i_slint_core::items::Path>,
+        self_rc: &ItemRc,
+        size: LogicalSize,
+    ) {
+        let geom = LogicalRect::from(size);
+        if !self.should_draw(&geom) {
+            return;
+        }
+
+        // Get the fitted path events from the Path item
+        let Some((offset, path_iterator)) = path.fitted_path_events(self_rc) else {
+            return;
+        };
+
+        let physical_geom_f32 =
+            geom.translate(self.current_state.offset.to_vector()).cast() * self.scale_factor;
+        let rounded_geom = physical_geom_f32.round();
+        let physical_geom = rounded_geom.cast().transformed(self.rotation);
+
+        let rotation = RotationInfo {
+            orientation: self.rotation.orientation,
+            screen_size: rounded_geom.size.cast::<i16>() + euclid::size2(1, 1),
+        };
+
+        let offset = offset * self.scale_factor + (physical_geom_f32.origin - rounded_geom.origin);
+
+        // Convert to zeno commands
+        let zeno_commands =
+            path::convert_path_data_to_zeno(path_iterator, rotation, self.scale_factor, offset);
+
+        let physical_clip =
+            (self.current_state.clip.translate(self.current_state.offset.to_vector()).cast()
+                * self.scale_factor)
+                .round()
+                .cast::<i16>()
+                .transformed(self.rotation);
+
+        // Clip the geometry - early return if nothing to draw
+        let Some(clipped_geom) = physical_geom.intersection(&physical_clip) else {
+            return;
+        };
+
+        // Draw fill if specified
+        let fill_brush = path.fill();
+        if !fill_brush.is_transparent() {
+            let fill_color = self.alpha_color(fill_brush.color());
+            if fill_color.alpha() > 0 {
+                self.processor.process_filled_path(
+                    physical_geom,
+                    clipped_geom,
+                    zeno_commands.clone(),
+                    fill_color.into(),
+                );
+            }
+        }
+
+        // Draw stroke if specified
+        let stroke_brush = path.stroke();
+        let stroke_width = path.stroke_width();
+        if !stroke_brush.is_transparent() && stroke_width.get() > 0.0 {
+            let stroke_color = self.alpha_color(stroke_brush.color());
+            if stroke_color.alpha() > 0 {
+                let physical_stroke_width = (stroke_width.cast() * self.scale_factor).get();
+                let stroke_line_cap = path.stroke_line_cap();
+                let stroke_line_join = path.stroke_line_join();
+                let stroke_miter_limit = path.stroke_miter_limit();
+                self.processor.process_stroked_path(
+                    physical_geom,
+                    clipped_geom,
+                    zeno_commands,
+                    stroke_color.into(),
+                    physical_stroke_width,
+                    stroke_line_cap,
+                    stroke_line_join,
+                    stroke_miter_limit,
+                );
+            }
+        }
+    }
+
     fn should_draw(&self, rect: &LogicalRect) -> bool {
         !rect.size.is_empty()
             && self.current_state.alpha > 0.01
@@ -2844,6 +2975,21 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
     }
 
     fn draw_image_impl(
+        &mut self,
+        image_inner: &ImageInner,
+        fit: i_slint_core::graphics::FitResult,
+        colorize: Color,
+    ) {
+        #[cfg(feature = "std")]
+        i_slint_core::frame_profile::time(
+            |p| &mut p.image_draw,
+            || self.draw_image_impl_inner(image_inner, fit, colorize),
+        );
+        #[cfg(not(feature = "std"))]
+        self.draw_image_impl_inner(image_inner, fit, colorize);
+    }
+
+    fn draw_image_impl_inner(
         &mut self,
         image_inner: &ImageInner,
         i_slint_core::graphics::FitResult {
@@ -3587,80 +3733,10 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         self_rc: &ItemRc,
         size: LogicalSize,
     ) {
-        let geom = LogicalRect::from(size);
-        if !self.should_draw(&geom) {
-            return;
-        }
-
-        // Get the fitted path events from the Path item
-        let Some((offset, path_iterator)) = path.fitted_path_events(self_rc) else {
-            return;
-        };
-
-        let physical_geom_f32 =
-            geom.translate(self.current_state.offset.to_vector()).cast() * self.scale_factor;
-        let rounded_geom = physical_geom_f32.round();
-        let physical_geom = rounded_geom.cast().transformed(self.rotation);
-
-        let rotation = RotationInfo {
-            orientation: self.rotation.orientation,
-            screen_size: rounded_geom.size.cast::<i16>() + euclid::size2(1, 1),
-        };
-
-        let offset = offset * self.scale_factor + (physical_geom_f32.origin - rounded_geom.origin);
-
-        // Convert to zeno commands
-        let zeno_commands =
-            path::convert_path_data_to_zeno(path_iterator, rotation, self.scale_factor, offset);
-
-        let physical_clip =
-            (self.current_state.clip.translate(self.current_state.offset.to_vector()).cast()
-                * self.scale_factor)
-                .round()
-                .cast::<i16>()
-                .transformed(self.rotation);
-
-        // Clip the geometry - early return if nothing to draw
-        let Some(clipped_geom) = physical_geom.intersection(&physical_clip) else {
-            return;
-        };
-
-        // Draw fill if specified
-        let fill_brush = path.fill();
-        if !fill_brush.is_transparent() {
-            let fill_color = self.alpha_color(fill_brush.color());
-            if fill_color.alpha() > 0 {
-                self.processor.process_filled_path(
-                    physical_geom,
-                    clipped_geom,
-                    zeno_commands.clone(),
-                    fill_color.into(),
-                );
-            }
-        }
-
-        // Draw stroke if specified
-        let stroke_brush = path.stroke();
-        let stroke_width = path.stroke_width();
-        if !stroke_brush.is_transparent() && stroke_width.get() > 0.0 {
-            let stroke_color = self.alpha_color(stroke_brush.color());
-            if stroke_color.alpha() > 0 {
-                let physical_stroke_width = (stroke_width.cast() * self.scale_factor).get();
-                let stroke_line_cap = path.stroke_line_cap();
-                let stroke_line_join = path.stroke_line_join();
-                let stroke_miter_limit = path.stroke_miter_limit();
-                self.processor.process_stroked_path(
-                    physical_geom,
-                    clipped_geom,
-                    zeno_commands,
-                    stroke_color.into(),
-                    physical_stroke_width,
-                    stroke_line_cap,
-                    stroke_line_join,
-                    stroke_miter_limit,
-                );
-            }
-        }
+        i_slint_core::frame_profile::time(
+            |p| &mut p.path_draw,
+            || self.draw_path_inner(path, self_rc, size),
+        )
     }
 
     fn draw_box_shadow(
@@ -3698,7 +3774,9 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 let changed = state == Some(true);
                 let direct = cache.direct.borrow().contains_key(&key);
                 let area = LogicalRect::new(self.current_state.offset, size);
+                let (invalidated, waiting, blitted) = cache.visits.get();
                 if changed {
+                    cache.visits.set((invalidated + 1, waiting, blitted));
                     cache.acknowledge_dirty(item_rc);
                     let layer =
                         DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: true };
@@ -3709,6 +3787,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 // renders one image: another such layer is drawn directly once more.
                 if direct || state.is_none() {
                     if cache.rendering.get() {
+                        cache.visits.set((invalidated, waiting + 1, blitted));
                         let layer =
                             DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: false };
                         cache.direct.borrow_mut().insert(key, layer);
@@ -3720,6 +3799,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                         cache.release(item_rc);
                     }
                 }
+                cache.visits.set((invalidated, waiting, blitted + 1));
                 self.draw_cached_layer(cache, item_rc, size);
                 return RenderingResult::ContinueRenderingWithoutChildren;
             }
@@ -3993,15 +4073,20 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
         glyphs_it: &mut dyn Iterator<Item = sharedparley::parley::layout::Glyph>,
     ) {
         let slint_context = self.window.context();
-        let (swash_key, swash_offset) =
-            fonts::systemfonts::get_swash_font_info(&font.data, font.index);
-        let font = fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
-            font.data.clone(),
-            font.index,
-            swash_key,
-            swash_offset,
-            font_size.cast(),
-            normalized_coords,
+        let font = i_slint_core::frame_profile::time(
+            |p| &mut p.glyph_run_setup,
+            || {
+                let (swash_key, swash_offset) =
+                    fonts::systemfonts::get_swash_font_info(&font.data, font.index);
+                fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
+                    font.data.clone(),
+                    font.index,
+                    swash_key,
+                    swash_offset,
+                    font_size.cast(),
+                    normalized_coords,
+                )
+            },
         );
 
         let global_offset: euclid::Vector2D<f32, PhysicalPx> =
@@ -4039,6 +4124,7 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
             let Some(glyph) = font.render_vector_glyph(id, subpixel_bin, slint_context) else {
                 continue;
             };
+            i_slint_core::frame_profile::record(|p| p.glyphs += 1);
 
             let gl_y = PhysicalLength::new(glyph.y.truncate() as i16);
             // i32 so a glyph past the i16 range survives until it is clipped below.

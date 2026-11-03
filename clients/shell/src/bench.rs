@@ -82,6 +82,8 @@ struct Frame {
     convert: f64,
     set: f64,
     animate: f64,
+    /// Of the render, before the dirty walk (`draw_contents`: instantiating repeaters).
+    prepare: f64,
     walk: f64,
     raster: f64,
     /// Of `raster`: replaying the recorded draw calls on the band threads.
@@ -92,14 +94,76 @@ struct Frame {
     layer_time: f64,
     total: f64,
     dirty_px: f64,
+    /// `KORRI_BENCH_PROFILE`: where the walk and the raster phase went.
+    profile: Option<Profile>,
+}
+
+/// One frame's profile (`KORRI_BENCH_PROFILE=1`), times in microseconds. Walk: from the
+/// end of the previous render through this frame's dirty-region walk (logic, properties,
+/// animations, then the walk). Raster: the rest of the render, on the UI thread.
+#[derive(Default, Clone, Copy)]
+struct Profile {
+    walk: TextProfile,
+    raster: TextProfile,
+    image_draw: f64,
+    path_draw: f64,
+    glyph_raster_count: f64,
+    glyph_raster: f64,
+    glyph_run_setup: f64,
+    glyph_runs: f64,
+    glyphs: f64,
+    /// Cached layers: invalidated, waiting for their turn, drawn from an image.
+    layers_invalidated: f64,
+    layers_waiting: f64,
+    layers_blitted: f64,
+    walked_items: f64,
+}
+
+#[derive(Default, Clone, Copy)]
+struct TextProfile {
+    measure: f64,
+    measures: f64,
+    draw: f64,
+    draws: f64,
+    shape: f64,
+    shapes: f64,
+    line_break: f64,
+    line_breaks: f64,
+    /// Outermost property bindings' time, and every binding evaluated.
+    binding: f64,
+    bindings: f64,
+}
+
+/// A `TextProfile` from the renderer's frame profile (its type is Slint's, unnamed here).
+macro_rules! text_profile {
+    ($p:expr) => {{
+        let p = &$p;
+        TextProfile {
+            measure: us(p.text_measure.time),
+            measures: p.text_measure.count as f64,
+            draw: us(p.text_draw.time),
+            draws: p.text_draw.count as f64,
+            shape: us(p.shape.time),
+            shapes: p.shape.count as f64,
+            line_break: us(p.line_break.time),
+            line_breaks: p.line_break.count as f64,
+            binding: us(p.binding.time),
+            bindings: p.binding.count as f64,
+        }
+    }};
+}
+
+fn us(d: Duration) -> f64 {
+    d.as_secs_f64() * 1e6
 }
 
 type Phase = (&'static str, fn(&Frame) -> f64);
-const PHASES: [Phase; 10] = [
+const PHASES: [Phase; 11] = [
     ("logic (Tick/update/view)", |f| f.logic),
     ("view to properties: convert", |f| f.convert),
     ("view to properties: set", |f| f.set),
     ("timers and animations", |f| f.animate),
+    ("before the walk (instantiate)", |f| f.prepare),
     ("dirty walk and layout", |f| f.walk),
     ("rasterisation", |f| f.raster),
     ("  of which banded replay", |f| f.replay),
@@ -168,6 +232,7 @@ pub fn run(options: Options) -> Result<String> {
     let mut images = ImageCache::new(&package.dir);
     let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
     binder.apply(&surface, &view, &mut images)?;
+    let mut last_view = view;
     surface.show()?;
 
     let (width, height) = options.size;
@@ -178,6 +243,9 @@ pub fn run(options: Options) -> Result<String> {
     let log_frames = std::env::var_os("KORRI_BENCH_FRAMES").is_some();
     // KORRI_BENCH_DUMP=DIR: every drawn frame as a PNG, dirty rectangles outlined in red.
     let dump = std::env::var_os("KORRI_BENCH_DUMP").map(std::path::PathBuf::from);
+    // KORRI_BENCH_PROFILE=1: where each frame's walk and raster time went (adds timing cost).
+    let profile = std::env::var_os("KORRI_BENCH_PROFILE").is_some();
+    let mut raster_sizes: BTreeMap<i16, u64> = BTreeMap::new();
     // Warm up: the first frames fill caches; they are not reported.
     let warm = 10;
     for n in 0..options.frames + warm {
@@ -187,6 +255,8 @@ pub fn run(options: Options) -> Result<String> {
         // Logic: a press every PRESS_EVERY frames from frame 30, a Tick
         // every second, and everything their requests cause.
         let mut message = None;
+        // Each logic call this frame and its time (KORRI_BENCH_FRAMES).
+        let mut calls: Vec<String> = Vec::new();
         let press_index = n
             .checked_sub(30)
             .filter(|k| k % PRESS_EVERY == 0)
@@ -207,7 +277,13 @@ pub fn run(options: Options) -> Result<String> {
                 if rounds > 16 {
                     bail!("requests keep causing requests");
                 }
+                let call = Instant::now();
                 let requests = engine.update(&message).map_err(|v| anyhow!("logic: {v}"))?;
+                calls.push(format!(
+                    "update({})={:.0}",
+                    message["_tag"].as_str().unwrap_or_default(),
+                    us(call.elapsed())
+                ));
                 let mut changed = false;
                 for request in &requests {
                     match messages::request_tag(request) {
@@ -225,9 +301,15 @@ pub fn run(options: Options) -> Result<String> {
                     }
                 }
                 if changed {
-                    engine
-                        .set_model(&model(&query, &from, count, &focused))
-                        .map_err(|v| anyhow!("logic: {v}"))?;
+                    let call = Instant::now();
+                    let text = model(&query, &from, count, &focused);
+                    let built = us(call.elapsed());
+                    let call = Instant::now();
+                    engine.set_model(&text).map_err(|v| anyhow!("logic: {v}"))?;
+                    calls.push(format!(
+                        "model(build)={built:.0} set_model={:.0}",
+                        us(call.elapsed())
+                    ));
                     queue.push(messages::korri_published());
                 }
             }
@@ -239,11 +321,23 @@ pub fn run(options: Options) -> Result<String> {
                 frame.view = view_started.elapsed().as_secs_f64() * 1e6;
                 frame.logic = logic.elapsed().as_secs_f64() * 1e6;
                 binder.apply(&surface, &view, &mut images)?;
+                if let (Some(new), Some(old)) = (view.as_object(), last_view.as_object()) {
+                    let changed: Vec<&str> = new
+                        .iter()
+                        .filter(|(k, v)| old.get(*k) != Some(*v))
+                        .map(|(k, _)| k.as_str())
+                        .collect();
+                    calls.push(format!("changed=[{}]", changed.join(",")));
+                }
+                last_view = view;
                 frame.convert = binder.timing.0.as_secs_f64() * 1e6;
                 frame.set = binder.timing.1.as_secs_f64() * 1e6;
             } else {
                 frame.logic = logic.elapsed().as_secs_f64() * 1e6;
             }
+        }
+        if !calls.is_empty() {
+            calls.push(format!("view={:.0}", frame.view));
         }
         let animate = Instant::now();
         slint::platform::update_timers_and_animations();
@@ -252,10 +346,39 @@ pub fn run(options: Options) -> Result<String> {
             if let Some(threads) = options.threads {
                 renderer.set_render_threads(threads);
             }
+            renderer.set_frame_profile(profile);
+            let render = Instant::now();
             let region = renderer.render(&mut buffer, width as usize);
+            let render = us(render.elapsed());
+            if profile {
+                let walk = renderer.last_walk_profile();
+                let raster = renderer.take_frame_profile();
+                let (invalidated, waiting, blitted) = renderer.last_frame_layer_visits();
+                for (size, n) in walk.raster_sizes.iter().chain(&raster.raster_sizes) {
+                    *raster_sizes.entry(*size).or_default() += n;
+                }
+                frame.profile = Some(Profile {
+                    walk: text_profile!(walk),
+                    raster: text_profile!(raster),
+                    image_draw: us(raster.image_draw.time),
+                    path_draw: us(raster.path_draw.time),
+                    glyph_raster_count: (walk.glyph_raster.count + raster.glyph_raster.count)
+                        as f64,
+                    glyph_raster: us(walk.glyph_raster.time + raster.glyph_raster.time),
+                    glyph_run_setup: us(raster.glyph_run_setup.time),
+                    glyph_runs: raster.glyph_run_setup.count as f64,
+                    glyphs: raster.glyphs as f64,
+                    layers_invalidated: invalidated as f64,
+                    layers_waiting: waiting as f64,
+                    layers_blitted: blitted as f64,
+                    walked_items: renderer.dirty_region_walked_items() as f64,
+                });
+            }
             let (walk, raster) = renderer.last_frame_phases();
             frame.walk = walk.as_secs_f64() * 1e6;
             frame.raster = raster.as_secs_f64() * 1e6;
+            // Before the walk: instantiating repeaters and conditionals, updating layouts.
+            frame.prepare = (render - frame.walk - frame.raster).max(0.0);
             frame.replay = renderer.last_frame_replay().as_secs_f64() * 1e6;
             let (layers, layer_px, layer_time) = renderer.last_frame_layer_renders();
             frame.layers = layers as f64;
@@ -274,16 +397,85 @@ pub fn run(options: Options) -> Result<String> {
         if n >= warm {
             if log_frames {
                 eprintln!(
-                    "FRAME {n} logic={:.0} view={:.0} set={:.0} walk={:.0} raster={:.0} replay={:.0} layers={:.0}/{:.0}px/{:.0}us total={:.0} px={:.0}",
-                    frame.logic, frame.view, frame.set, frame.walk, frame.raster, frame.replay,
+                    "FRAME {n} logic={:.0} view={:.0} set={:.0} prepare={:.0} walk={:.0} raster={:.0} replay={:.0} layers={:.0}/{:.0}px/{:.0}us total={:.0} px={:.0}",
+                    frame.logic, frame.view, frame.set, frame.prepare, frame.walk, frame.raster, frame.replay,
                     frame.layers, frame.layer_px, frame.layer_time, frame.total, frame.dirty_px
                 );
+                if !calls.is_empty() {
+                    eprintln!("  LOGIC {n} {}", calls.join(" "));
+                }
+                if let Some(p) = &frame.profile {
+                    eprintln!(
+                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
+                        p.walk.binding, p.walk.bindings, p.walk.measure, p.walk.measures, p.walk.shape, p.walk.shapes,
+                        p.walk.line_break, p.walk.line_breaks, p.walked_items,
+                        p.raster.binding, p.raster.bindings, p.raster.draw, p.raster.draws, p.raster.shape, p.raster.shapes,
+                        p.raster.line_break, p.raster.line_breaks, p.glyphs,
+                        p.glyph_raster_count, p.glyph_raster, p.glyph_runs, p.glyph_run_setup,
+                        p.image_draw, p.path_draw, p.layers_invalidated, p.layers_waiting, p.layers_blitted
+                    );
+                }
             }
             frames.push(frame);
         }
     }
     drop(surface);
-    Ok(report(&options, &frames))
+    let mut out = report(&options, &frames);
+    if profile {
+        out += &profile_report(&frames, &raster_sizes);
+    }
+    Ok(out)
+}
+
+type ProfilePhase = (&'static str, fn(&Profile) -> f64);
+const PROFILE_PHASES: [ProfilePhase; 26] = [
+    ("walk: bindings, outermost (us)", |p| p.walk.binding),
+    ("walk: bindings evaluated", |p| p.walk.bindings),
+    ("walk: text measuring (us)", |p| p.walk.measure),
+    ("walk: texts measured", |p| p.walk.measures),
+    ("walk: shaping (us)", |p| p.walk.shape),
+    ("walk: texts shaped", |p| p.walk.shapes),
+    ("walk: line breaking (us)", |p| p.walk.line_break),
+    ("walk: texts broken", |p| p.walk.line_breaks),
+    ("walk: items walked", |p| p.walked_items),
+    ("raster: bindings, outermost (us)", |p| p.raster.binding),
+    ("raster: bindings evaluated", |p| p.raster.bindings),
+    ("raster: text drawing (us)", |p| p.raster.draw),
+    ("raster: texts drawn", |p| p.raster.draws),
+    ("raster: shaping (us)", |p| p.raster.shape),
+    ("raster: line breaking (us)", |p| p.raster.line_break),
+    ("raster: texts broken", |p| p.raster.line_breaks),
+    ("raster: glyphs drawn", |p| p.glyphs),
+    ("raster: glyph runs", |p| p.glyph_runs),
+    ("raster: glyph run setup (us)", |p| p.glyph_run_setup),
+    ("new glyphs rasterised", |p| p.glyph_raster_count),
+    ("new glyph rasterising (us)", |p| p.glyph_raster),
+    ("raster: image drawing (us)", |p| p.image_draw),
+    ("raster: path drawing (us)", |p| p.path_draw),
+    ("layers invalidated", |p| p.layers_invalidated),
+    ("layers waiting for an image", |p| p.layers_waiting),
+    ("layers drawn from an image", |p| p.layers_blitted),
+];
+
+fn profile_report(frames: &[Frame], raster_sizes: &BTreeMap<i16, u64>) -> String {
+    let profiles: Vec<Profile> = frames.iter().filter_map(|f| f.profile).collect();
+    let mut out = format!("profile ({} frames drawn)\n", profiles.len());
+    for (name, get) in PROFILE_PHASES {
+        let mut values: Vec<f64> = profiles.iter().map(get).collect();
+        values.sort_by(f64::total_cmp);
+        out += &format!(
+            "{name:<30} {:>10.0} {:>10.0} {:>10.0}\n",
+            percentile(&values, 0.5),
+            percentile(&values, 0.95),
+            values.last().copied().unwrap_or_default()
+        );
+    }
+    let sizes: Vec<String> = raster_sizes
+        .iter()
+        .map(|(s, n)| format!("{s}px:{n}"))
+        .collect();
+    out += &format!("glyphs rasterised by pixel size: {}\n", sizes.join(" "));
+    out
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {
