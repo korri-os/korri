@@ -75,6 +75,27 @@ function unfocused<T>(value: T): T {
   return out as T
 }
 
+/**
+ * `value` with `focused` dropped from every entry under it: none of it is
+ * drawn, so none of it takes the cursor. The shell keeps a field a view
+ * leaves out, so .slint reads `focused` only where it draws the entry.
+ */
+function undrawn<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(undrawn) as T
+  if (value === null || typeof value !== "object" || "$image" in (value as Json)) return value
+  const out: Json = {}
+  for (const [key, inner] of Object.entries(value as Json)) if (key !== "focused") out[key] = undrawn(inner)
+  return out as T
+}
+
+/** A list's rows with `focused` dropped from those that never take the cursor (headings, notes). */
+const targetRows = (rows: Json[]): Json[] =>
+  rows.map(entry => {
+    if (!("focused" in entry) || entry.focused === true || typeof entry.kind !== "string" || !NOT_TARGETS.has(entry.kind)) return entry
+    const { focused: _, ...rest } = entry
+    return rest
+  })
+
 /** An entry that can take the cursor: it has `focused`, words, and is not a list's heading or note. */
 const NOT_TARGETS = new Set(["title", "caption", "note", "problem", "text", "tags", "word", "buttons"])
 const isTarget = (entry: Json): boolean =>
@@ -143,6 +164,37 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     for (const key of Object.keys(view)) if (key !== holder) view[key] = unfocused(view[key])
   }
 
+  // ---- A moment (the title card, the tally, the attract) covers the whole window: nothing under it holds the cursor ----
+  const moment = (raw.launchCard as { shown?: boolean } | undefined)?.shown === true || (raw.tally as { shown?: boolean } | undefined)?.shown === true || raw.attract === true
+  if (moment) for (const key of Object.keys(view)) view[key] = unfocused(view[key])
+
+  // ---- Only what is drawn takes the cursor: what the page does not draw carries no `focused` ----
+  if (raw.tabsShown !== true) view.tabs = undrawn(view.tabs)
+  if (page !== "games") {
+    for (const key of ["actions", "cardMarks", "find", "get"]) view[key] = undrawn(view[key])
+  } else {
+    if (raw.findShown !== true) view.find = undrawn(view.find)
+    if (raw.getShown !== true) view.get = undrawn(view.get)
+    // ZoneCardBand draws the focused card and `reach` cards either side of it.
+    const reach = screen.select.band === "wide" ? 2 : 1
+    const at = raw.focusedCard as number
+    view.cardMarks = (view.cardMarks as Json[]).map((mark, index) => (Math.abs(index - at) <= reach ? mark : undrawn(mark)))
+  }
+  const qr = view.qrShown === true
+  if (page !== "savedata" || qr) {
+    view.saveCards = undrawn(view.saveCards)
+    view.retired = undrawn(view.retired)
+  }
+  if (page !== "savedata" || !qr) view.slab = undrawn(view.slab)
+  if (page !== "onboarding") {
+    for (const key of ["seats", "next", "newSave"]) view[key] = undrawn(view[key])
+  } else {
+    if ((view.next as Btnish).label === "") view.next = undrawn(view.next)
+    if ((view.newSave as { shown?: boolean }).shown !== true) view.newSave = undrawn(view.newSave)
+  }
+  view.rows = targetRows(view.rows as Json[])
+  view.optsRows = targetRows(view.optsRows as Json[])
+
   // ---- Regions ----
   view.tabs = regionOf(view.tabs, "tabs", entry => entry.active === true)
   const byIndex = (list: unknown, index: unknown) =>
@@ -172,8 +224,10 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     const marked = rows.findIndex(entry => entry.focused === true || entry.focusActive === true)
     // The row the list enters on: the one it holds, else the one Zone goes to (the first; the last from below).
     const enters = marked >= 0 && items.includes(marked) ? marked : (page === "launch" || page === "onboarding" ? items.at(-1) : items[0]) ?? -1
+    // LAUNCH SETTINGS enters its buttons on the first that can be pressed.
+    const enabled = actions >= 0 ? ((rows[actions]!.buttons as Json[]).find(button => button.disabled !== true) ?? (rows[actions]!.buttons as Json[])[0]) : undefined
     view.rows = rows.map((entry, index) =>
-      index === actions ? regionOf(entry, "actions") : regionOf(entry, "list", () => index === enters))
+      index === actions ? regionOf(entry, "actions", button => button === enabled) : regionOf(entry, "list", () => index === enters))
   }
 
   // ---- Exits ----
@@ -182,10 +236,14 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   const shown = (key: string) => (view[key] as { shown?: boolean } | undefined)?.shown === true
   const covered = shown("dialog") || shown("keyboard") || (shown("busy") && ((view.busy as { buttons?: unknown[] }).buttons?.length ?? 0) > 0)
   const gamesError = page === "games" && korri.catalog._tag === "Error"
-  if (gamesError && shown("dialog") && !state.status.focus && korri.status._tag === "Browsing") {
+  // GAMES' catalog error: RELOAD stands under the tabs, and the tabs stay reachable.
+  if (gamesError && shown("dialog") && korri.status._tag === "Browsing" && layer === "none") {
     plan.dialog = { up: { to: "tabs", entry: "active" } }
+    plan.tabs = { down: { to: "dialog", entry: "first" } }
   }
-  if (!covered && layer === "none") {
+  // GAMES' own layers (GAME OPTS., the keyboard, the attract) hold the cursor in their region.
+  const ownLayer = page === "games" && layer !== "none"
+  if (!covered && !ownLayer) {
     switch (page) {
       case "games": {
         const band = present("cardMarks")
@@ -233,7 +291,7 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
         break
       }
       case "launch":
-        plan.list = { down: { to: "actions", entry: "first" } }
+        plan.list = { down: { to: "actions", entry: "active" } }
         plan.actions = { up: { to: "list", entry: "active" } }
         break
       case "onboarding":

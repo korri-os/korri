@@ -276,6 +276,8 @@ function games(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
       if (inside !== undefined) return go({ _tag: "FocusedTab", tab: ZONE_TABS[inside]! })
       if (button === "right" && findShown) return go({ _tag: "FocusedFind" })
       if (button === "down") {
+        // The catalog could not be read: RELOAD stands under the tabs.
+        if (korri.catalog._tag === "Error") return go({ _tag: "FocusedCard", index: nav.card })
         if (band.length > 0) return go({ _tag: "FocusedCard", index: nav.card })
         if (store) return go({ _tag: "FocusedGetGames" })
         if (findShown) return go({ _tag: "FocusedFind" })
@@ -296,11 +298,9 @@ function games(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
       return
     case "cards": {
       if (band[nav.card] === undefined) {
-        // A draft that matches nothing: NO GAMES, the cursor on FIND (or GET GAMES).
-        if (button === "up") return go({ _tag: "FocusedTab", tab: nav.tab })
-        if (button === "confirm" && findShown) return go({ _tag: "ChoseFind" })
-        if (button === "confirm" && store) return go({ _tag: "ChoseGetGames" })
-        if (button === "left" && store) return go({ _tag: "FocusedGetGames" })
+        // A draft that matches nothing: NO GAMES, the cursor on FIND (or GET GAMES); it moves as from there.
+        if (findShown) return games({ ...state, nav: { ...nav, zone: "find" } }, button, korri, send)
+        if (store) return games({ ...state, nav: { ...nav, zone: "get" } }, button, korri, send)
         return
       }
       if (button === "left" || button === "right") {
@@ -460,8 +460,9 @@ function launch(state: ZoneSurfaceState, button: Direction | "confirm", korri: S
     const first = actions.find(action => action.enabled)
     if (first !== undefined && button === "confirm") return send({ _tag: "LaunchAction", actionId: first.id })
     if (first !== undefined) send({ _tag: "FocusedLaunchAction", actionId: first.id })
-    if (button !== "left" && button !== "right") return
-    return launch({ ...state, launchAction: first?.id }, button, korri, send)
+    // The view already lights the first: a direction moves on from it.
+    if (!isDirection(button) || first === undefined) return
+    return launch({ ...state, launchAction: first.id }, button, korri, send)
   }
   const onAction = state.launchAction !== undefined && optionsLayer(state.launch) === "none"
   if (onAction) {
