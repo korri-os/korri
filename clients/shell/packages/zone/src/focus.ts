@@ -147,7 +147,7 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   view.tabs = regionOf(view.tabs, "tabs", entry => entry.active === true)
   const byIndex = (list: unknown, index: unknown) =>
     Array.isArray(list) ? list.map((entry, at) => (at === index ? { ...(entry as Json), focusActive: true } : entry)) : list
-  view.cards = byIndex(regionOf(view.cards, "band"), raw.focusedCard)
+  view.cardMarks = byIndex(regionOf(view.cardMarks, "band"), raw.focusedCard)
   view.actions = regionOf(view.actions, "actions")
   view.find = regionOf(view.find, "find")
   view.get = regionOf(view.get, "get")
@@ -188,7 +188,7 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   if (!covered && layer === "none") {
     switch (page) {
       case "games": {
-        const band = present("cards")
+        const band = present("cardMarks")
         const find = present("find")
         const get = present("get")
         const toBand: ZoneExit = { to: "band", entry: "active" }

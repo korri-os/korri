@@ -11,12 +11,13 @@ import { Tokens } from "../../ui/tokens.slint";
 import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
 import { ZoneCard } from "ZoneCard.slint";
 import { ZoneSectionCard } from "ZoneSectionCard.slint";
-import { Card } from "../types.slint";
+import { Card, Mark } from "../types.slint";
 
 export component ZoneCardBand {
     in property <[Card]> cards;
     in property <int> focused-card;
     in property <bool> card-focused;
+    in property <[Mark]> marks;
     in property <int> first-index;
     in property <int> total;
     in property <float> nudge: Tokens.nudge-band;
@@ -83,7 +84,7 @@ export component ZoneCardBand {
                 y: root.cy - self.height / 2;
                 card: c;
                 focused: i == root.focused-card;
-                lit: root.card-focused;
+                lit: root.marks[i].focused;
             }
             if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0 && c.section != "" && (i == 0 || root.cards[i - 1].section != c.section): ZoneSectionCard {
                 x: root.card-x(i + root.first-index) - root.gap + root.a;

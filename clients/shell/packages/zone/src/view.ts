@@ -94,7 +94,18 @@ function signalOf(connection: SurfaceNetworkConnection | undefined) {
   }
 }
 
-const card = (game: SurfaceGame) => ({
+/** A game's card, made once per game object Korri publishes (the press rebuild only marks focus). */
+const cards = new WeakMap<SurfaceGame, ReturnType<typeof makeCard>>()
+const card = (game: SurfaceGame) => {
+  let made = cards.get(game)
+  if (made === undefined) {
+    made = makeCard(game)
+    cards.set(game, made)
+  }
+  return made
+}
+
+const makeCard = (game: SurfaceGame) => ({
   title: game.title,
   ...(game.coverArtUrl === undefined ? {} : { art: { $image: game.coverArtUrl } }),
   hasArt: game.coverArtUrl !== undefined,
@@ -482,7 +493,9 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
     // GAMES
     zone: onGames ? nav.zone : "",
     catalog: catalog._tag,
-    cards: band.map((game, index) => ({ ...card(game), focused: index === nav.card && cardFocused })),
+    // The cards stay as they were across a move (one object per game); the marks carry the focus.
+    cards: band.map(card),
+    cardMarks: band.map((game, index) => ({ label: game.title, focused: index === nav.card && cardFocused })),
     focusedCard: nav.card,
     cardFocused,
     firstIndex: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.firstIndex : 0,

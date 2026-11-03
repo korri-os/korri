@@ -12,7 +12,7 @@
 // cursor's triangles move.
 
 import { Tokens } from "ui/tokens.slint";
-import { Screen, Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud } from "ui/types.slint";
+import { Screen, Mark, Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud } from "ui/types.slint";
 import { ZoneStatusLayer } from "ui/organisms/ZoneStatusLayer.slint";
 import { ZoneGames } from "pages/ZoneGames.slint";
 import { ZoneOptions } from "pages/ZoneOptions.slint";
@@ -23,7 +23,7 @@ import { ZoneLaunchSettings } from "pages/ZoneLaunchSettings.slint";
 import { ZoneOnboarding } from "pages/ZoneOnboarding.slint";
 import { ZonePaused } from "pages/ZonePaused.slint";
 
-export { Screen, Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud }
+export { Screen, Mark, Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud }
 
 export component Surface inherits Window {
     title: "Zone";
@@ -46,6 +46,7 @@ export component Surface inherits Window {
     in property <[Card]> cards;
     in property <int> focused-card;
     in property <bool> card-focused;
+    in property <[Mark]> card-marks;
     in property <int> first-index;
     in property <int> total;
     in property <[Fact]> facts;
@@ -121,6 +122,7 @@ export component Surface inherits Window {
         cards: root.cards;
         focused-card: root.focused-card;
         card-focused: root.card-focused;
+        card-marks: root.card-marks;
         first-index: root.first-index;
         total: root.total;
         facts: root.facts;

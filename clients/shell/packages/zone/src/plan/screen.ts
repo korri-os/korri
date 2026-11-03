@@ -85,7 +85,19 @@ export const ZONE_ROW_BUTTONS = 6
  * Buttons in order, each line centred; a button that does not fit beside
  * the one before starts the next line, so no button is cut at any width.
  */
+const rows = new Map<string, ZoneButtonRow>()
 export function buttonRow(labels: readonly string[], width: number, cap: number, a: number, look: ZoneLook): ZoneButtonRow {
+  const key = `${width}|${cap}|${a}|${look}|${labels.join("\u0000")}`
+  let row = rows.get(key)
+  if (row === undefined) {
+    if (rows.size > 256) rows.clear()
+    row = layButtonRow(labels, width, cap, a, look)
+    rows.set(key, row)
+  }
+  return row
+}
+
+function layButtonRow(labels: readonly string[], width: number, cap: number, a: number, look: ZoneLook): ZoneButtonRow {
   const spans = labels.slice(0, ZONE_ROW_BUTTONS).map(label => buttonSpan(label, cap, a, look))
   const gap = 2 * cap + 10 * a
   const room = width - 2 * 11 * a
@@ -128,7 +140,19 @@ export interface ZoneTabsPlan {
 }
 
 /** The tabs of the strip, as ZoneTabStrip places them. */
+const tabPlans = new Map<string, ZoneTabsPlan>()
 export function tabsPlan(labels: readonly string[], active: number, screen: ZoneScreen): ZoneTabsPlan {
+  const key = `${screen.width}|${screen.height}|${screen.look}|${active}|${labels.join("\u0000")}`
+  let plan = tabPlans.get(key)
+  if (plan === undefined) {
+    if (tabPlans.size > 64) tabPlans.clear()
+    plan = layTabs(labels, active, screen)
+    tabPlans.set(key, plan)
+  }
+  return plan
+}
+
+function layTabs(labels: readonly string[], active: number, screen: ZoneScreen): ZoneTabsPlan {
   const a = screen.a
   const c1 = 10 * a
   const least = screen.top.least

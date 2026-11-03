@@ -74,3 +74,31 @@ describe("Resized", () => {
     expect((walk.view().actions as { focused: boolean }[]).findIndex(button => button.focused)).toBe(1)
   })
 })
+
+describe("the per-press cost (RG353M benchmark)", () => {
+  test("a Tick that changes nothing gives the same state back, and the same view", () => {
+    const walk = new Walk("games", 640, 480)
+    const before = walk.state
+    const view = walk.view()
+    walk.deliver({ _tag: "Tick", idleMs: 1_000 })
+    expect(walk.state).toBe(before)
+    expect(walk.view()).toBe(view)
+  })
+
+  test("a huge idleMs is one step, not one per turn", () => {
+    const walk = new Walk("games-empty", 640, 480)
+    const started = performance.now()
+    walk.deliver({ _tag: "Tick", idleMs: 4_294_967_295 })
+    walk.deliver({ _tag: "Tick", idleMs: 4_294_967_295 })
+    expect(performance.now() - started).toBeLessThan(5)
+  })
+
+  test("moving along the band leaves the cards as they were: only the marks change", () => {
+    const walk = new Walk("games", 640, 480)
+    const before = JSON.stringify(walk.view().cards)
+    const marks = JSON.stringify(walk.view().cardMarks)
+    walk.press("right")
+    expect(JSON.stringify(walk.view().cards)).toBe(before)
+    expect(JSON.stringify(walk.view().cardMarks)).not.toBe(marks)
+  })
+})

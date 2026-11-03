@@ -20,7 +20,7 @@ import { ZoneLaunchCard } from "../ui/organisms/ZoneLaunchCard.slint";
 import { ZoneTally } from "../ui/organisms/ZoneTally.slint";
 import { ZoneAttract } from "../ui/organisms/ZoneAttract.slint";
 import { ZoneShell } from "../ui/templates/ZoneShell.slint";
-import { Tab, Hints, Foot, Card, Fact, Btn, Row, Keyboard, LaunchCard, Tally } from "../ui/types.slint";
+import { Mark, Tab, Hints, Foot, Card, Fact, Btn, Row, Keyboard, LaunchCard, Tally } from "../ui/types.slint";
 
 export component ZoneGames {
     in property <[Tab]> tabs;
@@ -30,6 +30,7 @@ export component ZoneGames {
     in property <[Card]> cards;
     in property <int> focused-card;
     in property <bool> card-focused;
+    in property <[Mark]> card-marks;
     in property <int> first-index;
     in property <int> total;
     in property <[Fact]> facts;
@@ -70,6 +71,7 @@ export component ZoneGames {
             cards: root.cards;
             focused-card: root.focused-card;
             card-focused: root.card-focused;
+            marks: root.card-marks;
             first-index: root.first-index;
             total: root.total;
         }

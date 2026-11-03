@@ -132,6 +132,13 @@ export struct Card {
     stripes: int,
     tags: [Tag],
     section: string,
+}
+
+// One card's focus, apart from the card itself: a press changes these and
+// leaves the cards (their words and art) as they were, so the band's cards
+// are not rebuilt on every move.
+export struct Mark {
+    label: string,
     focused: bool,
 }
 

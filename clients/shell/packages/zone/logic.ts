@@ -70,7 +70,15 @@ export interface State {
 }
 
 /** Zone's plan for the window and the look it is drawn in. */
-export const screenOf = (state: State): ZoneScreen => zoneScreen(state.size.width, state.size.height, state.zone.look)
+let lastScreen: ZoneScreen | undefined
+export function screenOf(state: State): ZoneScreen {
+  const { width, height } = state.size
+  const look = state.zone.look
+  if (lastScreen === undefined || lastScreen.width !== width || lastScreen.height !== height || lastScreen.look !== look) {
+    lastScreen = zoneScreen(width, height, look)
+  }
+  return lastScreen
+}
 
 /**
  * The action Korri marks as Back's on its status (contract 7, A1): every
@@ -163,6 +171,8 @@ export function update(state: State, message: Message, model: Model): { state: S
       // Zone's idle: the attract opens after ZONE_IDLE_AFTER_MS without a
       // press and moves to the next game every ZONE_IDLE_CYCLE_MS.
       const due = message.idleMs < ZONE_IDLE_AFTER_MS ? 0 : 1 + Math.floor((message.idleMs - ZONE_IDLE_AFTER_MS) / ZONE_IDLE_CYCLE_MS)
+      // Most Ticks change nothing: the same state back, so the view is not rebuilt.
+      if (due === idleTurns || (due > 0 && due < idleTurns)) return { state, requests: [] }
       if (due === 0) idleTurns = 0
       if (idleTurns === 0 && due > 0) {
         zone = run(zone, { _tag: "Games", message: { _tag: "IdleElapsed" } }, model, out)
@@ -230,12 +240,20 @@ export function update(state: State, message: Message, model: Model): { state: S
   return { state: { zone, reported: focused, moving, idleTurns, size }, requests: out }
 }
 
+// The view is a pure function of (state, model): the same two give the last view back.
+let lastView: { state: State; model: Model; view: ReturnType<typeof zoneView> } | undefined
+let lastOverlay: { state: State; model: Model; view: ReturnType<typeof overlayView> } | undefined
+
 export function view(state: State, model: Model) {
-  return zoneView(state.zone, model, screenOf(state))
+  if (lastView?.state === state && lastView.model === model) return lastView.view
+  lastView = { state, model, view: zoneView(state.zone, model, screenOf(state)) }
+  return lastView.view
 }
 
 export function overlay(state: State, model: Model) {
-  return overlayView(state.zone, model, screenOf(state))
+  if (lastOverlay?.state === state && lastOverlay.model === model) return lastOverlay.view
+  lastOverlay = { state, model, view: overlayView(state.zone, model, screenOf(state)) }
+  return lastOverlay.view
 }
 
 // The look follows the person (ADR 0018's rule by kind): `shared`.
