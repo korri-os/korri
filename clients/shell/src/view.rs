@@ -240,10 +240,47 @@ pub fn convert(
                 let converted = convert(json, ty, &prior, images, &format!("{path}.{field}"))?;
                 value.set_field(field, converted);
             }
+            // A declared field the object omits and that has no value yet
+            // gets its type's default; Slint panics on a field with none.
+            for (field, ty) in &declared.fields {
+                if value.get_field(field).is_none_or(|v| *v == Value::Void) {
+                    value.set_field(field.to_string(), default_value(ty));
+                }
+            }
             Value::Struct(value)
         }
         _ => bail!("{path}: wrong type, expected {ty}, got {}", short(json)),
     })
+}
+
+/// A type's default value, recursively for structs: what Slint gives a
+/// declared field with no binding.
+fn default_value(ty: &Type) -> Value {
+    match ty {
+        Type::Bool => Value::Bool(false),
+        Type::String => Value::String(Default::default()),
+        Type::Int32
+        | Type::Float32
+        | Type::Duration
+        | Type::PhysicalLength
+        | Type::LogicalLength
+        | Type::Rem
+        | Type::Angle
+        | Type::Percent
+        | Type::UnitProduct(_) => Value::Number(0.0),
+        Type::Array(_) => Value::Model(ModelRc::new(VecModel::<Value>::default())),
+        Type::Image => Value::Image(Default::default()),
+        Type::Color => Value::Brush(Default::default()),
+        Type::Brush => Value::Brush(Default::default()),
+        Type::Struct(declared) => {
+            let mut value = Struct::default();
+            for (field, ty) in &declared.fields {
+                value.set_field(field.to_string(), default_value(ty));
+            }
+            Value::Struct(value)
+        }
+        _ => Value::Void,
+    }
 }
 
 fn short(json: &Json) -> String {
@@ -395,6 +432,45 @@ mod tests {
             &|v| v["focusPlan"]["rows"]["north"] = json!({"to": "tabs", "entry": "first"})
         )
         .contains("not up, down"));
+        Ok(())
+    }
+
+    #[test]
+    fn omitted_struct_fields_get_their_type_default() -> Result<()> {
+        let source = r#"
+            export struct Inner { shown: bool, label: string }
+            export struct Entry { label: string, focused: bool, size: int, inner: Inner, tags: [string] }
+            export component Surface inherits Window {
+                in property <[Entry]> entries;
+                Text { text: root.entries[0].focused || root.entries[0].inner.shown ? "on" : root.entries[0].tags.length; }
+                in property <string> heading: "kept";
+            }"#;
+        let definition = compile(source);
+        let dir = tempfile::tempdir()?;
+        let mut images = ImageCache::new(dir.path());
+        crate::backend::headless::Headless::install();
+        let instance = definition.create()?;
+        // `focused`, `size`, `inner` and `tags` omitted; `heading` absent.
+        let view = json!({"entries": [{"label": "Resume"}]});
+        Binder::new(&definition).apply(&instance, &view, &mut images)?;
+        let Value::Model(entries) = instance.get_property("entries")? else {
+            panic!()
+        };
+        let Some(Value::Struct(entry)) = entries.row_data(0) else {
+            panic!()
+        };
+        assert_eq!(entry.get_field("focused"), Some(&Value::Bool(false)));
+        assert_eq!(entry.get_field("size"), Some(&Value::Number(0.0)));
+        let Some(Value::Struct(inner)) = entry.get_field("inner") else {
+            panic!()
+        };
+        assert_eq!(inner.get_field("shown"), Some(&Value::Bool(false)));
+        assert_eq!(inner.get_field("label"), Some(&Value::String("".into())));
+        // A top-level property the view omits keeps its value.
+        assert_eq!(
+            instance.get_property("heading")?,
+            Value::String("kept".into())
+        );
         Ok(())
     }
 
