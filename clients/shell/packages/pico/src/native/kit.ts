@@ -119,6 +119,27 @@ export function cartView(
   game: Pick<PicoShelfGame, "id" | "title" | "subtitle" | "artUrl" | "resumable" | "playCount" | "totalPlaytimeSeconds">,
   options: { readonly hero?: boolean; readonly focused?: boolean; readonly focusId?: string; readonly band?: boolean } = {},
 ): CartView {
+  // A game's cart, once per game object and look: QuickJS builds a shelf of
+  // carts on every press otherwise.
+  const key = `${options.hero === true}|${options.focused === true}|${options.focusId ?? ""}|${options.band !== false}`
+  let byGame = CARTS.get(game)
+  if (byGame === undefined) {
+    byGame = new Map()
+    CARTS.set(game, byGame)
+  }
+  const known = byGame.get(key)
+  if (known !== undefined) return known
+  const built = buildCart(game, options)
+  byGame.set(key, built)
+  return built
+}
+
+const CARTS = new WeakMap<object, Map<string, CartView>>()
+
+function buildCart(
+  game: Pick<PicoShelfGame, "id" | "title" | "subtitle" | "artUrl" | "resumable" | "playCount" | "totalPlaytimeSeconds">,
+  options: { readonly hero?: boolean; readonly focused?: boolean; readonly focusId?: string; readonly band?: boolean },
+): CartView {
   const look = picoCartLookFor(game.id, game.subtitle)
   const cover = art(game.artUrl)
   // The NEW band is the shelf's: other racks (the grid, Find, the store) draw none.
@@ -176,6 +197,18 @@ function pngSize(url: string): { readonly width: number; readonly height: number
  */
 export function artRatio(url: string | undefined): number {
   if (url === undefined || url === "") return 1
+  const known = RATIOS.get(url)
+  if (known !== undefined) return known
+  const ratio = measuredRatio(url)
+  if (RATIOS.size >= 256) RATIOS.clear()
+  RATIOS.set(url, ratio)
+  return ratio
+}
+
+/** Art ratios by URL: reading a PNG's header out of a data URL is not free. */
+const RATIOS = new Map<string, number>()
+
+function measuredRatio(url: string): number {
   const size = pngSize(url)
   if (size === undefined) return 0
   const shape = size.width / size.height

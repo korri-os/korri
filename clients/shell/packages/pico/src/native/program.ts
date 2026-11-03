@@ -39,9 +39,10 @@ import { initialOnboarding } from "../state/onboarding"
 import { updateOnboarding } from "../state/onboarding-update"
 import { initialOverlay, updateOverlay } from "../state/overlay"
 import type { PicoRequest } from "../state/requests"
-import { attractShowing, inviteNotices, launchOpen, runnerOpen, shownScreen } from "../state/shown"
+import { attractShowing, canAttract, inviteNotices, launchOpen, runnerOpen, shownScreen } from "../state/shown"
 import { update as picoUpdate } from "../state/update"
 import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScreen, sameQuery } from "./catalog"
+import { memo } from "./memo"
 import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus } from "./focus"
 import { cartView } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
@@ -58,8 +59,10 @@ const EDGE = 8
 
 /** The layout plan the focus graph and the view share (contract A2, 8.2). */
 export function planFor(s: State, korri: KorriModel): Plan {
-  return picoLayoutPlan(s.window, korri.displays)
+  return planOf(s.window, korri.displays)
 }
+
+const planOf = memo(4, (window: State["window"], displays: KorriModel["displays"]) => [window, displays], picoLayoutPlan)
 
 export function init(korri: KorriModel, preferences: Readonly<Record<string, string>>): State {
   return {
@@ -175,8 +178,15 @@ const run = (step: Step, act: Act | undefined, korri: KorriModel): Step =>
 
 /** What the catalog presentation shows now, as a view and focus targets. */
 export function catalogScreen(s: State, korri: KorriModel): Screen {
-  return drawnOnly(screenOf(s, korri))
+  return catalogScreenOf(s, korri)
 }
+
+/** A screen reads only these parts of the state (src/native/*.ts). */
+const catalogScreenOf = memo(
+  6,
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, korri],
+  (s: State, korri: KorriModel) => drawnOnly(screenOf(s, korri)),
+)
 
 /**
  * Only targets the view draws: a target with no entry in the view (a list
@@ -240,8 +250,17 @@ function onPage(screen: Screen, page: "setup" | "launch" | "settings" | "store")
 
 function overlayView(s: State, korri: KorriModel): Screen | undefined {
   if (korri.presentation.kind !== "gameplay-overlay") return undefined
-  return drawnOnly(overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status), s.overlay, s.overlayFocus))
+  return overlayScreenOf(s.overlay, s.overlayFocus, korri)
 }
+
+const overlayScreenOf = memo(
+  4,
+  (overlay: State["overlay"], focus: State["overlayFocus"], korri: KorriModel) => [overlay, focus, korri],
+  (overlay: State["overlay"], focus: State["overlayFocus"], korri: KorriModel) =>
+    korri.presentation.kind !== "gameplay-overlay"
+      ? undefined as never
+      : drawnOnly(overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status), overlay, focus)),
+)
 
 /** Keep the cursor on a target of the screen shown, starting where the
  * screen says when the screen changed or its target went. */
@@ -437,6 +456,16 @@ function leftRange(id: string, korri: KorriModel): Act {
 }
 
 export function update(state: State, message: SurfaceMessage, korri: KorriModel): { state: State; requests: SurfaceRequest[] } {
+  // A Tick that crosses no threshold, and a Resized to the same size, change
+  // nothing: the same state object tells the shell not to draw again.
+  if (message._tag === "Tick") {
+    if (message.idleMs < PICO_ATTRACT_AFTER_MS || state.nav.idle._tag !== "Awake" || !canAttract(state.nav, picoModelFrom(korri))) {
+      return { state, requests: [] }
+    }
+  }
+  if (message._tag === "Resized" && message.width === state.window.width && message.height === state.window.height) {
+    return { state, requests: [] }
+  }
   let step: Step = { state, requests: [] }
   const model = picoModelFrom(korri)
   switch (message._tag) {
@@ -481,8 +510,10 @@ const fontFor = (id: State["font"]) => PICO_FONTS.find(font => font.id === id) ?
 
 /** The plan's exits for the regions on this screen: the view's `focusPlan`. */
 function focusPlanOf(s: State, korri: KorriModel, screen: Screen): FocusPlan {
-  return resolveExits(planFor(s, korri).exits, screen.targets)
+  return exitsOf(planFor(s, korri).exits, screen.targets)
 }
+
+const exitsOf = memo(6, (exits: Plan["exits"], targets: Screen["targets"]) => [exits, targets], resolveExits)
 
 /** Each region's last focused target, kept for `remembered` exits. */
 function remember(s: State, korri: KorriModel): State {
@@ -523,6 +554,17 @@ function marked(value: unknown, screen: Screen): unknown {
 }
 
 export function view(s: State, korri: KorriModel) {
+  return viewOf(s, korri)
+}
+
+/** The view reads the screen's inputs, the notices' round and the font. */
+const viewOf = memo(
+  2,
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.noticeRound, korri],
+  (s: State, korri: KorriModel) => buildView(s, korri),
+)
+
+function buildView(s: State, korri: KorriModel) {
   const model = picoModelFrom(korri)
   const screen = catalogScreen(s, korri)
   const font = fontFor(s.font)
@@ -558,6 +600,16 @@ function splitPlan(plan: PicoDisplayPlan | undefined) {
 }
 
 export function overlay(s: State, korri: KorriModel) {
+  return overlayOf(s, korri)
+}
+
+const overlayOf = memo(
+  2,
+  (s: State, korri: KorriModel) => [s.overlay, s.overlayFocus, s.font, s.window, korri],
+  (s: State, korri: KorriModel) => buildOverlay(s, korri),
+)
+
+function buildOverlay(s: State, korri: KorriModel) {
   const shown = overlayView(s, korri)
   const font = fontFor(s.font)
   const drawn = {

@@ -177,3 +177,19 @@ describe("attract", () => {
     expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(false)
   })
 })
+
+describe("quiet messages keep the state object", () => {
+  test("a Tick below the attract threshold, and a Resized to the same size, return the same state", () => {
+    const korri = new Korri(fixtureGames.map(game => ({ ...game })))
+    const model = korri.model()
+    let state = init(model, {})
+    state = update(state, { _tag: "Resized", width: 640, height: 480 }, model).state
+    state = update(state, { _tag: "KorriPublished" }, model).state
+    for (const idleMs of [0, 1_000, 44_999]) expect(update(state, { _tag: "Tick", idleMs }, model).state).toBe(state)
+    expect(update(state, { _tag: "Resized", width: 640, height: 480 }, model).state).toBe(state)
+    // The threshold crossed: attract starts, and the state changes.
+    expect(update(state, { _tag: "Tick", idleMs: 45_000 }, model).state).not.toBe(state)
+    // The same state and model draw the same view object.
+    expect(view(state, model)).toBe(view(state, model))
+  })
+})
