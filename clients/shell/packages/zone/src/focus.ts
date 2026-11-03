@@ -89,7 +89,7 @@ function undrawn<T>(value: T): T {
 }
 
 /** A list's rows with `focused` dropped from those that never take the cursor (headings, notes). */
-const targetRows = (rows: Json[]): Json[] =>
+export const targetRows = (rows: Json[]): Json[] =>
   rows.map(entry => {
     if (!("focused" in entry) || entry.focused === true || typeof entry.kind !== "string" || !NOT_TARGETS.has(entry.kind)) return entry
     const { focused: _, ...rest } = entry

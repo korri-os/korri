@@ -51,7 +51,7 @@ const scenarios: Scenario[] = [
   { name: "games-gameopts", ref: ["ZoneGames", "GameOpts"], models: [withActions(ready)], steps: ["right", "right", "right", "options"] },
   { name: "games-gameopts-asking", ref: ["ZoneGames", "GameOptsAsking"], models: [withActions(ready)], steps: ["right", "right", "right", "options", "down", "confirm"] },
   { name: "games-find", ref: ["ZoneGames", "FindOpen"], models: [ready], steps: ["menu", "menu", "confirm"] },
-  { name: "games-filtered", ref: ["ZoneGames", "Filtered"], models: [ready], steps: ["menu", "menu", "confirm", "down", "right", "right", "right", "right", "right", "right", "right", "right", "confirm", "down", "confirm", "down", "down", "right", "right", "right", "right", "right", "right", "confirm"] },
+  { name: "games-filtered", ref: ["ZoneGames", "Filtered"], models: [ready], steps: ["menu", "menu", "confirm", "right", "right", "right", "right", "right", "right", "right", "right", "right", "down", "confirm", "down", "confirm", "down", "right", "right", "right", "right", "right", "right", "confirm"] },
   { name: "games-get", ref: ["ZoneGames", "GetGames"], models: [fixtureGetGamesModel], steps: ["right", "menu", "menu", "menu"] },
   { name: "games-busy", ref: ["ZoneGames", "BusyOverHome"], models: [{ ...ready, status: statusBusyDetail }], steps: [] },
   { name: "games-title-card", ref: ["ZoneLaunchCard", "default"], models: [ready], steps: ["right", "confirm"] },

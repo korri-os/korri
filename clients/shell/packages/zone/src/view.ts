@@ -22,7 +22,7 @@ import { deviceNameSetting, onboardingTargets, seatTarget, TARGET, ZONE_ONBOARDI
 import { overlayControls, shownRangeValue } from "./state/overlay"
 import { problemButtons } from "./state/status"
 import { withLook, zoneShown, type ZoneShown, type ZoneSurfaceState } from "./state/surface"
-import { focusView } from "./focus"
+import { focusView, targetRows } from "./focus"
 import type { ZoneScreen } from "./plan/screen"
 
 const TAB_WORDS: Readonly<Record<ZoneTab, string>> = { games: "Games", options: "Options", savedata: "Save data" }
@@ -704,15 +704,30 @@ function onboardingView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boo
 export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen) {
   const raw = pausedView(state, korri)
   const dialog = raw.dialog
-  // The Overlay's regions: PAUSED's list, and a question's buttons.
+  // The Overlay's regions: a question's buttons, and PAUSED's controls. The
+  // controls step down-left like stairs, so each control is its own region:
+  // up and down go to the control above and below, left and right step its
+  // value or stay.
   const planned = focusView({ actions: [], retired: [], dialog, busy: raw.busy, rows: [], optsRows: [], tabs: [] }, state, korri, screen)
+  const rows = targetRows(raw.rows as unknown as Record<string, unknown>[])
+  const controls = rows.flatMap((entry, index) => ("focused" in entry ? [index] : []))
+  const region = (index: number) => `control-${controls.indexOf(index)}`
+  const focusPlan: Record<string, Record<string, { to: string; entry: "first" }>> = {}
+  if (!dialog.shown && !(raw.busy.shown && raw.busy.buttons.length > 0)) {
+    controls.forEach((_, k) => {
+      focusPlan[`control-${k}`] = {
+        ...(k > 0 ? { up: { to: `control-${k - 1}`, entry: "first" as const } } : {}),
+        ...(k < controls.length - 1 ? { down: { to: `control-${k + 1}`, entry: "first" as const } } : {}),
+      }
+    })
+  }
   return {
     ...raw,
     dialog: planned.dialog,
     busy: planned.busy,
-    rows: raw.rows.map(entry => ({ ...entry, focusRegion: "paused" })),
+    rows: rows.map((entry, index) => ("focused" in entry ? { ...entry, focusRegion: region(index) } : entry)),
     screen: planned.screen,
-    focusPlan: {},
+    focusPlan,
   }
 }
 
