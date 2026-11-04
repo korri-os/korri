@@ -91,6 +91,8 @@ pub enum CachedItemBoundingBoxAndTransform {
         bounding_rect: LogicalRect,
         /// The item's offset relative to its parent.
         offset: LogicalVector,
+        /// The item's size (its geometry's), so drawing it needs no new geometry query.
+        size: LogicalSize,
         sibling_index: u16,
     },
     /// An item such as Rotate that defines an additional transformation
@@ -145,9 +147,9 @@ impl CachedItemBoundingBoxAndTransform {
         use CachedItemBoundingBoxAndTransform::*;
         match (self, other) {
             (
-                RegularItem { bounding_rect: a, offset: oa, .. },
-                RegularItem { bounding_rect: b, offset: ob, .. },
-            ) => a == b && oa == ob,
+                RegularItem { bounding_rect: a, offset: oa, size: sa, .. },
+                RegularItem { bounding_rect: b, offset: ob, size: sb, .. },
+            ) => a == b && oa == ob && sa == sb,
             (
                 ItemWithTransform { bounding_rect: a, transform: ta, .. },
                 ItemWithTransform { bounding_rect: b, transform: tb, .. },
@@ -187,7 +189,12 @@ impl CachedItemBoundingBoxAndTransform {
                 sibling_index,
             }
         } else {
-            Self::RegularItem { bounding_rect, offset: geometry.origin.to_vector(), sibling_index }
+            Self::RegularItem {
+                bounding_rect,
+                offset: geometry.origin.to_vector(),
+                size: geometry.size,
+                sibling_index,
+            }
         }
     }
 }
@@ -805,7 +812,9 @@ impl<T: ItemRenderer + ItemRendererFeatures> ItemRenderer for PartialRenderer<'_
             rendering_data.get_entry(&mut cache).map(|e| {
                 let draw = self.item_is_drawn(e.data.bounding_rect());
                 let offset = match &e.data {
-                    CachedItemBoundingBoxAndTransform::RegularItem { offset, .. } => Some(*offset),
+                    CachedItemBoundingBoxAndTransform::RegularItem { offset, size, .. } => {
+                        Some((*offset, *size))
+                    }
                     _ => None,
                 };
                 (draw, offset)
@@ -813,8 +822,12 @@ impl<T: ItemRenderer + ItemRendererFeatures> ItemRenderer for PartialRenderer<'_
         };
 
         // Items that are not drawn only need their origin; this skips e.g. shaping off-screen text.
-        if let Some((false, Some(offset))) = cached {
-            return (false, offset.to_point(), None);
+        // Drawn ones take the geometry this frame's dirty-region walk computed, instead of
+        // asking the item again.
+        match cached {
+            Some((false, Some((offset, _)))) => return (false, offset.to_point(), None),
+            Some((true, Some((offset, size)))) => return (true, offset.to_point(), Some(size)),
+            _ => {}
         }
 
         // Query untracked, as the bounding rect calculation already registers a dependency on the geometry.
