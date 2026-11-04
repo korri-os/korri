@@ -35,7 +35,8 @@ export component PicoNotice inherits PicoCard {
         accessible-label: line.text;
         accessible-item-selectable: true;
         accessible-item-selected: (line.target && line.focused);
-        if (line.target && line.focused) : Rectangle { x: -Tokens.p; y: 0; width: parent.width + 2 * Tokens.p; height: parent.height; background: P8.pick; }
+        // Always present, shown by the row's data: a row updates in place.
+        Rectangle { visible: (line.target && line.focused); x: -Tokens.p; y: 0; width: parent.width + 2 * Tokens.p; height: parent.height; background: P8.pick; }
         l := PicoPara { x: 0; y: 0; width: parent.width; text: line.text; font-size: Tokens.sm; color: (line.target && line.focused) ? P8.pick-ink : P8.note(card.tone); }
         PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: parent.width; height: parent.height; focused: (line.target && line.focused); }
     }

@@ -53,7 +53,8 @@ export component PicoSettingRow {
         y: top;
         width: root.width;
         height: plate-h - 2 * Tokens.p;
-        if (item.target && item.focused) : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: parent.width; height: parent.height; background: Cycle.now; }
+        // Always present, shown by the row's data: a row updates in place.
+        Rectangle { visible: (item.target && item.focused); x: Tokens.drop-sm; y: Tokens.drop-sm; width: parent.width; height: parent.height; background: Cycle.now; }
         Rectangle { background: (item.target && item.focused) ? P8.pick : P8.ink-dark; }
         property <color> value-ink: (item.target && item.focused) ? P8.pick-mark : P8.ink-quiet;
         Text {
