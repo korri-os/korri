@@ -1,0 +1,35 @@
+# RG353M Zone slide frames (modern, presses right,right,down,up,left,left), FULLSPEED=1.
+# A. Build d21acb603, per-frame profile (KORRI_BENCH_FRAMES=1 KORRI_BENCH_PROFILE=1). Medians over frames with >100k dirty px:
+#   zone-frames.txt slide frames 71 prepare=619us walk=5585us raster=10898us replay=2867us total=18298us
+#   zone-frames2-1.txt slide frames 71 prepare=599us walk=5371us raster=10659us replay=2890us total=17810us
+#   zone-frames2-2.txt slide frames 70 prepare=806us walk=7265us raster=14851us replay=3974us total=24886us
+#   zone-frames.txt = d21acb603; zone-frames2-*.txt = 8c145f9f5 (run 2 under a load spike).
+# Typical slide frame (d21acb603, frame 36): prepare 0.7 walk 6.0 (geometry 3.5, bindings 2.3/124) raster 10.8 = UI recording 7.7 (text 2.4/100 texts, 722 glyphs; layers 1.2; path 0.45) + band tail 3.1; 168k px; 3 card layers invalidated each frame (the cards resize as the band snaps, so they are drawn directly).
+FRAME 31 logic=8185 view=2752 set=359 prepare=11678 walk=25590 raster=31343 replay=5642 layers=1/41992px/2949us total=73155 px=228282
+  PROFILE 31 walk: bindings=18601us/1070 measure=2456us/13 shape=1910us/13 break=156us/13 items=503 | raster: bindings=1485us/209 text=15200us/198 shape=6277us/98 break=539us/112 glyphs=1338 new-glyphs=34/1178us runs=198/221us image=18us path=1217us rect=136us layer=4423us instantiate=10766us geometry=18410/1165us visited=482 created=11 rows=4 | layers invalidated=3 waiting=2 blitted=6
+FRAME 32 logic=10861 view=82 set=0 prepare=686 walk=7599 raster=19829 replay=4567 layers=1/41630px/2449us total=30108 px=189451
+  PROFILE 32 walk: bindings=1648us/86 measure=0us/0 shape=0us/0 break=0us/0 items=502 | raster: bindings=552us/85 text=6344us/212 shape=684us/14 break=210us/42 glyphs=1380 new-glyphs=5/244us runs=212/189us image=15us path=688us rect=57us layer=3695us instantiate=263us geometry=3733/1051us visited=443 created=0 rows=0 | layers invalidated=4 waiting=1 blitted=6
+FRAME 33 logic=0 view=0 set=0 prepare=1123 walk=7927 raster=15433 replay=2579 layers=1/24464px/2963us total=25350 px=145817
+  PROFILE 33 walk: bindings=4225us/196 measure=1483us/29 shape=1119us/15 break=80us/15 items=332 | raster: bindings=394us/26 text=4658us/184 shape=0us/0 break=172us/28 glyphs=1254 new-glyphs=7/297us runs=198/167us image=17us path=492us rect=53us layer=4117us instantiate=720us geometry=5367/1208us visited=403 created=0 rows=0 | layers invalidated=3 waiting=2 blitted=6
+FRAME 34 logic=0 view=0 set=0 prepare=726 walk=6040 raster=19076 replay=4672 layers=1/22464px/4530us total=26814 px=218641
+  PROFILE 34 walk: bindings=2535us/130 measure=217us/29 shape=0us/0 break=99us/15 items=277 | raster: bindings=359us/26 text=4980us/212 shape=0us/0 break=160us/28 glyphs=1380 new-glyphs=8/311us runs=226/194us image=16us path=613us rect=50us layer=6337us instantiate=398us geometry=3690/1594us visited=495 created=0 rows=0 | layers invalidated=3 waiting=1 blitted=6
+FRAME 35 logic=0 view=0 set=0 prepare=753 walk=6145 raster=13333 replay=3523 layers=1/28160px/1861us total=21212 px=221201
+  PROFILE 35 walk: bindings=2398us/130 measure=206us/29 shape=0us/0 break=101us/15 items=277 | raster: bindings=356us/26 text=2980us/128 shape=0us/0 break=179us/28 glyphs=848 new-glyphs=1/55us runs=142/126us image=17us path=548us rect=49us layer=3288us instantiate=381us geometry=3675/953us visited=311 created=0 rows=0 | layers invalidated=3 waiting=0 blitted=7
+FRAME 36 logic=0 view=0 set=0 prepare=705 walk=6008 raster=10835 replay=3137 layers=0/0px/0us total=18619 px=168469
+  PROFILE 36 walk: bindings=2285us/124 measure=213us/29 shape=0us/0 break=99us/15 items=263 | raster: bindings=381us/26 text=2386us/100 shape=0us/0 break=176us/28 glyphs=722 new-glyphs=1/67us runs=114/102us image=14us path=452us rect=47us layer=1230us instantiate=355us geometry=3540/352us visited=257 created=0 rows=0 | layers invalidated=3 waiting=0 blitted=7
+
+# B. Build 8c145f9f5, press rows 3x back to back:
+# run 1 load: 1.95 1.69 1.48 2/368 308461
+# 10.42.0.1 2026-11-04T10:45:55Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 1.91 1.70 1.50 1/369 309873
+# 10.42.0.1 2026-11-04T10:46:31Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 2.23 1.80 1.54 1/369 311287
+# 10.42.0.1 2026-11-04T10:47:07Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [48, 59, 50] (median 50); p95 us [18150, 20881, 19590] (median 19590); max us [72979, 83234, 90978] (median 83234)
+# pico presses: over [3, 4, 3] (median 3); p95 us [5006, 4616, 4697] (median 4697); max us [30472, 33850, 39158] (median 33850)
