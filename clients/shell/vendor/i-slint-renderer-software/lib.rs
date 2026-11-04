@@ -818,6 +818,14 @@ impl SoftwareRenderer {
         self.parallel_threshold.set(pixels);
     }
 
+    /// Whether unscaled glyphs are drawn through the alpha-map fast path (the default) or the
+    /// general texture path. For tests that compare the two; it applies to every renderer.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_glyph_fast_path(fast: bool) {
+        draw_functions::GLYPH_FAST_PATH.store(fast, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Whether band threads move between bands as chunks are published (the default), or
     /// each replays a whole band, waiting for each chunk (the former ordering). For
     /// benchmarks and tests that compare the two; it applies to every renderer.

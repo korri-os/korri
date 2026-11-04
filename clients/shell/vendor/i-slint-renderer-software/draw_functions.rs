@@ -17,6 +17,47 @@ use num_traits::Float;
 
 /// Draw one line of the texture in the line buffer
 ///
+/// Whether alpha maps take the fast path in `draw_texture_line` (the default); off, the
+/// general path draws them, for tests that compare the two.
+#[cfg(feature = "std")]
+pub(super) static GLYPH_FAST_PATH: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(true);
+
+/// The colour an alpha map's coverage blends, for every coverage value, as `fetch_blend_pixel`
+/// computes it: `color` premultiplied at `coverage * alpha / 255`. Kept per thread for the
+/// last colours used.
+#[cfg(feature = "std")]
+fn coverage_colors(color: Color, alpha: u8, f: impl FnOnce(&[PremultipliedRgbaColor; 256])) {
+    type Table = (Color, u8, alloc::boxed::Box<[PremultipliedRgbaColor; 256]>);
+    std::thread_local! {
+        static TABLES: core::cell::RefCell<alloc::vec::Vec<Table>> =
+            const { core::cell::RefCell::new(alloc::vec::Vec::new()) };
+    }
+    TABLES.with(|tables| {
+        let mut tables = tables.borrow_mut();
+        let index = match tables.iter().position(|(c, a, _)| *c == color && *a == alpha) {
+            Some(i) => i,
+            None => {
+                let mut table = alloc::boxed::Box::new([PremultipliedRgbaColor::default(); 256]);
+                for (coverage, entry) in table.iter_mut().enumerate() {
+                    *entry = PremultipliedRgbaColor::premultiply(Color::from_argb_u8(
+                        ((coverage as u16 * alpha as u16) / 255) as u8,
+                        color.red(),
+                        color.green(),
+                        color.blue(),
+                    ));
+                }
+                if tables.len() >= 16 {
+                    tables.remove(0);
+                }
+                tables.push((color, alpha, table));
+                tables.len() - 1
+            }
+        };
+        f(&tables[index].2)
+    })
+}
+
 pub(super) fn draw_texture_line(
     span: &PhysicalRect,
     line: PhysicalLength,
@@ -62,6 +103,37 @@ pub(super) fn draw_texture_line(
                     }),
                 }
             }
+            return;
+        }
+    }
+
+    // Fast path: an unscaled, unrotated alpha map (a glyph) at a whole-pixel offset: read the
+    // source row directly and take each coverage's colour from a table, built once per colour
+    // and opacity. The table holds what the general path computes per pixel, so the result is
+    // the same.
+    #[cfg(feature = "std")]
+    if format == TexturePixelFormat::AlphaMap
+        && GLYPH_FAST_PATH.load(core::sync::atomic::Ordering::Relaxed)
+        && rotation == super::RenderingRotation::NoRotation
+        && dx.0 == 0x100
+        && dy.0 == 0x100
+        && off_x.0 & 0xf == 0
+        && off_y.0 & 0xf == 0
+    {
+        let source = texture.source_size();
+        let y = (line - span.origin.y_length()).get() as usize + (off_y.0 >> 4) as usize;
+        let x = (off_x.0 >> 4) as usize + extra_clip_begin.max(0) as usize;
+        if y < source.height as usize && x + line_buffer.len() <= source.width as usize {
+            let start = y * pixel_stride as usize + x;
+            let row = &data[start..start + line_buffer.len()];
+            coverage_colors(colorize, alpha, |colors| {
+                for (pix, &coverage) in line_buffer.iter_mut().zip(row) {
+                    // No coverage (most of a glyph's box): blending leaves the target unchanged.
+                    if coverage != 0 {
+                        pix.blend(colors[coverage as usize]);
+                    }
+                }
+            });
             return;
         }
     }

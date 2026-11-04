@@ -27,6 +27,73 @@ mod single_linked_list_pin {
         value: T,
     }
 
+    /// Freed nodes kept for the next allocation of the same layout: a binding evaluated
+    /// again drops its dependency nodes and makes the same number anew, every frame of an
+    /// animation, and the allocator calls were a large share of that.
+    #[cfg(feature = "std")]
+    mod pool {
+        use core::alloc::Layout;
+        use core::cell::RefCell;
+
+        /// Nodes kept per layout.
+        const KEEP: usize = 8192;
+
+        struct Pool(alloc::vec::Vec<(Layout, alloc::vec::Vec<*mut u8>)>);
+
+        impl Drop for Pool {
+            fn drop(&mut self) {
+                for (layout, free) in self.0.drain(..) {
+                    for ptr in free {
+                        // Safety: allocated with this layout and not in use.
+                        unsafe { alloc::alloc::dealloc(ptr, layout) };
+                    }
+                }
+            }
+        }
+
+        std::thread_local! {
+            static POOL: RefCell<Pool> = const { RefCell::new(Pool(alloc::vec::Vec::new())) };
+        }
+
+        pub(super) fn alloc(layout: Layout) -> *mut u8 {
+            let reused = POOL
+                .try_with(|pool| {
+                    let mut pool = pool.borrow_mut();
+                    pool.0.iter_mut().find(|(l, _)| *l == layout).and_then(|(_, free)| free.pop())
+                })
+                .ok()
+                .flatten();
+            // Safety: a non-zero-sized layout.
+            reused.unwrap_or_else(|| unsafe { alloc::alloc::alloc(layout) })
+        }
+
+        /// Safety: `ptr` was allocated by `alloc` with `layout` and is no longer used.
+        pub(super) unsafe fn dealloc(ptr: *mut u8, layout: Layout) {
+            let kept = POOL
+                .try_with(|pool| {
+                    let Ok(mut pool) = pool.try_borrow_mut() else { return false };
+                    let index = match pool.0.iter().position(|(l, _)| *l == layout) {
+                        Some(i) => i,
+                        None => {
+                            pool.0.push((layout, alloc::vec::Vec::new()));
+                            pool.0.len() - 1
+                        }
+                    };
+                    let free = &mut pool.0[index].1;
+                    if free.len() < KEEP {
+                        free.push(ptr);
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            if !kept {
+                unsafe { alloc::alloc::dealloc(ptr, layout) };
+            }
+        }
+    }
+
     pub struct SingleLinkedListPinHead<T>(NodePtr<T>);
     impl<T> Default for SingleLinkedListPinHead<T> {
         fn default() -> Self {
@@ -44,6 +111,12 @@ mod single_linked_list_pin {
                 unsafe {
                     cur = (*node.as_ptr()).next;
                     core::ptr::drop_in_place(&raw mut (*node.as_ptr()).value);
+                    #[cfg(feature = "std")]
+                    pool::dealloc(
+                        node.as_ptr().cast(),
+                        core::alloc::Layout::new::<SingleLinkedListPinNode<T>>(),
+                    );
+                    #[cfg(not(feature = "std"))]
                     alloc::alloc::dealloc(
                         node.as_ptr().cast(),
                         core::alloc::Layout::new::<SingleLinkedListPinNode<T>>(),
@@ -59,6 +132,9 @@ mod single_linked_list_pin {
             // Safety: raw allocation, written once and never moved
             let ptr = unsafe {
                 let layout = core::alloc::Layout::new::<SingleLinkedListPinNode<T>>();
+                #[cfg(feature = "std")]
+                let mem = pool::alloc(layout) as *mut SingleLinkedListPinNode<T>;
+                #[cfg(not(feature = "std"))]
                 let mem = alloc::alloc::alloc(layout) as *mut SingleLinkedListPinNode<T>;
                 assert!(!mem.is_null(), "allocation failed");
                 core::ptr::write(mem, node);
@@ -1212,6 +1288,19 @@ impl<T: Clone> Property<T> {
             self.debug_name.borrow().as_str(),
         );
         self.get_internal()
+    }
+
+    /// [`Self::get`], handing `f` the value instead of a clone of it: reading one field of a
+    /// large value need not copy the rest. `f` must not access this property.
+    pub fn get_with<R>(self: Pin<&Self>, f: impl FnOnce(&T) -> R) -> R {
+        unsafe { self.handle.update(self.value.get()) };
+        let handle = unsafe { Pin::new_unchecked(&self.handle) };
+        handle.register_as_dependency_to_current_binding(
+            #[cfg(slint_debug_property)]
+            self.debug_name.borrow().as_str(),
+        );
+        // Safety: PropertyHandle::access ensures that the value is locked.
+        self.handle.access(|_| f(unsafe { &*self.value.get() }))
     }
 
     /// Same as get() but without registering a dependency
