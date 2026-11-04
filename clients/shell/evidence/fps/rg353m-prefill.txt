@@ -1,0 +1,32 @@
+# RG353M, build b8f23d134 (shell 45b331379 + zone c0e9a4750 pre-filled spare band slot), FULLSPEED=1.
+# Press rows 3x back to back, load before each run:
+# run 1 load: 1.17 1.25 1.25 1/366 333891
+# 10.42.0.1 2026-11-04T13:38:57Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 1.39 1.31 1.28 1/368 335309
+# 10.42.0.1 2026-11-04T13:39:33Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 1.35 1.33 1.28 3/370 336725
+# 10.42.0.1 2026-11-04T13:40:10Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [61, 25, 34] (median 34); p95 us [21387, 15690, 17743] (median 17743); max us [76359, 59924, 52948] (median 59924)
+# pico presses: over [5, 2, 3] (median 3); p95 us [4171, 4386, 4207] (median 4207); max us [29086, 26981, 26539] (median 26981)
+
+# Idle and whole-frame rows (one run):
+bench zone 640x480 frames=600 games=12 presses=0 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          4606       7996      12442
+frames over 16.7 ms: 0 of 600
+bench pico 640x480 frames=600 games=12 presses=0 prefs={} buffer=reused threads=default
+frame total                            44        129        752
+frames over 16.7 ms: 0 of 600
+bench zone 640x480 frames=300 games=12 presses=0 prefs={"zone.look": "modern"} buffer=new threads=default
+frame total                          8763      12587      15971
+frames over 16.7 ms: 0 of 300
+bench pico 640x480 frames=300 games=12 presses=0 prefs={} buffer=new threads=default
+frame total                            42         81        171
+frames over 16.7 ms: 0 of 300
+
+# SP (10.42.5.1): not run; korri-games.slice had 5 processes (a game) at every check, 2026-11-04T13:41:39Z included.
