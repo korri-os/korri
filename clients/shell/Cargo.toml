@@ -57,6 +57,8 @@ libc = "0.2"
 pollster = "0.4"
 zeroize = "1"
 korri-window-sdl = { path = "window-sdl", optional = true }
+# Focus targets as drawn (src/targets.rs): each element's place and selected flag.
+i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

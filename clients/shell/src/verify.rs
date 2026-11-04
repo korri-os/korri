@@ -21,12 +21,13 @@ use crate::{
     images::ImageCache,
     messages,
     package::{self, Package},
-    view,
+    targets, view,
 };
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use slint::ComponentHandle;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -399,6 +400,56 @@ fn sweep_one(
     })
 }
 
+/// README, Focus targets: in the first view at 640x480 and after one press of each button,
+/// every focus entry is drawn by exactly one element that sets `accessible-item-selectable`
+/// and is `accessible-item-selected` when that entry alone is focused (`targets::drawn`).
+fn drawn_targets(
+    plan: &Plan,
+    definition: &slint_interpreter::ComponentDefinition,
+    games: &[Value],
+) -> Result<()> {
+    crate::backend::headless::Headless::install();
+    let (base, _) = fixture();
+    let sweep = Sweep {
+        base,
+        games,
+        query: catalog::default_query(),
+        from: json!({"_tag": "Start"}),
+        count: catalog::DEFAULT_COUNT,
+        focused: None,
+        overlay: false,
+        displays: None,
+    };
+    let instance = definition.create()?;
+    instance
+        .window()
+        .set_size(slint::PhysicalSize::new(640, 480));
+    let mut binder = view::Binder::new(definition);
+    let mut images = ImageCache::new(&plan.package.dir);
+    let mut presses = vec![None];
+    presses.extend(messages::BUTTONS.iter().map(|b| Some(*b)));
+    for press in presses {
+        let mut engine = Engine::load(plan.source, plan.limits)?;
+        engine.set_model(&sweep.model().to_string())?;
+        engine.init(&engine::effective_preferences(
+            engine.declaration(),
+            &BTreeMap::new(),
+        ))?;
+        engine.update(&messages::resized(640.0, 480.0))?;
+        if let Some(button) = press {
+            engine.update(&messages::pressed(button))?;
+        }
+        let view = engine.view()?;
+        targets::drawn(&instance, &mut binder, &view, &mut images).with_context(
+            || match press {
+                Some(button) => format!("after {button:?}"),
+                None => "in the first view".to_owned(),
+            },
+        )?;
+    }
+    Ok(())
+}
+
 /// Verify one package. Always returns a summary; `pass` says whether it may load.
 pub fn verify(package: &Package, limits: Limits) -> Summary {
     let mut summary = Summary {
@@ -475,6 +526,8 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
                 .runs
                 .push(sweep_one(&plan, &games, true, None, &mut peaks)?);
         }
+        drawn_targets(&plan, &views.surface, &catalog::games(&examples, 12))
+            .context("focus targets (README, Focus targets)")?;
         Ok(())
     })();
     summary.max_call_ms = peaks.call.as_secs_f64() * 1e3;
