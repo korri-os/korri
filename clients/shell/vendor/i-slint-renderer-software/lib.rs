@@ -468,6 +468,17 @@ struct LayerCache {
     visits: Cell<(u32, u32, u32)>,
     /// Layers drawn directly because their content changed (`visit_layer`).
     direct: RefCell<std::collections::HashMap<(usize, u32), DirectLayer>>,
+    /// Whether this frame draws much of the window (a third or more) while layers animate
+    /// (the last frame invalidated one): a layer image is not rendered in such a frame,
+    /// where it would add its whole area to a frame already long.
+    busy: Cell<bool>,
+    /// Layers the last frame invalidated (content changed, drawn directly).
+    last_invalidated: Cell<u32>,
+    /// Layers whose image a busy frame did not render, with their screen areas: drawn again
+    /// in the first frame that is not busy, which renders their images (`visit_layer`).
+    deferred: RefCell<std::collections::HashMap<(usize, u32), LogicalRect>>,
+    /// Whether layer images wait for frames that are not busy (the default). For tests.
+    defer_images: Cell<bool>,
 }
 
 /// A layer drawn directly because its content changed: the item, its last screen area, and
@@ -572,7 +583,11 @@ impl Default for SoftwareRenderer {
             #[cfg(feature = "systemfonts")]
             text_layout_cache: Default::default(),
             #[cfg(feature = "std")]
-            layer_cache: Default::default(),
+            layer_cache: {
+                let cache = LayerCache::default();
+                cache.defer_images.set(true);
+                cache
+            },
             #[cfg(feature = "std")]
             layer_cache_size: Default::default(),
             #[cfg(feature = "std")]
@@ -841,6 +856,14 @@ impl SoftwareRenderer {
         parallel::INTERLEAVED.store(interleaved, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Whether layer images wait for a frame that draws less than a third of the window
+    /// (the default), or are rendered in any frame. For tests that compare the two.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_defer_layer_images(&self, defer: bool) {
+        self.layer_cache.defer_images.set(defer);
+    }
+
     /// Whether a frame where nothing changed is skipped (the default). For benchmarks that
     /// compare the two.
     #[doc(hidden)]
@@ -989,7 +1012,7 @@ impl SoftwareRenderer {
         let same_frame = self.drawn_frame.replace(frame) == frame;
         let idle = || {
             #[cfg(feature = "std")]
-            if self.check_layers_again.get() {
+            if self.check_layers_again.get() || !self.layer_cache.deferred.borrow().is_empty() {
                 return false;
             }
             if !same_frame || !self.skip_quiet_frames.get() {
@@ -1061,6 +1084,17 @@ impl SoftwareRenderer {
 
                 renderer.actual_renderer.processor.dirty_region = dirty_region.clone();
                 #[cfg(feature = "std")]
+                {
+                    let drawn: i64 = dirty_region
+                        .iter()
+                        .map(|(_, size)| size.width as i64 * size.height as i64)
+                        .sum();
+                    let window = size.width as i64 * size.height as i64;
+                    self.layer_cache
+                        .busy
+                        .set(drawn * 3 >= window && self.layer_cache.last_invalidated.get() > 0);
+                }
+                #[cfg(feature = "std")]
                 if let Some(recorder) = &mut renderer.actual_renderer.processor.recording {
                     if let Some(stream) = start_bands.as_mut().and_then(|start| start(&dirty_region, factor)) {
                         recorder.stream_to(stream);
@@ -1122,6 +1156,17 @@ impl SoftwareRenderer {
                     // Layers drawn shifted are drawn again next frame, at their exact phase
                     // if they stopped moving.
                     let mut shifted = self.layer_cache.shifted.take();
+                    // Images a busy frame deferred: their areas are drawn again in the first
+                    // frame that is not, which renders them (one a frame).
+                    // The animation that made frames busy has ended once a frame invalidates no
+                    // layer.
+                    let (invalidated, _, _) = self.layer_cache.visits.get();
+                    self.layer_cache.last_invalidated.set(invalidated);
+                    if invalidated == 0 {
+                        for (_, area) in self.layer_cache.deferred.borrow_mut().drain() {
+                            shifted.add_rect(area);
+                        }
+                    }
                     // A layer drawn directly whose content did not change since is drawn again
                     // next frame, to render its image. One that changed is drawn again anyway.
                     let mut check_again = false;
@@ -3921,6 +3966,18 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 // Its content stayed the same for a frame, or it has no image yet. A frame
                 // renders one image: another such layer is drawn directly once more.
                 if direct || state.is_none() {
+                    if cache.busy.get() && cache.defer_images.get() {
+                        // A long frame: drawn directly now, its image rendered in the first
+                        // frame that is not busy. Its stale image (content before a change)
+                        // goes now.
+                        if direct {
+                            cache.direct.borrow_mut().remove(&key);
+                            cache.release(item_rc);
+                        }
+                        cache.deferred.borrow_mut().insert(key, area);
+                        cache.visits.set((invalidated, waiting + 1, blitted));
+                        return RenderingResult::ContinueRenderingChildren;
+                    }
                     if cache.rendering.get() {
                         cache.visits.set((invalidated, waiting + 1, blitted));
                         let layer =
