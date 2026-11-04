@@ -114,3 +114,34 @@ fn a_target_without_its_element_fails() {
         "{stdout}"
     );
 }
+
+/// A list that shows four of ten rows: the rows scrolled out are not drawn, and
+/// down from the last row in view goes to the next row, scrolled into view.
+#[test]
+fn a_scrolling_list_moves_into_rows_out_of_view() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let run = walk_package("scroller", &root.join("fixtures/model.json"));
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(stdout.contains(" states, 0 failures"), "{stdout}");
+}
+
+/// A band that draws only the focused card and its neighbours and recentres
+/// on every move: identity is the entry's place in the view, so a move right
+/// is judged as the move to the next card, not as a rename.
+#[test]
+fn a_recentring_band_keeps_its_cards_apart() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let run = walk_package("band", &root.join("fixtures/model.json"));
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(stdout.contains(" states, 0 failures"), "{stdout}");
+}

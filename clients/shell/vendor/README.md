@@ -1,8 +1,8 @@
 # Vendored Slint 1.18.1 crates, patched
 
-Three crates from crates.io, version **1.18.1**, unchanged except for the
-changes listed below: `i-slint-core`, `i-slint-renderer-software` and
-`slint-interpreter`. `../Cargo.toml` substitutes them through
+Four crates from crates.io, version **1.18.1**, unchanged except for the
+changes listed below: `i-slint-core`, `i-slint-renderer-software`,
+`slint-interpreter` and `i-slint-backend-testing`. `../Cargo.toml` substitutes them through
 `[patch.crates-io]`. Every other Slint crate is the published 1.18.1. The
 whole difference is `slint.patch`. The public API is unchanged. Nothing in it
 is specific to Korri.
@@ -65,6 +65,7 @@ standard mechanisms did not reach the software renderer:
 | `i-slint-core/item_rendering.rs` | `ItemCache::with_entry_mut` | Mutable access to one entry, for the above. |
 | `slint-interpreter/eval.rs` | `invoke_function` | Evaluates the function body through a borrow instead of a deep copy of its expression tree on every call. |
 | `slint-interpreter/item_tree_vtable.rs` | `item_geometry` | Borrows the compiled geometry expression instead of deep-copying it on every call. |
+| `i-slint-backend-testing/search_api.rs` | `ElementHandle::is_visible` | Whether an element is inside the window and every clipping ancestor (`ItemRc::is_visible`): focus targets clipped out of a list are not drawn (`../src/targets.rs`). The crate's `[[test]]`s are not vendored. |
 | `slint-interpreter/Cargo.toml` | `[[test]]` | The crate's own tests are not vendored. |
 | `i-slint-core/properties.rs` | `DepEdge`, `Cutoff`, `sources_changed`, `mark_dependencies_maybe_dirty`, `Property::set_binding_comparing`, `PropertyTracker::{is_dirty, acknowledge_dirty}`, `set_equality_cutoff` (doc-hidden) | Equality cut-off. A changed property marks its direct dependents dirty and everything further only *maybe* dirty. Each dependency edge remembers the source binding and the version it read; a comparing binding bumps its version only when its value changed. Before a maybe-dirty binding or tracker is evaluated, its sources are brought up to date and compared, and it is not evaluated when none changed. Zone's band: the card that only moves keeps its layer and its ~120 bindings are not evaluated each snap frame. `set_equality_cutoff(false)` restores upstream propagation (tests, `KORRI_BENCH_NO_CUTOFF`). |
 | `i-slint-core/rtti.rs`, `slint-interpreter/bindings.rs` | `set_binding` of native and interpreted properties | Use `set_binding_comparing`. Animated, two-way and global bindings keep upstream behaviour (always "changed"). |

@@ -1,0 +1,22 @@
+// A test package for surface-probe: a band of eight cards that draws only the
+// focused card and one either side, and keeps the focused card centred.
+import "fonts/tiny5.ttf";
+export struct Card { label: string, focused: bool }
+export component Surface inherits Window {
+    in property <[Card]> cards;
+    in property <int> current;
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: #102030;
+    default-font-family: "Pico Tiny5";
+    for card[i] in root.cards: Rectangle {
+        if Math.abs(i - root.current) <= 1: Rectangle {
+            x: 270px + (i - root.current) * 160px; y: 180px; width: 100px; height: 120px;
+            accessible-role: list-item;
+            accessible-item-selectable: true;
+            accessible-item-selected: card.focused;
+            background: card.focused ? #f0c040 : #304050;
+            Text { text: card.label; color: white; font-size: 20px; }
+        }
+    }
+}

@@ -251,17 +251,20 @@ fn has_focus(view: &Value) -> bool {
 /// A focus target as drawn: its box (logical px) and its identity.
 #[derive(Clone, Debug)]
 struct Drawn {
-    rect: Rect,
-    /// The view entry without `focused`, the plan keys and booleans, plus
-    /// its occurrence.
+    /// The element's box; `None` when the entry is not drawn in the window
+    /// (scrolled out of a list, outside a band's reach).
+    rect: Option<Rect>,
+    /// `region#k`: the k-th of its region's entries in the view (src/targets.rs).
     identity: String,
+    /// k.
+    index: usize,
     /// `focusRegion` (contract 8.4).
     region: String,
     /// `focusActive`.
     active: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Rect {
     x: f32,
     y: f32,
@@ -351,10 +354,10 @@ impl State {
             self.targets
                 .iter()
                 .enumerate()
-                .filter(|(_, t)| t.region == region)
+                .filter(|(_, t)| t.region == region && t.rect.is_some())
                 .min_by(|(_, a), (_, b)| {
-                    let (ax, ay) = a.rect.center();
-                    let (bx, by) = b.rect.center();
+                    let (ax, ay) = a.rect.unwrap_or_default().center();
+                    let (bx, by) = b.rect.unwrap_or_default().center();
                     ay.round()
                         .total_cmp(&by.round())
                         .then(ax.round().total_cmp(&bx.round()))
@@ -376,19 +379,56 @@ impl State {
     }
 }
 
+/// No drawn target that way: the region's entry next in the view in that direction, when
+/// it is not drawn, which a scroll brings into view. The direction runs along the region's
+/// drawn targets (a column scrolls with up and down, a row with left and right); down and
+/// right go to the next entry, up and left to the previous one.
+fn scrolled_to(state: &State, from: usize, direction: &str) -> Option<usize> {
+    let (region, index) = (&state.targets[from].region, state.targets[from].index);
+    let drawn: Vec<(f32, f32)> = state
+        .targets
+        .iter()
+        .filter(|t| &t.region == region)
+        .filter_map(|t| t.rect.map(|r| r.center()))
+        .collect();
+    if drawn.len() > 1 {
+        let spread = |f: fn(&(f32, f32)) -> f32| {
+            let (lo, hi) = drawn
+                .iter()
+                .map(f)
+                .fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+            hi - lo
+        };
+        let vertical = spread(|c| c.1) > spread(|c| c.0);
+        if vertical != (direction == "up" || direction == "down") {
+            return None;
+        }
+    }
+    let next = match direction {
+        "down" | "right" => index + 1,
+        _ => index.checked_sub(1)?,
+    };
+    state
+        .targets
+        .iter()
+        .position(|t| &t.region == region && t.index == next && t.rect.is_none())
+}
+
 /// The portal's spatial-focus rule (spatial-focus.ts): the target ahead by
 /// more than 1 px with the lowest along + 3 x across; the first in tree order
 /// on a tie. None when nothing lies that way.
 fn nearest(state: &State, from: usize, direction: &str) -> Option<usize> {
     const OFF_AXIS_PENALTY: f32 = 3.0;
-    let (fx, fy) = state.targets[from].rect.center();
+    let (fx, fy) = state.targets[from].rect?.center();
     let region = &state.targets[from].region;
     let mut best: Option<(usize, f32)> = None;
     for (i, candidate) in state.targets.iter().enumerate() {
         if i == from || &candidate.region != region {
             continue;
         }
-        let (cx, cy) = candidate.rect.center();
+        // Only drawn targets are candidates.
+        let Some(rect) = candidate.rect else { continue };
+        let (cx, cy) = rect.center();
         let (dx, dy) = (cx - fx, cy - fy);
         let along = match direction {
             "left" => -dx,
@@ -610,8 +650,9 @@ fn walk(
                 ));
             }
             // A2 (8.3): every target's box is the geometry of the element that draws it
-            // (accessible-item-selectable); its identity is its region and its place in
-            // that region's drawing order (src/targets.rs).
+            // (accessible-item-selectable); its identity is its region and its place among
+            // the region's entries in the view (src/targets.rs). The focused one must be
+            // drawn in the window.
             binder.apply(&instance, &view, &mut images)?;
             match korri_shell::targets::drawn(&instance, &mut binder, &view, &mut images) {
                 Ok(drawn) => {
@@ -619,15 +660,15 @@ fn walk(
                         if target.entry.focused {
                             state.focused = Some(state.targets.len());
                         }
-                        let e = &target.element;
                         state.targets.push(Drawn {
-                            rect: Rect {
+                            rect: target.element.as_ref().map(|e| Rect {
                                 x: e.x,
                                 y: e.y,
                                 w: e.w,
                                 h: e.h,
-                            },
+                            }),
                             identity: target.identity,
+                            index: target.index,
                             region: target.entry.region,
                             active: target.entry.active,
                         });
@@ -678,11 +719,14 @@ fn directions(
         // 8.4: inside the region, the nearest drawn target; else the
         // region's declared exit; else stay.
         let region = before.targets[focused].region.clone();
-        let (expected, why) = match nearest(before, focused, pressed) {
-            Some(i) => (
-                Some(i),
-                format!("the nearest {pressed} in region {region:?}"),
-            ),
+        let (expected, why) = match nearest(before, focused, pressed)
+            .map(|i| (i, format!("the nearest {pressed} in region {region:?}")))
+            .or_else(|| {
+                scrolled_to(before, focused, pressed).map(|i| {
+                    (i, format!("no drawn target {pressed} in region {region:?}: the next entry, scrolled into view"))
+                })
+            }) {
+            Some((i, why)) => (Some(i), why),
             None => match before
                 .plan
                 .get(&region)
@@ -716,19 +760,22 @@ fn directions(
         };
         let want = expected.map_or(&before.targets[focused], |i| &before.targets[i]);
         let got = &after.targets[now];
+        let at = |t: &Drawn| {
+            t.rect.map_or("(not drawn)".to_owned(), |r| {
+                format!("({:.0},{:.0})", r.x, r.y)
+            })
+        };
         if want.identity != got.identity {
             failures.push(format!(
-                "{} at {}x{}: [{}] then {pressed} focuses {} at ({:.0},{:.0}); expected {} at ({:.0},{:.0}): {why}",
+                "{} at {}x{}: [{}] then {pressed} focuses {} at {}; expected {} at {}: {why}",
                 model_file.display(),
                 size.0,
                 size.1,
                 before.path.join(" "),
                 got.identity,
-                got.rect.x,
-                got.rect.y,
+                at(got),
                 want.identity,
-                want.rect.x,
-                want.rect.y,
+                at(want),
             ));
         }
     }
