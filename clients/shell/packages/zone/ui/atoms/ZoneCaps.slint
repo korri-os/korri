@@ -15,6 +15,11 @@ import { ZoneMeasure } from "./ZoneMeasure.slint";
 //
 // Each copy is written out: a frame walks every item, so no repeater.
 export component ZoneCaps {
+    // The ring, the drop and the face draw as one cached image: a caption is
+    // drawn once, not fourteen times, while what is round it moves. Not an
+    // elided caption: the layer image is cut at the Text box, and the "…"
+    // is drawn past it (a renderer fault, reported to the shell).
+    cache-rendering-hint: !root.elide;
     in property <string> text;
     in property <length> cap: Tokens.c1;
     in property <length> a: Tokens.a;
