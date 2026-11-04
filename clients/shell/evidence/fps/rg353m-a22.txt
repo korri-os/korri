@@ -1,3 +1,4 @@
+# NOTE (#360, 67c92b2bf): FULLSPEED raised the cap to 1.8 GHz, but korri-limitsd (the 61 % cap on the deployed generation) put it back at 1104 MHz within seconds. These runs mixed 1.8 GHz and 1104 MHz in proportions that varied by run, so their medians and their run-to-run spread are not comparable with one another or with runs at a fixed clock. See rg353m-frequency-cap.txt.
 # RG353M, build b2c715552 (zone a22ed80d9: spare slot draws nothing, filled after the snap), FULLSPEED=1.
 # run 1 load: 1.54 1.31 1.22 1/367 345660
 # 10.42.0.1 2026-11-04T15:36:39Z Anbernic

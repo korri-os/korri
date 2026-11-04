@@ -1,3 +1,4 @@
+# NOTE (#360, 67c92b2bf): FULLSPEED raised the cap to 1.8 GHz, but korri-limitsd (the 61 % cap on the deployed generation) put it back at 1104 MHz within seconds. These runs mixed 1.8 GHz and 1104 MHz in proportions that varied by run, so their medians and their run-to-run spread are not comparable with one another or with runs at a fixed clock. See rg353m-frequency-cap.txt.
 # RG353M at full clock (FULLSPEED=1, restored by a trap; see '# after'), nice 10 beside the kiosk, as nobody.
 # Build: 49c4dbfd3 (adds: still layers copied in partial frames, conditions compared, drawn items reuse the walk's geometry).
 # Band-thread crossover, zone presses (KORRI_BENCH_PARALLEL_MIN): 16 Ki px 52 over p95 18.9 ms; 60 K 53 / 18.2; 120 K 63 / 26.5; 200 K 62 / 22.4; one thread 58 / 21.7. The default 16 Ki px stays.
