@@ -43,6 +43,7 @@ fn package_frames_full(
             threads: Some(1),
             cutoff,
             reuse_models: true,
+            logic_thread: false,
         };
         bench::run_captured(options, true).unwrap().1
     })

@@ -209,6 +209,9 @@ fn run(arguments: Arguments) -> anyhow::Result<()> {
             threads: arguments.threads,
             cutoff: std::env::var_os("KORRI_BENCH_NO_CUTOFF").is_none(),
             reuse_models: std::env::var_os("KORRI_BENCH_NEW_MODELS").is_none(),
+            // As the shell runs it, unless KORRI_BENCH_SYNC_LOGIC asks for the frames that
+            // wait on their calls (deterministic).
+            logic_thread: std::env::var_os("KORRI_BENCH_SYNC_LOGIC").is_none(),
         })?;
         print!("{report}");
         return Ok(());
