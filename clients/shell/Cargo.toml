@@ -66,6 +66,8 @@ tempfile = "3"
 i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 # Its `testing` feature only adds the text layout cache's counters (tests/text_reshape.rs).
 i-slint-renderer-software = { version = "=1.18.1", features = ["testing"] }
+# The frame pacing of redraws that draw nothing (vendored, tests/frame_pacing.rs).
+i-slint-backend-winit = { version = "=1.18.1", default-features = false }
 
 [features]
 default = ["desktop"]
@@ -96,3 +98,4 @@ i-slint-core = { path = "vendor/i-slint-core" }
 i-slint-renderer-software = { path = "vendor/i-slint-renderer-software" }
 slint-interpreter = { path = "vendor/slint-interpreter" }
 i-slint-backend-testing = { path = "vendor/i-slint-backend-testing" }
+i-slint-backend-winit = { path = "vendor/i-slint-backend-winit" }
