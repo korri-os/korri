@@ -26,7 +26,7 @@ export component PicoWifiSetup {
             bars: network.bars;
             locked: network.locked;
             connected: network.value == "CONNECTED";
-            focused: network.focused;
+            focused: (network.target && network.focused);
         }
         if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
         if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }

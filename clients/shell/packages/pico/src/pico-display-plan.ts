@@ -111,10 +111,16 @@ export function picoSplitInWindow(plan: PicoDisplayPlan | undefined, displays: r
   return { show: fit(plan.show), choose: fit(plan.choose) }
 }
 
+/** The smallest screen Pico lays out: 320x240 at a virtual pixel of 2. */
+const SMALLEST = { width: 160, height: 120 }
+
 export function picoLayoutPlan(window: PicoWindow, displays: readonly SurfaceDisplay[] | undefined): PicoLayoutPlan {
-  const split = picoSplitInWindow(picoDisplayPlan(displays), displays, window)
   // As Tokens.fit: the virtual pixel from the whole window.
   const p = Math.max(2, Math.floor(Math.min(window.width, window.height) / 360))
+  // A split only when the screen that chooses has room for a whole Pico
+  // screen; a window too small for two draws one.
+  const placed = picoSplitInWindow(picoDisplayPlan(displays), displays, window)
+  const split = placed !== undefined && placed.choose.width / p >= SMALLEST.width && placed.choose.height / p >= SMALLEST.height ? placed : undefined
   const box = split === undefined ? window : split.choose
   const width = Math.floor(box.width / p)
   const height = Math.floor(box.height / p)

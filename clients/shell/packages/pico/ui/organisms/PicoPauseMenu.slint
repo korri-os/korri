@@ -10,6 +10,8 @@ export struct SheetItem {
     label: string,
     value: string,
     focused: bool,
+    // A focus target in this view: only then is `focused` current.
+    target: bool,
     disabled: bool,
     warn: bool,
     range: bool,
@@ -32,7 +34,7 @@ export component PicoPauseMenu inherits VerticalLayout {
         if item.kind == "row" : PicoControlRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
             label: item.label;
             value: item.value;
-            focused: item.focused;
+            focused: (item.target && item.focused);
             disabled: item.disabled;
             warn: item.warn;
             range: item.range;

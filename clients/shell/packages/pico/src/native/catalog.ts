@@ -4,6 +4,7 @@
  * own screen. Ports of PicoHome, PicoLibrary and PicoGameDetail; the words
  * are theirs.
  */
+import { PICO_FONTS } from "../pico-fonts"
 import type { SurfaceAction } from "../model"
 import { picoDetailViewFromGame, picoDownloadLabel, picoStatsFor } from "../pico-detail-view"
 import { picoInvitePlaying, picoInvitesFrom, picoInviteWhere } from "../pico-invite-view"
@@ -278,18 +279,26 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   } else if (view._tag === "Shelf" && home.mode === "grid") {
     body = "grid"
     const columns = ctx.plan.columns
+    // As PicoCartGrid draws it, in virtual pixels: a section's title line
+    // (the font's rows, 1.5 high), its rows of 44 in slots 34 apart, its
+    // floor, and 4 between sections. The focus plan must be drawn to scale,
+    // or a press picks a different nearest cart than the one drawn there.
+    const rowsOfFont = (PICO_FONTS.find(font => font.id === ctx.s.font) ?? PICO_FONTS[0])?.rows ?? 7
+    const title = rowsOfFont * 1.5
     let rowStart = 0
-    sections = picoCollectionsFrom(games).map((collection, index) => {
+    let top = 0
+    sections = picoCollectionsFrom(games).map((collection) => {
+      const rowsTop = top + title + 2
+      top = rowsTop + Math.ceil(collection.games.length / columns) * 44 + 2 + 2 + 4
       const section = {
         title: collection.title,
         rowStart,
         carts: collection.games.map((game, i) => {
           const id = `cart:${game.id}`
           if (!menuOpen) {
-            const row = rowStart + Math.floor(i / columns)
             targets.push({
               id,
-              region: "grid", box: { x: (i % columns) * 10, y: row * 30 + index * 10, w: 9, h: 20 },
+              region: "grid", box: { x: (i % columns) * 34, y: rowsTop + Math.floor(i / columns) * 44, w: 30, h: 44 },
               act: [nav({ _tag: "OpenedGame", gameId: game.id })],
               enter: [nav({ _tag: "SelectedCart", gameId: game.id }), ...(home.aim === undefined ? [] : aimAt(undefined))],
             })

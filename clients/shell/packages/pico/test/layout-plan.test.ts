@@ -65,7 +65,13 @@ describe("the plan is a function of the window alone", () => {
     ]
     for (const [w, h] of FIVE) {
       const plan = picoLayoutPlan({ width: w, height: h }, two as never)
-      const { show, choose } = plan.split ?? { show: undefined, choose: undefined }
+      // A window too small for two screens draws one.
+      if (plan.split === undefined) {
+        expect(plan.width).toBe(Math.floor(w / plan.p))
+        continue
+      }
+      const { show, choose } = plan.split
+      expect(choose.width / plan.p).toBeGreaterThanOrEqual(160)
       for (const rect of [show, choose]) {
         expect(rect).toBeDefined()
         expect(rect!.x + rect!.width).toBeLessThanOrEqual(w)

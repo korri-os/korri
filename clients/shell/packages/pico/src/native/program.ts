@@ -543,6 +543,10 @@ function marked(value: unknown, screen: Screen): unknown {
   if ("focused" in entry) {
     const id = entry["focusId"]
     const target = typeof id === "string" ? screen.targets.find(candidate => candidate.id === id) : undefined
+    // `target` tells main.slint whether `focused` is current: an entry that
+    // is no target sends no `focused`, and the shell keeps a field it is not
+    // sent, so its old value must not show.
+    out["target"] = target !== undefined
     if (target === undefined) {
       delete out["focused"]
     } else {

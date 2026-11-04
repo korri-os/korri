@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoModal { height: 180 * Tokens.p; card: { shown: true, tone: "warn", kicker: "COULD NOT START", title: "Tetris", message: "No installed runner can play this game.", lines: [], actions: [{ label: "OK", detail: "", focused: true, disabled: false, warn: false, lit: false }], inline: false }; }
+        PicoModal { height: 180 * Tokens.p; card: { shown: true, tone: "warn", kicker: "COULD NOT START", title: "Tetris", message: "No installed runner can play this game.", lines: [], actions: [{ label: "OK", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false }], inline: false }; }
     }
 }

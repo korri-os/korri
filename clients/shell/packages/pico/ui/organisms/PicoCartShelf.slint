@@ -41,7 +41,18 @@ export component PicoCartShelf inherits Rectangle {
             y: 8 * Tokens.p + slot-h - Tokens.p - shell.shell-h - (cart.hero ? 4 * Tokens.p : 0);
             width: shell.shell-w;
             height: shell.shell-h;
-            if cart.hero || cart.focused : Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: cart.focused ? Cycle.now : P8.ink; }
+            if cart.hero || (cart.target && cart.focused) : Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: (cart.target && cart.focused) ? Cycle.now : P8.ink; }
+            // The slot, level across the shelf: the focus target.
+            Rectangle {
+                x: 0;
+                y: 8 * Tokens.p - parent.y;
+                width: parent.width;
+                height: slot-h;
+                accessible-role: AccessibleRole.list-item;
+                accessible-label: cart.title;
+                accessible-item-selectable: true;
+                accessible-item-selected: (cart.target && cart.focused);
+            }
             shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; cart: cart; box-w: art-w; box-h: art-h; }
         }
     }

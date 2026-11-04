@@ -12,7 +12,7 @@ export component PicoGameActions inherits VerticalLayout {
     spacing: 2 * Tokens.p;
     if actions.length > 0 : PicoLine { text: "ACTIONS"; color: P8.ink-quiet; }
     for action in actions : VerticalLayout {
-        PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: { label: action.label, detail: "", focused: action.focused, disabled: action.disabled, warn: action.warn, lit: false }; }
+        PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: { label: action.label, detail: "", focused: action.focused, target: action.target, disabled: action.disabled, warn: action.warn, lit: false }; }
         if action.detail != "" : PicoLine { text: action.detail; color: P8.ink-dim; }
     }
 }

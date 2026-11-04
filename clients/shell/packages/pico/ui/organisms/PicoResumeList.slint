@@ -21,7 +21,11 @@ export component PicoResumeList inherits VerticalLayout {
             spacing: Tokens.p;
             Rectangle {
                 height: 40 * Tokens.p;
-                if game.cart.focused : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                accessible-role: AccessibleRole.list-item;
+                accessible-label: game.cart.title;
+                accessible-item-selectable: true;
+                accessible-item-selected: (game.cart.target && game.cart.focused);
+                if (game.cart.target && game.cart.focused) : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
                 shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: parent.height - self.shell-h - 2 * Tokens.p; cart: game.cart; box-w: 20 * Tokens.p; box-h: 28 * Tokens.p; }
                 Rectangle { x: 0; y: parent.height - 2 * Tokens.p; width: parent.width; height: 2 * Tokens.p; background: P8.floor; }
             }

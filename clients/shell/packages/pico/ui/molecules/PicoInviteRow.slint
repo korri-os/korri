@@ -17,14 +17,30 @@ export component PicoInviteRow {
         height: root.height - Tokens.p;
         spacing: 3 * Tokens.p;
         if invite.has-art : Image { width: 22 * Tokens.p; source: invite.art; image-fit: contain; image-rendering: pixelated; }
+        // The words take the room, so every row's actions stand flush
+        // right, in columns.
         VerticalLayout {
+            horizontal-stretch: 1;
+            // The game's name keeps a third of a narrow row.
+            min-width: min(root.width * 35%, 80 * Tokens.p);
             alignment: center;
             PicoLine { text: invite.title; font-size: Tokens.md; }
             PicoLine { text: invite.who; color: P8.ink-dim; }
         }
-        for action in invite.actions : VerticalLayout {
-            alignment: center;
-            PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  min-width: max(30 * Tokens.p, self.preferred-width); button: action; }
+        // Each action as wide as its label, as the web Pico drew them; in a
+        // narrow row they share what is left, and their labels elide.
+        for action in invite.actions : Rectangle {
+            horizontal-stretch: 0;
+            min-width: 30 * Tokens.p;
+            preferred-width: max(30 * Tokens.p, natural.preferred-width + 8 * Tokens.p);
+            natural := Text { visible: false; text: action.label; font-size: Tokens.md; }
+            PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }
+                x: 0;
+                y: (parent.height - self.height) / 2;
+                width: parent.width;
+                height: self.preferred-height;
+                button: action;
+            }
         }
     }
     Rectangle { x: 0; y: root.height - Tokens.p; width: root.width; height: Tokens.p; background: P8.floor; }

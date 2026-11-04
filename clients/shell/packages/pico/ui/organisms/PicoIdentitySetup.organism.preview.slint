@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoIdentitySetup { height: 200 * Tokens.p; setup: { step: "you", layout: "card", tone: "ask", title: "Who are you?", message: "Your identity is the key that ties your Korri devices together.", busy: "", rows: [], carts: [], more: "", answers: [{ label: "New identity", detail: "", focused: true, disabled: false, warn: false, lit: false },{ label: "Restore from backup", detail: "", focused: false, disabled: false, warn: false, lit: false },{ label: "Connect a signer", detail: "", focused: false, disabled: false, warn: false, lit: false }], inline: false, go: { label: "", detail: "", focused: false, disabled: false, warn: false, lit: false }, has-go: false, pack: { } }; }
+        PicoIdentitySetup { height: 200 * Tokens.p; setup: { step: "you", layout: "card", tone: "ask", title: "Who are you?", message: "Your identity is the key that ties your Korri devices together.", busy: "", rows: [], carts: [], more: "", answers: [{ label: "New identity", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false },{ label: "Restore from backup", detail: "", focused: false, disabled: false, warn: false, lit: false },{ label: "Connect a signer", detail: "", focused: false, disabled: false, warn: false, lit: false }], inline: false, go: { label: "", detail: "", focused: false, disabled: false, warn: false, lit: false }, has-go: false, pack: { } }; }
     }
 }

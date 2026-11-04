@@ -15,7 +15,7 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoIdentityDialog { identity: { title: "SWITCH FROM BACKUP", note: "Save files and save states stay under the plugin account.", rows: [{ label: "Encrypted backup", detail: "—", focused: true, disabled: false, warn: false, lit: false }, { label: "Password", detail: "—", focused: false, disabled: false, warn: false, lit: false }, { label: "SWITCH IDENTITY", detail: "", focused: false, disabled: true, warn: true, lit: false }] }; }
+        PicoIdentityDialog { identity: { title: "SWITCH FROM BACKUP", note: "Save files and save states stay under the plugin account.", rows: [{ label: "Encrypted backup", detail: "—", focused: true, target: true, disabled: false, warn: false, lit: false }, { label: "Password", detail: "—", focused: false, disabled: false, warn: false, lit: false }, { label: "SWITCH IDENTITY", detail: "", focused: false, disabled: true, warn: true, lit: false }] }; }
     }
 }
 
@@ -29,6 +29,6 @@ export component Backup inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoIdentityDialog { identity: { title: "BACK UP IDENTITY", note: "Korri cannot recover a lost key.", qr: "M 0 0 H 7 V 7 H 0 Z M 14 0 H 21 V 7 H 14 Z M 0 14 H 7 V 21 H 0 Z M 9 9 H 12 V 12 H 9 Z", qr-size: 21, secret: "ncryptsec1qgq…", rows: [{ label: "DONE", detail: "", focused: true, disabled: false, warn: false, lit: false }] }; }
+        PicoIdentityDialog { identity: { title: "BACK UP IDENTITY", note: "Korri cannot recover a lost key.", qr: "M 0 0 H 7 V 7 H 0 Z M 14 0 H 21 V 7 H 14 Z M 0 14 H 7 V 21 H 0 Z M 9 9 H 12 V 12 H 9 Z", qr-size: 21, secret: "ncryptsec1qgq…", rows: [{ label: "DONE", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false }] }; }
     }
 }

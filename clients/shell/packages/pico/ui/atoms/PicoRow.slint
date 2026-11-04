@@ -8,6 +8,8 @@ export struct ButtonView {
     label: string,
     detail: string,
     focused: bool,
+    // A focus target in this view: only then is `focused` current.
+    target: bool,
     disabled: bool,
     // Korri marked it destructive: red ink.
     warn: bool,
@@ -24,23 +26,23 @@ export component PicoRow {
     accessible-role: AccessibleRole.button;
     accessible-label: button.label;
     accessible-item-selectable: true;
-    accessible-item-selected: button.focused;
+    accessible-item-selected: (button.target && button.focused);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> button;
     in property <string> kind: "plate";
     in property <length> font-size: Tokens.md;
     in property <bool> wrap;
-    property <color> ground: button.focused ? P8.pick : kind == "card" ? P8.ink-dark : P8.plate;
-    property <color> ink: button.disabled ? P8.ink-quiet : button.warn ? P8.warn : button.focused ? P8.pick-ink : kind == "card" ? P8.ink : P8.plate-ink;
+    property <color> ground: (button.target && button.focused) ? P8.pick : kind == "card" ? P8.ink-dark : P8.plate;
+    property <color> ink: button.disabled ? P8.ink-quiet : button.warn ? P8.warn : (button.target && button.focused) ? P8.pick-ink : kind == "card" ? P8.ink : P8.plate-ink;
     min-height: font-size + 6 * Tokens.p;
     preferred-height: max(font-size + 6 * Tokens.p, label.preferred-height + 6 * Tokens.p);
     max-height: self.preferred-height;
-    if kind == "plate" || button.focused : Rectangle {
+    if kind == "plate" || (button.target && button.focused) : Rectangle {
         x: Tokens.drop-sm;
         y: Tokens.drop-sm;
         width: root.width;
         height: root.height;
-        background: button.focused ? Cycle.now : P8.plate-shadow;
+        background: (button.target && button.focused) ? Cycle.now : P8.plate-shadow;
     }
     Rectangle { background: ground; }
     label := Text {
@@ -63,7 +65,7 @@ export component PicoRow {
         visible: button.detail != "";
         text: button.detail;
         font-size: root.font-size;
-        color: button.focused ? P8.pick-mark : P8.ink-quiet;
+        color: (button.target && button.focused) ? P8.pick-mark : P8.ink-quiet;
     }
-    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: (button.target && button.focused); }
 }

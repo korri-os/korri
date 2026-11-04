@@ -27,10 +27,15 @@ export component PicoCartGrid inherits VerticalLayout {
                 y: floor(i / max(1, columns)) * row-h;
                 width: slot-w;
                 height: row-h;
-                if cart.focused : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                accessible-role: AccessibleRole.list-item;
+                accessible-label: cart.title;
+                accessible-item-selectable: true;
+                accessible-item-selected: (cart.target && cart.focused);
+                if (cart.target && cart.focused) : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
                 shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
                     x: 0;
                     y: parent.height - 4 * Tokens.p - self.shell-h - (cart.hero ? 4 * Tokens.p : 0);
+                   
                     cart: cart;
                     box-w: 22 * Tokens.p;
                     box-h: 30 * Tokens.p;
