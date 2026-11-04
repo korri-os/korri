@@ -212,8 +212,14 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     let package = Package::at(&options.packages.join(&options.surface))
         .with_context(|| format!("package {}", options.surface))?;
     let views = package::compile(&package)?;
-    let mut engine = Engine::load(&package.logic_source()?, Limits::default())
-        .map_err(|v| anyhow!("logic: {v}"))?;
+    // The bench measures calls; it does not enforce the shell's 50 ms budget (a loaded
+    // machine would otherwise abort a run that only asks what the frames cost).
+    let limits = Limits {
+        call: Duration::from_secs(2),
+        ..Limits::default()
+    };
+    let mut engine =
+        Engine::load(&package.logic_source()?, limits).map_err(|v| anyhow!("logic: {v}"))?;
     let (base, examples) = verify::fixture();
     let games = catalog::games(&examples, options.games);
     let mut query = catalog::default_query();
