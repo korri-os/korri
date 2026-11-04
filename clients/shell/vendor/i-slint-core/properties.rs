@@ -345,6 +345,11 @@ struct Cutoff {
     refresh: Cell<Option<Refresh>>,
     /// A `PropertyTracker`: no value, but its sources can be checked the same way.
     tracker: bool,
+    /// The edges whose source was marked dirty or maybe dirty since this was last checked or
+    /// evaluated: only they can have changed, so only they are checked (`sources_changed`).
+    suspects: RefCell<Vec<*const DepEdge>>,
+    /// Check every edge instead (after `acknowledge_dirty` left a source pending).
+    scan_all: Cell<bool>,
 }
 
 crate::thread_local! {
@@ -374,8 +379,30 @@ unsafe fn update_erased<T>(handle: *const PropertyHandle, value: *mut c_void) {
 /// locked) counts as changed. Clears `maybe` on sources found unchanged.
 unsafe fn sources_changed(holder: *const BindingHolder) -> bool {
     unsafe {
-        for edge in (*(*holder).dep_nodes.get()).iter() {
-            let edge = &edge.get_ref().binding_ref();
+        let cutoff = &(*holder).cutoff;
+        let edges: Vec<*const DepEdge> = if cutoff.scan_all.get() {
+            (*(*holder).dep_nodes.get())
+                .iter()
+                .map(|e| e.get_ref().binding_ref() as *const DepEdge)
+                .collect()
+        } else {
+            core::mem::take(&mut *cutoff.suspects.borrow_mut())
+        };
+        let changed = edges_changed(&edges);
+        if changed {
+            // Kept for the next check, until an evaluation clears them.
+            cutoff.suspects.borrow_mut().extend(edges);
+        } else {
+            cutoff.scan_all.set(false);
+        }
+        changed
+    }
+}
+
+unsafe fn edges_changed(edges: &[*const DepEdge]) -> bool {
+    unsafe {
+        for &edge in edges {
+            let edge = &*edge;
             let source = edge.source.get();
             if source.is_null() {
                 continue;
@@ -422,6 +449,7 @@ unsafe fn forget_as_source(holder: *const BindingHolder) {
 }
 
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::cell::{Cell, RefCell, UnsafeCell};
 use core::ffi::c_void;
 use core::marker::PhantomPinned;
@@ -909,7 +937,11 @@ impl PropertyHandle {
                 let binding_ptr = unsafe { binding_ptr.unwrap_unchecked() };
 
                 // clear all the nodes so that we can start from scratch
-                unsafe { *(*binding_ptr).dep_nodes.get() = Default::default() };
+                unsafe {
+                    (*binding_ptr).cutoff.suspects.borrow_mut().clear();
+                    (*binding_ptr).cutoff.scan_all.set(false);
+                    *(*binding_ptr).dep_nodes.get() = Default::default()
+                };
                 let evaluate = || unsafe {
                     current_binding_storage::set(Some(binding_ptr), || {
                         ((*binding_ptr).vtable.evaluate)(binding_ptr, value as *mut c_void)
@@ -1050,6 +1082,17 @@ unsafe fn mark_dependencies_maybe_dirty(dependencies: *mut DependencyListHead) {
         }
         DependencyListHead::for_each(&*dependencies, |edge| {
             let binding: &BindingHolder = &*edge.binding;
+            // A holder marked often but not checked (an item nobody draws) would gather
+            // suspects for ever: past a few, it checks every edge instead.
+            let mut suspects = binding.cutoff.suspects.borrow_mut();
+            if binding.cutoff.scan_all.get() {
+            } else if suspects.len() >= 64 {
+                suspects.clear();
+                binding.cutoff.scan_all.set(true);
+            } else {
+                suspects.push(edge as *const DepEdge);
+            }
+            drop(suspects);
             if binding.dirty.get() || binding.cutoff.maybe.get() {
                 (binding.vtable.mark_dirty)(binding as *const BindingHolder, true);
                 return;
@@ -1603,6 +1646,8 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
     /// any changes to accessed properties will not propagate to the other tracker.
     pub fn evaluate_as_dependency_root<R>(self: Pin<&Self>, f: impl FnOnce() -> R) -> R {
         // clear all the nodes so that we can start from scratch
+        self.holder.cutoff.suspects.borrow_mut().clear();
+        self.holder.cutoff.scan_all.set(false);
         unsafe { *self.holder.dep_nodes.get() = Default::default() };
 
         let holder_ptr = &raw const self.holder as *const BindingHolder;
@@ -1646,6 +1691,8 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
         }
         self.holder.dirty.set(false);
         self.holder.cutoff.maybe.set(pending);
+        self.holder.cutoff.suspects.borrow_mut().clear();
+        self.holder.cutoff.scan_all.set(pending);
         self.bump_version();
     }
 
