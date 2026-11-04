@@ -240,7 +240,20 @@ pub(super) fn draw_texture_line(
                 }
             }
             TexturePixelFormat::Rgba => {
-                if color.alpha() == 0 {
+                if color.alpha() == 0 && alpha == 0xff {
+                    // At full opacity a pixel's alpha is its own (x * 255 / 255 == x): the same
+                    // result as below without the multiply and divide per pixel.
+                    for pix in line_buffer {
+                        let pos = pos(4).0;
+                        let p: &[u8] = &data[pos..pos + 4];
+                        match p[3] {
+                            0xff => *pix = TargetPixel::from_rgb(p[0], p[1], p[2]),
+                            a => pix.blend(PremultipliedRgbaColor::premultiply(
+                                Color::from_argb_u8(a, p[0], p[1], p[2]),
+                            )),
+                        }
+                    }
+                } else if color.alpha() == 0 {
                     for pix in line_buffer {
                         let pos = pos(4).0;
                         let p: &[u8] = &data[pos..pos + 4];

@@ -380,20 +380,29 @@ unsafe fn update_erased<T>(handle: *const PropertyHandle, value: *mut c_void) {
 unsafe fn sources_changed(holder: *const BindingHolder) -> bool {
     unsafe {
         let cutoff = &(*holder).cutoff;
-        let edges: Vec<*const DepEdge> = if cutoff.scan_all.get() {
-            (*(*holder).dep_nodes.get())
-                .iter()
-                .map(|e| e.get_ref().binding_ref() as *const DepEdge)
-                .collect()
-        } else {
-            core::mem::take(&mut *cutoff.suspects.borrow_mut())
-        };
+        if cutoff.scan_all.get() {
+            // Every edge, read in place: checking a source evaluates that source's binding,
+            // never this holder's, so its edge list stays as it is. When one changed,
+            // `scan_all` stays set for the next check, until an evaluation clears it.
+            for edge in (*(*holder).dep_nodes.get()).iter() {
+                let edge = edge.get_ref().binding_ref() as *const DepEdge;
+                if edges_changed(core::slice::from_ref(&edge)) {
+                    return true;
+                }
+            }
+            cutoff.scan_all.set(false);
+            return false;
+        }
+        let edges = core::mem::take(&mut *cutoff.suspects.borrow_mut());
         let changed = edges_changed(&edges);
         if changed {
             // Kept for the next check, until an evaluation clears them.
-            cutoff.suspects.borrow_mut().extend(edges);
-        } else {
-            cutoff.scan_all.set(false);
+            let mut suspects = cutoff.suspects.borrow_mut();
+            if suspects.is_empty() {
+                *suspects = edges;
+            } else {
+                suspects.extend(edges);
+            }
         }
         changed
     }

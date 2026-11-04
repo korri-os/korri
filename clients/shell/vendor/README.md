@@ -93,6 +93,8 @@ standard mechanisms did not reach the software renderer:
 | `i-slint-core/item_tree.rs` | `visit_item_children` (new) | Visit an item's children as `visit_items` does below a `Continue`. |
 | `i-slint-core/window.rs` | `WindowInner::{instantiated, take_instantiated}` | Whether an instantiation pass created or dropped trees since the last walk; such a walk walks every tree. |
 | `i-slint-core/item_rendering.rs` | `ItemRenderer::{skip_subtree, layer_content_changed}` (new, default `false`), `render_item_children` | Drawing leaves out the items below a nested tree's root when the partial renderer knows they reach no dirty area (`SubtreeWalk::bounds`, with a pixel of margin). The software renderer answers `layer_content_changed` from its layer cache. |
+| `i-slint-core/properties.rs` | `sources_changed` | A holder that checks all its sources reads its edge list in place instead of copying it into a new vector each check. |
+| `i-slint-renderer-software/draw_functions.rs` | `fetch_blend_pixel`, RGBA at full opacity | The pixel's own alpha is used directly instead of `alpha * 255 / 255` per pixel; opaque pixels are stored. Same result. |
 
 ## Verification
 
