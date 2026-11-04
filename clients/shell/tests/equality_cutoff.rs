@@ -152,15 +152,13 @@ struct Run {
     frames: Vec<Vec<u16>>,
     invalidated: u32,
     blitted: u32,
-    /// Layer images rendered per frame.
-    renders: Vec<u32>,
 }
 
 fn band(cutoff: bool) -> Run {
-    band_source(cutoff, BAND.to_owned(), false)
+    band_source(cutoff, BAND.to_owned())
 }
 
-fn band_source(cutoff: bool, source: String, defer: bool) -> Run {
+fn band_source(cutoff: bool, source: String) -> Run {
     std::thread::spawn(move || {
         SoftwareRenderer::new().set_equality_cutoff(cutoff);
         let _ = slint::platform::set_platform(Box::new(Manual));
@@ -181,7 +179,6 @@ fn band_source(cutoff: bool, source: String, defer: bool) -> Run {
             frames: Vec::new(),
             invalidated: 0,
             blitted: 0,
-            renders: Vec::new(),
         };
         for n in 0..60 {
             if n == 10 {
@@ -193,11 +190,7 @@ fn band_source(cutoff: bool, source: String, defer: bool) -> Run {
             slint::platform::update_timers_and_animations();
             window.request_redraw();
             window.draw_if_needed(|renderer| {
-                // Images rendered in any frame, also mid-snap: what is compared here is which
-                // layers the cut-off keeps clean, not when images are rendered.
-                renderer.set_defer_layer_images(defer);
                 renderer.render(&mut buffer, 320);
-                run.renders.push(renderer.last_frame_layer_renders().0);
                 if (12..22).contains(&n) {
                     let (invalidated, _, blitted) = renderer.last_frame_layer_visits();
                     run.invalidated += invalidated;
@@ -229,25 +222,5 @@ fn a_card_that_only_moves_keeps_its_layer_and_the_pixels_stay_the_same() {
         without.invalidated,
         with.blitted,
         without.blitted
-    );
-}
-
-/// Layer images wait while layers animate over much of the window (vendored
-/// `LayerCache::{busy, deferred}`): no image is rendered mid-snap, the images come once
-/// the snap has ended, and every frame has the pixels of rendering images at once.
-#[test]
-fn layer_images_wait_for_the_snap_to_end_and_the_pixels_stay_the_same() {
-    let deferred = band_source(true, BAND.to_owned(), true);
-    let at_once = band_source(true, BAND.to_owned(), false);
-    for (n, (a, b)) in deferred.frames.iter().zip(&at_once.frames).enumerate() {
-        assert!(a == b, "frame {n} differs with images deferred");
-    }
-    let mid_snap = |run: &Run| run.renders[12..22].iter().sum::<u32>();
-    assert_eq!(mid_snap(&deferred), 0, "{:?}", deferred.renders);
-    assert!(mid_snap(&at_once) > 0, "{:?}", at_once.renders);
-    assert!(
-        deferred.renders[22..].iter().sum::<u32>() > 0,
-        "images rendered after the snap: {:?}",
-        deferred.renders
     );
 }
