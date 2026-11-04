@@ -676,6 +676,8 @@ pub struct WindowInner {
     pub active_popups: RefCell<Vec<PopupWindow>>,
     /// The item trees and their origins the last frame drew (`draw_contents_if_changed`).
     drawn_trees: RefCell<Vec<(usize, LogicalPoint)>>,
+    /// An instantiation pass created or dropped item trees since the last dirty-region walk.
+    instantiated: Cell<bool>,
     next_popup_id: Cell<NonZeroU32>,
     had_popup_on_press: Cell<bool>,
     close_requested: Callback<(), CloseRequestResponse>,
@@ -746,6 +748,7 @@ impl WindowInner {
             cursor_blinker: Default::default(),
             active_popups: Default::default(),
             drawn_trees: Default::default(),
+            instantiated: Cell::new(true),
             next_popup_id: Cell::new(NonZeroU32::MIN),
             had_popup_on_press: Default::default(),
             close_requested: Default::default(),
@@ -829,12 +832,21 @@ impl WindowInner {
                     changed
                 });
             }
+            if changed {
+                self.instantiated.set(true);
+            }
             changed |= crate::properties::ChangeTracker::run_change_handlers_once();
             if !changed {
                 return;
             }
         }
         crate::debug_log!("Slint: long callback/instantiation chain detected");
+    }
+
+    /// Whether item trees were created or dropped since the last call (the dirty-region walk
+    /// then walks every tree).
+    pub fn take_instantiated(&self) -> bool {
+        self.instantiated.replace(false)
     }
 
     /// Returns a slice of the active popups.

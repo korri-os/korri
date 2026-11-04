@@ -4075,6 +4075,11 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         self.window
     }
 
+    #[cfg(feature = "std")]
+    fn layer_content_changed(&self, item_rc: &ItemRc) -> bool {
+        self.layer_cache.is_some_and(|cache| cache.is_dirty(item_rc) == Some(true))
+    }
+
     fn as_any(&mut self) -> Option<&mut dyn core::any::Any> {
         None
     }

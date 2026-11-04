@@ -1362,6 +1362,18 @@ pub fn visit_items<State>(
     visit_internal(item_tree, order, &mut visitor, -1, &state)
 }
 
+/// Visit the children of the item at `index` of `item_tree` (and their children), as
+/// [`visit_items`] does below an item whose visitor returned `Continue(state)`.
+pub fn visit_item_children<State>(
+    item_tree: &ItemTreeRc,
+    index: u32,
+    order: TraversalOrder,
+    visitor: &mut impl FnMut(&ItemTreeRc, Pin<ItemRef>, u32, &State) -> ItemVisitorResult<State>,
+    state: &State,
+) -> VisitChildrenResult {
+    visit_internal(item_tree, order, visitor, index as isize, state)
+}
+
 fn visit_internal<State>(
     item_tree: &ItemTreeRc,
     order: TraversalOrder,

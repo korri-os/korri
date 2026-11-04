@@ -1,6 +1,6 @@
 diff -ruN a/i-slint-backend-testing/Cargo.toml b/i-slint-backend-testing/Cargo.toml
---- a/i-slint-backend-testing/Cargo.toml	2026-11-04 00:32:51.901749348 -0700
-+++ b/i-slint-backend-testing/Cargo.toml	2026-11-04 00:32:51.903469813 -0700
+--- a/i-slint-backend-testing/Cargo.toml	2026-11-04 01:21:57.555416871 -0700
++++ b/i-slint-backend-testing/Cargo.toml	2026-11-04 01:21:57.556554783 -0700
 @@ -75,17 +75,8 @@
  name = "i_slint_backend_testing"
  path = "lib.rs"
@@ -20,8 +20,8 @@ diff -ruN a/i-slint-backend-testing/Cargo.toml b/i-slint-backend-testing/Cargo.t
  [dependencies.async-net]
  version = "2.0.0"
 diff -ruN a/i-slint-backend-testing/search_api.rs b/i-slint-backend-testing/search_api.rs
---- a/i-slint-backend-testing/search_api.rs	2026-11-04 00:32:51.902073569 -0700
-+++ b/i-slint-backend-testing/search_api.rs	2026-11-04 00:32:51.903736394 -0700
+--- a/i-slint-backend-testing/search_api.rs	2026-11-04 01:21:57.555645971 -0700
++++ b/i-slint-backend-testing/search_api.rs	2026-11-04 01:21:57.556744477 -0700
 @@ -473,6 +473,12 @@
      }
  
@@ -36,8 +36,8 @@ diff -ruN a/i-slint-backend-testing/search_api.rs b/i-slint-backend-testing/sear
          self.item.upgrade().is_some()
      }
 diff -ruN a/i-slint-core/animations.rs b/i-slint-core/animations.rs
---- a/i-slint-core/animations.rs	2026-11-04 00:32:51.884802748 -0700
-+++ b/i-slint-core/animations.rs	2026-11-04 00:32:51.889208483 -0700
+--- a/i-slint-core/animations.rs	2026-11-04 01:21:57.543440586 -0700
++++ b/i-slint-core/animations.rs	2026-11-04 01:21:57.546156136 -0700
 @@ -300,10 +300,25 @@
  pub fn animation_tick() -> u64 {
      CURRENT_ANIMATION_DRIVER.with(|driver| {
@@ -67,7 +67,7 @@ diff -ruN a/i-slint-core/animations.rs b/i-slint-core/animations.rs
      const D1: f32 = 2.75;
 diff -ruN a/i-slint-core/frame_profile.rs b/i-slint-core/frame_profile.rs
 --- a/i-slint-core/frame_profile.rs	1969-12-31 17:00:00.000000000 -0700
-+++ b/i-slint-core/frame_profile.rs	2026-11-04 00:32:51.891692331 -0700
++++ b/i-slint-core/frame_profile.rs	2026-11-04 01:21:57.548105260 -0700
 @@ -0,0 +1,135 @@
 +// Copyright © SixtyFPS GmbH <info@slint.dev>
 +// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
@@ -205,8 +205,8 @@ diff -ruN a/i-slint-core/frame_profile.rs b/i-slint-core/frame_profile.rs
 +    result
 +}
 diff -ruN a/i-slint-core/graphics/image.rs b/i-slint-core/graphics/image.rs
---- a/i-slint-core/graphics/image.rs	2026-11-04 00:32:51.885588646 -0700
-+++ b/i-slint-core/graphics/image.rs	2026-11-04 00:32:51.889754117 -0700
+--- a/i-slint-core/graphics/image.rs	2026-11-04 01:21:57.543891819 -0700
++++ b/i-slint-core/graphics/image.rs	2026-11-04 01:21:57.546597791 -0700
 @@ -687,6 +687,10 @@
              #[cfg(not(target_arch = "wasm32"))]
              (Self::BorrowedOpenGLTexture(l0), Self::BorrowedOpenGLTexture(r0)) => l0 == r0,
@@ -219,8 +219,8 @@ diff -ruN a/i-slint-core/graphics/image.rs b/i-slint-core/graphics/image.rs
          }
      }
 diff -ruN a/i-slint-core/item_rendering.rs b/i-slint-core/item_rendering.rs
---- a/i-slint-core/item_rendering.rs	2026-11-04 00:32:51.885588646 -0700
-+++ b/i-slint-core/item_rendering.rs	2026-11-04 00:32:51.889894562 -0700
+--- a/i-slint-core/item_rendering.rs	2026-11-04 01:21:57.543891819 -0700
++++ b/i-slint-core/item_rendering.rs	2026-11-04 01:21:57.546708559 -0700
 @@ -107,6 +107,39 @@
              .and_then(|entry| callback(&entry.data))
      }
@@ -270,9 +270,40 @@ diff -ruN a/i-slint-core/item_rendering.rs b/i-slint-core/item_rendering.rs
  
              let (do_draw, item_origin, item_size) = renderer.filter_item(&item_rc, window_adapter);
  
+@@ -236,7 +271,9 @@
+                 RenderingResult::ContinueRenderingChildren
+             };
+ 
+-            if matches!(render_result, RenderingResult::ContinueRenderingChildren) {
++            if matches!(render_result, RenderingResult::ContinueRenderingChildren)
++                && !(index == 0 && renderer.skip_subtree(&item_rc))
++            {
+                 render_item_children(renderer, component, index as isize, window_adapter);
+             }
+             renderer.restore_state();
+@@ -703,6 +740,19 @@
+     ///  - if the item needs to be drawn (false means it is clipped or doesn't need to be drawn)
+     ///  - the origin of the item
+     ///  - the size of the item, or None if it doesn't need to be drawn and the size wasn't computed
++    /// Whether the content of `item_rc`, a `Layer` the renderer caches, changed since its
++    /// cached drawing. Its children are then drawn by the layer, not through their own
++    /// trackers, so the dirty-region walk cannot see them change.
++    fn layer_content_changed(&self, _item_rc: &ItemRc) -> bool {
++        false
++    }
++
++    /// Whether the items below `item_rc` (the root item of a nested item tree) can all be
++    /// left out: none of them reaches the area being drawn. Only the item itself is drawn.
++    fn skip_subtree(&mut self, _item_rc: &ItemRc) -> bool {
++        false
++    }
++
+     fn filter_item(
+         &mut self,
+         item: &ItemRc,
 diff -ruN a/i-slint-core/items.rs b/i-slint-core/items.rs
---- a/i-slint-core/items.rs	2026-11-04 00:32:51.886334964 -0700
-+++ b/i-slint-core/items.rs	2026-11-04 00:32:51.889996917 -0700
+--- a/i-slint-core/items.rs	2026-11-04 01:21:57.544263051 -0700
++++ b/i-slint-core/items.rs	2026-11-04 01:21:57.546708559 -0700
 @@ -1378,7 +1378,40 @@
      }
  }
@@ -314,9 +345,31 @@ diff -ruN a/i-slint-core/items.rs b/i-slint-core/items.rs
      let root_item_in_local_item_tree = ItemRc::new_root(item.item_tree().clone());
  
      if root_item_in_local_item_tree.downcast::<crate::items::WindowItem>().is_some() {
+diff -ruN a/i-slint-core/item_tree.rs b/i-slint-core/item_tree.rs
+--- a/i-slint-core/item_tree.rs	2026-11-04 01:21:57.543891819 -0700
++++ b/i-slint-core/item_tree.rs	2026-11-04 01:21:57.546708559 -0700
+@@ -1362,6 +1362,18 @@
+     visit_internal(item_tree, order, &mut visitor, -1, &state)
+ }
+ 
++/// Visit the children of the item at `index` of `item_tree` (and their children), as
++/// [`visit_items`] does below an item whose visitor returned `Continue(state)`.
++pub fn visit_item_children<State>(
++    item_tree: &ItemTreeRc,
++    index: u32,
++    order: TraversalOrder,
++    visitor: &mut impl FnMut(&ItemTreeRc, Pin<ItemRef>, u32, &State) -> ItemVisitorResult<State>,
++    state: &State,
++) -> VisitChildrenResult {
++    visit_internal(item_tree, order, visitor, index as isize, state)
++}
++
+ fn visit_internal<State>(
+     item_tree: &ItemTreeRc,
+     order: TraversalOrder,
 diff -ruN a/i-slint-core/lib.rs b/i-slint-core/lib.rs
---- a/i-slint-core/lib.rs	2026-11-04 00:32:51.886334964 -0700
-+++ b/i-slint-core/lib.rs	2026-11-04 00:32:51.890337308 -0700
+--- a/i-slint-core/lib.rs	2026-11-04 01:21:57.544263051 -0700
++++ b/i-slint-core/lib.rs	2026-11-04 01:21:57.547285988 -0700
 @@ -39,6 +39,9 @@
  pub mod data_transfer;
  pub mod date_time;
@@ -328,8 +381,8 @@ diff -ruN a/i-slint-core/lib.rs b/i-slint-core/lib.rs
  pub mod graphics;
  pub mod input;
 diff -ruN a/i-slint-core/model/repeater.rs b/i-slint-core/model/repeater.rs
---- a/i-slint-core/model/repeater.rs	2026-11-04 00:32:51.886642759 -0700
-+++ b/i-slint-core/model/repeater.rs	2026-11-04 00:32:51.890550963 -0700
+--- a/i-slint-core/model/repeater.rs	2026-11-04 01:21:57.544563676 -0700
++++ b/i-slint-core/model/repeater.rs	2026-11-04 01:21:57.547467101 -0700
 @@ -475,6 +475,11 @@
              if created {
                  c.1 = Some((self.init)());
@@ -366,8 +419,8 @@ diff -ruN a/i-slint-core/model/repeater.rs b/i-slint-core/model/repeater.rs
  
      /// Call the visitor for the root of each instance.
 diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
---- a/i-slint-core/partial_renderer.rs	2026-11-04 00:32:51.886642759 -0700
-+++ b/i-slint-core/partial_renderer.rs	2026-11-04 00:32:51.890550963 -0700
+--- a/i-slint-core/partial_renderer.rs	2026-11-04 01:21:57.544563676 -0700
++++ b/i-slint-core/partial_renderer.rs	2026-11-04 01:21:57.548105260 -0700
 @@ -91,6 +91,8 @@
          bounding_rect: LogicalRect,
          /// The item's offset relative to its parent.
@@ -390,7 +443,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
              (
                  ItemWithTransform { bounding_rect: a, transform: ta, .. },
                  ItemWithTransform { bounding_rect: b, transform: tb, .. },
-@@ -187,7 +189,12 @@
+@@ -187,20 +189,78 @@
                  sibling_index,
              }
          } else {
@@ -404,7 +457,52 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
          }
      }
  }
-@@ -197,10 +204,16 @@
+ 
++/// The state the dirty-region walk passes from an item to its children.
++#[derive(Clone, Copy)]
++struct ComputeDirtyRegionState {
++    transform_to_screen: ItemTransform,
++    old_transform_to_screen: ItemTransform,
++    clipped: LogicalRect,
++    must_refresh_children: bool,
++    /// Depth of the item in the tree, used to index the sibling counters.
++    depth: usize,
++}
++
++impl ComputeDirtyRegionState {
++    /// Adjust transform_to_screen and old_transform_to_screen to map from item coordinates
++    /// to the screen when using it on a child, specified by its children transform.
++    fn adjust_transforms_for_child(
++        &mut self,
++        children_transform: &ItemTransform,
++        old_children_transform: &ItemTransform,
++    ) {
++        self.transform_to_screen = children_transform.then(&self.transform_to_screen);
++        self.old_transform_to_screen = old_children_transform.then(&self.old_transform_to_screen);
++    }
++}
++
++/// At the root item of a nested item tree: what the dirty-region walk of the tree's items
++/// read, and whether that walk found nothing to draw. While it is clean, the tree is where
++/// it was, and its last walk found nothing, the tree's items need no walk: their geometry
++/// and their rendering trackers are among what it read.
++#[derive(Default)]
++struct SubtreeWalk {
++    tracker: Pin<Box<PropertyTracker>>,
++    /// The last walk found no change, dirty item or new item in the tree. A walk that did
++    /// cannot be trusted: the dirty items' trackers are evaluated later, while drawing,
++    /// under the window's tracker and not this one.
++    armed: bool,
++    /// The transform and the clip the tree was last walked with.
++    at: Option<(ItemTransform, LogicalRect)>,
++    /// Where on screen the tree's items below its root reach (their clipped screen rects,
++    /// nested trees included), as of its last walk: `None` when not known. Drawing skips
++    /// a tree whose items reach no dirty area.
++    bounds: Option<LogicalRect>,
++}
++
+ struct PartialRenderingCachedData {
+     /// The geometry of the item as it was previously rendered.
      pub data: CachedItemBoundingBoxAndTransform,
      /// The property tracker that should be used to evaluate whether the item needs to be re-rendered
      pub tracker: Option<core::pin::Pin<Box<PropertyTracker>>>,
@@ -414,15 +512,19 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
 +    /// and the layer did not move, [`PartialRenderer::compute_dirty_regions`] needs not walk the
 +    /// children.
 +    pub cached_layer: bool,
++    /// At the root item of a nested item tree: see [`SubtreeWalk`].
++    subtree: Option<SubtreeWalk>,
++    /// A `Layer`: where its children reach on screen, as of their last walk.
++    children_bounds: Option<LogicalRect>,
  }
  impl PartialRenderingCachedData {
      fn new(data: CachedItemBoundingBoxAndTransform) -> Self {
 -        Self { data, tracker: None }
-+        Self { data, tracker: None, cached_layer: false }
++        Self { data, tracker: None, cached_layer: false, subtree: None, children_bounds: None }
      }
  }
  
-@@ -214,11 +227,18 @@
+@@ -214,11 +274,18 @@
      /// When a tree is destroyed, this is the region that needs to be repainted
      /// (see [`PartialRenderingState::free_graphics_resources`]).
      tree_screen_rects: alloc::collections::BTreeMap<usize, LogicalRect>,
@@ -442,37 +544,664 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      }
  }
  
-@@ -526,6 +546,7 @@
+@@ -432,6 +499,13 @@
+     pub actual_renderer: T,
+     /// The window adapter the renderer is rendering into.
+     pub window_adapter: Rc<dyn WindowAdapter>,
++    /// Changes the dirty-region walk met so far: geometry changes, dirty, moved and new items.
++    walk_events: u64,
++    /// Whether nested item trees whose last walk found nothing may be skipped this walk.
++    skip_clean_trees: bool,
++    /// Per subtree being walked (innermost last), where its items reach on screen so far;
++    /// `None` once something in it is not known.
++    bounds: alloc::vec::Vec<Option<LogicalRect>>,
+ }
  
-                 let rendering_data = item.cached_rendering_data_offset();
-                 let mut cache = self.cache.borrow_mut();
-+                cache.walked_items += 1;
+ impl<'a, T: ItemRenderer + ItemRendererFeatures> PartialRenderer<'a, T> {
+@@ -442,7 +516,15 @@
+         actual_renderer: T,
+     ) -> Self {
+         let window_adapter = actual_renderer.window().window_adapter();
+-        Self { cache, dirty_region: initial_dirty_region, actual_renderer, window_adapter }
++        Self {
++            cache,
++            dirty_region: initial_dirty_region,
++            actual_renderer,
++            window_adapter,
++            walk_events: 0,
++            skip_clean_trees: false,
++            bounds: alloc::vec::Vec::new(),
++        }
+     }
  
-                 let tree_key = vtable::VRef::as_ptr(crate::item_tree::ItemTreeRc::borrow(component))
-                     .as_ptr() as usize;
-@@ -541,7 +562,7 @@
-                 }
+     /// Visit the tree of item and compute what are the dirty regions
+@@ -452,16 +534,6 @@
+         origin: LogicalPoint,
+         size: LogicalSize,
+     ) {
+-        #[derive(Clone, Copy)]
+-        struct ComputeDirtyRegionState {
+-            transform_to_screen: ItemTransform,
+-            old_transform_to_screen: ItemTransform,
+-            clipped: LogicalRect,
+-            must_refresh_children: bool,
+-            /// Depth of the item in the tree, used to index `sibling_counters`.
+-            depth: usize,
+-        }
+-
+         // Two counters per tree depth to give each item its rank among its z-ordered siblings.
+         // `.0` counts every visited item and is what gets stored in the cache entry; `.1`
+         // counts only the items that already have a cache entry and is what the stored rank
+@@ -471,199 +543,323 @@
+         // existing items can never trade places without at least one comparison rank
+         // changing.
+         let sibling_counters = RefCell::new(alloc::vec::Vec::<(u16, u16)>::new());
+-
+-        impl ComputeDirtyRegionState {
+-            /// Adjust transform_to_screen and old_transform_to_screen to map from item coordinates
+-            /// to the screen when using it on a child, specified by its children transform.
+-            fn adjust_transforms_for_child(
+-                &mut self,
+-                children_transform: &ItemTransform,
+-                old_children_transform: &ItemTransform,
+-            ) {
+-                self.transform_to_screen = children_transform.then(&self.transform_to_screen);
+-                self.old_transform_to_screen =
+-                    old_children_transform.then(&self.old_transform_to_screen);
+-            }
+-        }
+-
++        // A frame that created or destroyed item trees walks them all: a tree's tracker
++        // does not see its repeaters' instances come and go.
++        self.skip_clean_trees =
++            !crate::window::WindowInner::from_pub(self.window_adapter.window()).take_instantiated();
+         crate::item_tree::visit_items(
+             component,
+             crate::item_tree::TraversalOrder::BackToFront,
+-            |component, item, index, state| {
+-                let mut new_state = *state;
+-                let item_rc = ItemRc::new(component.clone(), index);
+-
+-                let my_sibling_index = {
+-                    let depth = state.depth;
+-                    let mut counters = sibling_counters.borrow_mut();
+-                    if counters.len() <= depth + 1 {
+-                        counters.resize(depth + 2, (0, 0));
+-                    }
+-                    counters[depth + 1] = (0, 0); // this item's children restart at zero
+-                    let idx = counters[depth].0;
+-                    counters[depth].0 = idx.saturating_add(1);
+-                    idx
+-                };
+-                new_state.depth = state.depth + 1;
++            |component, item, index, state| self.visit(&sibling_counters, component, item, index, state),
++            {
++                let initial_transform =
++                    euclid::Transform2D::translation(origin.x as f32, origin.y as f32);
++                ComputeDirtyRegionState {
++                    transform_to_screen: initial_transform,
++                    old_transform_to_screen: initial_transform,
++                    clipped: LogicalRect::from_size(size),
++                    must_refresh_children: false,
++                    depth: 0,
++                }
++            },
++        );
++    }
  
-                 match rendering_data.get_entry(&mut cache) {
+-                let new_geom = CachedItemBoundingBoxAndTransform::new::<T>(
+-                    &item_rc,
+-                    &self.window_adapter,
+-                    my_sibling_index,
++    /// One item of the dirty-region walk. At the root of a nested item tree, the tree's
++    /// items are walked here, under the tree's own tracker (`SubtreeWalk`); a tree whose
++    /// last walk found nothing to draw, and that nothing it read changed since, is not
++    /// walked again.
++    fn visit(
++        &mut self,
++        counters: &RefCell<alloc::vec::Vec<(u16, u16)>>,
++        component: &ItemTreeRc,
++        item: Pin<ItemRef>,
++        index: u32,
++        state: &ComputeDirtyRegionState,
++    ) -> ItemVisitorResult<ComputeDirtyRegionState> {
++        let events = self.walk_events;
++        // `visit_item` starts the tree's screen region afresh at its root; a tree not walked
++        // keeps the one of its last walk.
++        let tree_key =
++            vtable::VRef::as_ptr(crate::item_tree::ItemTreeRc::borrow(component)).as_ptr() as usize;
++        let last_region = (index == 0)
++            .then(|| self.cache.borrow().tree_screen_rects.get(&tree_key).copied())
++            .flatten();
++        let result = self.visit_item(counters, component, item, index, state);
++        let ItemVisitorResult::Continue(new_state) = result else {
++            return result;
++        };
++        let is_layer = ItemRef::downcast_pin::<crate::items::Layer>(item).is_some();
++        // A layer whose content changed, and where its children reached before. Drawn from
++        // its cache, a layer's children are drawn by the layer and their own trackers never
++        // run: where they reached and reach now is drawn again.
++        let layer_changed = is_layer
++            && (self.walk_events != events
++                || self.actual_renderer.layer_content_changed(&ItemRc::new(component.clone(), index)));
++        let layer_before = if layer_changed {
++            // Its content changing is a change of the tree it is in.
++            self.walk_events += 1;
++            let mut cache = self.cache.borrow_mut();
++            item.cached_rendering_data_offset().get_entry(&mut cache).and_then(|e| e.children_bounds)
++        } else {
++            None
++        };
++        // Only nested trees: the window's own tree is the window's redraw tracker's.
++        if index != 0 || state.depth == 0 {
++            if !is_layer {
++                return ItemVisitorResult::Continue(new_state);
++            }
++            // A layer's children: where they reach, for when a clean cached layer is not
++            // walked (they may reach outside the layer).
++            self.bounds.push(Some(LogicalRect::default()));
++            crate::item_tree::visit_item_children(
++                component,
++                index,
++                crate::item_tree::TraversalOrder::BackToFront,
++                &mut |component, item, index, state| {
++                    self.visit(counters, component, item, index, state)
++                },
++                &new_state,
++            );
++            let children = self.bounds.pop().flatten();
++            self.add_bounds(children);
++            if layer_changed {
++                for rect in [layer_before, children].into_iter().flatten() {
++                    self.dirty_region.add_rect(rect);
++                }
++            }
++            let mut cache = self.cache.borrow_mut();
++            if let Some(entry) = item.cached_rendering_data_offset().get_entry(&mut cache) {
++                entry.children_bounds = children;
++            }
++            return ItemVisitorResult::SkipChildren;
++        }
++        let root_clean = self.walk_events == events;
++        let rendering_data = item.cached_rendering_data_offset();
++        let mut walk = {
++            let mut cache = self.cache.borrow_mut();
++            let Some(entry) = rendering_data.get_entry(&mut cache) else {
++                return ItemVisitorResult::Continue(new_state);
++            };
++            entry.subtree.take().unwrap_or_default()
++        };
++        let skip = self.skip_clean_trees
++            && root_clean
++            && walk.armed
++            && !new_state.must_refresh_children
++            && new_state.transform_to_screen == new_state.old_transform_to_screen
++            && walk.at == Some((new_state.transform_to_screen, new_state.clipped))
++            && !walk.tracker.is_dirty();
++        if skip {
++            walk.tracker.as_ref().register_as_dependency_to_current_binding();
++            if let Some(last) = last_region {
++                let mut cache = self.cache.borrow_mut();
++                let region = cache.tree_screen_rects.entry(tree_key).or_default();
++                *region = region.union(&last);
++            }
++            self.add_bounds(walk.bounds);
++        } else {
++            let children_events = self.walk_events;
++            self.bounds.push(Some(LogicalRect::default()));
++            walk.tracker.as_ref().evaluate(|| {
++                crate::item_tree::visit_item_children(
++                    component,
++                    index,
++                    crate::item_tree::TraversalOrder::BackToFront,
++                    &mut |component, item, index, state| {
++                        self.visit(counters, component, item, index, state)
++                    },
++                    &new_state,
+                 );
++            });
++            walk.armed = self.walk_events == children_events;
++            walk.at = Some((new_state.transform_to_screen, new_state.clipped));
++            walk.bounds = self.bounds.pop().flatten();
++            self.add_bounds(walk.bounds);
++            if layer_changed {
++                for rect in [layer_before, walk.bounds].into_iter().flatten() {
++                    self.dirty_region.add_rect(rect);
++                }
++            }
++        }
++        let mut cache = self.cache.borrow_mut();
++        if let Some(entry) = rendering_data.get_entry(&mut cache) {
++            // A root that is a layer: what a walk that skips its children adds.
++            entry.children_bounds = walk.bounds;
++            entry.subtree = Some(walk);
++        }
++        ItemVisitorResult::SkipChildren
++    }
+ 
+-                // The region the item covers on screen. It is merged into the owning
+-                // tree's entry in `tree_screen_rects` so that destroying the tree can
+-                // repaint that region (see `PartialRenderingState::free_graphics_resources`),
+-                // and it doubles as the item's current-position dirty rect in the branches
+-                // below.
+-                let new_screen_rect = clipped_screen_rect(
+-                    new_geom.bounding_rect(),
+-                    &state.transform_to_screen,
+-                    &state.clipped,
+-                )
+-                .unwrap_or_default();
++    /// The dirty-region walk's work for one item.
++    fn visit_item(
++        &mut self,
++        counters: &RefCell<alloc::vec::Vec<(u16, u16)>>,
++        component: &ItemTreeRc,
++        item: Pin<ItemRef>,
++        index: u32,
++        state: &ComputeDirtyRegionState,
++    ) -> ItemVisitorResult<ComputeDirtyRegionState> {
++            let mut new_state = *state;
++            let item_rc = ItemRc::new(component.clone(), index);
++
++            let my_sibling_index = {
++                let depth = state.depth;
++                let mut counters = counters.borrow_mut();
++                if counters.len() <= depth + 1 {
++                    counters.resize(depth + 2, (0, 0));
++                }
++                counters[depth + 1] = (0, 0); // this item's children restart at zero
++                let idx = counters[depth].0;
++                counters[depth].0 = idx.saturating_add(1);
++                idx
++            };
++            new_state.depth = state.depth + 1;
++
++            let new_geom = CachedItemBoundingBoxAndTransform::new::<T>(
++                &item_rc,
++                &self.window_adapter,
++                my_sibling_index,
++            );
++
++            // The region the item covers on screen. It is merged into the owning
++            // tree's entry in `tree_screen_rects` so that destroying the tree can
++            // repaint that region (see `PartialRenderingState::free_graphics_resources`),
++            // and it doubles as the item's current-position dirty rect in the branches
++            // below.
++            let new_screen_rect = clipped_screen_rect(
++                new_geom.bounding_rect(),
++                &state.transform_to_screen,
++                &state.clipped,
++            )
++            .unwrap_or_default();
++            self.add_bounds(Some(new_screen_rect));
+ 
+-                let rendering_data = item.cached_rendering_data_offset();
+-                let mut cache = self.cache.borrow_mut();
++            let rendering_data = item.cached_rendering_data_offset();
++            let mut cache = self.cache.borrow_mut();
++            cache.walked_items += 1;
+ 
+-                let tree_key = vtable::VRef::as_ptr(crate::item_tree::ItemTreeRc::borrow(component))
+-                    .as_ptr() as usize;
+-                if index == 0
+-                    && let Some(acc) = cache.tree_screen_rects.get_mut(&tree_key)
+-                {
+-                    // Entering the tree: rebuild its screen region from this pass's visits.
+-                    *acc = LogicalRect::default();
+-                }
+-                if !new_screen_rect.is_empty() {
+-                    let acc = cache.tree_screen_rects.entry(tree_key).or_default();
+-                    *acc = acc.union(&new_screen_rect);
+-                }
++            let tree_key = vtable::VRef::as_ptr(crate::item_tree::ItemTreeRc::borrow(component))
++                .as_ptr() as usize;
++            if index == 0
++                && let Some(acc) = cache.tree_screen_rects.get_mut(&tree_key)
++            {
++                // Entering the tree: rebuild its screen region from this pass's visits.
++                *acc = LogicalRect::default();
++            }
++            if !new_screen_rect.is_empty() {
++                let acc = cache.tree_screen_rects.entry(tree_key).or_default();
++                *acc = acc.union(&new_screen_rect);
++            }
+ 
+-                match rendering_data.get_entry(&mut cache) {
 -                    Some(PartialRenderingCachedData { data: cached_geom, tracker }) => {
-+                    Some(PartialRenderingCachedData { data: cached_geom, tracker, cached_layer }) => {
-                         let rendering_dirty = tracker.as_ref().is_some_and(|tr| tr.is_dirty());
+-                        let rendering_dirty = tracker.as_ref().is_some_and(|tr| tr.is_dirty());
+-
+-                        // Repaint when the rank among the previously known siblings changed,
+-                        // in either direction: two items cannot trade places in the stacking
+-                        // order with both comparison ranks unchanged, and since an overlap is
+-                        // within both items' rects, repainting the changed one(s) covers it.
+-                        // Only a decrease is not enough: in a permutation of three or more
+-                        // items a pair can flip while one member keeps its rank and the other
+-                        // only rises. A saturated rank (>65535 siblings) always repaints.
+-                        let comparison_sibling_index = {
+-                            let mut counters = sibling_counters.borrow_mut();
+-                            let idx = counters[state.depth].1;
+-                            counters[state.depth].1 = idx.saturating_add(1);
+-                            idx
+-                        };
+-                        let old_sibling_index =
+-                            core::mem::replace(cached_geom.sibling_index(), my_sibling_index);
+-                        let sibling_index_changed = my_sibling_index == u16::MAX
+-                            || comparison_sibling_index != old_sibling_index;
+-                        new_state.must_refresh_children |= sibling_index_changed;
+-
+-                        let geometry_changed = !cached_geom.same_geometry(&new_geom);
+-                        if ItemRef::downcast_pin::<Clip>(item).is_some()
+-                            || ItemRef::downcast_pin::<Opacity>(item).is_some()
+-                        {
+-                            // When the opacity or the clip change, this will impact all the children, including
+-                            // the ones outside the element, regardless if they are themselves dirty or not.
+-                            new_state.must_refresh_children |= rendering_dirty || geometry_changed;
+-
+-                            if rendering_dirty {
+-                                // Destroy the tracker as we we might not re-render this clipped item but it would stay dirty
+-                                *tracker = None;
+-                            }
++            match rendering_data.get_entry(&mut cache) {
++                Some(PartialRenderingCachedData {
++                    data: cached_geom,
++                    tracker,
++                    cached_layer,
++                    children_bounds,
++                    ..
++                }) => {
++                    let rendering_dirty = tracker.as_ref().is_some_and(|tr| tr.is_dirty());
++
++                    // Repaint when the rank among the previously known siblings changed,
++                    // in either direction: two items cannot trade places in the stacking
++                    // order with both comparison ranks unchanged, and since an overlap is
++                    // within both items' rects, repainting the changed one(s) covers it.
++                    // Only a decrease is not enough: in a permutation of three or more
++                    // items a pair can flip while one member keeps its rank and the other
++                    // only rises. A saturated rank (>65535 siblings) always repaints.
++                    let comparison_sibling_index = {
++                        let mut counters = counters.borrow_mut();
++                        let idx = counters[state.depth].1;
++                        counters[state.depth].1 = idx.saturating_add(1);
++                        idx
++                    };
++                    let old_sibling_index =
++                        core::mem::replace(cached_geom.sibling_index(), my_sibling_index);
++                    let sibling_index_changed = my_sibling_index == u16::MAX
++                        || comparison_sibling_index != old_sibling_index;
++                    new_state.must_refresh_children |= sibling_index_changed;
++
++                    let geometry_changed = !cached_geom.same_geometry(&new_geom);
++                    if ItemRef::downcast_pin::<Clip>(item).is_some()
++                        || ItemRef::downcast_pin::<Opacity>(item).is_some()
++                    {
++                        // When the opacity or the clip change, this will impact all the children, including
++                        // the ones outside the element, regardless if they are themselves dirty or not.
++                        new_state.must_refresh_children |= rendering_dirty || geometry_changed;
++
++                        if rendering_dirty {
++                            // Destroy the tracker as we we might not re-render this clipped item but it would stay dirty
++                            *tracker = None;
+                         }
++                    }
++
++                    if geometry_changed {
++                        self.walk_events += 1;
++                        let old_transform = cached_geom.transform();
++                        self.mark_dirty_rect(
++                            cached_geom.bounding_rect(),
++                            state.old_transform_to_screen,
++                            &state.clipped,
++                        );
++                        self.dirty_region.add_rect(new_screen_rect);
++
++                        new_state
++                            .adjust_transforms_for_child(&new_geom.transform(), &old_transform);
++
++                        *cached_geom = new_geom;
++
++                        return ItemVisitorResult::Continue(new_state);
++                    }
++
++                    new_state.adjust_transforms_for_child(
++                        &cached_geom.transform(),
++                        &cached_geom.transform(),
++                    );
++
++                    let moved = state.must_refresh_children
++                        || sibling_index_changed
++                        || new_state.transform_to_screen != new_state.old_transform_to_screen;
  
-                         // Repaint when the rank among the previously known siblings changed,
-@@ -624,6 +645,12 @@
-                                 self.dirty_region.add_rect(new_screen_rect);
-                             } else if let Some(tr) = &tracker {
-                                 tr.as_ref().register_as_dependency_to_current_binding();
-+                                // A clean layer the renderer drew from its own cache: nothing
-+                                // below it changed (its tracker would be dirty), so its children
-+                                // add no dirty region. Skip the walk.
-+                                if *cached_layer {
-+                                    return ItemVisitorResult::SkipChildren;
-+                                }
+-                        if geometry_changed {
+-                            let old_transform = cached_geom.transform();
++                    if rendering_dirty || moved {
++                        self.walk_events += 1;
++                    }
++                    if rendering_dirty {
++                        self.dirty_region.add_rect(new_screen_rect);
++                        if moved {
+                             self.mark_dirty_rect(
+                                 cached_geom.bounding_rect(),
+                                 state.old_transform_to_screen,
+                                 &state.clipped,
+                             );
+-                            self.dirty_region.add_rect(new_screen_rect);
+-
+-                            new_state
+-                                .adjust_transforms_for_child(&new_geom.transform(), &old_transform);
+-
+-                            *cached_geom = new_geom;
+-
+-                            return ItemVisitorResult::Continue(new_state);
+                         }
+ 
+-                        new_state.adjust_transforms_for_child(
+-                            &cached_geom.transform(),
+-                            &cached_geom.transform(),
+-                        );
+-
+-                        let moved = state.must_refresh_children
+-                            || sibling_index_changed
+-                            || new_state.transform_to_screen != new_state.old_transform_to_screen;
+-
+-                        if rendering_dirty {
++                        ItemVisitorResult::Continue(new_state)
++                    } else {
++                        if moved {
++                            self.mark_dirty_rect(
++                                cached_geom.bounding_rect(),
++                                state.old_transform_to_screen,
++                                &state.clipped,
++                            );
+                             self.dirty_region.add_rect(new_screen_rect);
+-                            if moved {
+-                                self.mark_dirty_rect(
+-                                    cached_geom.bounding_rect(),
+-                                    state.old_transform_to_screen,
+-                                    &state.clipped,
+-                                );
+-                            }
+-
+-                            ItemVisitorResult::Continue(new_state)
+-                        } else {
+-                            if moved {
+-                                self.mark_dirty_rect(
+-                                    cached_geom.bounding_rect(),
+-                                    state.old_transform_to_screen,
+-                                    &state.clipped,
+-                                );
+-                                self.dirty_region.add_rect(new_screen_rect);
+-                            } else if let Some(tr) = &tracker {
+-                                tr.as_ref().register_as_dependency_to_current_binding();
+-                            }
+-
+-                            if let CachedItemBoundingBoxAndTransform::ClipItem {
+-                                geometry, ..
+-                            } = &cached_geom
+-                            {
+-                                new_state.clipped = new_state
+-                                    .clipped
+-                                    .intersection(
+-                                        &state
+-                                            .transform_to_screen
+-                                            .outer_transformed_rect(&geometry.cast())
+-                                            .cast()
+-                                            .union(
+-                                                &state
+-                                                    .old_transform_to_screen
+-                                                    .outer_transformed_rect(&geometry.cast())
+-                                                    .cast(),
+-                                            ),
+-                                    )
+-                                    .unwrap_or_default();
+-                                if new_state.clipped.is_empty() {
+-                                    return ItemVisitorResult::SkipChildren;
+-                                }
++                        } else if let Some(tr) = &tracker {
++                            tr.as_ref().register_as_dependency_to_current_binding();
++                            // A clean layer the renderer drew from its own cache: nothing
++                            // below it changed (its tracker would be dirty), so its children
++                            // add no dirty region. Skip the walk.
++                            if *cached_layer && !self.actual_renderer.layer_content_changed(&item_rc) {
++                                let children = *children_bounds;
++                                drop(cache);
++                                self.add_bounds(children);
++                                return ItemVisitorResult::SkipChildren;
                              }
+-                            ItemVisitorResult::Continue(new_state)
+                         }
+-                    }
+-                    None => {
+-                        let cache_entry = PartialRenderingCachedData::new(new_geom.clone());
+-                        rendering_data.cache_index.set(cache.insert(cache_entry));
+-                        rendering_data.cache_generation.set(cache.generation());
+-
+-                        new_state.adjust_transforms_for_child(
+-                            &new_geom.transform(),
+-                            &new_geom.transform(),
+-                        );
  
-                             if let CachedItemBoundingBoxAndTransform::ClipItem {
-@@ -785,7 +812,9 @@
+-                        if let CachedItemBoundingBoxAndTransform::ClipItem { geometry, .. } =
+-                            new_geom
++                        if let CachedItemBoundingBoxAndTransform::ClipItem {
++                            geometry, ..
++                        } = &cached_geom
+                         {
+                             new_state.clipped = new_state
+                                 .clipped
+@@ -671,32 +867,67 @@
+                                     &state
+                                         .transform_to_screen
+                                         .outer_transformed_rect(&geometry.cast())
+-                                        .cast(),
++                                        .cast()
++                                        .union(
++                                            &state
++                                                .old_transform_to_screen
++                                                .outer_transformed_rect(&geometry.cast())
++                                                .cast(),
++                                        ),
+                                 )
+                                 .unwrap_or_default();
++                            if new_state.clipped.is_empty() {
++                                return ItemVisitorResult::SkipChildren;
++                            }
+                         }
+-
+-                        self.dirty_region.add_rect(new_screen_rect);
+-                        if new_state.clipped.is_empty() {
+-                            ItemVisitorResult::SkipChildren
+-                        } else {
+-                            ItemVisitorResult::Continue(new_state)
+-                        }
++                        ItemVisitorResult::Continue(new_state)
+                     }
+                 }
+-            },
+-            {
+-                let initial_transform =
+-                    euclid::Transform2D::translation(origin.x as f32, origin.y as f32);
+-                ComputeDirtyRegionState {
+-                    transform_to_screen: initial_transform,
+-                    old_transform_to_screen: initial_transform,
+-                    clipped: LogicalRect::from_size(size),
+-                    must_refresh_children: false,
+-                    depth: 0,
++                None => {
++                    self.walk_events += 1;
++                    let cache_entry = PartialRenderingCachedData::new(new_geom.clone());
++                    rendering_data.cache_index.set(cache.insert(cache_entry));
++                    rendering_data.cache_generation.set(cache.generation());
++
++                    new_state.adjust_transforms_for_child(
++                        &new_geom.transform(),
++                        &new_geom.transform(),
++                    );
++
++                    if let CachedItemBoundingBoxAndTransform::ClipItem { geometry, .. } =
++                        new_geom
++                    {
++                        new_state.clipped = new_state
++                            .clipped
++                            .intersection(
++                                &state
++                                    .transform_to_screen
++                                    .outer_transformed_rect(&geometry.cast())
++                                    .cast(),
++                            )
++                            .unwrap_or_default();
++                    }
++
++                    self.dirty_region.add_rect(new_screen_rect);
++                    if new_state.clipped.is_empty() {
++                        ItemVisitorResult::SkipChildren
++                    } else {
++                        ItemVisitorResult::Continue(new_state)
++                    }
+                 }
+-            },
+-        );
++            }
++    }
++
++    /// Add `rect` to where the innermost subtree being walked reaches.
++    fn add_bounds(&mut self, rect: Option<LogicalRect>) {
++        if let Some(top) = self.bounds.last_mut() {
++            *top = match (*top, rect) {
++                (Some(_), Some(r)) if r.is_empty() => *top,
++                (Some(t), Some(r)) if t.is_empty() => Some(r),
++                (Some(t), Some(r)) => Some(t.union(&r)),
++                _ => None,
++            };
++        }
+     }
+ 
+     fn mark_dirty_rect(
+@@ -771,6 +1002,25 @@
+ }
+ 
+ impl<T: ItemRenderer + ItemRendererFeatures> ItemRenderer for PartialRenderer<'_, T> {
++    fn layer_content_changed(&self, item_rc: &ItemRc) -> bool {
++        self.actual_renderer.layer_content_changed(item_rc)
++    }
++
++    fn skip_subtree(&mut self, item_rc: &ItemRc) -> bool {
++        let item = item_rc.borrow();
++        let mut cache = self.cache.borrow_mut();
++        let Some(bounds) = item
++            .cached_rendering_data_offset()
++            .get_entry(&mut cache)
++            .and_then(|e| e.subtree.as_ref())
++            .and_then(|w| w.bounds)
++        else {
++            return false;
++        };
++        // A pixel of margin over the walk's rounding.
++        !self.dirty_region.draw_intersects(bounds.inflate(1 as Coord, 1 as Coord))
++    }
++
+     fn filter_item(
+         &mut self,
+         item_rc: &ItemRc,
+@@ -785,7 +1035,9 @@
              rendering_data.get_entry(&mut cache).map(|e| {
                  let draw = self.item_is_drawn(e.data.bounding_rect());
                  let offset = match &e.data {
@@ -483,7 +1212,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
                      _ => None,
                  };
                  (draw, offset)
-@@ -793,8 +822,12 @@
+@@ -793,8 +1045,12 @@
          };
  
          // Items that are not drawn only need their origin; this skips e.g. shaping off-screen text.
@@ -498,7 +1227,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
          }
  
          // Query untracked, as the bounding rect calculation already registers a dependency on the geometry.
-@@ -820,7 +853,24 @@
+@@ -820,7 +1076,24 @@
  
      forward_rendering_call!(fn visit_clip(Clip) -> RenderingResult);
      forward_rendering_call!(fn visit_opacity(Opacity) -> RenderingResult);
@@ -524,7 +1253,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
  
      fn combine_clip(&mut self, rect: LogicalRect, radius: LogicalBorderRadius) -> bool {
          self.actual_renderer.combine_clip(rect, radius)
-@@ -902,6 +952,12 @@
+@@ -902,6 +1175,12 @@
  }
  
  impl PartialRenderingState {
@@ -537,7 +1266,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      /// Creates a partial renderer that's initialized with the partial rendering caches maintained in this state structure.
      /// Call [`Self::apply_dirty_region`] after this function to compute the correct partial rendering region.
      pub fn create_partial_renderer<T: ItemRenderer + ItemRendererFeatures>(
-@@ -922,6 +978,7 @@
+@@ -922,6 +1201,7 @@
          logical_window_size: LogicalSize,
          dirty_region_of_existing_buffer: Option<DirtyRegion>,
      ) -> DirtyRegion {
@@ -545,7 +1274,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
          for (component, origin) in components {
              if let Some(component) = crate::item_tree::ItemTreeWeak::upgrade(component) {
                  partial_renderer.compute_dirty_regions(&component, *origin, logical_window_size);
-@@ -952,6 +1009,19 @@
+@@ -952,6 +1232,19 @@
          region_to_repaint
      }
  
@@ -566,8 +1295,8 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      pub fn mark_dirty_region(&self, region: DirtyRegion) {
          self.force_dirty.replace_with(|r| r.union(&region));
 diff -ruN a/i-slint-core/properties/change_tracker.rs b/i-slint-core/properties/change_tracker.rs
---- a/i-slint-core/properties/change_tracker.rs	2026-11-04 00:32:51.886796043 -0700
-+++ b/i-slint-core/properties/change_tracker.rs	2026-11-04 00:32:51.890890031 -0700
+--- a/i-slint-core/properties/change_tracker.rs	2026-11-04 01:21:57.544673760 -0700
++++ b/i-slint-core/properties/change_tracker.rs	2026-11-04 01:21:57.547553806 -0700
 @@ -119,6 +119,7 @@
                  let _self_raw = _self;
                  let _self = _self as *const BindingHolder<ChangeTrackerInner<T, EF, NF, Data>>;
@@ -604,8 +1333,8 @@ diff -ruN a/i-slint-core/properties/change_tracker.rs b/i-slint-core/properties/
                      ((*addr_of!((*node).vtable)).evaluate)(
                          node as *mut BindingHolder,
 diff -ruN a/i-slint-core/properties/properties_animations.rs b/i-slint-core/properties/properties_animations.rs
---- a/i-slint-core/properties/properties_animations.rs	2026-11-04 00:32:51.886796043 -0700
-+++ b/i-slint-core/properties/properties_animations.rs	2026-11-04 00:32:51.890996907 -0700
+--- a/i-slint-core/properties/properties_animations.rs	2026-11-04 01:21:57.544673760 -0700
++++ b/i-slint-core/properties/properties_animations.rs	2026-11-04 01:21:57.547553806 -0700
 @@ -431,7 +431,11 @@
          if self.state.get() == AnimatedBindingState::ShouldStart {
              return;
@@ -620,8 +1349,8 @@ diff -ruN a/i-slint-core/properties/properties_animations.rs b/i-slint-core/prop
              self.carried_velocity
                  .set(self.animation_data.borrow().current_velocity().unwrap_or(0.0));
 diff -ruN a/i-slint-core/properties.rs b/i-slint-core/properties.rs
---- a/i-slint-core/properties.rs	2026-11-04 00:32:51.886796043 -0700
-+++ b/i-slint-core/properties.rs	2026-11-04 00:32:51.891692331 -0700
+--- a/i-slint-core/properties.rs	2026-11-04 01:21:57.544673760 -0700
++++ b/i-slint-core/properties.rs	2026-11-04 01:21:57.548105260 -0700
 @@ -175,6 +175,11 @@
              self.0.get().is_null()
          }
@@ -1165,8 +1894,8 @@ diff -ruN a/i-slint-core/properties.rs b/i-slint-core/properties.rs
      }
  }
 diff -ruN a/i-slint-core/rtti.rs b/i-slint-core/rtti.rs
---- a/i-slint-core/rtti.rs	2026-11-04 00:32:51.886996948 -0700
-+++ b/i-slint-core/rtti.rs	2026-11-04 00:32:51.890996907 -0700
+--- a/i-slint-core/rtti.rs	2026-11-04 01:21:57.544673760 -0700
++++ b/i-slint-core/rtti.rs	2026-11-04 01:21:57.547553806 -0700
 @@ -256,7 +256,7 @@
          if !matches!(animation, AnimatedBindingKind::NotAnimated) {
              Err(())
@@ -1186,8 +1915,8 @@ diff -ruN a/i-slint-core/rtti.rs b/i-slint-core/rtti.rs
                      });
                      Ok(())
 diff -ruN a/i-slint-core/textlayout/sharedparley/cache.rs b/i-slint-core/textlayout/sharedparley/cache.rs
---- a/i-slint-core/textlayout/sharedparley/cache.rs	2026-11-04 00:32:51.887506293 -0700
-+++ b/i-slint-core/textlayout/sharedparley/cache.rs	2026-11-04 00:32:51.891483527 -0700
+--- a/i-slint-core/textlayout/sharedparley/cache.rs	2026-11-04 01:21:57.544985207 -0700
++++ b/i-slint-core/textlayout/sharedparley/cache.rs	2026-11-04 01:21:57.547928083 -0700
 @@ -11,7 +11,7 @@
  //! with the one shaping function every path must share.
  
@@ -1272,8 +2001,8 @@ diff -ruN a/i-slint-core/textlayout/sharedparley/cache.rs b/i-slint-core/textlay
              last_used: 0, // stamped right below, for both a hit and this miss
          }
 diff -ruN a/i-slint-core/textlayout/sharedparley/layout.rs b/i-slint-core/textlayout/sharedparley/layout.rs
---- a/i-slint-core/textlayout/sharedparley/layout.rs	2026-11-04 00:32:51.887506293 -0700
-+++ b/i-slint-core/textlayout/sharedparley/layout.rs	2026-11-04 00:32:51.891483527 -0700
+--- a/i-slint-core/textlayout/sharedparley/layout.rs	2026-11-04 01:21:57.544985207 -0700
++++ b/i-slint-core/textlayout/sharedparley/layout.rs	2026-11-04 01:21:57.547928083 -0700
 @@ -116,7 +116,7 @@
  pub(super) fn layout(
      layout_builder: &LayoutWithoutLineBreaksBuilder,
@@ -1303,8 +2032,8 @@ diff -ruN a/i-slint-core/textlayout/sharedparley/layout.rs b/i-slint-core/textla
      let get_ellipsis_glyph = |font_context: &mut parley::FontContext| {
          let mut layout = layout_builder.build(font_context, "…", None, None);
 diff -ruN a/i-slint-core/textlayout/sharedparley/shaping.rs b/i-slint-core/textlayout/sharedparley/shaping.rs
---- a/i-slint-core/textlayout/sharedparley/shaping.rs	2026-11-04 00:32:51.887506293 -0700
-+++ b/i-slint-core/textlayout/sharedparley/shaping.rs	2026-11-04 00:32:51.891483527 -0700
+--- a/i-slint-core/textlayout/sharedparley/shaping.rs	2026-11-04 01:21:57.544985207 -0700
++++ b/i-slint-core/textlayout/sharedparley/shaping.rs	2026-11-04 01:21:57.547928083 -0700
 @@ -29,6 +29,7 @@
      pub(super) link_color: Option<Color>,
  }
@@ -1376,8 +2105,8 @@ diff -ruN a/i-slint-core/textlayout/sharedparley/shaping.rs b/i-slint-core/textl
  
  pub(super) struct TextParagraph {
 diff -ruN a/i-slint-core/textlayout/sharedparley.rs b/i-slint-core/textlayout/sharedparley.rs
---- a/i-slint-core/textlayout/sharedparley.rs	2026-11-04 00:32:51.887506293 -0700
-+++ b/i-slint-core/textlayout/sharedparley.rs	2026-11-04 00:32:51.891329112 -0700
+--- a/i-slint-core/textlayout/sharedparley.rs	2026-11-04 01:21:57.544985207 -0700
++++ b/i-slint-core/textlayout/sharedparley.rs	2026-11-04 01:21:57.547804433 -0700
 @@ -5,6 +5,17 @@
  pub use parley;
  pub use parley::fontique;
@@ -1461,8 +2190,8 @@ diff -ruN a/i-slint-core/textlayout/sharedparley.rs b/i-slint-core/textlayout/sh
  
  /// The content widths of the text. See [`crate::renderer::ContentWidths`].
 diff -ruN a/i-slint-core/window.rs b/i-slint-core/window.rs
---- a/i-slint-core/window.rs	2026-11-04 00:32:51.887860360 -0700
-+++ b/i-slint-core/window.rs	2026-11-04 00:32:51.891692331 -0700
+--- a/i-slint-core/window.rs	2026-11-04 01:21:57.545235751 -0700
++++ b/i-slint-core/window.rs	2026-11-04 01:21:57.548105260 -0700
 @@ -571,6 +571,12 @@
      text_input_focused: Property<bool>,
      #[pin]
@@ -1476,16 +2205,18 @@ diff -ruN a/i-slint-core/window.rs b/i-slint-core/window.rs
  }
  
  /// The outcome of dispatching a [`MouseEvent`] through [`WindowInner::process_mouse_input`].
-@@ -668,6 +674,8 @@
+@@ -668,6 +674,10 @@
  
      /// Stack of currently active popups
      pub active_popups: RefCell<Vec<PopupWindow>>,
 +    /// The item trees and their origins the last frame drew (`draw_contents_if_changed`).
 +    drawn_trees: RefCell<Vec<(usize, LogicalPoint)>>,
++    /// An instantiation pass created or dropped item trees since the last dirty-region walk.
++    instantiated: Cell<bool>,
      next_popup_id: Cell<NonZeroU32>,
      had_popup_on_press: Cell<bool>,
      close_requested: Callback<(), CloseRequestResponse>,
-@@ -728,6 +736,8 @@
+@@ -728,6 +738,8 @@
                      SharedVector::default(),
                      "i_slint_core::Window::menubar_shortcuts",
                  ),
@@ -1494,23 +2225,21 @@ diff -ruN a/i-slint-core/window.rs b/i-slint-core/window.rs
              }),
              focus_item: Default::default(),
              focus_item_visibility_tracker: Default::default(),
-@@ -735,6 +745,7 @@
+@@ -735,6 +747,8 @@
              last_ime_text: Default::default(),
              cursor_blinker: Default::default(),
              active_popups: Default::default(),
 +            drawn_trees: Default::default(),
++            instantiated: Cell::new(true),
              next_popup_id: Cell::new(NonZeroU32::MIN),
              had_popup_on_press: Default::default(),
              close_requested: Default::default(),
-@@ -796,11 +807,27 @@
+@@ -796,11 +810,30 @@
          // sees the model property before any change handler can reset it.
          for _ in 0..10 {
              let mut changed = false;
 -            if let Some(component) = self.try_component() {
 -                changed |= crate::item_tree::ensure_item_tree_instantiated(&component);
--            }
--            for popup in self.active_popups.borrow().iter() {
--                changed |= crate::item_tree::ensure_item_tree_instantiated(&popup.component);
 +            // Walk the repeaters and conditionals only when something the last walk read
 +            // changed (a model, a row count, a condition), or the component or popups did.
 +            let fields = self.pinned_fields.as_ref().project_ref();
@@ -1533,9 +2262,27 @@ diff -ruN a/i-slint-core/window.rs b/i-slint-core/window.rs
 +                    changed
 +                });
              }
+-            for popup in self.active_popups.borrow().iter() {
+-                changed |= crate::item_tree::ensure_item_tree_instantiated(&popup.component);
++            if changed {
++                self.instantiated.set(true);
+             }
              changed |= crate::properties::ChangeTracker::run_change_handlers_once();
              if !changed {
-@@ -1843,16 +1870,74 @@
+@@ -810,6 +843,12 @@
+         crate::debug_log!("Slint: long callback/instantiation chain detected");
+     }
+ 
++    /// Whether item trees were created or dropped since the last call (the dirty-region walk
++    /// then walks every tree).
++    pub fn take_instantiated(&self) -> bool {
++        self.instantiated.replace(false)
++    }
++
+     /// Returns a slice of the active popups.
+     pub fn active_popups(&self) -> core::cell::Ref<'_, [PopupWindow]> {
+         core::cell::Ref::map(self.active_popups.borrow(), |v| v.as_slice())
+@@ -1843,16 +1882,74 @@
              &dyn Fn(&mut dyn crate::item_rendering::ItemRenderer),
          ) -> T,
      ) -> Option<T> {
@@ -1611,7 +2358,7 @@ diff -ruN a/i-slint-core/window.rs b/i-slint-core/window.rs
              || {
                  if !self
                      .active_popups
-@@ -1877,7 +1962,7 @@
+@@ -1877,7 +1974,7 @@
                      render_components(&item_trees, &post_render)
                  }
              },
@@ -1621,8 +2368,8 @@ diff -ruN a/i-slint-core/window.rs b/i-slint-core/window.rs
  
      /// Draws the source `DragArea`'s `drag-image` under the cursor when a drag is in flight.
 diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-software/draw_functions.rs
---- a/i-slint-renderer-software/draw_functions.rs	2026-11-04 00:32:51.893381576 -0700
-+++ b/i-slint-renderer-software/draw_functions.rs	2026-11-04 00:32:51.895083624 -0700
+--- a/i-slint-renderer-software/draw_functions.rs	2026-11-04 01:21:57.549005990 -0700
++++ b/i-slint-renderer-software/draw_functions.rs	2026-11-04 01:21:57.550234464 -0700
 @@ -32,6 +32,40 @@
          extra: super::SceneTextureExtra { colorize, alpha, rotation, dx, dy, off_x, off_y },
      } = *texture;
@@ -1693,8 +2440,8 @@ diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-softw
                          ((data[pos] as u16 * alpha as u16) / 255) as u8,
                          color.red(),
 diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs b/i-slint-renderer-software/fonts/systemfonts.rs
---- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-04 00:32:51.893632761 -0700
-+++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-04 00:32:51.895083624 -0700
+--- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-04 01:21:57.549188306 -0700
++++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-04 01:21:57.550234464 -0700
 @@ -79,7 +79,27 @@
      path: &std::path::Path,
  ) -> Result<(), alloc::boxed::Box<dyn std::error::Error>> {
@@ -1725,8 +2472,8 @@ diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs b/i-slint-renderer-so
 +    static REGISTERED_FONT_FILES: RefCell<HashMap<std::path::PathBuf, (u64, Option<std::time::SystemTime>)>> = Default::default();
 +}
 diff -ruN a/i-slint-renderer-software/fonts/vectorfont.rs b/i-slint-renderer-software/fonts/vectorfont.rs
---- a/i-slint-renderer-software/fonts/vectorfont.rs	2026-11-04 00:32:51.893632761 -0700
-+++ b/i-slint-renderer-software/fonts/vectorfont.rs	2026-11-04 00:32:51.895083624 -0700
+--- a/i-slint-renderer-software/fonts/vectorfont.rs	2026-11-04 01:21:57.549188306 -0700
++++ b/i-slint-renderer-software/fonts/vectorfont.rs	2026-11-04 01:21:57.550234464 -0700
 @@ -194,6 +194,8 @@
                  return Some(entry.clone());
              }
@@ -1757,8 +2504,8 @@ diff -ruN a/i-slint-renderer-software/fonts/vectorfont.rs b/i-slint-renderer-sof
          })
      }
 diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
---- a/i-slint-renderer-software/lib.rs	2026-11-04 00:32:51.893632761 -0700
-+++ b/i-slint-renderer-software/lib.rs	2026-11-04 00:32:51.895083624 -0700
+--- a/i-slint-renderer-software/lib.rs	2026-11-04 01:21:57.549188306 -0700
++++ b/i-slint-renderer-software/lib.rs	2026-11-04 01:21:57.550234464 -0700
 @@ -22,6 +22,8 @@
  #[cfg(feature = "path")]
  mod path;
@@ -3102,7 +3849,19 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {
          match self.current_state.clip.intersection(&other) {
              Some(r) => {
-@@ -3330,15 +4180,38 @@
+@@ -3225,6 +4075,11 @@
+         self.window
+     }
+ 
++    #[cfg(feature = "std")]
++    fn layer_content_changed(&self, item_rc: &ItemRc) -> bool {
++        self.layer_cache.is_some_and(|cache| cache.is_dirty(item_rc) == Some(true))
++    }
++
+     fn as_any(&mut self) -> Option<&mut dyn core::any::Any> {
+         None
+     }
+@@ -3330,15 +4185,38 @@
          glyphs_it: &mut dyn Iterator<Item = sharedparley::parley::layout::Glyph>,
      ) {
          let slint_context = self.window.context();
@@ -3150,7 +3909,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          );
  
          let global_offset: euclid::Vector2D<f32, PhysicalPx> =
-@@ -3376,6 +4249,7 @@
+@@ -3376,6 +4254,7 @@
              let Some(glyph) = font.render_vector_glyph(id, subpixel_bin, slint_context) else {
                  continue;
              };
@@ -3160,7 +3919,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
              // i32 so a glyph past the i16 range survives until it is clipped below.
 diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/parallel.rs
 --- a/i-slint-renderer-software/parallel.rs	1969-12-31 17:00:00.000000000 -0700
-+++ b/i-slint-renderer-software/parallel.rs	2026-11-04 00:32:51.895083624 -0700
++++ b/i-slint-renderer-software/parallel.rs	2026-11-04 01:21:57.550234464 -0700
 @@ -0,0 +1,633 @@
 +// Copyright © SixtyFPS GmbH <info@slint.dev>
 +// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
@@ -3796,8 +4555,8 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 +    });
 +}
 diff -ruN a/i-slint-renderer-software/scene.rs b/i-slint-renderer-software/scene.rs
---- a/i-slint-renderer-software/scene.rs	2026-11-04 00:32:51.893632761 -0700
-+++ b/i-slint-renderer-software/scene.rs	2026-11-04 00:32:51.895083624 -0700
+--- a/i-slint-renderer-software/scene.rs	2026-11-04 01:21:57.549188306 -0700
++++ b/i-slint-renderer-software/scene.rs	2026-11-04 01:21:57.550234464 -0700
 @@ -312,6 +312,7 @@
      },
  }
@@ -3851,8 +4610,8 @@ diff -ruN a/i-slint-renderer-software/scene.rs b/i-slint-renderer-software/scene
      /// The gradient stops (colors and normalized angle positions)
      /// Position 0 = 0 degrees (north), 1 = 360 degrees
 diff -ruN a/slint-interpreter/bindings.rs b/slint-interpreter/bindings.rs
---- a/slint-interpreter/bindings.rs	2026-11-04 00:32:51.897197722 -0700
-+++ b/slint-interpreter/bindings.rs	2026-11-04 00:32:51.899996815 -0700
+--- a/slint-interpreter/bindings.rs	2026-11-04 01:21:57.551249140 -0700
++++ b/slint-interpreter/bindings.rs	2026-11-04 01:21:57.553622847 -0700
 @@ -216,6 +216,13 @@
                  matches!(eval_expression(&mut ctx, &expr), Value::Bool(true))
              });
@@ -3903,8 +4662,8 @@ diff -ruN a/slint-interpreter/bindings.rs b/slint-interpreter/bindings.rs
              prop.set_animated_binding(binding_fn, move || (anim_fn(), None));
          }
 diff -ruN a/slint-interpreter/Cargo.toml b/slint-interpreter/Cargo.toml
---- a/slint-interpreter/Cargo.toml	2026-11-04 00:32:51.897060265 -0700
-+++ b/slint-interpreter/Cargo.toml	2026-11-04 00:32:51.899523661 -0700
+--- a/slint-interpreter/Cargo.toml	2026-11-04 01:21:57.551161614 -0700
++++ b/slint-interpreter/Cargo.toml	2026-11-04 01:21:57.553354659 -0700
 @@ -153,17 +153,8 @@
  name = "slint_interpreter"
  path = "lib.rs"
@@ -3924,8 +4683,8 @@ diff -ruN a/slint-interpreter/Cargo.toml b/slint-interpreter/Cargo.toml
  [dependencies.derive_more]
  version = "2.0.0"
 diff -ruN a/slint-interpreter/eval.rs b/slint-interpreter/eval.rs
---- a/slint-interpreter/eval.rs	2026-11-04 00:32:51.897197722 -0700
-+++ b/slint-interpreter/eval.rs	2026-11-04 00:32:51.899628715 -0700
+--- a/slint-interpreter/eval.rs	2026-11-04 01:21:57.551249140 -0700
++++ b/slint-interpreter/eval.rs	2026-11-04 01:21:57.553555571 -0700
 @@ -439,7 +439,9 @@
                  panic!("invoke_function on non-function global reference")
              };
@@ -3947,8 +4706,8 @@ diff -ruN a/slint-interpreter/eval.rs b/slint-interpreter/eval.rs
              inner_ctx.function_arg_types = function.args.clone();
              eval_expression(&mut inner_ctx, &code)
 diff -ruN a/slint-interpreter/globals.rs b/slint-interpreter/globals.rs
---- a/slint-interpreter/globals.rs	2026-11-04 00:32:51.897197722 -0700
-+++ b/slint-interpreter/globals.rs	2026-11-04 00:32:51.899628715 -0700
+--- a/slint-interpreter/globals.rs	2026-11-04 01:21:57.551249140 -0700
++++ b/slint-interpreter/globals.rs	2026-11-04 01:21:57.553555571 -0700
 @@ -274,7 +274,7 @@
                  }
                  let expr = expr.clone();
@@ -3959,8 +4718,8 @@ diff -ruN a/slint-interpreter/globals.rs b/slint-interpreter/globals.rs
                      eval_expression(&mut ctx, &expr)
                  });
 diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_vtable.rs
---- a/slint-interpreter/item_tree_vtable.rs	2026-11-04 00:32:51.897197722 -0700
-+++ b/slint-interpreter/item_tree_vtable.rs	2026-11-04 00:32:51.899628715 -0700
+--- a/slint-interpreter/item_tree_vtable.rs	2026-11-04 01:21:57.551249140 -0700
++++ b/slint-interpreter/item_tree_vtable.rs	2026-11-04 01:21:57.553622847 -0700
 @@ -242,6 +242,7 @@
      }
  
@@ -4020,8 +4779,8 @@ diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_
  
      fn accessible_role(self: Pin<&Self>, item_index: u32) -> AccessibleRole {
 diff -ruN a/slint-interpreter/value_model.rs b/slint-interpreter/value_model.rs
---- a/slint-interpreter/value_model.rs	2026-11-04 00:32:51.897996836 -0700
-+++ b/slint-interpreter/value_model.rs	2026-11-04 00:32:51.899996815 -0700
+--- a/slint-interpreter/value_model.rs	2026-11-04 01:21:57.551691967 -0700
++++ b/slint-interpreter/value_model.rs	2026-11-04 01:21:57.553622847 -0700
 @@ -8,6 +8,7 @@
  /// index. The type-erased equivalent of core's `impl Model for usize`; the
  /// count is baked in — a change to the number re-evaluates the model binding

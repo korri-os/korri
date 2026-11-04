@@ -271,7 +271,9 @@ pub fn render_item_children(
                 RenderingResult::ContinueRenderingChildren
             };
 
-            if matches!(render_result, RenderingResult::ContinueRenderingChildren) {
+            if matches!(render_result, RenderingResult::ContinueRenderingChildren)
+                && !(index == 0 && renderer.skip_subtree(&item_rc))
+            {
                 render_item_children(renderer, component, index as isize, window_adapter);
             }
             renderer.restore_state();
@@ -738,6 +740,19 @@ pub trait ItemRenderer {
     ///  - if the item needs to be drawn (false means it is clipped or doesn't need to be drawn)
     ///  - the origin of the item
     ///  - the size of the item, or None if it doesn't need to be drawn and the size wasn't computed
+    /// Whether the content of `item_rc`, a `Layer` the renderer caches, changed since its
+    /// cached drawing. Its children are then drawn by the layer, not through their own
+    /// trackers, so the dirty-region walk cannot see them change.
+    fn layer_content_changed(&self, _item_rc: &ItemRc) -> bool {
+        false
+    }
+
+    /// Whether the items below `item_rc` (the root item of a nested item tree) can all be
+    /// left out: none of them reaches the area being drawn. Only the item itself is drawn.
+    fn skip_subtree(&mut self, _item_rc: &ItemRc) -> bool {
+        false
+    }
+
     fn filter_item(
         &mut self,
         item: &ItemRc,
