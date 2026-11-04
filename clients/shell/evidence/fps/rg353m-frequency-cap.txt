@@ -1,0 +1,22 @@
+# RG353M: why press rows varied 25-63 over between runs (#360). Script: run10.sh (interleaved runs; korrid/dbus CPU per run from /proc/PID/stat; a control window of the same length with no bench; temperature; scaling_max_freq and time_in_state per run).
+# 1. Same build and packages, one ssh session, 4 runs. Within run 1 the cap returns to 1104 MHz (FULLSPEED had raised it to 1800); runs 2-4 never leave 1104 MHz:
+RUN round=1 surface=zonenc load=1.30 over=20 p95=16041 secs=13.4943 korrid_ticks=297 dbus_ticks=0 control_korrid_ticks=523 control_dbus_ticks=0 temp=47222 max=1104000 time_in_state=408:304,600:187,816:111,1104:168,1416:91,1608:29,1800:491,
+RUN round=2 surface=zonenc load=1.51 over=65 p95=26021 secs=14.7228 korrid_ticks=502 dbus_ticks=0 control_korrid_ticks=525 control_dbus_ticks=0 temp=46111 max=1104000 time_in_state=408:228,600:188,816:136,1104:950,
+RUN round=3 surface=zonenc load=1.15 over=61 p95=22090 secs=14.7409 korrid_ticks=499 dbus_ticks=0 control_korrid_ticks=606 control_dbus_ticks=0 temp=45000 max=1104000 time_in_state=408:233,600:125,816:107,1104:1038,
+RUN round=4 surface=zonenc load=0.87 over=63 p95=22515 secs=14.7068 korrid_ticks=488 dbus_ticks=0 control_korrid_ticks=598 control_dbus_ticks=0 temp=45000 max=1104000 time_in_state=408:199,600:128,816:117,1104:1058,
+# 2. korrid uses 30-39 ticks/s (30-39% of a core) with and without the bench (control window): the bench does not wake it.
+# zone: over [36, 62, 62, 63, 63, 64, 64, 64, 64, 65] median 63.5 IQR 62.0-64.0; korrid ticks/s bench 32.6 vs control 39.3
+# zonenc: over [60, 60, 60, 61, 61, 61, 62, 62, 63, 64] median 61.0 IQR 60.0-62.25; korrid ticks/s bench 33.6 vs control 39.1
+# 3. Builds interleaved, one session per run (so each run starts right after FULLSPEED raised the cap):
+RUN build=b2c round=1 surface=zonenc load=2.21 over=64 p95=24229 secs=13.3731 korrid_ticks=448 dbus_ticks=0 control_korrid_ticks=542 control_dbus_ticks=0
+RUN build=368 round=1 surface=zonenc load=1.89 over=30 p95=16606 secs=13.4699 korrid_ticks=344 dbus_ticks=0 control_korrid_ticks=545 control_dbus_ticks=0
+RUN build=head round=1 surface=zonenc load=2.40 over=27 p95=16174 secs=13.4506 korrid_ticks=353 dbus_ticks=0 control_korrid_ticks=379 control_dbus_ticks=0
+RUN build=b2c round=1 surface=zonenc load=3.06 over=46 p95=19881 secs=13.4425 korrid_ticks=439 dbus_ticks=0 control_korrid_ticks=535 control_dbus_ticks=0
+RUN build=368 round=1 surface=zonenc load=2.08 over=26 p95=16306 secs=13.4803 korrid_ticks=377 dbus_ticks=0 control_korrid_ticks=476 control_dbus_ticks=0
+RUN build=head round=1 surface=zonenc load=1.98 over=28 p95=16546 secs=13.3703 korrid_ticks=343 dbus_ticks=0 control_korrid_ticks=372 control_dbus_ticks=0
+RUN build=b2c round=1 surface=zonenc load=1.80 over=51 p95=19148 secs=13.4857 korrid_ticks=398 dbus_ticks=0 control_korrid_ticks=576 control_dbus_ticks=0
+RUN build=368 round=1 surface=zonenc load=1.40 over=32 p95=16957 secs=13.3903 korrid_ticks=238 dbus_ticks=0 control_korrid_ticks=508 control_dbus_ticks=0
+RUN build=head round=1 surface=zonenc load=1.86 over=35 p95=17003 secs=13.3986 korrid_ticks=361 dbus_ticks=0 control_korrid_ticks=514 control_dbus_ticks=0
+RUN build=b2c round=1 surface=zonenc load=1.77 over=39 p95=18019 secs=13.45 korrid_ticks=391 dbus_ticks=0 control_korrid_ticks=588 control_dbus_ticks=0
+RUN build=368 round=1 surface=zonenc load=3.15 over=36 p95=18103 secs=13.3675 korrid_ticks=249 dbus_ticks=0 control_korrid_ticks=435 control_dbus_ticks=0
+RUN build=head round=1 surface=zonenc load=3.27 over=28 p95=16335 secs=13.3862 korrid_ticks=352 dbus_ticks=0 control_korrid_ticks=527 control_dbus_ticks=0
