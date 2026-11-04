@@ -1,0 +1,32 @@
+MEASURE zone-quiet secs=15 shell_cpu_pct=41 fixture_cpu_pct=0 max=1800000 time_in_state=600:65,816:378,1104:324,1416:171,1608:98,1800:497, temp=63333 rss_kib=141796 heap_kib=104900
+THREAD zone-quiet 478919 ld-linux-aarch6 23%
+THREAD zone-quiet 480252 korrid-requests 0%
+THREAD zone-quiet 480254 korrid-native-i 0%
+THREAD zone-quiet 480258 logic-zone 0%
+THREAD zone-quiet 480262 korrid-watch-zo 0%
+THREAD zone-quiet 480268 blocking-1 0%
+THREAD zone-quiet exited-threads(band) 18%
+MEASURE zone-attract secs=30 shell_cpu_pct=125 fixture_cpu_pct=0 max=1416000 time_in_state=600:23,816:61,1104:343,1416:846,1608:1103,1800:665, temp=69375 rss_kib=142392 heap_kib=104940
+THREAD zone-attract 478919 ld-linux-aarch6 52%
+THREAD zone-attract 480252 korrid-requests 0%
+THREAD zone-attract 480254 korrid-native-i 0%
+THREAD zone-attract 480258 logic-zone 0%
+THREAD zone-attract 480262 korrid-watch-zo 0%
+THREAD zone-attract 480268 blocking-1 0%
+THREAD zone-attract exited-threads(band) 72%
+MEASURE pico-idle secs=30 shell_cpu_pct=12 fixture_cpu_pct=1 max=1800000 time_in_state=408:2144,600:392,816:195,1104:100,1416:45,1608:11,1800:145, temp=51250 rss_kib=180388 heap_kib=142748
+THREAD pico-idle 478919 ld-linux-aarch6 11%
+THREAD pico-idle 480252 korrid-requests 0%
+THREAD pico-idle 480254 korrid-native-i 0%
+THREAD pico-idle 480268 blocking-1 0%
+THREAD pico-idle 486543 logic-pico 0%
+THREAD pico-idle 486547 korrid-watch-pi 0%
+THREAD pico-idle exited-threads(band) 0%
+MEASURE zone-quiet-again secs=15 shell_cpu_pct=76 fixture_cpu_pct=0 max=1800000 time_in_state=816:101,1104:365,1416:231,1608:224,1800:615, temp=66875 rss_kib=182728 heap_kib=145136
+THREAD zone-quiet-again 478919 ld-linux-aarch6 33%
+THREAD zone-quiet-again 480252 korrid-requests 0%
+THREAD zone-quiet-again 480254 korrid-native-i 0%
+THREAD zone-quiet-again 480268 blocking-1 0%
+THREAD zone-quiet-again 486658 logic-zone 0%
+THREAD zone-quiet-again 486662 korrid-watch-zo 0%
+THREAD zone-quiet-again exited-threads(band) 43%
