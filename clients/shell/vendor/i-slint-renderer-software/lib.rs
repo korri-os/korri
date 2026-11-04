@@ -290,6 +290,30 @@ impl PhysicalRegion {
         })
     }
 
+    /// The same pixels, however the rectangles split them.
+    #[cfg(feature = "std")]
+    fn same(&self, other: &PhysicalRegion) -> bool {
+        let bounds = self.bounding_rect();
+        if bounds != other.bounding_rect() {
+            return false;
+        }
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        let mut line = bounds.min_y();
+        while line < bounds.max_y() {
+            let next_a = region_line_ranges(self, line, &mut a);
+            let next_b = region_line_ranges(other, line, &mut b);
+            if a != b {
+                return false;
+            }
+            line = match (next_a, next_b) {
+                (Some(x), Some(y)) => x.min(y),
+                (Some(x), None) | (None, Some(x)) => x,
+                (None, None) => break,
+            };
+        }
+        true
+    }
+
     fn intersection(&self, clip: &PhysicalRect) -> PhysicalRegion {
         let mut res = Self::default();
         let clip = clip.to_box2d();
@@ -569,6 +593,14 @@ pub struct SoftwareRenderer {
     #[cfg(feature = "systemfonts")]
     drawn_root: Cell<usize>,
     skip_quiet_frames: Cell<bool>,
+    /// The last frame drawn from recorded ops: its region and ops. A frame recording the
+    /// same ops over the same region draws the same image, so it is not drawn or presented.
+    #[cfg(feature = "std")]
+    last_frame: RefCell<Option<(PhysicalRegion, Vec<parallel::Op>)>>,
+    /// With swapped buffers: the previous frame's dirty region as this frame found it, for a
+    /// frame that is not drawn (the next one must still cover it).
+    #[cfg(feature = "std")]
+    prev_frame_dirty_before: Cell<DirtyRegion>,
 }
 
 impl Default for SoftwareRenderer {
@@ -598,6 +630,10 @@ impl Default for SoftwareRenderer {
             walk_profile: Default::default(),
             #[cfg(feature = "std")]
             check_layers_again: Default::default(),
+            #[cfg(feature = "std")]
+            last_frame: Default::default(),
+            #[cfg(feature = "std")]
+            prev_frame_dirty_before: Default::default(),
             drawn_frame: Default::default(),
             #[cfg(feature = "systemfonts")]
             drawn_root: Default::default(),
@@ -761,7 +797,7 @@ impl SoftwareRenderer {
             let stream = std::sync::Arc::new(parallel::OpStream::new());
             let shared = &*stream;
             let mut scratch = LinesOnly::like(buffer, pixel_stride, lines);
-            let (region, started) = std::thread::scope(|scope| {
+            let region = std::thread::scope(|scope| {
                 let mut unclaimed = Some(&mut *buffer);
                 let mut queue = None;
                 let mut start = |region: &PhysicalRegion, scale_factor: ScaleFactor| {
@@ -790,14 +826,28 @@ impl SoftwareRenderer {
                     self.render_buffer_inner(&mut scratch, true, Some(&mut start));
                 drop(start);
                 let started = std::time::Instant::now();
+                // The frame's region and ops, kept for the next frame to compare with.
+                let mut frame = None;
+                let mut same_as_previous = false;
                 if let Some(recorded) = recorded {
-                    match unclaimed.take() {
-                        None => shared.publish(recorded.ops, true),
-                        Some(buffer) => {
-                            let mut ops = shared.take_ops();
-                            ops.extend(recorded.ops);
-                            let recorded = parallel::Recorded { ops, ..recorded };
-                            parallel::replay_in_bands(&recorded, buffer, pixel_stride, 1);
+                    if recorded.same_as_previous {
+                        // The previous frame's image: nothing to draw.
+                        same_as_previous = true;
+                        shared.publish(Vec::new(), true);
+                        frame = Some((recorded.dirty_region, recorded.ops));
+                    } else {
+                        match unclaimed.take() {
+                            None => {
+                                shared.publish(recorded.ops, true);
+                                frame = Some((recorded.dirty_region, Vec::new()));
+                            }
+                            Some(buffer) => {
+                                let mut ops = shared.take_ops();
+                                ops.extend(recorded.ops);
+                                let recorded = parallel::Recorded { ops, ..recorded };
+                                parallel::replay_in_bands(&recorded, buffer, pixel_stride, 1);
+                                frame = Some((recorded.dirty_region, recorded.ops));
+                            }
                         }
                     }
                 } else {
@@ -807,8 +857,32 @@ impl SoftwareRenderer {
                 if let Some(queue) = queue.take() {
                     queue.work(shared);
                 }
-                (region, started)
+                (region, started, frame, same_as_previous)
             });
+            let (region, started, frame, same_as_previous) = region;
+            // Every op of a frame streamed to the band threads is in the stream (they ended).
+            let frame = frame.map(|(region, mut ops)| {
+                if ops.is_empty() {
+                    ops = stream.take_ops();
+                }
+                (region, ops)
+            });
+            // A frame not walked (nothing changed) keeps the last one's.
+            if frame.is_some() {
+                *self.last_frame.borrow_mut() = frame;
+            }
+            if same_as_previous {
+                // Not drawn and not presented: with swapped buffers the next frame gets this
+                // frame's buffer again, which lacks what the previous frame changed. This
+                // frame changed no pixel, so that is all the next one must also redraw.
+                if self.repaint_buffer_type.get() == RepaintBufferType::SwappedBuffers {
+                    self.prev_frame_dirty.set(self.prev_frame_dirty_before.take());
+                }
+                self.last_phases.set((self.last_phases.get().0, started.elapsed()));
+                self.last_replay.set(Default::default());
+                return PhysicalRegion::default();
+            }
+
             // The scope waited for the band threads: their tail counts as replay.
             let replay = started.elapsed();
             let (walk, record) = self.last_phases.get();
@@ -982,6 +1056,9 @@ impl SoftwareRenderer {
         #[cfg(feature = "std")]
         if record {
             renderer.actual_renderer.processor.recording = Some(parallel::Recorder::new());
+        } else {
+            // Drawn without recording: no ops to compare the next frame with.
+            self.last_frame.take();
         }
         let window_adapter = renderer.window_adapter.clone();
 
@@ -1030,12 +1107,15 @@ impl SoftwareRenderer {
                         );
                     }
                     RepaintBufferType::SwappedBuffers => {
+                        let before = self.prev_frame_dirty.take();
+                        #[cfg(feature = "std")]
+                        self.prev_frame_dirty_before.set(before.clone());
                         let dirty_region_for_this_frame =
                             self.partial_rendering_state.apply_dirty_region(
                                 &mut renderer,
                                 components,
                                 logical_size,
-                                Some(self.prev_frame_dirty.take()),
+                                Some(before),
                             );
                         self.prev_frame_dirty.set(dirty_region_for_this_frame);
                     }
@@ -1073,6 +1153,20 @@ impl SoftwareRenderer {
                 renderer.actual_renderer.processor.dirty_region = dirty_region.clone();
                 #[cfg(feature = "std")]
                 if let Some(recorder) = &mut renderer.actual_renderer.processor.recording {
+                    // Over the region the last recorded frame drew, its ops: the same ops
+                    // draw the same image (`Recorder::compare_with`). A fresh buffer holds
+                    // no image to keep.
+                    let last = self.last_frame.take();
+                    if self.skip_quiet_frames.get()
+                        && self.repaint_buffer_type.get() != RepaintBufferType::NewBuffer
+                    {
+                        if let Some((region, ops)) = last {
+                            if region.same(&dirty_region) {
+                                recorder.compare_with(ops);
+                            }
+                        }
+                    }
+                    recorder.cover_region(dirty_region.bounding_rect());
                     if let Some(stream) = start_bands.as_mut().and_then(|start| start(&dirty_region, factor)) {
                         recorder.stream_to(stream);
                     }
@@ -1163,8 +1257,10 @@ impl SoftwareRenderer {
                 self.measure_frame_rendered(&mut renderer);
                 #[cfg(feature = "std")]
                 if let Some(recorder) = renderer.actual_renderer.processor.recording.take() {
+                    let (ops, same_as_previous) = recorder.into_ops();
                     recorded = Some(parallel::Recorded {
-                        ops: recorder.into_ops(),
+                        ops,
+                        same_as_previous,
                         dirty_region: dirty_region.clone(),
                         scale_factor: factor,
                     });
@@ -3022,7 +3118,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 item_rc.index() as isize,
                 &window_adapter,
             );
-            nested.processor.recording.take().map(|recorder| recorder.into_ops()).unwrap_or_default()
+            nested.processor.recording.take().map(|recorder| recorder.into_ops().0).unwrap_or_default()
         };
         // The area is what the calls draw, which may reach past the children's boxes.
         let drawn = ops
