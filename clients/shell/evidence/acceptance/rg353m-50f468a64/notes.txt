@@ -1,0 +1,15 @@
+20:19:05 backlight before: /sys/class/backlight/backlight 833/1666 bl_power=0
+[
+  {
+    "success": true
+  }
+]
+[
+  {
+    "success": true
+  }
+]
+20:19:06 backlight after: /sys/class/backlight/backlight 833/1666 bl_power=0
+20:21:10 shell process: 444822 after install
+20:24:19 script done
+20:24:49 restored

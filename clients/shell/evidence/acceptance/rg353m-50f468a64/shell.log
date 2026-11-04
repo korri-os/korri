@@ -1,0 +1,44 @@
+Nov 04 20:14:09.724947 haku systemd[1]: Started [systemd-run] /run/current-system/sw/bin/sh -c "/tmp/korri-preview/run-shell.sh install --packages /tmp/korri-preview/packages --cache /run/korri-preview/cache && exec /tmp/korri-preview/run-shell.sh --packages /tmp/korri-preview/packages --cache /run/korri-preview/cache --surfaces zone,pico --placement fullscreen --stats".
+Nov 04 20:15:09.247320 haku sh[443457]: korri-shell: Permission denied (os error 13)
+Nov 04 20:15:09.324952 haku systemd[1]: korri-accept-shell.service: Main process exited, code=exited, status=1/FAILURE
+Nov 04 20:15:09.327167 haku systemd[1]: korri-accept-shell.service: Failed with result 'exit-code'.
+Nov 04 20:15:09.337005 haku systemd[1]: korri-accept-shell.service: Consumed 58.499s CPU time over 59.607s wall clock time, 59.2M memory peak, 12K read from disk.
+Nov 04 20:19:11.533282 haku systemd[1]: Started [systemd-run] /run/current-system/sw/bin/sh -c "/tmp/korri-preview/run-shell.sh install --packages /tmp/korri-preview/packages --cache /run/korri-preview/cache && exec /tmp/korri-preview/run-shell.sh --packages /tmp/korri-preview/packages --cache /run/korri-preview/cache --surfaces zone,pico --placement fullscreen --stats".
+Nov 04 20:20:12.724171 haku sh[444827]: pico pass
+Nov 04 20:21:39.245639 haku systemd-journald[427]: Suppressed 3086 messages from korri-accept-shell.service
+Nov 04 20:21:39.245639 haku sh[444822]: SHELL_STATS fps=52.501 frames=263 seconds=5.009 heap_bytes=769557 interval_ms_p50=16.8 p95=32.7 max=39.7
+Nov 04 20:21:44.258647 haku sh[444822]: SHELL_STATS fps=12.767 frames=64 seconds=5.013 heap_bytes=867354 interval_ms_p50=27.6 p95=60.0 max=3241.5
+Nov 04 20:21:49.258894 haku sh[444822]: SHELL_STATS fps=42.798 frames=214 seconds=5.000 heap_bytes=862570 interval_ms_p50=24.1 p95=37.0 max=65.7
+Nov 04 20:21:54.259389 haku sh[444822]: SHELL_STATS fps=59.595 frames=298 seconds=5.000 heap_bytes=838778 interval_ms_p50=16.7 p95=18.4 max=34.1
+Nov 04 20:21:59.259629 haku sh[444822]: SHELL_STATS fps=59.999 frames=300 seconds=5.000 heap_bytes=838778 interval_ms_p50=16.7 p95=18.1 max=22.7
+Nov 04 20:22:04.259560 haku sh[444822]: SHELL_STATS fps=52.798 frames=264 seconds=5.000 heap_bytes=840710 interval_ms_p50=16.8 p95=32.8 max=65.8
+Nov 04 20:22:09.260033 haku sh[444822]: SHELL_STATS fps=57.598 frames=288 seconds=5.000 heap_bytes=841274 interval_ms_p50=16.8 p95=23.2 max=62.7
+Nov 04 20:22:14.260430 haku sh[444822]: SHELL_STATS fps=59.991 frames=300 seconds=5.001 heap_bytes=841274 interval_ms_p50=16.7 p95=18.1 max=20.1
+Nov 04 20:22:19.260796 haku sh[444822]: SHELL_STATS fps=60.197 frames=301 seconds=5.000 heap_bytes=841274 interval_ms_p50=16.7 p95=18.1 max=19.9
+Nov 04 20:22:24.260948 haku sh[444822]: SHELL_STATS fps=59.996 frames=300 seconds=5.000 heap_bytes=841274 interval_ms_p50=16.7 p95=18.0 max=20.8
+Nov 04 20:22:29.263310 haku sh[444822]: SHELL_STATS fps=59.800 frames=299 seconds=5.000 heap_bytes=841274 interval_ms_p50=16.7 p95=18.1 max=22.1
+Nov 04 20:22:34.260850 haku sh[444822]: SHELL_STATS fps=60.203 frames=301 seconds=5.000 heap_bytes=841274 interval_ms_p50=16.7 p95=18.1 max=24.4
+Nov 04 20:22:39.261142 haku sh[444822]: SHELL_STATS fps=57.193 frames=286 seconds=5.001 heap_bytes=864274 interval_ms_p50=16.7 p95=27.2 max=35.8
+Nov 04 20:22:44.853592 haku sh[444822]: SHELL_STATS fps=42.379 frames=237 seconds=5.592 heap_bytes=970115 interval_ms_p50=16.7 p95=28.8 max=35.0
+Nov 04 20:22:44.938445 haku sh[444822]: SHELL_STATS package=pico compile_ms=1171.883 logic_ms=161.880 korrid_ms=9.832 first_frame_ms=1536.264
+Nov 04 20:22:49.853358 haku sh[444822]: SHELL_STATS fps=5649.965 frames=28248 seconds=5.000 heap_bytes=1191451 interval_ms_p50=0.1 p95=0.2 max=1458.2
+Nov 04 20:22:54.853344 haku sh[444822]: SHELL_STATS fps=6696.442 frames=33482 seconds=5.000 heap_bytes=1403077 interval_ms_p50=0.1 p95=0.2 max=11.4
+Nov 04 20:22:59.853258 haku sh[444822]: SHELL_STATS fps=6589.675 frames=32948 seconds=5.000 heap_bytes=1468737 interval_ms_p50=0.1 p95=0.2 max=11.1
+Nov 04 20:23:04.853358 haku sh[444822]: SHELL_STATS fps=6147.724 frames=30739 seconds=5.000 heap_bytes=1508429 interval_ms_p50=0.1 p95=0.2 max=8.0
+Nov 04 20:23:09.853463 haku sh[444822]: SHELL_STATS fps=6671.476 frames=33357 seconds=5.000 heap_bytes=1398317 interval_ms_p50=0.1 p95=0.2 max=8.2
+Nov 04 20:23:14.853498 haku sh[444822]: SHELL_STATS fps=8751.729 frames=43759 seconds=5.000 heap_bytes=1221013 interval_ms_p50=0.1 p95=0.2 max=19.3
+Nov 04 20:23:19.853287 haku sh[444822]: SHELL_STATS fps=6283.257 frames=31416 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=18.2
+Nov 04 20:23:24.853302 haku sh[444822]: SHELL_STATS fps=6672.567 frames=33363 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=15.6
+Nov 04 20:23:29.853452 haku sh[444822]: SHELL_STATS fps=6758.717 frames=33794 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=13.4
+Nov 04 20:23:34.853394 haku sh[444822]: SHELL_STATS fps=6834.591 frames=34173 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=11.1
+Nov 04 20:23:39.853464 haku sh[444822]: SHELL_STATS fps=6891.809 frames=34459 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=8.9
+Nov 04 20:23:44.853323 haku sh[444822]: SHELL_STATS fps=7013.849 frames=35069 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=8.7
+Nov 04 20:23:49.853325 haku sh[444822]: SHELL_STATS fps=6969.614 frames=34848 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=8.6
+Nov 04 20:23:54.853359 haku sh[444822]: SHELL_STATS fps=6644.372 frames=33222 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=9.4
+Nov 04 20:23:59.853367 haku sh[444822]: SHELL_STATS fps=6629.016 frames=33145 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=17.2
+Nov 04 20:24:04.853362 haku sh[444822]: SHELL_STATS fps=6755.193 frames=33776 seconds=5.000 heap_bytes=1289082 interval_ms_p50=0.1 p95=0.2 max=15.4
+Nov 04 20:24:09.854700 haku sh[444822]: SHELL_STATS fps=5928.625 frames=29645 seconds=5.000 heap_bytes=1307094 interval_ms_p50=0.1 p95=0.2 max=33.8
+Nov 04 20:24:16.307559 haku sh[444822]: SHELL_STATS fps=2373.672 frames=15319 seconds=6.454 heap_bytes=734674 interval_ms_p50=0.1 p95=0.2 max=11.9
+Nov 04 20:24:16.466721 haku sh[444822]: SHELL_STATS package=zone compile_ms=3644.638 logic_ms=155.703 korrid_ms=9.615 first_frame_ms=4044.163
+Nov 04 20:24:21.310109 haku sh[444822]: SHELL_STATS fps=48.773 frames=244 seconds=5.003 heap_bytes=743817 interval_ms_p50=16.7 p95=23.9 max=268.6
+(20996 lines 'The use of the ElementHandle API requires the presence of debug info…' removed)
