@@ -103,8 +103,9 @@ window:
 - No exit: focus stays.
 
 A target's drawn box and identity are its element's (Focus targets above).
-The probe runs on its own clock with `animation-tick()` held still, so frames
-it compares differ only by what the views changed; `--still` fails a state
+The probe runs on its own clock, starting at the same instant every run, with
+`animation-tick()` held still, so frames it compares differ only by what the
+views changed and two runs draw the same pixels; `--still` fails a state
 whose unchanged view, applied again, changes a pixel.
 
 ## Wire

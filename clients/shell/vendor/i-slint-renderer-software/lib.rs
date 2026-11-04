@@ -441,8 +441,14 @@ struct CachedLayer {
     at: euclid::Point2D<f32, PhysicalPx>,
     /// Where the layer was last drawn at another offset than `at`, if it was.
     shifted_at: Cell<Option<euclid::Point2D<f32, PhysicalPx>>>,
-    /// The screen area the children draw in, in physical pixels.
+    /// The screen area the children's calls draw in, in physical pixels: it may reach past
+    /// their boxes (text past its box, an ellipsis).
     area: euclid::Rect<i32, PhysicalPx>,
+    /// The clip the calls were recorded under, in logical screen coordinates: the clip the
+    /// layer's parent gives it, as drawing the children directly would have. A call clipped
+    /// by another clip can draw other pixels (a tiled image's phase), so the calls are
+    /// replayed only under the same one.
+    clip: LogicalRect,
     /// The children's draw calls, in screen coordinates, and the pixels they last drew.
     ops: std::sync::Arc<parallel::LayerOps>,
 }
@@ -2920,6 +2926,14 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 self.render_layer_image(cache, item_rc, size)
             });
         }
+        // Under another clip than it was recorded with: record again under this one.
+        let clip = self.current_state.clip.translate(self.current_state.offset.to_vector());
+        if layer.as_ref().is_some_and(|layer| layer.clip != clip) {
+            cache.release(item_rc);
+            layer = cache.get_or_update_cache_entry(item_rc, || {
+                self.render_layer_image(cache, item_rc, size)
+            });
+        }
         let Some(layer) = layer else { return true };
         let screen_clip = (self.current_state.clip.translate(self.current_state.offset.to_vector()).cast()
             * scale)
@@ -2991,11 +3005,12 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 self.text_layout_cache,
                 Some(cache),
             );
-            // Recorded where the children are drawn now, clipped to their bounds only: the
-            // replay clips to the layer's clip of the frame it is drawn in.
+            // Recorded where the children are drawn now, under the clip their parent gives
+            // them, exactly as they are drawn directly: no clip of the layer's own, so text
+            // past its box and an ellipsis are drawn. The replay clips to that same clip.
             nested.nested_in_layer_image = true;
             nested.current_state.offset = self.current_state.offset;
-            nested.current_state.clip = bounds;
+            nested.current_state.clip = self.current_state.clip;
             i_slint_core::item_rendering::render_item_children(
                 &mut nested,
                 &item_rc.item_tree(),
@@ -3004,8 +3019,19 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             );
             nested.processor.recording.take().map(|recorder| recorder.into_ops()).unwrap_or_default()
         };
+        // The area is what the calls draw, which may reach past the children's boxes.
+        let drawn = ops
+            .iter()
+            .filter(|op| !matches!(op, parallel::Op::Background(_) | parallel::Op::SetClip(_)))
+            .map(parallel::Op::bounds)
+            .fold(None, |acc: Option<PhysicalRect>, r| Some(acc.map_or(r, |a| a.union(&r))));
+        let area = match drawn {
+            Some(drawn) => drawn.cast::<i32>().union(&area),
+            None => area,
+        };
         let ops = std::sync::Arc::new(parallel::LayerOps::new(ops, area.cast()));
-        Some(Rc::new(CachedLayer { at, shifted_at: Cell::new(None), area, ops }))
+        let clip = self.current_state.clip.translate(self.current_state.offset.to_vector());
+        Some(Rc::new(CachedLayer { at, shifted_at: Cell::new(None), area, clip, ops }))
     }
 
     #[cfg(feature = "path")]

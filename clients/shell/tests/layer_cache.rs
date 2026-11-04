@@ -297,3 +297,107 @@ fn a_clean_cached_layer_is_not_walked() {
     assert!(cached < 20, "clean again: walked {cached}");
     pair.assert_same("clean again");
 }
+
+/// Captions as Zone draws them: a cached layer at fractional positions holding elided
+/// text whose glyphs and ellipsis reach past their boxes and past the layer, text raised
+/// above its box, and offset copies of each caption (an edge and a drop). Cached and
+/// direct give the same RGB565 pixels.
+const CAPTIONS: &str = r#"
+import "fonts/tiny5.ttf";
+export component Surface inherits Window {
+    in property <bool> cached;
+    in property <length> layer-x: 20.3px;
+    in property <length> layer-y: 10.6px;
+    in property <string> word: "A caption much too long";
+    background: #204060;
+    default-font-family: "Pico Tiny5";
+    // As ZoneCaps: the layer is the caption's box; its texts are raised above it and elided
+    // in it, so their glyphs and ellipsis reach past the layer and past the texts' boxes.
+    Rectangle {
+        x: root.layer-x;
+        y: root.layer-y;
+        width: 70.5px;
+        height: 9.2px;
+        cache-rendering-hint: root.cached;
+        for d in [{x: -1px, y: -1px}, {x: 1px, y: -1px}, {x: -1px, y: 1px}, {x: 1px, y: 1px}, {x: 1.5px, y: 2.5px}]: Text {
+            x: d.x; y: -4.5px + d.y; width: 70.5px; height: 7px;
+            text: root.word; font-size: 19px; color: #000000; overflow: elide;
+        }
+        Text { x: 0; y: -4.5px; width: 70.5px; height: 7px; text: root.word; font-size: 19px; color: #ffffff; overflow: elide; }
+    }
+    Rectangle {
+        x: root.layer-x; y: root.layer-y + 30px; width: 30px; height: 4px;
+        cache-rendering-hint: root.cached;
+        Text { x: 0; y: 0; width: 30px; height: 4px; text: "Cut text"; font-size: 15px; color: #ffcc00; overflow: elide; }
+    }
+}
+"#;
+
+#[test]
+fn cached_captions_at_fractional_positions_match_direct_rendering() {
+    // Whole frames: a changed caption's glyphs past its box are drawn again too. (Partial
+    // frames repaint a changed item's box only, cached or not: ink past it can stay, as
+    // equality_cutoff.rs bounds.)
+    KIND.with(|k| k.set(RepaintBufferType::NewBuffer));
+    let mut pair = Pair::<Rgb565Pixel>::new(CAPTIONS, 200, 80);
+    let frames = |pair: &mut Pair<Rgb565Pixel>, step: &str| {
+        // Moved or changed, then settled: drawn directly, then from the cache.
+        for n in 0..4 {
+            for window in &pair.windows {
+                window.request_redraw();
+            }
+            pair.render();
+            pair.assert_same(&format!("{step}, frame {n}"));
+        }
+    };
+    for (x, y) in [(20.3, 10.6), (20.5, 10.5), (21.75, 11.25), (33.1, 9.9)] {
+        pair.set("layer-x", Value::Number(x));
+        pair.set("layer-y", Value::Number(y));
+        frames(&mut pair, &format!("captions at ({x}, {y})"));
+    }
+    pair.set("word", Value::String("Elided again and again".into()));
+    frames(&mut pair, "another caption");
+    KIND.with(|k| k.set(RepaintBufferType::ReusedBuffer));
+}
+
+/// Rings larger than the window, as Zone's ground draws them: a cached layer whose
+/// children are clipped by the window gives the same RGB565 pixels as drawing directly.
+const RINGS: &str = r#"
+export component Surface inherits Window {
+    in property <bool> cached;
+    in property <length> layer-x: 0px;
+    in property <length> layer-y: 0px;
+    in property <string> word;
+    in property <length> a: 2px;
+    background: #4ad49e;
+    Rectangle {
+        x: root.layer-x; y: root.layer-y; width: root.width; height: root.height;
+        cache-rendering-hint: root.cached;
+        Rectangle { x: 50 * root.a - 30 * root.a - 3 * root.a; y: 33 * root.a - 30 * root.a - 3 * root.a; width: 66 * root.a; height: self.width; border-radius: self.width / 2; border-width: 6 * root.a; border-color: #36b2ce; }
+        Rectangle { x: 80 * root.a - 20 * root.a - 3 * root.a; y: 10 * root.a - 20 * root.a - 3 * root.a; width: 46 * root.a; height: self.width; border-radius: self.width / 2; border-width: 6 * root.a; border-color: #f7931e; }
+    }
+}
+"#;
+
+#[test]
+fn cached_rings_past_the_window_match_direct_rendering() {
+    for kind in [
+        RepaintBufferType::ReusedBuffer,
+        RepaintBufferType::NewBuffer,
+    ] {
+        KIND.with(|k| k.set(kind));
+        let mut pair = Pair::<Rgb565Pixel>::new(RINGS, 200, 150);
+        for a in [2.0, 2.37, 1.640625, 3.015625, 2.5] {
+            pair.set("a", Value::Number(a));
+            for n in 0..6 {
+                for window in &pair.windows {
+                    window.request_redraw();
+                }
+                let [walked, _] = pair.render();
+                let _ = walked;
+                pair.assert_same(&format!("rings, a {a}, {kind:?}, frame {n}"));
+            }
+        }
+    }
+    KIND.with(|k| k.set(RepaintBufferType::ReusedBuffer));
+}
