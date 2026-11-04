@@ -380,7 +380,7 @@ fn names(
     let mut lit = false;
     for (label, entries) in labels {
         let drawn: Vec<usize> = (0..targets.len()).filter(|&i| targets[i].label == label).collect();
-        if entries.len() == 1 {
+        if entries.len() == 1 && !drawn.is_empty() {
             for &i in &drawn {
                 out[i] = known.entries[entries[0]].2.clone();
             }
@@ -407,10 +407,13 @@ fn names(
             at["focused"] = json!(true);
             binder.apply(instance, &stripped(&alone), images).unwrap();
             lit = true;
+            // A changed row's repeater instance is made again when the window draws.
+            let size = instance.window().size();
+            render(size.width, size.height);
             let now = drawn_targets(instance);
             if let Some(i) = now.iter().position(|t| t.selected) {
                 // The same element: the i-th target drawn now is the i-th before.
-                if i < out.len() && now.len() == targets.len() {
+                if i < out.len() && now.len() == targets.len() && now[i].label == targets[i].label {
                     out[i] = known.entries[e].2.clone();
                 }
             }
@@ -418,6 +421,8 @@ fn names(
     }
     if lit {
         binder.apply(instance, &stripped(view), images).unwrap();
+        let size = instance.window().size();
+        render(size.width, size.height);
     }
     out
 }
@@ -593,9 +598,6 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
             instance.show().unwrap();
             let mut binder = view::Binder::new(&definition);
             let mut images = ImageCache::new(&root);
-            // Draws a view with one entry alone focused, to tell apart targets with the same label.
-            let mut matcher = view::Binder::new(&definition);
-            let mut matcher_images = ImageCache::new(&root);
             let deliver = |engine: &mut engine::Engine, korri: &mut Korri, message: Value| {
                 let mut queue = vec![message];
                 while let Some(message) = queue.pop() {
@@ -625,13 +627,13 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                     deliver(&mut engine, &mut korri, press(step));
                 }
             }
-            let mut check = |engine: &mut engine::Engine, label: &str| -> Value {
+            let mut check = |engine: &mut engine::Engine, binder: &mut view::Binder, images: &mut ImageCache, label: &str| -> Value {
                 let view = if overlay {
                     engine.overlay().unwrap().unwrap()
                 } else {
                     engine.view().unwrap()
                 };
-                binder.apply(&instance, &stripped(&view), &mut images).unwrap();
+                binder.apply(&instance, &stripped(&view), images).unwrap();
                 render(width, height);
                 settle();
                 let pixels = render(width, height);
@@ -645,18 +647,18 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                 save(&pixels, width, height, &format!("walk.{name}.{label}"));
                 view
             };
-            let mut view = check(&mut engine, "steps");
+            let mut view = check(&mut engine, &mut binder, &mut images, "steps");
             let mut remembered: BTreeMap<String, String> = BTreeMap::new();
             for (direction, times) in [("down", 8), ("right", 6), ("up", 8), ("left", 6)] {
                 for n in 0..times {
                     let targets = drawn_targets(&instance);
                     let known = regions(&view);
-                    let named = names(&targets, &known, &view, &instance, &mut matcher, &mut matcher_images);
+                    let named = names(&targets, &known, &view, &instance, &mut binder, &mut images);
                     let region_of = |i: usize| known.of.get(&named[i]).cloned();
                     let from = targets.iter().position(|t| t.selected);
                     let plan = view.get("focusPlan").cloned().unwrap_or(json!({}));
                     deliver(&mut engine, &mut korri, press(direction));
-                    view = check(&mut engine, &format!("{direction}{n}"));
+                    view = check(&mut engine, &mut binder, &mut images, &format!("{direction}{n}"));
                     let (Some(from), Some((focused, region))) = (from, known.focused.clone()) else { continue };
                     if !same(&named[from], &focused) {
                         wrong_way.push(format!("{name} {width}x{height}: {direction}{n}: the drawn focus {:?} is not the view's {focused:?}", named[from]));
@@ -683,7 +685,10 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                                     let ((ax, ay), (bx, by)) = (targets[a].centre(), targets[b].centre());
                                     ay.round().total_cmp(&by.round()).then(ax.round().total_cmp(&bx.round()))
                                 });
-                                let first = there.first().map(|&i| named[i].clone()).unwrap_or_default();
+                                // A list scrolled past the region draws none of it: its first entry in the view.
+                                let first = there.first().map(|&i| named[i].clone()).unwrap_or_else(|| {
+                                    known.entries.iter().find(|(_, _, n)| known.of.get(n) == Some(&to)).map(|(_, _, n)| n.clone()).unwrap_or_default()
+                                });
                                 let label = match entry {
                                     "active" => known.active.get(&to).cloned().unwrap_or_default(),
                                     "remembered" => remembered.get(&to).cloned().unwrap_or(first),
