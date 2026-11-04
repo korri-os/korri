@@ -268,8 +268,12 @@ enum AppliedDisplayPlacement {
         rectangles: Vec<super::display_placement::SurfaceDisplay>,
     },
     Game(String),
+    /// `window` is the surface window placed: its receipt holds only while
+    /// that exact compositor window is the one mapped, never for a
+    /// replacement the same process maps for the same launch.
     Overlay {
         launch_id: String,
+        window: Option<super::compositor_focus::FocusCandidate>,
         rectangles: Vec<super::display_placement::SurfaceDisplay>,
     },
 }
@@ -785,11 +789,16 @@ impl HostSessionControl {
                 .display_content
                 .lock()
                 .expect("display content mutex poisoned") = occupied;
+            let window = compositor
+                .tree()
+                .ok()
+                .and_then(|tree| super::compositor_focus::portal_window(&tree, &portal_pids).ok());
             *self
                 .placement_applied
                 .lock()
                 .expect("placement mutex poisoned") = Some(AppliedDisplayPlacement::Overlay {
                 launch_id: launch_id.into(),
+                window,
                 rectangles,
             });
             trace.focus_target = Some(trace.time("portal_focus", || {
@@ -1146,11 +1155,23 @@ impl HostSessionControl {
         }
     }
 
+    /// The surface window mapped now: the compositor's own window identity
+    /// (sway con_id), never a PID or a launch. None when it is not unique.
+    fn mapped_surface_window(
+        &self,
+        pids: &std::collections::BTreeSet<i32>,
+    ) -> Option<super::compositor_focus::FocusCandidate> {
+        let tree = self.compositor.as_ref()?.tree().ok()?;
+        super::compositor_focus::portal_window(&tree, pids).ok()
+    }
+
+    /// A catalog receipt holds only for the exact window it placed. A window
+    /// the same process maps in its place is placed again.
     fn cached_catalog_rectangles(
         &self,
         pids: &std::collections::BTreeSet<i32>,
     ) -> Option<Vec<super::display_placement::SurfaceDisplay>> {
-        match self
+        let placed = match self
             .placement_applied
             .lock()
             .expect("placement mutex poisoned")
@@ -1159,9 +1180,10 @@ impl HostSessionControl {
             Some(AppliedDisplayPlacement::Catalog {
                 instance,
                 rectangles,
-            }) if pids.contains(&instance.pid) => Some(rectangles.clone()),
-            _ => None,
-        }
+            }) if pids.contains(&instance.pid) => (instance.clone(), rectangles.clone()),
+            _ => return None,
+        };
+        (self.mapped_surface_window(pids).as_ref() == Some(&placed.0)).then_some(placed.1)
     }
 
     fn invalidate_catalog_placement(&self) {
@@ -1242,17 +1264,26 @@ impl HostSessionControl {
             None
         };
         if request.overlay && matches!(&*state, ActiveState::Frozen { .. }) {
-            if let Some(AppliedDisplayPlacement::Overlay {
-                launch_id: placed,
-                rectangles,
-            }) = self
+            let receipt = match self
                 .placement_applied
                 .lock()
                 .expect("placement mutex poisoned")
                 .as_ref()
             {
-                if Some(placed.as_str()) == launch_id {
-                    return Ok(rectangles.clone());
+                Some(AppliedDisplayPlacement::Overlay {
+                    launch_id: placed,
+                    window: Some(window),
+                    rectangles,
+                }) if Some(placed.as_str()) == launch_id => {
+                    Some((window.clone(), rectangles.clone()))
+                }
+                _ => None,
+            };
+            // The receipt holds for the exact window it placed: an overlay
+            // window mapped anew for the same launch is placed again.
+            if let Some((window, rectangles)) = receipt {
+                if self.mapped_surface_window(&self.portal_pids()?).as_ref() == Some(&window) {
+                    return Ok(rectangles);
                 }
             }
         }
@@ -1291,11 +1322,14 @@ impl HostSessionControl {
             .lock()
             .expect("display content mutex poisoned") = occupied;
         if let Some(id) = launch_id {
+            let window =
+                super::compositor_focus::portal_window(&compositor.tree()?, &portal_pids).ok();
             *self
                 .placement_applied
                 .lock()
                 .expect("placement mutex poisoned") = Some(AppliedDisplayPlacement::Overlay {
                 launch_id: id.into(),
+                window,
                 rectangles: rectangles.clone(),
             });
         } else if let Some(instance) = catalog_instance {
@@ -4048,6 +4082,44 @@ printf '[{{"success":true}}]'
             let commands = fs::read_to_string(root.path().join("commands")).unwrap();
             assert!(commands
                 .ends_with("[con_id=2] move absolute position 0 px 480 px; [con_id=2] focus\n"));
+            // The shell maps a new overlay window in the same process for
+            // the same launch: unchanged PID and launch, new compositor
+            // window. The receipt was for con_id 2; con_id 7 is placed again.
+            let portal_tree = fs::read_to_string(root.path().join("tree")).unwrap();
+            fs::write(
+                root.path().join("tree"),
+                portal_tree.replace(r#""id": 2,"#, r#""id": 7,"#),
+            )
+            .unwrap();
+            let replaced = control
+                .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    overlay: true,
+                    launch_id: Some(prepared.launch_id.clone()),
+                })
+                .unwrap();
+            assert_eq!(replaced, rectangles);
+            let placed = fs::read_to_string(root.path().join("commands")).unwrap();
+            let added = &placed[commands.len()..];
+            assert!(
+                added.contains("[con_id=7] move absolute position 0 px 480 px"),
+                "{added}"
+            );
+            assert!(!added.contains("con_id=2]"), "{added}");
+            // Placed: the new window's receipt holds again, effect-free.
+            control
+                .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                    displays: super::super::display_placement::SurfaceDisplayScope::All,
+                    overlay: true,
+                    launch_id: Some(prepared.launch_id.clone()),
+                })
+                .unwrap();
+            assert_eq!(
+                fs::read_to_string(root.path().join("commands")).unwrap(),
+                placed
+            );
+            fs::write(root.path().join("tree"), &portal_tree).unwrap();
+            let commands = placed;
             fs::write(root.path().join("reads"), "").unwrap();
             fs::write(root.path().join("commands"), "").unwrap();
             let identity_reads = portal.identity_reads();
@@ -4468,6 +4540,41 @@ printf '[{{"success":true}}]'
             fs::read_to_string(root.path().join("commands")).unwrap(),
             commands,
             "cached main request must be effect-free"
+        );
+        // The shell replaces its window inside the same process: same PID,
+        // new compositor window. The receipt was for con_id 10; the new
+        // window, con_id 11, is placed again.
+        fs::write(
+            root.path().join("tree"),
+            r#"{"nodes":[{"id":11,"pid":2603,"app_id":"korri-shell","fullscreen_mode":0}]}"#,
+        )
+        .unwrap();
+        let replaced = control
+            .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                displays: super::super::display_placement::SurfaceDisplayScope::Main,
+                overlay: false,
+                launch_id: None,
+            })
+            .unwrap();
+        assert_eq!(replaced, displays);
+        let after = fs::read_to_string(root.path().join("commands")).unwrap();
+        let added = &after[commands.len()..];
+        assert!(
+            added.contains("[con_id=11] move container to output DSI-2"),
+            "{added}"
+        );
+        assert!(!added.contains("con_id=10"), "{added}");
+        // Placed: the new window's receipt is effect-free again.
+        control
+            .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                displays: super::super::display_placement::SurfaceDisplayScope::Main,
+                overlay: false,
+                launch_id: None,
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(root.path().join("commands")).unwrap(),
+            after
         );
         let queries = fs::read_to_string(root.path().join("unit-queries")).unwrap();
         assert!(queries.contains(
