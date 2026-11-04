@@ -1,8 +1,8 @@
 # Vendored Slint 1.18.1 crates, patched
 
-Three crates from crates.io, version **1.18.1**, unchanged except for the
-changes listed below: `i-slint-core`, `i-slint-renderer-software` and
-`slint-interpreter`. `../Cargo.toml` substitutes them through
+Four crates from crates.io, version **1.18.1**, unchanged except for the
+changes listed below: `i-slint-core`, `i-slint-renderer-software`,
+`slint-interpreter` and `i-slint-backend-testing`. `../Cargo.toml` substitutes them through
 `[patch.crates-io]`. Every other Slint crate is the published 1.18.1. The
 whole difference is `slint.patch`. The public API is unchanged. Nothing in it
 is specific to Korri.
@@ -65,11 +65,15 @@ standard mechanisms did not reach the software renderer:
 | `i-slint-core/item_rendering.rs` | `ItemCache::with_entry_mut` | Mutable access to one entry, for the above. |
 | `slint-interpreter/eval.rs` | `invoke_function` | Evaluates the function body through a borrow instead of a deep copy of its expression tree on every call. |
 | `slint-interpreter/item_tree_vtable.rs` | `item_geometry` | Borrows the compiled geometry expression instead of deep-copying it on every call. |
+| `i-slint-backend-testing/search_api.rs` | `ElementHandle::is_visible` | Whether an element is inside the window and every clipping ancestor (`ItemRc::is_visible`): focus targets clipped out of a list are not drawn (`../src/targets.rs`). The crate's `[[test]]`s are not vendored. |
 | `slint-interpreter/Cargo.toml` | `[[test]]` | The crate's own tests are not vendored. |
 | `i-slint-core/properties.rs` | `DepEdge`, `Cutoff`, `sources_changed`, `mark_dependencies_maybe_dirty`, `Property::set_binding_comparing`, `PropertyTracker::{is_dirty, acknowledge_dirty}`, `set_equality_cutoff` (doc-hidden) | Equality cut-off. A changed property marks its direct dependents dirty and everything further only *maybe* dirty. Each dependency edge remembers the source binding and the version it read; a comparing binding bumps its version only when its value changed. Before a maybe-dirty binding or tracker is evaluated, its sources are brought up to date and compared, and it is not evaluated when none changed. Zone's band: the card that only moves keeps its layer and its ~120 bindings are not evaluated each snap frame. `set_equality_cutoff(false)` restores upstream propagation (tests, `KORRI_BENCH_NO_CUTOFF`). |
 | `i-slint-core/rtti.rs`, `slint-interpreter/bindings.rs` | `set_binding` of native and interpreted properties | Use `set_binding_comparing`. Animated, two-way and global bindings keep upstream behaviour (always "changed"). |
 | `i-slint-core/properties/properties_animations.rs`, `change_tracker.rs` | `mark_dirty`, edges | An animation starts on a maybe-dirty original binding too; the change tracker uses the new edge type. |
 | `i-slint-renderer-software/lib.rs`, `parallel.rs` | `CachedLayer`, `draw_cached_layer`, `render_layer_image_inner`, `ProcessScene::process_layer_ops`, `Op::{SetClip, translated, bounds}` | A cached layer holds its children's recorded draw calls at the screen offset they were drawn at, not an image. Drawing it replays them inside its clip, so every pixel is blended exactly as drawing the children directly (RGB565 included). At another offset, under opacity or rotation the layer is drawn directly; once it stays at a new offset its calls are recorded again. |
+| `i-slint-renderer-software/parallel.rs` | `Op::Layer`, `LayerOps::{replay, draw}` | A cached layer is one op holding its calls. When the dirty region spans its visible width, each line whose target pixels under the layer are those of last time gets the pixels the calls drew then (same calls on the same pixels: exact for every format); other lines are replayed and remembered. A whole frame redrawn every frame copies still layers instead of drawing them. |
+| `i-slint-core/window.rs` | `WindowPinnedFields::{instantiation_tracker, instantiated_for}`, `ensure_tree_instantiated` | The walk over every repeater and conditional before a frame runs only when something the last walk read changed, or the component or the popups did. It ran every frame, idle too (1 ms a frame on the RG353M). |
+| `i-slint-renderer-software/parallel.rs`, `lib.rs` | `BandQueue`, `stream_into_bands`, `render` | A frame's region is split into several bands per thread; band threads take bands as they finish, and the UI thread takes the ones left once its walk ended, instead of waiting for fixed bands. |
 | `i-slint-renderer-software/lib.rs` | `RenderToBuffer::dirty_clips` | The dirty region as non-overlapping rectangles, so a path is blended once where dirty rectangles overlap. |
 | `i-slint-core/animations.rs`, `SoftwareRenderer::freeze_animation_tick` (doc-hidden) | `animation_tick` | Can return a frozen instant (the focus probe); property animations and timers keep the clock. |
 | `i-slint-core/frame_profile.rs` (new), hooks in `sharedparley`, `vectorfont.rs`, `lib.rs` | `SoftwareRenderer::{set_frame_profile, take_frame_profile, last_walk_profile, last_frame_layer_visits}` (doc-hidden) | `KORRI_BENCH_PROFILE`: bindings, text measuring, shaping, line breaking, drawing, new glyphs by size, path and image draws, layer invalidations per frame. Off by default. |

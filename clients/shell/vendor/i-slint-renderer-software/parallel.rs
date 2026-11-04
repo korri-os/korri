@@ -27,9 +27,10 @@ use std::sync::Arc;
 pub(super) enum Op {
     /// The window background for the dirty region.
     Background(Color),
-    /// Restrict the ops that follow to this rectangle, or lift the restriction: a cached
-    /// layer's ops inside its clip.
+    /// Restrict the ops that follow to this rectangle, or lift the restriction.
     SetClip(Option<PhysicalRect>),
+    /// A cached layer's draw calls, inside the clip (`LayerOps::replay`).
+    Layer(Arc<LayerOps>, PhysicalRect),
     Texture(PhysicalRect, SceneTexture<'static>),
     SharedTexture(PhysicalRect, SharedBufferCommand),
     Rectangle(PhysicalRect, PremultipliedRgbaColor),
@@ -58,35 +59,10 @@ pub(super) enum Op {
 }
 
 impl Op {
-    /// The op drawn `delta` pixels further.
-    pub(super) fn translated(&self, delta: euclid::Vector2D<i16, PhysicalPx>) -> Op {
-        let mut op = self.clone();
-        match &mut op {
-            Op::Background(_) => {}
-            Op::SetClip(clip) => {
-                if let Some(clip) = clip {
-                    *clip = clip.translate(delta);
-                }
-            }
-            Op::Texture(geometry, _)
-            | Op::SharedTexture(geometry, _)
-            | Op::Rectangle(geometry, _)
-            | Op::RoundedRectangle(geometry, _)
-            | Op::LinearGradient(geometry, _)
-            | Op::RadialGradient(geometry, _)
-            | Op::ConicGradient(geometry, _) => *geometry = geometry.translate(delta),
-            #[cfg(feature = "path")]
-            Op::FilledPath { path, clip, .. } | Op::StrokedPath { path, clip, .. } => {
-                *path = path.translate(delta);
-                *clip = clip.translate(delta);
-            }
-        }
-        op
-    }
-
     /// The pixels the op can touch.
     pub(super) fn bounds(&self) -> PhysicalRect {
         match self {
+            Op::Layer(_, clip) => *clip,
             Op::Background(_) | Op::SetClip(_) => {
                 PhysicalRect::new(PhysicalPoint::new(i16::MIN / 2, i16::MIN / 2), PhysicalSize::new(i16::MAX, i16::MAX))
             }
@@ -100,6 +76,127 @@ impl Op {
             #[cfg(feature = "path")]
             Op::FilledPath { clip, .. } | Op::StrokedPath { clip, .. } => *clip,
         }
+    }
+}
+
+/// A cached layer's draw calls (screen coordinates, recorded where the layer stands), and per
+/// line of its area the target pixels before and after they were last replayed there.
+///
+/// When the frame's dirty region spans the layer's visible width, a line whose target pixels
+/// before the layer are those it had last time gets the pixels the calls drew then: the same
+/// calls on the same pixels draw the same pixels, so this is exact for every pixel format. A
+/// line with other pixels under it is drawn by replaying the calls, and remembered. A whole
+/// screen redrawn every frame (a fresh buffer) so copies a still layer instead of drawing it.
+pub(super) struct LayerOps {
+    ops: Vec<Op>,
+    area: PhysicalRect,
+    lines: Vec<std::sync::Mutex<Option<LineSnapshot>>>,
+}
+
+struct LineSnapshot {
+    /// Pixel type and the x range the pixels cover.
+    kind: &'static str,
+    x: core::ops::Range<i16>,
+    before: Vec<u8>,
+    after: Vec<u8>,
+}
+
+// Sound for the reason `SharedOps` is: band threads only read the calls (they never clone
+// or drop a reference-counted value in them), and each band locks only its own lines.
+unsafe impl Sync for LayerOps {}
+unsafe impl Send for LayerOps {}
+
+/// The bytes of a run of target pixels (plain values without padding: RGB565, RGB8, RGBA8).
+fn pixel_bytes<T>(pixels: &[T]) -> &[u8] {
+    // Safety: target pixels are plain integer structs; reading them as bytes is fine.
+    unsafe { core::slice::from_raw_parts(pixels.as_ptr().cast(), core::mem::size_of_val(pixels)) }
+}
+
+fn pixel_bytes_mut<T>(pixels: &mut [T]) -> &mut [u8] {
+    // Safety: as above, and any bytes written come from pixels of the same type.
+    unsafe {
+        core::slice::from_raw_parts_mut(pixels.as_mut_ptr().cast(), core::mem::size_of_val(pixels))
+    }
+}
+
+impl LayerOps {
+    pub(super) fn new(ops: Vec<Op>, area: PhysicalRect) -> Self {
+        let lines = (0..area.height().max(0)).map(|_| std::sync::Mutex::new(None)).collect();
+        Self { ops, area, lines }
+    }
+
+    /// Draw the calls into `target` inside `clip`.
+    fn replay<B: target_pixel_buffer::TargetPixelBuffer>(
+        &self,
+        target: &mut RenderToBuffer<'_, B>,
+        clip: &PhysicalRect,
+    ) {
+        let Some(visible) = clip.intersection(&self.area) else { return };
+        let bounds = target.dirty_region.bounding_rect();
+        let Some(drawn) = visible.intersection(&bounds) else { return };
+        // Copies only where the dirty region covers the layer's visible width in one rectangle.
+        let whole_width = target.dirty_region.iter_box().count() == 1
+            && drawn.min_x() == visible.min_x()
+            && drawn.max_x() == visible.max_x();
+        if !whole_width {
+            self.draw(target, Some(drawn));
+            return;
+        }
+        let kind = core::any::type_name::<B::TargetPixel>();
+        let x = drawn.min_x()..drawn.max_x();
+        let (x0, x1) = (x.start as usize, x.end as usize);
+        let mut stale: Vec<i16> = Vec::new();
+        for y in drawn.min_y()..drawn.max_y() {
+            let line = &mut target.buffer.line_slice(y as usize)[x0..x1];
+            let index = (y - self.area.min_y()) as usize;
+            let snapshot = self.lines[index].lock().unwrap();
+            match snapshot.as_ref() {
+                Some(s) if s.kind == kind && s.x == x && s.before == pixel_bytes(line) => {
+                    pixel_bytes_mut(line).copy_from_slice(&s.after);
+                }
+                _ => stale.push(y),
+            }
+        }
+        // Draw the other lines, a run at a time, and remember them.
+        let mut start = 0;
+        while start < stale.len() {
+            let mut end = start + 1;
+            while end < stale.len() && stale[end] == stale[end - 1] + 1 {
+                end += 1;
+            }
+            let (top, bottom) = (stale[start], stale[end - 1] + 1);
+            let before: Vec<Vec<u8>> = (top..bottom)
+                .map(|y| pixel_bytes(&target.buffer.line_slice(y as usize)[x0..x1]).to_vec())
+                .collect();
+            let run = PhysicalRect::new(
+                PhysicalPoint::new(x.start, top),
+                PhysicalSize::new(x.end - x.start, bottom - top),
+            );
+            self.draw(target, Some(run));
+            for (y, before) in (top..bottom).zip(before) {
+                let after = pixel_bytes(&target.buffer.line_slice(y as usize)[x0..x1]).to_vec();
+                let index = (y - self.area.min_y()) as usize;
+                *self.lines[index].lock().unwrap() =
+                    Some(LineSnapshot { kind, x: x.clone(), before, after });
+            }
+            start = end;
+        }
+    }
+
+    /// Replay the calls inside `clip`.
+    fn draw<B: target_pixel_buffer::TargetPixelBuffer>(
+        &self,
+        target: &mut RenderToBuffer<'_, B>,
+        clip: Option<PhysicalRect>,
+    ) {
+        let Some(clip) = clip else { return };
+        target.replay(&Op::SetClip(Some(clip)));
+        for op in &self.ops {
+            if op.bounds().intersects(&clip) {
+                target.replay(op);
+            }
+        }
+        target.replay(&Op::SetClip(None));
     }
 }
 
@@ -259,6 +356,7 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
     /// Draw one recorded op, as the matching `ProcessScene` call would have.
     pub(super) fn replay(&mut self, op: &Op) {
         match op {
+            Op::Layer(layer, clip) => layer.replay(self, clip),
             Op::SetClip(Some(clip)) => {
                 let whole = self.unclipped.take().unwrap_or_else(|| self.dirty_region.clone());
                 self.dirty_region = whole.intersection(clip);
@@ -413,24 +511,27 @@ fn band_renderer<'b, 'a, T: TargetPixel>(
     })
 }
 
-/// Start one thread per band of `buffer` under `region`; each replays the
-/// chunks of `stream` as they are published, until the last.
-pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
-    scope: &'scope std::thread::Scope<'scope, 'env>,
-    stream: &'scope OpStream,
-    buffer: &'scope mut [T],
-    pixel_stride: usize,
-    region: &PhysicalRegion,
+/// The bands of one frame not yet taken, for the band threads and, once its walk ended, the
+/// UI thread: a band is taken whole and replays every chunk of the stream.
+pub(super) struct BandQueue<'a, T> {
+    bands: std::sync::Mutex<Vec<SendBand<'a, T>>>,
+    region: PhysicalRegion,
     scale_factor: ScaleFactor,
-    threads: usize,
-) {
-    for band in split_bands(buffer, pixel_stride, region, threads) {
-        let region = region.clone();
-        scope.spawn(move || {
-            let band = band; // the whole `SendBand`, not its field
+}
+
+// Sound as `SendBand` is: each band is taken by one thread, and its lines are its own.
+unsafe impl<T> Sync for BandQueue<'_, T> {}
+unsafe impl<T> Send for BandQueue<'_, T> {}
+
+impl<T: TargetPixel> BandQueue<'_, T> {
+    /// Take bands until none is left; replay every chunk of `stream` into each.
+    pub(super) fn work(&self, stream: &OpStream) {
+        loop {
+            let Some(band) = self.bands.lock().unwrap().pop() else { return };
             let mut band = band.0;
-            let Some(mut renderer) = band_renderer(&mut band, &region, scale_factor) else {
-                return;
+            let Some(mut renderer) = band_renderer(&mut band, &self.region, self.scale_factor)
+            else {
+                continue;
             };
             let mut index = 0;
             while let Some(chunk) = stream.chunk(index) {
@@ -439,8 +540,36 @@ pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
                 }
                 index += 1;
             }
-        });
+        }
     }
+}
+
+/// Split `buffer` under `region` into bands several times more than `threads`, and start
+/// `threads` threads taking them; the queue goes back to the caller, whose own thread takes
+/// the bands still left once it has published the last chunk. Balanced by what is left, not
+/// by rows: a thread that finishes early takes another band.
+pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    stream: &'scope OpStream,
+    buffer: &'scope mut [T],
+    pixel_stride: usize,
+    region: &PhysicalRegion,
+    scale_factor: ScaleFactor,
+    threads: usize,
+) -> Arc<BandQueue<'scope, T>> {
+    let mut bands = split_bands(buffer, pixel_stride, region, (threads + 1) * 4);
+    // Taken from the end: the top of the region first.
+    bands.reverse();
+    let queue = Arc::new(BandQueue {
+        bands: std::sync::Mutex::new(bands),
+        region: region.clone(),
+        scale_factor,
+    });
+    for _ in 0..threads {
+        let queue = queue.clone();
+        scope.spawn(move || queue.work(stream));
+    }
+    queue
 }
 
 /// Replay `recorded` into `buffer` on `threads` threads, one band of lines each.

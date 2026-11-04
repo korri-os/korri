@@ -1,0 +1,27 @@
+# Which frames go over 16.7 ms on a press, RG353M at full clock (FULLSPEED=1),
+# build 9465d2d3c (profile counters for rectangles, layers, instantiation).
+# KORRI_BENCH_PROFILE=1 KORRI_BENCH_FRAMES=1: the timing adds about 10 %, so totals here
+# run higher than in rg353m-cutoff.txt. Presses right,right,down,up,left,left at frames
+# 30, 50, ... 130. Raw per-frame log: not committed (1200 lines); summary below.
+#
+# Zone: 54 of 600 over.
+#   the press frame itself (+0):   6 over. Mean total 53.3 ms: logic 5.0, view to properties 0.4,
+#                                  instantiate before the walk 8.6, walk 12.8, raster 24.5
+#                                  (rows of changed arrays re-created: actions, facts, presses).
+#   the slide frames (+1..+14):   48 over. Mean total 21.5 ms: before the walk 1.5, walk 4.9,
+#                                  raster 14.1 (of which waiting for the band threads 2.3).
+#   One slide frame (frame 36) in detail, ms:
+#     before the walk 1.66: instantiating repeaters 1.01 (every frame, idle too)
+#     walk 5.91: bindings 2.73 (142 evaluated), text measuring 0.26, items walked 265
+#     raster 13.65: text drawing 3.26 (100 texts, 722 glyphs, all cached; glyph run setup 0.26),
+#                   cached layers 1.14 (8 copied, 3 invalidated), paths 0.50, rectangles 0.27,
+#                   bindings 0.36, waiting for the band threads 3.03, the rest (item walk,
+#                   trackers, clips) about 5.1
+#   So the slide frames are the count, and no single cost dominates them: the UI thread's
+#   walk of the two resizing cards (bindings, 100 texts) plus the band threads' tail.
+#
+# Pico: 6 of 600 over, all six the press frame itself. Mean total 53.3 ms:
+#   logic 15.0 (update(Pressed) 7.2, update(KorriPublished) 3.9, view() 5.3: Pico's own
+#   JavaScript; each update rebuilds the screen model D8() 2-3 times, view() once more),
+#   instantiate before the walk 19.7 (the changed `home` and `attract` rows re-created),
+#   walk 9.6, raster 6.1.
