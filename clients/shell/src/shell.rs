@@ -377,6 +377,15 @@ impl Shell {
                     }
                 }
                 self.retire_drawn();
+                // A window the shell mapped anew (the Overlay, or the Surface back from
+                // it) has drawn: korrid places it on the declare.
+                if self
+                    .current
+                    .as_ref()
+                    .is_some_and(|c| c.generation == generation)
+                {
+                    self.place_current();
+                }
             }
             HostEvent::Key { key, pressed } => {
                 let now = self.now();
@@ -763,6 +772,17 @@ impl Shell {
         self.resized();
     }
 
+    /// `loaded`'s window `role` (0 Surface, 1 Overlay) was mapped anew: it needs placing,
+    /// and its next frame is a first frame (`HostEvent::FirstFrame`), which declares again.
+    fn remap(&self, loaded: &mut Loaded, role: u8) {
+        loaded.placed = false;
+        if role == 0 {
+            self.attach(loaded.surface.window(), loaded.generation, 0);
+        } else if let Some((overlay, _)) = &loaded.overlay {
+            self.attach(overlay.window(), loaded.generation, 1);
+        }
+    }
+
     fn attach(&self, window: &slint::Window, generation: u64, role: u8) {
         let post = self.post.clone();
         self.backend.attach(
@@ -799,6 +819,10 @@ impl Shell {
             if !loaded.surface_shown {
                 loaded.surface.show()?;
                 loaded.surface_shown = true;
+                if !self.backend.shared_window() {
+                    // Mapped anew: declare again once it has drawn.
+                    self.remap(loaded, 0);
+                }
             }
             return Ok(());
         }
@@ -807,7 +831,8 @@ impl Shell {
             // change, and with the model that asks for the overlay).
             return Ok(());
         };
-        if loaded.overlay.is_none() {
+        let created = loaded.overlay.is_none();
+        if created {
             let definition = loaded.overlay_definition.as_ref().expect("checked");
             let component = definition.create()?;
             self.attach(component.window(), loaded.generation, 1);
@@ -815,6 +840,10 @@ impl Shell {
                 .place(component.window(), self.options.placement);
             let binder = Binder::new(definition);
             loaded.overlay = Some((component, binder));
+        }
+        if created && !self.backend.shared_window() {
+            // A new mapped window: korrid places it on a declare sent after it has drawn.
+            loaded.placed = false;
         }
         let (component, binder) = loaded.overlay.as_mut().expect("just created");
         binder.apply_diff(component, &view, &diff, &mut loaded.images)?;

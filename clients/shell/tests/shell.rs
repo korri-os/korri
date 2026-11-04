@@ -353,8 +353,11 @@ fn declare_carries_the_declared_displays_and_only_all_gets_model_displays() {
 fn the_overlay_follows_the_presentation() {
     let mut rig = rig(&["probe"], 12, Behaviour::default());
     assert!(!rig.shell.overlay_shown());
+    rig.until("surface placed", |r| r.fixture.declarations().len() == 2);
     rig.fixture.set_overlay(true);
     rig.until("overlay", |r| r.shell.overlay_shown());
+    // Every newly mapped window is placed: the Overlay's first frame declares again.
+    rig.until("overlay placed", |r| r.fixture.declarations().len() == 3);
     assert!(
         matches!(rig.shell.overlay_property("heading"), Some(SlintValue::String(s)) if s.as_str() == "Paused")
     );
@@ -364,6 +367,16 @@ fn the_overlay_follows_the_presentation() {
     rig.until("overlay gone", |r| !r.shell.overlay_shown());
     assert_eq!(rig.requests("DismissGameplayOverlay").len(), 1);
     assert_eq!(Headless::live_windows(), 1);
+    // The Surface mapped again is placed again.
+    rig.until("surface placed again", |r| {
+        r.fixture.declarations().len() == 4
+    });
+    rig.settle();
+    assert_eq!(
+        rig.fixture.declarations().len(),
+        4,
+        "one declare per mapping"
+    );
 }
 
 #[test]
