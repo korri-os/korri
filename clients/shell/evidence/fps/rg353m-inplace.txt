@@ -1,0 +1,106 @@
+# RG353M, build d21acb603: logic thread, quiet-frame skip, targeted walk and subtree draw skip, rows updated in place (zone f77bfee2d, pico 204d743c2 merged). FULLSPEED=1, nice 10, as nobody.
+# Press rows 3x back to back (press3.sh); load average before each run.
+# run 1 load: 1.23 1.31 1.25 1/366 299625
+# 10.42.0.1 2026-11-04T09:55:24Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic calls (logic thread)              0          0      15706
+view to properties: convert             0          0       3303
+view to properties: set                 0          0       1440
+timers and animations                  66        943       1472
+before the walk (instantiate)         247        703      22976
+dirty walk and layout                1070       6115      26053
+rasterisation                        3905      11804      31646
+  of which banded replay             2266       4372       7840
+  of which layer images                 0          0       8888
+frame total                          5292      18984      82658
+dirty region (px)                   38222     169992     229521
+frames over 16.7 ms: 53 of 600
+press to view applied (ms): p50 33 max 67 over 6 presses (logic off the UI thread; frames paced at 60 Hz)
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic calls (logic thread)              0          0      39231
+view to properties: convert             0          0       2399
+view to properties: set                 0          0       4130
+timers and animations                  44        108       1301
+before the walk (instantiate)         200        362       5589
+dirty walk and layout                   0       2731      16088
+rasterisation                          20       1611       5935
+  of which banded replay               20        277       3234
+  of which layer images                 0          0          0
+frame total                           283       4750      38039
+dirty region (px)                      -0       3120     150976
+frames over 16.7 ms: 3 of 600
+press to view applied (ms): p50 33 max 50 over 6 presses (logic off the UI thread; frames paced at 60 Hz)
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 1.64 1.41 1.28 3/368 301037
+# 10.42.0.1 2026-11-04T09:56:00Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic calls (logic thread)              0          0      14169
+view to properties: convert             0          0       4186
+view to properties: set                 0          0       2833
+timers and animations                  71        937       1826
+before the walk (instantiate)         272        699      24018
+dirty walk and layout                1198       5960      26190
+rasterisation                        3878      11263      30976
+  of which banded replay             2234       4210       7857
+  of which layer images                 0          0      10986
+frame total                          5343      18903      78668
+dirty region (px)                   38222     169992     229521
+frames over 16.7 ms: 53 of 600
+press to view applied (ms): p50 33 max 50 over 6 presses (logic off the UI thread; frames paced at 60 Hz)
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic calls (logic thread)              0          0      27766
+view to properties: convert             0          0       1807
+view to properties: set                 0          0       3518
+timers and animations                  46        153       1795
+before the walk (instantiate)         203        421       4729
+dirty walk and layout                   0       2613       9799
+rasterisation                          21       1793       5879
+  of which banded replay               21        281       2508
+  of which layer images                 0          0          0
+frame total                           289       4994      27605
+dirty region (px)                      -0       3120     150976
+frames over 16.7 ms: 4 of 600
+press to view applied (ms): p50 33 max 33 over 6 presses (logic off the UI thread; frames paced at 60 Hz)
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 2.48 1.65 1.37 4/369 302455
+# 10.42.0.1 2026-11-04T09:56:36Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic calls (logic thread)              0          0      21482
+view to properties: convert             0          0       3406
+view to properties: set                 0          0       2538
+timers and animations                  72        922       1427
+before the walk (instantiate)         266        669      30311
+dirty walk and layout                1218       5939      25253
+rasterisation                        3743      11498      31926
+  of which banded replay             2203       4102       8966
+  of which layer images                 0          0       8625
+frame total                          5165      18766      87794
+dirty region (px)                   38214     170575     229521
+frames over 16.7 ms: 51 of 600
+press to view applied (ms): p50 50 max 67 over 6 presses (logic off the UI thread; frames paced at 60 Hz)
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic calls (logic thread)              0          0      35039
+view to properties: convert             0          0       2139
+view to properties: set                 0          0       4140
+timers and animations                  43         77       1371
+before the walk (instantiate)         183        334       4711
+dirty walk and layout                   0       2553      12651
+rasterisation                          20       1803       6741
+  of which banded replay               20        284       1841
+  of which layer images                 0          0          0
+frame total                           269       4791      31965
+dirty region (px)                      -0       3120     150976
+frames over 16.7 ms: 4 of 600
+press to view applied (ms): p50 33 max 50 over 6 presses (logic off the UI thread; frames paced at 60 Hz)
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [53, 53, 51] (median 53); p95 us [18984, 18903, 18766] (median 18903); max us [82658, 78668, 87794] (median 82658)
+# pico presses: over [3, 4, 4] (median 4); p95 us [4750, 4994, 4791] (median 4791); max us [38039, 27605, 31965] (median 31965)
