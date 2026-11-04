@@ -15,7 +15,11 @@ export component PicoResumeList inherits VerticalLayout {
     HorizontalLayout {
         alignment: start;
         spacing: 6 * Tokens.p;
-        for game in games : VerticalLayout {
+        // The cart, its shadow and its target read the row through the list
+        // by index: after the shell updates a row in place, the row's own
+        // copy can lag a render (seen when the probe reads elements between
+        // renders), which left the cursor's shadow and scroll behind.
+        for game[i] in games : VerticalLayout {
             width: 44 * Tokens.p;
             alignment: start;
             spacing: Tokens.p;
@@ -24,10 +28,10 @@ export component PicoResumeList inherits VerticalLayout {
                 accessible-role: AccessibleRole.list-item;
                 accessible-label: game.cart.title;
                 accessible-item-selectable: true;
-                accessible-item-selected: (game.cart.target && game.cart.focused);
+                accessible-item-selected: root.games[i].cart.target && root.games[i].cart.focused;
                 // Always present, shown by the row's data: a row updates in place.
-                Rectangle { visible: (game.cart.target && game.cart.focused); x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
-                shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: parent.height - self.shell-h - 2 * Tokens.p; cart: game.cart; box-w: 20 * Tokens.p; box-h: 28 * Tokens.p; }
+                Rectangle { visible: root.games[i].cart.target && root.games[i].cart.focused; x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: parent.height - self.shell-h - 2 * Tokens.p; cart: root.games[i].cart; box-w: 20 * Tokens.p; box-h: 28 * Tokens.p; }
                 Rectangle { x: 0; y: parent.height - 2 * Tokens.p; width: parent.width; height: 2 * Tokens.p; background: P8.floor; }
             }
             Text { text: game.title; font-size: Tokens.sm; color: P8.ink; wrap: word-wrap; }

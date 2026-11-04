@@ -111,11 +111,9 @@ describe("the session a game's own screen watches", () => {
     pico.publish()
     pico.publish()
     expect(pico.state().nav.session._tag).toBe("AwaitingSession")
-    // The game runs: korrid publishes its session as a card of its own
-    // (model.rs, Entry::NowPlaying), first under CONTINUE.
-    korri.status = { _tag: "Running", kicker: "PLAYING", gameId: "spelunky" }
-    pico.publish()
-    korri.status = { _tag: "Browsing" }
+    // The game runs: a host with no Running status publishes its session as
+    // a card of its own (korrid's model.rs, Entry::NowPlaying), first under
+    // CONTINUE.
     korri.games = [{ id: "now:spelunky", title: "Spelunky", section: "Continue", resumable: true }, ...korri.games]
     pico.publish()
     expect(pico.state().nav.session).toMatchObject({ _tag: "Watching", sessionId: "now:spelunky" })
@@ -127,6 +125,68 @@ describe("the session a game's own screen watches", () => {
     korri.games = korri.games.filter(game => game.id !== "now:spelunky")
     pico.publish()
     expect(pico.state().nav.detail).toBeUndefined()
+  })
+})
+
+describe("a session outside the cursor window", () => {
+  test("a game launched past the first window of 120 is watched by Korri's status, and its screen closes when it ends", () => {
+    const games: SurfaceGame[] = Array.from({ length: 120 }, (_, i) => ({ id: `g${i}`, title: `Game ${String(i).padStart(3, "0")}` }))
+    const korri = new Korri(games)
+    const pico = run(korri)
+    for (let i = 0; i < 87; i += 1) pico.press("right")
+    pico.press("confirm")
+    expect(pico.state().nav.detail?.gameId).toBe("g87")
+    // g87 is outside the first window Korri sent.
+    expect(korri.model().catalog._tag === "Ready" && korri.from._tag !== "Start").toBe(true)
+    pico.press("confirm")
+    expect(korri.requests.some(request => request._tag === "LaunchGame" && request.gameId === "g87")).toBe(true)
+    expect(pico.state().nav.session._tag).toBe("AwaitingSession")
+    // Korri starts it, then it runs. Its session card lands far outside the
+    // window the shelf holds.
+    korri.status = { _tag: "Busy", kicker: "Starting Game 087…", gameId: "g87" }
+    pico.publish()
+    korri.status = { _tag: "Running", kicker: "PLAYING", gameId: "g87" }
+    korri.games = [...korri.games, { id: "now:g87", title: "Game 087", resumable: true }]
+    pico.publish()
+    expect(pico.state().nav.session).toMatchObject({ _tag: "Watching", viewingId: "g87", live: true })
+    // Pushes while it plays keep the watch and the screen.
+    korri.focused = "g87"
+    pico.publish()
+    expect(pico.state().nav.detail?.gameId).toBe("g87")
+    // It ends: Korri is browsing again; the card leaves a window that never held it.
+    korri.status = { _tag: "Browsing" }
+    korri.games = korri.games.filter(game => game.id !== "now:g87")
+    pico.publish()
+    expect(pico.state().nav.detail).toBeUndefined()
+    expect(pico.state().nav.session._tag).toBe("Idle")
+  })
+
+  test("a session ended by another device closes the screen once its Ended card is dismissed", () => {
+    const games: SurfaceGame[] = Array.from({ length: 120 }, (_, i) => ({ id: `g${i}`, title: `Game ${String(i).padStart(3, "0")}` }))
+    const korri = new Korri(games)
+    const pico = run(korri)
+    for (let i = 0; i < 87; i += 1) pico.press("right")
+    pico.press("confirm", "confirm")
+    korri.status = { _tag: "Paused", kicker: "Paused", actions: [], gameId: "g87" }
+    pico.publish()
+    expect(pico.state().nav.session).toMatchObject({ _tag: "Watching", live: true })
+    korri.status = { _tag: "Ended", kicker: "ENDED", reason: "Simon left.", gameId: "g87" }
+    pico.publish()
+    expect(pico.state().nav.detail?.gameId).toBe("g87")
+    korri.status = { _tag: "Browsing" }
+    pico.publish()
+    expect(pico.state().nav.detail).toBeUndefined()
+  })
+
+  test("a cancelled launch keeps the screen", () => {
+    const korri = new Korri(fixtureGames.map(game => ({ ...game, resumable: false })))
+    const pico = run(korri)
+    pico.press("right", "right", "right", "confirm", "confirm")
+    korri.status = { _tag: "Busy", kicker: "Starting…", gameId: "spelunky" }
+    pico.publish()
+    korri.status = { _tag: "Browsing" }
+    pico.publish()
+    expect(pico.state().nav.detail?.gameId).toBe("spelunky")
   })
 })
 
