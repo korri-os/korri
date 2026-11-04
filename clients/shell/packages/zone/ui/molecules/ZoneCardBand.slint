@@ -28,6 +28,18 @@ export component ZoneCardBand {
     // The pool: reach cards either side of the focus, and the next one each way.
     property <int> slots: 2 * reach + 3;
     property <int> base: focused-card - reach - 1;
+    // `base` one frame late: a spare slot takes its next card after the press frame.
+    property <int> fill-base;
+    init => {
+        self.fill-base = self.base;
+    }
+    fill := Timer {
+        interval: 1ms;
+        running: root.fill-base != root.base;
+        triggered => {
+            root.fill-base = root.base;
+        }
+    }
     property <length> gap: (Tokens.wide ? 10 : 7) * a;
     property <length> tri: (Tokens.wide ? 14 : 12) * a;
     property <length> room: tri + 8 * a;
@@ -82,7 +94,11 @@ export component ZoneCardBand {
         for j in root.slots: Rectangle {
             property <int> i: root.base + Math.mod(j - root.base + root.slots * 1000000, root.slots);
             property <bool> shown: i >= 0 && i < root.cards.length && Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0;
-            property <Card> c: i >= 0 && i < root.cards.length ? root.cards[i] : { };
+            // The card it is bound to: its own while drawn; while spare, the card
+            // it had before the move until the frame after it (`fill-base`), so the
+            // press frame only re-points which slot stands where.
+            property <int> data-i: shown ? i : root.fill-base + Math.mod(j - root.fill-base + root.slots * 1000000, root.slots);
+            property <Card> c: data-i >= 0 && data-i < root.cards.length ? root.cards[data-i] : { };
             x: 0;
             y: 0;
             width: 0;
