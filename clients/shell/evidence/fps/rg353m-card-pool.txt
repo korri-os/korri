@@ -1,0 +1,31 @@
+# RG353M, shell 9c5dcd6e9 + zone 2c1d71e6e (card band pool), FULLSPEED=1. Press rows 3x back to back, load before each run:
+# run 1 load: 1.50 1.40 1.30 2/365 327313
+# 10.42.0.1 2026-11-04T12:03:54Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 1.58 1.44 1.32 1/368 328730
+# 10.42.0.1 2026-11-04T12:04:29Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 1.98 1.57 1.37 1/369 330138
+# 10.42.0.1 2026-11-04T12:05:06Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [37, 24, 29] (median 29); p95 us [17340, 15339, 16516] (median 16516); max us [78356, 77106, 63696] (median 77106)
+# pico presses: over [2, 2, 4] (median 2); p95 us [4225, 4215, 4165] (median 4215); max us [24752, 27569, 27259] (median 27259)
+
+# Zone first frames of presses, per-frame profile (frames over 25 ms):
+FRAME 31 logic=8290 view=4453 set=1075 prepare=9002 walk=24699 raster=28193 replay=543 layers=1/41992px/3488us total=69122 px=228282
+    walk: bindings=19159us/1051 measure=2831us/13 shape=2275us/13 break=162us/13 items=508 | raster: bindings=1696us/208 text=16870us/198 shape=6934us/98 break=718us/112 glyphs=1338 new-glyphs=34/1344us runs=198/291us image=24us path=1404us rect=97us layer=4991us instantiate=8112us geometry=18253/1300us visited=484 created=7 rows=3 | layers invalidated=3 waiting=3 blitted=6
+FRAME 52 logic=7373 view=2747 set=1751 prepare=5429 walk=14516 raster=20895 replay=679 layers=0/0px/0us total=44951 px=200575
+    walk: bindings=9565us/810 measure=1252us/10 shape=977us/10 break=70us/10 items=517 | raster: bindings=1293us/222 text=11330us/184 shape=4456us/85 break=393us/99 glyphs=1016 new-glyphs=15/416us runs=184/229us image=18us path=1058us rect=90us layer=1736us instantiate=5190us geometry=10063/565us visited=443 created=5 rows=2 | layers invalidated=6 waiting=0 blitted=6
+FRAME 53 logic=9084 view=62 set=0 prepare=698 walk=7126 raster=15968 replay=650 layers=1/23220px/78us total=26009 px=185983
+    walk: bindings=2397us/232 measure=199us/1 shape=159us/1 break=13us/1 items=467 | raster: bindings=699us/100 text=5703us/198 shape=803us/14 break=246us/42 glyphs=1058 new-glyphs=6/179us runs=198/194us image=22us path=921us rect=65us layer=2576us instantiate=281us geometry=4579/609us visited=412 created=0 rows=0 | layers invalidated=4 waiting=1 blitted=7
+FRAME 91 logic=10718 view=2539 set=172 prepare=2416 walk=7183 raster=15699 replay=4159 layers=1/24288px/3171us total=29694 px=229521
+    walk: bindings=809us/36 measure=0us/0 shape=0us/0 break=0us/0 items=246 | raster: bindings=80us/19 text=2962us/99 shape=0us/0 break=0us/0 glyphs=550 new-glyphs=0/0us runs=113/147us image=23us path=841us rect=78us layer=5096us instantiate=2051us geometry=2955/1421us visited=246 created=3 rows=0 | layers invalidated=3 waiting=0 blitted=11
+FRAME 111 logic=12762 view=4186 set=2788 prepare=7981 walk=18828 raster=20544 replay=361 layers=0/0px/0us total=54487 px=197232
+    walk: bindings=11971us/493 measure=961us/4 shape=765us/4 break=54us/4 items=536 | raster: bindings=548us/39 text=11044us/184 shape=4256us/70 break=300us/70 glyphs=1226 new-glyphs=0/0us runs=198/184us image=23us path=700us rect=112us layer=2344us instantiate=7646us geometry=12287/577us visited=443 created=3 rows=0 | layers invalidated=6 waiting=0 blitted=6
+FRAME 131 logic=7928 view=4821 set=1100 prepare=9060 walk=16613 raster=20892 replay=796 layers=0/0px/0us total=53617 px=228241
+    walk: bindings=10259us/424 measure=1514us/35 shape=989us/6 break=220us/21 items=508 | raster: bindings=1013us/46 text=10968us/170 shape=3790us/56 break=761us/84 glyphs=1310 new-glyphs=0/0us runs=184/188us image=12us path=759us rect=54us layer=2889us instantiate=7415us geometry=11161/542us visited=416 created=3 rows=0 | layers invalidated=6 waiting=0 blitted=5
+FRAME 132 logic=13264 view=54 set=0 prepare=1445 walk=7505 raster=20212 replay=724 layers=1/23220px/85us total=31387 px=196264
+    walk: bindings=3485us/190 measure=193us/1 shape=149us/1 break=11us/1 items=426 | raster: bindings=402us/26 text=9753us/170 shape=2878us/14 break=604us/28 glyphs=1310 new-glyphs=0/0us runs=170/214us image=22us path=718us rect=51us layer=3048us instantiate=1030us geometry=4548/561us visited=364 created=0 rows=0 | layers invalidated=5 waiting=0 blitted=6
