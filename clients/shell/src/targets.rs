@@ -10,9 +10,10 @@
 //!
 //! Which element draws which view entry is found by lighting each entry alone
 //! (every other `focused` false) and reading which element is selected. An
-//! entry that selects no element, or one clipped out of view (outside the
-//! window or a clipping ancestor), is not drawn: a scrolling list or a band
-//! shows only some of its entries.
+//! entry that selects no element, or one on a hidden layer (`visible: false` or
+//! opacity zero on it or an ancestor), is not drawn. An entry whose element is
+//! only clipped out of view (by a scrolling or clipping ancestor, or the window)
+//! is drawn, at its real geometry, and not visible: a press can scroll it in.
 
 use crate::{
     images::ImageCache,
@@ -33,6 +34,8 @@ pub struct Element {
     pub selected: bool,
     /// Inside the window and every clipping ancestor.
     pub visible: bool,
+    /// On a hidden layer: `visible: false` or opacity zero on it or an ancestor.
+    pub hidden: bool,
 }
 
 impl Element {
@@ -52,6 +55,7 @@ pub fn elements(instance: &ComponentInstance) -> Vec<Element> {
         .filter(|e| e.is_valid())
         .map(|e| {
             let visible = e.is_visible();
+            let hidden = e.is_hidden();
             let at = e.absolute_position();
             let size = e.size();
             Element {
@@ -61,6 +65,7 @@ pub fn elements(instance: &ComponentInstance) -> Vec<Element> {
                 h: size.height,
                 selected: e.accessible_item_selected() == Some(true),
                 visible,
+                hidden,
             }
         })
         .collect()
@@ -132,10 +137,12 @@ pub fn lit(view: &Value, entries: &[Entry], lit: Option<usize>) -> Value {
     out
 }
 
-/// A focus target: its entry, its element when it is drawn in the window, its identity.
+/// A focus target: its entry, its element when it is drawn, its identity.
 #[derive(Clone, Debug)]
 pub struct Target {
     pub entry: Entry,
+    /// The element when it is drawn: not on a hidden layer, with a size. It may be clipped
+    /// out of view (`Element::visible` false).
     pub element: Option<Element>,
     /// `region#k`: the k-th of its region's entries in the view.
     pub identity: String,
@@ -145,7 +152,7 @@ pub struct Target {
 
 /// The targets of `view` as drawn by `instance`, with the view applied as it is at the end.
 /// Fails when an entry selects more than one element, when an element is selected with no
-/// entry focused, or when the focused entry is not drawn (focus stays in view).
+/// entry focused, or when the focused entry is not drawn and visible (focus stays in view).
 pub fn drawn(
     instance: &ComponentInstance,
     binder: &mut Binder,
@@ -158,7 +165,7 @@ pub fn drawn(
         binder.apply(instance, view, images)?;
         bail!("focus target element {i} is selected with no entry focused");
     }
-    let inside = |e: &Element| e.visible && e.w > 0.0 && e.h > 0.0;
+    let drawn = |e: &Element| !e.hidden && e.w > 0.0 && e.h > 0.0;
     let mut targets = Vec::new();
     let mut problem = None;
     let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
@@ -175,8 +182,8 @@ pub fn drawn(
                 selected.len()
             ));
         }
-        let element = selected.into_iter().next().filter(inside);
-        if entry.focused && element.is_none() {
+        let element = selected.into_iter().next().filter(drawn);
+        if entry.focused && !element.as_ref().is_some_and(|e| e.visible) {
             problem.get_or_insert(format!(
                 "the focused entry at {} ({:?}) selects no element with accessible-item-selectable in the window",
                 path_text(&entry.path),

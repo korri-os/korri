@@ -66,14 +66,16 @@ accessible-item-selected: entry.focused; // true exactly while its view entry is
 The shell finds which element draws which view entry by focusing each entry
 alone and reading which element is selected; the target's box is that
 element's geometry in the window (`src/targets.rs`). An entry whose element is
-missing or clipped out of view (outside the window or a clipping ancestor: a
-scrolled list, a band that draws only its reach) is not drawn. A target's
+missing, or on a hidden layer (`visible: false` or opacity zero on it or an
+ancestor), is not drawn. An element only clipped out of view (by a scrolling or
+clipping ancestor, or the window) is drawn, at its real geometry, and not
+visible: a press can scroll it in. A target's
 identity is its region and its place among that region's entries in the view,
 never its label, its values or its drawing order: labels repeat (two route
 rows with the same buttons), values change in place (a choice row that left
 and right step), and a list or band that recentres changes what is drawn but
 not the view. The verifier fails a package, in the first view at 640x480 or
-after one press of each button, whose focused entry is not drawn, whose entry
+after one press of each button, whose focused entry is not drawn and visible, whose entry
 selects more than one element, or that has an element selected while no entry
 is focused.
 
@@ -83,14 +85,18 @@ window:
 
 - Inside the focused target's region: the target drawn nearest in the pressed
   direction (spatial-focus.ts: distance along the axis plus 3 x the distance
-  across, ahead by more than 1 px); targets not drawn are no candidates.
+  across, ahead by more than 1 px), among the region's drawn targets, visible
+  or clipped out of view by a scrolling ancestor; targets not drawn are no
+  candidates.
 - None drawn that way, along the region's drawn targets (a column for up and
   down, a row for left and right): the region's next entry in the view (down,
   right) or the previous one (up, left), when it is not drawn: a scroll brings
   it into view.
-- After every press the focused entry is drawn: focus stays in view.
+- After every press the focused entry is drawn and visible: the press scrolled
+  it into view.
 - None that way: the region's exit. `first` is the destination's target drawn
-  first, top to bottom then left to right by box centre; `active` is its
+  first, top to bottom then left to right by box centre, also when every one of
+  them is scrolled out of view; `active` is its
   `focusActive` target; `remembered` is the target that region last had
   focused along the walked path, or `first` if it never had focus.
 - No exit: focus stays.

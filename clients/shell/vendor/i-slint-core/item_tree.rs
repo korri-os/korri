@@ -411,11 +411,34 @@ impl ItemRc {
         let (clip, geometry) = self.absolute_clip_rect_and_geometry();
         let clip = clip.to_box2d();
         let geometry = geometry.to_box2d();
+        // An item that only touches the clip's edge is outside it: none of it shows.
         !clip.is_empty()
-            && clip.max.x >= geometry.min.x
-            && clip.max.y >= geometry.min.y
-            && clip.min.x <= geometry.max.x
-            && clip.min.y <= geometry.max.y
+            && clip.max.x > geometry.min.x
+            && clip.max.y > geometry.min.y
+            && clip.min.x < geometry.max.x
+            && clip.min.y < geometry.max.y
+    }
+
+    /// Whether the item or an ancestor is hidden: `visible: false` (a visibility clip that
+    /// clips) or an opacity of zero. Unlike `is_visible`, being clipped out by a scrolling
+    /// or clipping ancestor or the window does not count.
+    pub fn is_hidden(&self) -> bool {
+        let mut current = Some(self.clone());
+        while let Some(item) = current {
+            if let Some(clip) = item.downcast::<crate::items::Clip>() {
+                let clip = clip.as_pin_ref();
+                if clip.is_visibility_clip() && clip.clip() {
+                    return true;
+                }
+            }
+            if let Some(opacity) = item.downcast::<crate::items::Opacity>() {
+                if opacity.as_pin_ref().opacity() <= 0.0 {
+                    return true;
+                }
+            }
+            current = item.parent_item(ParentItemTraversalMode::StopAtPopups);
+        }
+        false
     }
 
     pub(crate) fn visibility_clips(&self) -> Vec<VWeakMapped<ItemTreeVTable, crate::items::Clip>> {

@@ -1,0 +1,46 @@
+// A test package for surface-probe: a grid whose rows below the fold are
+// clipped by a scrolling box, and a side list scrolled out of view until it is
+// entered (contract 8.4 with scroll-clipped targets).
+import "fonts/tiny5.ttf";
+export struct Target { label: string, focused: bool }
+export component Surface inherits Window {
+    in property <[Target]> cells;
+    in property <[Target]> side;
+    in property <int> top;
+    in property <int> side-top;
+    in property <bool> hide-side;
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: #102030;
+    default-font-family: "Pico Tiny5";
+    // Three columns, two rows in view of six.
+    Rectangle {
+        x: 20px; y: 20px; width: 420px; height: 160px;
+        clip: true;
+        background: #203040;
+        for cell[i] in root.cells: Rectangle {
+            x: Math.mod(i, 3) * 140px; y: (floor(i / 3) - root.top) * 80px;
+            width: 120px; height: 60px;
+            accessible-role: button;
+            accessible-item-selectable: true;
+            accessible-item-selected: cell.focused;
+            background: cell.focused ? #f0c040 : #405060;
+            Text { text: cell.label; color: white; font-size: 20px; }
+        }
+    }
+    // A list on the right; scrolled out of its box until it is entered.
+    Rectangle {
+        x: 470px; y: 20px; width: 150px; height: 160px;
+        clip: true;
+        visible: !root.hide-side;
+        background: #203040;
+        for row[i] in root.side: Rectangle {
+            x: 0px; y: (i - root.side-top) * 50px; width: 150px; height: 46px;
+            accessible-role: list-item;
+            accessible-item-selectable: true;
+            accessible-item-selected: row.focused;
+            background: row.focused ? #f0c040 : #304050;
+            Text { text: row.label; color: white; font-size: 20px; }
+        }
+    }
+}

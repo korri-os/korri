@@ -145,3 +145,46 @@ fn a_recentring_band_keeps_its_cards_apart() {
     );
     assert!(stdout.contains(" states, 0 failures"), "{stdout}");
 }
+
+fn model_with_clock(label: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = tempfile::tempdir().unwrap();
+    let mut model: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("fixtures/model.json")).unwrap())
+            .unwrap();
+    model["clockLabel"] = label.into();
+    let path = dir.path().join("model.json");
+    std::fs::write(&path, model.to_string()).unwrap();
+    (dir, path)
+}
+
+/// A grid showing two of six rows: down from the last row in view goes to the cell below,
+/// clipped by the scrolling box, judged at its real geometry (the nearest down, same
+/// column), and scrolled in. Right from the grid exits to a side list scrolled entirely
+/// out of its box: the exit is valid, entering at the first row by geometry.
+#[test]
+fn targets_below_the_fold_and_a_region_scrolled_out_are_reachable() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let run = walk_package("fold", &root.join("fixtures/model.json"));
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(stdout.contains(" states, 0 failures"), "{stdout}");
+}
+
+/// The same side list on a hidden layer (`visible: false`) is not a target: the exit to
+/// it finds none.
+#[test]
+fn targets_on_a_hidden_layer_are_not_reachable() {
+    let (_dir, model) = model_with_clock("HIDE");
+    let run = walk_package("fold", &model);
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(!run.status.success(), "{stdout}");
+    assert!(
+        stdout.contains(r#"right exit to "side" (first) finds no drawn target"#),
+        "{stdout}"
+    );
+}
