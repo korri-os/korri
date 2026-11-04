@@ -42,6 +42,7 @@ bun run zone:typecheck
 bash packages/zone/test/bite.sh        # each gate fails on a planted defect
 cargo test --release --features fixture --test zone_package   # previews at five sizes; focus in view
 korri-shell verify packages/zone       # the install-time verifier, 0 / 12 / 10,000 games
+bash packages/zone/preview/probe.sh PROBE   # the shell's probe (built surface-probe) over every scenario model, five sizes
 nix run .#zone-check                   # the bun checks and logic.js freshness
 ```
 
