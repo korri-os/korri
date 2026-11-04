@@ -113,6 +113,9 @@ struct Profile {
     raster: TextProfile,
     image_draw: f64,
     path_draw: f64,
+    rect_draw: f64,
+    layer_draw: f64,
+    instantiate: f64,
     glyph_raster_count: f64,
     glyph_raster: f64,
     glyph_run_setup: f64,
@@ -377,6 +380,9 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                     raster: text_profile!(raster),
                     image_draw: us(raster.image_draw.time),
                     path_draw: us(raster.path_draw.time),
+                    rect_draw: us(raster.rect_draw.time),
+                    layer_draw: us(raster.layer_draw.time),
+                    instantiate: us(walk.instantiate.time),
                     glyph_raster_count: (walk.glyph_raster.count + raster.glyph_raster.count)
                         as f64,
                     glyph_raster: us(walk.glyph_raster.time + raster.glyph_raster.time),
@@ -429,13 +435,13 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                 }
                 if let Some(p) = &frame.profile {
                     eprintln!(
-                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
+                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us rect={:.0}us layer={:.0}us instantiate={:.0}us | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
                         p.walk.binding, p.walk.bindings, p.walk.measure, p.walk.measures, p.walk.shape, p.walk.shapes,
                         p.walk.line_break, p.walk.line_breaks, p.walked_items,
                         p.raster.binding, p.raster.bindings, p.raster.draw, p.raster.draws, p.raster.shape, p.raster.shapes,
                         p.raster.line_break, p.raster.line_breaks, p.glyphs,
                         p.glyph_raster_count, p.glyph_raster, p.glyph_runs, p.glyph_run_setup,
-                        p.image_draw, p.path_draw, p.layers_invalidated, p.layers_waiting, p.layers_blitted
+                        p.image_draw, p.path_draw, p.rect_draw, p.layer_draw, p.instantiate, p.layers_invalidated, p.layers_waiting, p.layers_blitted
                     );
                 }
             }
@@ -451,7 +457,8 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
 }
 
 type ProfilePhase = (&'static str, fn(&Profile) -> f64);
-const PROFILE_PHASES: [ProfilePhase; 26] = [
+const PROFILE_PHASES: [ProfilePhase; 29] = [
+    ("instantiate repeaters (us)", |p| p.instantiate),
     ("walk: bindings, outermost (us)", |p| p.walk.binding),
     ("walk: bindings evaluated", |p| p.walk.bindings),
     ("walk: text measuring (us)", |p| p.walk.measure),
@@ -475,6 +482,8 @@ const PROFILE_PHASES: [ProfilePhase; 26] = [
     ("new glyph rasterising (us)", |p| p.glyph_raster),
     ("raster: image drawing (us)", |p| p.image_draw),
     ("raster: path drawing (us)", |p| p.path_draw),
+    ("raster: rectangle drawing (us)", |p| p.rect_draw),
+    ("raster: cached layers (us)", |p| p.layer_draw),
     ("layers invalidated", |p| p.layers_invalidated),
     ("layers waiting for an image", |p| p.layers_waiting),
     ("layers drawn from an image", |p| p.layers_blitted),

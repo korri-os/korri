@@ -1843,6 +1843,12 @@ impl WindowInner {
             &dyn Fn(&mut dyn crate::item_rendering::ItemRenderer),
         ) -> T,
     ) -> Option<T> {
+        #[cfg(feature = "std")]
+        crate::frame_profile::time(
+            |p| &mut p.instantiate,
+            || crate::properties::evaluate_no_tracking(|| self.ensure_tree_instantiated()),
+        );
+        #[cfg(not(feature = "std"))]
         crate::properties::evaluate_no_tracking(|| self.ensure_tree_instantiated());
         #[cfg(feature = "shared-parley")]
         if let Some(cache) = self.window_adapter().renderer().text_layout_cache() {

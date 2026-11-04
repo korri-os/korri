@@ -3431,6 +3431,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         size: LogicalSize,
         _cache: &CachedRenderingData,
     ) {
+        i_slint_core::frame_profile::time(|p| &mut p.rect_draw, || {
         let geom = LogicalRect::from(size);
         if self.should_draw(&geom) {
             let geom = (geom.translate(self.current_state.offset.to_vector()).cast()
@@ -3450,6 +3451,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
             args.rotation = self.rotation.orientation;
             self.processor.process_rectangle(&args, clipped);
         }
+            })
     }
 
     fn draw_border_rectangle(
@@ -3459,6 +3461,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         size: LogicalSize,
         _: &CachedRenderingData,
     ) {
+        i_slint_core::frame_profile::time(|p| &mut p.rect_draw, || {
         let geom = LogicalRect::from(size);
         if self.should_draw(&geom) {
             let geom = (geom.translate(self.current_state.offset.to_vector()).cast()
@@ -3499,6 +3502,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
 
             self.processor.process_rectangle(&args, clipped);
         }
+            })
     }
 
     fn draw_window_background(
@@ -3772,6 +3776,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         item_rc: &ItemRc,
         size: LogicalSize,
     ) -> RenderingResult {
+        i_slint_core::frame_profile::time(|p| &mut p.layer_draw, || {
         #[cfg(feature = "std")]
         if layer.cache_rendering_hint() {
             // A layer inside a layer's image is drawn into that image.
@@ -3834,6 +3839,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         }
         let _ = (layer, item_rc, size);
         RenderingResult::ContinueRenderingChildren
+            })
     }
 
     fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {

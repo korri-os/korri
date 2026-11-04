@@ -44,6 +44,12 @@ pub struct FrameProfile {
     pub binding: Counter,
     /// Drawing a path item (building and filling or stroking it).
     pub path_draw: Counter,
+    /// Drawing rectangles and bordered rectangles.
+    pub rect_draw: Counter,
+    /// Drawing a cached layer (`visit_layer`, including recording its calls when it has none).
+    pub layer_draw: Counter,
+    /// Making sure every repeater and conditional is instantiated before a frame.
+    pub instantiate: Counter,
     /// Pixel sizes at which glyphs were rasterised, with their glyph count.
     pub raster_sizes: Vec<(i16, u64)>,
 }
