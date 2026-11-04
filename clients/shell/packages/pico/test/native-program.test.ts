@@ -193,3 +193,23 @@ describe("quiet messages keep the state object", () => {
     expect(view(state, model)).toBe(view(state, model))
   })
 })
+
+describe("a publish that changes nothing", () => {
+  test("a freshly parsed, equal model keeps the state and the view; unchanged rows keep their arrays", () => {
+    const korri = new Korri(fixtureGames.map(game => ({ ...game })))
+    const parsed = () => JSON.parse(JSON.stringify(korri.model())) as KorriModel
+    let state = init(parsed(), {})
+    state = update(state, { _tag: "Resized", width: 640, height: 480 }, parsed()).state
+    state = update(state, { _tag: "KorriPublished" }, parsed()).state
+    const before = view(state, parsed()) as { attract: { carts: unknown[] }; home: { menu: unknown[] } }
+    const again = update(state, { _tag: "KorriPublished" }, parsed())
+    expect(again.state).toBe(state)
+    expect(view(state, parsed())).toBe(before)
+    // A move along the shelf changes the carts, not MENU's list or attract's.
+    const moved = update(state, { _tag: "Pressed", button: "right" }, parsed()).state
+    const after = view(moved, parsed()) as typeof before
+    expect(after).not.toBe(before)
+    expect(after.attract.carts).toBe(before.attract.carts)
+    expect(after.home.menu).toBe(before.home.menu)
+  })
+})

@@ -42,7 +42,7 @@ import type { PicoRequest } from "../state/requests"
 import { attractShowing, canAttract, inviteNotices, launchOpen, runnerOpen, shownScreen } from "../state/shown"
 import { update as picoUpdate } from "../state/update"
 import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScreen, sameQuery } from "./catalog"
-import { memo } from "./memo"
+import { memo, share } from "./memo"
 import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus } from "./focus"
 import { cartView } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
@@ -64,7 +64,24 @@ export function planFor(s: State, korri: KorriModel): Plan {
 
 const planOf = memo(4, (window: State["window"], displays: KorriModel["displays"]) => [window, displays], picoLayoutPlan)
 
-export function init(korri: KorriModel, preferences: Readonly<Record<string, string>>): State {
+/**
+ * The shell parses Korri's model afresh on every publish. Parts equal to the
+ * last model's keep the last model's objects, and a model equal in every
+ * part is the last model itself: the screen, the view and every cart built
+ * from it are reused, not rebuilt.
+ */
+let lastIn: KorriModel | undefined
+let lastOut: KorriModel | undefined
+function interned(korri: KorriModel): KorriModel {
+  if (korri === lastIn || korri === lastOut) return lastOut as KorriModel
+  const out = share(lastOut, korri)
+  lastIn = korri
+  lastOut = out
+  return out
+}
+
+export function init(raw: KorriModel, preferences: Readonly<Record<string, string>>): State {
+  const korri = interned(raw)
   return {
     nav: initialNavigation(),
     setup: initialOnboarding(),
@@ -455,7 +472,15 @@ function leftRange(id: string, korri: KorriModel): Act {
   return control === undefined ? [] : [{ to: "overlay", message: { _tag: "LeftRange", control } }]
 }
 
-export function update(state: State, message: SurfaceMessage, korri: KorriModel): { state: State; requests: SurfaceRequest[] } {
+export function update(state: State, message: SurfaceMessage, raw: KorriModel): { state: State; requests: SurfaceRequest[] } {
+  const korri = interned(raw)
+  const result = updated(state, message, korri)
+  // A message that changed nothing returns the same state, so the shell does
+  // not draw again (a publish with the same window, a press with nowhere to go).
+  return { state: share(state, result.state) === state ? state : result.state, requests: result.requests }
+}
+
+function updated(state: State, message: SurfaceMessage, korri: KorriModel): { state: State; requests: SurfaceRequest[] } {
   // A Tick that crosses no threshold, and a Resized to the same size, change
   // nothing: the same state object tells the shell not to draw again.
   if (message._tag === "Tick") {
@@ -557,9 +582,17 @@ function marked(value: unknown, screen: Screen): unknown {
   return out
 }
 
-export function view(s: State, korri: KorriModel) {
-  return viewOf(s, korri)
+export function view(s: State, raw: KorriModel) {
+  const built = viewOf(s, interned(raw))
+  if (built === lastBuilt) return lastView
+  lastBuilt = built
+  lastView = share(lastView, built)
+  return lastView
 }
+
+/** The last view, so rows that did not change keep their arrays. */
+let lastBuilt: unknown
+let lastView: ReturnType<typeof buildView> | undefined
 
 /** The view reads the screen's inputs, the notices' round and the font. */
 const viewOf = memo(
@@ -603,9 +636,16 @@ function splitPlan(plan: PicoDisplayPlan | undefined) {
   return { on: true, showX: show.x, showY: show.y, showW: show.width, showH: show.height, chooseX: choose.x, chooseY: choose.y, chooseW: choose.width, chooseH: choose.height }
 }
 
-export function overlay(s: State, korri: KorriModel) {
-  return overlayOf(s, korri)
+export function overlay(s: State, raw: KorriModel) {
+  const built = overlayOf(s, interned(raw))
+  if (built === lastOverlayBuilt) return lastOverlay
+  lastOverlayBuilt = built
+  lastOverlay = share(lastOverlay, built)
+  return lastOverlay
 }
+
+let lastOverlayBuilt: unknown
+let lastOverlay: ReturnType<typeof buildOverlay> | undefined
 
 const overlayOf = memo(
   2,
