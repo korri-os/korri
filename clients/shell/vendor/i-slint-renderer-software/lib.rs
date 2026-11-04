@@ -435,8 +435,8 @@ struct CachedLayer {
     shifted_at: Cell<Option<euclid::Point2D<f32, PhysicalPx>>>,
     /// The screen area the children draw in, in physical pixels.
     area: euclid::Rect<i32, PhysicalPx>,
-    /// The children's draw calls, in screen coordinates.
-    ops: Vec<parallel::Op>,
+    /// The children's draw calls, in screen coordinates, and the pixels they last drew.
+    ops: std::sync::Arc<parallel::LayerOps>,
 }
 
 /// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
@@ -1951,12 +1951,7 @@ fn prepare_scene(
 trait ProcessScene {
     /// Draw a cached layer's recorded draw calls, moved by `delta`, inside `clip`.
     #[cfg(feature = "std")]
-    fn process_layer_ops(
-        &mut self,
-        ops: &[parallel::Op],
-        delta: euclid::Vector2D<i16, PhysicalPx>,
-        clip: PhysicalRect,
-    );
+    fn process_layer_ops(&mut self, layer: &std::sync::Arc<parallel::LayerOps>, clip: PhysicalRect);
     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>);
     fn process_target_texture(
         &mut self,
@@ -2358,30 +2353,11 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<'_, B> {
     #[cfg(feature = "std")]
-    fn process_layer_ops(
-        &mut self,
-        ops: &[parallel::Op],
-        delta: euclid::Vector2D<i16, PhysicalPx>,
-        clip: PhysicalRect,
-    ) {
-        // Only the calls that reach the clip and the frame's dirty region.
-        let Some(reach) = clip.intersection(&self.dirty_region.bounding_rect()) else { return };
-        let moved = ops.iter().filter_map(|op| {
-            let op = op.translated(delta);
-            op.bounds().intersects(&reach).then_some(op)
-        });
-        if let Some(recorder) = &mut self.recording {
-            recorder.push(parallel::Op::SetClip(Some(clip)));
-            for op in moved {
-                recorder.push(op);
-            }
-            recorder.push(parallel::Op::SetClip(None));
-        } else {
-            self.replay(&parallel::Op::SetClip(Some(clip)));
-            for op in moved {
-                self.replay(&op);
-            }
-            self.replay(&parallel::Op::SetClip(None));
+    fn process_layer_ops(&mut self, layer: &std::sync::Arc<parallel::LayerOps>, clip: PhysicalRect) {
+        let op = parallel::Op::Layer(layer.clone(), clip);
+        match &mut self.recording {
+            Some(recorder) => recorder.push(op),
+            None => self.replay(&op),
         }
     }
 
@@ -2603,12 +2579,7 @@ struct PrepareScene {
 
 impl ProcessScene for PrepareScene {
     #[cfg(feature = "std")]
-    fn process_layer_ops(
-        &mut self,
-        _ops: &[parallel::Op],
-        _delta: euclid::Vector2D<i16, PhysicalPx>,
-        _clip: PhysicalRect,
-    ) {
+    fn process_layer_ops(&mut self, _layer: &std::sync::Arc<parallel::LayerOps>, _clip: PhysicalRect) {
         // Line-by-line rendering has no layer cache.
     }
 
@@ -2850,7 +2821,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             .round_out()
             .cast::<i32>();
         let Some(clipped) = layer.area.intersection(&screen_clip) else { return true };
-        self.processor.process_layer_ops(&layer.ops, euclid::vec2(0, 0), clipped.cast());
+        self.processor.process_layer_ops(&layer.ops, clipped.cast());
         true
     }
 
@@ -2928,6 +2899,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             );
             nested.processor.recording.take().map(|recorder| recorder.into_ops()).unwrap_or_default()
         };
+        let ops = std::sync::Arc::new(parallel::LayerOps::new(ops, area.cast()));
         Some(Rc::new(CachedLayer { at, shifted_at: Cell::new(None), area, ops }))
     }
 
