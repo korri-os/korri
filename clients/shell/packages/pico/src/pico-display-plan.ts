@@ -158,7 +158,8 @@ const to = (region: string, entry: Entry) => ({ to: region, entry })
  *   are tabs.
  * - `keys` over `answers` in the editor; setup's `list`, `pack` answers,
  *   `answers` and `go`, top to bottom; the store's `search` over its
- *   `results`, and an entry's `actions` over its `card`.
+ *   `results`; a game's `play` (its first answer) over its other
+ *   `actions`, over its `card`.
  */
 export function picoExits(spinesBeside: boolean): ExitChoices {
   const spines = spinesBeside
@@ -189,7 +190,7 @@ export function picoExits(spinesBeside: boolean): ExitChoices {
     hero: { up: [to("invites", "remembered")], down: [to("resume", "first"), to("floor", "first")] },
     resume: { up: [to("hero", "first"), to("invites", "remembered")], down: [to("floor", "first")] },
     card: {
-      up: [to("actions", "remembered"), to("search", "first"), to("invites", "remembered")],
+      up: [to("actions", "remembered"), to("play", "first"), to("search", "first"), to("invites", "remembered")],
       down: [to("floor", "first")],
     },
     stage: { down: [to("floor", "first")] },
@@ -198,7 +199,8 @@ export function picoExits(spinesBeside: boolean): ExitChoices {
     keys: { up: [to("orders", "active")], down: [to("results", "remembered"), to("answers", "first")] },
     results: { up: [to("keys", "remembered"), to("search", "first")] },
     search: { down: [to("results", "first"), to("card", "first")] },
-    actions: { down: [to("card", "first")] },
+    play: { down: [to("actions", "first"), to("card", "first")] },
+    actions: { up: [to("play", "first")], down: [to("card", "first")] },
     spines,
     scopes,
     rows,

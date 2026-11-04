@@ -62,7 +62,7 @@ imports.
 - **Regions and exits (contract 8.4).** Every focus target belongs to a
   region (`src/native/focus.ts`): `floor`, `menu`, `invites`, `shelf`,
   `grid`, `hero`, `resume`, `card`, `stage`, `sections`, `orders`, `keys`,
-  `results`, `search`, `actions`, `spines`, `scopes`, `rows`, `answers`,
+  `results`, `search`, `play`, `actions`, `spines`, `scopes`, `rows`, `answers`,
   `list`, `pack`, `go`. Inside a region a press moves to the nearest target
   ahead. Leaving one follows `picoExits` in `src/pico-display-plan.ts`,
   which the plan computes per size (spines beside the rows or above them).

@@ -568,7 +568,7 @@ export function detailScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Detail
     targets.push(...placed.targets)
     shownCard = placed.card
   } else {
-    targets.push({ id: "play", region: "actions", box: { x: 0, y: 0, w: 30, h: 10 }, act: [nav({ _tag: "PressedPlay" })] })
+    targets.push({ id: "play", region: "play", box: { x: 0, y: 0, w: 30, h: 10 }, act: [nav({ _tag: "PressedPlay" })] })
     actions.forEach((action, i) => {
       if (action.enabled) targets.push({ id: `action:${action.id}`, region: "actions", box: { x: 0, y: 20 + i * 10, w: 100, h: 8 }, act: [nav({ _tag: "PressedGameAction", action })] })
     })

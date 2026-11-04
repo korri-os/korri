@@ -138,7 +138,7 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
   switch (get._tag) {
     case "Offer": {
       const [first, ...rest] = get.actions
-      if (first !== undefined && first.enabled) targets.push({ id: `action:${first.id}`, region: "actions", box: { x: 0, y: 0, w: 30, h: 10 }, act: actionAct(first) })
+      if (first !== undefined && first.enabled) targets.push({ id: `action:${first.id}`, region: "play", box: { x: 0, y: 0, w: 30, h: 10 }, act: actionAct(first) })
       rest.forEach((action, i) => { if (action.enabled) targets.push({ id: `action:${action.id}`, region: "actions", box: { x: 0, y: 20 + i * 10, w: 100, h: 8 }, act: actionAct(action) }) })
       hints = first === undefined ? [B("BACK")] : [A(first.label.toUpperCase()), B("BACK")]
       return {
