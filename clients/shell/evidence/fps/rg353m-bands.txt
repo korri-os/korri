@@ -1,0 +1,26 @@
+# RG353M, build 90f4a0e6b, Zone modern press row, FULLSPEED=1: interleaved bands (default) vs KORRI_BENCH_WHOLE_BANDS=1, alternating, load before each run.
+# inter 1 load 1.18 1.49 1.49 1/365 312850
+  of which banded replay             2150       3838       6252
+frame total                          5911      19215      86930
+frames over 16.7 ms: 52 of 600
+# whole 1 load 1.43 1.53 1.50 2/368 314219
+  of which banded replay             2513       4642      10037
+frame total                          6231      17958      86378
+frames over 16.7 ms: 49 of 600
+# inter 2 load 1.23 1.47 1.48 1/368 315584
+  of which banded replay             2050       4066       9666
+frame total                          5396      17473      84316
+frames over 16.7 ms: 42 of 600
+# whole 2 load 1.29 1.48 1.48 1/368 316955
+  of which banded replay             2380       4238       8546
+frame total                          5863      18224      86977
+frames over 16.7 ms: 49 of 600
+# inter 3 load 2.13 1.66 1.54 2/368 318325
+  of which banded replay             2000       3767       6973
+frame total                          5228      17447      91403
+frames over 16.7 ms: 44 of 600
+# whole 3 load 2.42 1.77 1.58 1/371 319699
+  of which banded replay             2384       4237      11468
+frame total                          5932      18419      77078
+frames over 16.7 ms: 54 of 600
+# Over: interleaved [52,42,44] (median 44), whole [49,49,54] (median 49). Band tail p50 2.0-2.15 ms vs 2.38-2.51 ms.
