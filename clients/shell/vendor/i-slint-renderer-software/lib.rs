@@ -455,6 +455,12 @@ struct CachedLayer {
 
 /// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
 /// children's rendering read changes, and cleared when the scale factor or window size changes.
+/// Layer image pixels a frame renders before further layers wait for a later frame: the
+/// first image of a frame is always rendered; small ones (captions) share a frame, so many
+/// small layers do not each wait a frame, redrawn directly meanwhile.
+#[cfg(feature = "std")]
+const LAYER_IMAGE_PIXELS: u64 = 24 * 1024;
+
 #[cfg(feature = "std")]
 #[derive(Default)]
 struct LayerCache {
@@ -3947,7 +3953,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 // Its content stayed the same for a frame, or it has no image yet. A frame
                 // renders one image: another such layer is drawn directly once more.
                 if direct || state.is_none() {
-                    if cache.rendering.get() {
+                    if cache.rendering.get() && cache.renders.get().1 >= LAYER_IMAGE_PIXELS {
                         cache.visits.set((invalidated, waiting + 1, blitted));
                         let layer =
                             DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: false };
