@@ -553,6 +553,10 @@ pub struct SoftwareRenderer {
     /// The buffer size, scale factor and rotation of the last frame drawn: a frame with
     /// others is drawn even when no property changed.
     drawn_frame: Cell<Option<(PhysicalSize, f32, RenderingRotation)>>,
+    /// The window's component at the last frame: another one forgets the shaping shared
+    /// across items (`TextLayoutCache::clear_shared`).
+    #[cfg(feature = "systemfonts")]
+    drawn_root: Cell<usize>,
     skip_quiet_frames: Cell<bool>,
 }
 
@@ -584,6 +588,8 @@ impl Default for SoftwareRenderer {
             #[cfg(feature = "std")]
             check_layers_again: Default::default(),
             drawn_frame: Default::default(),
+            #[cfg(feature = "systemfonts")]
+            drawn_root: Default::default(),
             skip_quiet_frames: Cell::new(true),
         }
     }
@@ -970,6 +976,15 @@ impl SoftwareRenderer {
 
         // Nothing to draw when no property the last frame read changed, nothing marked a
         // region, and the buffer keeps last frame's pixels (`WindowInner::draw_contents_if_changed`).
+        #[cfg(feature = "systemfonts")]
+        {
+            let root = window_inner.try_component().map_or(0, |c| {
+                &*c as *const _ as *const u8 as usize
+            });
+            if self.drawn_root.replace(root) != root {
+                self.text_layout_cache.clear_shared();
+            }
+        }
         let frame = Some((size, factor.get(), rotation));
         let same_frame = self.drawn_frame.replace(frame) == frame;
         let idle = || {

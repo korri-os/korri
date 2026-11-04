@@ -44,6 +44,18 @@ type InnerTextLayoutCache = crate::item_rendering::ItemCache<CachedParagraphs>;
 /// Entry count above which [`TextLayoutCache::sweep`] runs (~4.7KB per entry).
 const ENTRY_LIMIT: usize = 1024;
 
+/// Shaped paragraphs kept across items (`TextLayoutCache::shared`).
+const SHARED_LIMIT: usize = 256;
+
+/// Paragraphs shaped for some item, kept for any other item with the same inputs: a list row
+/// or a card handed text another row showed before shapes nothing. Shaping depends on the
+/// inputs alone, so a copy is what shaping them again would give.
+struct SharedParagraphs {
+    wrap: TextWrap,
+    inputs: ShapingInputs,
+    paragraphs: Vec<TextParagraph>,
+}
+
 /// Cache for shaped text paragraphs (before line breaking), keyed by ItemRc.
 pub struct TextLayoutCache {
     inner: InnerTextLayoutCache,
@@ -57,6 +69,10 @@ pub struct TextLayoutCache {
     entry_count_estimate: std::cell::Cell<usize>,
     /// Estimate above which the next sweep runs; raised when the active set exceeds the limit.
     sweep_threshold: std::cell::Cell<usize>,
+    /// Paragraphs shaped lately, by any item, oldest first (`SHARED_LIMIT`).
+    shared: std::cell::RefCell<alloc::collections::VecDeque<SharedParagraphs>>,
+    /// Whether misses look in `shared` (the default); off, every miss shapes. For tests.
+    share: std::cell::Cell<bool>,
     #[cfg(feature = "testing")]
     cache_miss_count: std::cell::Cell<u64>,
     #[cfg(feature = "testing")]
@@ -74,6 +90,8 @@ impl Default for TextLayoutCache {
             generation: Default::default(),
             entry_count_estimate: Default::default(),
             sweep_threshold: std::cell::Cell::new(ENTRY_LIMIT),
+            shared: Default::default(),
+            share: std::cell::Cell::new(true),
             #[cfg(feature = "testing")]
             cache_miss_count: std::cell::Cell::new(0),
             #[cfg(feature = "testing")]
@@ -90,14 +108,64 @@ impl TextLayoutCache {
     /// cache rather than when rendering starts, because the layout pass that follows a scale
     /// factor change measures before anything renders.
     pub(super) fn clear_if_scale_factor_changed(&self, window: &crate::api::Window) {
+        if self.inner.scale_factor_changed(window) {
+            self.shared.borrow_mut().clear();
+        }
         self.inner.clear_cache_if_scale_factor_changed(window);
         self.content_widths.clear_cache_if_scale_factor_changed(window);
+    }
+
+    /// Forgets the paragraphs shared across items: fonts resolved for one component tree need
+    /// not be the ones another resolves for the same request.
+    pub fn clear_shared(&self) {
+        self.shared.borrow_mut().clear();
+    }
+
+    /// Whether a miss may take paragraphs another item shaped from the same inputs (the
+    /// default). For tests that compare the two.
+    pub fn set_share_shaping(&self, share: bool) {
+        self.share.set(share);
+        if !share {
+            self.clear_shared();
+        }
+    }
+
+    /// Paragraphs shaped from `inputs` for `wrap` by any item lately, or shaped now and kept.
+    fn shape_shared(
+        &self,
+        wrap: TextWrap,
+        inputs: &ShapingInputs,
+        font_context: &mut parley::FontContext,
+    ) -> Vec<TextParagraph> {
+        if self.share.get() && inputs.plain_text().is_some() {
+            if let Some(found) = self
+                .shared
+                .borrow()
+                .iter()
+                .rev()
+                .find(|e| e.wrap == wrap && e.inputs.same_as(inputs))
+            {
+                return found.paragraphs.clone();
+            }
+        }
+        let paragraphs = profiled!(shape, inputs.shape(font_context));
+        if self.share.get()
+            && let Some(copy) = inputs.plain_copy()
+        {
+            let mut shared = self.shared.borrow_mut();
+            if shared.len() >= SHARED_LIMIT {
+                shared.pop_front();
+            }
+            shared.push_back(SharedParagraphs { wrap, inputs: copy, paragraphs: paragraphs.clone() });
+        }
+        paragraphs
     }
     pub fn component_destroyed(&self, component: crate::item_tree::ItemTreeRef) {
         self.inner.component_destroyed(component);
         self.content_widths.component_destroyed(component);
     }
     pub fn clear_all(&self) {
+        self.shared.borrow_mut().clear();
         self.inner.clear_all();
         self.content_widths.clear_all();
     }
@@ -287,7 +355,7 @@ pub(super) fn cached_paragraphs<'a>(
         cache.entry_count_estimate.set(cache.entry_count_estimate.get() + 1);
         CachedParagraphs {
             wrap,
-            paragraphs: Some(profiled!(shape, inputs.shape(font_context))),
+            paragraphs: Some(cache.shape_shared(wrap, &inputs, font_context)),
             inputs,
             line_breaking: None,
             last_used: 0, // stamped right below, for both a hit and this miss

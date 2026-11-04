@@ -140,6 +140,11 @@ impl<T> ItemCache<T> {
             .map(|entry| callback(&mut entry.data))
     }
 
+    /// Whether the window's scale factor differs from the one the cache was last cleared for.
+    pub fn scale_factor_changed(&self, _window: &crate::api::Window) -> bool {
+        self.window_scale_factor_tracker.is_dirty()
+    }
+
     /// Clears the cache if the window's scale factor has changed since the last call.
     pub fn clear_cache_if_scale_factor_changed(&self, window: &crate::api::Window) {
         if self.window_scale_factor_tracker.is_dirty() {

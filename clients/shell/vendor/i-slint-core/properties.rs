@@ -36,7 +36,7 @@ mod single_linked_list_pin {
         use core::cell::RefCell;
 
         /// Nodes kept per layout.
-        const KEEP: usize = 8192;
+        const KEEP: usize = 2048;
 
         struct Pool(alloc::vec::Vec<(Layout, alloc::vec::Vec<*mut u8>)>);
 

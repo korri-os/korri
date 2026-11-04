@@ -29,7 +29,7 @@ pub(super) struct Brush {
     pub(super) link_color: Option<Color>,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub(super) struct LayoutWithoutLineBreaksBuilder {
     font_request: Option<FontRequest>,
     pub(super) text_wrap: TextWrap,
@@ -411,6 +411,26 @@ impl ShapingInputs {
     }
 
     /// Whether shaping with `other` gives the same paragraphs.
+    /// A copy, for the cache shared across items; `None` for styled text, which is not shared.
+    pub(super) fn plain_copy(&self) -> Option<Self> {
+        match &self.text {
+            PlainOrStyledText::Plain(text) => Some(Self {
+                builder: self.builder.clone(),
+                text: PlainOrStyledText::Plain(text.clone()),
+                link_color: self.link_color,
+            }),
+            PlainOrStyledText::Styled(_) => None,
+        }
+    }
+
+    /// The plain text, to find shared entries by.
+    pub(super) fn plain_text(&self) -> Option<&str> {
+        match &self.text {
+            PlainOrStyledText::Plain(text) => Some(text.as_str()),
+            PlainOrStyledText::Styled(_) => None,
+        }
+    }
+
     pub(super) fn same_as(&self, other: &Self) -> bool {
         let same_text = match (&self.text, &other.text) {
             (PlainOrStyledText::Plain(a), PlainOrStyledText::Plain(b)) => a == b,
@@ -421,6 +441,7 @@ impl ShapingInputs {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct TextParagraph {
     pub(super) range: Range<usize>,
     pub(super) y: PhysicalLength,
