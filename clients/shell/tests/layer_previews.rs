@@ -53,13 +53,20 @@ fn zone(dir: &Path, cached: bool) -> PathBuf {
                 std::fs::remove_file(&path).unwrap();
             } else if name.ends_with(".slint") {
                 let text = std::fs::read_to_string(&path).unwrap();
-                let text = if cached {
-                    text.replace(
-                        "export component ZoneCaps {\n",
-                        "export component ZoneCaps {\n    cache-rendering-hint: true;\n",
-                    )
+                let text = if !cached {
+                    set_hints(&text, "false")
+                } else if name == "ZoneCaps.slint" {
+                    // Every caption cached, elided ones too.
+                    if text.contains("cache-rendering-hint:") {
+                        set_hints(&text, "true")
+                    } else {
+                        text.replace(
+                            "export component ZoneCaps {\n",
+                            "export component ZoneCaps {\n    cache-rendering-hint: true;\n",
+                        )
+                    }
                 } else {
-                    regex_free_uncache(&text)
+                    text
                 };
                 std::fs::write(&path, text).unwrap();
             }
@@ -68,15 +75,15 @@ fn zone(dir: &Path, cached: bool) -> PathBuf {
     package
 }
 
-/// Every `cache-rendering-hint: …;` set to false.
-fn regex_free_uncache(text: &str) -> String {
+/// Every `cache-rendering-hint: …;` set to `value`.
+fn set_hints(text: &str, value: &str) -> String {
     let mut out = String::new();
     for line in text.split_inclusive('\n') {
         match line.find("cache-rendering-hint:") {
             Some(at) => {
                 let end = line[at..].find(';').map_or(line.len(), |e| at + e + 1);
                 out.push_str(&line[..at]);
-                out.push_str("cache-rendering-hint: false;");
+                out.push_str(&format!("cache-rendering-hint: {value};"));
                 out.push_str(&line[end..]);
             }
             None => out.push_str(line),
