@@ -37,7 +37,8 @@ export component PicoRow {
     min-height: font-size + 6 * Tokens.p;
     preferred-height: max(font-size + 6 * Tokens.p, label.preferred-height + 6 * Tokens.p);
     max-height: self.preferred-height;
-    if kind == "plate" || (button.target && button.focused) : Rectangle {
+    // Always present, shown by the row's data: a row updates in place.
+    Rectangle { visible: kind == "plate" || (button.target && button.focused);
         x: Tokens.drop-sm;
         y: Tokens.drop-sm;
         width: root.width;

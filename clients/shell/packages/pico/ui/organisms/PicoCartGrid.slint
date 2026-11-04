@@ -31,7 +31,8 @@ export component PicoCartGrid inherits VerticalLayout {
                 accessible-label: cart.title;
                 accessible-item-selectable: true;
                 accessible-item-selected: (cart.target && cart.focused);
-                if (cart.target && cart.focused) : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                // Always present, shown by the row's data: a row updates in place.
+                Rectangle { visible: (cart.target && cart.focused); x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
                 shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
                     x: 0;
                     y: parent.height - 4 * Tokens.p - self.shell-h - (cart.hero ? 4 * Tokens.p : 0);

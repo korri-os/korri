@@ -41,7 +41,8 @@ export component PicoCartShelf inherits Rectangle {
             y: 8 * Tokens.p + slot-h - Tokens.p - shell.shell-h - (cart.hero ? 4 * Tokens.p : 0);
             width: shell.shell-w;
             height: shell.shell-h;
-            if cart.hero || (cart.target && cart.focused) : Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: (cart.target && cart.focused) ? Cycle.now : P8.ink; }
+            // Always present, shown by the row's data: a row updates in place.
+            Rectangle { visible: cart.hero || (cart.target && cart.focused); x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: (cart.target && cart.focused) ? Cycle.now : P8.ink; }
             // The slot, level across the shelf: the focus target.
             Rectangle {
                 x: 0;

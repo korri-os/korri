@@ -22,7 +22,8 @@ export component PicoChip {
     preferred-width: label.preferred-width + 6 * Tokens.p;
     min-width: self.preferred-width;
     height: font-size + 4 * Tokens.p;
-    if (button.target && button.focused) : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
+    // Always present, shown by the row's data: a row updates in place.
+    Rectangle { visible: (button.target && button.focused); x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
     Rectangle { background: (button.target && button.focused) ? P8.pick : button.lit ? lit-ground : ground; }
     label := Text {
         x: 3 * Tokens.p;
