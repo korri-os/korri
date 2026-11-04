@@ -204,6 +204,16 @@ pub struct Engine {
 impl Engine {
     /// Evaluate `logic.js` and read its preference declaration.
     pub fn load(source: &str, limits: Limits) -> Result<Self, Violation> {
+        Self::load_stoppable(source, limits, Default::default())
+    }
+
+    /// `load`, with a flag another thread sets to interrupt whatever call runs (a surface
+    /// unloaded while its logic runs on its own thread, `crate::logic`).
+    pub fn load_stoppable(
+        source: &str,
+        limits: Limits,
+        stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<Self, Violation> {
         let runtime = Runtime::new().map_err(|e| Violation::Exception {
             call: "load",
             message: e.to_string(),
@@ -212,7 +222,9 @@ impl Engine {
         runtime.set_max_stack_size(1024 * 1024);
         let deadline = Rc::new(Cell::new(Instant::now() + limits.load));
         let clock = deadline.clone();
-        runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= clock.get())));
+        runtime.set_interrupt_handler(Some(Box::new(move || {
+            stop.load(std::sync::atomic::Ordering::Relaxed) || Instant::now() >= clock.get()
+        })));
         let context = Context::full(&runtime).map_err(|e| Violation::Exception {
             call: "load",
             message: e.to_string(),

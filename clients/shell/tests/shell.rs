@@ -407,6 +407,36 @@ fn a_runaway_call_unloads_the_surface_and_restores_the_previous_one() {
     );
 }
 
+/// The logic runs on its own thread: a press whose call never returns does not hold up
+/// the UI thread, and switching away while it runs drops that logic (its call is
+/// interrupted, its thread joined) without waiting for its budget.
+#[test]
+fn a_switch_while_the_logic_runs_drops_that_logic() {
+    let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());
+    rig.key(Key::F2);
+    rig.until("probe", |r| {
+        r.shell.current_id() == Some("probe") && r.shell.retiring() == 0
+    });
+    let started = Instant::now();
+    rig.shell.press(korri_shell::messages::Button::Confirm); // probe loops forever on confirm
+    assert!(
+        started.elapsed() < Duration::from_millis(20),
+        "the press waited on logic"
+    );
+    rig.shell.switch();
+    rig.until("pico after the switch", |r| {
+        r.shell.current_id() == Some("pico") && r.shell.retiring() == 0
+    });
+    assert!(started.elapsed() < Duration::from_secs(2));
+    rig.settle();
+    assert_eq!(rig.shell.current_id(), Some("pico"));
+    assert!(
+        !rig.shell.log().iter().any(|l| l.contains("unloaded")),
+        "the retired logic's outcome is ignored: {:?}",
+        rig.shell.log()
+    );
+}
+
 #[test]
 fn a_heap_blow_up_unloads_the_surface() {
     let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());

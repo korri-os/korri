@@ -137,7 +137,15 @@ Each surface's logic runs under three limits (`src/engine.rs`):
 | `LOAD_BUDGET` | 2,000 ms | one load: evaluating `logic.js`, reading its declarations and first model, and `init`, together; once per load or switch |
 | `CALL_BUDGET` | 50 ms | each `update`, `view` and `overlay` call, and each later model |
 
-A violation unloads the package and restores the previous one. The verifier
+A violation unloads the package and restores the previous one.
+
+The logic runs on a thread of its own (`src/logic.rs`). Presses, ticks and
+models go to it as calls, one at a time in order; a `Tick` sent while the last
+waiting call is a `Tick` replaces it. Each outcome (requests, and the views
+when the state or model changed) is applied on the UI thread in the next
+frame, so a slow `update` or `view()` never holds up a frame. The limits above
+are enforced on that thread; unloading or switching interrupts a running call
+and joins the thread. The verifier
 records the slowest load as `loadMs` and the slowest call as `maxCallMs` in
 each package's summary. Slint is patched (`vendor/README.md`) to cache
 still layers. Numbers and screenshots: `evidence/`.
