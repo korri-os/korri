@@ -1,0 +1,21 @@
+CYCLES kiosk-idle cpu_cores=0.355 mean_mhz=686 mcycles_per_s=243 at_1800=10% temp=52500 tis=408:1765,600:392,816:269,1104:182,1416:75,1608:19,1800:306,
+CYCLES zone-still cpu_cores=0.183 mean_mhz=914 mcycles_per_s=167 at_1800=15% temp=57777 tis=408:294,600:315,816:378,1104:216,1416:70,1608:11,1800:226,
+CYCLES zone-attract cpu_cores=0.393 mean_mhz=789 mcycles_per_s=310 at_1800=9% temp=51250 tis=408:1452,600:389,816:263,1104:223,1416:305,1608:113,1800:263,
+CYCLES pico cpu_cores=0.216 mean_mhz=847 mcycles_per_s=183 at_1800=13% temp=55000 tis=408:840,600:722,816:557,1104:309,1416:154,1608:45,1800:380,
+CYCLES zone-still-again cpu_cores=0.266 mean_mhz=541 mcycles_per_s=144 at_1800=3% temp=50625 tis=408:1095,600:185,816:107,1104:57,1416:17,1608:3,1800:44,
+BUDGET_UNLOADS 3
+Nov 04 23:30:15 haku sh[497458]: SHELL_STATS package=zone compile_ms=3237.547 logic_ms=114.549 korrid_ms=8.132 first_frame_ms=3560.053
+Nov 04 23:31:09 haku sh[497458]: korri-shell: zone unloaded (time): view ran 52 ms, over the 50 ms budget
+Nov 04 23:31:10 haku sh[497458]: korri-shell: pico restored after zone was unloaded
+Nov 04 23:31:10 haku sh[497458]: SHELL_STATS package=pico compile_ms=797.171 logic_ms=107.130 korrid_ms=6.752 first_frame_ms=1034.558
+Nov 04 23:31:21 haku sh[497458]: SHELL_STATS package=zone compile_ms=3014.596 logic_ms=105.321 korrid_ms=8.921 first_frame_ms=3279.528
+Nov 04 23:31:51 haku sh[497458]: korri-shell: zone unloaded (time): view ran 58 ms, over the 50 ms budget
+Nov 04 23:31:52 haku sh[497458]: korri-shell: pico restored after zone was unloaded
+Nov 04 23:31:53 haku sh[497458]: SHELL_STATS package=pico compile_ms=826.189 logic_ms=108.435 korrid_ms=6.661 first_frame_ms=1056.891
+Nov 04 23:32:01 haku sh[497458]: SHELL_STATS package=zone compile_ms=2904.491 logic_ms=109.009 korrid_ms=9.306 first_frame_ms=3171.369
+Nov 04 23:37:22 haku sh[502577]: SHELL_STATS package=zone compile_ms=3286.742 logic_ms=115.543 korrid_ms=8.283 first_frame_ms=3599.878
+Nov 04 23:38:04 haku sh[502577]: korri-shell: zone unloaded (time): view ran 50 ms, over the 50 ms budget
+Nov 04 23:38:05 haku sh[502577]: korri-shell: pico restored after zone was unloaded
+Nov 04 23:38:05 haku sh[502577]: SHELL_STATS package=pico compile_ms=786.187 logic_ms=106.314 korrid_ms=7.131 first_frame_ms=1014.809
+Nov 04 23:38:27 haku sh[502577]: SHELL_STATS package=zone compile_ms=2980.961 logic_ms=104.541 korrid_ms=9.716 first_frame_ms=3247.199
+Nov 04 23:39:04 haku sh[502577]: SHELL_STATS package=pico compile_ms=816.039 logic_ms=110.624 korrid_ms=7.396 first_frame_ms=1047.166
