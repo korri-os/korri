@@ -33,6 +33,64 @@ previews and walks its focus at five sizes.
 it in `app.surface.declare` and korrid publishes `model.displays` only for
 `"all"`. Zone declares `"main"`, Pico `"all"`, as the portal registry does.
 
+## Focus plan
+
+Contract 8.4: a surface groups its focus targets into regions and declares
+how focus leaves each region. A package shows this in its view, in three
+reserved keys that the shell never binds to Slint (so `.slint` does not
+declare them):
+
+| Key | Where | Value |
+|---|---|---|
+| `focusRegion` | every view entry that has `focused` | the target's region id, a non-empty string (for example `"tabs"`, `"band"`) |
+| `focusActive` | optional, on a target | `true` on the region's active target (for example the active tab); at most one per region |
+| `focusPlan` | top level of `view()` or `overlay()` | `{ "<region>": { "up" \| "down" \| "left" \| "right": { "to": "<region>", "entry": "remembered" \| "active" \| "first" } } }` |
+
+The plan computes `focusPlan`, so the exits may differ by size. A direction a
+region does not list has no exit: focus stays. The verifier fails a package
+whose view has a focus target without `focusRegion`, more than one active
+target in a region, a direction other than the four, an entry rule other
+than the three, or an exit whose `to` region has no target in that view.
+
+### Focus targets
+
+Every element that draws a focus target sets three accessible properties
+(also what a screen reader needs):
+
+```slint
+accessible-role: button;                 // or another role that fits
+accessible-item-selectable: true;
+accessible-item-selected: entry.focused; // true exactly while its view entry is focused
+```
+
+The shell finds which element draws which view entry by focusing each entry
+alone and reading which element is selected; the target's box is that
+element's geometry in the window (`src/targets.rs`). A target's identity is
+its region and its place in that region's drawing order, never its label or
+values: labels repeat (two route rows with the same buttons) and values
+change in place (a choice row that left and right step). The verifier fails a
+package whose focus entry, in the first view at 640x480 or after one press of
+each button, selects no element or more than one, or that has an element
+selected while no entry is focused.
+
+`examples/surface-probe.rs walk` judges every d-pad press, at 320x240,
+640x480, 480x800, 1280x720 and 1920x1080, with a display list larger than the
+window:
+
+- Inside the focused target's region: the target drawn nearest in the pressed
+  direction (spatial-focus.ts: distance along the axis plus 3 x the distance
+  across, ahead by more than 1 px).
+- None that way: the region's exit. `first` is the destination's target drawn
+  first, top to bottom then left to right by box centre; `active` is its
+  `focusActive` target; `remembered` is the target that region last had
+  focused along the walked path, or `first` if it never had focus.
+- No exit: focus stays.
+
+A target's drawn box and identity are its element's (Focus targets above).
+The probe runs on its own clock with `animation-tick()` held still, so frames
+it compares differ only by what the views changed; `--still` fails a state
+whose unchanged view, applied again, changes a pixel.
+
 ## Wire
 
 `POST /rpc` with `app.surface.declare`, `.preferences`, `.model`, `.request`;
@@ -44,6 +102,13 @@ Once a second the shell sends the active surface `{"_tag":"Tick","idleMs":N}`
 (contract amendment A1, section 7.1): `N` is the time since the last `Pressed`
 it delivered to that surface, or since the surface loaded. Each `Tick` is an
 `update` call under the 50 ms budget. The verifier's sweep includes ticks.
+
+Right after `init`, before the first `view()`, and on every window size or
+scale-factor change, the shell sends `{"_tag":"Resized","width":W,"height":H}`
+in logical pixels (amendment A2, section 8.1). The verifier sweeps 320x240,
+640x480, 480x800, 1280x720 and 1920x1080, and runs once under a display list
+larger than the window. `examples/surface-probe.rs walk` checks every d-pad
+direction against the drawn geometry (section 8.3).
 
 ## Windows and placement
 

@@ -1,0 +1,29 @@
+// A test package for surface-probe's region and exit judge (contract 8.4).
+import "fonts/tiny5.ttf";
+export struct Target { label: string, focused: bool }
+export component Surface inherits Window {
+    in property <[Target]> tabs;
+    in property <[Target]> cells;
+    in property <int> columns: 3;
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: #102030;
+    default-font-family: "Pico Tiny5";
+    for tab[i] in root.tabs: Rectangle {
+        x: 20px + i * 140px; y: 20px; width: 120px; height: 40px;
+        accessible-role: button;
+        accessible-item-selectable: true;
+        accessible-item-selected: tab.focused;
+        background: tab.focused ? #f0c040 : #304050;
+        Text { text: tab.label; color: white; font-size: 20px; }
+    }
+    for cell[i] in root.cells: Rectangle {
+        x: 20px + Math.mod(i, root.columns) * 140px; y: 100px + floor(i / root.columns) * 80px;
+        width: 120px; height: 60px;
+        accessible-role: button;
+        accessible-item-selectable: true;
+        accessible-item-selected: cell.focused;
+        background: cell.focused ? #f0c040 : #405060;
+        Text { text: cell.label; color: white; font-size: 20px; }
+    }
+}

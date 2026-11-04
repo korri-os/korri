@@ -1,0 +1,118 @@
+# RG353M at full clock for the run (FULLSPEED=1 in kbench-run.sh: scaling_max_freq raised to cpuinfo_max_freq, restored after).
+# Build: streamed banded replay + layer images only from unchanged content.
+# 10.42.0.1 2026-11-03T05:38:46Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+bench zone 640x480 frames=600 games=12 presses=0 prefs={"zone.look": "modern"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       6052
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  38         50       1344
+dirty walk and layout                 536        922       3873
+rasterisation                        1992       4513      11316
+  of which banded replay             1043       2900      10233
+  of which layer images                 0          0          0
+frame total                          3177       6522      12667
+dirty region (px)                   37431      45907      46457
+frames over 16.7 ms: 0 of 600
+bench zone 640x480 frames=600 games=12 presses=0 prefs={"zone.look": "blend"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       6662
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  36         49       9695
+dirty walk and layout                 600        797       8384
+rasterisation                        1052       2931      16409
+  of which banded replay              588       1759      14695
+  of which layer images                 0          0          0
+frame total                          2421       5155      18812
+dirty region (px)                    8112      42336      45840
+frames over 16.7 ms: 1 of 600
+bench zone 640x480 frames=600 games=12 presses=0 prefs={"zone.look": "retro"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       6356
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  36         50        391
+dirty walk and layout                 610        927       3393
+rasterisation                        1077       2978      11076
+  of which banded replay              602       1749      10635
+  of which layer images                 0          0          0
+frame total                          2487       4811      12500
+dirty region (px)                    8112      42336      45840
+frames over 16.7 ms: 0 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      12664
+view to properties: convert             0          0        175
+view to properties: set                 0          0       2034
+timers and animations                  45        812       2187
+dirty walk and layout                 663      10713      48677
+rasterisation                        2600      19449      67104
+  of which banded replay             1270       2975       7491
+  of which layer images                 0          0      31959
+frame total                          4172      33271     158080
+dirty region (px)                   38284     160927     229521
+frames over 16.7 ms: 68 of 600
+bench zone 640x480 frames=300 games=12 presses=0 prefs={"zone.look": "modern"} buffer=new threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       7607
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  41         55        374
+dirty walk and layout                   3          4        235
+rasterisation                        6892      12001      23242
+  of which banded replay             5033       8660      20057
+  of which layer images                 0          0          0
+frame total                          7940      13596      24067
+dirty region (px)                  307200     307200     307200
+frames over 16.7 ms: 6 of 300
+bench pico 640x480 frames=600 games=12 presses=0 prefs={} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      14565
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                   1         42        109
+dirty walk and layout                   0       3719       4425
+rasterisation                           0       2123       2554
+  of which banded replay                0        106        149
+  of which layer images                 0          0          0
+frame total                             1       7179      15064
+dirty region (px)                       0       3120       3120
+frames over 16.7 ms: 0 of 600
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      27157
+view to properties: convert             0          0       1571
+view to properties: set                 0          0       1174
+timers and animations                   1         60        888
+dirty walk and layout                   0       4020      19569
+rasterisation                           0       2411      13465
+  of which banded replay                0        121       4201
+  of which layer images                 0          0          0
+frame total                             1       8346      96659
+dirty region (px)                       0       3120     284544
+frames over 16.7 ms: 6 of 600
+bench pico 640x480 frames=300 games=12 presses=0 prefs={} buffer=new threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      13973
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                   1         51        149
+dirty walk and layout                   0          3          5
+rasterisation                           0      10078      30980
+  of which banded replay                0        563       1496
+  of which layer images                 0          0          0
+frame total                             1      12300      32740
+dirty region (px)                       0     307200     307200
+frames over 16.7 ms: 1 of 300
+# after: policy0 scaling_max_freq 1104000 kHz
+
+# Same device, back to back, two rounds each (zone full redraw; zone presses): frame total p50 p95 max (us), frames over 16.7 ms
+# base round 1: # policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil frame total 4852 8154 15114 frames over 16.7 ms: 0 of 300 frame total 4110 29046 107408 frames over 16.7 ms: 59 of 600 
+# streamonly round 1: # policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil frame total 6047 8450 14179 frames over 16.7 ms: 0 of 300 frame total 4182 33396 155089 frames over 16.7 ms: 65 of 600 
+# ack round 1: # policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil frame total 4142 5906 9879 frames over 16.7 ms: 0 of 300 frame total 2597 23815 75336 frames over 16.7 ms: 59 of 600 
+# base round 2: # policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil frame total 4992 10048 17391 frames over 16.7 ms: 2 of 300 frame total 2405 22941 91038 frames over 16.7 ms: 51 of 600 
+# streamonly round 2: # policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil frame total 4127 5954 9813 frames over 16.7 ms: 0 of 300 frame total 2934 24185 94610 frames over 16.7 ms: 53 of 600 
+# ack round 2: # policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil frame total 4084 6202 10622 frames over 16.7 ms: 0 of 300 frame total 2572 20364 74151 frames over 16.7 ms: 57 of 600 
+# base = b41586b07; streamonly = streamed replay, old layer churn; ack = this commit

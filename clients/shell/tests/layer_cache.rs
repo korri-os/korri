@@ -5,7 +5,7 @@
 //! cached layer is not walked.
 
 use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
+    software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel, TargetPixel},
     Platform, WindowAdapter,
 };
 use slint::{ComponentHandle, Rgb8Pixel};
@@ -78,14 +78,14 @@ fn compile(source: &str) -> ComponentDefinition {
     result.component("Surface").expect("Surface")
 }
 
-struct Pair {
+struct Pair<P = Rgb8Pixel> {
     instances: [ComponentInstance; 2],
     windows: [Rc<MinimalSoftwareWindow>; 2],
-    buffers: [Vec<Rgb8Pixel>; 2],
+    buffers: [Vec<P>; 2],
     size: (u32, u32),
 }
 
-impl Pair {
+impl<P: TargetPixel + Default + Clone + PartialEq> Pair<P> {
     fn new(source: &str, width: u32, height: u32) -> Self {
         let _ = slint::platform::set_platform(Box::new(Reused(std::time::Instant::now())));
         let definition = compile(source);
@@ -116,7 +116,7 @@ impl Pair {
         self.size = (width, height);
         for (window, buffer) in self.windows.iter().zip(&mut self.buffers) {
             window.set_size(slint::PhysicalSize::new(width, height));
-            *buffer = vec![Rgb8Pixel::default(); (width * height) as usize];
+            *buffer = vec![P::default(); (width * height) as usize];
         }
     }
 
@@ -154,7 +154,34 @@ impl Pair {
 
 #[test]
 fn a_cached_layer_matches_direct_rendering_through_every_change() {
-    let mut pair = Pair::new(SOURCE, 200, 120);
+    every_change::<Rgb8Pixel>();
+}
+
+/// RGB565, as the handhelds draw: text blended over a translucent child inside
+/// the layer gives the same 16-bit pixels cached and direct.
+#[test]
+fn a_cached_layer_matches_direct_rendering_in_rgb565() {
+    every_change::<Rgb565Pixel>();
+}
+
+/// Opacity on the layer: drawn as its children are, each with the opacity.
+#[test]
+fn a_cached_layer_under_opacity_matches_direct_rendering() {
+    let source = SOURCE.replace(
+        "        cache-rendering-hint: root.cached;",
+        "        cache-rendering-hint: root.cached;\n        opacity: 0.6;",
+    );
+    let mut pair = Pair::<Rgb565Pixel>::new(&source, 200, 120);
+    pair.render();
+    pair.assert_same("first frame");
+    pair.set("mover-x", Value::Number(40.0));
+    pair.render();
+    pair.render();
+    pair.assert_same("mover under the translucent layer");
+}
+
+fn every_change<P: TargetPixel + Default + Clone + PartialEq>() {
+    let mut pair = Pair::<P>::new(SOURCE, 200, 120);
     pair.render();
     pair.assert_same("first frame");
     // A still layer, with something moving under and over it.
@@ -178,11 +205,14 @@ fn a_cached_layer_matches_direct_rendering_through_every_change() {
     pair.set("count", Value::Number(5.0));
     pair.render();
     pair.assert_same("repeater grew");
-    // The layer moves, by whole and by fractional pixels.
+    // The layer moves, by whole and by fractional pixels. A layer at a new
+    // sub-pixel phase is first shifted by whole pixels (it may be moving) and
+    // asks for one more frame, which renders it at its exact phase.
     for x in [40.0, 40.5, 41.25] {
         pair.set("layer-x", Value::Number(x));
         pair.render();
-        pair.assert_same(&format!("layer at {x}"));
+        pair.render();
+        pair.assert_same(&format!("layer at {x}, settled"));
     }
     // The window is resized, and the scale factor changes.
     pair.resize(260, 150);
@@ -206,7 +236,7 @@ fn a_clean_cached_layer_is_not_walked() {
         "        // A child reaching outside the layer's own geometry.",
         "        for i in 300: Rectangle { x: Math.mod(i, 30) * 5px; y: 50px + Math.floor(i / 30) * 3px; width: 4px; height: 2px; background: #ffffff; }\n        // A child reaching outside the layer's own geometry.",
     );
-    let mut pair = Pair::new(&source, 200, 120);
+    let mut pair = Pair::<Rgb8Pixel>::new(&source, 200, 120);
     pair.render();
     pair.set("mover-x", Value::Number(10.0));
     pair.render();
@@ -218,11 +248,16 @@ fn a_clean_cached_layer_is_not_walked() {
         cached < 20,
         "the clean cached layer is skipped: walked {cached}"
     );
-    // A change inside makes it walk again, once.
+    // A change inside draws the layer directly, walking it. The next frame finds
+    // the content unchanged and draws its area again; that frame renders the
+    // image. Then it is clean again.
     pair.set("word", Value::String("AGAIN".into()));
     let [cached, _] = pair.render();
     assert!(cached > 300, "a dirty layer is walked: {cached}");
     pair.assert_same("after the change");
+    pair.render();
+    pair.render();
+    pair.assert_same("image rendered after the change");
     pair.set("mover-x", Value::Number(30.0));
     let [cached, _] = pair.render();
     assert!(cached < 20, "clean again: walked {cached}");

@@ -32,6 +32,40 @@ pub(super) fn draw_texture_line(
         extra: super::SceneTextureExtra { colorize, alpha, rotation, dx, dy, off_x, off_y },
     } = *texture;
 
+    // Fast path: an unscaled, unrotated premultiplied texture at full opacity and a whole-pixel
+    // offset (cached layers): read the source row directly; skip transparent pixels, store
+    // opaque ones, blend the rest. Same result as the general path below.
+    if format == TexturePixelFormat::RgbaPremultiplied
+        && colorize.alpha() == 0
+        && alpha == 0xff
+        && rotation == super::RenderingRotation::NoRotation
+        && dx.0 == 0x100
+        && dy.0 == 0x100
+        && off_x.0 & 0xf == 0
+        && off_y.0 & 0xf == 0
+    {
+        let source = texture.source_size();
+        let y = (line - span.origin.y_length()).get() as usize + (off_y.0 >> 4) as usize;
+        let x = (off_x.0 >> 4) as usize + extra_clip_begin.max(0) as usize;
+        if y < source.height as usize && x + line_buffer.len() <= source.width as usize {
+            let start = (y * pixel_stride as usize + x) * 4;
+            let row = &data[start..start + line_buffer.len() * 4];
+            for (pix, p) in line_buffer.iter_mut().zip(row.chunks_exact(4)) {
+                match p[3] {
+                    0 => {}
+                    0xff => *pix = TargetPixel::from_rgb(p[0], p[1], p[2]),
+                    a => pix.blend(PremultipliedRgbaColor {
+                        alpha: a,
+                        red: p[0],
+                        green: p[1],
+                        blue: p[2],
+                    }),
+                }
+            }
+            return;
+        }
+    }
+
     let source_size = texture.source_size().cast::<i32>();
     let len = line_buffer.len();
     let y = line - span.origin.y_length();
@@ -253,6 +287,11 @@ pub(super) fn draw_texture_line(
                         if data[pos + 3] == 0 {
                             continue;
                         }
+                        // An opaque premultiplied pixel replaces the target.
+                        if data[pos + 3] == 0xff {
+                            *pix = TargetPixel::from_rgb(data[pos], data[pos + 1], data[pos + 2]);
+                            continue;
+                        }
                         let c = PremultipliedRgbaColor {
                             alpha: data[pos + 3],
                             red: data[pos + 0],
@@ -277,6 +316,10 @@ pub(super) fn draw_texture_line(
             TexturePixelFormat::AlphaMap => {
                 for pix in line_buffer {
                     let pos = pos(1).0;
+                    // No coverage (most of a glyph's box): blending leaves the target unchanged.
+                    if data[pos] == 0 {
+                        continue;
+                    }
                     let c = PremultipliedRgbaColor::premultiply(Color::from_argb_u8(
                         ((data[pos] as u16 * alpha as u16) / 255) as u8,
                         color.red(),

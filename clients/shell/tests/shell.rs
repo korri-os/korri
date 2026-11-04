@@ -527,3 +527,33 @@ fn ticks_arrive_each_second_with_idle_time_that_a_press_and_a_switch_reset() {
     rig.until("first tick after the switch", |r| r.int("ticks") >= 1.0);
     assert!(rig.int("idle-ms") < 1_100.0, "{}", rig.int("idle-ms"));
 }
+
+#[test]
+fn resized_comes_before_the_first_view_and_follows_every_window_change() {
+    let mut rig = rig(&["probe", "pico"], 12, Behaviour::default());
+    // A2 (8.1): one Resized right after init, before the first view.
+    assert_eq!(rig.int("views-before-first-resize"), 0.0);
+    assert_eq!(rig.int("resizes"), 1.0);
+    assert_eq!(
+        (rig.int("width-seen"), rig.int("height-seen")),
+        (640.0, 480.0)
+    );
+    rig.shell.resize_window(800, 600);
+    rig.settle();
+    assert_eq!(
+        (rig.int("width-seen"), rig.int("height-seen")),
+        (800.0, 600.0)
+    );
+    assert_eq!(rig.int("resizes"), 2.0);
+    // The same size again sends nothing.
+    rig.shell.resize_window(800, 600);
+    rig.settle();
+    assert_eq!(rig.int("resizes"), 2.0);
+    // A switch loads again: its first Resized again precedes its first view.
+    rig.key(Key::F2);
+    rig.until("pico", |r| r.shell.current_id() == Some("pico"));
+    rig.key(Key::F2);
+    rig.until("probe again", |r| r.shell.current_id() == Some("probe"));
+    assert_eq!(rig.int("resizes"), 1.0);
+    assert_eq!(rig.int("views-before-first-resize"), 0.0);
+}

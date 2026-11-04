@@ -57,9 +57,13 @@ libc = "0.2"
 pollster = "0.4"
 zeroize = "1"
 korri-window-sdl = { path = "window-sdl", optional = true }
+# Focus targets as drawn (src/targets.rs): each element's place and selected flag.
+i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
+# Its `testing` feature only adds the text layout cache's counters (tests/text_reshape.rs).
+i-slint-renderer-software = { version = "=1.18.1", features = ["testing"] }
 
 [features]
 default = ["desktop"]
@@ -88,3 +92,4 @@ opt-level = 3
 [patch.crates-io]
 i-slint-core = { path = "vendor/i-slint-core" }
 i-slint-renderer-software = { path = "vendor/i-slint-renderer-software" }
+slint-interpreter = { path = "vendor/slint-interpreter" }

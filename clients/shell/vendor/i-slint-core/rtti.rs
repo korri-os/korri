@@ -256,7 +256,7 @@ where
         if !matches!(animation, AnimatedBindingKind::NotAnimated) {
             Err(())
         } else {
-            self.apply_pin(item).set_binding(move || {
+            self.apply_pin(item).set_binding_comparing(move || {
                 binding().try_into().map_err(|_| ()).expect("binding was of the wrong type")
             });
             Ok(())
@@ -366,7 +366,7 @@ where
         {
             match animation {
                 AnimatedBindingKind::NotAnimated => {
-                    p.set_binding(move || {
+                    p.set_binding_comparing(move || {
                         binding().try_into().map_err(|_| ()).expect("binding was of the wrong type")
                     });
                     Ok(())

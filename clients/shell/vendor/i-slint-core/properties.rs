@@ -175,6 +175,11 @@ pub(crate) mod dependency_tracker {
             self.0.get().is_null()
         }
 
+        /// Whether the head holds the constant-property sentinel instead of a list.
+        pub fn is_sentinel(&self) -> bool {
+            self.0.get() as *const () == super::const_sentinel() as *const ()
+        }
+
         pub unsafe fn drop(_self: *mut Self) {
             unsafe {
                 if let Some(next) = (*_self).0.get().as_ref() {
@@ -219,13 +224,13 @@ pub(crate) mod dependency_tracker {
         /// Returns the first node of the list, if any
         pub fn take_head(&self) -> Option<T>
         where
-            T: Copy,
+            T: Clone,
         {
             unsafe {
                 if let Some(node) = self.0.get().as_ref() {
                     node.debug_assert_valid();
                     node.remove();
-                    Some(node.binding)
+                    Some(node.binding.clone())
                 } else {
                     None
                 }
@@ -245,6 +250,11 @@ pub(crate) mod dependency_tracker {
     impl<T> DependencyNode<T> {
         pub fn new(binding: T) -> Self {
             Self { next: Cell::new(core::ptr::null()), prev: Cell::new(core::ptr::null()), binding }
+        }
+
+        /// The value the node carries.
+        pub fn binding_ref(&self) -> &T {
+            &self.binding
         }
 
         /// Assert that the invariant of `next` and `prev` are met.
@@ -293,8 +303,123 @@ pub(crate) mod dependency_tracker {
     }
 }
 
-type DependencyListHead = dependency_tracker::DependencyListHead<*const BindingHolder>;
-type DependencyNode = dependency_tracker::DependencyNode<*const BindingHolder>;
+type DependencyListHead = dependency_tracker::DependencyListHead<DepEdge>;
+type DependencyNode = dependency_tracker::DependencyNode<DepEdge>;
+
+/// One dependency: `binding` read a property whose binding was `source` (null when the
+/// property had no binding, or once that binding left the property), at its `version` `seen`.
+/// A binding marked only "maybe dirty" compares `seen` with the source's version to tell
+/// whether anything it read really changed (equality cut-off).
+#[derive(Clone)]
+struct DepEdge {
+    binding: *const BindingHolder,
+    source: Cell<*const BindingHolder>,
+    seen: Cell<u32>,
+}
+
+impl DepEdge {
+    fn new(binding: *const BindingHolder) -> Self {
+        Self { binding, source: Cell::new(core::ptr::null()), seen: Cell::new(0) }
+    }
+}
+
+/// How a property's binding is brought up to date from outside: the property's handle and
+/// value, and `PropertyHandle::update` for its type. Only bindings installed through
+/// `Property::set_binding_comparing` have one.
+#[derive(Clone, Copy)]
+struct Refresh {
+    handle: *const PropertyHandle,
+    value: *mut c_void,
+    update: unsafe fn(*const PropertyHandle, *mut c_void),
+}
+
+/// The equality cut-off state of a binding or tracker (see `DepEdge`).
+#[derive(Default)]
+struct Cutoff {
+    /// Something it read may have changed: a binding or tracker it depends on is dirty or
+    /// maybe dirty. Before it is evaluated, its sources are brought up to date and compared.
+    maybe: Cell<bool>,
+    /// Bumped when an evaluation changed the value (always, for a binding that cannot
+    /// compare), or when a tracker was evaluated or set dirty.
+    version: Cell<u32>,
+    refresh: Cell<Option<Refresh>>,
+    /// A `PropertyTracker`: no value, but its sources can be checked the same way.
+    tracker: bool,
+}
+
+crate::thread_local! {
+    /// Set by a comparing binding when its evaluation produced the value the property had.
+    static EVALUATED_UNCHANGED: Cell<bool> = const { Cell::new(false) }
+}
+
+crate::thread_local! {
+    /// Whether dirtiness stops at bindings whose value did not change (the default).
+    static EQUALITY_CUTOFF: Cell<bool> = const { Cell::new(true) }
+}
+
+/// Turns the equality cut-off on (the default) or off for this thread. Off, every binding
+/// that depends, directly or not, on a changed property is marked dirty and evaluated again,
+/// as in upstream Slint. For tests and benchmarks that compare the two.
+#[doc(hidden)]
+pub fn set_equality_cutoff(enabled: bool) {
+    EQUALITY_CUTOFF.with(|c| c.set(enabled));
+}
+
+unsafe fn update_erased<T>(handle: *const PropertyHandle, value: *mut c_void) {
+    unsafe { (*handle).update::<T>(value as *mut T) }
+}
+
+/// Whether anything `holder` read since its last evaluation changed value. Sources that are
+/// dirty or maybe dirty are brought up to date first; one that cannot be (no refresh, or
+/// locked) counts as changed. Clears `maybe` on sources found unchanged.
+unsafe fn sources_changed(holder: *const BindingHolder) -> bool {
+    unsafe {
+        for edge in (*(*holder).dep_nodes.get()).iter() {
+            let edge = &edge.get_ref().binding_ref();
+            let source = edge.source.get();
+            if source.is_null() {
+                continue;
+            }
+            if (*source).dirty.get() || (*source).cutoff.maybe.get() {
+                if let Some(refresh) = (*source).cutoff.refresh.get() {
+                    if (*refresh.handle).lock_flag() {
+                        return true;
+                    }
+                    (refresh.update)(refresh.handle, refresh.value);
+                } else if (*source).cutoff.tracker && !(*source).dirty.get() {
+                    if sources_changed(source) {
+                        (*source).dirty.set(true);
+                        (*source).cutoff.maybe.set(false);
+                        return true;
+                    }
+                    (*source).cutoff.maybe.set(false);
+                } else {
+                    return true;
+                }
+            }
+            if (*source).cutoff.version.get() != edge.seen.get() {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Before `holder` stops being the binding of its property (or a tracker is dropped): the
+/// edges that name it as their source forget it.
+unsafe fn forget_as_source(holder: *const BindingHolder) {
+    unsafe {
+        let list = (*holder).dependencies.as_ptr() as *const DependencyListHead;
+        if (*list).is_sentinel() {
+            return;
+        }
+        (*list).for_each(|edge| {
+            if edge.source.get() == holder {
+                edge.source.set(core::ptr::null());
+            }
+        });
+    }
+}
 
 use alloc::boxed::Box;
 use core::cell::{Cell, RefCell, UnsafeCell};
@@ -454,6 +579,8 @@ struct BindingHolder<B = ()> {
     vtable: &'static BindingVTable,
     /// The binding is dirty and need to be re_evaluated
     dirty: Cell<bool>,
+    /// Equality cut-off: maybe dirty, version, refresh.
+    cutoff: Cutoff,
     /// Specify that B is a `TwoWayBinding<T>`
     is_two_way_binding: bool,
     pinned: PhantomPinned,
@@ -468,9 +595,15 @@ impl BindingHolder {
     fn register_self_as_dependency(
         self_ptr: *const BindingHolder,
         property_that_will_notify: *mut DependencyListHead,
+        source: *const BindingHolder,
         #[cfg(slint_debug_property)] _other_debug_name: &str,
     ) {
-        let node = DependencyNode::new(self_ptr);
+        let edge = DepEdge::new(self_ptr);
+        if !source.is_null() {
+            edge.source.set(source);
+            edge.seen.set(unsafe { (*source).cutoff.version.get() });
+        }
+        let node = DependencyNode::new(edge);
         // Safety: self_ptr is valid and pinned
         unsafe {
             let dep_nodes = &mut *(*self_ptr).dep_nodes.get();
@@ -550,6 +683,7 @@ fn alloc_binding_holder<T, B: BindingCallable<T> + 'static>(binding: B) -> *mut 
         dep_nodes: Default::default(),
         vtable: <B as HasBindingVTable<T>>::VT,
         dirty: Cell::new(true), // starts dirty so it evaluates the property when used
+        cutoff: Cutoff::default(),
         is_two_way_binding: B::IS_TWO_WAY_BINDING,
         pinned: PhantomPinned,
         #[cfg(slint_debug_property)]
@@ -657,6 +791,7 @@ impl PropertyHandle {
     fn detach_binding(&self) -> Option<*mut BindingHolder> {
         let binding = Self::pointer_to_binding(self.handle.get())?;
         unsafe {
+            forget_as_source(binding);
             let const_sentinel = const_sentinel();
             if (*binding).dependencies.get() == const_sentinel {
                 self.handle.set(const_sentinel);
@@ -760,19 +895,40 @@ impl PropertyHandle {
 
         let remove = self.access(|binding| {
             if let Some(binding) = binding
-                && binding.dirty.get()
+                && (binding.dirty.get()
+                    || (binding.cutoff.maybe.get() && {
+                        // Safety: binding is Some so binding_ptr is too
+                        let changed = unsafe { sources_changed(binding_ptr.unwrap_unchecked()) };
+                        if !changed {
+                            binding.cutoff.maybe.set(false);
+                        }
+                        changed
+                    }))
             {
                 // Safety: binding is Some so binding_ptr is too
                 let binding_ptr = unsafe { binding_ptr.unwrap_unchecked() };
 
                 // clear all the nodes so that we can start from scratch
                 unsafe { *(*binding_ptr).dep_nodes.get() = Default::default() };
-                let r = unsafe {
+                let evaluate = || unsafe {
                     current_binding_storage::set(Some(binding_ptr), || {
                         ((*binding_ptr).vtable.evaluate)(binding_ptr, value as *mut c_void)
                     })
                 };
-                unsafe { (*binding_ptr).dirty.set(false) };
+                EVALUATED_UNCHANGED.with(|u| u.set(false));
+                #[cfg(feature = "std")]
+                let r = crate::frame_profile::binding(evaluate);
+                #[cfg(not(feature = "std"))]
+                let r = evaluate();
+                let unchanged = EVALUATED_UNCHANGED.with(|u| u.replace(false));
+                unsafe {
+                    (*binding_ptr).dirty.set(false);
+                    (*binding_ptr).cutoff.maybe.set(false);
+                    if !unchanged {
+                        let version = &(*binding_ptr).cutoff.version;
+                        version.set(version.get().wrapping_add(1));
+                    }
+                };
                 if r == BindingResult::RemoveBinding {
                     return true;
                 }
@@ -793,9 +949,12 @@ impl PropertyHandle {
             if let Some(cur_binding) = cur_binding {
                 let dependencies = self.dependencies();
                 if unsafe { *(dependencies as *mut *mut ()) } != const_sentinel() {
+                    let source = Self::pointer_to_binding(self.handle.get())
+                        .map_or(core::ptr::null(), |b| b as *const BindingHolder);
                     BindingHolder::register_self_as_dependency(
                         cur_binding,
                         dependencies,
+                        source,
                         #[cfg(slint_debug_property)]
                         debug_name,
                     );
@@ -851,19 +1010,53 @@ impl Drop for PropertyHandle {
 unsafe fn mark_dependencies_dirty(dependencies: *mut DependencyListHead) {
     unsafe {
         debug_assert!(*(dependencies as *mut *mut ()) != const_sentinel());
-        DependencyListHead::for_each(&*dependencies, |binding| {
-            let binding: &BindingHolder = &**binding;
+        if !EQUALITY_CUTOFF.with(Cell::get) {
+            DependencyListHead::for_each(&*dependencies, |edge| {
+                let binding: &BindingHolder = &*edge.binding;
+                let was_dirty = binding.dirty.replace(true);
+                (binding.vtable.mark_dirty)(binding as *const BindingHolder, was_dirty);
+                if !was_dirty {
+                    mark_dependencies_dirty(binding.dependencies.as_ptr() as *mut DependencyListHead)
+                }
+            });
+            return;
+        }
+        DependencyListHead::for_each(&*dependencies, |edge| {
+            let binding: &BindingHolder = &*edge.binding;
             let was_dirty = binding.dirty.replace(true);
-            (binding.vtable.mark_dirty)(binding as *const BindingHolder, was_dirty);
+            let was_maybe = binding.cutoff.maybe.replace(false);
+            (binding.vtable.mark_dirty)(binding as *const BindingHolder, was_dirty || was_maybe);
 
             assert!(
                 binding.dependencies.get() != const_sentinel(),
                 "Const property marked as dirty"
             );
 
-            if !was_dirty {
-                mark_dependencies_dirty(binding.dependencies.as_ptr() as *mut DependencyListHead)
+            // Its dependents are only maybe dirty: they check, before evaluating, whether its
+            // value really changed.
+            if !was_dirty && !was_maybe {
+                mark_dependencies_maybe_dirty(binding.dependencies.as_ptr() as *mut DependencyListHead)
             }
+        });
+    }
+}
+
+/// Marks the dependents of a binding that is dirty or maybe dirty as maybe dirty.
+/// Safety: the dependency list must be valid and consistent
+unsafe fn mark_dependencies_maybe_dirty(dependencies: *mut DependencyListHead) {
+    unsafe {
+        if *(dependencies as *mut *mut ()) == const_sentinel() {
+            return;
+        }
+        DependencyListHead::for_each(&*dependencies, |edge| {
+            let binding: &BindingHolder = &*edge.binding;
+            if binding.dirty.get() || binding.cutoff.maybe.get() {
+                (binding.vtable.mark_dirty)(binding as *const BindingHolder, true);
+                return;
+            }
+            binding.cutoff.maybe.set(true);
+            (binding.vtable.mark_dirty)(binding as *const BindingHolder, false);
+            mark_dependencies_maybe_dirty(binding.dependencies.as_ptr() as *mut DependencyListHead)
         });
     }
 }
@@ -1102,6 +1295,44 @@ impl<T: Clone> Property<T> {
         );
     }
 
+    /// Like [`Self::set_binding`], but when an evaluation gives the value the property already
+    /// had, the bindings and trackers that depend on it are not evaluated again (equality
+    /// cut-off): they were only marked maybe dirty, and find that nothing they read changed.
+    pub fn set_binding_comparing(self: Pin<&Self>, binding: impl Binding<T> + 'static)
+    where
+        T: PartialEq + 'static,
+    {
+        let holder = alloc_binding_holder::<T, _>(move |val: &mut T| {
+            let new = binding.evaluate(val);
+            if *val == new {
+                EVALUATED_UNCHANGED.with(|u| u.set(true));
+            } else {
+                *val = new;
+            }
+            BindingResult::KeepBinding
+        });
+        #[cfg(slint_debug_property)]
+        unsafe {
+            (*holder).debug_name = self.debug_name.borrow().clone();
+        }
+        self.handle.set_binding_impl(holder);
+        if PropertyHandle::pointer_to_binding(self.handle.handle.get()) == Some(holder) {
+            // Safety: the property is pinned, so its handle and value stay where they are
+            // while the binding is installed.
+            unsafe {
+                (*holder).cutoff.refresh.set(Some(Refresh {
+                    handle: &self.handle as *const PropertyHandle,
+                    value: self.value.get() as *mut c_void,
+                    update: update_erased::<T>,
+                }));
+            }
+        }
+        self.handle.mark_dirty(
+            #[cfg(slint_debug_property)]
+            self.debug_name.borrow().as_str(),
+        );
+    }
+
     /// Returns true if the property has currently a binding (like an animation, ...), otherwise false
     pub fn has_binding(&self) -> bool {
         PropertyHandle::pointer_to_binding(self.handle.handle.get()).is_some()
@@ -1110,7 +1341,7 @@ impl<T: Clone> Property<T> {
     /// Any of the properties accessed during the last evaluation of the closure called
     /// from the last call to evaluate is potentially dirty.
     pub fn is_dirty(&self) -> bool {
-        self.handle.access(|binding| binding.is_some_and(|b| b.dirty.get()))
+        self.handle.access(|binding| binding.is_some_and(|b| b.dirty.get() || b.cutoff.maybe.get()))
     }
 
     /// Internal function to mark the property as dirty and notify dependencies, regardless of
@@ -1290,6 +1521,7 @@ impl<const NEEDS_SET_DIRTY: bool> Default for PropertyTracker<NEEDS_SET_DIRTY, (
             dep_nodes: Default::default(),
             vtable: VT,
             dirty: Cell::new(true), // starts dirty so it evaluates the property when used
+            cutoff: Cutoff { tracker: true, ..Cutoff::default() },
             is_two_way_binding: false,
             pinned: PhantomPinned,
             binding: (),
@@ -1305,6 +1537,7 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler> Drop
 {
     fn drop(&mut self) {
         unsafe {
+            forget_as_source(&raw const self.holder as *const BindingHolder);
             DependencyListHead::drop(self.holder.dependencies.as_ptr() as *mut DependencyListHead);
         }
     }
@@ -1331,6 +1564,7 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
                 BindingHolder::register_self_as_dependency(
                     cur_binding,
                     self.holder.dependencies.as_ptr() as *mut DependencyListHead,
+                    &raw const self.holder as *const BindingHolder,
                     #[cfg(slint_debug_property)]
                     &self.holder.debug_name,
                 );
@@ -1341,7 +1575,18 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
     /// Any of the properties accessed during the last evaluation of the closure called
     /// from the last call to evaluate is potentially dirty.
     pub fn is_dirty(&self) -> bool {
-        self.holder.dirty.get()
+        if self.holder.dirty.get() {
+            return true;
+        }
+        if self.holder.cutoff.maybe.get() {
+            self.holder.cutoff.maybe.set(false);
+            // Safety: the holder is valid; its sources are bound or trackers (see DepEdge).
+            if unsafe { sources_changed(&raw const self.holder as *const BindingHolder) } {
+                self.holder.dirty.set(true);
+                return true;
+            }
+        }
+        false
     }
 
     /// Evaluate the function, and record dependencies of properties accessed within this function.
@@ -1363,7 +1608,45 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
         let holder_ptr = &raw const self.holder as *const BindingHolder;
         let r = current_binding_storage::set(Some(holder_ptr), f);
         self.holder.dirty.set(false);
+        self.holder.cutoff.maybe.set(false);
+        self.bump_version();
         r
+    }
+
+    fn bump_version(&self) {
+        let version = &self.holder.cutoff.version;
+        version.set(version.get().wrapping_add(1));
+    }
+
+    /// Mark the tracker clean without evaluating anything: it keeps the dependencies of its
+    /// last evaluation, so it becomes dirty again when one of them changes again.
+    pub fn acknowledge_dirty(self: Pin<&Self>) {
+        // What it read now counts as seen: bring the sources up to date and record their
+        // versions, so only a later change makes it dirty again. A source that cannot be
+        // brought up to date here stays dirty, so a later change would not reach this tracker
+        // through it: the tracker then stays maybe dirty and compares versions when asked.
+        let mut pending = false;
+        unsafe {
+            for edge in (*self.holder.dep_nodes.get()).iter() {
+                let edge = edge.get_ref().binding_ref();
+                let source = edge.source.get();
+                if source.is_null() {
+                    continue;
+                }
+                if (*source).dirty.get() || (*source).cutoff.maybe.get() {
+                    if let Some(refresh) = (*source).cutoff.refresh.get() {
+                        if !(*refresh.handle).lock_flag() {
+                            (refresh.update)(refresh.handle, refresh.value);
+                        }
+                    }
+                }
+                pending |= (*source).dirty.get() || (*source).cutoff.maybe.get();
+                edge.seen.set((*source).cutoff.version.get());
+            }
+        }
+        self.holder.dirty.set(false);
+        self.holder.cutoff.maybe.set(pending);
+        self.bump_version();
     }
 
     /// Call [`Self::evaluate`] if and only if it is dirty.
@@ -1416,6 +1699,7 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
             dep_nodes: Default::default(),
             vtable: <DirtyHandler as HasBindingVTable>::VT,
             dirty: Cell::new(true), // starts dirty so it evaluates the property when used
+            cutoff: Cutoff { tracker: true, ..Cutoff::default() },
             is_two_way_binding: false,
             pinned: PhantomPinned,
             binding: handler,
@@ -1430,6 +1714,8 @@ impl<DirtyHandler> PropertyTracker<true, DirtyHandler> {
     /// Mark this PropertyTracker as dirty
     pub fn set_dirty(&self) {
         self.holder.dirty.set(true);
+        let version = &self.holder.cutoff.version;
+        version.set(version.get().wrapping_add(1));
         unsafe { mark_dependencies_dirty(self.holder.dependencies.as_ptr() as *mut _) };
     }
 }

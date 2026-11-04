@@ -300,8 +300,23 @@ pub fn current_tick() -> Instant {
 pub fn animation_tick() -> u64 {
     CURRENT_ANIMATION_DRIVER.with(|driver| {
         driver.set_has_active_animations();
-        driver.current_tick().0
+        let tick = driver.current_tick().0;
+        FROZEN_ANIMATION_TICK.with(Cell::get).unwrap_or(tick)
     })
+}
+
+crate::thread_local! {
+    /// What `animation-tick()` returns instead of the clock, while set.
+    static FROZEN_ANIMATION_TICK: core::cell::Cell<Option<u64>> = const { core::cell::Cell::new(None) }
+}
+
+/// Makes `animation-tick()` return `tick` (milliseconds) on this thread, or the clock again
+/// with `None`. Property animations and timers keep following the clock. For tools that
+/// compare frames rendered at different times, such as a focus probe: motion drawn from
+/// `animation-tick()` stands still between them.
+#[doc(hidden)]
+pub fn freeze_animation_tick(tick: Option<u64>) {
+    FROZEN_ANIMATION_TICK.with(|t| t.set(tick));
 }
 
 fn ease_out_bounce_curve(value: f32) -> f32 {

@@ -55,7 +55,7 @@ assert
   == [ "fde60000.gpu" ];
 assert
   korri.nixosConfigurations.rg353m.config.services.korri.limits.gpuDevfreqNodes == [ "fde60000.gpu" ];
-assert korri.nixosConfigurations.rg353m.config.services.korri.limits.defaults.cpu.max == 61;
+assert korri.nixosConfigurations.rg353m.config.services.korri.limits.defaults.cpu.max == 100;
 assert
   korri.nixosConfigurations.rg353m.config.systemd.services.korri-limits.environment.LIMITSD_GPU_NODES
   == "fde60000.gpu";

@@ -29,6 +29,7 @@ pub(super) struct Brush {
     pub(super) link_color: Option<Color>,
 }
 
+#[derive(PartialEq)]
 pub(super) struct LayoutWithoutLineBreaksBuilder {
     font_request: Option<FontRequest>,
     pub(super) text_wrap: TextWrap,
@@ -375,18 +376,49 @@ pub(super) fn wrap_builder_for_tests() -> LayoutWithoutLineBreaksBuilder {
     LayoutWithoutLineBreaksBuilder::new(None, TextWrap::WordWrap, None, ScaleFactor::new(1.0))
 }
 
-/// Shapes `text` the way both the drawing and the measuring paths need it, so that they can share
-/// one cache entry. `text_wrap` is passed separately because `text_size` measures the unwrapped
-/// width of items that are otherwise wrapped.
-pub(super) fn shape_paragraphs(
-    text: Pin<&dyn crate::item_rendering::RenderString>,
-    item_rc: Option<&crate::item_tree::ItemRc>,
-    text_wrap: TextWrap,
-    scale_factor: ScaleFactor,
-    font_context: &mut parley::FontContext,
-) -> Vec<TextParagraph> {
-    let builder = shaping_builder(text, item_rc, text_wrap, scale_factor);
-    create_text_paragraphs(&builder, font_context, text.text(), text.link_color())
+/// Every input baked into an item's shaped paragraphs, read in one place, so that the drawing
+/// and the measuring paths share one cache entry. `text_wrap` is passed separately because
+/// `text_size` measures the unwrapped width of items that are otherwise wrapped.
+///
+/// A cache entry keeps them, so that an entry whose dependencies were marked dirty but whose
+/// inputs came out unchanged keeps its paragraphs (see [`super::cache::cached_paragraphs`]).
+pub(super) struct ShapingInputs {
+    builder: LayoutWithoutLineBreaksBuilder,
+    text: PlainOrStyledText,
+    link_color: Color,
+}
+
+impl ShapingInputs {
+    pub(super) fn read(
+        text: Pin<&dyn crate::item_rendering::RenderString>,
+        item_rc: Option<&crate::item_tree::ItemRc>,
+        text_wrap: TextWrap,
+        scale_factor: ScaleFactor,
+    ) -> Self {
+        Self {
+            builder: shaping_builder(text, item_rc, text_wrap, scale_factor),
+            text: text.text(),
+            link_color: text.link_color(),
+        }
+    }
+
+    pub(super) fn shape(&self, font_context: &mut parley::FontContext) -> Vec<TextParagraph> {
+        let text = match &self.text {
+            PlainOrStyledText::Plain(text) => PlainOrStyledText::Plain(text.clone()),
+            PlainOrStyledText::Styled(text) => PlainOrStyledText::Styled(text.clone()),
+        };
+        create_text_paragraphs(&self.builder, font_context, text, self.link_color)
+    }
+
+    /// Whether shaping with `other` gives the same paragraphs.
+    pub(super) fn same_as(&self, other: &Self) -> bool {
+        let same_text = match (&self.text, &other.text) {
+            (PlainOrStyledText::Plain(a), PlainOrStyledText::Plain(b)) => a == b,
+            (PlainOrStyledText::Styled(a), PlainOrStyledText::Styled(b)) => a == b,
+            _ => false,
+        };
+        same_text && self.link_color == other.link_color && self.builder == other.builder
+    }
 }
 
 pub(super) struct TextParagraph {

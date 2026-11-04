@@ -1,0 +1,145 @@
+# 10.42.0.1 2026-11-03T03:16:32Z Anbernic
+bench zone 640x480 frames=600 games=12 presses=0 prefs={"zone.look": "modern"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       5400
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  41         49        751
+dirty walk and layout                 537        763       3854
+rasterisation                        1683       2744       6082
+  of which banded replay             1296       2213       4530
+frame total                          2913       4971      11031
+dirty region (px)                   37431      45907      46457
+frames over 16.7 ms: 0 of 600
+bench zone 640x480 frames=600 games=12 presses=0 prefs={"zone.look": "blend"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       5005
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  29         45        123
+dirty walk and layout                 496        684       1602
+rasterisation                         891       1763       3508
+  of which banded replay              512       1390       2989
+frame total                          2059       3379       7660
+dirty region (px)                    8112      42336      45840
+frames over 16.7 ms: 0 of 600
+bench zone 640x480 frames=600 games=12 presses=0 prefs={"zone.look": "retro"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       5623
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  28         44        153
+dirty walk and layout                 474        691       1865
+rasterisation                         890       1856       6355
+  of which banded replay              512       1442       5851
+frame total                          2005       3669       8527
+dirty region (px)                    8112      42336      45840
+frames over 16.7 ms: 0 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       7936
+view to properties: convert             0          0        206
+view to properties: set                 0          0       2417
+timers and animations                  46        573       1514
+dirty walk and layout                 579      11524      39526
+rasterisation                        1725      24134      78843
+  of which banded replay             1304       6237      14714
+frame total                          3042      38783     132034
+dirty region (px)                   38222     169890     229521
+frames over 16.7 ms: 66 of 600
+bench zone 640x480 frames=300 games=12 presses=0 prefs={"zone.look": "modern"} buffer=new threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       4894
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  36         42        137
+dirty walk and layout                   3          4         48
+rasterisation                        3677       5708       9803
+  of which banded replay             2908       4796       8896
+frame total                          4434       6741      11002
+dirty region (px)                  307200     307200     307200
+frames over 16.7 ms: 0 of 300
+bench pico 640x480 frames=600 games=12 presses=0 prefs={} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      16097
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                   1         37        114
+dirty walk and layout                   0       3298       7080
+rasterisation                           0       1884       4825
+  of which banded replay                0         91        258
+frame total                             1       6477      16487
+dirty region (px)                       0       3120       3120
+frames over 16.7 ms: 0 of 600
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      26830
+view to properties: convert             0          0       1459
+view to properties: set                 0          0       1050
+timers and animations                   1         59        737
+dirty walk and layout                   0       3501      16148
+rasterisation                           0       2167       9178
+  of which banded replay                0        104       2467
+frame total                             1       7243      85826
+dirty region (px)                       0       3120     284544
+frames over 16.7 ms: 8 of 600
+bench pico 640x480 frames=300 games=12 presses=0 prefs={} buffer=new threads=default
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      20189
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                   1         55         72
+dirty walk and layout                   0          4          5
+rasterisation                           0       8007      12361
+  of which banded replay                0       2003       4169
+frame total                             1       9789      20567
+dirty region (px)                       0     307200     307200
+frames over 16.7 ms: 1 of 300
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=1
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       8716
+view to properties: convert             0          0        163
+view to properties: set                 0          0       2008
+timers and animations                  33        526        815
+dirty walk and layout                 489      11769      38459
+rasterisation                        1950      29043      73183
+  of which banded replay                0          0          0
+frame total                          3019      42691     130591
+dirty region (px)                   38222     169890     229521
+frames over 16.7 ms: 63 of 600
+bench zone 640x480 frames=300 games=12 presses=0 prefs={"zone.look": "modern"} buffer=new threads=1
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0       4863
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                  32         37        115
+dirty walk and layout                   3          4          6
+rasterisation                        6113       7171      10942
+  of which banded replay                0          0          0
+frame total                          6757       8464      13673
+dirty region (px)                  307200     307200     307200
+frames over 16.7 ms: 0 of 300
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=1
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      27628
+view to properties: convert             0          0       1518
+view to properties: set                 0          0       1151
+timers and animations                   1         54        685
+dirty walk and layout                   0       3554      19273
+rasterisation                           0       2167      12481
+  of which banded replay                0          0          0
+frame total                             1       7104      90514
+dirty region (px)                       0       3120     284544
+frames over 16.7 ms: 8 of 600
+bench pico 640x480 frames=300 games=12 presses=0 prefs={} buffer=new threads=1
+phase (us; px)                        p50        p95        max
+logic (Tick/update/view)                0          0      11347
+view to properties: convert             0          0          0
+view to properties: set                 0          0          0
+timers and animations                   1         36         53
+dirty walk and layout                   0          3          4
+rasterisation                           0       8333      12503
+  of which banded replay                0          0          0
+frame total                             1       9473      13526
+dirty region (px)                       0     307200     307200
+frames over 16.7 ms: 0 of 300

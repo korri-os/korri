@@ -21,6 +21,9 @@ type Sink = (
 );
 
 thread_local! {
+    /// Set: the clock the platform reports, advanced only by `Headless::advance`.
+    static MANUAL: std::cell::Cell<Option<std::time::Duration>> = const { std::cell::Cell::new(None) };
+    static STARTED: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
     static WINDOWS: RefCell<Vec<Weak<MinimalSoftwareWindow>>> = const { RefCell::new(Vec::new()) };
     static SINKS: RefCell<Vec<Sink>> = const { RefCell::new(Vec::new()) };
 }
@@ -38,7 +41,9 @@ impl Platform for HeadlessPlatform {
     }
 
     fn duration_since_start(&self) -> std::time::Duration {
-        self.started.elapsed()
+        MANUAL
+            .with(|m| m.get())
+            .unwrap_or_else(|| self.started.elapsed())
     }
 }
 
@@ -47,10 +52,38 @@ pub struct Headless;
 impl Headless {
     /// Install the headless platform for this thread. Idempotent.
     pub fn install() -> Self {
-        let _ = slint::platform::set_platform(Box::new(HeadlessPlatform {
-            started: std::time::Instant::now(),
-        }));
+        let started = std::time::Instant::now();
+        if slint::platform::set_platform(Box::new(HeadlessPlatform { started })).is_ok() {
+            STARTED.with(|s| s.set(Some(started)));
+        }
         Self
+    }
+
+    /// From now on the clock moves only by `advance`: frames are rendered at instants the
+    /// caller chooses, not at whatever time the machine took.
+    pub fn manual_clock() {
+        let now = STARTED
+            .with(|s| s.get())
+            .map_or_else(Default::default, |s| s.elapsed());
+        MANUAL.with(|m| {
+            if m.get().is_none() {
+                m.set(Some(now));
+            }
+        });
+    }
+
+    /// Moves the manual clock forward (see `manual_clock`).
+    pub fn advance(by: std::time::Duration) {
+        MANUAL.with(|m| m.set(m.get().map(|t| t + by)));
+    }
+
+    /// Holds `animation-tick()` at the manual clock's current instant: motion drawn from it
+    /// stands still between frames, while property animations and timers follow the clock.
+    /// For comparing frames rendered at different times (the focus probe).
+    pub fn freeze_motion() {
+        let now = MANUAL.with(|m| m.get()).unwrap_or_default();
+        slint::platform::software_renderer::SoftwareRenderer::new()
+            .freeze_animation_tick(Some(now.as_millis() as u64));
     }
 
     /// Visible windows that are still alive.

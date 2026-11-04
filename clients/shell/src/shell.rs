@@ -106,6 +106,8 @@ struct Loaded {
     generation: u64,
     /// The last `Pressed` delivered to this surface, or when it loaded.
     last_press: Instant,
+    /// The last size sent in `Resized`, in logical pixels.
+    size: (f32, f32),
     package: Package,
     engine: Engine,
     overlay_definition: Option<ComponentDefinition>,
@@ -373,6 +375,15 @@ impl Shell {
                 }
                 self.follow_focus();
             }
+            HostEvent::Resized => {
+                if self
+                    .current
+                    .as_ref()
+                    .is_some_and(|c| c.generation == generation)
+                {
+                    self.resized();
+                }
+            }
             HostEvent::Close => {
                 if let Some(quit) = &self.quit {
                     quit(Ok(()));
@@ -605,9 +616,6 @@ impl Shell {
         engine
             .init(&preferences)
             .map_err(|v| anyhow!("logic: {v}"))?;
-        let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
-        let logic_done = started.elapsed();
-
         self.next_generation += 1;
         let generation = self.next_generation;
         let mut images = ImageCache::new(&package.dir);
@@ -615,12 +623,22 @@ impl Shell {
         let mut surface_binder = Binder::new(&views.surface);
         let drawn = Rc::new(Cell::new(false));
         self.attach(surface.window(), generation, 0);
+        self.backend.place(surface.window(), self.options.placement);
+        // A2 (8.1): the window's size, once after init and before the first view.
+        let size = logical_size(surface.window());
+        let first_requests = engine
+            .update(&messages::resized(size.0, size.1))
+            .map_err(|v| anyhow!("logic: {v}"))?;
+        for request in &first_requests {
+            check_request(request, engine.declaration()).map_err(|f| anyhow!("{f}"))?;
+        }
+        let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
+        let logic_done = started.elapsed();
         let applied = surface_binder.apply(&surface, &view, &mut images);
         if let Err(error) = applied {
             drop(surface);
             return Err(error.context("view"));
         }
-        self.backend.place(surface.window(), self.options.placement);
         let post = self.post.clone();
         let watch = self.korrid.watch(
             &package.id,
@@ -638,6 +656,7 @@ impl Shell {
         let mut loaded = Loaded {
             generation,
             last_press: Instant::now(),
+            size,
             package,
             engine,
             overlay_definition: views.overlay,
@@ -664,7 +683,43 @@ impl Shell {
             self.unload(loaded);
             return Err(anyhow!("{id} overlay: {error:#}"));
         }
+        for request in first_requests {
+            let _ = self.jobs.send(RequestJob {
+                generation,
+                surface: loaded.package.id.clone(),
+                request,
+            });
+        }
         Ok(loaded)
+    }
+
+    /// Send `Resized` when the mapped window's logical size changed.
+    fn resized(&mut self) {
+        let Some(current) = self.current.as_mut() else {
+            return;
+        };
+        let window = match &current.overlay {
+            Some((overlay, _)) if !current.surface_shown => overlay.window(),
+            _ => current.surface.window(),
+        };
+        let size = logical_size(window);
+        if size == current.size || size.0 <= 0.0 || size.1 <= 0.0 {
+            return;
+        }
+        current.size = size;
+        self.update(&messages::resized(size.0, size.1));
+    }
+
+    /// Resize the current surface's window, as a compositor would (tests).
+    #[doc(hidden)]
+    pub fn resize_window(&mut self, width: u32, height: u32) {
+        if let Some(current) = self.current.as_ref() {
+            current
+                .surface
+                .window()
+                .set_size(slint::PhysicalSize::new(width, height));
+        }
+        self.resized();
     }
 
     fn attach(&self, window: &slint::Window, generation: u64, role: u8) {
@@ -763,6 +818,12 @@ impl Shell {
     }
 
     fn render(&mut self, current: &mut Loaded) -> std::result::Result<(), Failure> {
+        // Same state object and model: view() and overlay() would return the
+        // same views, so skip them (a Tick that changes nothing costs one call).
+        if !current.engine.view_stale() {
+            return Ok(());
+        }
+        current.engine.views_drawn();
         let view = current.engine.view()?;
         current
             .surface_binder
@@ -922,4 +983,10 @@ fn check_request(
         _ => {}
     }
     Ok(())
+}
+
+/// A window's size in logical pixels, the units `.slint` lays out in.
+fn logical_size(window: &slint::Window) -> (f32, f32) {
+    let size = window.size().to_logical(window.scale_factor());
+    (size.width, size.height)
 }

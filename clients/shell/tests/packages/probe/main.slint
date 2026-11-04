@@ -8,6 +8,10 @@ export component Surface inherits Window {
     in property <string> focused-game;
     in property <int> idle-ms;
     in property <int> ticks;
+    in property <int> width-seen;
+    in property <int> height-seen;
+    in property <int> resizes;
+    in property <int> views-before-first-resize;
     preferred-width: 640px;
     preferred-height: 480px;
     background: #102030;

@@ -1,0 +1,41 @@
+// A test package for surface-probe's targets: labels that repeat (two route
+// rows with the same buttons; a header and a button with the same word) and
+// a choice row whose value left and right step in place.
+import "fonts/tiny5.ttf";
+export struct Button { label: string, focused: bool }
+export struct Choice { label: string, value: string, focused: bool }
+export component Surface inherits Window {
+    in property <string> header;
+    in property <[Button]> first;
+    in property <[Button]> second;
+    in property <Choice> choice;
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: #102030;
+    default-font-family: "Pico Tiny5";
+    Text { x: 20px; y: 10px; text: root.header; color: white; font-size: 20px; }
+    for b[i] in root.first: Rectangle {
+        x: 20px + i * 160px; y: 60px; width: 140px; height: 40px;
+        accessible-role: button;
+        accessible-item-selectable: true;
+        accessible-item-selected: b.focused;
+        background: b.focused ? #f0c040 : #304050;
+        Text { text: b.label; color: white; font-size: 20px; }
+    }
+    for b[i] in root.second: Rectangle {
+        x: 20px + i * 160px; y: 140px; width: 140px; height: 40px;
+        accessible-role: button;
+        accessible-item-selectable: true;
+        accessible-item-selected: b.focused;
+        background: b.focused ? #f0c040 : #304050;
+        Text { text: b.label; color: white; font-size: 20px; }
+    }
+    Rectangle {
+        x: 20px; y: 220px; width: 300px; height: 40px;
+        accessible-role: button;
+        accessible-item-selectable: true;
+        accessible-item-selected: root.choice.focused;
+        background: root.choice.focused ? #f0c040 : #304050;
+        Text { text: root.choice.label + ": " + root.choice.value; color: white; font-size: 20px; }
+    }
+}

@@ -1,0 +1,33 @@
+# Zone snap frame breakdown. WORKSTATION ONLY so far (x86, Xvfb-free headless bench,
+# KORRI_BENCH_PROFILE=1 KORRI_BENCH_FRAMES=1, --press right, 640x480, modern).
+# RG353M run pending (aarch64 build /nix/store/wb56l4zd...-korri-shell-0.0.0 packed).
+# Workstation-to-RG353M ratio in the existing evidence: about 9-10x.
+#
+# Mid-snap frame (frames 35-44 after the press at 30), typical: total 3.6-4.2 ms
+#   dirty walk 1.3-1.5 ms
+#     property bindings re-evaluated: 440 per frame, about 1.1 ms (outermost time)
+#     text measuring (layout queries): 29 texts, 55-95 us; line breaking 15 texts, 15-30 us
+#     shaping: 0 texts (font size does not change mid-snap)
+#     items walked: 265
+#   raster on the UI thread 1.8-2.0 ms (banded replay tail 0.25-0.3 ms extra)
+#     text drawing: 100 texts, 722 glyphs, 0.6-0.9 ms; new glyphs 0-3 per frame (<60 us)
+#     path drawing 0.2-0.3 ms; bindings 0.12-0.2 ms; image drawing <10 us
+#   dirty region 155-167 Kpx (half the screen); replay is not the bottleneck
+#   layer cache: 4 layers invalidated every frame (the band and all 3 visible cards),
+#     8 drawn from images
+#
+# Glyph sizes rasterised over the whole run: 23 px (167 glyphs) and 46 px (5).
+# The card title switches between two cap sizes (c1, 2*c1) at most once per snap;
+# no new size per frame.
+#
+# Cause found: Slint marks a binding dirty when a dependency changes even when its
+# value comes out the same. The third card (constant size, only moving) has its
+# whole subtree re-evaluated and its layer invalidated every frame. Making that
+# card's geometry independent of the animated properties (experiment, package copy)
+# cut the frame from 4.2 to 2.6 ms: bindings 440 -> 316, texts drawn 100 -> 58,
+# layers invalidated 4 -> 3.
+#
+# Press frame (frame 30): logic 1.6-1.9 ms, set 0.5 ms, walk 4.7-5.9 ms (2054 bindings,
+# 12 texts shaped), raster 7.4 ms (98 texts shaped, 31 new glyphs, 1 layer image);
+# plus about 2-3 ms instantiating repeater rows before the walk: every changed
+# array property gets a new model, so its repeater drops and recreates every row.

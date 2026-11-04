@@ -74,6 +74,9 @@ impl Backend for Winit {
                     return EventResult::PreventDefault;
                 }
                 WindowEvent::Focused(focused) => sink(HostEvent::Focus(*focused)),
+                WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                    sink(HostEvent::Resized)
+                }
                 WindowEvent::CloseRequested => {
                     sink(HostEvent::Close);
                     return EventResult::PreventDefault;
