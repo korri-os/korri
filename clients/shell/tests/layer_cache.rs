@@ -14,13 +14,15 @@ use std::{cell::RefCell, rc::Rc};
 
 thread_local! {
     static WINDOWS: RefCell<Vec<Rc<MinimalSoftwareWindow>>> = const { RefCell::new(Vec::new()) };
+    /// The buffer windows are made with: reused (partial redraws) unless a test asks for new.
+    static KIND: std::cell::Cell<RepaintBufferType> = const { std::cell::Cell::new(RepaintBufferType::ReusedBuffer) };
 }
 
 struct Reused(std::time::Instant);
 
 impl Platform for Reused {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-        let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+        let window = MinimalSoftwareWindow::new(KIND.with(|k| k.get()));
         WINDOWS.with(|w| w.borrow_mut().push(window.clone()));
         Ok(window)
     }
@@ -162,6 +164,38 @@ fn a_cached_layer_matches_direct_rendering_through_every_change() {
 #[test]
 fn a_cached_layer_matches_direct_rendering_in_rgb565() {
     every_change::<Rgb565Pixel>();
+}
+
+/// Every frame drawn whole (a fresh buffer, as a compositor with buffer age 0 gives): a
+/// still cached layer copies the pixels its calls drew last time over the same pixels, and
+/// draws again where what lies under it changed. Same pixels as drawing directly.
+#[test]
+fn a_cached_layer_matches_direct_rendering_in_whole_frames() {
+    KIND.with(|k| k.set(RepaintBufferType::NewBuffer));
+    let mut pair = Pair::<Rgb565Pixel>::new(SOURCE, 200, 120);
+    for step in 0..6 {
+        for window in &pair.windows {
+            window.request_redraw();
+        }
+        pair.render();
+        pair.assert_same(&format!("still, frame {step}"));
+    }
+    for x in [5, 30, 60, 90, 130, 170] {
+        pair.set("mover-x", Value::Number(x as f64));
+        for window in &pair.windows {
+            window.request_redraw();
+        }
+        pair.render();
+        pair.assert_same(&format!("whole frame, mover at {x}"));
+    }
+    pair.set("word", Value::String("MOVED".into()));
+    for step in 0..3 {
+        for window in &pair.windows {
+            window.request_redraw();
+        }
+        pair.render();
+        pair.assert_same(&format!("whole frame after a change, {step}"));
+    }
 }
 
 /// Opacity on the layer: drawn as its children are, each with the opacity.

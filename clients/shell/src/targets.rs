@@ -2,13 +2,17 @@
 //! targets): every element that draws a focus target sets
 //! `accessible-item-selectable: true`, and `accessible-item-selected` while
 //! its view entry is `focused`. A target's box is that element's geometry in
-//! the window. Its identity is its region and its place in that region's
-//! drawn order, never its label or its values: labels repeat legitimately
-//! (two route rows with the same buttons) and values change in place (a
-//! choice row stepped with left and right).
+//! the window. Its identity is its region and its place among that region's
+//! entries in the view, never its label or its values: labels repeat
+//! legitimately (two route rows with the same buttons), values change in place
+//! (a choice row stepped with left and right), and a list that draws only the
+//! entries in view, or recentres them, changes what is drawn but not the view.
 //!
 //! Which element draws which view entry is found by lighting each entry alone
-//! (every other `focused` false) and reading which element is selected.
+//! (every other `focused` false) and reading which element is selected. An
+//! entry that selects no element, or one clipped out of view (outside the
+//! window or a clipping ancestor), is not drawn: a scrolling list or a band
+//! shows only some of its entries.
 
 use crate::{
     images::ImageCache,
@@ -27,6 +31,8 @@ pub struct Element {
     pub w: f32,
     pub h: f32,
     pub selected: bool,
+    /// Inside the window and every clipping ancestor.
+    pub visible: bool,
 }
 
 impl Element {
@@ -45,6 +51,7 @@ pub fn elements(instance: &ComponentInstance) -> Vec<Element> {
         .iter()
         .filter(|e| e.is_valid())
         .map(|e| {
+            let visible = e.is_visible();
             let at = e.absolute_position();
             let size = e.size();
             Element {
@@ -53,6 +60,7 @@ pub fn elements(instance: &ComponentInstance) -> Vec<Element> {
                 w: size.width,
                 h: size.height,
                 selected: e.accessible_item_selected() == Some(true),
+                visible,
             }
         })
         .collect()
@@ -124,18 +132,20 @@ pub fn lit(view: &Value, entries: &[Entry], lit: Option<usize>) -> Value {
     out
 }
 
-/// A drawn focus target: its entry, its element, its identity.
+/// A focus target: its entry, its element when it is drawn in the window, its identity.
 #[derive(Clone, Debug)]
 pub struct Target {
     pub entry: Entry,
-    pub element: Element,
-    /// `region#k`: the k-th of its region's targets in drawing order.
+    pub element: Option<Element>,
+    /// `region#k`: the k-th of its region's entries in the view.
     pub identity: String,
+    /// k.
+    pub index: usize,
 }
 
 /// The targets of `view` as drawn by `instance`, with the view applied as it is at the end.
-/// Fails when an entry lights no element, or more than one, or when an element is selected
-/// with no entry focused.
+/// Fails when an entry selects more than one element, when an element is selected with no
+/// entry focused, or when the focused entry is not drawn (focus stays in view).
 pub fn drawn(
     instance: &ComponentInstance,
     binder: &mut Binder,
@@ -148,56 +158,45 @@ pub fn drawn(
         binder.apply(instance, view, images)?;
         bail!("focus target element {i} is selected with no entry focused");
     }
-    let mut found: Vec<(usize, Entry, Element)> = Vec::new();
+    let inside = |e: &Element| e.visible && e.w > 0.0 && e.h > 0.0;
+    let mut targets = Vec::new();
     let mut problem = None;
+    let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
     for (n, entry) in entries.iter().enumerate() {
         binder.apply(instance, &lit(view, &entries, Some(n)), images)?;
-        let selected: Vec<(usize, Element)> = elements(instance)
+        let selected: Vec<Element> = elements(instance)
             .into_iter()
-            .enumerate()
-            .filter(|(_, e)| e.selected)
+            .filter(|e| e.selected)
             .collect();
-        match selected.as_slice() {
-            [(index, element)] => found.push((*index, entry.clone(), element.clone())),
-            [] => {
-                problem.get_or_insert(format!(
-                    "the focus entry at {} ({:?}) selects no element with accessible-item-selectable",
-                    path_text(&entry.path),
-                    entry.region
-                ));
-            }
-            more => {
-                problem.get_or_insert(format!(
-                    "the focus entry at {} selects {} elements",
-                    path_text(&entry.path),
-                    more.len()
-                ));
-            }
+        if selected.len() > 1 {
+            problem.get_or_insert(format!(
+                "the focus entry at {} selects {} elements",
+                path_text(&entry.path),
+                selected.len()
+            ));
         }
+        let element = selected.into_iter().next().filter(inside);
+        if entry.focused && element.is_none() {
+            problem.get_or_insert(format!(
+                "the focused entry at {} ({:?}) selects no element with accessible-item-selectable in the window",
+                path_text(&entry.path),
+                entry.region
+            ));
+        }
+        let index = seen.entry(entry.region.clone()).or_default();
+        targets.push(Target {
+            identity: format!("{}#{}", entry.region, index),
+            index: *index,
+            entry: entry.clone(),
+            element,
+        });
+        *index += 1;
     }
     binder.apply(instance, view, images)?;
     if let Some(problem) = problem {
         bail!(problem);
     }
-    // Identity: the region and the place in its drawing order.
-    let mut order: Vec<usize> = (0..found.len()).collect();
-    order.sort_by_key(|&i| found[i].0);
-    let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
-    let mut identity = vec![String::new(); found.len()];
-    for i in order {
-        let n = seen.entry(found[i].1.region.clone()).or_default();
-        identity[i] = format!("{}#{}", found[i].1.region, n);
-        *n += 1;
-    }
-    Ok(found
-        .into_iter()
-        .zip(identity)
-        .map(|((_, entry, element), identity)| Target {
-            entry,
-            element,
-            identity,
-        })
-        .collect())
+    Ok(targets)
 }
 
 pub fn path_text(path: &[Value]) -> String {

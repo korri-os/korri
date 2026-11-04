@@ -93,3 +93,4 @@ opt-level = 3
 i-slint-core = { path = "vendor/i-slint-core" }
 i-slint-renderer-software = { path = "vendor/i-slint-renderer-software" }
 slint-interpreter = { path = "vendor/slint-interpreter" }
+i-slint-backend-testing = { path = "vendor/i-slint-backend-testing" }

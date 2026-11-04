@@ -65,13 +65,17 @@ accessible-item-selected: entry.focused; // true exactly while its view entry is
 
 The shell finds which element draws which view entry by focusing each entry
 alone and reading which element is selected; the target's box is that
-element's geometry in the window (`src/targets.rs`). A target's identity is
-its region and its place in that region's drawing order, never its label or
-values: labels repeat (two route rows with the same buttons) and values
-change in place (a choice row that left and right step). The verifier fails a
-package whose focus entry, in the first view at 640x480 or after one press of
-each button, selects no element or more than one, or that has an element
-selected while no entry is focused.
+element's geometry in the window (`src/targets.rs`). An entry whose element is
+missing or clipped out of view (outside the window or a clipping ancestor: a
+scrolled list, a band that draws only its reach) is not drawn. A target's
+identity is its region and its place among that region's entries in the view,
+never its label, its values or its drawing order: labels repeat (two route
+rows with the same buttons), values change in place (a choice row that left
+and right step), and a list or band that recentres changes what is drawn but
+not the view. The verifier fails a package, in the first view at 640x480 or
+after one press of each button, whose focused entry is not drawn, whose entry
+selects more than one element, or that has an element selected while no entry
+is focused.
 
 `examples/surface-probe.rs walk` judges every d-pad press, at 320x240,
 640x480, 480x800, 1280x720 and 1920x1080, with a display list larger than the
@@ -79,7 +83,12 @@ window:
 
 - Inside the focused target's region: the target drawn nearest in the pressed
   direction (spatial-focus.ts: distance along the axis plus 3 x the distance
-  across, ahead by more than 1 px).
+  across, ahead by more than 1 px); targets not drawn are no candidates.
+- None drawn that way, along the region's drawn targets (a column for up and
+  down, a row for left and right): the region's next entry in the view (down,
+  right) or the previous one (up, left), when it is not drawn: a scroll brings
+  it into view.
+- After every press the focused entry is drawn: focus stays in view.
 - None that way: the region's exit. `first` is the destination's target drawn
   first, top to bottom then left to right by box centre; `active` is its
   `focusActive` target; `remembered` is the target that region last had

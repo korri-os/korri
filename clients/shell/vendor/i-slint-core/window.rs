@@ -571,6 +571,12 @@ struct WindowPinnedFields {
     text_input_focused: Property<bool>,
     #[pin]
     menubar_shortcuts: Property<SharedVector<MenuEntry>>,
+    /// What the last instantiation of the window's repeaters and conditionals read: while
+    /// none of it changed, there is nothing new to instantiate (`ensure_tree_instantiated`).
+    #[pin]
+    instantiation_tracker: PropertyTracker,
+    /// The component and popup count that tracker saw.
+    instantiated_for: Cell<(usize, usize)>,
 }
 
 /// The outcome of dispatching a [`MouseEvent`] through [`WindowInner::process_mouse_input`].
@@ -728,6 +734,8 @@ impl WindowInner {
                     SharedVector::default(),
                     "i_slint_core::Window::menubar_shortcuts",
                 ),
+                instantiation_tracker: Default::default(),
+                instantiated_for: Default::default(),
             }),
             focus_item: Default::default(),
             focus_item_visibility_tracker: Default::default(),
@@ -796,11 +804,27 @@ impl WindowInner {
         // sees the model property before any change handler can reset it.
         for _ in 0..10 {
             let mut changed = false;
-            if let Some(component) = self.try_component() {
-                changed |= crate::item_tree::ensure_item_tree_instantiated(&component);
-            }
-            for popup in self.active_popups.borrow().iter() {
-                changed |= crate::item_tree::ensure_item_tree_instantiated(&popup.component);
+            // Walk the repeaters and conditionals only when something the last walk read
+            // changed (a model, a row count, a condition), or the component or popups did.
+            let fields = self.pinned_fields.as_ref().project_ref();
+            let component = self.try_component();
+            let key = (
+                component.as_ref().map_or(0, |c| vtable::VRef::as_ptr(ItemTreeRc::borrow(c)).as_ptr() as usize),
+                self.active_popups.borrow().len(),
+            );
+            let tracker = fields.instantiation_tracker;
+            if tracker.is_dirty() || fields.instantiated_for.get() != key {
+                fields.instantiated_for.set(key);
+                changed |= tracker.evaluate_as_dependency_root(|| {
+                    let mut changed = false;
+                    if let Some(component) = &component {
+                        changed |= crate::item_tree::ensure_item_tree_instantiated(component);
+                    }
+                    for popup in self.active_popups.borrow().iter() {
+                        changed |= crate::item_tree::ensure_item_tree_instantiated(&popup.component);
+                    }
+                    changed
+                });
             }
             changed |= crate::properties::ChangeTracker::run_change_handlers_once();
             if !changed {
@@ -1843,6 +1867,12 @@ impl WindowInner {
             &dyn Fn(&mut dyn crate::item_rendering::ItemRenderer),
         ) -> T,
     ) -> Option<T> {
+        #[cfg(feature = "std")]
+        crate::frame_profile::time(
+            |p| &mut p.instantiate,
+            || crate::properties::evaluate_no_tracking(|| self.ensure_tree_instantiated()),
+        );
+        #[cfg(not(feature = "std"))]
         crate::properties::evaluate_no_tracking(|| self.ensure_tree_instantiated());
         #[cfg(feature = "shared-parley")]
         if let Some(cache) = self.window_adapter().renderer().text_layout_cache() {

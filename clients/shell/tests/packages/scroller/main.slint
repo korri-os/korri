@@ -1,0 +1,25 @@
+// A test package for surface-probe: a list of ten rows in a box that shows
+// four, scrolled so the focused row stays in view.
+import "fonts/tiny5.ttf";
+export struct Row { label: string, focused: bool }
+export component Surface inherits Window {
+    in property <[Row]> rows;
+    in property <int> top;
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: #102030;
+    default-font-family: "Pico Tiny5";
+    Rectangle {
+        x: 40px; y: 40px; width: 300px; height: 200px;
+        clip: true;
+        background: #203040;
+        for row[i] in root.rows: Rectangle {
+            x: 0px; y: (i - root.top) * 50px; width: 300px; height: 46px;
+            accessible-role: list-item;
+            accessible-item-selectable: true;
+            accessible-item-selected: row.focused;
+            background: row.focused ? #f0c040 : #304050;
+            Text { text: row.label; color: white; font-size: 20px; }
+        }
+    }
+}
