@@ -30,9 +30,9 @@ export component ZoneRowList inherits Rectangle {
         height: self.preferred-height;
         width: root.width;
         spacing: 0;
-        // Only a row the cursor can stand on reads `focused` (the view leaves it out of the others).
         for r in root.rows: VerticalLayout {
-            property <bool> holds: (r.focused && (r.kind == "item" || r.kind == "range" || r.kind == "route")) || r.holds;
+            // The row the cursor stands on, or whose button it stands on (the view's `holds`).
+            property <bool> holds: r.holds;
             // A row of buttons keeps its held button's line in view; any other row, itself.
             property <length> keep-y: r.kind == "buttons" ? 4 * root.a + r.holds-line * (2 * Tokens.c1 + 5 * root.a) : 0;
             property <length> keep-h: r.kind == "buttons" ? 2 * Tokens.c1 : self.preferred-height;

@@ -155,7 +155,9 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     const buttons = lines((entry.buttons as Btnish[] | undefined) ?? [], width, c1, screen)
     // The held button's line: the list keeps it, not the whole row, in view.
     const held = buttons.find(button => button.focused === true)
-    return { ...entry, buttons, holdsLine: held === undefined ? 0 : held.line }
+    // The row the list keeps in view: the focused row, or the row of the focused button. Its own
+    // field, so the list scrolls by the cursor, not by whichever entry is drawn focused.
+    return { ...entry, buttons, holds: entry.holds === true || entry.focused === true, holdsLine: held === undefined ? 0 : held.line }
   })
   view.rows = withLines(raw.rows as Json[], listWidth)
   view.optsRows = withLines(raw.optsRows as Json[], screen.width - 24 * a)

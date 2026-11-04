@@ -7,12 +7,12 @@ import { ZoneOptionRow } from "./ZoneOptionRow.slint";
 
 export component Focused inherits ZonePreview {
     ground: "options";
-    ZoneOptionRow { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; it: { kind: "item", label: "Name", value: "mini", value-fact: true, focused: true, bars: -1 }; }
+    ZoneOptionRow { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; it: { kind: "item", label: "Name", value: "mini", value-fact: true, focused: true, bars: -1, holds: true }; }
 }
 
 export component Choice inherits ZonePreview {
     ground: "options";
-    ZoneOptionRow { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; it: { kind: "item", label: "Look", value: "Modern", focused: true, choice: true, bars: -1 }; }
+    ZoneOptionRow { x: 8 * Tokens.a; y: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; it: { kind: "item", label: "Look", value: "Modern", focused: true, choice: true, bars: -1, holds: true }; }
 }
 
 export component Network inherits ZonePreview {
