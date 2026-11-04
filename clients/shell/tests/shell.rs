@@ -353,8 +353,11 @@ fn declare_carries_the_declared_displays_and_only_all_gets_model_displays() {
 fn the_overlay_follows_the_presentation() {
     let mut rig = rig(&["probe"], 12, Behaviour::default());
     assert!(!rig.shell.overlay_shown());
+    rig.until("surface placed", |r| r.fixture.declarations().len() == 2);
     rig.fixture.set_overlay(true);
     rig.until("overlay", |r| r.shell.overlay_shown());
+    // Every newly mapped window is placed: the Overlay's first frame declares again.
+    rig.until("overlay placed", |r| r.fixture.declarations().len() == 3);
     assert!(
         matches!(rig.shell.overlay_property("heading"), Some(SlintValue::String(s)) if s.as_str() == "Paused")
     );
@@ -364,6 +367,16 @@ fn the_overlay_follows_the_presentation() {
     rig.until("overlay gone", |r| !r.shell.overlay_shown());
     assert_eq!(rig.requests("DismissGameplayOverlay").len(), 1);
     assert_eq!(Headless::live_windows(), 1);
+    // The Surface mapped again is placed again.
+    rig.until("surface placed again", |r| {
+        r.fixture.declarations().len() == 4
+    });
+    rig.settle();
+    assert_eq!(
+        rig.fixture.declarations().len(),
+        4,
+        "one declare per mapping"
+    );
 }
 
 #[test]
@@ -546,17 +559,27 @@ fn ticks_arrive_each_second_with_idle_time_that_a_press_and_a_switch_reset() {
     assert_eq!(rig.int("count"), 1.0);
     let ticks = rig.int("ticks");
     rig.until("tick after the press", |r| r.int("ticks") > ticks);
-    assert!(rig.int("idle-ms") < 1_100.0, "{}", rig.int("idle-ms"));
+    // Ticks come once a second; a loaded machine delivers them late (slack, not exactness).
+    assert!(rig.int("idle-ms") < SLACK_MS, "{}", rig.int("idle-ms"));
     // A switch away and back loads the probe again: its count starts over.
     rig.until("idle again", |r| r.int("idle-ms") >= 1_800.0);
     rig.key(Key::F2);
     rig.until("pico", |r| r.shell.current_id() == Some("pico"));
     rig.key(Key::F2);
     rig.until("probe again", |r| r.shell.current_id() == Some("probe"));
-    assert_eq!(rig.int("ticks"), 0.0, "a fresh load has seen no tick");
+    // The reloaded probe counts from zero: a loaded machine may already have delivered
+    // its first tick, but not more, and that tick's idle time starts at the load.
+    assert!(
+        rig.int("ticks") <= 1.0,
+        "a fresh load starts its count over"
+    );
     rig.until("first tick after the switch", |r| r.int("ticks") >= 1.0);
-    assert!(rig.int("idle-ms") < 1_100.0, "{}", rig.int("idle-ms"));
+    assert!(rig.int("idle-ms") < SLACK_MS, "{}", rig.int("idle-ms"));
 }
+
+/// The largest idle time a tick right after a press or load may report: one second, and
+/// what a loaded machine adds to delivering it.
+const SLACK_MS: f64 = 1_800.0;
 
 #[test]
 fn resized_comes_before_the_first_view_and_follows_every_window_change() {

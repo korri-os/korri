@@ -28,14 +28,16 @@ export component ZoneCardBand {
     // The pool: reach cards either side of the focus, and the next one each way.
     property <int> slots: 2 * reach + 3;
     property <int> base: focused-card - reach - 1;
-    // `base` one frame late: a spare slot takes its next card after the press frame.
+    // `base` once the band is still: a spare slot takes its next card only after
+    // the snap has ended, on a quiet frame, so the move's frames draw no new card.
     property <int> fill-base;
     init => {
         self.fill-base = self.base;
     }
+    property <bool> snapping: f != focus-index || lin != focus-index;
     fill := Timer {
-        interval: 1ms;
-        running: root.fill-base != root.base;
+        interval: 50ms;
+        running: root.fill-base != root.base && !root.snapping;
         triggered => {
             root.fill-base = root.base;
         }
@@ -103,6 +105,8 @@ export component ZoneCardBand {
             y: 0;
             width: 0;
             height: 0;
+            // A spare slot draws nothing.
+            visible: self.shown;
             ZoneCard {
                 visible: parent.shown;
                 cache-rendering-hint: true;

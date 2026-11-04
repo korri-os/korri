@@ -33,7 +33,8 @@ pub enum HostEvent {
     },
     Focus(bool),
     Close,
-    /// The window finished drawing a frame. Sent once per window.
+    /// The window finished drawing a frame. Sent once per window, and once more each
+    /// time the shell attaches it again.
     FirstFrame,
     /// The window's size or scale factor changed. The shell reads the new
     /// logical size from the window when it handles this.
@@ -106,6 +107,8 @@ pub trait Backend {
     /// Route the window's host events to `sink`. The sink must not re-enter
     /// the shell synchronously; implementations call it from window
     /// callbacks.
+    /// Attaching a window again replaces its sink and makes its next drawn frame a
+    /// `FirstFrame` again (the shell does so when it maps the window anew).
     fn attach(&self, window: &slint::Window, sink: Rc<dyn Fn(HostEvent)>, frames: FrameCounter);
 
     fn place(&self, window: &slint::Window, placement: Placement);

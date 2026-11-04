@@ -150,9 +150,11 @@ impl Backend for Headless {
                 .find(|candidate| std::ptr::eq(candidate.window(), window))
         });
         if let Some(window) = found {
+            // Attached again (a window mapped anew): its next frame is a first frame again.
             SINKS.with(|s| {
-                s.borrow_mut()
-                    .push((Rc::downgrade(&window), sink, frames, true))
+                let mut sinks = s.borrow_mut();
+                sinks.retain(|(w, ..)| !w.upgrade().is_some_and(|w| Rc::ptr_eq(&w, &window)));
+                sinks.push((Rc::downgrade(&window), sink, frames, true))
             });
         }
     }
