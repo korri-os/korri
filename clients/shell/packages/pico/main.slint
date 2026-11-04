@@ -120,14 +120,6 @@ export component Surface inherits Window {
             if page == "setup" : PicoOnboarding { frame: frame; setup: setup; editor: editor; identity: identity; mode: mode; }
             if page == "runner" : PicoRunnerPicker { sheet: sheet; }
             if attract.shown : PicoAttract { attract: attract; }
-            // MENU's list at window level: over every screen, never clipped by one.
-            if page == "home" && home.menu-open : PicoMenu {
-                x: 2 * Tokens.u;
-                y: max(Tokens.u, parent.height - Tokens.floor-band - self.height);
-                room-width: parent.width - 4 * Tokens.u;
-                room-height: parent.height - Tokens.floor-band - Tokens.u;
-                entries: home.menu;
-            }
             if !split.on && notices.length > 0 : PicoInviteNotices { notices: notices; round: notice-round; }
         }
         if split.on : Rectangle {
@@ -140,6 +132,16 @@ export component Surface inherits Window {
             if attract.shown : PicoAttract { attract: attract; }
             if notices.length > 0 : PicoInviteNotices { notices: notices; round: notice-round; }
         }
+    }
+    // MENU's list at the window's top level, with no clipping ancestor: it
+    // stands over the floor's MENU key in the choosing screen's rectangle
+    // (the whole window, or its part of a split), in window coordinates.
+    if page == "home" && home.menu-open : PicoMenu {
+        x: displays.x + displays.choose-x + 2 * Tokens.u;
+        y: displays.y + displays.choose-y + max(Tokens.u, displays.choose-h - Tokens.floor-band - self.height);
+        room-width: displays.choose-w - 4 * Tokens.u;
+        room-height: displays.choose-h - Tokens.floor-band - Tokens.u;
+        entries: home.menu;
     }
 }
 
