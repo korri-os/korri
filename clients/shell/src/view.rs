@@ -391,8 +391,9 @@ fn convert_from(
 /// Brings `rows`, a model the shell converted from a JSON array, to the JSON
 /// array `items`; `diffs` says which rows changed. A row whose JSON is the same keeps its value
 /// and its repeater instance. A row whose JSON changed is converted from its
-/// previous value and replaced (removed and inserted), so a repeater drops
-/// its instance and creates a new one, as for a new model. Rows past the new
+/// previous value and set in place (`set_row_data`): a repeater keeps its
+/// instance and updates its bindings, so a row's `init` runs only when the row
+/// is created and a package must draw a row from its data. Rows past the new
 /// length are removed; new rows are added at the end.
 fn update_rows(
     rows: &VecModel<Value>,
@@ -413,8 +414,7 @@ fn update_rows(
     }
     for (i, value) in changed {
         if i < rows.row_count() {
-            rows.remove(i);
-            rows.insert(i, value);
+            rows.set_row_data(i, value);
         } else {
             rows.push(value);
         }
