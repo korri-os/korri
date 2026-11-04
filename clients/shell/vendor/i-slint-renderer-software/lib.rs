@@ -553,6 +553,7 @@ pub struct SoftwareRenderer {
     /// The buffer size, scale factor and rotation of the last frame drawn: a frame with
     /// others is drawn even when no property changed.
     drawn_frame: Cell<Option<(PhysicalSize, f32, RenderingRotation)>>,
+    skip_quiet_frames: Cell<bool>,
 }
 
 impl Default for SoftwareRenderer {
@@ -583,6 +584,7 @@ impl Default for SoftwareRenderer {
             #[cfg(feature = "std")]
             check_layers_again: Default::default(),
             drawn_frame: Default::default(),
+            skip_quiet_frames: Cell::new(true),
         }
     }
 }
@@ -816,6 +818,13 @@ impl SoftwareRenderer {
         self.parallel_threshold.set(pixels);
     }
 
+    /// Whether a frame where nothing changed is skipped (the default). For benchmarks that
+    /// compare the two.
+    #[doc(hidden)]
+    pub fn set_skip_quiet_frames(&self, skip: bool) {
+        self.skip_quiet_frames.set(skip);
+    }
+
     /// How many threads `render` rasterises a frame with. The default is the
     /// online cores, at most 4; 1 draws on the calling thread only.
     #[doc(hidden)]
@@ -951,7 +960,7 @@ impl SoftwareRenderer {
             if self.check_layers_again.get() {
                 return false;
             }
-            if !same_frame {
+            if !same_frame || !self.skip_quiet_frames.get() {
                 return false;
             }
             self.repaint_buffer_type.get() == RepaintBufferType::ReusedBuffer
