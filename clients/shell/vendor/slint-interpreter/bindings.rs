@@ -422,7 +422,7 @@ fn install_property_binding(
         animation_for_binding(binding.animation.as_ref(), weak_sub.clone()),
         animated_value_map(ty),
     ) {
-        (AnimatedBindingKind::NotAnimated, _) => prop.set_binding(binding_fn),
+        (AnimatedBindingKind::NotAnimated, _) => prop.set_binding_comparing(binding_fn),
         (AnimatedBindingKind::Animation(anim_fn), None) => {
             prop.set_animated_binding(binding_fn, move || (anim_fn(), None));
         }

@@ -425,16 +425,18 @@ struct TargetPixelSlice<'a, T> {
 /// premultiplied, over transparency.
 #[cfg(feature = "std")]
 struct CachedLayer {
-    /// The image's top-left corner relative to the layer item's origin, in physical pixels.
-    origin: euclid::Point2D<i32, PhysicalPx>,
-    /// The fractional part of the layer's physical screen position the image was rendered at.
-    /// The children are positioned with sub-pixel precision. A layer drawn at another phase is
-    /// shifted by whole pixels while it moves, and rendered again at its exact phase once it
-    /// stops (see `SceneBuilder::draw_cached_layer`).
-    phase: euclid::Vector2D<f32, PhysicalPx>,
-    /// Where the layer was last drawn shifted (its physical screen offset), if it was.
+    /// The layer's physical screen offset when its children's draw calls were recorded. The
+    /// calls are replayed only at exactly that offset: each draws the pixels drawing the
+    /// children there directly would (positions, edges and blending alike), for every
+    /// target pixel format. Elsewhere the layer is drawn directly, and recorded again once
+    /// it stays at a new offset.
+    at: euclid::Point2D<f32, PhysicalPx>,
+    /// Where the layer was last drawn at another offset than `at`, if it was.
     shifted_at: Cell<Option<euclid::Point2D<f32, PhysicalPx>>>,
-    image: SharedPixelBuffer<Rgba8Pixel>,
+    /// The screen area the children draw in, in physical pixels.
+    area: euclid::Rect<i32, PhysicalPx>,
+    /// The children's draw calls, in screen coordinates.
+    ops: Vec<parallel::Op>,
 }
 
 /// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
@@ -453,6 +455,9 @@ struct LayerCache {
     rendering: Cell<bool>,
     /// Threads a layer image is rasterised with: the renderer's `render` threads this frame.
     threads: Cell<usize>,
+    /// This frame's cached layers: invalidated (content changed, drawn directly), drawn
+    /// directly while waiting for their turn to render an image, and drawn from an image.
+    visits: Cell<(u32, u32, u32)>,
     /// Layers drawn directly because their content changed (`visit_layer`).
     direct: RefCell<std::collections::HashMap<(usize, u32), DirectLayer>>,
 }
@@ -527,6 +532,9 @@ pub struct SoftwareRenderer {
     /// Of the last raster phase: the banded replay (`parallel`).
     #[cfg(feature = "std")]
     last_replay: Cell<std::time::Duration>,
+    /// The last render's frame profile of the dirty-region walk, when profiling is on.
+    #[cfg(feature = "std")]
+    walk_profile: RefCell<i_slint_core::frame_profile::FrameProfile>,
 }
 
 impl Default for SoftwareRenderer {
@@ -550,6 +558,8 @@ impl Default for SoftwareRenderer {
             render_threads: Cell::new(parallel::default_threads()),
             #[cfg(feature = "std")]
             last_replay: Default::default(),
+            #[cfg(feature = "std")]
+            walk_profile: Default::default(),
         }
     }
 }
@@ -608,6 +618,57 @@ impl SoftwareRenderer {
     #[cfg(feature = "std")]
     pub fn last_frame_layer_renders(&self) -> (u32, u64, std::time::Duration) {
         self.layer_cache.renders.get()
+    }
+
+    /// Turns the calling thread's frame profile (`i_slint_core::frame_profile`) on or off:
+    /// text shaping, line breaking, measuring and drawing, glyph rasterisation and image draws,
+    /// timed. For benchmarks; off by default.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_frame_profile(&self, enabled: bool) {
+        i_slint_core::frame_profile::set_enabled(enabled);
+    }
+
+    /// Turns the property system's equality cut-off on (the default) or off for the calling
+    /// thread (`i_slint_core::properties::set_equality_cutoff`). Off, a binding that depends on
+    /// a changed property is always evaluated again, as upstream. For tests and benchmarks.
+    #[doc(hidden)]
+    pub fn set_equality_cutoff(&self, enabled: bool) {
+        i_slint_core::properties::set_equality_cutoff(enabled);
+    }
+
+    /// Makes `animation-tick()` return `tick` milliseconds on the calling thread, or follow
+    /// the clock again with `None` (`i_slint_core::animations::freeze_animation_tick`).
+    /// Property animations and timers keep following the clock. For focus probes.
+    #[doc(hidden)]
+    pub fn freeze_animation_tick(&self, tick: Option<u64>) {
+        i_slint_core::animations::freeze_animation_tick(tick);
+    }
+
+    /// The calling thread's frame profile since the last call; resets it. After a render:
+    /// its raster phase (the walk's part is in [`Self::last_walk_profile`]).
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn take_frame_profile(&self) -> i_slint_core::frame_profile::FrameProfile {
+        i_slint_core::frame_profile::take()
+    }
+
+    /// The frame profile of the last render's dirty-region walk, when profiling is on. The
+    /// profile from before the render up to the walk's end, so take the profile right before
+    /// rendering.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_walk_profile(&self) -> i_slint_core::frame_profile::FrameProfile {
+        self.walk_profile.take()
+    }
+
+    /// The last render's cached layers (`cache-rendering-hint`): invalidated (drawn directly
+    /// because their content changed), drawn directly while another layer rendered its image,
+    /// and drawn from their image (part of the raster phase).
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn last_frame_layer_visits(&self) -> (u32, u32, u32) {
+        self.layer_cache.visits.get()
     }
 
     /// Returns the kind of buffer that must be passed to  [`Self::render`]
@@ -826,6 +887,8 @@ impl SoftwareRenderer {
                 scale_factor: factor,
                 #[cfg(feature = "std")]
                 recording: None,
+                #[cfg(feature = "std")]
+                unclipped: None,
             },
             rotation,
             #[cfg(feature = "systemfonts")]
@@ -874,8 +937,13 @@ impl SoftwareRenderer {
                 #[cfg(feature = "std")]
                 let (walk, raster_started) = (walk_started.elapsed(), std::time::Instant::now());
                 #[cfg(feature = "std")]
+                if i_slint_core::frame_profile::enabled() {
+                    *self.walk_profile.borrow_mut() = i_slint_core::frame_profile::take();
+                }
+                #[cfg(feature = "std")]
                 {
                     self.layer_cache.renders.set(Default::default());
+                    self.layer_cache.visits.set(Default::default());
                     self.layer_cache.rendering.set(false);
                 }
                 let rotation = RotationInfo { orientation: rotation, screen_size: size };
@@ -1881,6 +1949,14 @@ fn prepare_scene(
 }
 
 trait ProcessScene {
+    /// Draw a cached layer's recorded draw calls, moved by `delta`, inside `clip`.
+    #[cfg(feature = "std")]
+    fn process_layer_ops(
+        &mut self,
+        ops: &[parallel::Op],
+        delta: euclid::Vector2D<i16, PhysicalPx>,
+        clip: PhysicalRect,
+    );
     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>);
     fn process_target_texture(
         &mut self,
@@ -2179,15 +2255,47 @@ struct RenderToBuffer<'a, TargetPixelBuffer> {
     /// When set, draw calls are recorded here instead of drawn (`parallel`).
     #[cfg(feature = "std")]
     recording: Option<parallel::Recorder>,
+    /// While a cached layer's draw calls are replayed: the dirty region outside its clip.
+    #[cfg(feature = "std")]
+    unclipped: Option<PhysicalRegion>,
 }
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
-    /// `clip` intersected with each rectangle of the dirty region.
+    /// The dirty region inside `clip`, as rectangles that do not overlap: a path drawn once
+    /// per rectangle blends each pixel once, also where the region's rectangles overlap.
     fn dirty_clips(&self, clip: &PhysicalRect) -> Vec<PhysicalRect> {
-        self.dirty_region
-            .iter_box()
-            .filter_map(|b| clip.intersection(&b.to_rect()))
-            .collect()
+        let rects: Vec<PhysicalRect> =
+            self.dirty_region.iter_box().filter_map(|b| clip.intersection(&b.to_rect())).collect();
+        if rects.len() < 2 {
+            return rects;
+        }
+        let mut edges: Vec<i16> = rects.iter().flat_map(|r| [r.min_y(), r.max_y()]).collect();
+        edges.sort_unstable();
+        edges.dedup();
+        let mut out = Vec::new();
+        for band in edges.windows(2) {
+            let (top, bottom) = (band[0], band[1]);
+            let mut spans: Vec<(i16, i16)> = rects
+                .iter()
+                .filter(|r| r.min_y() <= top && r.max_y() >= bottom)
+                .map(|r| (r.min_x(), r.max_x()))
+                .collect();
+            spans.sort_unstable();
+            let mut merged: Vec<(i16, i16)> = Vec::new();
+            for (start, end) in spans {
+                match merged.last_mut() {
+                    Some(last) if start <= last.1 => last.1 = last.1.max(end),
+                    _ => merged.push((start, end)),
+                }
+            }
+            for (start, end) in merged {
+                out.push(PhysicalRect::new(
+                    PhysicalPoint::new(start, top),
+                    PhysicalSize::new(end - start, bottom - top),
+                ));
+            }
+        }
+        out
     }
 
     fn foreach_ranges(
@@ -2249,6 +2357,38 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
 }
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<'_, B> {
+    #[cfg(feature = "std")]
+    fn process_layer_ops(
+        &mut self,
+        ops: &[parallel::Op],
+        delta: euclid::Vector2D<i16, PhysicalPx>,
+        clip: PhysicalRect,
+    ) {
+        // Only the calls that reach the clip and, when drawing now, the dirty region.
+        let reach = match &self.recording {
+            Some(_) => Some(clip),
+            None => clip.intersection(&self.dirty_region.bounding_rect()),
+        };
+        let Some(reach) = reach else { return };
+        let moved = ops.iter().filter_map(|op| {
+            let op = op.translated(delta);
+            op.bounds().intersects(&reach).then_some(op)
+        });
+        if let Some(recorder) = &mut self.recording {
+            recorder.push(parallel::Op::SetClip(Some(clip)));
+            for op in moved {
+                recorder.push(op);
+            }
+            recorder.push(parallel::Op::SetClip(None));
+        } else {
+            self.replay(&parallel::Op::SetClip(Some(clip)));
+            for op in moved {
+                self.replay(&op);
+            }
+            self.replay(&parallel::Op::SetClip(None));
+        }
+    }
+
     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>) {
         #[cfg(feature = "std")]
         if let Some(ops) = &mut self.recording {
@@ -2466,6 +2606,16 @@ struct PrepareScene {
 }
 
 impl ProcessScene for PrepareScene {
+    #[cfg(feature = "std")]
+    fn process_layer_ops(
+        &mut self,
+        _ops: &[parallel::Op],
+        _delta: euclid::Vector2D<i16, PhysicalPx>,
+        _clip: PhysicalRect,
+    ) {
+        // Line-by-line rendering has no layer cache.
+    }
+
     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>) {
         let texture_index = self.vectors.textures.len() as u16;
         self.vectors.textures.push(texture);
@@ -2675,71 +2825,40 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
     /// Draw a `Layer`'s children from its cached image, rendering the image first if the
     /// cache has none or anything it depends on changed.
     #[cfg(feature = "std")]
-    fn draw_cached_layer(&mut self, cache: &'a LayerCache, item_rc: &ItemRc, size: LogicalSize) {
+    fn draw_cached_layer(
+        &mut self,
+        cache: &'a LayerCache,
+        item_rc: &ItemRc,
+        size: LogicalSize,
+    ) -> bool {
         let scale = self.scale_factor;
-        let screen_offset = self.current_state.offset.cast::<f32>() * scale;
-        let phase = screen_offset.to_vector() - screen_offset.floor().to_vector();
-        let render = || self.render_layer_image(cache, item_rc, size, phase);
+        let at = self.current_state.offset.cast::<f32>() * scale;
+        let render = || self.render_layer_image(cache, item_rc, size);
         let mut layer = cache.get_or_update_cache_entry(item_rc, render);
-        // A layer at another sub-pixel phase: while it moves, shift the image by whole pixels
-        // (rendering its children again every frame of a slide is what costs); once it is drawn
-        // twice at the same position, render it again at its exact phase.
-        let mut shifted = false;
-        if let Some(cached) =
-            layer.as_ref().filter(|layer| (layer.phase - phase).square_length() > 1e-6)
-        {
-            let stopped = cached
-                .shifted_at
-                .get()
-                .is_some_and(|at| (at - screen_offset).square_length() <= 1e-6);
-            if stopped {
-                cache.release(item_rc);
-                layer = cache.get_or_update_cache_entry(item_rc, || {
-                    self.render_layer_image(cache, item_rc, size, phase)
-                });
-            } else {
-                cached.shifted_at.set(Some(screen_offset));
-                shifted = true;
+        // At another offset the recorded calls would not place every edge exactly as drawing
+        // directly does: draw directly while the layer moves; once it is drawn twice at the
+        // same offset, record its calls again there.
+        if let Some(cached) = layer.as_ref().filter(|layer| layer.at != at) {
+            if cached.shifted_at.get() != Some(at) {
+                cached.shifted_at.set(Some(at));
+                return false;
             }
+            cache.release(item_rc);
+            layer = cache.get_or_update_cache_entry(item_rc, || {
+                self.render_layer_image(cache, item_rc, size)
+            });
         }
-        let Some(layer) = layer else { return };
-        let offset = if shifted {
-            (screen_offset - layer.phase).round().cast::<i32>().to_vector()
-        } else {
-            screen_offset.floor().cast::<i32>().to_vector()
-        };
-        let (width, height) = (layer.image.width() as i32, layer.image.height() as i32);
-        let local = euclid::Rect::<i32, PhysicalPx>::new(layer.origin, euclid::size2(width, height));
-        let physical_clip = (self.current_state.clip.cast() * scale).round_out().cast::<i32>();
-        let Some(clipped) = local.intersection(&physical_clip) else { return };
-        if shifted {
-            let screen = clipped.translate(offset).cast::<f32>() / scale;
-            cache.shifted.borrow_mut().add_rect(LogicalRect::new(
-                LogicalPoint::new(screen.origin.x as _, screen.origin.y as _),
-                LogicalSize::new(screen.size.width as _, screen.size.height as _),
-            ).round_out());
-        }
-        let t = target_pixel_buffer::DrawTextureArgs {
-            data: target_pixel_buffer::TextureDataContainer::Shared {
-                buffer: SharedBufferData::SharedImage(SharedImageBuffer::RGBA8Premultiplied(
-                    layer.image.clone(),
-                )),
-                source_rect: euclid::rect(0, 0, width, height).cast(),
-            },
-            colorize: None,
-            alpha: (self.current_state.alpha * 255.) as u8,
-            dst_x: (layer.origin.x + offset.x) as _,
-            dst_y: (layer.origin.y + offset.y) as _,
-            dst_width: width as _,
-            dst_height: height as _,
-            rotation: self.rotation.orientation,
-            tiling: None,
-        };
-        self.processor
-            .process_target_texture(&t, clipped.translate(offset).cast().transformed(self.rotation));
+        let Some(layer) = layer else { return true };
+        let screen_clip = (self.current_state.clip.translate(self.current_state.offset.to_vector()).cast()
+            * scale)
+            .round_out()
+            .cast::<i32>();
+        let Some(clipped) = layer.area.intersection(&screen_clip) else { return true };
+        self.processor.process_layer_ops(&layer.ops, euclid::vec2(0, 0), clipped.cast());
+        true
     }
 
-    /// Render a `Layer`'s children, unrotated and at full opacity, into a premultiplied image
+    /// Record a `Layer`'s children's draw calls, unrotated and at full opacity, over an area
     /// that covers the layer and every child, at the given sub-pixel phase.
     #[cfg(feature = "std")]
     fn render_layer_image(
@@ -2747,13 +2866,12 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         cache: &'a LayerCache,
         item_rc: &ItemRc,
         size: LogicalSize,
-        phase: euclid::Vector2D<f32, PhysicalPx>,
     ) -> Option<Rc<CachedLayer>> {
         let started = std::time::Instant::now();
         cache.rendering.set(true);
-        let image = self.render_layer_image_inner(cache, item_rc, size, phase);
+        let image = self.render_layer_image_inner(cache, item_rc, size);
         let (count, pixels, time) = cache.renders.get();
-        let area = image.as_ref().map_or(0, |l| l.image.width() as u64 * l.image.height() as u64);
+        let area = image.as_ref().map_or(0, |l| l.area.size.width as u64 * l.area.size.height as u64);
         cache.renders.set((count + 1, pixels + area, time + started.elapsed()));
         image
     }
@@ -2764,77 +2882,140 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
         cache: &'a LayerCache,
         item_rc: &ItemRc,
         size: LogicalSize,
-        phase: euclid::Vector2D<f32, PhysicalPx>,
     ) -> Option<Rc<CachedLayer>> {
         let window_adapter = self.window.window_adapter();
         let scale = self.scale_factor;
         let bounds = i_slint_core::item_rendering::item_children_bounding_rect(item_rc, &window_adapter)
             .union(&LogicalRect::from_size(size));
-        let physical = (bounds.cast::<f32>() * scale).translate(phase).round_out();
-        let (width, height) = (physical.size.width as usize, physical.size.height as usize);
-        if width == 0 || height == 0 || width > i16::MAX as usize || height > i16::MAX as usize {
+        let at = self.current_state.offset.cast::<f32>() * scale;
+        let area = (bounds.cast::<f32>() * scale).translate(at.to_vector()).round_out().cast::<i32>();
+        if area.is_empty() || area.size.width > i16::MAX as i32 || area.size.height > i16::MAX as i32 {
             return None;
         }
-        let mut pixels = alloc::vec![PremultipliedRgbaColor::default(); width * height];
-        // A large image is rasterised like a frame: the children's draw calls are recorded
-        // here and replayed in bands on the render threads (`parallel`).
-        let threads = cache.threads.get();
-        let record = threads > 1 && width * height >= parallel::MIN_PARALLEL_PIXELS;
-        let recorded = {
-            let mut target = TargetPixelSlice { data: &mut pixels, pixel_stride: width };
+        let screen = self.rotation.screen_size;
+        let mut lines =
+            LinesOnly::<PremultipliedRgbaColor>::like(&[], screen.width as usize, screen.height as usize);
+        let ops = {
             let mut dirty_region = PhysicalRegion::default();
             dirty_region.rectangles[0] = euclid::Box2D::new(
                 euclid::point2(0, 0),
-                euclid::point2(width as i16, height as i16),
+                euclid::point2(screen.width, screen.height),
             );
             dirty_region.count = 1;
             let mut nested = SceneBuilder::new(
-                euclid::size2(width as i16, height as i16),
+                screen,
                 scale,
                 self.window,
                 RenderToBuffer {
-                    buffer: &mut target,
+                    buffer: &mut lines,
                     dirty_range_cache: Vec::new(),
-                    dirty_region: dirty_region.clone(),
+                    dirty_region,
                     scale_factor: scale,
-                    recording: record.then(parallel::Recorder::new),
+                    recording: Some(parallel::Recorder::new()),
+                    unclipped: None,
                 },
                 RenderingRotation::NoRotation,
                 #[cfg(feature = "systemfonts")]
                 self.text_layout_cache,
                 Some(cache),
             );
-            // Item coordinates map to the image: physical = (logical * scale + phase) - origin.
-            let image_origin = (physical.origin.to_vector() - phase) / scale;
-            let image_origin = LogicalPoint::new(image_origin.x as _, image_origin.y as _);
+            // Recorded where the children are drawn now, clipped to their bounds only: the
+            // replay clips to the layer's clip of the frame it is drawn in.
             nested.nested_in_layer_image = true;
-            nested.current_state.offset = LogicalPoint::new(-image_origin.x, -image_origin.y);
-            nested.current_state.clip = LogicalRect::new(image_origin, (physical.size / scale).cast());
+            nested.current_state.offset = self.current_state.offset;
+            nested.current_state.clip = bounds;
             i_slint_core::item_rendering::render_item_children(
                 &mut nested,
                 &item_rc.item_tree(),
                 item_rc.index() as isize,
                 &window_adapter,
             );
-            nested.processor.recording.take().map(|recorder| parallel::Recorded {
-                ops: recorder.into_ops(),
-                dirty_region,
-                scale_factor: scale,
-            })
+            nested.processor.recording.take().map(|recorder| recorder.into_ops()).unwrap_or_default()
         };
-        if let Some(recorded) = recorded {
-            parallel::replay_in_bands(&recorded, &mut pixels, width, threads);
+        Some(Rc::new(CachedLayer { at, shifted_at: Cell::new(None), area, ops }))
+    }
+
+    #[cfg(feature = "path")]
+    fn draw_path_inner(
+        &mut self,
+        path: Pin<&i_slint_core::items::Path>,
+        self_rc: &ItemRc,
+        size: LogicalSize,
+    ) {
+        let geom = LogicalRect::from(size);
+        if !self.should_draw(&geom) {
+            return;
         }
-        let mut image = SharedPixelBuffer::<Rgba8Pixel>::new(width as u32, height as u32);
-        for (to, from) in image.make_mut_slice().iter_mut().zip(&pixels) {
-            *to = Rgba8Pixel::new(from.red, from.green, from.blue, from.alpha);
+
+        // Get the fitted path events from the Path item
+        let Some((offset, path_iterator)) = path.fitted_path_events(self_rc) else {
+            return;
+        };
+
+        let physical_geom_f32 =
+            geom.translate(self.current_state.offset.to_vector()).cast() * self.scale_factor;
+        let rounded_geom = physical_geom_f32.round();
+        let physical_geom = rounded_geom.cast().transformed(self.rotation);
+
+        let rotation = RotationInfo {
+            orientation: self.rotation.orientation,
+            screen_size: rounded_geom.size.cast::<i16>() + euclid::size2(1, 1),
+        };
+
+        let offset = offset * self.scale_factor + (physical_geom_f32.origin - rounded_geom.origin);
+
+        // Convert to zeno commands
+        let zeno_commands =
+            path::convert_path_data_to_zeno(path_iterator, rotation, self.scale_factor, offset);
+
+        let physical_clip =
+            (self.current_state.clip.translate(self.current_state.offset.to_vector()).cast()
+                * self.scale_factor)
+                .round()
+                .cast::<i16>()
+                .transformed(self.rotation);
+
+        // Clip the geometry - early return if nothing to draw
+        let Some(clipped_geom) = physical_geom.intersection(&physical_clip) else {
+            return;
+        };
+
+        // Draw fill if specified
+        let fill_brush = path.fill();
+        if !fill_brush.is_transparent() {
+            let fill_color = self.alpha_color(fill_brush.color());
+            if fill_color.alpha() > 0 {
+                self.processor.process_filled_path(
+                    physical_geom,
+                    clipped_geom,
+                    zeno_commands.clone(),
+                    fill_color.into(),
+                );
+            }
         }
-        Some(Rc::new(CachedLayer {
-            origin: physical.origin.cast(),
-            phase,
-            shifted_at: Cell::new(None),
-            image,
-        }))
+
+        // Draw stroke if specified
+        let stroke_brush = path.stroke();
+        let stroke_width = path.stroke_width();
+        if !stroke_brush.is_transparent() && stroke_width.get() > 0.0 {
+            let stroke_color = self.alpha_color(stroke_brush.color());
+            if stroke_color.alpha() > 0 {
+                let physical_stroke_width = (stroke_width.cast() * self.scale_factor).get();
+                let stroke_line_cap = path.stroke_line_cap();
+                let stroke_line_join = path.stroke_line_join();
+                let stroke_miter_limit = path.stroke_miter_limit();
+                self.processor.process_stroked_path(
+                    physical_geom,
+                    clipped_geom,
+                    zeno_commands,
+                    stroke_color.into(),
+                    physical_stroke_width,
+                    stroke_line_cap,
+                    stroke_line_join,
+                    stroke_miter_limit,
+                );
+            }
+        }
     }
 
     fn should_draw(&self, rect: &LogicalRect) -> bool {
@@ -2844,6 +3025,21 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
     }
 
     fn draw_image_impl(
+        &mut self,
+        image_inner: &ImageInner,
+        fit: i_slint_core::graphics::FitResult,
+        colorize: Color,
+    ) {
+        #[cfg(feature = "std")]
+        i_slint_core::frame_profile::time(
+            |p| &mut p.image_draw,
+            || self.draw_image_impl_inner(image_inner, fit, colorize),
+        );
+        #[cfg(not(feature = "std"))]
+        self.draw_image_impl_inner(image_inner, fit, colorize);
+    }
+
+    fn draw_image_impl_inner(
         &mut self,
         image_inner: &ImageInner,
         i_slint_core::graphics::FitResult {
@@ -3587,80 +3783,10 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         self_rc: &ItemRc,
         size: LogicalSize,
     ) {
-        let geom = LogicalRect::from(size);
-        if !self.should_draw(&geom) {
-            return;
-        }
-
-        // Get the fitted path events from the Path item
-        let Some((offset, path_iterator)) = path.fitted_path_events(self_rc) else {
-            return;
-        };
-
-        let physical_geom_f32 =
-            geom.translate(self.current_state.offset.to_vector()).cast() * self.scale_factor;
-        let rounded_geom = physical_geom_f32.round();
-        let physical_geom = rounded_geom.cast().transformed(self.rotation);
-
-        let rotation = RotationInfo {
-            orientation: self.rotation.orientation,
-            screen_size: rounded_geom.size.cast::<i16>() + euclid::size2(1, 1),
-        };
-
-        let offset = offset * self.scale_factor + (physical_geom_f32.origin - rounded_geom.origin);
-
-        // Convert to zeno commands
-        let zeno_commands =
-            path::convert_path_data_to_zeno(path_iterator, rotation, self.scale_factor, offset);
-
-        let physical_clip =
-            (self.current_state.clip.translate(self.current_state.offset.to_vector()).cast()
-                * self.scale_factor)
-                .round()
-                .cast::<i16>()
-                .transformed(self.rotation);
-
-        // Clip the geometry - early return if nothing to draw
-        let Some(clipped_geom) = physical_geom.intersection(&physical_clip) else {
-            return;
-        };
-
-        // Draw fill if specified
-        let fill_brush = path.fill();
-        if !fill_brush.is_transparent() {
-            let fill_color = self.alpha_color(fill_brush.color());
-            if fill_color.alpha() > 0 {
-                self.processor.process_filled_path(
-                    physical_geom,
-                    clipped_geom,
-                    zeno_commands.clone(),
-                    fill_color.into(),
-                );
-            }
-        }
-
-        // Draw stroke if specified
-        let stroke_brush = path.stroke();
-        let stroke_width = path.stroke_width();
-        if !stroke_brush.is_transparent() && stroke_width.get() > 0.0 {
-            let stroke_color = self.alpha_color(stroke_brush.color());
-            if stroke_color.alpha() > 0 {
-                let physical_stroke_width = (stroke_width.cast() * self.scale_factor).get();
-                let stroke_line_cap = path.stroke_line_cap();
-                let stroke_line_join = path.stroke_line_join();
-                let stroke_miter_limit = path.stroke_miter_limit();
-                self.processor.process_stroked_path(
-                    physical_geom,
-                    clipped_geom,
-                    zeno_commands,
-                    stroke_color.into(),
-                    physical_stroke_width,
-                    stroke_line_cap,
-                    stroke_line_join,
-                    stroke_miter_limit,
-                );
-            }
-        }
+        i_slint_core::frame_profile::time(
+            |p| &mut p.path_draw,
+            || self.draw_path_inner(path, self_rc, size),
+        )
     }
 
     fn draw_box_shadow(
@@ -3687,6 +3813,13 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 }
                 return RenderingResult::ContinueRenderingChildren;
             }
+            // Under opacity or rotation the children are drawn directly: a cached layer
+            // replays their draw calls unrotated, each at full opacity.
+            if self.current_state.alpha < 1.0
+                || self.rotation.orientation != RenderingRotation::NoRotation
+            {
+                return RenderingResult::ContinueRenderingChildren;
+            }
             if let Some(cache) = self.layer_cache {
                 // An image is rendered only from content that stayed the same for a frame: a
                 // layer whose content changed is drawn directly, and its image entry is marked
@@ -3698,7 +3831,9 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 let changed = state == Some(true);
                 let direct = cache.direct.borrow().contains_key(&key);
                 let area = LogicalRect::new(self.current_state.offset, size);
+                let (invalidated, waiting, blitted) = cache.visits.get();
                 if changed {
+                    cache.visits.set((invalidated + 1, waiting, blitted));
                     cache.acknowledge_dirty(item_rc);
                     let layer =
                         DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: true };
@@ -3709,6 +3844,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 // renders one image: another such layer is drawn directly once more.
                 if direct || state.is_none() {
                     if cache.rendering.get() {
+                        cache.visits.set((invalidated, waiting + 1, blitted));
                         let layer =
                             DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: false };
                         cache.direct.borrow_mut().insert(key, layer);
@@ -3720,8 +3856,12 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                         cache.release(item_rc);
                     }
                 }
-                self.draw_cached_layer(cache, item_rc, size);
-                return RenderingResult::ContinueRenderingWithoutChildren;
+                if self.draw_cached_layer(cache, item_rc, size) {
+                    cache.visits.set((invalidated, waiting, blitted + 1));
+                    return RenderingResult::ContinueRenderingWithoutChildren;
+                }
+                // Moving to a new sub-pixel phase: drawn directly, its image kept.
+                return RenderingResult::ContinueRenderingChildren;
             }
         }
         let _ = (layer, item_rc, size);
@@ -3993,15 +4133,20 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
         glyphs_it: &mut dyn Iterator<Item = sharedparley::parley::layout::Glyph>,
     ) {
         let slint_context = self.window.context();
-        let (swash_key, swash_offset) =
-            fonts::systemfonts::get_swash_font_info(&font.data, font.index);
-        let font = fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
-            font.data.clone(),
-            font.index,
-            swash_key,
-            swash_offset,
-            font_size.cast(),
-            normalized_coords,
+        let font = i_slint_core::frame_profile::time(
+            |p| &mut p.glyph_run_setup,
+            || {
+                let (swash_key, swash_offset) =
+                    fonts::systemfonts::get_swash_font_info(&font.data, font.index);
+                fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
+                    font.data.clone(),
+                    font.index,
+                    swash_key,
+                    swash_offset,
+                    font_size.cast(),
+                    normalized_coords,
+                )
+            },
         );
 
         let global_offset: euclid::Vector2D<f32, PhysicalPx> =
@@ -4039,6 +4184,7 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
             let Some(glyph) = font.render_vector_glyph(id, subpixel_bin, slint_context) else {
                 continue;
             };
+            i_slint_core::frame_profile::record(|p| p.glyphs += 1);
 
             let gl_y = PhysicalLength::new(glyph.y.truncate() as i16);
             // i32 so a glyph past the i16 range survives until it is clipped below.

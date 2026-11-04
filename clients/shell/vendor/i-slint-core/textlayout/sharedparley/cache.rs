@@ -232,7 +232,7 @@ pub(super) fn cached_paragraphs<'a>(
 ) -> CachedParagraphsGuard<'a> {
     let Some((cache, item_rc)) = cache.zip(item_rc) else {
         return CachedParagraphsGuard {
-            paragraphs: Some(inputs().shape(font_context)),
+            paragraphs: Some(profiled!(shape, inputs().shape(font_context))),
             line_breaking: None,
             container: None,
         };
@@ -287,7 +287,7 @@ pub(super) fn cached_paragraphs<'a>(
         cache.entry_count_estimate.set(cache.entry_count_estimate.get() + 1);
         CachedParagraphs {
             wrap,
-            paragraphs: Some(inputs.shape(font_context)),
+            paragraphs: Some(profiled!(shape, inputs.shape(font_context))),
             inputs,
             line_breaking: None,
             last_used: 0, // stamped right below, for both a hit and this miss

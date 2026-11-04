@@ -431,7 +431,11 @@ unsafe impl<T: InterpolatedPropertyValue + Clone, A: Fn() -> AnimationDetail> Bi
         if self.state.get() == AnimatedBindingState::ShouldStart {
             return;
         }
-        let original_dirty = self.original_binding.access(|b| b.unwrap().dirty.get());
+        let original_dirty =
+            self.original_binding.access(|b| {
+                let b = b.unwrap();
+                b.dirty.get() || b.cutoff.maybe.get()
+            });
         if original_dirty {
             self.carried_velocity
                 .set(self.animation_data.borrow().current_velocity().unwrap_or(0.0));

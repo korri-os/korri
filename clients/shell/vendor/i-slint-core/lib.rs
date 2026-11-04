@@ -39,6 +39,9 @@ pub mod cursor;
 pub mod data_transfer;
 pub mod date_time;
 pub mod debug_log;
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub mod frame_profile;
 pub mod future;
 pub mod graphics;
 pub mod input;

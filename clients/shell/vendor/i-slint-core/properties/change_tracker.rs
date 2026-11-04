@@ -178,6 +178,7 @@ impl ChangeTracker {
             dep_nodes: Default::default(),
             vtable: <ChangeTrackerInner<T, EF, NF, Data> as HasBindingVTable>::VT,
             dirty: Cell::new(false),
+            cutoff: Default::default(),
             is_two_way_binding: false,
             pinned: PhantomPinned,
             binding: inner,
@@ -191,7 +192,7 @@ impl ChangeTracker {
             // Safety: raw is valid and we own it
             unsafe {
                 let dep_nodes = &mut *(*core::ptr::addr_of!((*raw).dep_nodes)).get();
-                let node = dep_nodes.push_front(DependencyNode::new(raw as *const BindingHolder));
+                let node = dep_nodes.push_front(DependencyNode::new(super::DepEdge::new(raw as *const BindingHolder)));
                 CHANGED_NODES.with(|changed_nodes| {
                     changed_nodes.append(node);
                 });
@@ -253,7 +254,8 @@ impl ChangeTracker {
             let old_list = DependencyListHead::default();
             let old_list = core::pin::pin!(old_list);
             DependencyListHead::swap(list.as_ref(), old_list.as_ref());
-            while let Some(node) = old_list.take_head() {
+            while let Some(edge) = old_list.take_head() {
+                let node = edge.binding;
                 unsafe {
                     ((*addr_of!((*node).vtable)).evaluate)(
                         node as *mut BindingHolder,

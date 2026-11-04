@@ -66,6 +66,13 @@ standard mechanisms did not reach the software renderer:
 | `slint-interpreter/eval.rs` | `invoke_function` | Evaluates the function body through a borrow instead of a deep copy of its expression tree on every call. |
 | `slint-interpreter/item_tree_vtable.rs` | `item_geometry` | Borrows the compiled geometry expression instead of deep-copying it on every call. |
 | `slint-interpreter/Cargo.toml` | `[[test]]` | The crate's own tests are not vendored. |
+| `i-slint-core/properties.rs` | `DepEdge`, `Cutoff`, `sources_changed`, `mark_dependencies_maybe_dirty`, `Property::set_binding_comparing`, `PropertyTracker::{is_dirty, acknowledge_dirty}`, `set_equality_cutoff` (doc-hidden) | Equality cut-off. A changed property marks its direct dependents dirty and everything further only *maybe* dirty. Each dependency edge remembers the source binding and the version it read; a comparing binding bumps its version only when its value changed. Before a maybe-dirty binding or tracker is evaluated, its sources are brought up to date and compared, and it is not evaluated when none changed. Zone's band: the card that only moves keeps its layer and its ~120 bindings are not evaluated each snap frame. `set_equality_cutoff(false)` restores upstream propagation (tests, `KORRI_BENCH_NO_CUTOFF`). |
+| `i-slint-core/rtti.rs`, `slint-interpreter/bindings.rs` | `set_binding` of native and interpreted properties | Use `set_binding_comparing`. Animated, two-way and global bindings keep upstream behaviour (always "changed"). |
+| `i-slint-core/properties/properties_animations.rs`, `change_tracker.rs` | `mark_dirty`, edges | An animation starts on a maybe-dirty original binding too; the change tracker uses the new edge type. |
+| `i-slint-renderer-software/lib.rs`, `parallel.rs` | `CachedLayer`, `draw_cached_layer`, `render_layer_image_inner`, `ProcessScene::process_layer_ops`, `Op::{SetClip, translated, bounds}` | A cached layer holds its children's recorded draw calls at the screen offset they were drawn at, not an image. Drawing it replays them inside its clip, so every pixel is blended exactly as drawing the children directly (RGB565 included). At another offset, under opacity or rotation the layer is drawn directly; once it stays at a new offset its calls are recorded again. |
+| `i-slint-renderer-software/lib.rs` | `RenderToBuffer::dirty_clips` | The dirty region as non-overlapping rectangles, so a path is blended once where dirty rectangles overlap. |
+| `i-slint-core/animations.rs`, `SoftwareRenderer::freeze_animation_tick` (doc-hidden) | `animation_tick` | Can return a frozen instant (the focus probe); property animations and timers keep the clock. |
+| `i-slint-core/frame_profile.rs` (new), hooks in `sharedparley`, `vectorfont.rs`, `lib.rs` | `SoftwareRenderer::{set_frame_profile, take_frame_profile, last_walk_profile, last_frame_layer_visits}` (doc-hidden) | `KORRI_BENCH_PROFILE`: bindings, text measuring, shaping, line breaking, drawing, new glyphs by size, path and image draws, layer invalidations per frame. Off by default. |
 
 ## Verification
 
@@ -74,6 +81,9 @@ standard mechanisms did not reach the software renderer:
 | `layer_cache.rs::a_cached_layer_matches_direct_rendering_through_every_change` | Two windows render the same tree under partial rendering (`ReusedBuffer`), one with the hint and one without. The pixels are equal for a still subtree, for an item moving under and over the layer, for a text and a colour change inside the layer, for a growing repeater, for whole and fractional layer moves (once settled: a moved layer is first shifted by whole pixels and drawn exactly the next frame), after a resize, and at scale factor 2. A one-pixel blit offset fails this test (checked by planting it). |
 | `layer_cache.rs::a_clean_cached_layer_is_not_walked` | With 300 children in the layer, the direct window walks more than 300 items a frame and the cached window fewer than 20. A change inside is drawn directly (walked); two frames later its image is rendered, and then it is clean again. |
 | `parallel_render.rs` | Windows on 1 thread and on 4 (and 3) threads render the same tree (gradients, a path, text, a cached layer, opacity, moves, a resize to 500x333, more draw calls than one chunk): every frame is pixel-identical, with 1, 2 and 3 band threads beside the walk. A band thread that skips a chunk fails it (checked by planting it). |
+| `layer_cache.rs::a_cached_layer_matches_direct_rendering_in_rgb565`, `…_under_opacity_…` | The same, into RGB565 (text over a translucent child), and under opacity. |
+| `equality_cutoff.rs` | Zone (modern, retro) and Pico through presses: every frame drawn whole is identical with the cut-off on and off; partial frames stay within the stale-edge bound either way. A band of three animated cards: every partial frame is identical on and off, and with the cut-off the card that only moves is drawn from its cache. |
+| `probe_still.rs` | surface-probe on Zone with `--still`: an unchanged view applied again changes no pixel. |
 | `text_reshape.rs` | Six texts whose width, text and font size depend on an animated size, with the text and size values unchanged: no text is shaped again over four size steps, and each frame equals a fresh window at that size. A new font size shapes all six again. Comparing nothing (always reshaping) fails it (checked by planting it). |
 | `memory_probe.rs` | 20 rounds of compiling, creating, showing and dropping Zone and Pico grow by less than 48 KiB a round. The measured growth is 0 to 10 KiB a round; before the change it was 153 KiB a round. |
 
@@ -85,12 +95,12 @@ the hint): 27.5–37.6 % of one core before, 6.2–8.1 % after
 
 - The software renderer's line-by-line mode (`render_by_line`, used by
   MCUs) does not cache layers. It draws them as before.
-- A cached layer is drawn without rotation inside it and without the layer's
-  own opacity applied twice. Opacity is applied once, when the image is
-  blitted, which is group opacity. That is what the GPU renderers' layers do.
-  Without the hint, the software renderer applied it to each child.
-- The image covers the item and all its children. A very large layer costs its
-  area in memory: 4 bytes a physical pixel.
+- A layer under opacity or rotation is drawn directly, as without the hint.
+- A moving layer is drawn directly while it moves (a slide costs its walk).
+- Partial redraws leave a few stale edge pixels next to some moving items
+  (up to ~30 per frame in Zone; `tests/equality_cutoff.rs` bounds them at 64),
+  with or without the cut-off; full redraws are exact. Not yet traced.
+- A layer holds its children's draw calls (shared glyph and image data), not pixels.
 - Banded rasterisation parallelises the replay only (beside the walk). The item walk, property
   evaluation and text shaping stay on the UI thread. A path's coverage mask
   is computed again in each band it crosses.

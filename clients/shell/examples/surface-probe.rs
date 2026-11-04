@@ -30,6 +30,13 @@
 //!     identity across states is its entry without `focused` and without
 //!     booleans (other highlight flags).
 //!
+//!     With --still, a state whose unchanged view, applied again, changes a
+//!     pixel is a failure too.
+//!
+//!     The probe runs on a manual clock that only its renders advance, and
+//!     holds `animation-tick()` still, so frames it compares differ only by
+//!     what the views changed (property animations and timers still run).
+//!
 //!     Default sizes: 320x240, 640x480, 480x800, 1280x720, 1920x1080.
 //! ```
 //!
@@ -81,7 +88,7 @@ fn save(pixels: &[u16], (w, h): (u32, u32), path: &Path) -> Result<()> {
 fn render_quick(instance: &slint_interpreter::ComponentInstance) -> Vec<u16> {
     let mut frame = Vec::new();
     for _ in 0..3 {
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        Headless::advance(std::time::Duration::from_millis(20));
         instance.window().request_redraw();
         frame = Headless::render().unwrap_or_default();
     }
@@ -92,11 +99,12 @@ fn render(instance: &slint_interpreter::ComponentInstance, size: (u32, u32)) -> 
     instance
         .window()
         .set_size(slint::PhysicalSize::new(size.0, size.1));
-    // Changed callbacks (the tokens follow the window) and the 16 ms reveal
-    // (the cursor's control brought into sight) settle over a few passes.
+    // Changed callbacks (the tokens follow the window), the 16 ms reveal (the
+    // cursor's control brought into sight) and the animations they start
+    // settle over these passes: 500 ms of the probe's clock.
     let mut frame = Vec::new();
-    for _ in 0..10 {
-        std::thread::sleep(std::time::Duration::from_millis(25));
+    for _ in 0..20 {
+        Headless::advance(std::time::Duration::from_millis(25));
         instance.window().request_redraw();
         frame = Headless::render().unwrap_or_default();
     }
@@ -480,6 +488,7 @@ fn walk(
     size: (u32, u32),
     max: usize,
     out: &Path,
+    still: bool,
 ) -> Result<(usize, Vec<String>)> {
     let package = Package::at(dir)?;
     let views = package::compile(&package)?;
@@ -512,6 +521,9 @@ fn walk(
     };
     let instance = definition.create()?;
     instance.show()?;
+    // One binder for the instance, as the shell keeps one: a view applied again applies
+    // only what changed, and arrays keep their models.
+    let mut binder = Binder::new(&definition);
     let mut images = ImageCache::new(&package.dir);
     let presses: Vec<&'static str> = vec![
         "up", "down", "left", "right", "confirm", "back", "menu", "options",
@@ -617,17 +629,33 @@ fn walk(
             ));
         }
         if has_focus(&view) {
-            let mut binder = Binder::new(&definition);
             binder.apply(&instance, &view, &mut images)?;
             let a = render(&instance, size);
+            if still {
+                // The same view applied again and drawn later: nothing may change.
+                binder.apply(&instance, &view, &mut images)?;
+                let again = render(&instance, size);
+                let changed = a.iter().zip(&again).filter(|(p, q)| p != q).count();
+                if changed > 0 {
+                    let name = format!("still-{}x{}-{}.png", size.0, size.1, failures.len());
+                    std::fs::create_dir_all(out)?;
+                    save(&again, size, &out.join(&name))?;
+                    save(&a, size, &out.join(name.replace("still-", "before-")))?;
+                    failures.push(format!(
+                        "{} at {}x{}: [{}] the unchanged view applied again changed {changed} pixels ({name})",
+                        model_file.display(),
+                        size.0,
+                        size.1,
+                        path.join(" ")
+                    ));
+                }
+            }
             let quiet_view = unfocused(&view);
-            let mut quiet = Binder::new(&definition);
-            quiet.apply(&instance, &quiet_view, &mut images)?;
+            binder.apply(&instance, &quiet_view, &mut images)?;
             let b = render(&instance, size);
             // Clocks (the walking meter, the focus cycle) can move between
             // frames: a third frame tells motion from focus.
-            let mut again = Binder::new(&definition);
-            again.apply(&instance, &quiet_view, &mut images)?;
+            binder.apply(&instance, &quiet_view, &mut images)?;
             let c = render(&instance, size);
             if changed_box(&a, &b, &c, size.0).is_none() {
                 let name = format!("unseen-{}x{}-{}.png", size.0, size.1, failures.len());
@@ -648,7 +676,7 @@ fn walk(
                 for target in &paths {
                     let mut alone = quiet_view.clone();
                     at_mut(&mut alone, target)["focused"] = json!(true);
-                    Binder::new(&definition).apply(&instance, &alone, &mut images)?;
+                    binder.apply(&instance, &alone, &mut images)?;
                     let lit = render_quick(&instance);
                     let mut whole = view.clone();
                     let entry = at_mut(&mut whole, target).clone();
@@ -672,7 +700,7 @@ fn walk(
                 }
             }
             // Restore every property for the next state.
-            Binder::new(&definition).apply(&instance, &view, &mut images)?;
+            binder.apply(&instance, &view, &mut images)?;
         }
         walked.push(state);
         if path.len() < 40 {
@@ -779,6 +807,10 @@ fn clone_korri(k: &Korri) -> Korri {
 
 fn main() -> Result<()> {
     Headless::install();
+    // Every compared frame at a chosen instant, with `animation-tick()` motion held still:
+    // what changes between two frames is what the views changed.
+    Headless::manual_clock();
+    Headless::freeze_motion();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let flag = |name: &str| {
         args.iter()
@@ -809,10 +841,12 @@ fn main() -> Result<()> {
         Some("walk") => {
             let dir = PathBuf::from(args.get(1).context("PACKAGE")?);
             let max = flag("--max").and_then(|m| m.parse().ok()).unwrap_or(300);
+            // --still: also fail a state whose unchanged view, applied again, changes pixels.
+            let still = args.iter().any(|a| a == "--still");
             let mut all = Vec::new();
             for model in flag("--model").context("--model FILE[,FILE…]")?.split(',') {
                 for &size in &sizes {
-                    let (states, failures) = walk(&dir, Path::new(model), size, max, &out)?;
+                    let (states, failures) = walk(&dir, Path::new(model), size, max, &out, still)?;
                     println!("{model} {}x{}: {states} states, {} failures", size.0, size.1, failures.len());
                     all.extend(failures);
                 }
@@ -825,6 +859,6 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        _ => bail!("usage: surface-probe previews DIR --sizes … --out OUT | walk PACKAGE --model FILE --sizes … [--max N] [--out OUT]"),
+        _ => bail!("usage: surface-probe previews DIR --sizes … --out OUT | walk PACKAGE --model FILE --sizes … [--max N] [--still] [--out OUT]"),
     }
 }

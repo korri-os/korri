@@ -116,7 +116,7 @@ fn vertical_offset(
 pub(super) fn layout(
     layout_builder: &LayoutWithoutLineBreaksBuilder,
     font_context: &mut parley::FontContext,
-    mut paragraphs: Vec<TextParagraph>,
+    paragraphs: Vec<TextParagraph>,
     scale_factor: ScaleFactor,
     options: LayoutOptions,
     line_breaking: Option<RetainedLineBreaking>,
@@ -145,6 +145,18 @@ pub(super) fn layout(
         };
     }
 
+    profiled!(line_break, break_lines(paragraphs, layout_builder, font_context, options, inputs, max_physical_width, max_physical_height))
+}
+
+fn break_lines(
+    mut paragraphs: Vec<TextParagraph>,
+    layout_builder: &LayoutWithoutLineBreaksBuilder,
+    font_context: &mut parley::FontContext,
+    options: LayoutOptions,
+    inputs: LineBreakingInputs,
+    max_physical_width: Option<PhysicalLength>,
+    max_physical_height: Option<PhysicalLength>,
+) -> Layout {
     // Returned None if failed to get the ellipsis glyph for some rare reason.
     let get_ellipsis_glyph = |font_context: &mut parley::FontContext| {
         let mut layout = layout_builder.build(font_context, "…", None, None);
