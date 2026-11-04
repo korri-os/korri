@@ -95,6 +95,7 @@ standard mechanisms did not reach the software renderer:
 | `i-slint-core/item_rendering.rs` | `ItemRenderer::{skip_subtree, layer_content_changed}` (new, default `false`), `render_item_children` | Drawing leaves out the items below a nested tree's root when the partial renderer knows they reach no dirty area (`SubtreeWalk::bounds`, with a pixel of margin). The software renderer answers `layer_content_changed` from its layer cache. |
 | `i-slint-core/properties.rs` | `sources_changed` | A holder that checks all its sources reads its edge list in place instead of copying it into a new vector each check. |
 | `i-slint-renderer-software/draw_functions.rs` | `fetch_blend_pixel`, RGBA at full opacity | The pixel's own alpha is used directly instead of `alpha * 255 / 255` per pixel; opaque pixels are stored. Same result. |
+| `i-slint-renderer-software/parallel.rs` | `BandQueue`, `BandSlot`, `INTERLEAVED`, `OpStream::{status, wait_beyond}`, `SoftwareRenderer::set_interleaved_bands` (doc-hidden; `KORRI_BENCH_WHOLE_BANDS`) | Band threads move between bands as chunks are published: a thread takes any band with chunks it has not replayed, replays them, and moves on. Each band keeps its renderer state between chunks and replays every op in order. Before, a thread replayed one whole band, waiting for each chunk, and the bands not taken waited for the walk to end, which left most of the pixel work for after it. |
 
 ## Verification
 

@@ -311,6 +311,21 @@ impl OpStream {
         }
     }
 
+    /// How many chunks are published, and whether the last one is.
+    fn status(&self) -> (usize, bool) {
+        let state = self.state.lock().unwrap();
+        (state.chunks.len(), state.done)
+    }
+
+    /// Wait until more than `published` chunks are published, or the stream is done when it
+    /// was not.
+    fn wait_beyond(&self, published: usize, done: bool) {
+        let mut state = self.state.lock().unwrap();
+        while state.chunks.len() <= published && state.done == done {
+            state = self.published.wait(state).unwrap();
+        }
+    }
+
     /// Every published op, for a frame drawn without band threads.
     pub(super) fn take_ops(&self) -> Vec<Op> {
         let mut state = self.state.lock().unwrap();
@@ -538,43 +553,120 @@ fn band_renderer<'b, 'a, T: TargetPixel>(
     })
 }
 
-/// The bands of one frame not yet taken, for the band threads and, once its walk ended, the
-/// UI thread: a band is taken whole and replays every chunk of the stream.
+/// How band threads share a frame's bands (`SoftwareRenderer::set_interleaved_bands`).
+/// Interleaved (the default): a thread takes any band whose next chunk is published,
+/// replays the chunks published so far into it, and moves on, so every band keeps up with
+/// the walk. Whole: a thread takes a band and replays every chunk of the frame into it,
+/// waiting for each; the bands not taken wait for the walk to end.
+pub(super) static INTERLEAVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// One band of a frame: its lines, its renderer's state between chunks, and the next
+/// chunk it replays.
+struct BandSlot<'a, T> {
+    band: Band<'a, T>,
+    /// The band's part of the region, its clip state, and its range cache; `None` once
+    /// the band has no part of the region.
+    state: Option<(PhysicalRegion, Option<PhysicalRegion>, Vec<core::ops::Range<i16>>)>,
+    next: usize,
+    finished: bool,
+}
+
+/// The bands of one frame, for the band threads and, once its walk ended, the UI thread.
 pub(super) struct BandQueue<'a, T> {
-    bands: std::sync::Mutex<Vec<SendBand<'a, T>>>,
-    region: PhysicalRegion,
+    slots: Vec<std::sync::Mutex<BandSlot<'a, T>>>,
+    /// Whole bands not yet taken (`INTERLEAVED` off).
+    whole: std::sync::Mutex<Vec<usize>>,
+    interleaved: bool,
     scale_factor: ScaleFactor,
 }
 
-// Sound as `SendBand` is: each band is taken by one thread, and its lines are its own.
+// Sound as `SendBand` is: each band is replayed by one thread at a time (its mutex), and
+// its lines are its own.
 unsafe impl<T> Sync for BandQueue<'_, T> {}
 unsafe impl<T> Send for BandQueue<'_, T> {}
 
+impl<T: TargetPixel> BandSlot<'_, T> {
+    /// Replay `chunk` into the band, as one renderer replaying every op in order would.
+    fn replay(&mut self, chunk: &[Op], scale_factor: ScaleFactor) {
+        let Some((dirty_region, unclipped, dirty_range_cache)) = self.state.take() else {
+            return;
+        };
+        let mut renderer = RenderToBuffer {
+            buffer: &mut self.band,
+            dirty_range_cache,
+            dirty_region,
+            scale_factor,
+            recording: None,
+            unclipped,
+        };
+        for op in chunk {
+            renderer.replay(op);
+        }
+        self.state = Some((renderer.dirty_region, renderer.unclipped, renderer.dirty_range_cache));
+    }
+}
+
 impl<T: TargetPixel> BandQueue<'_, T> {
-    /// Take bands until none is left; replay every chunk of `stream` into each.
+    /// Replay every chunk of `stream` into every band, with the other threads doing the same.
     pub(super) fn work(&self, stream: &OpStream) {
-        loop {
-            let Some(band) = self.bands.lock().unwrap().pop() else { return };
-            let mut band = band.0;
-            let Some(mut renderer) = band_renderer(&mut band, &self.region, self.scale_factor)
-            else {
-                continue;
-            };
-            let mut index = 0;
-            while let Some(chunk) = stream.chunk(index) {
-                for op in chunk.iter() {
-                    renderer.replay(op);
+        if !self.interleaved {
+            loop {
+                let Some(i) = self.whole.lock().unwrap().pop() else { return };
+                let mut slot = self.slots[i].lock().unwrap();
+                while let Some(chunk) = stream.chunk(slot.next) {
+                    slot.replay(&chunk, self.scale_factor);
+                    slot.next += 1;
                 }
-                index += 1;
+                slot.finished = true;
+            }
+        }
+        // Start where another thread is least likely to be.
+        let start = THREAD_START.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        loop {
+            let (published, done) = stream.status();
+            let mut progressed = false;
+            let mut unfinished = false;
+            for k in 0..self.slots.len() {
+                let i = (start + k) % self.slots.len();
+                let Ok(mut slot) = self.slots[i].try_lock() else {
+                    unfinished = true;
+                    continue;
+                };
+                if slot.finished {
+                    continue;
+                }
+                while slot.next < published {
+                    let chunk = stream.chunk(slot.next).expect("published");
+                    slot.replay(&chunk, self.scale_factor);
+                    slot.next += 1;
+                    progressed = true;
+                }
+                if done && slot.next == published {
+                    slot.finished = true;
+                } else {
+                    unfinished = true;
+                }
+            }
+            if !unfinished {
+                return;
+            }
+            if !progressed {
+                if done {
+                    // Every chunk is out; the bands left are being replayed by the threads
+                    // that hold them, which finish them.
+                    return;
+                }
+                stream.wait_beyond(published, done);
             }
         }
     }
 }
 
+static THREAD_START: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Split `buffer` under `region` into bands several times more than `threads`, and start
-/// `threads` threads taking them; the queue goes back to the caller, whose own thread takes
-/// the bands still left once it has published the last chunk. Balanced by what is left, not
-/// by rows: a thread that finishes early takes another band.
+/// `threads` threads replaying them; the queue goes back to the caller, whose own thread
+/// helps once it has published the last chunk.
 pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
     scope: &'scope std::thread::Scope<'scope, 'env>,
     stream: &'scope OpStream,
@@ -584,12 +676,23 @@ pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
     scale_factor: ScaleFactor,
     threads: usize,
 ) -> Arc<BandQueue<'scope, T>> {
-    let mut bands = split_bands(buffer, pixel_stride, region, (threads + 1) * 2);
+    let interleaved = INTERLEAVED.load(std::sync::atomic::Ordering::Relaxed);
+    let bands = split_bands(buffer, pixel_stride, region, (threads + 1) * 2);
+    let slots: Vec<_> = bands
+        .into_iter()
+        .map(|band| {
+            let mut band = band.0;
+            let state = band_renderer(&mut band, region, scale_factor)
+                .map(|r| (r.dirty_region, r.unclipped, r.dirty_range_cache));
+            std::sync::Mutex::new(BandSlot { finished: state.is_none(), band, state, next: 0 })
+        })
+        .collect();
     // Taken from the end: the top of the region first.
-    bands.reverse();
+    let whole = (0..slots.len()).rev().collect();
     let queue = Arc::new(BandQueue {
-        bands: std::sync::Mutex::new(bands),
-        region: region.clone(),
+        slots,
+        whole: std::sync::Mutex::new(whole),
+        interleaved,
         scale_factor,
     });
     for _ in 0..threads {

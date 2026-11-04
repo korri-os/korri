@@ -287,6 +287,10 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     // KORRI_BENCH_PROFILE=1: where each frame's walk and raster time went (adds timing cost).
     let profile = std::env::var_os("KORRI_BENCH_PROFILE").is_some();
     // KORRI_BENCH_PARALLEL_MIN=PIXELS: dirty pixels from which a frame uses several threads.
+    // KORRI_BENCH_WHOLE_BANDS=1: each band thread replays a whole band (the former ordering).
+    slint::platform::software_renderer::SoftwareRenderer::set_interleaved_bands(
+        std::env::var_os("KORRI_BENCH_WHOLE_BANDS").is_none(),
+    );
     // KORRI_BENCH_NO_SKIP=1: draw frames where nothing changed, as before the skip.
     let no_skip = std::env::var_os("KORRI_BENCH_NO_SKIP").is_some();
     let parallel_min: Option<usize> = std::env::var("KORRI_BENCH_PARALLEL_MIN")

@@ -2,7 +2,9 @@
 //! `parallel.rs`): a frame rasterised in bands on several threads has the
 //! same pixels as the same frame drawn on one thread, through full and
 //! partial frames, every primitive kind, cached layers, moves and resizes,
-//! with the draw calls streamed to the band threads in several chunks.
+//! with the draw calls streamed to the band threads in several chunks; with
+//! threads moving between bands as chunks are published (the default) and with
+//! each thread replaying a whole band (the former ordering).
 
 use slint::platform::{
     software_renderer::{MinimalSoftwareWindow, RepaintBufferType},
@@ -181,4 +183,14 @@ fn bands_on_three_threads_match_one_thread() {
 #[test]
 fn one_band_thread_beside_the_walk_matches_one_thread() {
     scenario([1, 2]);
+}
+
+/// The former ordering: each band thread replays one whole band at a time. Both orderings
+/// replay every op into every band in order, so both match one thread; the switch is
+/// global, and a test running beside this one draws the same pixels either way.
+#[test]
+fn whole_bands_on_three_threads_match_one_thread() {
+    slint::platform::software_renderer::SoftwareRenderer::set_interleaved_bands(false);
+    scenario([1, 3]);
+    slint::platform::software_renderer::SoftwareRenderer::set_interleaved_bands(true);
 }

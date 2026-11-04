@@ -818,6 +818,15 @@ impl SoftwareRenderer {
         self.parallel_threshold.set(pixels);
     }
 
+    /// Whether band threads move between bands as chunks are published (the default), or
+    /// each replays a whole band, waiting for each chunk (the former ordering). For
+    /// benchmarks and tests that compare the two; it applies to every renderer.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_interleaved_bands(interleaved: bool) {
+        parallel::INTERLEAVED.store(interleaved, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Whether a frame where nothing changed is skipped (the default). For benchmarks that
     /// compare the two.
     #[doc(hidden)]
