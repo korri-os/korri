@@ -109,8 +109,8 @@ export struct Dialog {
     lines: [string],
     title: string,
     buttons: [Btn],
-    // The buttons stand at caps-2 (caps-1 when caps-2 would wrap them): the plan's.
-    big: bool,
+    // The buttons' cap in px: the plan's (src/plan/screen.ts dialogButtons).
+    cap: float,
 }
 
 export struct Busy {
@@ -201,6 +201,9 @@ export struct TallyRow {
     label: string,
     value: string,
     share: float,
+    // time, plays or total, and the number its value counts up to (seconds, or the count).
+    kind: string,
+    amount: float,
 }
 
 export struct Tally {

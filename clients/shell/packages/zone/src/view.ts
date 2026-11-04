@@ -456,12 +456,19 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
     ? { shown: false, title: "", system: "", act: 0 }
     : { shown: true, title: nav.launch.title, system: nav.launch.system ?? "", act: nav.launch.act }
   const tally = nav.tally === undefined || nav.tally.leaving || !onGames
-    ? { shown: false, title: "", counted: false, rows: [] as { label: string; value: string; share: number }[] }
+    ? { shown: false, title: "", counted: false, rows: [] as { label: string; value: string; share: number; kind: string; amount: number }[] }
     : {
         shown: true,
         title: nav.tally.title,
         counted: nav.tally.counted,
-        rows: zoneTallyRows(nav.tally).map(entry => ({ label: entry.label, value: zoneTallyValue(entry.kind, nav.tally!), share: entry.share })),
+        rows: zoneTallyRows(nav.tally).map(entry => ({
+          label: entry.label,
+          value: zoneTallyValue(entry.kind, nav.tally!),
+          share: entry.share,
+          // What the value counts up to, for ZoneTally's count-up: seconds for TIME and TOTAL, the count for PLAYS.
+          kind: entry.kind,
+          amount: entry.kind === "time" ? (nav.tally!.seconds ?? 0) : entry.kind === "plays" ? nav.tally!.plays : (nav.tally!.total ?? 0),
+        })),
       }
 
   const cardFocused = onGames && nav.zone === "cards" && layer === "none" && !status.busy.shown && !dialog.shown

@@ -54,8 +54,8 @@ See the report of the conversion (stage `native-zone`); the lasting ones:
   (Zone's pixel looks cut them as one-art-px stairs).
 - PAUSED's game art is muted by the veil, not turned grey (Slint has no grey filter).
 - A section spine's caption stands letter under letter (Slint draws no rotated text).
-- Timers: the contract has no timer message. The idle attract, the tally's
-  count-up and the launch card's sweep run on the view's own clock; the
-  first press after the attract shows also acts, the tally closes on a press
-  only (no 8 s close), and the moments leave at once.
+- Timers come from the shell's Tick (contract 7.1, once a second): the idle
+  attract, and the results tally's end of count-up and its 8 s close (to
+  the nearest second). The tally's count-up and the launch card's sweep
+  are drawn on the view's own clock, and the moments leave at once.
 - The shell's keyboard has `S` for the system button (gamepads have none).

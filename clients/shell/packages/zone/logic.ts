@@ -17,7 +17,10 @@
  *     Tick         the shell's idle clock (contract 7, A1): Zone's IdleElapsed
  *                  at ZONE_IDLE_AFTER_MS, then its IdleTicked every
  *                  ZONE_IDLE_CYCLE_MS, so the attract is Zone's own layer and
- *                  the first press only wakes it
+ *                  the first press only wakes it; and the results tally's
+ *                  clock (`tallyClock`): TallyCounted when its count-up has
+ *                  run, TallyElapsed at ZONE_TALLY_CLOSE_MS, as the portal's
+ *                  timers did
  *     Resized      the window's size (contract 8, A2): Zone's plan for it
  *                  (src/plan/screen.ts), which the focus graph and view()
  *                  both read
@@ -36,9 +39,9 @@
  *     MoveCatalog    the FIND draft as the query's text, and a window around
  *                    the focused game near either end of the window
  *
- * Zone's other timers (the tally's count and close, the moments' ways out)
- * have no message: the count is drawn by main.slint on its own clock, and a
- * moment that starts to leave is let go at once.
+ * The moments' ways out have no message: a moment that starts to leave is
+ * let go at once. The tally's count-up is drawn by ZoneTally on the view's
+ * clock; its end and the close come from Ticks.
  *
  * Pure: no timers, no Date, no randomness.
  */
@@ -52,7 +55,10 @@ import type {
 import { isZoneLook, ZONE_DEFAULT_LOOK } from "./src/plan/look"
 import { zoneScreen, ZONE_DEFAULT_SIZE, type ZoneScreen } from "./src/plan/screen"
 import { press } from "./src/press"
-import { bandGames, cardCount, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS } from "./src/state/navigation"
+import { bandGames, cardCount, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS, ZONE_TALLY_CLOSE_MS } from "./src/state/navigation"
+import { zoneTallyCountMs } from "./src/plan/motion"
+import { zoneTallyRows } from "./src/plan/tally"
+import type { ZoneTally } from "./src/state/tally"
 import type { ZoneRequest } from "./src/state/requests"
 import { update as zoneUpdate, zoneShown, zoneSurfaceStart, type ZoneSurfaceMessage, type ZoneSurfaceState } from "./src/state/surface"
 import { overlayView, view as zoneView } from "./src/view"
@@ -67,6 +73,27 @@ export interface State {
   readonly idleTurns: number
   /** The window, from the shell's Resized (logical px). */
   readonly size: { readonly width: number; readonly height: number }
+  /** The results tally's clock while it shows (`tallyClock`). */
+  readonly tally?: TallyClock
+}
+
+/** How long the tally has shown, from the shell's Ticks: `idle` is the last Tick's idleMs. */
+export interface TallyClock {
+  readonly key: string
+  readonly elapsed: number
+  readonly idle: number
+}
+
+/**
+ * The tally's clock after a Tick. Its first Tick starts it; each later Tick
+ * adds the idle time since the one before, or all of it when a press reset
+ * the idle time in between, so the clock runs on across presses.
+ */
+export function tallyClock(tally: ZoneTally, previous: TallyClock | undefined, idleMs: number): TallyClock {
+  const key = `${tally.gameId}:${tally.plays}`
+  if (previous?.key !== key) return { key, elapsed: 0, idle: idleMs }
+  const step = idleMs >= previous.idle ? idleMs - previous.idle : idleMs
+  return { key, elapsed: previous.elapsed + step, idle: idleMs }
 }
 
 /** Zone's plan for the window and the look it is drawn in. */
@@ -163,11 +190,23 @@ export function update(state: State, message: Message, model: Model): { state: S
   let moving = state.moving
   let idleTurns = state.idleTurns
   let size = state.size
+  let tally = state.tally
   switch (message._tag) {
     case "Resized":
       size = { width: Math.max(0, message.width), height: Math.max(0, message.height) }
       break
     case "Tick": {
+      // The results tally holds the window: its count-up ends, then it closes
+      // by itself at ZONE_TALLY_CLOSE_MS; the attract waits until it has gone.
+      const shown = zone.nav.tally
+      if (shown !== undefined && !shown.leaving) {
+        tally = tallyClock(shown, tally, message.idleMs)
+        if (!shown.counted && tally.elapsed >= zoneTallyCountMs(zoneTallyRows(shown).length)) {
+          zone = run(zone, { _tag: "Games", message: { _tag: "TallyCounted" } }, model, out)
+        }
+        if (tally.elapsed >= ZONE_TALLY_CLOSE_MS) zone = run(zone, { _tag: "Games", message: { _tag: "TallyElapsed" } }, model, out)
+        break
+      }
       // Zone's idle: the attract opens after ZONE_IDLE_AFTER_MS without a
       // press and moves to the next game every ZONE_IDLE_CYCLE_MS.
       const due = message.idleMs < ZONE_IDLE_AFTER_MS ? 0 : 1 + Math.floor((message.idleMs - ZONE_IDLE_AFTER_MS) / ZONE_IDLE_CYCLE_MS)
@@ -237,7 +276,9 @@ export function update(state: State, message: Message, model: Model): { state: S
       }
     }
   }
-  return { state: { zone, reported: focused, moving, idleTurns, size }, requests: out }
+  // The clock lives while the tally does.
+  if (zone.nav.tally === undefined || zone.nav.tally.leaving) tally = undefined
+  return { state: { zone, reported: focused, moving, idleTurns, size, ...(tally === undefined ? {} : { tally }) }, requests: out }
 }
 
 // The view is a pure function of (state, model): the same two give the last view back.
