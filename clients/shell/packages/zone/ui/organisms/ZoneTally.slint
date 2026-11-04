@@ -6,7 +6,8 @@ import { ZoneCaps } from "../atoms/ZoneCaps.slint";
 import { Tally } from "../types.slint";
 
 // The results tally (ZoneTally): the tally ground, the game at caps-2, each
-// row's label, its bar and its value counting up over 1.2 s, 300 ms apart.
+// row's label, its bar and its value counting up together over 1.2 s, 300 ms
+// apart.
 export component ZoneTally {
     // A focus trap: the walk keeps a press inside the layer that holds the focus.
     accessible-role: groupbox;
@@ -46,6 +47,13 @@ export component ZoneTally {
     for r[i] in root.tally.rows: row-box := Rectangle {
         property <float> count: root.tally.counted ? 1 : Math.clamp((root.since-ms - 300 * i) / 1200, 0, 1);
         property <float> stepped: Math.floor(self.count * 60) / 60;
+        // The value as it counts up with its bar (plan/tally.ts zoneTallyCounts), whole numbers only.
+        property <int> n: Math.floor(r.amount * self.stepped);
+        property <int> minutes: Math.floor(self.n / 60);
+        property <int> seconds: Math.mod(self.n, 60);
+        property <string> counting: r.kind == "time" ? "\{self.minutes}'\{self.seconds < 10 ? "0" : ""}\{self.seconds}\""
+            : r.kind == "total" ? (r.amount >= 3600 ? "\{Math.floor(self.minutes / 60)}H \{Math.mod(self.minutes, 60)}M" : "\{Math.mod(self.minutes, 60)}M")
+            : "\{self.n}";
         x: root.width * 0.12;
         y: root.height * 0.38 + i * 30 * root.a;
         width: root.width * 0.76;
@@ -82,7 +90,7 @@ export component ZoneTally {
         ZoneCaps {
             x: parent.width - 22 * root.a - self.natural;
             y: 6 * root.a;
-            text: r.value;
+            text: row-box.stepped >= 1 ? r.value : row-box.counting;
             cap: root.c1;
             face: "fact";
         }

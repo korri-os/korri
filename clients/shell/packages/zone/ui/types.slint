@@ -201,6 +201,9 @@ export struct TallyRow {
     label: string,
     value: string,
     share: float,
+    // time, plays or total, and the number its value counts up to (seconds, or the count).
+    kind: string,
+    amount: float,
 }
 
 export struct Tally {
