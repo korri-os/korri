@@ -26,6 +26,19 @@ export component ZoneTab {
         duration: 180ms;
         easing: cubic-bezier(0.34, 1.56, 0.64, 1);
     }
+    // The focus target the probe and the walk read: the tab's box at rest,
+    // without the focus lift (the tab itself is a zero-height line through
+    // its centre). Draws nothing.
+    Rectangle {
+        x: 0;
+        y: -self.height / 2;
+        width: root.span;
+        height: root.tab.active ? banner.height : root.th;
+        accessible-role: button;
+        accessible-item-selectable: true;
+        accessible-item-selected: root.tab.focused;
+        accessible-label: root.tab.label;
+    }
     banner := ZoneBanner {
         x: 0;
         visible: root.tab.active;

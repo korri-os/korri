@@ -8,6 +8,9 @@ import { Tally } from "../types.slint";
 // The results tally (ZoneTally): the tally ground, the game at caps-2, each
 // row's label, its bar and its value counting up over 1.2 s, 300 ms apart.
 export component ZoneTally {
+    // A focus trap: the walk keeps a press inside the layer that holds the focus.
+    accessible-role: groupbox;
+    accessible-label: "zone-trap";
     property <length> a: Tokens.a;
     in property <Tally> tally;
     property <float> opened-ms: 0;

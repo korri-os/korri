@@ -31,18 +31,26 @@ export component ZoneRowList inherits Rectangle {
         width: root.width;
         spacing: 0;
         for r in root.rows: VerticalLayout {
-            init => {
-                if (r.focused) {
-                    root.focus-y = self.y;
-                    root.focus-h = self.preferred-height;
+            // The row the cursor stands on, or whose button it stands on (the view's `holds`).
+            property <bool> holds: r.holds;
+            // A row of buttons keeps its held button's line in view; any other row, itself.
+            property <length> keep-y: r.kind == "buttons" ? 4 * root.a + r.holds-line * (2 * Tokens.c1 + 5 * root.a) : 0;
+            property <length> keep-h: r.kind == "buttons" ? 2 * Tokens.c1 : self.preferred-height;
+            // The list keeps the holding row in view. Slint cannot read a repeated
+            // row's place from outside, so the row reports it: when it is made, and
+            // whenever its data or its place changes (the shell updates a changed
+            // row in place, so `init` alone would miss the cursor moving).
+            function keep() {
+                if (self.holds) {
+                    root.focus-y = self.y + self.keep-y;
+                    root.focus-h = self.keep-h;
                 }
             }
-            changed y => {
-                if (r.focused) {
-                    root.focus-y = self.y;
-                    root.focus-h = self.preferred-height;
-                }
-            }
+            init => { self.keep(); }
+            changed holds => { self.keep(); }
+            changed keep-y => { self.keep(); }
+            changed keep-h => { self.keep(); }
+            changed y => { self.keep(); }
             if r.kind == "title" || r.kind == "caption": ZoneOptionGroup {
                 title: r.label;
                 caption: r.kind == "caption";

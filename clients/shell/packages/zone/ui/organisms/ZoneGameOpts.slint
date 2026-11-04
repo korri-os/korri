@@ -10,6 +10,9 @@ import { Row } from "../types.slint";
 // head (GAME OPTS. caps-2 on black, the game on blue), Korri's actions as
 // rows with RUN, red when destructive.
 export component ZoneGameOpts {
+    // A focus trap: the walk keeps a press inside the layer that holds the focus.
+    accessible-role: groupbox;
+    accessible-label: "zone-trap";
     property <length> a: Tokens.a;
     in property <string> title;
     in property <[Row]> rows;

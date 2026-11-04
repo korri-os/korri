@@ -13,6 +13,13 @@ import { Btn } from "../types.slint";
 // focused (3), and the breathing red triangles when focused.
 export component ZoneButton {
     in property <Btn> btn;
+    // False on a row that draws nothing (a trial row): not a focus target.
+    in property <bool> target: true;
+    // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
+    accessible-role: button;
+    accessible-item-selectable: root.btn.label != "" && root.target;
+    accessible-item-selected: root.btn.focused;
+    accessible-label: root.btn.label;
     property <length> a: Tokens.a;
     in property <float> nudge: Tokens.nudge-button;
     in property <length> cap: 10 * a;

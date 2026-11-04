@@ -22,6 +22,8 @@ import { deviceNameSetting, onboardingTargets, seatTarget, TARGET, ZONE_ONBOARDI
 import { overlayControls, shownRangeValue } from "./state/overlay"
 import { problemButtons } from "./state/status"
 import { withLook, zoneShown, type ZoneShown, type ZoneSurfaceState } from "./state/surface"
+import { focusView, targetRows } from "./focus"
+import type { ZoneScreen } from "./plan/screen"
 
 const TAB_WORDS: Readonly<Record<ZoneTab, string>> = { games: "Games", options: "Options", savedata: "Save data" }
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -40,11 +42,11 @@ export function dayOf(at: number): string {
   return `${d} ${MONTHS[m - 1] ?? ""} ${y}`
 }
 
-const hoursAndMinutes = ({ hours, minutes }: { readonly hours: number; readonly minutes: number }): string =>
+export const hoursAndMinutes = ({ hours, minutes }: { readonly hours: number; readonly minutes: number }): string =>
   hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
 
 /** ZoneGames.tsx `launchLabel`: PLAY, CONTINUE, PLAY HERE, PLAY ON ZAO. */
-const launchLabel = (launch: ZoneLaunchChoice): string => {
+export const launchLabel = (launch: ZoneLaunchChoice): string => {
   const verb = launch.verb === "continue" ? "Continue" : "Play"
   if (launch.place === undefined) return verb
   return launch.place.here ? `${verb} here` : `${verb} on ${launch.place.label}`
@@ -92,7 +94,18 @@ function signalOf(connection: SurfaceNetworkConnection | undefined) {
   }
 }
 
-const card = (game: SurfaceGame) => ({
+/** A game's card, made once per game object Korri publishes (the press rebuild only marks focus). */
+const cards = new WeakMap<SurfaceGame, ReturnType<typeof makeCard>>()
+const card = (game: SurfaceGame) => {
+  let made = cards.get(game)
+  if (made === undefined) {
+    made = makeCard(game)
+    cards.set(game, made)
+  }
+  return made
+}
+
+const makeCard = (game: SurfaceGame) => ({
   title: game.title,
   ...(game.coverArtUrl === undefined ? {} : { art: { $image: game.coverArtUrl } }),
   hasArt: game.coverArtUrl !== undefined,
@@ -233,7 +246,12 @@ const STEP_WORDS = { controllers: "Controllers", wifi: "Wi-Fi", name: "Name", id
 const RUN_TAGS = { Loading: "continue", Ready: "system", Stale: "open", Warnings: "open", Busy: "here", Conflict: "remote", Error: "remote" } as const
 const LAUNCH_TAGS = { Loading: "continue", Ready: "system", Conflict: "remote", Error: "remote" } as const
 
-export function view(state: ZoneSurfaceState, korri: SurfaceModel) {
+/** The Surface's view for one window: Zone's view, then its regions, exits and the plan's decisions (src/focus.ts). */
+export function view(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen) {
+  return focusView(surfaceView(state, korri), state, korri, screen)
+}
+
+function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
   const page = zoneShown(state, korri)
   const nav = state.nav
   const band = bandGames(nav, korri)
@@ -446,6 +464,11 @@ export function view(state: ZoneSurfaceState, korri: SurfaceModel) {
         rows: zoneTallyRows(nav.tally).map(entry => ({ label: entry.label, value: zoneTallyValue(entry.kind, nav.tally!), share: entry.share })),
       }
 
+  const cardFocused = onGames && nav.zone === "cards" && layer === "none" && !status.busy.shown && !dialog.shown
+  // On the tabs (or LAUNCH SETTINGS' buttons) a page's list keeps its row as the one it enters on, unfocused.
+  if (((page === "options" || page === "savedata") && nav.zone === "tabs") || (page === "launch" && state.launchAction !== undefined)) {
+    rows = rows.map(entry => (entry.focused ? { ...entry, focused: false, focusActive: true } : entry))
+  }
   const device = deviceNameSetting(korri)?.value ?? ""
   const tabbed = page === "games" || page === "options" || page === "savedata"
   return {
@@ -457,7 +480,7 @@ export function view(state: ZoneSurfaceState, korri: SurfaceModel) {
     pips: page === "onboarding" ? ZONE_ONBOARDING_STEPS.length : 0,
     pip: ZONE_ONBOARDING_STEPS.indexOf(state.onboarding.step),
     // The tabs hold the cursor unless a keyboard or a modal question covers them (GAMES' catalog error leaves them reachable).
-    tabs: ZONE_TABS.map(tab => ({ label: TAB_WORDS[tab], active: tab === nav.tab, focused: tabbed && nav.zone === "tabs" && tab === nav.tabCursor && !keyboard.shown && (!dialog.shown || (onGames && catalog._tag === "Error" && !status.dialog.shown)) })),
+    tabs: ZONE_TABS.map(tab => ({ label: TAB_WORDS[tab], active: tab === nav.tab, focused: tabbed && nav.zone === "tabs" && tab === nav.tabCursor && (!onGames || layer === "none") && !keyboard.shown && (!dialog.shown || (onGames && catalog._tag === "Error" && !status.dialog.shown)) })),
     hints: { back: "Back", confirm: "Confirm" },
     foot: {
       shown: page !== "onboarding" && page !== "paused",
@@ -470,19 +493,20 @@ export function view(state: ZoneSurfaceState, korri: SurfaceModel) {
     // GAMES
     zone: onGames ? nav.zone : "",
     catalog: catalog._tag,
+    // The cards stay as they were across a move (one object per game); the marks carry the focus.
     cards: band.map(card),
+    cardMarks: band.map((game, index) => ({ label: game.title, focused: index === nav.card && cardFocused })),
     focusedCard: nav.card,
-    cardFocused: onGames && nav.zone === "cards" && layer === "none" && !status.busy.shown && !dialog.shown,
+    cardFocused,
     firstIndex: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.firstIndex : 0,
     total: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.total : band.length,
     facts,
     actions: game === undefined ? [] : actionWords.map((label, index) => btn(label, { lit: index === lit, focused: index === focusedAction })),
     findShown: catalog._tag === "Ready",
-    findLabel: "Find",
-    findFocused: onGames && layer === "none" && (nav.zone === "find" || (nav.zone === "cards" && band.length === 0 && catalog._tag === "Ready")),
+    find: btn(catalog._tag === "Ready" ? "Find" : "", { focused: onGames && layer === "none" && (nav.zone === "find" || (nav.zone === "cards" && band.length === 0 && catalog._tag === "Ready")) }),
     kept: nav.find.draft === "" ? "" : nav.find.draft,
     getShown: korri.store !== undefined && catalog._tag !== "Error",
-    getFocused: onGames && layer === "none" && (nav.zone === "get" || (nav.zone === "cards" && band.length === 0 && catalog._tag !== "Ready" && korri.store !== undefined)),
+    get: btn(korri.store !== undefined && catalog._tag !== "Error" ? "Get games" : "", { focused: onGames && layer === "none" && (nav.zone === "get" || (nav.zone === "cards" && band.length === 0 && catalog._tag !== "Ready" && korri.store !== undefined)) }),
     typing: onGames && layer === "keyboard",
     // Zone's idle layer (navigation.ts), opened by the shell's Tick: the attract
     // shows the game at idleCard (in catalog order) and moves on with each IdleTicked.
@@ -497,14 +521,16 @@ export function view(state: ZoneSurfaceState, korri: SurfaceModel) {
     rows,
     well,
     // SAVE DATA
-    saveCards: save.cards,
+    saveCards: save.cards.map((entry, index) => ({ ...entry, focused: save.marked && index === save.focus && state.identity.flow._tag !== "retired" })),
     saveFocus: save.focus,
     saveMarked: save.marked,
+    // The cursor is on a retired key's buttons: its card stays marked.
+    saveLit: save.marked && state.identity.flow._tag === "retired",
     retired: save.retired,
     qrShown: save.qr !== undefined,
     ...(save.qr === undefined ? {} : { qr: { $image: save.qr } }),
     secret: save.secret,
-    slabFocused: save.slab,
+    slab: btn(save.qr === undefined ? "" : "secret", { focused: save.slab && nav.zone !== "tabs" }),
     // First boot
     seats: boarding.seats,
     seatName: boarding.seatName,
@@ -657,7 +683,8 @@ function onboardingView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boo
     seat: controller.heard ? `${index + 1}P` : "",
     name: controller.name,
     heard: controller.heard,
-    focused: model.entry === undefined && model.focus === seatTarget(controller.id),
+    // Only a heard controller's seat takes the cursor.
+    ...(controller.heard ? { focused: model.entry === undefined && model.focus === seatTarget(controller.id) } : {}),
   }))
   const focusedSeat = controllers.find(controller => model.focus === seatTarget(controller.id))
   const targets = onboardingTargets(model, korri)
@@ -677,7 +704,37 @@ function onboardingView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boo
 // ---- PAUSED ----
 
 /** The Overlay's view: Korri's title on the red band, the controls in the yellow wedge. */
-export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel) {
+export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen) {
+  const raw = pausedView(state, korri)
+  const dialog = raw.dialog
+  // The Overlay's regions: a question's buttons, and PAUSED's controls. The
+  // controls step down-left like stairs, so each control is its own region:
+  // up and down go to the control above and below, left and right step its
+  // value or stay.
+  const planned = focusView({ actions: [], retired: [], dialog, busy: raw.busy, rows: [], optsRows: [], tabs: [] }, state, korri, screen)
+  const rows = targetRows(raw.rows as unknown as Record<string, unknown>[])
+  const controls = rows.flatMap((entry, index) => ("focused" in entry ? [index] : []))
+  const region = (index: number) => `control-${controls.indexOf(index)}`
+  const focusPlan: Record<string, Record<string, { to: string; entry: "first" }>> = {}
+  if (!dialog.shown && !(raw.busy.shown && raw.busy.buttons.length > 0)) {
+    controls.forEach((_, k) => {
+      focusPlan[`control-${k}`] = {
+        ...(k > 0 ? { up: { to: `control-${k - 1}`, entry: "first" as const } } : {}),
+        ...(k < controls.length - 1 ? { down: { to: `control-${k + 1}`, entry: "first" as const } } : {}),
+      }
+    })
+  }
+  return {
+    ...raw,
+    dialog: planned.dialog,
+    busy: planned.busy,
+    rows: rows.map((entry, index) => ("focused" in entry ? { ...entry, focusRegion: region(index) } : entry)),
+    screen: planned.screen,
+    focusPlan,
+  }
+}
+
+function pausedView(state: ZoneSurfaceState, korri: SurfaceModel) {
   const overlay = korri.presentation
   const empty = { look: state.look, heading: "Paused", korriHeading: false, hasArt: false, rows: [] as Row[], focusAt: 0, dialog: EMPTY_DIALOG, busy: EMPTY_BUSY, hints: { back: "Back", confirm: "Confirm" } }
   if (overlay.kind !== "gameplay-overlay") return empty

@@ -13,6 +13,11 @@ import { SaveCard } from "../types.slint";
 export component ZoneSaveCard {
     in property <SaveCard> card;
     in property <bool> focused;
+    // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
+    accessible-role: button;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.card.focused;
+    accessible-label: root.card.header;
     property <length> a: Tokens.a;
     property <length> c1: 10 * a;
     property <length> head-h: 2 * c1 + 6 * a;

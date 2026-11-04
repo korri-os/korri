@@ -6,18 +6,23 @@
  * is and turns each press into the fact the page would have reported, then
  * Zone's own `update` (src/state/surface.ts) decides what it means.
  *
- * Every page keeps the order Zone draws: up and down walk a page's rows top
- * to bottom, left and right walk a row of buttons or step a choice, and the
- * tabs are above every tabbed page. Back, menu, options and system are
+ * Focus moves by regions (contract 8.4, src/focus.ts): inside a region a
+ * direction goes to the target the plan draws nearest that way
+ * (src/plan/screen.ts `nearest`: tabs, rows of buttons that may wrap,
+ * dialogs whose buttons may stack, the keys); leaving a region follows the
+ * exits src/focus.ts declares. A list is a column: up and down walk its
+ * rows, left and right step a choice. Back, menu, options and system are
  * Zone's own host buttons.
  */
 import type { SurfaceButton, SurfaceModel } from "../../../../../contracts/generated/surface"
-import { findKey, keyGrid, keyMove, type ZoneGridKey } from "./keys"
+import { findKey, keyAt, keyGrid, type ZoneGridKey } from "./keys"
+import { buttonRow, dialogButtons, nearest, tabsPlan, type ZoneBox, type ZoneScreen } from "./plan/screen"
 import { entryHeading, optionsPlan, ZONE_OPTIONS_SYSTEM } from "./plan/options"
 import { launchPlan, launchSlices, ZONE_LAUNCH_SCOPE_ROW } from "./plan/launch-settings"
 import { runWithPlan } from "./plan/options-run-with"
 import { storeRows } from "./rows"
-import { launchChoices, type ZoneFindKey } from "./state/games"
+import { launchChoices, playtime, type ZoneFindKey } from "./state/games"
+import { dayOf, hoursAndMinutes, launchLabel } from "./view"
 import { identityCardCount, retiredKeyAt } from "./state/identity"
 import { bandGames, cardCount, topLayer, ZONE_TABS, type ZoneNavMessage } from "./state/navigation"
 import { onboardingTargets, TARGET } from "./state/onboarding"
@@ -44,7 +49,8 @@ const sideways = (button: Direction): -1 | 1 => (button === "left" ? -1 : 1)
  * Route one press. `state` is the state before it; `send` runs Zone's
  * update with each message in turn (a press can be one message or none).
  */
-export function press(state: ZoneSurfaceState, button: SurfaceButton, korri: SurfaceModel, send: Send): void {
+export function press(state: ZoneSurfaceState, button: SurfaceButton, korri: SurfaceModel, screen: ZoneScreen, send: Send): void {
+  SCREEN = screen
   switch (button) {
     case "back":
       return send({ _tag: "PressedBack" })
@@ -90,6 +96,46 @@ export function press(state: ZoneSurfaceState, button: SurfaceButton, korri: Sur
   }
 }
 
+// ---- The plan's geometry (src/plan/screen.ts) ----
+
+/** The window's plan for the press under way (press() sets it first). */
+let SCREEN: ZoneScreen
+
+/** The target drawn nearest `direction` in a region of boxes; undefined when none. */
+const step = (boxes: readonly ZoneBox[], at: number, direction: Direction): number | undefined => nearest(boxes, at, direction)
+
+/** A dialog's buttons as ZoneDialog draws them. */
+const dialogStep = (labels: readonly string[], at: number, direction: Direction) =>
+  step(dialogButtons(labels, SCREEN).boxes, at, direction)
+
+/** A row of buttons at a width, caps-1. */
+const rowStep = (labels: readonly string[], width: number, at: number, direction: Direction) =>
+  step(buttonRow(labels, width, 10 * SCREEN.a, SCREEN.a, SCREEN.look).boxes, at, direction)
+
+/** The tabs as ZoneTabStrip places them; the page's tab is the banner. */
+const TAB_LABELS = ["Games", "Options", "Save data"] as const
+const tabStep = (active: number, at: number, direction: Direction) => step(tabsPlan(TAB_LABELS, active, SCREEN).boxes, at, direction)
+
+/** The list's width on a page with the sky band (ZoneSkyBand). */
+const skyList = (well: boolean) => SCREEN.width - 16 * SCREEN.a - (well ? 56 * SCREEN.a : 0)
+
+/** The keys as ZoneKeyboard places them over the body. */
+function keyBoxes(grid: readonly ZoneGridKey[]): ZoneBox[] {
+  const a = SCREEN.a
+  const height = SCREEN.height - SCREEN.topH
+  const tight = height < 170 * a
+  const pad = tight ? 4 * a : 7 * a
+  const gap = tight ? 2 * a : 3 * a
+  const slab = tight ? 18 * a : 24 * a
+  const slant = tight ? 7 * a : 14 * a
+  const panel = Math.min(SCREEN.width - 4 * a, 450 * a)
+  const inner = panel - 2 * (pad + slant)
+  const unit = Math.max(16 * a, Math.floor((inner - 11 * gap) / 12 / a) * a)
+  const rows = Math.max(1, ...grid.map(key => key.row + 1))
+  const keyH = Math.max(16 * a, Math.min(20 * a, Math.floor((height - 12 * a - 3 * pad - slab - (rows - 1) * gap - 4 * a) / rows / a) * a))
+  return grid.map(key => ({ x: key.at * (unit + gap), y: key.row * (keyH + gap), w: key.units * unit + (key.units - 1) * gap, h: keyH }))
+}
+
 /** The status layer's buttons, when it holds the cursor. True when it took the press. */
 function statusLayer(state: ZoneSurfaceState, button: Exclude<SurfaceButton, "back" | "menu" | "system" | "options">, korri: SurfaceModel, send: Send): boolean {
   const status = korri.status
@@ -99,8 +145,11 @@ function statusLayer(state: ZoneSurfaceState, button: Exclude<SurfaceButton, "ba
   const count = statusButtonCount(status)
   const focus = clamp(state.status.focus, 0, Math.max(0, count - 1))
   const message = (inner: Parameters<typeof statusMessage>[0]) => send({ _tag: "Status", message: inner })
-  if (button === "left" || button === "right") {
-    if (count > 0) message({ _tag: "FocusedStatusButton", index: along(focus, count, sideways(button)) })
+  if (isDirection(button)) {
+    // Busy's buttons stand in the strip (160 art px); the others in the dialog.
+    const labels = statusLabels(status)
+    const next = status._tag === "Busy" ? rowStep(labels, 160 * SCREEN.a, focus, button) : dialogStep(labels, focus, button)
+    if (next !== undefined && count > 0) message({ _tag: "FocusedStatusButton", index: next })
     return true
   }
   if (button !== "confirm") return true
@@ -139,6 +188,25 @@ function statusLayer(state: ZoneSurfaceState, button: Exclude<SurfaceButton, "ba
   return true
 }
 
+/** The status layer's button words, as src/view.ts statusView draws them. */
+function statusLabels(status: SurfaceModel["status"]): string[] {
+  switch (status._tag) {
+    case "Busy":
+      return (status.actions ?? []).map(action => action.label)
+    case "Problem":
+      return problemButtons(status).map(which => (which === "dismiss" ? "Dismiss" : "Retry"))
+    case "Confirm":
+    case "Paused":
+      return status.actions.map(action => action.label)
+    case "ChooseSave":
+      return [...status.sides.map(side => `${side.device} · ${dayOf(side.endedAt)} · ${hoursAndMinutes(playtime(side.durationSeconds))}`), ...status.actions.map(action => action.label)]
+    case "Ended":
+      return ["Dismiss"]
+    default:
+      return []
+  }
+}
+
 // A helper type for the status messages above.
 function statusMessage(message: Extract<ZoneSurfaceMessage, { _tag: "Status" }>["message"]) {
   return message
@@ -148,13 +216,14 @@ function statusMessage(message: Extract<ZoneSurfaceMessage, { _tag: "Status" }>[
 function tabs(state: ZoneSurfaceState, button: Direction | "confirm", korri: SurfaceModel, send: Send): void {
   const nav = state.nav
   const at = ZONE_TABS.indexOf(nav.tabCursor)
-  if (button === "left" || button === "right") {
-    const next = ZONE_TABS[along(at, ZONE_TABS.length, sideways(button))]!
-    if (next !== nav.tabCursor) send({ _tag: "Games", message: { _tag: "FocusedTab", tab: next } })
-    return
-  }
   if (button === "confirm") return send({ _tag: "Games", message: { _tag: "ChoseTab", tab: nav.tabCursor } })
+  const inside = tabStep(ZONE_TABS.indexOf(nav.tab), at, button)
+  if (inside !== undefined) return send({ _tag: "Games", message: { _tag: "FocusedTab", tab: ZONE_TABS[inside]! } })
   if (button !== "down") return
+  // SAVE DATA with Korri's backup shown: the slab under the tabs.
+  if (nav.tab === "savedata" && korri.identityManagement?.status._tag === "BackupReady") {
+    return send({ _tag: "SaveData", message: { _tag: "FocusedSecret" } })
+  }
   switch (nav.tab) {
     case "games":
       return send({ _tag: "Games", message: { _tag: "FocusedCard", index: nav.card } })
@@ -202,14 +271,13 @@ function games(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
   switch (nav.zone) {
     case "tabs": {
       const at = ZONE_TABS.indexOf(nav.tabCursor)
-      if (button === "left" || button === "right") {
-        const next = ZONE_TABS[along(at, ZONE_TABS.length, sideways(button))]!
-        if (next !== nav.tabCursor) go({ _tag: "FocusedTab", tab: next })
-        else if (button === "right" && findShown) go({ _tag: "FocusedFind" })
-        return
-      }
       if (button === "confirm") return go({ _tag: "ChoseTab", tab: nav.tabCursor })
+      const inside = tabStep(ZONE_TABS.indexOf(nav.tab), at, button)
+      if (inside !== undefined) return go({ _tag: "FocusedTab", tab: ZONE_TABS[inside]! })
+      if (button === "right" && findShown) return go({ _tag: "FocusedFind" })
       if (button === "down") {
+        // The catalog could not be read: RELOAD stands under the tabs.
+        if (korri.catalog._tag === "Error") return go({ _tag: "FocusedCard", index: nav.card })
         if (band.length > 0) return go({ _tag: "FocusedCard", index: nav.card })
         if (store) return go({ _tag: "FocusedGetGames" })
         if (findShown) return go({ _tag: "FocusedFind" })
@@ -218,8 +286,8 @@ function games(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
     }
     case "find":
       if (button === "confirm") return go({ _tag: "ChoseFind" })
-      if (button === "up") return go({ _tag: "FocusedTab", tab: "savedata" })
-      if (button === "left") return store ? go({ _tag: "FocusedGetGames" }) : go({ _tag: "FocusedTab", tab: "savedata" })
+      if (button === "up") return go({ _tag: "FocusedTab", tab: nav.tab })
+      if (button === "left") return store ? go({ _tag: "FocusedGetGames" }) : go({ _tag: "FocusedTab", tab: nav.tab })
       if (button === "down" && band.length > 0) return go({ _tag: "FocusedCard", index: nav.card })
       return
     case "get":
@@ -230,11 +298,9 @@ function games(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
       return
     case "cards": {
       if (band[nav.card] === undefined) {
-        // A draft that matches nothing: NO GAMES, the cursor on FIND (or GET GAMES).
-        if (button === "up") return go({ _tag: "FocusedTab", tab: nav.tab })
-        if (button === "confirm" && findShown) return go({ _tag: "ChoseFind" })
-        if (button === "confirm" && store) return go({ _tag: "ChoseGetGames" })
-        if (button === "left" && store) return go({ _tag: "FocusedGetGames" })
+        // A draft that matches nothing: NO GAMES, the cursor on FIND (or GET GAMES); it moves as from there.
+        if (findShown) return games({ ...state, nav: { ...nav, zone: "find" } }, button, korri, send)
+        if (store) return games({ ...state, nav: { ...nav, zone: "get" } }, button, korri, send)
         return
       }
       if (button === "left" || button === "right") {
@@ -250,14 +316,14 @@ function games(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
       const game = band[nav.card]
       if (game === undefined) return
       const launches = launchChoices(game)
-      if (button === "left" || button === "right") {
-        // The launch buttons, then OPTS.
-        const next = along(nav.action, launches.length + 1, sideways(button))
-        if (next !== nav.action) go({ _tag: "FocusedAction", index: next })
+      if (isDirection(button)) {
+        // The launch buttons, then OPTS., as the row draws them (it may wrap).
+        const labels = [...launches.map(launchLabel), "Opts."]
+        const next = rowStep(labels, SCREEN.width, Math.min(nav.action, labels.length - 1), button)
+        if (next !== undefined) return go({ _tag: "FocusedAction", index: next })
+        if (button === "up") return go({ _tag: "FocusedCard", index: nav.card })
         return
       }
-      if (button === "up") return go({ _tag: "FocusedCard", index: nav.card })
-      if (button === "down") return
       const launch = launches[nav.action]
       if (launch === undefined) return go({ _tag: "ChoseGameOpts" })
       return go(launch.locationId === undefined
@@ -274,7 +340,11 @@ function gameOpts(state: ZoneSurfaceState, button: Direction | "confirm", korri:
   const game = bandGames(nav, korri)[nav.card]
   const actions = game !== undefined && korri.focusedGame?.gameId === game.id ? korri.focusedGame.actions : []
   if (nav.opts.asking !== undefined) {
-    if (button === "left" || button === "right") return go({ _tag: "FocusedAnswer", index: button === "left" ? 0 : 1 })
+    if (isDirection(button)) {
+      const next = dialogStep(["No", "Yes"], nav.opts.answer, button)
+      if (next !== undefined) go({ _tag: "FocusedAnswer", index: next })
+      return
+    }
     if (button === "confirm") go({ _tag: "AnsweredGameAction", yes: nav.opts.answer === 1 })
     return
   }
@@ -301,12 +371,14 @@ function keyboard(
   pressKey: (key: ZoneGridKey["key"]) => void,
 ): void {
   const grid = keyGrid(layer, clear)
+  const from = keyAt(grid, focused)
   if (isDirection(button)) {
-    const next = keyMove(grid, focused, button)
-    if (next.id !== focused) focus(next.id)
+    const next = grid[step(keyBoxes(grid), grid.indexOf(from), button) ?? -1]
+    if (next !== undefined && next.id !== focused) focus(next.id)
+    else if (focused === undefined) focus(from.id)
     return
   }
-  const key = grid.find(candidate => candidate.id === focused) ?? keyMove(grid, focused, "left")
+  const key = grid.find(candidate => candidate.id === focused) ?? from
   pressKey(key.key)
 }
 
@@ -339,7 +411,11 @@ function rowsPage(
     }
     case "dialog": {
       const dialog = options.dialog!
-      if (button === "left" || button === "right") return message({ _tag: "FocusedDialogButton", index: button === "left" ? 0 : 1 })
+      if (isDirection(button)) {
+        const next = dialogStep(["No", dialog.confirm.confirmLabel], dialog.focused, button)
+        if (next !== undefined) message({ _tag: "FocusedDialogButton", index: next === 0 ? 0 : 1 })
+        return
+      }
       if (button === "confirm") message({ _tag: "PressedDialogButton", index: dialog.focused })
       return
     }
@@ -384,20 +460,23 @@ function launch(state: ZoneSurfaceState, button: Direction | "confirm", korri: S
     const first = actions.find(action => action.enabled)
     if (first !== undefined && button === "confirm") return send({ _tag: "LaunchAction", actionId: first.id })
     if (first !== undefined) send({ _tag: "FocusedLaunchAction", actionId: first.id })
-    if (button !== "left" && button !== "right") return
-    return launch({ ...state, launchAction: first?.id }, button, korri, send)
+    // The view already lights the first: a direction moves on from it.
+    if (!isDirection(button) || first === undefined) return
+    return launch({ ...state, launchAction: first.id }, button, korri, send)
   }
   const onAction = state.launchAction !== undefined && optionsLayer(state.launch) === "none"
   if (onAction) {
     const at = Math.max(0, actions.findIndex(action => action.id === state.launchAction))
-    if (button === "left" || button === "right") {
-      const next = actions[along(at, actions.length, sideways(button))]
-      if (next !== undefined) send({ _tag: "FocusedLaunchAction", actionId: next.id })
-      return
+    if (isDirection(button)) {
+      // The buttons as the row draws them (it may wrap).
+      const inside = rowStep(actions.map(action => action.label), skyList(false), at, button)
+      if (inside !== undefined) return send({ _tag: "FocusedLaunchAction", actionId: actions[inside]!.id })
     }
+    if (button === "left" || button === "right" || button === "down") return
     if (button === "up") {
-      const last = rows.at(-1)
-      if (last !== undefined) message({ _tag: "FocusedRow", rowId: last.id })
+      // The row the list holds, else its last.
+      const back = rows.find(entry => entry.id === state.launch.focused) ?? rows.at(-1)
+      if (back !== undefined) message({ _tag: "FocusedRow", rowId: back.id })
       return
     }
     if (button === "confirm") send({ _tag: "LaunchAction", actionId: state.launchAction! })
@@ -429,14 +508,19 @@ function runWith(state: ZoneSurfaceState, button: Direction | "confirm", korri: 
     // left and right walk a row, up and down walk the rows.
     const rowOf = (id: string) => runWithRow(choice, plan, id)
     const here = focused === undefined ? 0 : rowOf(focused)
-    if (button === "left" || button === "right") {
-      const same = ids.filter(id => rowOf(id) === here)
-      const next = same[along(same.indexOf(focused ?? ""), same.length, sideways(button))]
-      if (next !== undefined && next !== focused) message({ _tag: "FocusedRow", rowId: next })
+    // Inside a row of buttons: the button drawn that way (the row may wrap).
+    const same = ids.filter(id => rowOf(id) === here)
+    const words = new Map([...plan.routes.flatMap(entry => entry.route.actions), ...choice.actions].map(action => [action.id, action.label]))
+    const inside = same.length > 1 ? rowStep(same.map(id => words.get(id) ?? ""), skyList(false), same.indexOf(focused ?? ""), button) : undefined
+    if (inside !== undefined) {
+      if (same[inside] !== focused) message({ _tag: "FocusedRow", rowId: same[inside]! })
       return
     }
+    if (button === "left" || button === "right") return
     const rows = [...new Set(ids.map(rowOf))]
     const target = rows[along(rows.indexOf(here), rows.length, button === "up" ? -1 : 1)]
+    // No row that way: the cursor stays.
+    if (target === here) return
     const next = ids.find(id => rowOf(id) === target)
     if (next !== undefined && next !== focused) message({ _tag: "FocusedRow", rowId: next })
     return
@@ -479,7 +563,11 @@ function store(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
   // Korri's question or trouble: its buttons in a row.
   if (shape.dialog.length > 0) {
     const at = clamp(model.dialog, 0, shape.dialog.length - 1)
-    if (button === "left" || button === "right") return message({ _tag: "FocusedDialogButton", index: along(at, shape.dialog.length, sideways(button)) })
+    if (isDirection(button)) {
+      const next = dialogStep(shape.dialogActions.map(action => action.label), at, button)
+      if (next !== undefined) message({ _tag: "FocusedDialogButton", index: next })
+      return
+    }
     const action = shape.dialog[at]
     if (button === "confirm" && action !== undefined) message({ _tag: "PressedAction", actionId: action })
     return
@@ -493,14 +581,19 @@ function store(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
     if (at < 0) message({ _tag: "FocusedRow", rowId: here.id })
     return message({ _tag: "PressedRow", rowId: here.id })
   }
-  if (button === "left" || button === "right") {
-    const same = ids.filter(entry => entry.row === here.row)
-    const next = same[along(same.indexOf(here), same.length, sideways(button))]
-    if (next !== undefined && next.id !== here.id) message({ _tag: "FocusedRow", rowId: next.id })
+  // Inside a row of buttons: the button drawn that way (the row may wrap).
+  const same = ids.filter(entry => entry.row === here.row)
+  const words = shape.rows[here.row]?.buttons.map(drawn => drawn.label) ?? []
+  const inside = same.length > 1 && words.length === same.length ? rowStep(words, skyList(shape.well), same.indexOf(here), button) : undefined
+  if (inside !== undefined) {
+    if (same[inside]!.id !== here.id) message({ _tag: "FocusedRow", rowId: same[inside]!.id })
     return
   }
+  if (button === "left" || button === "right") return
   const rows = [...new Set(ids.map(entry => entry.row))]
   const target = rows[along(rows.indexOf(here.row), rows.length, button === "up" ? -1 : 1)]
+  // No row that way: the cursor stays.
+  if (target === here.row) return
   const next = ids.find(entry => entry.row === target)
   if (next !== undefined && next.id !== here.id) message({ _tag: "FocusedRow", rowId: next.id })
 }
@@ -544,13 +637,21 @@ function saveData(state: ZoneSurfaceState, button: Direction | "confirm", korri:
     case "trust":
     case "confirmDelete":
     case "confirmBackedUp":
-      if (button === "left" || button === "right") return message({ _tag: "FocusedChoice", index: button === "left" ? 0 : 1 })
+      if (isDirection(button)) {
+        const next = dialogStep(flow._tag === "disposition" ? ["Transfer", "Delete"] : ["No", "Yes"], flow.focus, button)
+        if (next !== undefined) message({ _tag: "FocusedChoice", index: next === 0 ? 0 : 1 })
+        return
+      }
       if (button !== "confirm") return
       if (flow._tag === "disposition") return message({ _tag: "ChoseDisposition", disposition: flow.focus === 0 ? "transfer" : "delete" })
       return message({ _tag: "Answered", yes: flow.focus === 1 })
     case "retired":
-      if (button === "left" || button === "right") return message({ _tag: "FocusedRetiredAction", action: button === "left" ? "backup" : "delete" })
-      if (button === "up") return message({ _tag: "FocusedSaveCard", index: model.card })
+      if (isDirection(button)) {
+        const next = rowStep(["Back up", "Delete"], SCREEN.width, flow.action === "backup" ? 0 : 1, button)
+        if (next !== undefined) return message({ _tag: "FocusedRetiredAction", action: next === 0 ? "backup" : "delete" })
+        if (button === "up") return message({ _tag: "FocusedSaveCard", index: model.card })
+        return
+      }
       if (button === "confirm") message({ _tag: "ChoseRetiredAction", action: flow.action })
       return
     case "showSecret":
@@ -586,7 +687,11 @@ function paused(state: ZoneSurfaceState, button: Direction | "confirm", korri: S
   const model = state.overlay
   const message = (inner: Extract<ZoneSurfaceMessage, { _tag: "Paused" }>["message"]) => send({ _tag: "Paused", message: inner })
   if (model.asking !== undefined) {
-    if (button === "left" || button === "right") return message({ _tag: "FocusedAnswer", index: button === "left" ? 0 : 1 })
+    if (isDirection(button)) {
+      const next = dialogStep(["No", "Yes"], model.answer, button)
+      if (next !== undefined) message({ _tag: "FocusedAnswer", index: next === 0 ? 0 : 1 })
+      return
+    }
     if (button === "confirm") message({ _tag: "ChoseAnswer", yes: model.answer === 1 })
     return
   }
@@ -624,9 +729,12 @@ function onboarding(state: ZoneSurfaceState, button: Direction | "confirm", korr
     if (!vertical && !sidewaysWalk) return
     if (vertical && model.step === "controllers" && seats && button === "up") return
     const step = vertical ? (button === "up" ? -1 : 1) : sideways(button)
-    let next = targets[along(at, targets.length, step)]
-    // Down from a seat goes to NEXT.
+    // The seats are a row of their own: left and right stop at its ends.
+    const row = seats && !vertical ? targets.filter(target => target.startsWith("seat:")) : targets
+    let next = row[along(Math.max(0, row.indexOf(model.focus)), row.length, step)]
+    // Down from a seat goes to NEXT; up from NEXT to the first seat.
     if (vertical && model.step === "controllers" && seats) next = TARGET.next
+    if (button === "up" && model.step === "controllers" && model.focus === TARGET.next) next = targets.find(target => target.startsWith("seat:")) ?? next
     if (next !== undefined && next !== model.focus) message({ _tag: "FocusedTarget", target: next })
     return
   }

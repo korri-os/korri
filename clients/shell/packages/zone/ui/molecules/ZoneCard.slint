@@ -15,6 +15,11 @@ export component ZoneCard {
     in property <Card> card;
     in property <bool> focused;
     in property <bool> lit;
+    // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
+    accessible-role: button;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.lit;
+    accessible-label: root.card.title;
     property <length> a: Tokens.a;
     property <length> c1: 10 * a;
     property <length> frame: focused ? 4 * a : 2 * a;
@@ -44,7 +49,8 @@ export component ZoneCard {
         height: root.height;
         background: Tokens.shade;
     }
-    if root.focused && root.lit: Rectangle {
+    // The pink edge on the card that holds the focus (`lit`; only the band's focused card in use).
+    if root.lit: Rectangle {
         x: -2 * root.a;
         y: -2 * root.a;
         width: root.width + 4 * root.a;

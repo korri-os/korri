@@ -62,6 +62,8 @@ i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
+# The Zone walk reads what is drawn: each focus target's place and its selected flag.
+i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 # Its `testing` feature only adds the text layout cache's counters (tests/text_reshape.rs).
 i-slint-renderer-software = { version = "=1.18.1", features = ["testing"] }
 

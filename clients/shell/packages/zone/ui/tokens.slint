@@ -21,6 +21,7 @@
 import "../fonts/ZoneCaps.ttf";
 import "../fonts/Jersey10-latin.ttf";
 import "../fonts/Anton-latin.ttf";
+import { Screen } from "types.slint";
 
 export global Tokens {
     // ---- Inputs: the window, the look, the ground ----
@@ -70,14 +71,18 @@ export global Tokens {
     out property <float> paused-wedge-top: 8;
     out property <float> paused-rows-least: 200;
 
-    // ---- Derived: the grid and the plan ----
+    // ---- The plan (contract A2): the logic's, for the shell's Resized ----
+    // main.slint writes the view's `screen`; a preview frame its own (640x480
+    // until the preview renderer writes the logic's for its size). .slint
+    // sizes from it and never decides structure itself.
+    in-out property <Screen> screen: { a: 2, w-art: 320, h-art: 240, wide: false, tall: false, strip-level: 2, tabs-wrap: false, save-beside: true };
     out property <length> unit: 1px;
-    out property <length> a: Math.max(1, Math.floor(Math.min(width / 1px, height / 1px) / art-rows)) * 1px;
-    out property <float> w-art: Math.floor(width / a);
-    out property <float> h-art: Math.floor(height / a);
-    out property <bool> wide: w-art >= wide-at;
-    out property <bool> tall: h-art >= tall-at;
-    out property <int> strip-level: w-art >= strip-inline-at ? 0 : w-art >= strip-tight-at ? 1 : w-art >= strip-keys-at ? 2 : 3;
+    out property <length> a: screen.a * 1px;
+    out property <float> w-art: screen.w-art;
+    out property <float> h-art: screen.h-art;
+    out property <bool> wide: screen.wide;
+    out property <bool> tall: screen.tall;
+    out property <int> strip-level: screen.strip-level;
     out property <length> top-h: (tall ? top-tall : top-short) * a + (strip-level == 3 ? 30 * a : 0);
     out property <length> foot-h: (tall ? foot-tall : foot-short) * a;
     out property <length> c1: caps-1 * a;

@@ -35,6 +35,21 @@ export struct Btn {
     lit: bool,
     disabled: bool,
     danger: bool,
+    // Its line in its row of buttons: the plan wraps a row (src/plan/screen.ts).
+    line: int,
+}
+
+// The plan's grid and structure for one window (src/plan/screen.ts, from the
+// shell's Resized): ui/tokens.slint draws from it.
+export struct Screen {
+    a: float,
+    w-art: float,
+    h-art: float,
+    wide: bool,
+    tall: bool,
+    strip-level: int,
+    tabs-wrap: bool,
+    save-beside: bool,
 }
 
 export struct Tag {
@@ -57,6 +72,10 @@ export struct Row {
     bars: int,
     buttons: [Btn],
     tags: [Tag],
+    // A row of buttons holds the cursor on one of its buttons (the list keeps it in view).
+    holds: bool,
+    // The line of the held button in its row (src/focus.ts, the plan's): the list keeps that line in view.
+    holds-line: int,
 }
 
 export struct Key {
@@ -90,6 +109,8 @@ export struct Dialog {
     lines: [string],
     title: string,
     buttons: [Btn],
+    // The buttons stand at caps-2 (caps-1 when caps-2 would wrap them): the plan's.
+    big: bool,
 }
 
 export struct Busy {
@@ -113,6 +134,14 @@ export struct Card {
     stripes: int,
     tags: [Tag],
     section: string,
+}
+
+// One card's focus, apart from the card itself: a press changes these and
+// leaves the cards (their words and art) as they were, so the band's cards
+// are not rebuilt on every move.
+export struct Mark {
+    label: string,
+    focused: bool,
 }
 
 export struct Fact {
@@ -145,6 +174,7 @@ export struct SaveCard {
     emblem: string,
     foot: string,
     foot-kind: string,
+    focused: bool,
 }
 
 export struct Seat {

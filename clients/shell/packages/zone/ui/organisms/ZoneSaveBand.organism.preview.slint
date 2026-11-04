@@ -7,10 +7,10 @@ import { ZoneSaveBand } from "./ZoneSaveBand.slint";
 
 export component Default inherits ZonePreview {
     ground: "savedata";
-    ZoneSaveBand { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open" }, { header: "Switch", word: "From backup", emblem: "restore" }, { header: "Switch", word: "Bunker", emblem: "link" }, { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }]; at: 0; marked: true; }
+    ZoneSaveBand { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open", focused: true }, { header: "Switch", word: "From backup", emblem: "restore" }, { header: "Switch", word: "Bunker", emblem: "link" }, { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }]; at: 0; marked: true; }
 }
 
 export component Retired inherits ZonePreview {
     ground: "savedata";
-    ZoneSaveBand { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open" }, { header: "Switch", word: "From backup", emblem: "restore" }, { header: "Switch", word: "Bunker", emblem: "link" }, { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }]; at: 3; marked: true; retired: [{ label: "Back up", focused: true, lit: true }, { label: "Delete" }]; }
+    ZoneSaveBand { x: 0; y: 0; width: parent.width; height: parent.height; cards: [{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open" }, { header: "Switch", word: "From backup", emblem: "restore" }, { header: "Switch", word: "Bunker", emblem: "link" }, { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }]; at: 3; marked: true; lit: true; retired: [{ label: "Back up", focused: true, lit: true }, { label: "Delete" }]; }
 }

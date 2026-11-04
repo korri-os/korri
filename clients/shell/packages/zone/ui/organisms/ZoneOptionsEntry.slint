@@ -8,6 +8,9 @@ import { ZoneKeyboard } from "../molecules/ZoneKeyboard.slint";
 import { Keyboard } from "../types.slint";
 
 export component ZoneOptionsEntry {
+    // A focus trap: the walk keeps a press inside the layer that holds the focus.
+    accessible-role: groupbox;
+    accessible-label: "zone-trap";
     in property <Keyboard> board;
     in property <bool> veiled: true;
     if root.veiled: ZoneVeil {

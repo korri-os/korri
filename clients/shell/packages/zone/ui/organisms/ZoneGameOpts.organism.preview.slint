@@ -7,5 +7,5 @@ import { ZoneGameOpts } from "./ZoneGameOpts.slint";
 
 export component Default inherits ZonePreview {
     ground: "gameopts";
-    ZoneGameOpts { x: 0; y: 0; width: parent.width; height: parent.height; title: "Spelunky"; rows: [{ kind: "item", label: "Verify files", value: "Run", focused: true, choice: true, bars: -1 }, { kind: "note", label: "Check the game's files against the library", label-fact: true }, { kind: "item", label: "Delete save", value: "Run", danger: true, choice: true, bars: -1 }, { kind: "item", label: "Copy to zao", value: "Run", disabled: true, choice: true, bars: -1 }, { kind: "note", label: "zao is not on the network", label-fact: true }]; }
+    ZoneGameOpts { x: 0; y: 0; width: parent.width; height: parent.height; title: "Spelunky"; rows: [{ kind: "item", label: "Verify files", value: "Run", focused: true, choice: true, bars: -1, holds: true }, { kind: "note", label: "Check the game's files against the library", label-fact: true }, { kind: "item", label: "Delete save", value: "Run", danger: true, choice: true, bars: -1 }, { kind: "item", label: "Copy to zao", value: "Run", disabled: true, choice: true, bars: -1 }, { kind: "note", label: "zao is not on the network", label-fact: true }]; }
 }
