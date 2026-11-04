@@ -169,6 +169,25 @@ fn image_request(
     Ok(Some((url, mode)))
 }
 
+/// Where a value sits in a view, for error messages: formatted only when one is made, so
+/// converting a view allocates no path per field.
+#[derive(Clone, Copy)]
+enum Path<'a> {
+    Root(&'a str),
+    Field(&'a Path<'a>, &'a str),
+    Index(&'a Path<'a>, usize),
+}
+
+impl std::fmt::Display for Path<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Path::Root(name) => f.write_str(name),
+            Path::Field(parent, field) => write!(f, "{parent}.{field}"),
+            Path::Index(parent, i) => write!(f, "{parent}[{i}]"),
+        }
+    }
+}
+
 /// Convert one JSON value to the declared type. `previous` supplies values
 /// for `null` and omitted struct fields.
 pub fn convert(
@@ -178,22 +197,26 @@ pub fn convert(
     images: &mut ImageCache,
     path: &str,
 ) -> Result<Value> {
-    convert_from(json, ty, previous, None, images, path)
+    convert_from(json, ty, previous, None, images, &Path::Root(path))
 }
 
 /// `convert`, given the JSON that `previous` was converted from (`before`).
 /// An array whose model the shell made from `before` is brought up to date
 /// in place (`update_rows`), so a repeater over it keeps the instances of
-/// the rows that did not change.
+/// the rows that did not change. A value whose JSON equals `before` is
+/// `previous` (it was converted from that JSON).
 fn convert_from(
     json: &Json,
     ty: &Type,
     previous: &Value,
     before: Option<&Json>,
     images: &mut ImageCache,
-    path: &str,
+    path: &Path,
 ) -> Result<Value> {
     if json.is_null() {
+        return Ok(previous.clone());
+    }
+    if before == Some(json) && *previous != Value::Void {
         return Ok(previous.clone());
     }
     Ok(match (json, ty) {
@@ -225,7 +248,7 @@ fn convert_from(
                     .filter(|rows| rows.row_count() == before.len())
                 {
                     update_rows(rows, items, before, |i, json, prior| {
-                        convert_from(json, item, prior, None, images, &format!("{path}[{i}]"))
+                        convert_from(json, item, prior, None, images, &Path::Index(path, i))
                     })?;
                     return Ok(Value::Model(model.clone()));
                 }
@@ -235,7 +258,7 @@ fn convert_from(
                 .enumerate()
                 .map(|(i, v)| {
                     let prior = old.and_then(|m| m.row_data(i)).unwrap_or_default();
-                    convert(v, item, &prior, images, &format!("{path}[{i}]"))
+                    convert_from(v, item, &prior, None, images, &Path::Index(path, i))
                 })
                 .collect::<Result<Vec<_>>>()?;
             Value::Model(ModelRc::new(VecModel::from(values)))
@@ -266,7 +289,7 @@ fn convert_from(
                 let prior = value.get_field(&field).cloned().unwrap_or_default();
                 let before = before.and_then(|b| b.get(name));
                 let converted =
-                    convert_from(json, ty, &prior, before, images, &format!("{path}.{field}"))?;
+                    convert_from(json, ty, &prior, before, images, &Path::Field(path, &field))?;
                 value.set_field(field, converted);
             }
             // A declared field the object omits and that has no value yet
@@ -434,7 +457,7 @@ impl Binder {
                 .get(&property)
                 .filter(|(_, set)| self.reuse_models && *set == previous)
                 .map(|(last, _)| last);
-            let value = convert_from(json, ty, &previous, before, images, &property)?;
+            let value = convert_from(json, ty, &previous, before, images, &Path::Root(&property))?;
             let converted = std::time::Instant::now();
             component
                 .set_property(&property, value.clone())
