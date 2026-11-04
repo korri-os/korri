@@ -557,7 +557,7 @@ pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
     scale_factor: ScaleFactor,
     threads: usize,
 ) -> Arc<BandQueue<'scope, T>> {
-    let mut bands = split_bands(buffer, pixel_stride, region, (threads + 1) * 4);
+    let mut bands = split_bands(buffer, pixel_stride, region, (threads + 1) * 2);
     // Taken from the end: the top of the region first.
     bands.reverse();
     let queue = Arc::new(BandQueue {

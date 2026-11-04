@@ -216,6 +216,10 @@ fn install_repeater_model_bindings(
                 matches!(eval_expression(&mut ctx, &expr), Value::Bool(true))
             });
         } else {
+            // A number model evaluated to the same count is the same model: a new one would
+            // make the repeater drop and re-create every instance.
+            let last_count: core::cell::RefCell<Option<(usize, i_slint_core::model::ModelRc<Value>)>> =
+                Default::default();
             repeater.set_model_binding(move || {
                 let Some(owner) = weak_sub.upgrade() else {
                     return i_slint_core::model::ModelRc::default();
@@ -225,9 +229,20 @@ fn install_repeater_model_bindings(
                     Value::Model(m) => m,
                     // A number model (`for i in 42`): the `Cast { to: Model }`
                     // evaluates to the number itself.
-                    Value::Number(n) => i_slint_core::model::ModelRc::new(
-                        crate::value_model::IntModel(n.max(0.) as usize),
-                    ),
+                    Value::Number(n) => {
+                        let count = n.max(0.) as usize;
+                        let mut last = last_count.borrow_mut();
+                        match &*last {
+                            Some((c, model)) if *c == count => model.clone(),
+                            _ => {
+                                let model = i_slint_core::model::ModelRc::new(
+                                    crate::value_model::IntModel(count),
+                                );
+                                *last = Some((count, model.clone()));
+                                model
+                            }
+                        }
+                    }
                     _ => i_slint_core::model::ModelRc::default(),
                 }
             });
