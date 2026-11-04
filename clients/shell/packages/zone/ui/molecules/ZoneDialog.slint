@@ -87,14 +87,14 @@ export component ZoneDialog {
             ink: "hud";
             face: "korri";
         }
-        // The buttons stand at caps-2, or caps-1 when caps-2 would take a
-        // second line: the plan's (src/plan/screen.ts dialogButtons).
+        // The buttons' cap is the plan's (src/plan/screen.ts dialogButtons):
+        // caps-2, caps-1, or less for words that would leave the window.
         row := ZoneActionRow {
             x: root.width / 8;
             width: root.width * 3 / 4;
             y: root.panel-h - root.pad - self.needed;
             buttons: root.dialog.buttons;
-            cap: root.dialog.big ? 2 * root.c1 : root.c1;
+            cap: root.dialog.cap > 0 ? root.dialog.cap * Tokens.unit : root.c1;
         }
     }
 }

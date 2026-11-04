@@ -146,7 +146,7 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   view.retired = lines(raw.retired as Btnish[], screen.width, c1, screen)
   const dialog = raw.dialog as Json & { buttons: Btnish[] }
   const planned = dialogButtons(dialog.buttons.map(button => button.label), screen)
-  view.dialog = { ...dialog, big: planned.cap > c1, buttons: dialog.buttons.map((button, index) => ({ ...button, line: planned.lines[index] ?? 0 })) }
+  view.dialog = { ...dialog, cap: planned.cap, buttons: dialog.buttons.map((button, index) => ({ ...button, line: planned.lines[index] ?? 0 })) }
   const busy = raw.busy as Json & { buttons: Btnish[] }
   view.busy = { ...busy, buttons: lines(busy.buttons, 160 * a, c1, screen) }
   const well = (raw.well as { shown?: boolean } | undefined)?.shown === true

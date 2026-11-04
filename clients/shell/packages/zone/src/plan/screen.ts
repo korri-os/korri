@@ -121,13 +121,25 @@ function layButtonRow(labels: readonly string[], width: number, cap: number, a: 
   return { lines, boxes, needed: lineCount * 2 * cap + Math.max(0, lineCount - 1) * 5 * a }
 }
 
-/** A dialog's buttons (ZoneDialog): caps-2 across three quarters of the window, caps-1 when caps-2 would wrap. */
+/** The least cap a dialog's buttons step down to (art px). */
+export const ZONE_DIALOG_LEAST_CAP = 5
+
+/**
+ * A dialog's buttons (ZoneDialog), across three quarters of the window:
+ * caps-2 while they stand on one line and each fits; else caps-1; else, for
+ * a button whose words do not fit even at caps-1, the cap steps down one
+ * art px at a time until every button fits, so no button leaves the window.
+ */
 export function dialogButtons(labels: readonly string[], screen: ZoneScreen): ZoneButtonRow & { readonly cap: number } {
   const width = (screen.width * 3) / 4
-  const c1 = 10 * screen.a
-  const big = buttonRow(labels, width, 2 * c1, screen.a, screen.look)
-  const cap = big.needed > 2 * 2 * c1 ? c1 : 2 * c1
-  return { ...buttonRow(labels, width, cap, screen.a, screen.look), cap }
+  const a = screen.a
+  const room = width - 2 * 11 * a
+  const fits = (cap: number) => labels.slice(0, ZONE_ROW_BUTTONS).every(label => buttonSpan(label, cap, a, screen.look) <= room)
+  const c1 = 10 * a
+  const big = buttonRow(labels, width, 2 * c1, a, screen.look)
+  let cap = big.needed <= 2 * 2 * c1 && fits(2 * c1) ? 2 * c1 : c1
+  while (cap > ZONE_DIALOG_LEAST_CAP * a && !fits(cap)) cap -= a
+  return { ...buttonRow(labels, width, cap, a, screen.look), cap }
 }
 
 // ---- The tabs (ui/molecules/ZoneTabStrip.slint) ----
