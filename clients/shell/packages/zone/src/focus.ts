@@ -173,12 +173,15 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   if (page !== "games") {
     for (const key of ["actions", "cardMarks", "find", "get"]) view[key] = undrawn(view[key])
   } else {
-    if (raw.findShown !== true) view.find = undrawn(view.find)
-    if (raw.getShown !== true) view.get = undrawn(view.get)
+    // While FIND's keyboard is up, ZoneGames draws no band, FIND or GET GAMES under it.
+    const typing = raw.typing === true
+    if (raw.findShown !== true || typing) view.find = undrawn(view.find)
+    if (raw.getShown !== true || typing) view.get = undrawn(view.get)
+    if (typing) view.cardMarks = undrawn(view.cardMarks)
     // ZoneCardBand draws the focused card and `reach` cards either side of it.
     const reach = screen.select.band === "wide" ? 2 : 1
     const at = raw.focusedCard as number
-    view.cardMarks = (view.cardMarks as Json[]).map((mark, index) => (Math.abs(index - at) <= reach ? mark : undrawn(mark)))
+    if (!typing) view.cardMarks = (view.cardMarks as Json[]).map((mark, index) => (Math.abs(index - at) <= reach ? mark : undrawn(mark)))
   }
   const qr = view.qrShown === true
   if (page !== "savedata" || qr) {
@@ -214,8 +217,11 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   view.next = regionOf(view.next, "next")
   view.newSave = regionOf(view.newSave, "save")
   const perRow = page === "runwith" || page === "store"
-  if (perRow) view.rows = (view.rows as Json[]).map((entry, index) => regionOf(entry, rowRegion(index)))
-  else {
+  // A row's region counts only the rows that hold targets, so a note that opens under the focused route does not rename the regions after it.
+  if (perRow) {
+    let held = 0
+    view.rows = (view.rows as Json[]).map(entry => regionOf(entry, rowRegion(hasTargets(entry) ? held++ : held)))
+  } else {
     // A list is a column of rows; LAUNCH SETTINGS' buttons under it are their own row.
     const rows = view.rows as Json[]
     const last = rows.length - 1
@@ -282,11 +288,11 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
       case "runwith":
       case "store": {
         const rows = (view.rows as Json[]).map((entry, index) => (hasTargets(entry) ? index : -1)).filter(index => index >= 0)
-        rows.forEach((index, at) => {
+        rows.forEach((_, at) => {
           const exits: ZoneExits = {}
-          if (at > 0) exits.up = { to: rowRegion(rows[at - 1]!), entry: "first" }
-          if (at < rows.length - 1) exits.down = { to: rowRegion(rows[at + 1]!), entry: "first" }
-          plan[rowRegion(index)] = exits
+          if (at > 0) exits.up = { to: rowRegion(at - 1), entry: "first" }
+          if (at < rows.length - 1) exits.down = { to: rowRegion(at + 1), entry: "first" }
+          plan[rowRegion(at)] = exits
         })
         break
       }

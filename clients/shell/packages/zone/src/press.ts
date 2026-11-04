@@ -519,6 +519,8 @@ function runWith(state: ZoneSurfaceState, button: Direction | "confirm", korri: 
     if (button === "left" || button === "right") return
     const rows = [...new Set(ids.map(rowOf))]
     const target = rows[along(rows.indexOf(here), rows.length, button === "up" ? -1 : 1)]
+    // No row that way: the cursor stays.
+    if (target === here) return
     const next = ids.find(id => rowOf(id) === target)
     if (next !== undefined && next !== focused) message({ _tag: "FocusedRow", rowId: next })
     return
@@ -590,6 +592,8 @@ function store(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
   if (button === "left" || button === "right") return
   const rows = [...new Set(ids.map(entry => entry.row))]
   const target = rows[along(rows.indexOf(here.row), rows.length, button === "up" ? -1 : 1)]
+  // No row that way: the cursor stays.
+  if (target === here.row) return
   const next = ids.find(entry => entry.row === target)
   if (next !== undefined && next.id !== here.id) message({ _tag: "FocusedRow", rowId: next.id })
 }
@@ -725,7 +729,9 @@ function onboarding(state: ZoneSurfaceState, button: Direction | "confirm", korr
     if (!vertical && !sidewaysWalk) return
     if (vertical && model.step === "controllers" && seats && button === "up") return
     const step = vertical ? (button === "up" ? -1 : 1) : sideways(button)
-    let next = targets[along(at, targets.length, step)]
+    // The seats are a row of their own: left and right stop at its ends.
+    const row = seats && !vertical ? targets.filter(target => target.startsWith("seat:")) : targets
+    let next = row[along(Math.max(0, row.indexOf(model.focus)), row.length, step)]
     // Down from a seat goes to NEXT; up from NEXT to the first seat.
     if (vertical && model.step === "controllers" && seats) next = TARGET.next
     if (button === "up" && model.step === "controllers" && model.focus === TARGET.next) next = targets.find(target => target.startsWith("seat:")) ?? next

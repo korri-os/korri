@@ -683,7 +683,8 @@ function onboardingView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boo
     seat: controller.heard ? `${index + 1}P` : "",
     name: controller.name,
     heard: controller.heard,
-    focused: model.entry === undefined && model.focus === seatTarget(controller.id),
+    // Only a heard controller's seat takes the cursor.
+    ...(controller.heard ? { focused: model.entry === undefined && model.focus === seatTarget(controller.id) } : {}),
   }))
   const focusedSeat = controllers.find(controller => model.focus === seatTarget(controller.id))
   const targets = onboardingTargets(model, korri)
