@@ -151,7 +151,12 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   view.busy = { ...busy, buttons: lines(busy.buttons, 160 * a, c1, screen) }
   const well = (raw.well as { shown?: boolean } | undefined)?.shown === true
   const listWidth = page === "onboarding" ? screen.width - 24 * a : skyListWidth(screen, well)
-  const withLines = (rows: Json[], width: number) => rows.map(entry => ({ ...entry, buttons: lines((entry.buttons as Btnish[] | undefined) ?? [], width, c1, screen) }))
+  const withLines = (rows: Json[], width: number) => rows.map(entry => {
+    const buttons = lines((entry.buttons as Btnish[] | undefined) ?? [], width, c1, screen)
+    // The held button's line: the list keeps it, not the whole row, in view.
+    const held = buttons.find(button => button.focused === true)
+    return { ...entry, buttons, holdsLine: held === undefined ? 0 : held.line }
+  })
   view.rows = withLines(raw.rows as Json[], listWidth)
   view.optsRows = withLines(raw.optsRows as Json[], screen.width - 24 * a)
 
@@ -178,10 +183,8 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     if (raw.findShown !== true || typing) view.find = undrawn(view.find)
     if (raw.getShown !== true || typing) view.get = undrawn(view.get)
     if (typing) view.cardMarks = undrawn(view.cardMarks)
-    // ZoneCardBand draws the focused card and `reach` cards either side of it.
-    const reach = screen.select.band === "wide" ? 2 : 1
-    const at = raw.focusedCard as number
-    if (!typing) view.cardMarks = (view.cardMarks as Json[]).map((mark, index) => (Math.abs(index - at) <= reach ? mark : undrawn(mark)))
+    // Cards out of ZoneCardBand's reach keep `focused`: they are targets not drawn yet (the band brings
+    // each in as the cursor nears it), and each keeps its place among the band's entries.
   }
   const qr = view.qrShown === true
   if (page !== "savedata" || qr) {

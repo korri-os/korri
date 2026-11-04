@@ -33,29 +33,38 @@ export component ZoneRowList inherits Rectangle {
         // Only a row the cursor can stand on reads `focused` (the view leaves it out of the others).
         for r in root.rows: VerticalLayout {
             property <bool> holds: (r.focused && (r.kind == "item" || r.kind == "range" || r.kind == "route")) || r.holds;
+            // A row of buttons keeps its held button's line in view; any other row, itself.
+            property <length> keep-y: r.kind == "buttons" ? 4 * root.a + r.holds-line * (2 * Tokens.c1 + 5 * root.a) : 0;
+            property <length> keep-h: r.kind == "buttons" ? 2 * Tokens.c1 : self.preferred-height;
             init => {
                 if (self.holds) {
-                    root.focus-y = self.y;
-                    root.focus-h = self.preferred-height;
+                    root.focus-y = self.y + self.keep-y;
+                    root.focus-h = self.keep-h;
                 }
             }
             // The cursor moves to this row, or the row moves or grows while it holds the cursor.
             changed holds => {
                 if (self.holds) {
-                    root.focus-y = self.y;
-                    root.focus-h = self.preferred-height;
+                    root.focus-y = self.y + self.keep-y;
+                    root.focus-h = self.keep-h;
                 }
             }
             changed y => {
                 if (self.holds) {
-                    root.focus-y = self.y;
-                    root.focus-h = self.preferred-height;
+                    root.focus-y = self.y + self.keep-y;
+                    root.focus-h = self.keep-h;
+                }
+            }
+            changed keep-y => {
+                if (self.holds) {
+                    root.focus-y = self.y + self.keep-y;
+                    root.focus-h = self.keep-h;
                 }
             }
             changed preferred-height => {
                 if (self.holds) {
-                    root.focus-y = self.y;
-                    root.focus-h = self.preferred-height;
+                    root.focus-y = self.y + self.keep-y;
+                    root.focus-h = self.keep-h;
                 }
             }
             if r.kind == "title" || r.kind == "caption": ZoneOptionGroup {

@@ -74,6 +74,8 @@ export struct Row {
     tags: [Tag],
     // A row of buttons holds the cursor on one of its buttons (the list keeps it in view).
     holds: bool,
+    // The line of the held button in its row (src/focus.ts, the plan's): the list keeps that line in view.
+    holds-line: int,
 }
 
 export struct Key {
