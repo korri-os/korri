@@ -25,3 +25,12 @@
 #   JavaScript; each update rebuilds the screen model D8() 2-3 times, view() once more),
 #   instantiate before the walk 19.7 (the changed `home` and `attract` rows re-created),
 #   walk 9.6, raster 6.1.
+
+# After e7662aa5e, Zone slide frame 36 (profiled, total 19.4 ms), ms:
+#   before the walk 1.71: instantiating repeaters 1.12 (the tracker finds a change every slide frame)
+#   walk 5.32: bindings 2.22 (140 evaluated: the two resizing cards' internals)
+#   raster 11.71: waiting for the band threads 3.52, text drawing 2.31 (100 texts: the two
+#     resizing cards' titles and tags, 15 copies each by design; the dirty region holds only
+#     their old and new rectangles, the moving card copies its cached pixels), cached layers
+#     0.95, paths 0.31, rectangles 0.22, bindings 0.34, the rest (item walk, trackers) about 4.1
+# Zone presses: 53 of 600 over. Pico presses: 5 of 600 over, all press frames.
