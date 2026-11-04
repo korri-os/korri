@@ -334,8 +334,10 @@ impl core::fmt::Debug for DirtyRegion {
 }
 
 impl DirtyRegion {
-    /// The maximum number of rectangles that can be stored in a DirtyRegion
-    pub const MAX_COUNT: usize = 3;
+    /// The maximum number of rectangles that can be stored in a DirtyRegion.
+    /// Korri: 16, not 3. Small changes far apart (a still screen with a few small
+    /// animations) merged into boxes spanning the screen with only 3.
+    pub const MAX_COUNT: usize = 16;
 
     /// An iterator over the part of the region (they can overlap)
     pub fn iter(&self) -> impl Iterator<Item = euclid::Box2D<Coord, LogicalPx>> + '_ {

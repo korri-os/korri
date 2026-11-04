@@ -210,10 +210,9 @@ pub trait LineBufferProvider {
 const PHYSICAL_REGION_MAX_SIZE: usize = DirtyRegion::MAX_COUNT;
 // cbindgen can't understand associated const correctly, so hardcode the value
 #[cfg(cbindgen)]
-pub const PHYSICAL_REGION_MAX_SIZE: usize = 3;
+pub const PHYSICAL_REGION_MAX_SIZE: usize = 16;
 const _: () = {
-    assert!(PHYSICAL_REGION_MAX_SIZE == 3);
-    assert!(DirtyRegion::MAX_COUNT == 3);
+    assert!(PHYSICAL_REGION_MAX_SIZE == DirtyRegion::MAX_COUNT);
 };
 
 /// Represents a rectangular region on the screen, used for partial rendering.
