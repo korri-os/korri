@@ -24,6 +24,8 @@ mod path;
 mod scene;
 #[cfg(feature = "std")]
 mod parallel;
+#[cfg(feature = "std")]
+mod pool;
 
 use self::fonts::GlyphRenderer;
 pub use self::minimal_software_window::MinimalSoftwareWindow;
@@ -797,7 +799,7 @@ impl SoftwareRenderer {
             let stream = std::sync::Arc::new(parallel::OpStream::new());
             let shared = &*stream;
             let mut scratch = LinesOnly::like(buffer, pixel_stride, lines);
-            let region = std::thread::scope(|scope| {
+            let region = pool::scope(|scope| {
                 let mut unclaimed = Some(&mut *buffer);
                 let mut queue = None;
                 let mut start = |region: &PhysicalRegion, scale_factor: ScaleFactor| {

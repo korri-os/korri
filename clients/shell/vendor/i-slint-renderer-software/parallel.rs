@@ -877,8 +877,8 @@ static THREAD_START: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicU
 /// Split `buffer` under `region` into bands several times more than `threads`, and start
 /// `threads` threads replaying them; the queue goes back to the caller, whose own thread
 /// helps once it has published the last chunk.
-pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
-    scope: &'scope std::thread::Scope<'scope, 'env>,
+pub(super) fn stream_into_bands<'scope, T: TargetPixel>(
+    scope: &super::pool::Scope<'scope>,
     stream: &'scope OpStream,
     buffer: &'scope mut [T],
     pixel_stride: usize,
@@ -933,7 +933,7 @@ pub(super) fn replay_in_bands<T: TargetPixel>(
             renderer.replay(op);
         }
     };
-    std::thread::scope(|scope| {
+    super::pool::scope(|scope| {
         let mut bands = bands.into_iter();
         let mine = bands.next();
         for band in bands {
