@@ -188,3 +188,41 @@ fn targets_on_a_hidden_layer_are_not_reachable() {
         "{stdout}"
     );
 }
+
+/// A direction from a focused state must leave exactly one focused, visible target: a
+/// handler that clears every `focused` flag on down from the grid's bottom row fails.
+#[test]
+fn a_press_that_clears_the_focus_fails() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = tempfile::tempdir().unwrap();
+    let package = dir.path().join("lose");
+    std::fs::create_dir_all(package.join("fonts")).unwrap();
+    for file in ["main.slint", "fonts/tiny5.ttf"] {
+        std::fs::copy(root.join("tests/packages/regions").join(file), package.join(file)).unwrap();
+    }
+    let up = r#"if (b === "up") return { state: { ...s, region: "tabs", tab: s.active }, requests: [] };"#;
+    let logic = std::fs::read_to_string(root.join("tests/packages/regions/logic.js")).unwrap();
+    assert!(logic.contains(up));
+    let logic = logic.replace(
+        up,
+        &format!(r#"{up}
+    if (b === "down") return {{ state: {{ ...s, region: "nowhere" }}, requests: [] }};"#),
+    );
+    std::fs::write(package.join("logic.js"), logic).unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let run = Command::new(probe())
+        .arg("walk")
+        .arg(&package)
+        .arg("--model")
+        .arg(root.join("fixtures/model.json"))
+        .args(["--sizes", "640x480", "--max", "40", "--out"])
+        .arg(out.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(!run.status.success(), "{stdout}");
+    assert!(
+        stdout.contains("then down leaves 0 focused entries"),
+        "{stdout}"
+    );
+}

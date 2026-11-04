@@ -344,6 +344,10 @@ struct State {
     targets: Vec<Drawn>,
     /// The focused target, when it is drawn.
     focused: Option<usize>,
+    /// How many of the view's entries are `focused`.
+    focused_entries: usize,
+    /// The focus targets could not be read (a failure of its own, already reported).
+    unreadable: bool,
     /// The view's `focusPlan`: region, direction, `{to, entry}`.
     plan: Value,
     /// Per region, the identity of the target it last had focused before
@@ -602,6 +606,8 @@ fn walk(
             path: path.clone(),
             targets: Vec::new(),
             focused: None,
+            focused_entries: 0,
+            unreadable: false,
             plan: view.get(view::FOCUS_PLAN).cloned().unwrap_or(Value::Null),
             remembered,
         };
@@ -664,6 +670,7 @@ fn walk(
                 Ok(drawn) => {
                     for target in drawn {
                         if target.entry.focused {
+                            state.focused_entries += 1;
                             state.focused = Some(state.targets.len());
                         }
                         state.targets.push(Drawn {
@@ -681,13 +688,16 @@ fn walk(
                         });
                     }
                 }
-                Err(error) => failures.push(format!(
-                    "{} at {}x{}: [{}] focus targets: {error:#}",
-                    model_file.display(),
-                    size.0,
-                    size.1,
-                    path.join(" ")
-                )),
+                Err(error) => {
+                    state.unreadable = true;
+                    failures.push(format!(
+                        "{} at {}x{}: [{}] focus targets: {error:#}",
+                        model_file.display(),
+                        size.0,
+                        size.1,
+                        path.join(" ")
+                    ));
+                }
             }
             // Restore every property for the next state.
             binder.apply(&instance, &view, &mut images)?;
@@ -720,8 +730,26 @@ fn directions(
             continue;
         }
         let (before, after) = (&walked[from], &walked[to]);
-        let (Some(focused), Some(now)) = (before.focused, after.focused) else {
+        let Some(focused) = before.focused else {
             continue;
+        };
+        // From a focused state a direction leaves exactly one focused, visible target: a
+        // press that clears every `focused` flag, or sets two, loses the focus.
+        if after.unreadable {
+            continue;
+        }
+        let now = match (after.focused, after.focused_entries) {
+            (Some(now), 1) => now,
+            (_, count) => {
+                failures.push(format!(
+                    "{} at {}x{}: [{}] then {pressed} leaves {count} focused entries; a direction must leave exactly one focused, visible target",
+                    model_file.display(),
+                    size.0,
+                    size.1,
+                    before.path.join(" ")
+                ));
+                continue;
+            }
         };
         // 8.4: inside the region, the nearest drawn target; else the
         // region's declared exit; else stay.

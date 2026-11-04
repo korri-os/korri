@@ -93,7 +93,8 @@ window:
   right) or the previous one (up, left), when it is not drawn: a scroll brings
   it into view.
 - After every press the focused entry is drawn and visible: the press scrolled
-  it into view.
+  it into view. From a focused state, a direction leaves exactly one focused,
+  visible target: a press that clears every `focused` flag, or sets two, fails.
 - None that way: the region's exit. `first` is the destination's target drawn
   first, top to bottom then left to right by box centre, also when every one of
   them is scrolled out of view; `active` is its
