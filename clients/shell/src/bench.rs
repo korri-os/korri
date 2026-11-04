@@ -119,6 +119,8 @@ struct Profile {
     walk_geometry: f64,
     raster_geometry: f64,
     items_visited: f64,
+    instances_created: f64,
+    rows_updated: f64,
     glyph_raster_count: f64,
     glyph_raster: f64,
     glyph_run_setup: f64,
@@ -409,6 +411,8 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                     walk_geometry: us(walk.geometry.time),
                     raster_geometry: us(raster.geometry.time),
                     items_visited: raster.items_visited as f64,
+                    instances_created: (walk.instances_created + raster.instances_created) as f64,
+                    rows_updated: (walk.rows_updated + raster.rows_updated) as f64,
                     glyph_raster_count: (walk.glyph_raster.count + raster.glyph_raster.count)
                         as f64,
                     glyph_raster: us(walk.glyph_raster.time + raster.glyph_raster.time),
@@ -461,13 +465,13 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                 }
                 if let Some(p) = &frame.profile {
                     eprintln!(
-                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us rect={:.0}us layer={:.0}us instantiate={:.0}us geometry={:.0}/{:.0}us visited={:.0} | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
+                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us rect={:.0}us layer={:.0}us instantiate={:.0}us geometry={:.0}/{:.0}us visited={:.0} created={:.0} rows={:.0} | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
                         p.walk.binding, p.walk.bindings, p.walk.measure, p.walk.measures, p.walk.shape, p.walk.shapes,
                         p.walk.line_break, p.walk.line_breaks, p.walked_items,
                         p.raster.binding, p.raster.bindings, p.raster.draw, p.raster.draws, p.raster.shape, p.raster.shapes,
                         p.raster.line_break, p.raster.line_breaks, p.glyphs,
                         p.glyph_raster_count, p.glyph_raster, p.glyph_runs, p.glyph_run_setup,
-                        p.image_draw, p.path_draw, p.rect_draw, p.layer_draw, p.instantiate, p.walk_geometry, p.raster_geometry, p.items_visited, p.layers_invalidated, p.layers_waiting, p.layers_blitted
+                        p.image_draw, p.path_draw, p.rect_draw, p.layer_draw, p.instantiate, p.walk_geometry, p.raster_geometry, p.items_visited, p.instances_created, p.rows_updated, p.layers_invalidated, p.layers_waiting, p.layers_blitted
                     );
                 }
             }

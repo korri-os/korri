@@ -54,6 +54,9 @@ pub struct FrameProfile {
     pub geometry: Counter,
     /// Items the render walk visited (drawn or not).
     pub items_visited: u64,
+    /// Repeater rows and conditional instances created, and rows updated with new data.
+    pub instances_created: u64,
+    pub rows_updated: u64,
     /// Pixel sizes at which glyphs were rasterised, with their glyph count.
     pub raster_sizes: Vec<(i16, u64)>,
 }
