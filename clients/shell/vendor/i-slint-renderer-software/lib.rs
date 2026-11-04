@@ -421,6 +421,14 @@ struct TargetPixelSlice<'a, T> {
     pixel_stride: usize,
 }
 
+#[cfg(feature = "std")]
+std::thread_local! {
+    /// Fonts prepared for glyph runs in the frame being drawn (`draw_glyph_run`), cleared
+    /// before each frame so no font outlives its package.
+    static PREPARED_FONTS: RefCell<std::collections::HashMap<(u64, u32, u32, Vec<i16>), Rc<fonts::vectorfont::VectorFont>>> =
+        RefCell::new(Default::default());
+}
+
 /// A `Layer` (`cache-rendering-hint: true`) rendered once into an image: its children,
 /// premultiplied, over transparency.
 #[cfg(feature = "std")]
@@ -831,6 +839,8 @@ impl SoftwareRenderer {
         let mut recorded = None;
         #[cfg(not(feature = "std"))]
         let recorded = None;
+        #[cfg(feature = "std")]
+        PREPARED_FONTS.with(|f| f.borrow_mut().clear());
         let pixels_per_line = buffer.line_slice(0).len();
         let num_lines = buffer.num_lines();
         let buffer_pixel_count = num_lines * pixels_per_line;
@@ -4112,19 +4122,37 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
         glyphs_it: &mut dyn Iterator<Item = sharedparley::parley::layout::Glyph>,
     ) {
         let slint_context = self.window.context();
+        // A font at a size is prepared once (its metrics parsed), not for every glyph run:
+        // Zone draws each word as fourteen copies, a run each.
         let font = i_slint_core::frame_profile::time(
             |p| &mut p.glyph_run_setup,
             || {
-                let (swash_key, swash_offset) =
-                    fonts::systemfonts::get_swash_font_info(&font.data, font.index);
-                fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
-                    font.data.clone(),
+                let key = (
+                    font.data.id(),
                     font.index,
-                    swash_key,
-                    swash_offset,
-                    font_size.cast(),
-                    normalized_coords,
-                )
+                    font_size.get().to_bits(),
+                    normalized_coords.to_vec(),
+                );
+                PREPARED_FONTS.with(|fonts_cache| {
+                    let mut fonts_cache = fonts_cache.borrow_mut();
+                    if let Some(prepared) = fonts_cache.get(&key) {
+                        return prepared.clone();
+                    }
+                    let (swash_key, swash_offset) =
+                        fonts::systemfonts::get_swash_font_info(&font.data, font.index);
+                    let prepared = Rc::new(
+                        fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
+                            font.data.clone(),
+                            font.index,
+                            swash_key,
+                            swash_offset,
+                            font_size.cast(),
+                            normalized_coords,
+                        ),
+                    );
+                    fonts_cache.insert(key, prepared.clone());
+                    prepared
+                })
             },
         );
 

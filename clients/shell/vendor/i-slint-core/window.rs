@@ -1874,6 +1874,7 @@ impl WindowInner {
         );
         #[cfg(not(feature = "std"))]
         crate::properties::evaluate_no_tracking(|| self.ensure_tree_instantiated());
+        crate::items::forget_window_items();
         #[cfg(feature = "shared-parley")]
         if let Some(cache) = self.window_adapter().renderer().text_layout_cache() {
             cache.begin_frame();

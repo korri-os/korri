@@ -1378,7 +1378,40 @@ impl RenderRectangle for WindowItem {
     }
 }
 
+#[cfg(feature = "std")]
+std::thread_local! {
+    /// Per item tree (by address), its window item, for the frame being drawn.
+    static WINDOW_ITEMS: core::cell::RefCell<std::collections::HashMap<usize, Option<crate::item_tree::ItemWeak>>> =
+        Default::default();
+}
+
+/// Forgets the window items looked up for the last frame. Called before a frame is drawn:
+/// within a frame no item tree is created or destroyed, so an address names one tree.
+pub(crate) fn forget_window_items() {
+    #[cfg(feature = "std")]
+    WINDOW_ITEMS.with(|w| w.borrow_mut().clear());
+}
+
 fn next_window_item(item: &ItemRc) -> Option<ItemRc> {
+    // An item tree's place in the window never changes, so neither does its window item:
+    // looked up once per tree and frame, not for every text's font request (a walk up every
+    // parent).
+    #[cfg(feature = "std")]
+    {
+        let tree = item.item_tree();
+        let key = vtable::VRef::as_ptr(ItemTreeRc::borrow(tree)).as_ptr() as usize;
+        if let Some(window) = WINDOW_ITEMS.with(|w| w.borrow().get(&key).cloned()) {
+            return window.and_then(|w| w.upgrade());
+        }
+        let window = next_window_item_uncached(item);
+        WINDOW_ITEMS.with(|w| w.borrow_mut().insert(key, window.as_ref().map(|w| w.downgrade())));
+        return window;
+    }
+    #[cfg(not(feature = "std"))]
+    next_window_item_uncached(item)
+}
+
+fn next_window_item_uncached(item: &ItemRc) -> Option<ItemRc> {
     let root_item_in_local_item_tree = ItemRc::new_root(item.item_tree().clone());
 
     if root_item_in_local_item_tree.downcast::<crate::items::WindowItem>().is_some() {
