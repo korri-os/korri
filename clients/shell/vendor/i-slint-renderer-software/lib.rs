@@ -2364,12 +2364,8 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         delta: euclid::Vector2D<i16, PhysicalPx>,
         clip: PhysicalRect,
     ) {
-        // Only the calls that reach the clip and, when drawing now, the dirty region.
-        let reach = match &self.recording {
-            Some(_) => Some(clip),
-            None => clip.intersection(&self.dirty_region.bounding_rect()),
-        };
-        let Some(reach) = reach else { return };
+        // Only the calls that reach the clip and the frame's dirty region.
+        let Some(reach) = clip.intersection(&self.dirty_region.bounding_rect()) else { return };
         let moved = ops.iter().filter_map(|op| {
             let op = op.translated(delta);
             op.bounds().intersects(&reach).then_some(op)
