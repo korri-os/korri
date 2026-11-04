@@ -950,8 +950,12 @@ impl<C: RepeatedItemTree + 'static> Conditional<C> {
     }
 
     /// Set the model binding
+    #[allow(unsafe_code)]
     pub fn set_model_binding(&self, binding: impl Fn() -> bool + 'static) {
-        self.model.set_binding(binding);
+        // Compared: a condition re-evaluated to the same value leaves the conditional and
+        // what reads it clean (equality cut-off, properties.rs).
+        // Safety: a conditional lives pinned in its item tree.
+        unsafe { Pin::new_unchecked(&self.model) }.set_binding_comparing(binding);
     }
 
     /// Call the visitor for the root of each instance.

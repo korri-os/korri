@@ -540,6 +540,9 @@ pub struct SoftwareRenderer {
     /// Of the last raster phase: the banded replay (`parallel`).
     #[cfg(feature = "std")]
     last_replay: Cell<std::time::Duration>,
+    /// Dirty pixels from which a frame is rasterised on several threads (`parallel`).
+    #[cfg(feature = "std")]
+    parallel_threshold: Cell<usize>,
     /// The last render's frame profile of the dirty-region walk, when profiling is on.
     #[cfg(feature = "std")]
     walk_profile: RefCell<i_slint_core::frame_profile::FrameProfile>,
@@ -566,6 +569,8 @@ impl Default for SoftwareRenderer {
             render_threads: Cell::new(parallel::default_threads()),
             #[cfg(feature = "std")]
             last_replay: Default::default(),
+            #[cfg(feature = "std")]
+            parallel_threshold: Cell::new(parallel::MIN_PARALLEL_PIXELS),
             #[cfg(feature = "std")]
             walk_profile: Default::default(),
         }
@@ -722,6 +727,7 @@ impl SoftwareRenderer {
             // band threads start and rasterise the recorded calls while the walk goes on
             // (`parallel`); a small region is drawn here once the walk ended.
             let threads = self.render_threads.get();
+            let threshold = self.parallel_threshold.get();
             let lines = buffer.len() / pixel_stride.max(1);
             let stream = std::sync::Arc::new(parallel::OpStream::new());
             let shared = &*stream;
@@ -734,7 +740,7 @@ impl SoftwareRenderer {
                         .iter()
                         .map(|(_, size)| size.width as usize * size.height as usize)
                         .sum();
-                    if pixels < parallel::MIN_PARALLEL_PIXELS {
+                    if pixels < threshold {
                         return None;
                     }
                     let buffer = unclaimed.take().expect("one frame starts its bands once");
@@ -790,6 +796,14 @@ impl SoftwareRenderer {
     #[cfg(feature = "std")]
     pub fn last_frame_replay(&self) -> std::time::Duration {
         self.last_replay.get()
+    }
+
+    /// Dirty pixels from which `render` rasterises a frame on several threads; below, one
+    /// thread draws it. For benchmarks that look for the crossover.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_parallel_threshold(&self, pixels: usize) {
+        self.parallel_threshold.set(pixels);
     }
 
     /// How many threads `render` rasterises a frame with. The default is the

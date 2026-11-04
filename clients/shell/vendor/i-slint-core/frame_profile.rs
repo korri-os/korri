@@ -50,6 +50,10 @@ pub struct FrameProfile {
     pub layer_draw: Counter,
     /// Making sure every repeater and conditional is instantiated before a frame.
     pub instantiate: Counter,
+    /// Asking an interpreted item for its geometry (evaluating its x, y, width and height).
+    pub geometry: Counter,
+    /// Items the render walk visited (drawn or not).
+    pub items_visited: u64,
     /// Pixel sizes at which glyphs were rasterised, with their glyph count.
     pub raster_sizes: Vec<(i16, u64)>,
 }

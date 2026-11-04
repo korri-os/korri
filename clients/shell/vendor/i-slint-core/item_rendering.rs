@@ -242,6 +242,8 @@ pub fn render_item_children(
         |component: &ItemTreeRc, index: u32, item: Pin<ItemRef>| -> VisitChildrenResult {
             renderer.save_state();
             let item_rc = ItemRc::new(component.clone(), index);
+            #[cfg(feature = "std")]
+            crate::frame_profile::record(|p| p.items_visited += 1);
 
             let (do_draw, item_origin, item_size) = renderer.filter_item(&item_rc, window_adapter);
 

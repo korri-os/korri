@@ -116,6 +116,9 @@ struct Profile {
     rect_draw: f64,
     layer_draw: f64,
     instantiate: f64,
+    walk_geometry: f64,
+    raster_geometry: f64,
+    items_visited: f64,
     glyph_raster_count: f64,
     glyph_raster: f64,
     glyph_run_setup: f64,
@@ -269,6 +272,10 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     let dump = std::env::var_os("KORRI_BENCH_DUMP").map(std::path::PathBuf::from);
     // KORRI_BENCH_PROFILE=1: where each frame's walk and raster time went (adds timing cost).
     let profile = std::env::var_os("KORRI_BENCH_PROFILE").is_some();
+    // KORRI_BENCH_PARALLEL_MIN=PIXELS: dirty pixels from which a frame uses several threads.
+    let parallel_min: Option<usize> = std::env::var("KORRI_BENCH_PARALLEL_MIN")
+        .ok()
+        .and_then(|v| v.parse().ok());
     let mut raster_sizes: BTreeMap<i16, u64> = BTreeMap::new();
     // Warm up: the first frames fill caches; they are not reported.
     let warm = 10;
@@ -378,6 +385,9 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                 renderer.set_render_threads(threads);
             }
             renderer.set_frame_profile(profile);
+            if let Some(pixels) = parallel_min {
+                renderer.set_parallel_threshold(pixels);
+            }
             let render = Instant::now();
             let region = renderer.render(&mut buffer, width as usize);
             let render = us(render.elapsed());
@@ -396,6 +406,9 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                     rect_draw: us(raster.rect_draw.time),
                     layer_draw: us(raster.layer_draw.time),
                     instantiate: us(walk.instantiate.time),
+                    walk_geometry: us(walk.geometry.time),
+                    raster_geometry: us(raster.geometry.time),
+                    items_visited: raster.items_visited as f64,
                     glyph_raster_count: (walk.glyph_raster.count + raster.glyph_raster.count)
                         as f64,
                     glyph_raster: us(walk.glyph_raster.time + raster.glyph_raster.time),
@@ -448,13 +461,13 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                 }
                 if let Some(p) = &frame.profile {
                     eprintln!(
-                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us rect={:.0}us layer={:.0}us instantiate={:.0}us | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
+                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us rect={:.0}us layer={:.0}us instantiate={:.0}us geometry={:.0}/{:.0}us visited={:.0} | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
                         p.walk.binding, p.walk.bindings, p.walk.measure, p.walk.measures, p.walk.shape, p.walk.shapes,
                         p.walk.line_break, p.walk.line_breaks, p.walked_items,
                         p.raster.binding, p.raster.bindings, p.raster.draw, p.raster.draws, p.raster.shape, p.raster.shapes,
                         p.raster.line_break, p.raster.line_breaks, p.glyphs,
                         p.glyph_raster_count, p.glyph_raster, p.glyph_runs, p.glyph_run_setup,
-                        p.image_draw, p.path_draw, p.rect_draw, p.layer_draw, p.instantiate, p.layers_invalidated, p.layers_waiting, p.layers_blitted
+                        p.image_draw, p.path_draw, p.rect_draw, p.layer_draw, p.instantiate, p.walk_geometry, p.raster_geometry, p.items_visited, p.layers_invalidated, p.layers_waiting, p.layers_blitted
                     );
                 }
             }
@@ -470,7 +483,10 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
 }
 
 type ProfilePhase = (&'static str, fn(&Profile) -> f64);
-const PROFILE_PHASES: [ProfilePhase; 29] = [
+const PROFILE_PHASES: [ProfilePhase; 32] = [
+    ("walk: item geometry (us)", |p| p.walk_geometry),
+    ("raster: item geometry (us)", |p| p.raster_geometry),
+    ("raster: items visited", |p| p.items_visited),
     ("instantiate repeaters (us)", |p| p.instantiate),
     ("walk: bindings, outermost (us)", |p| p.walk.binding),
     ("walk: bindings evaluated", |p| p.walk.bindings),
