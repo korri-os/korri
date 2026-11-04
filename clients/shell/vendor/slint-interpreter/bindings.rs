@@ -216,6 +216,13 @@ fn install_repeater_model_bindings(
                 matches!(eval_expression(&mut ctx, &expr), Value::Bool(true))
             });
         } else {
+            // A number model is one model whose count follows the number: rows added or
+            // removed at the end keep the other rows' instances. A new model each time made
+            // the repeater drop and re-create every instance whenever the count's binding
+            // re-ran, changed or not.
+            let counted: core::cell::RefCell<
+                Option<(Rc<crate::value_model::CountModel>, i_slint_core::model::ModelRc<Value>)>,
+            > = Default::default();
             repeater.set_model_binding(move || {
                 let Some(owner) = weak_sub.upgrade() else {
                     return i_slint_core::model::ModelRc::default();
@@ -225,9 +232,22 @@ fn install_repeater_model_bindings(
                     Value::Model(m) => m,
                     // A number model (`for i in 42`): the `Cast { to: Model }`
                     // evaluates to the number itself.
-                    Value::Number(n) => i_slint_core::model::ModelRc::new(
-                        crate::value_model::IntModel(n.max(0.) as usize),
-                    ),
+                    Value::Number(n) => {
+                        let count = n.max(0.) as usize;
+                        let mut counted = counted.borrow_mut();
+                        match &*counted {
+                            Some((model, rc)) => {
+                                model.set_count(count);
+                                rc.clone()
+                            }
+                            None => {
+                                let model = Rc::new(crate::value_model::CountModel::new(count));
+                                let rc = i_slint_core::model::ModelRc::from(model.clone());
+                                *counted = Some((model, rc.clone()));
+                                rc
+                            }
+                        }
+                    }
                     _ => i_slint_core::model::ModelRc::default(),
                 }
             });

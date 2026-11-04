@@ -10,10 +10,13 @@
  *
  * Each screen lays its targets out on a plan of its own (`Box`, in the
  * screen's layout units): the same arrangement main.slint draws, row by row
- * and column by column, but not its pixels. A screen may name a neighbour
- * for a direction outright (`next`), where the geometry alone would pick a
- * cart that has scrolled away. A question (`trap`) keeps the cursor inside
- * itself, as `data-block-exit` did.
+ * and column by column, but not its pixels.
+ *
+ * Targets belong to regions (contract 8.4): a row of buttons, the tabs, the
+ * shelf, a key grid, a list. The rule above holds inside a region. Leaving
+ * one follows the exit the plan declares for that direction, with its entry
+ * rule; a direction with no exit stays. A question is a region with no
+ * exits, so the cursor stays inside it.
  */
 
 export type Direction = "up" | "down" | "left" | "right"
@@ -27,6 +30,8 @@ export interface Box {
 
 export interface Target<Act> {
   readonly id: string
+  /** The region it belongs to (contract 8.4). */
+  readonly region: string
   readonly box: Box
   /** What confirm does here. Absent: confirm does nothing (a fact). */
   readonly act?: Act
@@ -36,23 +41,84 @@ export interface Target<Act> {
   /** What arriving here by a direction press does: report the cart chosen,
    * aim the A hint. */
   readonly enter?: Act
-  /** A neighbour named outright for a direction. */
-  readonly next?: Partial<Record<Direction, string>>
+}
+
+/** How a region is entered: its last focused target, its active one, or its first. */
+export type Entry = "remembered" | "active" | "first"
+
+export interface Exit {
+  readonly to: string
+  readonly entry: Entry
+}
+
+/** Each region's exits, per direction: the view's `focusPlan` (contract 8.4). */
+export type FocusPlan = Readonly<Record<string, Partial<Record<Direction, Exit>>>>
+
+/**
+ * Exits as the plan declares them, each direction an ordered choice: the
+ * first exit whose region has targets on this screen applies.
+ */
+export type ExitChoices = Readonly<Record<string, Partial<Record<Direction, readonly Exit[]>>>>
+
+/** The plan's exits for the regions this screen has. */
+export function resolveExits(choices: ExitChoices, targets: readonly { readonly region: string }[]): FocusPlan {
+  const present = new Set(targets.map(target => target.region))
+  const plan: Record<string, Partial<Record<Direction, Exit>>> = {}
+  for (const region of present) {
+    const exits: Partial<Record<Direction, Exit>> = {}
+    for (const [direction, options] of Object.entries(choices[region] ?? {}) as [Direction, readonly Exit[]][]) {
+      const exit = options.find(option => option.to !== region && present.has(option.to))
+      if (exit !== undefined) exits[direction] = exit
+    }
+    plan[region] = exits
+  }
+  return plan
+}
+
+/** A region's first target: top to bottom, then left to right. */
+export function firstIn<Act>(targets: readonly Target<Act>[], region: string): Target<Act> | undefined {
+  let first: Target<Act> | undefined
+  for (const target of targets) {
+    if (target.region !== region) continue
+    if (first === undefined || target.box.y < first.box.y || (target.box.y === first.box.y && target.box.x < first.box.x)) first = target
+  }
+  return first
+}
+
+/** Where the cursor goes on entering `exit`'s region. */
+export function enter<Act>(
+  targets: readonly Target<Act>[],
+  exit: Exit,
+  active: Readonly<Record<string, string>>,
+  remembered: Readonly<Record<string, string>>,
+): string | undefined {
+  const inRegion = (id: string | undefined) => id !== undefined && targets.some(target => target.id === id && target.region === exit.to)
+  const wanted = exit.entry === "active" ? active[exit.to] : exit.entry === "remembered" ? remembered[exit.to] : undefined
+  return inRegion(wanted) ? wanted : firstIn(targets, exit.to)?.id
 }
 
 /** Off-axis distance is penalised so movement stays in the pressed direction. */
 const OFF_AXIS_PENALTY = 3
 
-/** The target a press of `direction` moves to from `from`, or undefined. */
+/** The target a press of `direction` moves to from `from`, or undefined to stay. */
 export function moveFocus<Act>(
   targets: readonly Target<Act>[],
   from: string | undefined,
   direction: Direction,
+  plan: FocusPlan = {},
+  active: Readonly<Record<string, string>> = {},
+  remembered: Readonly<Record<string, string>> = {},
 ): string | undefined {
-  const active = targets.find(target => target.id === from)
-  if (active === undefined) return targets[0]?.id
-  const named = active.next?.[direction]
-  if (named !== undefined && targets.some(target => target.id === named)) return named
+  const current = targets.find(target => target.id === from)
+  if (current === undefined) return targets[0]?.id
+  const near = nearest(targets.filter(target => target.region === current.region), current, direction)
+  if (near !== undefined) return near
+  const exit = plan[current.region]?.[direction]
+  return exit === undefined ? undefined : enter(targets, exit, active, remembered)
+}
+
+/** The nearest target ahead in `direction` (spatial-focus.ts's rule). */
+function nearest<Act>(targets: readonly Target<Act>[], active: Target<Act>, direction: Direction): string | undefined {
   const cx = active.box.x + active.box.w / 2
   const cy = active.box.y + active.box.h / 2
   let best: { readonly id: string; readonly score: number } | undefined
@@ -81,5 +147,3 @@ export function settleFocus<Act>(
   return targets[0]?.id
 }
 
-/** A column of rows, one unit apart, starting at `y`. */
-export const row = (x: number, y: number, w = 100, h = 1): Box => ({ x, y, w, h })

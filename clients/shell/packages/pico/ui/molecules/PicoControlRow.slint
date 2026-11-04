@@ -8,6 +8,12 @@ import { PicoSlider } from "../atoms/PicoSlider.slint";
 // range as cells, and, under it, why it is off or what it does, in the
 // note colour of the card it stands on.
 export component PicoControlRow {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.list-item;
+    accessible-label: label;
+    accessible-item-selectable: true;
+    accessible-item-selected: focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <string> label;
     in property <string> value;
@@ -21,7 +27,8 @@ export component PicoControlRow {
     in property <string> tone: "tell";
     in property <length> row-h: Tokens.md + 6 * Tokens.p;
     height: row-h + (note != "" ? Tokens.sm * 1.5 : 0);
-    if focused : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: row-h; background: Cycle.now; }
+    // Always present, shown by the row's data: a row updates in place.
+    Rectangle { visible: focused; x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: row-h; background: Cycle.now; }
     Rectangle { x: 0; y: 0; width: root.width; height: row-h; background: focused ? P8.pick : P8.ink-dark; }
     property <color> ink: disabled ? P8.ink-quiet : warn ? P8.warn : focused ? P8.pick-ink : P8.ink;
     Text { x: 3 * Tokens.p; y: (row-h - Tokens.md) / 2; width: root.width / 2; text: label; font-size: Tokens.md; color: ink; overflow: elide; }

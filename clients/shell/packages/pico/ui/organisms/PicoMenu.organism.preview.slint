@@ -15,7 +15,7 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoMenu { room-width: 200 * Tokens.p; room-height: 200 * Tokens.p; entries: [{ label: "FIND", detail: "", focused: true, disabled: false, warn: false, lit: false }, { label: "GET GAMES", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "SETTINGS", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "VIEW", detail: "◀ SHELF ▶", focused: false, disabled: false, warn: false, lit: false }]; }
+        PicoMenu { room-width: 200 * Tokens.p; room-height: 200 * Tokens.p; entries: [{ label: "FIND", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false }, { label: "GET GAMES", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "SETTINGS", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "VIEW", detail: "◀ SHELF ▶", focused: false, disabled: false, warn: false, lit: false }]; }
     }
 }
 
@@ -29,6 +29,6 @@ export component Short inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoMenu { room-width: 80 * Tokens.p; room-height: 40 * Tokens.p; entries: [{ label: "FIND", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "GET GAMES", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "SETTINGS", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "VIEW", detail: "◀ SHELF ▶", focused: true, disabled: false, warn: false, lit: false }]; }
+        PicoMenu { room-width: 80 * Tokens.p; room-height: 40 * Tokens.p; entries: [{ label: "FIND", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "GET GAMES", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "SETTINGS", detail: "", focused: false, disabled: false, warn: false, lit: false }, { label: "VIEW", detail: "◀ SHELF ▶", focused: true, target: true, disabled: false, warn: false, lit: false }]; }
     }
 }

@@ -21,7 +21,9 @@
 //!     8.4, with the regions and exits each view declares; clients/shell/
 //!     README.md, Focus plan): inside the focused target's region, the press
 //!     must reach the target drawn nearest (spatial-focus.ts: along + 3 x
-//!     across, ahead by more than 1 px); with none that way, the region's
+//!     across, ahead by more than 1 px), visible or clipped out of view by a
+//!     scrolling ancestor (the press scrolls it in; after it, the focused
+//!     target must be visible); with none that way, the region's
 //!     declared exit by its entry rule; with no exit, focus stays. A focus
 //!     target is a view entry with a `focused` field, drawn by the element
 //!     that sets `accessible-item-selectable` and is selected when that entry
@@ -251,9 +253,11 @@ fn has_focus(view: &Value) -> bool {
 /// A focus target as drawn: its box (logical px) and its identity.
 #[derive(Clone, Debug)]
 struct Drawn {
-    /// The element's box; `None` when the entry is not drawn in the window
-    /// (scrolled out of a list, outside a band's reach).
+    /// The element's box; `None` when the entry is not drawn (no element, or on a
+    /// hidden layer). A box clipped out of view by a scrolling ancestor is kept.
     rect: Option<Rect>,
+    /// The box is inside the window and every clipping ancestor.
+    visible: bool,
     /// `region#k`: the k-th of its region's entries in the view (src/targets.rs).
     identity: String,
     /// k.
@@ -414,7 +418,8 @@ fn scrolled_to(state: &State, from: usize, direction: &str) -> Option<usize> {
         .position(|t| &t.region == region && t.index == next && t.rect.is_none())
 }
 
-/// The portal's spatial-focus rule (spatial-focus.ts): the target ahead by
+/// The portal's spatial-focus rule (spatial-focus.ts), over the region's drawn targets,
+/// visible or clipped out by a scrolling ancestor: the target ahead by
 /// more than 1 px with the lowest along + 3 x across; the first in tree order
 /// on a tie. None when nothing lies that way.
 fn nearest(state: &State, from: usize, direction: &str) -> Option<usize> {
@@ -426,7 +431,8 @@ fn nearest(state: &State, from: usize, direction: &str) -> Option<usize> {
         if i == from || &candidate.region != region {
             continue;
         }
-        // Only drawn targets are candidates.
+        // Drawn targets are candidates, also those a scrolling ancestor clips out of view:
+        // the press scrolls them in.
         let Some(rect) = candidate.rect else { continue };
         let (cx, cy) = rect.center();
         let (dx, dy) = (cx - fx, cy - fy);
@@ -667,6 +673,7 @@ fn walk(
                                 w: e.w,
                                 h: e.h,
                             }),
+                            visible: target.element.as_ref().is_some_and(|e| e.visible),
                             identity: target.identity,
                             index: target.index,
                             region: target.entry.region,
@@ -762,7 +769,8 @@ fn directions(
         let got = &after.targets[now];
         let at = |t: &Drawn| {
             t.rect.map_or("(not drawn)".to_owned(), |r| {
-                format!("({:.0},{:.0})", r.x, r.y)
+                let clipped = if t.visible { "" } else { ", clipped" };
+                format!("({:.0},{:.0}{clipped})", r.x, r.y)
             })
         };
         if want.identity != got.identity {

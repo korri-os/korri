@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        Rectangle { height: 40 * Tokens.p; background: P8.shell-ask; VerticalLayout { padding: 4 * Tokens.p; PicoChoiceRow { choice: { label: "FPS limit", detail: "", focused: true, disabled: false, warn: false, lit: false }; note: "1 more setting mGBA offers here."; } } }
+        Rectangle { height: 40 * Tokens.p; background: P8.shell-ask; VerticalLayout { padding: 4 * Tokens.p; PicoChoiceRow { choice: { label: "FPS limit", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false }; note: "1 more setting mGBA offers here."; } } }
     }
 }

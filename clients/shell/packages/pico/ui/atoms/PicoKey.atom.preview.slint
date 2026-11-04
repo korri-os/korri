@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        Rectangle { height: 3 * Tokens.md; PicoKey { x: 0; y: 0; width: 4 * Tokens.md; height: Tokens.md + 5 * Tokens.p; key: { cap: "a", focused: true }; } PicoKey { x: 5 * Tokens.md; y: 0; width: 4 * Tokens.md; height: Tokens.md + 5 * Tokens.p; key: { cap: "b" }; } PicoKey { x: 10 * Tokens.md; y: 0; width: 8 * Tokens.md; height: Tokens.md + 5 * Tokens.p; key: { cap: "↑ CAPS", lit: true }; } }
+        Rectangle { height: 3 * Tokens.md; PicoKey { x: 0; y: 0; width: 4 * Tokens.md; height: Tokens.md + 5 * Tokens.p; key: { cap: "a", focused: true, target: true }; } PicoKey { x: 5 * Tokens.md; y: 0; width: 4 * Tokens.md; height: Tokens.md + 5 * Tokens.p; key: { cap: "b" }; } PicoKey { x: 10 * Tokens.md; y: 0; width: 8 * Tokens.md; height: Tokens.md + 5 * Tokens.p; key: { cap: "↑ CAPS", lit: true }; } }
     }
 }

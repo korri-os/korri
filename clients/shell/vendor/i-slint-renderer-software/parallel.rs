@@ -94,11 +94,13 @@ pub(super) struct LayerOps {
 }
 
 struct LineSnapshot {
-    /// Pixel type and the x range the pixels cover.
+    /// Pixel type, and the area's x range the arrays cover.
     kind: &'static str,
     x: core::ops::Range<i16>,
     before: Vec<u8>,
     after: Vec<u8>,
+    /// Per pixel: whether `before` and `after` hold a replay's pixels there.
+    valid: Vec<bool>,
 }
 
 // Sound for the reason `SharedOps` is: band threads only read the calls (they never clone
@@ -125,61 +127,86 @@ impl LayerOps {
         Self { ops, area, lines }
     }
 
-    /// Draw the calls into `target` inside `clip`.
+    /// Draw the calls into `target` inside `clip`. Every pixel's result depends only on the
+    /// pixel under it (no call reads its neighbours), so per line: when every pixel to draw
+    /// has the pixel under it that it had when last drawn, it gets last time's result; else
+    /// the line's part is replayed and remembered.
     fn replay<B: target_pixel_buffer::TargetPixelBuffer>(
         &self,
         target: &mut RenderToBuffer<'_, B>,
         clip: &PhysicalRect,
     ) {
         let Some(visible) = clip.intersection(&self.area) else { return };
-        let bounds = target.dirty_region.bounding_rect();
-        let Some(drawn) = visible.intersection(&bounds) else { return };
-        // Copies only where the dirty region covers the layer's visible width in one rectangle.
-        let whole_width = target.dirty_region.iter_box().count() == 1
-            && drawn.min_x() == visible.min_x()
-            && drawn.max_x() == visible.max_x();
-        if !whole_width {
-            self.draw(target, Some(drawn));
-            return;
-        }
         let kind = core::any::type_name::<B::TargetPixel>();
-        let x = drawn.min_x()..drawn.max_x();
-        let (x0, x1) = (x.start as usize, x.end as usize);
-        let mut stale: Vec<i16> = Vec::new();
-        for y in drawn.min_y()..drawn.max_y() {
-            let line = &mut target.buffer.line_slice(y as usize)[x0..x1];
-            let index = (y - self.area.min_y()) as usize;
-            let snapshot = self.lines[index].lock().unwrap();
-            match snapshot.as_ref() {
-                Some(s) if s.kind == kind && s.x == x && s.before == pixel_bytes(line) => {
-                    pixel_bytes_mut(line).copy_from_slice(&s.after);
-                }
-                _ => stale.push(y),
-            }
-        }
-        // Draw the other lines, a run at a time, and remember them.
-        let mut start = 0;
-        while start < stale.len() {
-            let mut end = start + 1;
-            while end < stale.len() && stale[end] == stale[end - 1] + 1 {
-                end += 1;
-            }
-            let (top, bottom) = (stale[start], stale[end - 1] + 1);
-            let before: Vec<Vec<u8>> = (top..bottom)
-                .map(|y| pixel_bytes(&target.buffer.line_slice(y as usize)[x0..x1]).to_vec())
-                .collect();
-            let run = PhysicalRect::new(
-                PhysicalPoint::new(x.start, top),
-                PhysicalSize::new(x.end - x.start, bottom - top),
-            );
-            self.draw(target, Some(run));
-            for (y, before) in (top..bottom).zip(before) {
-                let after = pixel_bytes(&target.buffer.line_slice(y as usize)[x0..x1]).to_vec();
+        let size = core::mem::size_of::<B::TargetPixel>();
+        // Disjoint parts of the dirty region: a pixel is drawn once.
+        for part in target.dirty_clips(&visible) {
+            let (x0, x1) = (part.min_x(), part.max_x());
+            let mut stale: Vec<i16> = Vec::new();
+            for y in part.min_y()..part.max_y() {
                 let index = (y - self.area.min_y()) as usize;
-                *self.lines[index].lock().unwrap() =
-                    Some(LineSnapshot { kind, x: x.clone(), before, after });
+                let line = &mut target.buffer.line_slice(y as usize)[x0 as usize..x1 as usize];
+                let snapshot = self.lines[index].lock().unwrap();
+                let hit = snapshot.as_ref().is_some_and(|s| {
+                    s.kind == kind && s.x.start <= x0 && x1 <= s.x.end && {
+                        let from = (x0 - s.x.start) as usize;
+                        let to = (x1 - s.x.start) as usize;
+                        s.valid[from..to].iter().all(|v| *v)
+                            && s.before[from * size..to * size] == *pixel_bytes(line)
+                    }
+                });
+                if hit {
+                    let s = snapshot.as_ref().unwrap();
+                    let from = (x0 - s.x.start) as usize * size;
+                    let len = line.len() * size;
+                    pixel_bytes_mut(line).copy_from_slice(&s.after[from..from + len]);
+                } else {
+                    stale.push(y);
+                }
             }
-            start = end;
+            let mut start = 0;
+            while start < stale.len() {
+                let mut end = start + 1;
+                while end < stale.len() && stale[end] == stale[end - 1] + 1 {
+                    end += 1;
+                }
+                let (top, bottom) = (stale[start], stale[end - 1] + 1);
+                let before: Vec<Vec<u8>> = (top..bottom)
+                    .map(|y| {
+                        pixel_bytes(&target.buffer.line_slice(y as usize)[x0 as usize..x1 as usize])
+                            .to_vec()
+                    })
+                    .collect();
+                let run = PhysicalRect::new(
+                    PhysicalPoint::new(x0, top),
+                    PhysicalSize::new(x1 - x0, bottom - top),
+                );
+                self.draw(target, Some(run));
+                for (y, before) in (top..bottom).zip(before) {
+                    let after =
+                        pixel_bytes(&target.buffer.line_slice(y as usize)[x0 as usize..x1 as usize]);
+                    let index = (y - self.area.min_y()) as usize;
+                    let mut snapshot = self.lines[index].lock().unwrap();
+                    let width = self.area.width() as usize;
+                    let fresh = !snapshot.as_ref().is_some_and(|s| s.kind == kind);
+                    if fresh {
+                        *snapshot = Some(LineSnapshot {
+                            kind,
+                            x: self.area.min_x()..self.area.max_x(),
+                            before: alloc::vec![0; width * size],
+                            after: alloc::vec![0; width * size],
+                            valid: alloc::vec![false; width],
+                        });
+                    }
+                    let s = snapshot.as_mut().unwrap();
+                    let from = (x0 - s.x.start) as usize;
+                    let to = (x1 - s.x.start) as usize;
+                    s.before[from * size..to * size].copy_from_slice(&before);
+                    s.after[from * size..to * size].copy_from_slice(after);
+                    s.valid[from..to].iter_mut().for_each(|v| *v = true);
+                }
+                start = end;
+            }
         }
     }
 
@@ -280,6 +307,21 @@ impl OpStream {
             if state.done {
                 return None;
             }
+            state = self.published.wait(state).unwrap();
+        }
+    }
+
+    /// How many chunks are published, and whether the last one is.
+    fn status(&self) -> (usize, bool) {
+        let state = self.state.lock().unwrap();
+        (state.chunks.len(), state.done)
+    }
+
+    /// Wait until more than `published` chunks are published, or the stream is done when it
+    /// was not.
+    fn wait_beyond(&self, published: usize, done: bool) {
+        let mut state = self.state.lock().unwrap();
+        while state.chunks.len() <= published && state.done == done {
             state = self.published.wait(state).unwrap();
         }
     }
@@ -511,43 +553,120 @@ fn band_renderer<'b, 'a, T: TargetPixel>(
     })
 }
 
-/// The bands of one frame not yet taken, for the band threads and, once its walk ended, the
-/// UI thread: a band is taken whole and replays every chunk of the stream.
+/// How band threads share a frame's bands (`SoftwareRenderer::set_interleaved_bands`).
+/// Interleaved (the default): a thread takes any band whose next chunk is published,
+/// replays the chunks published so far into it, and moves on, so every band keeps up with
+/// the walk. Whole: a thread takes a band and replays every chunk of the frame into it,
+/// waiting for each; the bands not taken wait for the walk to end.
+pub(super) static INTERLEAVED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// One band of a frame: its lines, its renderer's state between chunks, and the next
+/// chunk it replays.
+struct BandSlot<'a, T> {
+    band: Band<'a, T>,
+    /// The band's part of the region, its clip state, and its range cache; `None` once
+    /// the band has no part of the region.
+    state: Option<(PhysicalRegion, Option<PhysicalRegion>, Vec<core::ops::Range<i16>>)>,
+    next: usize,
+    finished: bool,
+}
+
+/// The bands of one frame, for the band threads and, once its walk ended, the UI thread.
 pub(super) struct BandQueue<'a, T> {
-    bands: std::sync::Mutex<Vec<SendBand<'a, T>>>,
-    region: PhysicalRegion,
+    slots: Vec<std::sync::Mutex<BandSlot<'a, T>>>,
+    /// Whole bands not yet taken (`INTERLEAVED` off).
+    whole: std::sync::Mutex<Vec<usize>>,
+    interleaved: bool,
     scale_factor: ScaleFactor,
 }
 
-// Sound as `SendBand` is: each band is taken by one thread, and its lines are its own.
+// Sound as `SendBand` is: each band is replayed by one thread at a time (its mutex), and
+// its lines are its own.
 unsafe impl<T> Sync for BandQueue<'_, T> {}
 unsafe impl<T> Send for BandQueue<'_, T> {}
 
+impl<T: TargetPixel> BandSlot<'_, T> {
+    /// Replay `chunk` into the band, as one renderer replaying every op in order would.
+    fn replay(&mut self, chunk: &[Op], scale_factor: ScaleFactor) {
+        let Some((dirty_region, unclipped, dirty_range_cache)) = self.state.take() else {
+            return;
+        };
+        let mut renderer = RenderToBuffer {
+            buffer: &mut self.band,
+            dirty_range_cache,
+            dirty_region,
+            scale_factor,
+            recording: None,
+            unclipped,
+        };
+        for op in chunk {
+            renderer.replay(op);
+        }
+        self.state = Some((renderer.dirty_region, renderer.unclipped, renderer.dirty_range_cache));
+    }
+}
+
 impl<T: TargetPixel> BandQueue<'_, T> {
-    /// Take bands until none is left; replay every chunk of `stream` into each.
+    /// Replay every chunk of `stream` into every band, with the other threads doing the same.
     pub(super) fn work(&self, stream: &OpStream) {
-        loop {
-            let Some(band) = self.bands.lock().unwrap().pop() else { return };
-            let mut band = band.0;
-            let Some(mut renderer) = band_renderer(&mut band, &self.region, self.scale_factor)
-            else {
-                continue;
-            };
-            let mut index = 0;
-            while let Some(chunk) = stream.chunk(index) {
-                for op in chunk.iter() {
-                    renderer.replay(op);
+        if !self.interleaved {
+            loop {
+                let Some(i) = self.whole.lock().unwrap().pop() else { return };
+                let mut slot = self.slots[i].lock().unwrap();
+                while let Some(chunk) = stream.chunk(slot.next) {
+                    slot.replay(&chunk, self.scale_factor);
+                    slot.next += 1;
                 }
-                index += 1;
+                slot.finished = true;
+            }
+        }
+        // Start where another thread is least likely to be.
+        let start = THREAD_START.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        loop {
+            let (published, done) = stream.status();
+            let mut progressed = false;
+            let mut unfinished = false;
+            for k in 0..self.slots.len() {
+                let i = (start + k) % self.slots.len();
+                let Ok(mut slot) = self.slots[i].try_lock() else {
+                    unfinished = true;
+                    continue;
+                };
+                if slot.finished {
+                    continue;
+                }
+                while slot.next < published {
+                    let chunk = stream.chunk(slot.next).expect("published");
+                    slot.replay(&chunk, self.scale_factor);
+                    slot.next += 1;
+                    progressed = true;
+                }
+                if done && slot.next == published {
+                    slot.finished = true;
+                } else {
+                    unfinished = true;
+                }
+            }
+            if !unfinished {
+                return;
+            }
+            if !progressed {
+                if done {
+                    // Every chunk is out; the bands left are being replayed by the threads
+                    // that hold them, which finish them.
+                    return;
+                }
+                stream.wait_beyond(published, done);
             }
         }
     }
 }
 
+static THREAD_START: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Split `buffer` under `region` into bands several times more than `threads`, and start
-/// `threads` threads taking them; the queue goes back to the caller, whose own thread takes
-/// the bands still left once it has published the last chunk. Balanced by what is left, not
-/// by rows: a thread that finishes early takes another band.
+/// `threads` threads replaying them; the queue goes back to the caller, whose own thread
+/// helps once it has published the last chunk.
 pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
     scope: &'scope std::thread::Scope<'scope, 'env>,
     stream: &'scope OpStream,
@@ -557,12 +676,23 @@ pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
     scale_factor: ScaleFactor,
     threads: usize,
 ) -> Arc<BandQueue<'scope, T>> {
-    let mut bands = split_bands(buffer, pixel_stride, region, (threads + 1) * 4);
+    let interleaved = INTERLEAVED.load(std::sync::atomic::Ordering::Relaxed);
+    let bands = split_bands(buffer, pixel_stride, region, (threads + 1) * 2);
+    let slots: Vec<_> = bands
+        .into_iter()
+        .map(|band| {
+            let mut band = band.0;
+            let state = band_renderer(&mut band, region, scale_factor)
+                .map(|r| (r.dirty_region, r.unclipped, r.dirty_range_cache));
+            std::sync::Mutex::new(BandSlot { finished: state.is_none(), band, state, next: 0 })
+        })
+        .collect();
     // Taken from the end: the top of the region first.
-    bands.reverse();
+    let whole = (0..slots.len()).rev().collect();
     let queue = Arc::new(BandQueue {
-        bands: std::sync::Mutex::new(bands),
-        region: region.clone(),
+        slots,
+        whole: std::sync::Mutex::new(whole),
+        interleaved,
         scale_factor,
     });
     for _ in 0..threads {

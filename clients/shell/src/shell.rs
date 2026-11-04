@@ -11,18 +11,24 @@
 //! 4. `app.surface.model`, `init`, `view`, create and show `Surface`
 //! 5. watch the model; each push runs `update(KorriPublished)` then acks
 //!
+//! The logic runs on its own thread (`crate::logic`): presses, ticks and
+//! models go to it as calls, one at a time, and each outcome comes back as
+//! [`Event::Logic`]; its view is applied then, in the next frame. The UI
+//! thread never waits on logic after a surface loaded.
+//!
 //! A failure in steps 1 to 4 keeps the surface already shown. A logic
 //! violation at run time unloads the surface and restores the previous one.
 
 use crate::{
     backend::{Backend, FrameCounter, HostEvent, Placement},
-    engine::{self, Engine, Limits, Violation},
+    engine::{self, Limits, Violation},
     images::ImageCache,
     input::{native::NativeEvent, Press, Router},
     korrid::{Korrid, WatchEvent},
+    logic::{Call, Done, Logic, Outcome},
     messages::{self, Button},
     package::{self, Package},
-    view::Binder,
+    view::{Binder, Diff},
 };
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
@@ -63,6 +69,11 @@ pub enum Event {
     Tick,
     /// Once a second: send the active surface a `Tick` (amendment A1).
     Idle,
+    /// A logic call returned (`crate::logic`).
+    Logic {
+        generation: u64,
+        outcome: Outcome,
+    },
 }
 
 /// Delivers events to the shell on the UI thread, later.
@@ -109,7 +120,9 @@ struct Loaded {
     /// The last size sent in `Resized`, in logical pixels.
     size: (f32, f32),
     package: Package,
-    engine: Engine,
+    logic: Logic,
+    /// Posts this surface's logic outcomes to the UI thread.
+    done: Done,
     overlay_definition: Option<ComponentDefinition>,
     surface: ComponentInstance,
     surface_binder: Binder,
@@ -248,7 +261,7 @@ impl Shell {
 
     /// The current surface's QuickJS heap, in bytes.
     pub fn heap_bytes(&self) -> usize {
-        self.current.as_ref().map_or(0, |l| l.engine.heap_bytes())
+        self.current.as_ref().map_or(0, |l| l.logic.heap_bytes())
     }
 
     /// A property of the current `Surface`, for tests and proofs.
@@ -336,6 +349,10 @@ impl Shell {
             } => self.request_done(generation, request, outcome),
             Event::Tick => self.tick(),
             Event::Idle => self.idle(),
+            Event::Logic {
+                generation,
+                outcome,
+            } => self.logic_done(generation, outcome),
         }
     }
 
@@ -546,9 +563,9 @@ impl Shell {
             return;
         };
         let id = current.package.id.clone();
-        if let Err(error) =
-            self.korrid
-                .declare(&id, &current.declaration, current.engine.displays())
+        if let Err(error) = self
+            .korrid
+            .declare(&id, &current.declaration, current.logic.displays())
         {
             self.say(format!("{id} declare again failed: {error:#}"));
         }
@@ -566,7 +583,7 @@ impl Shell {
             surface,
             overlay,
             watch,
-            engine,
+            logic,
             images,
             ..
         } = loaded;
@@ -582,7 +599,8 @@ impl Shell {
         }
         drop(overlay);
         drop(surface);
-        drop(engine);
+        // Interrupts a running call and joins the logic thread.
+        drop(logic);
         drop(images);
     }
 
@@ -591,31 +609,25 @@ impl Shell {
         let started = Instant::now();
         let views = package::compile(&package)?;
         let compiled = started.elapsed();
-        let mut engine = Engine::load(&package.logic_source()?, self.options.limits)
+        let logic = Logic::start(package.logic_source()?, self.options.limits, &package.id)
             .map_err(|v| anyhow!("logic: {v}"))?;
         let logic_loaded = started.elapsed();
         let declaration =
-            serde_json::to_value(engine.declaration()).expect("declaration serialises");
+            serde_json::to_value(logic.declaration()).expect("declaration serialises");
         self.korrid
-            .declare(&package.id, &declaration, engine.displays())
+            .declare(&package.id, &declaration, logic.displays())
             .context("app.surface.declare")?;
         let stored = self
             .korrid
             .preferences(&package.id)
             .context("app.surface.preferences")?;
-        let preferences = engine::effective_preferences(engine.declaration(), &stored);
+        let preferences = engine::effective_preferences(logic.declaration(), &stored);
         let model = self
             .korrid
             .model(&package.id)
             .context("app.surface.model")?;
         let korrid_done = started.elapsed();
         let gameplay_overlay = messages::is_gameplay_overlay(&serde_json::from_str(&model)?);
-        engine
-            .set_model(&model)
-            .map_err(|v| anyhow!("logic: {v}"))?;
-        engine
-            .init(&preferences)
-            .map_err(|v| anyhow!("logic: {v}"))?;
         self.next_generation += 1;
         let generation = self.next_generation;
         let mut images = ImageCache::new(&package.dir);
@@ -626,15 +638,34 @@ impl Shell {
         self.backend.place(surface.window(), self.options.placement);
         // A2 (8.1): the window's size, once after init and before the first view.
         let size = logical_size(surface.window());
-        let first_requests = engine
-            .update(&messages::resized(size.0, size.1))
+        let overlay_wanted = gameplay_overlay && views.overlay.is_some() && logic.has_overlay();
+        let (first_requests, view, overlay_view) = logic
+            .now(move |worker| -> std::result::Result<_, Violation> {
+                let engine = worker.engine();
+                engine.set_model(&model)?;
+                engine.init(&preferences)?;
+                let requests = engine.update(&messages::resized(size.0, size.1))?;
+                engine.views_drawn();
+                let view = engine.view()?;
+                let overlay = if overlay_wanted {
+                    engine.overlay()?
+                } else {
+                    None
+                };
+                let diff = worker.diff_view(&view);
+                let overlay = overlay.map(|o| {
+                    let diff = worker.diff_overlay(&o);
+                    (o, diff)
+                });
+                Ok((requests, (view, diff), overlay))
+            })
+            .and_then(|r| r)
             .map_err(|v| anyhow!("logic: {v}"))?;
         for request in &first_requests {
-            check_request(request, engine.declaration()).map_err(|f| anyhow!("{f}"))?;
+            check_request(request, logic.declaration()).map_err(|f| anyhow!("{f}"))?;
         }
-        let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
         let logic_done = started.elapsed();
-        let applied = surface_binder.apply(&surface, &view, &mut images);
+        let applied = surface_binder.apply_diff(&surface, &view.0, &view.1, &mut images);
         if let Err(error) = applied {
             drop(surface);
             return Err(error.context("view"));
@@ -653,12 +684,22 @@ impl Shell {
                 })
             }),
         );
+        let done: Done = {
+            let post = self.post.clone();
+            Arc::new(move |outcome| {
+                post.post(Event::Logic {
+                    generation,
+                    outcome,
+                })
+            })
+        };
         let mut loaded = Loaded {
             generation,
             last_press: Instant::now(),
             size,
             package,
-            engine,
+            logic,
+            done,
             overlay_definition: views.overlay,
             surface,
             surface_binder,
@@ -678,7 +719,7 @@ impl Shell {
                 shown: Duration::ZERO,
             },
         };
-        if let Err(error) = self.render_overlay(&mut loaded) {
+        if let Err(error) = self.render_overlay(&mut loaded, overlay_view) {
             let id = loaded.package.id.clone();
             self.unload(loaded);
             return Err(anyhow!("{id} overlay: {error:#}"));
@@ -739,10 +780,11 @@ impl Shell {
 
     /// Show, refresh or remove the Overlay to match the presentation, and
     /// map exactly one of Surface and Overlay.
-    fn render_overlay(&mut self, loaded: &mut Loaded) -> Result<()> {
+    /// `view`: the overlay's view when the logic gave a new one.
+    fn render_overlay(&mut self, loaded: &mut Loaded, view: Option<(Value, Diff)>) -> Result<()> {
         let wanted = loaded.gameplay_overlay
             && loaded.overlay_definition.is_some()
-            && loaded.engine.has_overlay();
+            && loaded.logic.has_overlay();
         if !wanted {
             if let Some((overlay, _)) = loaded.overlay.take() {
                 if let Some(windows) = &mut self.focused {
@@ -760,11 +802,11 @@ impl Shell {
             }
             return Ok(());
         }
-        let view = loaded
-            .engine
-            .overlay()
-            .map_err(|v| anyhow!("{v}"))?
-            .context("overlay")?;
+        let Some((view, diff)) = view else {
+            // No new overlay view: the one shown stays (the logic sends one with every
+            // change, and with the model that asks for the overlay).
+            return Ok(());
+        };
         if loaded.overlay.is_none() {
             let definition = loaded.overlay_definition.as_ref().expect("checked");
             let component = definition.create()?;
@@ -775,7 +817,7 @@ impl Shell {
             loaded.overlay = Some((component, binder));
         }
         let (component, binder) = loaded.overlay.as_mut().expect("just created");
-        binder.apply(component, &view, &mut loaded.images)?;
+        binder.apply_diff(component, &view, &diff, &mut loaded.images)?;
         component.show()?;
         if loaded.surface_shown {
             if !self.backend.shared_window() {
@@ -789,20 +831,53 @@ impl Shell {
         Ok(())
     }
 
-    /// Run `update`, render, and send its requests.
+    /// Send a message to the logic; its outcome comes back as `Event::Logic`.
     fn update(&mut self, message: &Value) {
+        self.call(Call::Message(message.clone()));
+    }
+
+    fn call(&mut self, call: Call) {
+        if let Some(current) = self.current.as_mut() {
+            let done = current.done.clone();
+            current.logic.submit(call, &done);
+        }
+    }
+
+    /// A logic call returned: apply its views, acknowledge its model, send its requests,
+    /// and start the next call.
+    fn logic_done(&mut self, generation: u64, outcome: Outcome) {
+        if self
+            .current
+            .as_ref()
+            .is_none_or(|c| c.generation != generation)
+        {
+            return; // a retired surface's logic
+        }
         let Some(mut current) = self.current.take() else {
             return;
         };
-        let outcome = (|| -> std::result::Result<Vec<Value>, Failure> {
-            let requests = current.engine.update(message)?;
-            for request in &requests {
-                check_request(request, current.engine.declaration())?;
+        let revision = outcome.revision.clone();
+        let applied = (|| -> std::result::Result<Vec<Value>, Failure> {
+            let step = outcome.result?;
+            for request in &step.requests {
+                check_request(request, current.logic.declaration())?;
             }
-            self.render(&mut current)?;
-            Ok(requests)
+            if let Some(gameplay) = step.gameplay_overlay {
+                current.gameplay_overlay = gameplay;
+            }
+            if let Some((view, diff)) = &step.view {
+                current
+                    .surface_binder
+                    .apply_diff(&current.surface, view, diff, &mut current.images)
+                    .map_err(Failure::View)?;
+            }
+            if step.view.is_some() || step.gameplay_overlay.is_some() {
+                self.render_overlay(&mut current, step.overlay)
+                    .map_err(Failure::View)?;
+            }
+            Ok(step.requests)
         })();
-        match outcome {
+        match applied {
             Ok(requests) => {
                 for request in requests {
                     let _ = self.jobs.send(RequestJob {
@@ -811,26 +886,15 @@ impl Shell {
                         request,
                     });
                 }
+                if let (Some(revision), Some(watch)) = (revision, &current.watch) {
+                    watch.ack(&revision);
+                }
+                let done = current.done.clone();
+                current.logic.returned(&done);
                 self.current = Some(current);
             }
             Err(failure) => self.fail(current, failure),
         }
-    }
-
-    fn render(&mut self, current: &mut Loaded) -> std::result::Result<(), Failure> {
-        // Same state object and model: view() and overlay() would return the
-        // same views, so skip them (a Tick that changes nothing costs one call).
-        if !current.engine.view_stale() {
-            return Ok(());
-        }
-        current.engine.views_drawn();
-        let view = current.engine.view()?;
-        current
-            .surface_binder
-            .apply(&current.surface, &view, &mut current.images)
-            .map_err(Failure::View)?;
-        self.render_overlay(current).map_err(Failure::View)?;
-        Ok(())
     }
 
     fn model(&mut self, generation: u64, revision: Option<String>, model: String) {
@@ -841,28 +905,7 @@ impl Shell {
         {
             return; // a retired surface's watch
         }
-        let gameplay_overlay =
-            serde_json::from_str::<Value>(&model).map(|m| messages::is_gameplay_overlay(&m));
-        let Some(mut current) = self.current.take() else {
-            return;
-        };
-        current.gameplay_overlay = gameplay_overlay.unwrap_or(false);
-        match current.engine.set_model(&model) {
-            Ok(()) => self.current = Some(current),
-            Err(violation) => {
-                self.fail(current, Failure::Logic(violation));
-                return;
-            }
-        }
-        self.update(&messages::korri_published());
-        if let (Some(revision), Some(current)) = (
-            revision,
-            self.current.as_ref().filter(|c| c.generation == generation),
-        ) {
-            if let Some(watch) = &current.watch {
-                watch.ack(&revision);
-            }
-        }
+        self.call(Call::Model { model, revision });
     }
 
     fn request_done(

@@ -756,6 +756,20 @@ pub fn eval_expression(ctx: &mut EvalContext, expression: &Expression) -> Value 
             ctx.locals.get(name).cloned().unwrap_or(Value::Void)
         }
         Expression::StructFieldAccess { base, name } => {
+            // A field of a struct property: read the field in place, not a copy of the
+            // whole struct (a `HashMap`).
+            if let Expression::PropertyReference(MemberReference::Relative {
+                parent_level,
+                local_reference,
+            }) = &**base
+                && let LocalMemberIndex::Property(idx) = &local_reference.reference
+                && let Some(instance) = try_walk_to(ctx, *parent_level, local_reference)
+            {
+                return Pin::as_ref(&instance.properties[*idx]).get_with(|value| match value {
+                    Value::Struct(s) => s.get_field(name).cloned().unwrap_or(Value::Void),
+                    _ => Value::Void,
+                });
+            }
             if let Value::Struct(s) = eval_expression(ctx, base) {
                 s.get_field(name).cloned().unwrap_or(Value::Void)
             } else {

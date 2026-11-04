@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoChoicePicker { height: 180 * Tokens.p; choices: { shown: true, tone: "ask", kicker: "", title: "Add setting", message: "1 more setting mGBA offers here.", lines: [], actions: [{ label: "FPS limit", detail: "", focused: true, disabled: false, warn: false, lit: false },{ label: "CANCEL", detail: "", focused: false, disabled: false, warn: false, lit: false }], inline: false }; }
+        PicoChoicePicker { height: 180 * Tokens.p; choices: { shown: true, tone: "ask", kicker: "", title: "Add setting", message: "1 more setting mGBA offers here.", lines: [], actions: [{ label: "FPS limit", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false },{ label: "CANCEL", detail: "", focused: false, disabled: false, warn: false, lit: false }], inline: false }; }
     }
 }

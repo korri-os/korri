@@ -4,6 +4,7 @@
  * own screen. Ports of PicoHome, PicoLibrary and PicoGameDetail; the words
  * are theirs.
  */
+import { PICO_FONTS } from "../pico-fonts"
 import type { SurfaceAction } from "../model"
 import { picoDetailViewFromGame, picoDownloadLabel, picoStatsFor } from "../pico-detail-view"
 import { picoInvitePlaying, picoInvitesFrom, picoInviteWhere } from "../pico-invite-view"
@@ -38,6 +39,7 @@ import {
   NO_CARD,
   narrowestArt,
   art,
+  mark,
 } from "./kit"
 import { type Act, type Ctx, local, nav, type Screen } from "./types"
 
@@ -114,24 +116,25 @@ export function cardTargets(
   acts: readonly (Act | undefined)[],
   focused: string | undefined,
   lines: number = 0,
+  region: string = "card",
 ): { readonly card: CardView; readonly targets: Target<Act>[] } {
   const targets: Target<Act>[] = []
-  for (let i = 0; i < lines; i += 1) targets.push({ id: `line:${i}`, box: { x: 0, y: i * 10, w: 100, h: 8 } })
+  for (let i = 0; i < lines; i += 1) targets.push({ id: `line:${i}`, region, box: { x: 0, y: i * 10, w: 100, h: 8 } })
   shown.actions.forEach((_, i) => {
     const id = ids[i] ?? `answer:${i}`
     const act = acts[i]
     if (shown.actions[i]?.disabled === true) return
     targets.push({
       id,
-      box: shown.inline ? { x: i * 50, y: lines * 10 + 10, w: 48, h: 8 } : { x: 0, y: (lines + i) * 10 + 10, w: 100, h: 8 },
+      region, box: shown.inline ? { x: i * 50, y: lines * 10 + 10, w: 48, h: 8 } : { x: 0, y: (lines + i) * 10 + 10, w: 100, h: 8 },
       ...(act === undefined ? {} : { act }),
     })
   })
   return {
     card: {
       ...shown,
-      lines: shown.lines.map((line, i) => ({ ...line, focused: focused === `line:${i}` })),
-      actions: shown.actions.map((action, i) => ({ ...action, focused: focused === (ids[i] ?? `answer:${i}`) })),
+      lines: shown.lines.map((line, i) => ({ ...line, ...mark(`line:${i}`, focused) })),
+      actions: shown.actions.map((action, i) => ({ ...action, ...mark(ids[i] ?? `answer:${i}`, focused) })),
     },
     targets,
   }
@@ -166,16 +169,33 @@ const statusActions = (actions: readonly SurfaceAction[] | undefined, focused: s
   (actions ?? []).map(action => button(action.label, {
     detail: action.description ?? "",
     disabled: !action.enabled,
-    focused: focused === `status:${action.id}`,
+    ...mark(`status:${action.id}`, focused),
   }))
 
-/** Columns of the home grid at this width: the rack's carts at their pitch. */
-export function gridColumns(width: number): number {
-  // As PicoCartGrid fits them: 30-pixel slots 4 apart, in the body (the
-  // window less 8 a side). The display's width is the best guess the logic
-  // has of the window; main.slint fits the grid to the window it is given.
-  return Math.max(1, Math.floor((width - 16 + 4) / 34))
+/** A shelf cart's target, once per game, place and aim: a shelf of carts is
+ * rebuilt on every press otherwise. */
+function shelfTarget(game: PicoShelfGame, place: number, aiming: boolean): Target<Act> {
+  const key = `${place}|${aiming}`
+  let known = SHELF_TARGETS.get(game)
+  if (known === undefined) {
+    known = new Map()
+    SHELF_TARGETS.set(game, known)
+  }
+  const cached = known.get(key)
+  if (cached !== undefined) return cached
+  const target: Target<Act> = {
+    id: `cart:${game.id}`,
+    region: "shelf",
+    box: { x: place * 10, y: 500, w: 9, h: 20 },
+    act: [nav({ _tag: "OpenedGame", gameId: game.id })],
+    enter: [nav({ _tag: "SelectedCart", gameId: game.id }), ...(aiming ? [nav({ _tag: "AimedMenu", label: undefined })] : [])],
+  }
+  if (known.size > 8) known.clear()
+  known.set(key, target)
+  return target
 }
+
+const SHELF_TARGETS = new WeakMap<object, Map<string, Target<Act>>>()
 
 export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>): Screen {
   const { s, korri, model } = ctx
@@ -203,10 +223,9 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   const aimAt = (label: string | undefined): Act => [nav({ _tag: "AimedMenu", label })]
   const menuKey: Target<Act> = {
     id: "menu",
-    box: { x: 0, y: 1000, w: 10, h: 8 },
+    region: "floor", box: { x: 0, y: 1000, w: 10, h: 8 },
     act: [nav({ _tag: "ToggledHomeMenu" })],
     enter: aimAt(MENU_LABEL),
-    ...(menuOpen ? {} : chosenId === undefined ? {} : { next: { up: chosenId } }),
   }
 
   let body = "none"
@@ -221,7 +240,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   if (menuOpen) {
     entries.forEach((entry, i) => targets.push({
       id: `menu:${entry.label}`,
-      box: { x: 0, y: 900 + i * 10, w: 30, h: 8 },
+      region: "menu", box: { x: 0, y: 900 + i * 10, w: 30, h: 8 },
       act: entry.act,
       enter: aimAt(entry.label),
     }))
@@ -237,12 +256,12 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
         if (!menuOpen && action.enabled) {
           targets.push({
             id,
-            box: { x: 50 + column * 20, y: row * 10, w: 18, h: 8 },
+            region: "invites", box: { x: 50 + column * 20, y: row * 10, w: 18, h: 8 },
             act: [nav({ _tag: "PressedInviteAction", actionId: action.id })],
             enter: aimAt(undefined),
           })
         }
-        return button(action.label, { disabled: !action.enabled, focused: focused === id })
+        return button(action.label, { disabled: !action.enabled, ...mark(id, focused) })
       })
       const cover = art(invite.artUrl)
       return {
@@ -257,18 +276,11 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
 
   if (view._tag === "Shelf" && home.mode === "shelf") {
     body = "shelf"
+    const aiming = home.aim !== undefined
     carts = games.map((game, i) => {
       const id = `cart:${game.id}`
-      if (!menuOpen) {
-        targets.push({
-          id,
-          box: { x: (firstIndex + i) * 10, y: 500, w: 9, h: 20 },
-          act: [nav({ _tag: "OpenedGame", gameId: game.id })],
-          enter: [nav({ _tag: "SelectedCart", gameId: game.id }), ...(home.aim === undefined ? [] : aimAt(undefined))],
-          next: { down: "menu" },
-        })
-      }
-      return cartView(game, { hero: i === chosen, focused: focused === id })
+      if (!menuOpen) targets.push(shelfTarget(game, firstIndex + i, aiming))
+      return cartView(game, { hero: i === chosen, focused: focused === id, focusId: id })
     })
     if (chosenGame !== undefined) {
       stage = {
@@ -284,24 +296,32 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     }
   } else if (view._tag === "Shelf" && home.mode === "grid") {
     body = "grid"
-    const columns = gridColumns(ctx.plan.width)
+    const columns = ctx.plan.columns
+    // As PicoCartGrid draws it, in virtual pixels: a section's title line
+    // (the font's rows, 1.5 high), its rows of 44 in slots 34 apart, its
+    // floor, and 4 between sections. The focus plan must be drawn to scale,
+    // or a press picks a different nearest cart than the one drawn there.
+    const rowsOfFont = (PICO_FONTS.find(font => font.id === ctx.s.font) ?? PICO_FONTS[0])?.rows ?? 7
+    const title = rowsOfFont * 1.5
     let rowStart = 0
-    sections = picoCollectionsFrom(games).map((collection, index) => {
+    let top = 0
+    sections = picoCollectionsFrom(games).map((collection) => {
+      const rowsTop = top + title + 2
+      top = rowsTop + Math.ceil(collection.games.length / columns) * 44 + 2 + 2 + 4
       const section = {
         title: collection.title,
         rowStart,
         carts: collection.games.map((game, i) => {
           const id = `cart:${game.id}`
           if (!menuOpen) {
-            const row = rowStart + Math.floor(i / columns)
             targets.push({
               id,
-              box: { x: (i % columns) * 10, y: row * 30 + index * 10, w: 9, h: 20 },
+              region: "grid", box: { x: (i % columns) * 34, y: rowsTop + Math.floor(i / columns) * 44, w: 30, h: 44 },
               act: [nav({ _tag: "OpenedGame", gameId: game.id })],
               enter: [nav({ _tag: "SelectedCart", gameId: game.id }), ...(home.aim === undefined ? [] : aimAt(undefined))],
             })
           }
-          return cartView(game, { focused: focused === id, hero: focused === id, band: false })
+          return cartView(game, { ...mark(id, focused), hero: focused === id, band: false })
         }),
       }
       rowStart += Math.ceil(collection.games.length / columns)
@@ -315,19 +335,20 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     const pick = answered ? picoHeroPick(games) : undefined
     const resumable = games.filter(game => game.resumable === true)
     if (pick !== undefined && !menuOpen) {
-      targets.push({ id: "hero:open", box: { x: 0, y: 100, w: 30, h: 10 }, act: [nav({ _tag: "OpenedGame", gameId: pick.game.id })], enter: aimAt(undefined) })
+      targets.push({ id: "hero:open", region: "hero", box: { x: 0, y: 100, w: 30, h: 10 }, act: [nav({ _tag: "OpenedGame", gameId: pick.game.id })], enter: aimAt(undefined) })
     }
-    resumable.forEach((game, i) => {
-      if (!menuOpen) targets.push({ id: `resume:${game.id}`, box: { x: i * 10, y: 300, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })], enter: aimAt(undefined) })
+    // The RESUME list is drawn under the hero only.
+    if (pick !== undefined) resumable.forEach((game, i) => {
+      if (!menuOpen) targets.push({ id: `resume:${game.id}`, region: "resume", box: { x: i * 10, y: 300, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })], enter: aimAt(undefined) })
     })
     hero = pick === undefined ? hero : {
       title: pick.game.title,
       subtitle: pick.game.subtitle ?? "",
       reason: pick.reason ?? "",
       chips: factChips(pick.game),
-      open: button("OPEN", { focused: focused === "hero:open" }),
+      open: button("OPEN", { ...mark("hero:open", focused) }),
       resume: resumable.map(game => ({
-        cart: cartView(game, { focused: focused === `resume:${game.id}`, hero: focused === `resume:${game.id}`, band: false }),
+        cart: cartView(game, { ...mark(`resume:${game.id}`, focused), hero: focused === `resume:${game.id}`, band: false }),
         title: game.title,
         subtitle: game.subtitle ?? "",
       })),
@@ -373,7 +394,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     body = "stage"
     const actions = view._tag === "Running" ? [] : view.actions ?? []
     actions.forEach((action, i) => {
-      if (action.enabled) targets.push({ id: `status:${action.id}`, box: { x: i * 20, y: 0, w: 18, h: 8 }, act: [nav({ _tag: "PressedStatusAction", actionId: action.id })] })
+      if (action.enabled) targets.push({ id: `status:${action.id}`, region: "stage", box: { x: i * 20, y: 0, w: 18, h: 8 }, act: [nav({ _tag: "PressedStatusAction", actionId: action.id })] })
     })
     const progress = view._tag === "Busy" ? view.progress : undefined
     launch = {
@@ -400,6 +421,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     key: `home:${home.mode}:${view._tag}:${menuOpen ? "menu" : ""}`,
     fallback,
     targets,
+    ...(chosenId === undefined ? {} : { active: { shelf: chosenId } }),
     view: {
       page: "home",
       frame: frame({
@@ -408,7 +430,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
         readout: view._tag === "Shelf" ? shelfReadout(games, total) : "",
         hints: homeHints(view, menuOffered, menuOpen, home.aim),
         hasLead: menuOffered,
-        lead: button(MENU_LABEL, { focused: focused === "menu", lit: menuOpen }),
+        lead: button(MENU_LABEL, { ...mark("menu", focused), lit: menuOpen }),
       }),
       card: shownCard,
       home: {
@@ -424,8 +446,9 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
         invites,
         invitesLabel: `${invites.length} ${invites.length === 1 ? "GAME" : "GAMES"}`,
         menuOpen,
-        menu: entries.map(entry => button(entry.label, { detail: entry.detail, focused: focused === `menu:${entry.label}` })),
+        menu: entries.map(entry => button(entry.label, { detail: entry.detail, ...mark(`menu:${entry.label}`, focused) })),
         sections,
+        columns: ctx.plan.columns,
         focusRow: focusedRow(targets, focused),
         hero,
         launch,
@@ -450,13 +473,13 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
   const sections = [PICO_ALL_SECTIONS, ...s.sections]
   const sectionButtons = sections.map((section, i) => {
     const id = `section:${section}`
-    targets.push({ id, box: { x: i * 10, y: 10, w: 9, h: 8 }, act: [nav({ _tag: "ChoseSection", section })] })
-    return button(section.toUpperCase(), { lit: section === search.section, focused: focused === id })
+    targets.push({ id, region: "sections", box: { x: i * 10, y: 10, w: 9, h: 8 }, act: [nav({ _tag: "ChoseSection", section })] })
+    return button(section.toUpperCase(), { lit: section === search.section, ...mark(id, focused) })
   })
   const orderButtons = PICO_ORDERS.map((order, i) => {
     const id = `order:${order}`
-    targets.push({ id, box: { x: i * 10, y: 20, w: 9, h: 8 }, act: [nav({ _tag: "ChoseOrder", order })] })
-    return button(PICO_ORDER_LABELS[order], { lit: order === search.order, focused: focused === id })
+    targets.push({ id, region: "orders", box: { x: i * 10, y: 20, w: 9, h: 8 }, act: [nav({ _tag: "ChoseOrder", order })] })
+    return button(PICO_ORDER_LABELS[order], { lit: order === search.order, ...mark(id, focused) })
   })
   const keys = keyboard("search", { capitals: false, symbols: false }, focused, 30, (press: KeyPress): Act =>
     press._tag === "Type" ? [nav({ _tag: "TypedCharacter", character: press.character })]
@@ -471,7 +494,7 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
   const firstIndex = catalog._tag === "Ready" ? catalog.firstIndex : 0
   const results = games.map(game => {
     const id = `result:${game.id}`
-    targets.push({ id, box: { x: (firstIndex + games.indexOf(game)) * 10, y: 100, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })] })
+    targets.push({ id, region: "results", box: { x: (firstIndex + games.indexOf(game)) * 10, y: 100, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })] })
     const shelf: PicoShelfGame = {
       id: game.id,
       title: game.title,
@@ -481,13 +504,14 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
       ...(game.playCount === undefined ? {} : { playCount: game.playCount }),
       ...(game.totalPlaytimeSeconds === undefined ? {} : { totalPlaytimeSeconds: game.totalPlaytimeSeconds }),
     }
-    return { cart: cartView(shelf, { focused: focused === id, hero: focused === id, band: false }), title: game.title }
+    return { cart: cartView(shelf, { ...mark(id, focused), hero: focused === id, band: false }), title: game.title }
   })
   const focusedResult = results.findIndex(result => focused === `result:${result.cart.id}`)
   return {
     key: "find",
     fallback: "key:0:0",
     targets,
+    active: { sections: `section:${search.section}`, orders: `order:${search.order}` },
     view: {
       page: "find",
       frame: frame({ label: "FIND", clock: korri.clockLabel ?? "", hints: [A("OPEN"), B("BACK")] }),
@@ -563,9 +587,9 @@ export function detailScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Detail
     targets.push(...placed.targets)
     shownCard = placed.card
   } else {
-    targets.push({ id: "play", box: { x: 0, y: 0, w: 30, h: 10 }, act: [nav({ _tag: "PressedPlay" })] })
+    targets.push({ id: "play", region: "play", box: { x: 0, y: 0, w: 30, h: 10 }, act: [nav({ _tag: "PressedPlay" })] })
     actions.forEach((action, i) => {
-      if (action.enabled) targets.push({ id: `action:${action.id}`, box: { x: 0, y: 20 + i * 10, w: 100, h: 8 }, act: [nav({ _tag: "PressedGameAction", action })] })
+      if (action.enabled) targets.push({ id: `action:${action.id}`, region: "actions", box: { x: 0, y: 20 + i * 10, w: 100, h: 8 }, act: [nav({ _tag: "PressedGameAction", action })] })
     })
   }
   const stats = factChips({ ...shown.game, ...(game.artUrl === undefined ? {} : { artUrl: game.artUrl }) } as PicoShelfGame)
@@ -579,17 +603,18 @@ export function detailScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Detail
       frame: frame({ place: "LIBRARY", sep: true, label: game.title, clock: korri.clockLabel ?? "", hints: [A("PLAY"), B("BACK")] }),
       card: shownCard,
       detail: {
+        stacked: ctx.plan.detailStacked,
         cart: cartView({ ...shown.game, ...(game.artUrl === undefined ? {} : { artUrl: game.artUrl }) }, { hero: true }),
         title: game.title,
         subtitle: [game.subtitle, game.profile].filter(part => part !== undefined && part !== "").join(" · "),
         chips: stats,
-        primary: button(game.primaryLabel, { focused: focused === "play" }),
+        primary: button(game.primaryLabel, { ...mark("play", focused) }),
         bar: game.downloadProgress === undefined ? NO_BAR : bar(game.downloadProgress, game.download ?? ""),
         actions: actions.map(action => button(action.label, {
           detail: action.description ?? "",
           disabled: !action.enabled,
           warn: action.destructive === true,
-          focused: focused === `action:${action.id}`,
+          ...mark(`action:${action.id}`, focused),
         })),
       },
     },

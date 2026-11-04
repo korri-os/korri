@@ -9,8 +9,9 @@
 
 use crate::{
     catalog,
-    engine::{self, Engine, Limits},
+    engine::{self, Limits},
     images::ImageCache,
+    logic::{Call, Done, Logic, Outcome},
     messages::{self, Button},
     package::{self, Package},
     verify,
@@ -51,6 +52,10 @@ pub struct Options {
     /// The view binder keeps the models of changed arrays (`view::Binder`); `false` sets a
     /// new model for every changed array, as before.
     pub reuse_models: bool,
+    /// As the shell: the logic on its own thread, frames paced at 60 Hz in real time, and a
+    /// view applied in the first frame after its call returned. `false`: each frame waits for
+    /// its calls and applies their views at once (deterministic frames, for pixel tests).
+    pub logic_thread: bool,
 }
 
 const FRAME: Duration = Duration::from_nanos(16_666_667);
@@ -116,6 +121,11 @@ struct Profile {
     rect_draw: f64,
     layer_draw: f64,
     instantiate: f64,
+    walk_geometry: f64,
+    raster_geometry: f64,
+    items_visited: f64,
+    instances_created: f64,
+    rows_updated: f64,
     glyph_raster_count: f64,
     glyph_raster: f64,
     glyph_run_setup: f64,
@@ -168,7 +178,7 @@ fn us(d: Duration) -> f64 {
 
 type Phase = (&'static str, fn(&Frame) -> f64);
 const PHASES: [Phase; 11] = [
-    ("logic (Tick/update/view)", |f| f.logic),
+    ("logic calls (logic thread)", |f| f.logic),
     ("view to properties: convert", |f| f.convert),
     ("view to properties: set", |f| f.set),
     ("timers and animations", |f| f.animate),
@@ -212,8 +222,19 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     let package = Package::at(&options.packages.join(&options.surface))
         .with_context(|| format!("package {}", options.surface))?;
     let views = package::compile(&package)?;
-    let mut engine = Engine::load(&package.logic_source()?, Limits::default())
+    // The bench measures calls; it does not enforce the shell's 50 ms budget (a loaded
+    // machine would otherwise abort a run that only asks what the frames cost).
+    let limits = Limits {
+        call: Duration::from_secs(2),
+        ..Limits::default()
+    };
+    let mut logic = Logic::start(package.logic_source()?, limits, &options.surface)
         .map_err(|v| anyhow!("logic: {v}"))?;
+    let (outcomes_tx, outcomes) = std::sync::mpsc::channel::<Outcome>();
+    let outcomes_tx = std::sync::Mutex::new(outcomes_tx);
+    let done: Done = std::sync::Arc::new(move |outcome| {
+        let _ = outcomes_tx.lock().unwrap().send(outcome);
+    });
     let (base, examples) = verify::fixture();
     let games = catalog::games(&examples, options.games);
     let mut query = catalog::default_query();
@@ -229,27 +250,29 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
         model.to_string()
     };
     let stored = options.preferences.clone();
-    engine
-        .set_model(&model(&query, &from, count, &focused))
-        .map_err(|v| anyhow!("logic: {v}"))?;
-    engine
-        .init(&engine::effective_preferences(
-            engine.declaration(),
-            &stored,
-        ))
-        .map_err(|v| anyhow!("logic: {v}"))?;
+    let preferences = engine::effective_preferences(logic.declaration(), &stored);
     let surface = views.surface.create()?;
     let window = WINDOW.with(|w| w.borrow().clone()).context("no window")?;
     let scale = surface.window().scale_factor();
     let logical = surface.window().size().to_logical(scale);
-    engine
-        .update(&messages::resized(logical.width, logical.height))
+    let first_model = model(&query, &from, count, &focused);
+    let (view, diff) = logic
+        .now(move |worker| -> std::result::Result<_, engine::Violation> {
+            let engine = worker.engine();
+            engine.set_model(&first_model)?;
+            engine.init(&preferences)?;
+            engine.update(&messages::resized(logical.width, logical.height))?;
+            engine.views_drawn();
+            let view = engine.view()?;
+            let diff = worker.diff_view(&view);
+            Ok((view, diff))
+        })
+        .and_then(|r| r)
         .map_err(|v| anyhow!("logic: {v}"))?;
     let mut binder = Binder::new(&views.surface);
     binder.set_reuse_models(options.reuse_models);
     let mut images = ImageCache::new(&package.dir);
-    let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
-    binder.apply(&surface, &view, &mut images)?;
+    binder.apply_diff(&surface, &view, &diff, &mut images)?;
     let mut last_view = view;
     surface.show()?;
 
@@ -263,11 +286,33 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     let dump = std::env::var_os("KORRI_BENCH_DUMP").map(std::path::PathBuf::from);
     // KORRI_BENCH_PROFILE=1: where each frame's walk and raster time went (adds timing cost).
     let profile = std::env::var_os("KORRI_BENCH_PROFILE").is_some();
+    // KORRI_BENCH_PARALLEL_MIN=PIXELS: dirty pixels from which a frame uses several threads.
+    // KORRI_BENCH_WHOLE_BANDS=1: each band thread replays a whole band (the former ordering).
+    slint::platform::software_renderer::SoftwareRenderer::set_interleaved_bands(
+        std::env::var_os("KORRI_BENCH_WHOLE_BANDS").is_none(),
+    );
+    // KORRI_BENCH_NO_SKIP=1: draw frames where nothing changed, as before the skip.
+    let no_skip = std::env::var_os("KORRI_BENCH_NO_SKIP").is_some();
+    let parallel_min: Option<usize> = std::env::var("KORRI_BENCH_PARALLEL_MIN")
+        .ok()
+        .and_then(|v| v.parse().ok());
     let mut raster_sizes: BTreeMap<i16, u64> = BTreeMap::new();
     // Warm up: the first frames fill caches; they are not reported.
     let warm = 10;
+    let paced = Instant::now();
+    // The frame a press was sent at, until its view is applied (`logic_thread`).
+    let mut press_sent: Option<usize> = None;
+    let mut press_latency: Vec<f64> = Vec::new();
     for n in 0..options.frames + warm {
         NOW.with(|t| t.set(t.get() + FRAME));
+        if options.logic_thread {
+            // 60 Hz in real time, so the logic thread runs beside the frames as it does in
+            // the shell; a frame over budget starts the next one late.
+            let due = FRAME * n as u32;
+            if let Some(wait) = due.checked_sub(paced.elapsed()) {
+                std::thread::sleep(wait);
+            }
+        }
         let started = Instant::now();
         let mut frame = Frame::default();
         // Logic: a press every PRESS_EVERY frames from frame 30, a Tick
@@ -287,58 +332,53 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
             message = Some(messages::tick(idle));
         }
         if let Some(message) = message {
-            let logic = Instant::now();
-            let mut queue = vec![message];
-            let mut rounds = 0;
-            while let Some(message) = queue.pop() {
-                rounds += 1;
-                if rounds > 16 {
-                    bail!("requests keep causing requests");
+            if message["_tag"] == "Pressed" {
+                press_sent.get_or_insert(n);
+            }
+            logic.submit(Call::Message(message), &done);
+        }
+        // Outcomes: in `logic_thread`, those back by now; otherwise every call this frame
+        // caused, waited for.
+        let mut rounds = 0;
+        loop {
+            let outcome = if options.logic_thread {
+                match outcomes.try_recv() {
+                    Ok(outcome) => outcome,
+                    Err(_) => break,
                 }
-                let call = Instant::now();
-                let requests = engine.update(&message).map_err(|v| anyhow!("logic: {v}"))?;
-                calls.push(format!(
-                    "update({})={:.0}",
-                    message["_tag"].as_str().unwrap_or_default(),
-                    us(call.elapsed())
-                ));
-                let mut changed = false;
-                for request in &requests {
-                    match messages::request_tag(request) {
-                        Some("MoveCatalog") => {
-                            query = request["query"].clone();
-                            from = request["from"].clone();
-                            count = request["count"].as_u64().unwrap_or(50) as usize;
-                            changed = true;
-                        }
-                        Some("FocusGame") => {
-                            focused = request["gameId"].as_str().map(str::to_owned);
-                            changed = true;
-                        }
-                        _ => {}
+            } else {
+                if !logic.busy() {
+                    break;
+                }
+                outcomes.recv().map_err(|_| anyhow!("logic thread ended"))?
+            };
+            rounds += 1;
+            if rounds > 16 {
+                bail!("requests keep causing requests");
+            }
+            let step = outcome.result.map_err(|v| anyhow!("logic: {v}"))?;
+            frame.logic += us(step.took);
+            calls.push(format!("call={:.0}", us(step.took)));
+            let mut changed = false;
+            for request in &step.requests {
+                match messages::request_tag(request) {
+                    Some("MoveCatalog") => {
+                        query = request["query"].clone();
+                        from = request["from"].clone();
+                        count = request["count"].as_u64().unwrap_or(50) as usize;
+                        changed = true;
                     }
-                }
-                if changed {
-                    let call = Instant::now();
-                    let text = model(&query, &from, count, &focused);
-                    let built = us(call.elapsed());
-                    let call = Instant::now();
-                    engine.set_model(&text).map_err(|v| anyhow!("logic: {v}"))?;
-                    calls.push(format!(
-                        "model(build)={built:.0} set_model={:.0}",
-                        us(call.elapsed())
-                    ));
-                    queue.push(messages::korri_published());
+                    Some("FocusGame") => {
+                        focused = request["gameId"].as_str().map(str::to_owned);
+                        changed = true;
+                    }
+                    _ => {}
                 }
             }
-            // As the shell: view() only when the state or model changed.
-            if engine.view_stale() {
-                engine.views_drawn();
-                let view_started = Instant::now();
-                let view = engine.view().map_err(|v| anyhow!("logic: {v}"))?;
-                frame.view = view_started.elapsed().as_secs_f64() * 1e6;
-                frame.logic = logic.elapsed().as_secs_f64() * 1e6;
-                binder.apply(&surface, &view, &mut images)?;
+            if let Some((view, diff)) = step.view {
+                let apply = Instant::now();
+                binder.apply_diff(&surface, &view, &diff, &mut images)?;
+                frame.view += us(apply.elapsed());
                 if let (Some(new), Some(old)) = (view.as_object(), last_view.as_object()) {
                     let changed: Vec<&str> = new
                         .iter()
@@ -355,10 +395,21 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                     ));
                 }
                 last_view = view;
-                frame.convert = binder.timing.0.as_secs_f64() * 1e6;
-                frame.set = binder.timing.1.as_secs_f64() * 1e6;
-            } else {
-                frame.logic = logic.elapsed().as_secs_f64() * 1e6;
+                frame.convert += binder.timing.0.as_secs_f64() * 1e6;
+                frame.set += binder.timing.1.as_secs_f64() * 1e6;
+                if let Some(sent) = press_sent.take() {
+                    press_latency.push((n - sent) as f64 * FRAME.as_secs_f64() * 1e3);
+                }
+            }
+            logic.returned(&done);
+            if changed {
+                logic.submit(
+                    Call::Model {
+                        model: model(&query, &from, count, &focused),
+                        revision: None,
+                    },
+                    &done,
+                );
             }
         }
         if !calls.is_empty() {
@@ -372,6 +423,10 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                 renderer.set_render_threads(threads);
             }
             renderer.set_frame_profile(profile);
+            if let Some(pixels) = parallel_min {
+                renderer.set_parallel_threshold(pixels);
+            }
+            renderer.set_skip_quiet_frames(!no_skip);
             let render = Instant::now();
             let region = renderer.render(&mut buffer, width as usize);
             let render = us(render.elapsed());
@@ -390,6 +445,11 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                     rect_draw: us(raster.rect_draw.time),
                     layer_draw: us(raster.layer_draw.time),
                     instantiate: us(walk.instantiate.time),
+                    walk_geometry: us(walk.geometry.time),
+                    raster_geometry: us(raster.geometry.time),
+                    items_visited: raster.items_visited as f64,
+                    instances_created: (walk.instances_created + raster.instances_created) as f64,
+                    rows_updated: (walk.rows_updated + raster.rows_updated) as f64,
                     glyph_raster_count: (walk.glyph_raster.count + raster.glyph_raster.count)
                         as f64,
                     glyph_raster: us(walk.glyph_raster.time + raster.glyph_raster.time),
@@ -442,13 +502,13 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                 }
                 if let Some(p) = &frame.profile {
                     eprintln!(
-                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us rect={:.0}us layer={:.0}us instantiate={:.0}us | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
+                        "  PROFILE {n} walk: bindings={:.0}us/{:.0} measure={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} items={:.0} | raster: bindings={:.0}us/{:.0} text={:.0}us/{:.0} shape={:.0}us/{:.0} break={:.0}us/{:.0} glyphs={:.0} new-glyphs={:.0}/{:.0}us runs={:.0}/{:.0}us image={:.0}us path={:.0}us rect={:.0}us layer={:.0}us instantiate={:.0}us geometry={:.0}/{:.0}us visited={:.0} created={:.0} rows={:.0} | layers invalidated={:.0} waiting={:.0} blitted={:.0}",
                         p.walk.binding, p.walk.bindings, p.walk.measure, p.walk.measures, p.walk.shape, p.walk.shapes,
                         p.walk.line_break, p.walk.line_breaks, p.walked_items,
                         p.raster.binding, p.raster.bindings, p.raster.draw, p.raster.draws, p.raster.shape, p.raster.shapes,
                         p.raster.line_break, p.raster.line_breaks, p.glyphs,
                         p.glyph_raster_count, p.glyph_raster, p.glyph_runs, p.glyph_run_setup,
-                        p.image_draw, p.path_draw, p.rect_draw, p.layer_draw, p.instantiate, p.layers_invalidated, p.layers_waiting, p.layers_blitted
+                        p.image_draw, p.path_draw, p.rect_draw, p.layer_draw, p.instantiate, p.walk_geometry, p.raster_geometry, p.items_visited, p.instances_created, p.rows_updated, p.layers_invalidated, p.layers_waiting, p.layers_blitted
                     );
                 }
             }
@@ -457,6 +517,15 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     }
     drop(surface);
     let mut out = report(&options, &frames);
+    if options.logic_thread {
+        press_latency.sort_by(f64::total_cmp);
+        out += &format!(
+            "press to view applied (ms): p50 {:.0} max {:.0} over {} presses (logic off the UI thread; frames paced at 60 Hz)\n",
+            percentile(&press_latency, 0.5),
+            press_latency.last().copied().unwrap_or_default(),
+            press_latency.len()
+        );
+    }
     if profile {
         out += &profile_report(&frames, &raster_sizes);
     }
@@ -464,7 +533,10 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
 }
 
 type ProfilePhase = (&'static str, fn(&Profile) -> f64);
-const PROFILE_PHASES: [ProfilePhase; 29] = [
+const PROFILE_PHASES: [ProfilePhase; 32] = [
+    ("walk: item geometry (us)", |p| p.walk_geometry),
+    ("raster: item geometry (us)", |p| p.raster_geometry),
+    ("raster: items visited", |p| p.items_visited),
     ("instantiate repeaters (us)", |p| p.instantiate),
     ("walk: bindings, outermost (us)", |p| p.walk.binding),
     ("walk: bindings evaluated", |p| p.walk.bindings),

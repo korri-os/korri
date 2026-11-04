@@ -372,7 +372,10 @@ impl ElementHandle {
         visit_attached_popups(&self_item, visitor);
 
         self_item.visit_descendants(move |item_rc| {
-            if !item_rc.is_visible() {
+            // Hidden elements (`visible: false`, opacity zero) are left out; elements only
+            // clipped out of view (a scrolled list, outside the window) are found, and
+            // `is_visible` tells them apart.
+            if item_rc.is_hidden() {
                 return ControlFlow::Continue(());
             }
 
@@ -477,6 +480,12 @@ impl ElementHandle {
     /// ancestor that clips (a scrolled list, a `clip: true` rectangle).
     pub fn is_visible(&self) -> bool {
         self.item.upgrade().is_some_and(|item| item.is_visible())
+    }
+
+    /// Whether the element or an ancestor is hidden (`visible: false`, opacity zero). An
+    /// element only clipped out of view (a scrolled list, outside the window) is not hidden.
+    pub fn is_hidden(&self) -> bool {
+        self.item.upgrade().is_none_or(|item| item.is_hidden())
     }
 
     pub fn is_valid(&self) -> bool {

@@ -8,6 +8,7 @@ import { PicoGameDetail } from "PicoGameDetail.slint";
 import { PicoLaunchStage, LaunchStageView } from "PicoLaunchStage.slint";
 
 export struct StoreEntryView {
+    stacked: bool,
     cart: CartView,
     title: string,
     subtitle: string,
@@ -35,6 +36,7 @@ export component PicoStoreEntry {
         width: root.width;
         height: root.height;
         detail: {
+            stacked: entry.stacked,
             cart: entry.cart,
             title: entry.title,
             subtitle: entry.subtitle,

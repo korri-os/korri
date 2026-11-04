@@ -1,0 +1,137 @@
+# RG353M, build 2b75e0d6f (logic thread, quiet-frame skip, view diff on the logic thread). FULLSPEED=1.
+# 1. Press rows 3x back to back (press3.sh), build 6f15a3588 (same code, skip always on):
+# run 1 load: 1.35 1.18 1.18 1/366 279293
+# 10.42.0.1 2026-11-04T07:26:31Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 2.15 1.42 1.26 1/368 280701
+# 10.42.0.1 2026-11-04T07:27:07Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 1.81 1.44 1.28 1/370 282105
+# 10.42.0.1 2026-11-04T07:27:43Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [54, 63, 53] (median 54); p95 us [18561, 25636, 18306] (median 18561); max us [83335, 98438, 89620] (median 89620)
+# pico presses: over [9, 15, 14] (median 14); p95 us [15604, 15568, 15864] (median 15604); max us [48359, 43688, 46930] (median 46930)
+
+# 2. Skip on vs KORRI_BENCH_NO_SKIP=1, alternating, same build, load before each run:
+# skip run 1 load 1.06 1.25 1.38 1/365 289657
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                           281      15302      43964
+frames over 16.7 ms: 8 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5764      19250      87331
+frames over 16.7 ms: 52 of 600
+# noskip run 1 load 1.91 1.44 1.44 3/366 291057
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                          8551      10080      35674
+frames over 16.7 ms: 6 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5678      26111      96436
+frames over 16.7 ms: 64 of 600
+# skip run 2 load 2.13 1.54 1.47 1/367 292462
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                           247      12723      43938
+frames over 16.7 ms: 8 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5579      25221      90806
+frames over 16.7 ms: 63 of 600
+# noskip run 2 load 2.35 1.66 1.52 3/368 293862
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                          8526       9948      33702
+frames over 16.7 ms: 5 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5449      18373      97165
+frames over 16.7 ms: 51 of 600
+# skip run 3 load 1.85 1.60 1.50 1/368 295267
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                           280      15491      43312
+frames over 16.7 ms: 13 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5594      18779      91087
+frames over 16.7 ms: 52 of 600
+# noskip run 3 load 2.31 1.76 1.56 3/369 296677
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                          8717       9913      30327
+frames over 16.7 ms: 5 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          4476      18211      92066
+frames over 16.7 ms: 51 of 600
+
+# 3. uclamp.min 1024 (uclampset as root, then setpriv to nobody) vs 0, skip on, alternating:
+# uclamp.min 1024 load 2.13 1.64 1.36 2/370 283512
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                           256      14210      38216
+frames over 16.7 ms: 12 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5813      24773      89982
+frames over 16.7 ms: 65 of 600
+# uclamp.min 0 load 1.72 1.61 1.36 2/369 284914
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                           270      13246      35386
+frames over 16.7 ms: 7 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5484      18544      78134
+frames over 16.7 ms: 54 of 600
+# uclamp.min 1024 load 2.23 1.79 1.43 2/370 286321
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                           264      15913      56124
+frames over 16.7 ms: 13 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5390      19008      83099
+frames over 16.7 ms: 55 of 600
+# uclamp.min 0 load 2.59 1.91 1.48 3/370 287722
+bench pico 640x480 frames=600 games=12 presses=6 prefs={} buffer=reused threads=default
+frame total                           262      15493      35193
+frames over 16.7 ms: 10 of 600
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          4743      19461      80360
+frames over 16.7 ms: 50 of 600
+# uclamp does not help: frequency is not what makes paced frames slower (cur freq sampled 1.8 GHz during runs).
+
+# 4. Pico per frame, frames over 12 ms (KORRI_BENCH_FRAMES=1; logic= is the logic thread's call, not UI time):
+## skip
+FRAME 31 logic=15100 view=3067 set=1650 prepare=8745 walk=6792 raster=5147 replay=1246 layers=0/0px/0us total=26974 px=54704
+FRAME 51 logic=12776 view=2929 set=821 prepare=5751 walk=7803 raster=6092 replay=861 layers=0/0px/0us total=24524 px=218272
+FRAME 71 logic=14029 view=2945 set=1317 prepare=5759 walk=6578 raster=4911 replay=935 layers=0/0px/0us total=21787 px=84644
+FRAME 91 logic=12358 view=2686 set=1257 prepare=4156 walk=7328 raster=5156 replay=1017 layers=0/0px/0us total=20865 px=84644
+FRAME 107 logic=0 view=0 set=0 prepare=1608 walk=8892 raster=3876 replay=456 layers=0/0px/0us total=14451 px=4212
+FRAME 112 logic=20699 view=5048 set=1461 prepare=6720 walk=8264 raster=5819 replay=974 layers=0/0px/0us total=29031 px=218272
+FRAME 120 logic=0 view=0 set=0 prepare=1472 walk=6883 raster=4362 replay=424 layers=0/0px/0us total=12915 px=47276
+FRAME 124 logic=0 view=0 set=0 prepare=1436 walk=7060 raster=4696 replay=662 layers=0/0px/0us total=13392 px=48512
+FRAME 143 logic=0 view=0 set=0 prepare=1699 walk=9540 raster=4382 replay=316 layers=0/0px/0us total=15691 px=3120
+FRAME 191 logic=0 view=0 set=0 prepare=1768 walk=9836 raster=4670 replay=240 layers=0/0px/0us total=16345 px=3120
+FRAME 227 logic=0 view=0 set=0 prepare=1677 walk=9660 raster=4496 replay=319 layers=0/0px/0us total=15902 px=3120
+FRAME 239 logic=0 view=0 set=0 prepare=1763 walk=8649 raster=3438 replay=246 layers=0/0px/0us total=13919 px=3120
+FRAME 251 logic=0 view=0 set=0 prepare=1816 walk=9783 raster=5038 replay=345 layers=0/0px/0us total=16706 px=3120
+FRAME 287 logic=0 view=0 set=0 prepare=1620 walk=11006 raster=4296 replay=229 layers=0/0px/0us total=16992 px=3120
+FRAME 311 logic=0 view=0 set=0 prepare=1625 walk=7255 raster=4584 replay=324 layers=0/0px/0us total=13526 px=3120
+FRAME 347 logic=0 view=0 set=0 prepare=1725 walk=9165 raster=4394 replay=313 layers=0/0px/0us total=15354 px=3120
+FRAME 359 logic=0 view=0 set=0 prepare=1790 walk=9573 raster=4446 replay=322 layers=0/0px/0us total=15876 px=3120
+FRAME 371 logic=0 view=0 set=0 prepare=1917 walk=10126 raster=4379 replay=246 layers=0/0px/0us total=16498 px=3120
+FRAME 383 logic=0 view=0 set=0 prepare=1763 walk=9459 raster=4407 replay=320 layers=0/0px/0us total=15700 px=3120
+FRAME 407 logic=0 view=0 set=0 prepare=1795 walk=9550 raster=4571 replay=312 layers=0/0px/0us total=15984 px=3120
+FRAME 419 logic=0 view=0 set=0 prepare=1797 walk=7107 raster=3583 replay=236 layers=0/0px/0us total=12559 px=3120
+FRAME 455 logic=0 view=0 set=0 prepare=1628 walk=9396 raster=4455 replay=317 layers=0/0px/0us total=15547 px=3120
+FRAME 491 logic=0 view=0 set=0 prepare=1378 walk=7134 raster=3620 replay=235 layers=0/0px/0us total=12192 px=3120
+FRAME 503 logic=0 view=0 set=0 prepare=1730 walk=9446 raster=4517 replay=316 layers=0/0px/0us total=15774 px=3120
+FRAME 527 logic=0 view=0 set=0 prepare=1714 walk=9223 raster=4398 replay=320 layers=0/0px/0us total=15400 px=3120
+FRAME 539 logic=0 view=0 set=0 prepare=1733 walk=9193 raster=4418 replay=323 layers=0/0px/0us total=15411 px=3120
+FRAME 551 logic=0 view=0 set=0 prepare=1779 walk=9467 raster=4764 replay=329 layers=0/0px/0us total=16088 px=3120
+FRAME 563 logic=0 view=0 set=0 prepare=1722 walk=9803 raster=4432 replay=321 layers=0/0px/0us total=16024 px=3120
+FRAME 575 logic=0 view=0 set=0 prepare=1728 walk=9227 raster=4382 replay=321 layers=0/0px/0us total=15405 px=3120
+FRAME 587 logic=0 view=0 set=0 prepare=1691 walk=9187 raster=4382 replay=320 layers=0/0px/0us total=15324 px=3120
+FRAME 599 logic=0 view=0 set=0 prepare=1747 walk=9569 raster=3414 replay=237 layers=0/0px/0us total=14802 px=3120
+## noskip
+FRAME 31 logic=12525 view=3592 set=1644 prepare=5283 walk=4784 raster=3256 replay=439 layers=0/0px/0us total=20463 px=54704
+FRAME 51 logic=14297 view=5625 set=1458 prepare=6621 walk=7599 raster=5839 replay=797 layers=0/0px/0us total=28870 px=218272
+FRAME 71 logic=16398 view=3482 set=1709 prepare=6509 walk=9014 raster=4940 replay=603 layers=0/0px/0us total=26875 px=84644
+FRAME 92 logic=20372 view=3360 set=1599 prepare=4728 walk=7219 raster=5264 replay=600 layers=0/0px/0us total=22559 px=84644
+FRAME 112 logic=18879 view=5459 set=1529 prepare=7832 walk=10406 raster=6683 replay=957 layers=0/0px/0us total=33681 px=218272
+FRAME 135 logic=0 view=0 set=0 prepare=1583 walk=9301 raster=1961 replay=12 layers=0/0px/0us total=12897 px=-0
+FRAME 157 logic=0 view=0 set=0 prepare=1247 walk=8928 raster=4956 replay=10 layers=0/0px/0us total=15179 px=-0
+FRAME 360 logic=0 view=0 set=0 prepare=3695 walk=7329 raster=2439 replay=14 layers=0/0px/0us total=13557 px=-0
+FRAME 363 logic=0 view=0 set=0 prepare=3549 walk=7301 raster=2227 replay=14 layers=0/0px/0us total=13130 px=-0
+FRAME 378 logic=0 view=0 set=0 prepare=1187 walk=10104 raster=2024 replay=13 layers=0/0px/0us total=13362 px=-0
+FRAME 496 logic=0 view=0 set=0 prepare=1837 walk=5359 raster=2654 replay=13 layers=0/0px/0us total=12764 px=-0

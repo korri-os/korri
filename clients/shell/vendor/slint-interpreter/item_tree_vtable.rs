@@ -242,6 +242,7 @@ impl i_slint_core::item_tree::ItemTree for Instance {
     }
 
     fn item_geometry(self: Pin<&Self>, item_index: u32) -> LogicalRect {
+        i_slint_core::frame_profile::time(|p| &mut p.geometry, || {
         // `item_index` is the flat tree index. Resolve it via `item_table`
         // into the owning sub-component, then look up the geometry by
         // the item's `index_in_tree`. `sc.geometries` is keyed by the
@@ -327,6 +328,7 @@ impl i_slint_core::item_tree::ItemTree for Instance {
             i_slint_core::lengths::LogicalPoint::new(as_f32("x"), as_f32("y")),
             i_slint_core::lengths::LogicalSize::new(as_f32("width"), as_f32("height")),
         )
+        })
     }
 
     fn accessible_role(self: Pin<&Self>, item_index: u32) -> AccessibleRole {

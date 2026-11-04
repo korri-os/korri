@@ -27,6 +27,73 @@ mod single_linked_list_pin {
         value: T,
     }
 
+    /// Freed nodes kept for the next allocation of the same layout: a binding evaluated
+    /// again drops its dependency nodes and makes the same number anew, every frame of an
+    /// animation, and the allocator calls were a large share of that.
+    #[cfg(feature = "std")]
+    mod pool {
+        use core::alloc::Layout;
+        use core::cell::RefCell;
+
+        /// Nodes kept per layout.
+        const KEEP: usize = 8192;
+
+        struct Pool(alloc::vec::Vec<(Layout, alloc::vec::Vec<*mut u8>)>);
+
+        impl Drop for Pool {
+            fn drop(&mut self) {
+                for (layout, free) in self.0.drain(..) {
+                    for ptr in free {
+                        // Safety: allocated with this layout and not in use.
+                        unsafe { alloc::alloc::dealloc(ptr, layout) };
+                    }
+                }
+            }
+        }
+
+        std::thread_local! {
+            static POOL: RefCell<Pool> = const { RefCell::new(Pool(alloc::vec::Vec::new())) };
+        }
+
+        pub(super) fn alloc(layout: Layout) -> *mut u8 {
+            let reused = POOL
+                .try_with(|pool| {
+                    let mut pool = pool.borrow_mut();
+                    pool.0.iter_mut().find(|(l, _)| *l == layout).and_then(|(_, free)| free.pop())
+                })
+                .ok()
+                .flatten();
+            // Safety: a non-zero-sized layout.
+            reused.unwrap_or_else(|| unsafe { alloc::alloc::alloc(layout) })
+        }
+
+        /// Safety: `ptr` was allocated by `alloc` with `layout` and is no longer used.
+        pub(super) unsafe fn dealloc(ptr: *mut u8, layout: Layout) {
+            let kept = POOL
+                .try_with(|pool| {
+                    let Ok(mut pool) = pool.try_borrow_mut() else { return false };
+                    let index = match pool.0.iter().position(|(l, _)| *l == layout) {
+                        Some(i) => i,
+                        None => {
+                            pool.0.push((layout, alloc::vec::Vec::new()));
+                            pool.0.len() - 1
+                        }
+                    };
+                    let free = &mut pool.0[index].1;
+                    if free.len() < KEEP {
+                        free.push(ptr);
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            if !kept {
+                unsafe { alloc::alloc::dealloc(ptr, layout) };
+            }
+        }
+    }
+
     pub struct SingleLinkedListPinHead<T>(NodePtr<T>);
     impl<T> Default for SingleLinkedListPinHead<T> {
         fn default() -> Self {
@@ -44,6 +111,12 @@ mod single_linked_list_pin {
                 unsafe {
                     cur = (*node.as_ptr()).next;
                     core::ptr::drop_in_place(&raw mut (*node.as_ptr()).value);
+                    #[cfg(feature = "std")]
+                    pool::dealloc(
+                        node.as_ptr().cast(),
+                        core::alloc::Layout::new::<SingleLinkedListPinNode<T>>(),
+                    );
+                    #[cfg(not(feature = "std"))]
                     alloc::alloc::dealloc(
                         node.as_ptr().cast(),
                         core::alloc::Layout::new::<SingleLinkedListPinNode<T>>(),
@@ -59,6 +132,9 @@ mod single_linked_list_pin {
             // Safety: raw allocation, written once and never moved
             let ptr = unsafe {
                 let layout = core::alloc::Layout::new::<SingleLinkedListPinNode<T>>();
+                #[cfg(feature = "std")]
+                let mem = pool::alloc(layout) as *mut SingleLinkedListPinNode<T>;
+                #[cfg(not(feature = "std"))]
                 let mem = alloc::alloc::alloc(layout) as *mut SingleLinkedListPinNode<T>;
                 assert!(!mem.is_null(), "allocation failed");
                 core::ptr::write(mem, node);
@@ -345,6 +421,11 @@ struct Cutoff {
     refresh: Cell<Option<Refresh>>,
     /// A `PropertyTracker`: no value, but its sources can be checked the same way.
     tracker: bool,
+    /// The edges whose source was marked dirty or maybe dirty since this was last checked or
+    /// evaluated: only they can have changed, so only they are checked (`sources_changed`).
+    suspects: RefCell<Vec<*const DepEdge>>,
+    /// Check every edge instead (after `acknowledge_dirty` left a source pending).
+    scan_all: Cell<bool>,
 }
 
 crate::thread_local! {
@@ -374,8 +455,39 @@ unsafe fn update_erased<T>(handle: *const PropertyHandle, value: *mut c_void) {
 /// locked) counts as changed. Clears `maybe` on sources found unchanged.
 unsafe fn sources_changed(holder: *const BindingHolder) -> bool {
     unsafe {
-        for edge in (*(*holder).dep_nodes.get()).iter() {
-            let edge = &edge.get_ref().binding_ref();
+        let cutoff = &(*holder).cutoff;
+        if cutoff.scan_all.get() {
+            // Every edge, read in place: checking a source evaluates that source's binding,
+            // never this holder's, so its edge list stays as it is. When one changed,
+            // `scan_all` stays set for the next check, until an evaluation clears it.
+            for edge in (*(*holder).dep_nodes.get()).iter() {
+                let edge = edge.get_ref().binding_ref() as *const DepEdge;
+                if edges_changed(core::slice::from_ref(&edge)) {
+                    return true;
+                }
+            }
+            cutoff.scan_all.set(false);
+            return false;
+        }
+        let edges = core::mem::take(&mut *cutoff.suspects.borrow_mut());
+        let changed = edges_changed(&edges);
+        if changed {
+            // Kept for the next check, until an evaluation clears them.
+            let mut suspects = cutoff.suspects.borrow_mut();
+            if suspects.is_empty() {
+                *suspects = edges;
+            } else {
+                suspects.extend(edges);
+            }
+        }
+        changed
+    }
+}
+
+unsafe fn edges_changed(edges: &[*const DepEdge]) -> bool {
+    unsafe {
+        for &edge in edges {
+            let edge = &*edge;
             let source = edge.source.get();
             if source.is_null() {
                 continue;
@@ -422,6 +534,7 @@ unsafe fn forget_as_source(holder: *const BindingHolder) {
 }
 
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::cell::{Cell, RefCell, UnsafeCell};
 use core::ffi::c_void;
 use core::marker::PhantomPinned;
@@ -909,7 +1022,11 @@ impl PropertyHandle {
                 let binding_ptr = unsafe { binding_ptr.unwrap_unchecked() };
 
                 // clear all the nodes so that we can start from scratch
-                unsafe { *(*binding_ptr).dep_nodes.get() = Default::default() };
+                unsafe {
+                    (*binding_ptr).cutoff.suspects.borrow_mut().clear();
+                    (*binding_ptr).cutoff.scan_all.set(false);
+                    *(*binding_ptr).dep_nodes.get() = Default::default()
+                };
                 let evaluate = || unsafe {
                     current_binding_storage::set(Some(binding_ptr), || {
                         ((*binding_ptr).vtable.evaluate)(binding_ptr, value as *mut c_void)
@@ -1050,6 +1167,17 @@ unsafe fn mark_dependencies_maybe_dirty(dependencies: *mut DependencyListHead) {
         }
         DependencyListHead::for_each(&*dependencies, |edge| {
             let binding: &BindingHolder = &*edge.binding;
+            // A holder marked often but not checked (an item nobody draws) would gather
+            // suspects for ever: past a few, it checks every edge instead.
+            let mut suspects = binding.cutoff.suspects.borrow_mut();
+            if binding.cutoff.scan_all.get() {
+            } else if suspects.len() >= 64 {
+                suspects.clear();
+                binding.cutoff.scan_all.set(true);
+            } else {
+                suspects.push(edge as *const DepEdge);
+            }
+            drop(suspects);
             if binding.dirty.get() || binding.cutoff.maybe.get() {
                 (binding.vtable.mark_dirty)(binding as *const BindingHolder, true);
                 return;
@@ -1160,6 +1288,19 @@ impl<T: Clone> Property<T> {
             self.debug_name.borrow().as_str(),
         );
         self.get_internal()
+    }
+
+    /// [`Self::get`], handing `f` the value instead of a clone of it: reading one field of a
+    /// large value need not copy the rest. `f` must not access this property.
+    pub fn get_with<R>(self: Pin<&Self>, f: impl FnOnce(&T) -> R) -> R {
+        unsafe { self.handle.update(self.value.get()) };
+        let handle = unsafe { Pin::new_unchecked(&self.handle) };
+        handle.register_as_dependency_to_current_binding(
+            #[cfg(slint_debug_property)]
+            self.debug_name.borrow().as_str(),
+        );
+        // Safety: PropertyHandle::access ensures that the value is locked.
+        self.handle.access(|_| f(unsafe { &*self.value.get() }))
     }
 
     /// Same as get() but without registering a dependency
@@ -1603,6 +1744,8 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
     /// any changes to accessed properties will not propagate to the other tracker.
     pub fn evaluate_as_dependency_root<R>(self: Pin<&Self>, f: impl FnOnce() -> R) -> R {
         // clear all the nodes so that we can start from scratch
+        self.holder.cutoff.suspects.borrow_mut().clear();
+        self.holder.cutoff.scan_all.set(false);
         unsafe { *self.holder.dep_nodes.get() = Default::default() };
 
         let holder_ptr = &raw const self.holder as *const BindingHolder;
@@ -1646,6 +1789,8 @@ impl<const NEEDS_SET_DIRTY: bool, DirtyHandler: PropertyDirtyHandler>
         }
         self.holder.dirty.set(false);
         self.holder.cutoff.maybe.set(pending);
+        self.holder.cutoff.suspects.borrow_mut().clear();
+        self.holder.cutoff.scan_all.set(pending);
         self.bump_version();
     }
 

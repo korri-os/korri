@@ -169,6 +169,101 @@ fn image_request(
     Ok(Some((url, mode)))
 }
 
+/// How a JSON value differs from the one before it: what `Binder` needs to bring the
+/// values it converted from the old one up to date. Computed where the views are made (the
+/// logic thread), so the UI thread does not compare views.
+#[derive(Debug, PartialEq)]
+pub enum Diff {
+    /// Equal.
+    Same,
+    /// Another value, or no value before: converted again.
+    Replaced,
+    /// Both objects: each field of the new one against the old one's.
+    Fields(HashMap<String, Diff>),
+    /// Both arrays: the old length, and each new row against the old row at its index.
+    Rows { before: usize, rows: Vec<Diff> },
+}
+
+impl Diff {
+    pub fn between(old: Option<&Json>, new: &Json) -> Diff {
+        let Some(old) = old else {
+            return Diff::Replaced;
+        };
+        match (old, new) {
+            (Json::Object(old), Json::Object(new)) => {
+                let fields: HashMap<String, Diff> = new
+                    .iter()
+                    .map(|(name, value)| (name.clone(), Diff::between(old.get(name), value)))
+                    .collect();
+                if old.len() == new.len() && fields.values().all(|d| *d == Diff::Same) {
+                    Diff::Same
+                } else {
+                    Diff::Fields(fields)
+                }
+            }
+            (Json::Array(old), Json::Array(new)) => {
+                let rows: Vec<Diff> = new
+                    .iter()
+                    .enumerate()
+                    .map(|(i, row)| Diff::between(old.get(i), row))
+                    .collect();
+                if old.len() == new.len() && rows.iter().all(|d| *d == Diff::Same) {
+                    Diff::Same
+                } else {
+                    Diff::Rows {
+                        before: old.len(),
+                        rows,
+                    }
+                }
+            }
+            (old, new) if old == new => Diff::Same,
+            _ => Diff::Replaced,
+        }
+    }
+
+    fn field(&self, name: &str) -> Option<&Diff> {
+        match self {
+            Diff::Same => Some(&Diff::Same),
+            Diff::Fields(fields) => fields.get(name),
+            _ => None,
+        }
+    }
+}
+
+/// The views of one component in the order they are applied: each one's `Diff` against
+/// the one before.
+#[derive(Default)]
+pub struct Differ {
+    last: Option<Json>,
+}
+
+impl Differ {
+    pub fn next(&mut self, view: &Json) -> Diff {
+        let diff = Diff::between(self.last.as_ref(), view);
+        self.last = Some(view.clone());
+        diff
+    }
+}
+
+/// Where a value sits in a view, for error messages: formatted only when one is made, so
+/// converting a view allocates no path per field.
+#[derive(Clone, Copy)]
+enum Path<'a> {
+    Root(&'a str),
+    Field(&'a Path<'a>, &'a str),
+    Index(&'a Path<'a>, usize),
+}
+
+impl std::fmt::Display for Path<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Path::Root(name) => f.write_str(name),
+            Path::Field(parent, field) => write!(f, "{parent}.{field}"),
+            Path::Index(parent, i) => write!(f, "{parent}[{i}]"),
+        }
+    }
+}
+
 /// Convert one JSON value to the declared type. `previous` supplies values
 /// for `null` and omitted struct fields.
 pub fn convert(
@@ -178,22 +273,26 @@ pub fn convert(
     images: &mut ImageCache,
     path: &str,
 ) -> Result<Value> {
-    convert_from(json, ty, previous, None, images, path)
+    convert_from(json, ty, previous, None, images, &Path::Root(path))
 }
 
 /// `convert`, given the JSON that `previous` was converted from (`before`).
 /// An array whose model the shell made from `before` is brought up to date
 /// in place (`update_rows`), so a repeater over it keeps the instances of
-/// the rows that did not change.
+/// the rows that did not change. `diff`, when given, is how `json` differs from the
+/// JSON `previous` was converted from; a value the same as before is `previous`.
 fn convert_from(
     json: &Json,
     ty: &Type,
     previous: &Value,
-    before: Option<&Json>,
+    diff: Option<&Diff>,
     images: &mut ImageCache,
-    path: &str,
+    path: &Path,
 ) -> Result<Value> {
     if json.is_null() {
+        return Ok(previous.clone());
+    }
+    if diff == Some(&Diff::Same) && *previous != Value::Void {
         return Ok(previous.clone());
     }
     Ok(match (json, ty) {
@@ -218,14 +317,21 @@ fn convert_from(
                 Value::Model(model) => Some(model),
                 _ => None,
             };
-            if let (Some(model), Some(Json::Array(before))) = (old, before) {
+            if let (
+                Some(model),
+                Some(Diff::Rows {
+                    before,
+                    rows: diffs,
+                }),
+            ) = (old, diff)
+            {
                 if let Some(rows) = model
                     .as_any()
                     .downcast_ref::<VecModel<Value>>()
-                    .filter(|rows| rows.row_count() == before.len())
+                    .filter(|rows| rows.row_count() == *before)
                 {
-                    update_rows(rows, items, before, |i, json, prior| {
-                        convert_from(json, item, prior, None, images, &format!("{path}[{i}]"))
+                    update_rows(rows, items, diffs, |i, json, prior| {
+                        convert_from(json, item, prior, None, images, &Path::Index(path, i))
                     })?;
                     return Ok(Value::Model(model.clone()));
                 }
@@ -235,7 +341,7 @@ fn convert_from(
                 .enumerate()
                 .map(|(i, v)| {
                     let prior = old.and_then(|m| m.row_data(i)).unwrap_or_default();
-                    convert(v, item, &prior, images, &format!("{path}[{i}]"))
+                    convert_from(v, item, &prior, None, images, &Path::Index(path, i))
                 })
                 .collect::<Result<Vec<_>>>()?;
             Value::Model(ModelRc::new(VecModel::from(values)))
@@ -264,9 +370,9 @@ fn convert_from(
                     .get(field.as_str())
                     .with_context(|| format!("{path}: undeclared field {field}"))?;
                 let prior = value.get_field(&field).cloned().unwrap_or_default();
-                let before = before.and_then(|b| b.get(name));
+                let diff = diff.and_then(|d| d.field(name));
                 let converted =
-                    convert_from(json, ty, &prior, before, images, &format!("{path}.{field}"))?;
+                    convert_from(json, ty, &prior, diff, images, &Path::Field(path, &field))?;
                 value.set_field(field, converted);
             }
             // A declared field the object omits and that has no value yet
@@ -282,22 +388,23 @@ fn convert_from(
     })
 }
 
-/// Brings `rows`, a model the shell converted from the JSON array `before`,
-/// to the JSON array `items`. A row whose JSON is the same keeps its value
+/// Brings `rows`, a model the shell converted from a JSON array, to the JSON
+/// array `items`; `diffs` says which rows changed. A row whose JSON is the same keeps its value
 /// and its repeater instance. A row whose JSON changed is converted from its
-/// previous value and replaced (removed and inserted), so a repeater drops
-/// its instance and creates a new one, as for a new model. Rows past the new
+/// previous value and set in place (`set_row_data`): a repeater keeps its
+/// instance and updates its bindings, so a row's `init` runs only when the row
+/// is created and a package must draw a row from its data. Rows past the new
 /// length are removed; new rows are added at the end.
 fn update_rows(
     rows: &VecModel<Value>,
     items: &[Json],
-    before: &[Json],
+    diffs: &[Diff],
     mut convert_row: impl FnMut(usize, &Json, &Value) -> Result<Value>,
 ) -> Result<()> {
     // Convert first: an error leaves the model as it was.
     let mut changed = Vec::new();
     for (i, json) in items.iter().enumerate() {
-        if before.get(i) != Some(json) {
+        if diffs.get(i) != Some(&Diff::Same) {
             let prior = rows.row_data(i).unwrap_or_default();
             changed.push((i, convert_row(i, json, &prior)?));
         }
@@ -307,8 +414,7 @@ fn update_rows(
     }
     for (i, value) in changed {
         if i < rows.row_count() {
-            rows.remove(i);
-            rows.insert(i, value);
+            rows.set_row_data(i, value);
         } else {
             rows.push(value);
         }
@@ -380,8 +486,10 @@ pub fn check(view: &Json, types: &BTreeMap<String, Type>, images: &mut ImageCach
 /// `update_rows`).
 pub struct Binder {
     types: BTreeMap<String, Type>,
-    /// Per property: the JSON last applied, and the value it was set to.
-    last: HashMap<String, (Json, Value)>,
+    /// Per property: the value it was last set to.
+    last: HashMap<String, Value>,
+    /// The views `apply` was given, for their diffs (`apply_diff` takes diffs made elsewhere).
+    differ: Differ,
     /// Whether a changed array keeps its model (the default); off, every changed array gets
     /// a new model, as before. For tests and benchmarks that compare the two.
     reuse_models: bool,
@@ -394,6 +502,7 @@ impl Binder {
         Self {
             types: declared(definition),
             last: HashMap::new(),
+            differ: Differ::default(),
             reuse_models: true,
             timing: Default::default(),
         }
@@ -404,10 +513,24 @@ impl Binder {
         self.reuse_models = reuse;
     }
 
+    /// Apply `view`, diffed against the view this binder was given last.
     pub fn apply(
         &mut self,
         component: &ComponentInstance,
         view: &Json,
+        images: &mut ImageCache,
+    ) -> Result<usize> {
+        let diff = self.differ.next(view);
+        self.apply_diff(component, view, &diff, images)
+    }
+
+    /// Apply `view`, given how it differs from the view applied before it (`Differ`, kept
+    /// where the views are made). Use either this or `apply` for one binder, not both.
+    pub fn apply_diff(
+        &mut self,
+        component: &ComponentInstance,
+        view: &Json,
+        diff: &Diff,
         images: &mut ImageCache,
     ) -> Result<usize> {
         let fields = view.as_object().context("view must return an object")?;
@@ -418,7 +541,8 @@ impl Binder {
                 continue;
             }
             let property = kebab(name);
-            if self.last.get(&property).map(|(last, _)| last) == Some(json) {
+            let field_diff = diff.field(name);
+            if field_diff == Some(&Diff::Same) && self.last.contains_key(&property) {
                 continue;
             }
             let ty = self
@@ -427,21 +551,25 @@ impl Binder {
                 .with_context(|| format!("undeclared property {property}"))?;
             let started = std::time::Instant::now();
             let previous = component.get_property(&property)?;
-            // Its models are the shell's, made from that JSON, only while the
+            // Its models are the shell's, made from the JSON before, only while the
             // property still holds the value the shell set.
-            let before = self
-                .last
-                .get(&property)
-                .filter(|(_, set)| self.reuse_models && *set == previous)
-                .map(|(last, _)| last);
-            let value = convert_from(json, ty, &previous, before, images, &property)?;
+            let field_diff = field_diff
+                .filter(|_| self.reuse_models && self.last.get(&property) == Some(&previous));
+            let value = convert_from(
+                json,
+                ty,
+                &previous,
+                field_diff,
+                images,
+                &Path::Root(&property),
+            )?;
             let converted = std::time::Instant::now();
             component
                 .set_property(&property, value.clone())
                 .with_context(|| format!("set {property}"))?;
             self.timing.0 += converted - started;
             self.timing.1 += converted.elapsed();
-            self.last.insert(property, (json.clone(), value));
+            self.last.insert(property, value);
             changed += 1;
         }
         Ok(changed)
@@ -722,6 +850,72 @@ mod tests {
         };
         assert_eq!(item.get_field("label"), Some(&Value::String("a".into())));
         assert_eq!(item.get_field("item-count"), Some(&Value::Number(3.0)));
+        Ok(())
+    }
+
+    #[test]
+    fn a_diff_names_the_changed_fields_and_rows() {
+        let old = json!({"a": 1, "rows": [{"x": 1}, {"x": 2}], "s": {"p": "q", "r": [1]}});
+        assert_eq!(Diff::between(Some(&old), &old.clone()), Diff::Same);
+        assert_eq!(Diff::between(None, &old), Diff::Replaced);
+        let new =
+            json!({"a": 1, "rows": [{"x": 1}, {"x": 3}, {"x": 4}], "s": {"p": "q", "r": [1]}});
+        let Diff::Fields(fields) = Diff::between(Some(&old), &new) else {
+            panic!("fields");
+        };
+        assert_eq!(fields["a"], Diff::Same);
+        assert_eq!(fields["s"], Diff::Same);
+        let Diff::Rows { before, rows } = &fields["rows"] else {
+            panic!("rows");
+        };
+        assert_eq!(*before, 2);
+        assert_eq!(rows[0], Diff::Same);
+        assert!(matches!(rows[1], Diff::Fields(_)));
+        assert_eq!(rows[2], Diff::Replaced);
+        // A dropped field is a change, though the fields left are the same.
+        let fewer = json!({"a": 1, "rows": [{"x": 1}, {"x": 2}]});
+        assert!(matches!(Diff::between(Some(&old), &fewer), Diff::Fields(_)));
+        assert_eq!(Diff::between(Some(&json!(1)), &json!("1")), Diff::Replaced);
+    }
+
+    #[test]
+    fn diffs_made_elsewhere_apply_like_the_binders_own() -> Result<()> {
+        crate::backend::headless::Headless::install();
+        let definition = compile(SOURCE);
+        let dir = tempfile::tempdir()?;
+        let views = [
+            json!({"count": 1, "items": [{"itemCount": 1, "label": "a"}, {"itemCount": 2, "label": "b"}]}),
+            json!({"count": 1, "items": [{"itemCount": 1, "label": "a"}, {"itemCount": 5, "label": "b"}]}),
+            json!({"count": 2, "items": [{"itemCount": 1, "label": "a"}]}),
+            json!({"count": 2, "items": [{"itemCount": 1, "label": "a"}, {"itemCount": 7, "label": "c"}]}),
+        ];
+        let own = definition.create()?;
+        let elsewhere = definition.create()?;
+        let (mut own_binder, mut binder) = (Binder::new(&definition), Binder::new(&definition));
+        let mut differ = Differ::default();
+        let mut images = ImageCache::new(dir.path());
+        for view in &views {
+            own_binder.apply(&own, view, &mut images)?;
+            let diff = differ.next(view);
+            binder.apply_diff(&elsewhere, view, &diff, &mut images)?;
+            for property in ["count", "items"] {
+                let (a, b) = (
+                    own.get_property(property)?,
+                    elsewhere.get_property(property)?,
+                );
+                match (&a, &b) {
+                    (Value::Model(a), Value::Model(b)) => {
+                        assert_eq!(a.iter().collect::<Vec<_>>(), b.iter().collect::<Vec<_>>())
+                    }
+                    _ => assert_eq!(a, b),
+                }
+            }
+        }
+        // The unchanged first row kept its value through every view.
+        let Value::Model(items) = elsewhere.get_property("items")? else {
+            panic!("model");
+        };
+        assert_eq!(items.row_count(), 2);
         Ok(())
     }
 }

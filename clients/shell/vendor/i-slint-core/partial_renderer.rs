@@ -91,6 +91,8 @@ pub enum CachedItemBoundingBoxAndTransform {
         bounding_rect: LogicalRect,
         /// The item's offset relative to its parent.
         offset: LogicalVector,
+        /// The item's size (its geometry's), so drawing it needs no new geometry query.
+        size: LogicalSize,
         sibling_index: u16,
     },
     /// An item such as Rotate that defines an additional transformation
@@ -145,9 +147,9 @@ impl CachedItemBoundingBoxAndTransform {
         use CachedItemBoundingBoxAndTransform::*;
         match (self, other) {
             (
-                RegularItem { bounding_rect: a, offset: oa, .. },
-                RegularItem { bounding_rect: b, offset: ob, .. },
-            ) => a == b && oa == ob,
+                RegularItem { bounding_rect: a, offset: oa, size: sa, .. },
+                RegularItem { bounding_rect: b, offset: ob, size: sb, .. },
+            ) => a == b && oa == ob && sa == sb,
             (
                 ItemWithTransform { bounding_rect: a, transform: ta, .. },
                 ItemWithTransform { bounding_rect: b, transform: tb, .. },
@@ -187,9 +189,57 @@ impl CachedItemBoundingBoxAndTransform {
                 sibling_index,
             }
         } else {
-            Self::RegularItem { bounding_rect, offset: geometry.origin.to_vector(), sibling_index }
+            Self::RegularItem {
+                bounding_rect,
+                offset: geometry.origin.to_vector(),
+                size: geometry.size,
+                sibling_index,
+            }
         }
     }
+}
+
+/// The state the dirty-region walk passes from an item to its children.
+#[derive(Clone, Copy)]
+struct ComputeDirtyRegionState {
+    transform_to_screen: ItemTransform,
+    old_transform_to_screen: ItemTransform,
+    clipped: LogicalRect,
+    must_refresh_children: bool,
+    /// Depth of the item in the tree, used to index the sibling counters.
+    depth: usize,
+}
+
+impl ComputeDirtyRegionState {
+    /// Adjust transform_to_screen and old_transform_to_screen to map from item coordinates
+    /// to the screen when using it on a child, specified by its children transform.
+    fn adjust_transforms_for_child(
+        &mut self,
+        children_transform: &ItemTransform,
+        old_children_transform: &ItemTransform,
+    ) {
+        self.transform_to_screen = children_transform.then(&self.transform_to_screen);
+        self.old_transform_to_screen = old_children_transform.then(&self.old_transform_to_screen);
+    }
+}
+
+/// At the root item of a nested item tree: what the dirty-region walk of the tree's items
+/// read, and whether that walk found nothing to draw. While it is clean, the tree is where
+/// it was, and its last walk found nothing, the tree's items need no walk: their geometry
+/// and their rendering trackers are among what it read.
+#[derive(Default)]
+struct SubtreeWalk {
+    tracker: Pin<Box<PropertyTracker>>,
+    /// The last walk found no change, dirty item or new item in the tree. A walk that did
+    /// cannot be trusted: the dirty items' trackers are evaluated later, while drawing,
+    /// under the window's tracker and not this one.
+    armed: bool,
+    /// The transform and the clip the tree was last walked with.
+    at: Option<(ItemTransform, LogicalRect)>,
+    /// Where on screen the tree's items below its root reach (their clipped screen rects,
+    /// nested trees included), as of its last walk: `None` when not known. Drawing skips
+    /// a tree whose items reach no dirty area.
+    bounds: Option<LogicalRect>,
 }
 
 struct PartialRenderingCachedData {
@@ -203,10 +253,14 @@ struct PartialRenderingCachedData {
     /// and the layer did not move, [`PartialRenderer::compute_dirty_regions`] needs not walk the
     /// children.
     pub cached_layer: bool,
+    /// At the root item of a nested item tree: see [`SubtreeWalk`].
+    subtree: Option<SubtreeWalk>,
+    /// A `Layer`: where its children reach on screen, as of their last walk.
+    children_bounds: Option<LogicalRect>,
 }
 impl PartialRenderingCachedData {
     fn new(data: CachedItemBoundingBoxAndTransform) -> Self {
-        Self { data, tracker: None, cached_layer: false }
+        Self { data, tracker: None, cached_layer: false, subtree: None, children_bounds: None }
     }
 }
 
@@ -445,6 +499,13 @@ pub struct PartialRenderer<'a, T> {
     pub actual_renderer: T,
     /// The window adapter the renderer is rendering into.
     pub window_adapter: Rc<dyn WindowAdapter>,
+    /// Changes the dirty-region walk met so far: geometry changes, dirty, moved and new items.
+    walk_events: u64,
+    /// Whether nested item trees whose last walk found nothing may be skipped this walk.
+    skip_clean_trees: bool,
+    /// Per subtree being walked (innermost last), where its items reach on screen so far;
+    /// `None` once something in it is not known.
+    bounds: alloc::vec::Vec<Option<LogicalRect>>,
 }
 
 impl<'a, T: ItemRenderer + ItemRendererFeatures> PartialRenderer<'a, T> {
@@ -455,7 +516,15 @@ impl<'a, T: ItemRenderer + ItemRendererFeatures> PartialRenderer<'a, T> {
         actual_renderer: T,
     ) -> Self {
         let window_adapter = actual_renderer.window().window_adapter();
-        Self { cache, dirty_region: initial_dirty_region, actual_renderer, window_adapter }
+        Self {
+            cache,
+            dirty_region: initial_dirty_region,
+            actual_renderer,
+            window_adapter,
+            walk_events: 0,
+            skip_clean_trees: false,
+            bounds: alloc::vec::Vec::new(),
+        }
     }
 
     /// Visit the tree of item and compute what are the dirty regions
@@ -465,16 +534,6 @@ impl<'a, T: ItemRenderer + ItemRendererFeatures> PartialRenderer<'a, T> {
         origin: LogicalPoint,
         size: LogicalSize,
     ) {
-        #[derive(Clone, Copy)]
-        struct ComputeDirtyRegionState {
-            transform_to_screen: ItemTransform,
-            old_transform_to_screen: ItemTransform,
-            clipped: LogicalRect,
-            must_refresh_children: bool,
-            /// Depth of the item in the tree, used to index `sibling_counters`.
-            depth: usize,
-        }
-
         // Two counters per tree depth to give each item its rank among its z-ordered siblings.
         // `.0` counts every visited item and is what gets stored in the cache entry; `.1`
         // counts only the items that already have a cache entry and is what the stored rank
@@ -484,227 +543,14 @@ impl<'a, T: ItemRenderer + ItemRendererFeatures> PartialRenderer<'a, T> {
         // existing items can never trade places without at least one comparison rank
         // changing.
         let sibling_counters = RefCell::new(alloc::vec::Vec::<(u16, u16)>::new());
-
-        impl ComputeDirtyRegionState {
-            /// Adjust transform_to_screen and old_transform_to_screen to map from item coordinates
-            /// to the screen when using it on a child, specified by its children transform.
-            fn adjust_transforms_for_child(
-                &mut self,
-                children_transform: &ItemTransform,
-                old_children_transform: &ItemTransform,
-            ) {
-                self.transform_to_screen = children_transform.then(&self.transform_to_screen);
-                self.old_transform_to_screen =
-                    old_children_transform.then(&self.old_transform_to_screen);
-            }
-        }
-
+        // A frame that created or destroyed item trees walks them all: a tree's tracker
+        // does not see its repeaters' instances come and go.
+        self.skip_clean_trees =
+            !crate::window::WindowInner::from_pub(self.window_adapter.window()).take_instantiated();
         crate::item_tree::visit_items(
             component,
             crate::item_tree::TraversalOrder::BackToFront,
-            |component, item, index, state| {
-                let mut new_state = *state;
-                let item_rc = ItemRc::new(component.clone(), index);
-
-                let my_sibling_index = {
-                    let depth = state.depth;
-                    let mut counters = sibling_counters.borrow_mut();
-                    if counters.len() <= depth + 1 {
-                        counters.resize(depth + 2, (0, 0));
-                    }
-                    counters[depth + 1] = (0, 0); // this item's children restart at zero
-                    let idx = counters[depth].0;
-                    counters[depth].0 = idx.saturating_add(1);
-                    idx
-                };
-                new_state.depth = state.depth + 1;
-
-                let new_geom = CachedItemBoundingBoxAndTransform::new::<T>(
-                    &item_rc,
-                    &self.window_adapter,
-                    my_sibling_index,
-                );
-
-                // The region the item covers on screen. It is merged into the owning
-                // tree's entry in `tree_screen_rects` so that destroying the tree can
-                // repaint that region (see `PartialRenderingState::free_graphics_resources`),
-                // and it doubles as the item's current-position dirty rect in the branches
-                // below.
-                let new_screen_rect = clipped_screen_rect(
-                    new_geom.bounding_rect(),
-                    &state.transform_to_screen,
-                    &state.clipped,
-                )
-                .unwrap_or_default();
-
-                let rendering_data = item.cached_rendering_data_offset();
-                let mut cache = self.cache.borrow_mut();
-                cache.walked_items += 1;
-
-                let tree_key = vtable::VRef::as_ptr(crate::item_tree::ItemTreeRc::borrow(component))
-                    .as_ptr() as usize;
-                if index == 0
-                    && let Some(acc) = cache.tree_screen_rects.get_mut(&tree_key)
-                {
-                    // Entering the tree: rebuild its screen region from this pass's visits.
-                    *acc = LogicalRect::default();
-                }
-                if !new_screen_rect.is_empty() {
-                    let acc = cache.tree_screen_rects.entry(tree_key).or_default();
-                    *acc = acc.union(&new_screen_rect);
-                }
-
-                match rendering_data.get_entry(&mut cache) {
-                    Some(PartialRenderingCachedData { data: cached_geom, tracker, cached_layer }) => {
-                        let rendering_dirty = tracker.as_ref().is_some_and(|tr| tr.is_dirty());
-
-                        // Repaint when the rank among the previously known siblings changed,
-                        // in either direction: two items cannot trade places in the stacking
-                        // order with both comparison ranks unchanged, and since an overlap is
-                        // within both items' rects, repainting the changed one(s) covers it.
-                        // Only a decrease is not enough: in a permutation of three or more
-                        // items a pair can flip while one member keeps its rank and the other
-                        // only rises. A saturated rank (>65535 siblings) always repaints.
-                        let comparison_sibling_index = {
-                            let mut counters = sibling_counters.borrow_mut();
-                            let idx = counters[state.depth].1;
-                            counters[state.depth].1 = idx.saturating_add(1);
-                            idx
-                        };
-                        let old_sibling_index =
-                            core::mem::replace(cached_geom.sibling_index(), my_sibling_index);
-                        let sibling_index_changed = my_sibling_index == u16::MAX
-                            || comparison_sibling_index != old_sibling_index;
-                        new_state.must_refresh_children |= sibling_index_changed;
-
-                        let geometry_changed = !cached_geom.same_geometry(&new_geom);
-                        if ItemRef::downcast_pin::<Clip>(item).is_some()
-                            || ItemRef::downcast_pin::<Opacity>(item).is_some()
-                        {
-                            // When the opacity or the clip change, this will impact all the children, including
-                            // the ones outside the element, regardless if they are themselves dirty or not.
-                            new_state.must_refresh_children |= rendering_dirty || geometry_changed;
-
-                            if rendering_dirty {
-                                // Destroy the tracker as we we might not re-render this clipped item but it would stay dirty
-                                *tracker = None;
-                            }
-                        }
-
-                        if geometry_changed {
-                            let old_transform = cached_geom.transform();
-                            self.mark_dirty_rect(
-                                cached_geom.bounding_rect(),
-                                state.old_transform_to_screen,
-                                &state.clipped,
-                            );
-                            self.dirty_region.add_rect(new_screen_rect);
-
-                            new_state
-                                .adjust_transforms_for_child(&new_geom.transform(), &old_transform);
-
-                            *cached_geom = new_geom;
-
-                            return ItemVisitorResult::Continue(new_state);
-                        }
-
-                        new_state.adjust_transforms_for_child(
-                            &cached_geom.transform(),
-                            &cached_geom.transform(),
-                        );
-
-                        let moved = state.must_refresh_children
-                            || sibling_index_changed
-                            || new_state.transform_to_screen != new_state.old_transform_to_screen;
-
-                        if rendering_dirty {
-                            self.dirty_region.add_rect(new_screen_rect);
-                            if moved {
-                                self.mark_dirty_rect(
-                                    cached_geom.bounding_rect(),
-                                    state.old_transform_to_screen,
-                                    &state.clipped,
-                                );
-                            }
-
-                            ItemVisitorResult::Continue(new_state)
-                        } else {
-                            if moved {
-                                self.mark_dirty_rect(
-                                    cached_geom.bounding_rect(),
-                                    state.old_transform_to_screen,
-                                    &state.clipped,
-                                );
-                                self.dirty_region.add_rect(new_screen_rect);
-                            } else if let Some(tr) = &tracker {
-                                tr.as_ref().register_as_dependency_to_current_binding();
-                                // A clean layer the renderer drew from its own cache: nothing
-                                // below it changed (its tracker would be dirty), so its children
-                                // add no dirty region. Skip the walk.
-                                if *cached_layer {
-                                    return ItemVisitorResult::SkipChildren;
-                                }
-                            }
-
-                            if let CachedItemBoundingBoxAndTransform::ClipItem {
-                                geometry, ..
-                            } = &cached_geom
-                            {
-                                new_state.clipped = new_state
-                                    .clipped
-                                    .intersection(
-                                        &state
-                                            .transform_to_screen
-                                            .outer_transformed_rect(&geometry.cast())
-                                            .cast()
-                                            .union(
-                                                &state
-                                                    .old_transform_to_screen
-                                                    .outer_transformed_rect(&geometry.cast())
-                                                    .cast(),
-                                            ),
-                                    )
-                                    .unwrap_or_default();
-                                if new_state.clipped.is_empty() {
-                                    return ItemVisitorResult::SkipChildren;
-                                }
-                            }
-                            ItemVisitorResult::Continue(new_state)
-                        }
-                    }
-                    None => {
-                        let cache_entry = PartialRenderingCachedData::new(new_geom.clone());
-                        rendering_data.cache_index.set(cache.insert(cache_entry));
-                        rendering_data.cache_generation.set(cache.generation());
-
-                        new_state.adjust_transforms_for_child(
-                            &new_geom.transform(),
-                            &new_geom.transform(),
-                        );
-
-                        if let CachedItemBoundingBoxAndTransform::ClipItem { geometry, .. } =
-                            new_geom
-                        {
-                            new_state.clipped = new_state
-                                .clipped
-                                .intersection(
-                                    &state
-                                        .transform_to_screen
-                                        .outer_transformed_rect(&geometry.cast())
-                                        .cast(),
-                                )
-                                .unwrap_or_default();
-                        }
-
-                        self.dirty_region.add_rect(new_screen_rect);
-                        if new_state.clipped.is_empty() {
-                            ItemVisitorResult::SkipChildren
-                        } else {
-                            ItemVisitorResult::Continue(new_state)
-                        }
-                    }
-                }
-            },
+            |component, item, index, state| self.visit(&sibling_counters, component, item, index, state),
             {
                 let initial_transform =
                     euclid::Transform2D::translation(origin.x as f32, origin.y as f32);
@@ -717,6 +563,371 @@ impl<'a, T: ItemRenderer + ItemRendererFeatures> PartialRenderer<'a, T> {
                 }
             },
         );
+    }
+
+    /// One item of the dirty-region walk. At the root of a nested item tree, the tree's
+    /// items are walked here, under the tree's own tracker (`SubtreeWalk`); a tree whose
+    /// last walk found nothing to draw, and that nothing it read changed since, is not
+    /// walked again.
+    fn visit(
+        &mut self,
+        counters: &RefCell<alloc::vec::Vec<(u16, u16)>>,
+        component: &ItemTreeRc,
+        item: Pin<ItemRef>,
+        index: u32,
+        state: &ComputeDirtyRegionState,
+    ) -> ItemVisitorResult<ComputeDirtyRegionState> {
+        let events = self.walk_events;
+        // `visit_item` starts the tree's screen region afresh at its root; a tree not walked
+        // keeps the one of its last walk.
+        let tree_key =
+            vtable::VRef::as_ptr(crate::item_tree::ItemTreeRc::borrow(component)).as_ptr() as usize;
+        let last_region = (index == 0)
+            .then(|| self.cache.borrow().tree_screen_rects.get(&tree_key).copied())
+            .flatten();
+        let result = self.visit_item(counters, component, item, index, state);
+        let ItemVisitorResult::Continue(new_state) = result else {
+            return result;
+        };
+        let is_layer = ItemRef::downcast_pin::<crate::items::Layer>(item).is_some();
+        // A layer whose content changed, and where its children reached before. Drawn from
+        // its cache, a layer's children are drawn by the layer and their own trackers never
+        // run: where they reached and reach now is drawn again.
+        let layer_changed = is_layer
+            && (self.walk_events != events
+                || self.actual_renderer.layer_content_changed(&ItemRc::new(component.clone(), index)));
+        let layer_before = if layer_changed {
+            // Its content changing is a change of the tree it is in.
+            self.walk_events += 1;
+            let mut cache = self.cache.borrow_mut();
+            item.cached_rendering_data_offset().get_entry(&mut cache).and_then(|e| e.children_bounds)
+        } else {
+            None
+        };
+        // Only nested trees: the window's own tree is the window's redraw tracker's.
+        if index != 0 || state.depth == 0 {
+            if !is_layer {
+                return ItemVisitorResult::Continue(new_state);
+            }
+            // A layer's children: where they reach, for when a clean cached layer is not
+            // walked (they may reach outside the layer).
+            self.bounds.push(Some(LogicalRect::default()));
+            crate::item_tree::visit_item_children(
+                component,
+                index,
+                crate::item_tree::TraversalOrder::BackToFront,
+                &mut |component, item, index, state| {
+                    self.visit(counters, component, item, index, state)
+                },
+                &new_state,
+            );
+            let children = self.bounds.pop().flatten();
+            self.add_bounds(children);
+            if layer_changed {
+                for rect in [layer_before, children].into_iter().flatten() {
+                    self.dirty_region.add_rect(rect);
+                }
+            }
+            let mut cache = self.cache.borrow_mut();
+            if let Some(entry) = item.cached_rendering_data_offset().get_entry(&mut cache) {
+                entry.children_bounds = children;
+            }
+            return ItemVisitorResult::SkipChildren;
+        }
+        let root_clean = self.walk_events == events;
+        let rendering_data = item.cached_rendering_data_offset();
+        let mut walk = {
+            let mut cache = self.cache.borrow_mut();
+            let Some(entry) = rendering_data.get_entry(&mut cache) else {
+                return ItemVisitorResult::Continue(new_state);
+            };
+            entry.subtree.take().unwrap_or_default()
+        };
+        let skip = self.skip_clean_trees
+            && root_clean
+            && walk.armed
+            && !new_state.must_refresh_children
+            && new_state.transform_to_screen == new_state.old_transform_to_screen
+            && walk.at == Some((new_state.transform_to_screen, new_state.clipped))
+            && !walk.tracker.is_dirty();
+        if skip {
+            walk.tracker.as_ref().register_as_dependency_to_current_binding();
+            if let Some(last) = last_region {
+                let mut cache = self.cache.borrow_mut();
+                let region = cache.tree_screen_rects.entry(tree_key).or_default();
+                *region = region.union(&last);
+            }
+            self.add_bounds(walk.bounds);
+        } else {
+            let children_events = self.walk_events;
+            self.bounds.push(Some(LogicalRect::default()));
+            walk.tracker.as_ref().evaluate(|| {
+                crate::item_tree::visit_item_children(
+                    component,
+                    index,
+                    crate::item_tree::TraversalOrder::BackToFront,
+                    &mut |component, item, index, state| {
+                        self.visit(counters, component, item, index, state)
+                    },
+                    &new_state,
+                );
+            });
+            walk.armed = self.walk_events == children_events;
+            walk.at = Some((new_state.transform_to_screen, new_state.clipped));
+            walk.bounds = self.bounds.pop().flatten();
+            self.add_bounds(walk.bounds);
+            if layer_changed {
+                for rect in [layer_before, walk.bounds].into_iter().flatten() {
+                    self.dirty_region.add_rect(rect);
+                }
+            }
+        }
+        let mut cache = self.cache.borrow_mut();
+        if let Some(entry) = rendering_data.get_entry(&mut cache) {
+            // A root that is a layer: what a walk that skips its children adds.
+            entry.children_bounds = walk.bounds;
+            entry.subtree = Some(walk);
+        }
+        ItemVisitorResult::SkipChildren
+    }
+
+    /// The dirty-region walk's work for one item.
+    fn visit_item(
+        &mut self,
+        counters: &RefCell<alloc::vec::Vec<(u16, u16)>>,
+        component: &ItemTreeRc,
+        item: Pin<ItemRef>,
+        index: u32,
+        state: &ComputeDirtyRegionState,
+    ) -> ItemVisitorResult<ComputeDirtyRegionState> {
+            let mut new_state = *state;
+            let item_rc = ItemRc::new(component.clone(), index);
+
+            let my_sibling_index = {
+                let depth = state.depth;
+                let mut counters = counters.borrow_mut();
+                if counters.len() <= depth + 1 {
+                    counters.resize(depth + 2, (0, 0));
+                }
+                counters[depth + 1] = (0, 0); // this item's children restart at zero
+                let idx = counters[depth].0;
+                counters[depth].0 = idx.saturating_add(1);
+                idx
+            };
+            new_state.depth = state.depth + 1;
+
+            let new_geom = CachedItemBoundingBoxAndTransform::new::<T>(
+                &item_rc,
+                &self.window_adapter,
+                my_sibling_index,
+            );
+
+            // The region the item covers on screen. It is merged into the owning
+            // tree's entry in `tree_screen_rects` so that destroying the tree can
+            // repaint that region (see `PartialRenderingState::free_graphics_resources`),
+            // and it doubles as the item's current-position dirty rect in the branches
+            // below.
+            let new_screen_rect = clipped_screen_rect(
+                new_geom.bounding_rect(),
+                &state.transform_to_screen,
+                &state.clipped,
+            )
+            .unwrap_or_default();
+            self.add_bounds(Some(new_screen_rect));
+
+            let rendering_data = item.cached_rendering_data_offset();
+            let mut cache = self.cache.borrow_mut();
+            cache.walked_items += 1;
+
+            let tree_key = vtable::VRef::as_ptr(crate::item_tree::ItemTreeRc::borrow(component))
+                .as_ptr() as usize;
+            if index == 0
+                && let Some(acc) = cache.tree_screen_rects.get_mut(&tree_key)
+            {
+                // Entering the tree: rebuild its screen region from this pass's visits.
+                *acc = LogicalRect::default();
+            }
+            if !new_screen_rect.is_empty() {
+                let acc = cache.tree_screen_rects.entry(tree_key).or_default();
+                *acc = acc.union(&new_screen_rect);
+            }
+
+            match rendering_data.get_entry(&mut cache) {
+                Some(PartialRenderingCachedData {
+                    data: cached_geom,
+                    tracker,
+                    cached_layer,
+                    children_bounds,
+                    ..
+                }) => {
+                    let rendering_dirty = tracker.as_ref().is_some_and(|tr| tr.is_dirty());
+
+                    // Repaint when the rank among the previously known siblings changed,
+                    // in either direction: two items cannot trade places in the stacking
+                    // order with both comparison ranks unchanged, and since an overlap is
+                    // within both items' rects, repainting the changed one(s) covers it.
+                    // Only a decrease is not enough: in a permutation of three or more
+                    // items a pair can flip while one member keeps its rank and the other
+                    // only rises. A saturated rank (>65535 siblings) always repaints.
+                    let comparison_sibling_index = {
+                        let mut counters = counters.borrow_mut();
+                        let idx = counters[state.depth].1;
+                        counters[state.depth].1 = idx.saturating_add(1);
+                        idx
+                    };
+                    let old_sibling_index =
+                        core::mem::replace(cached_geom.sibling_index(), my_sibling_index);
+                    let sibling_index_changed = my_sibling_index == u16::MAX
+                        || comparison_sibling_index != old_sibling_index;
+                    new_state.must_refresh_children |= sibling_index_changed;
+
+                    let geometry_changed = !cached_geom.same_geometry(&new_geom);
+                    if ItemRef::downcast_pin::<Clip>(item).is_some()
+                        || ItemRef::downcast_pin::<Opacity>(item).is_some()
+                    {
+                        // When the opacity or the clip change, this will impact all the children, including
+                        // the ones outside the element, regardless if they are themselves dirty or not.
+                        new_state.must_refresh_children |= rendering_dirty || geometry_changed;
+
+                        if rendering_dirty {
+                            // Destroy the tracker as we we might not re-render this clipped item but it would stay dirty
+                            *tracker = None;
+                        }
+                    }
+
+                    if geometry_changed {
+                        self.walk_events += 1;
+                        let old_transform = cached_geom.transform();
+                        self.mark_dirty_rect(
+                            cached_geom.bounding_rect(),
+                            state.old_transform_to_screen,
+                            &state.clipped,
+                        );
+                        self.dirty_region.add_rect(new_screen_rect);
+
+                        new_state
+                            .adjust_transforms_for_child(&new_geom.transform(), &old_transform);
+
+                        *cached_geom = new_geom;
+
+                        return ItemVisitorResult::Continue(new_state);
+                    }
+
+                    new_state.adjust_transforms_for_child(
+                        &cached_geom.transform(),
+                        &cached_geom.transform(),
+                    );
+
+                    let moved = state.must_refresh_children
+                        || sibling_index_changed
+                        || new_state.transform_to_screen != new_state.old_transform_to_screen;
+
+                    if rendering_dirty || moved {
+                        self.walk_events += 1;
+                    }
+                    if rendering_dirty {
+                        self.dirty_region.add_rect(new_screen_rect);
+                        if moved {
+                            self.mark_dirty_rect(
+                                cached_geom.bounding_rect(),
+                                state.old_transform_to_screen,
+                                &state.clipped,
+                            );
+                        }
+
+                        ItemVisitorResult::Continue(new_state)
+                    } else {
+                        if moved {
+                            self.mark_dirty_rect(
+                                cached_geom.bounding_rect(),
+                                state.old_transform_to_screen,
+                                &state.clipped,
+                            );
+                            self.dirty_region.add_rect(new_screen_rect);
+                        } else if let Some(tr) = &tracker {
+                            tr.as_ref().register_as_dependency_to_current_binding();
+                            // A clean layer the renderer drew from its own cache: nothing
+                            // below it changed (its tracker would be dirty), so its children
+                            // add no dirty region. Skip the walk.
+                            if *cached_layer && !self.actual_renderer.layer_content_changed(&item_rc) {
+                                let children = *children_bounds;
+                                drop(cache);
+                                self.add_bounds(children);
+                                return ItemVisitorResult::SkipChildren;
+                            }
+                        }
+
+                        if let CachedItemBoundingBoxAndTransform::ClipItem {
+                            geometry, ..
+                        } = &cached_geom
+                        {
+                            new_state.clipped = new_state
+                                .clipped
+                                .intersection(
+                                    &state
+                                        .transform_to_screen
+                                        .outer_transformed_rect(&geometry.cast())
+                                        .cast()
+                                        .union(
+                                            &state
+                                                .old_transform_to_screen
+                                                .outer_transformed_rect(&geometry.cast())
+                                                .cast(),
+                                        ),
+                                )
+                                .unwrap_or_default();
+                            if new_state.clipped.is_empty() {
+                                return ItemVisitorResult::SkipChildren;
+                            }
+                        }
+                        ItemVisitorResult::Continue(new_state)
+                    }
+                }
+                None => {
+                    self.walk_events += 1;
+                    let cache_entry = PartialRenderingCachedData::new(new_geom.clone());
+                    rendering_data.cache_index.set(cache.insert(cache_entry));
+                    rendering_data.cache_generation.set(cache.generation());
+
+                    new_state.adjust_transforms_for_child(
+                        &new_geom.transform(),
+                        &new_geom.transform(),
+                    );
+
+                    if let CachedItemBoundingBoxAndTransform::ClipItem { geometry, .. } =
+                        new_geom
+                    {
+                        new_state.clipped = new_state
+                            .clipped
+                            .intersection(
+                                &state
+                                    .transform_to_screen
+                                    .outer_transformed_rect(&geometry.cast())
+                                    .cast(),
+                            )
+                            .unwrap_or_default();
+                    }
+
+                    self.dirty_region.add_rect(new_screen_rect);
+                    if new_state.clipped.is_empty() {
+                        ItemVisitorResult::SkipChildren
+                    } else {
+                        ItemVisitorResult::Continue(new_state)
+                    }
+                }
+            }
+    }
+
+    /// Add `rect` to where the innermost subtree being walked reaches.
+    fn add_bounds(&mut self, rect: Option<LogicalRect>) {
+        if let Some(top) = self.bounds.last_mut() {
+            *top = match (*top, rect) {
+                (Some(_), Some(r)) if r.is_empty() => *top,
+                (Some(t), Some(r)) if t.is_empty() => Some(r),
+                (Some(t), Some(r)) => Some(t.union(&r)),
+                _ => None,
+            };
+        }
     }
 
     fn mark_dirty_rect(
@@ -791,6 +1002,25 @@ macro_rules! forward_rendering_call2 {
 }
 
 impl<T: ItemRenderer + ItemRendererFeatures> ItemRenderer for PartialRenderer<'_, T> {
+    fn layer_content_changed(&self, item_rc: &ItemRc) -> bool {
+        self.actual_renderer.layer_content_changed(item_rc)
+    }
+
+    fn skip_subtree(&mut self, item_rc: &ItemRc) -> bool {
+        let item = item_rc.borrow();
+        let mut cache = self.cache.borrow_mut();
+        let Some(bounds) = item
+            .cached_rendering_data_offset()
+            .get_entry(&mut cache)
+            .and_then(|e| e.subtree.as_ref())
+            .and_then(|w| w.bounds)
+        else {
+            return false;
+        };
+        // A pixel of margin over the walk's rounding.
+        !self.dirty_region.draw_intersects(bounds.inflate(1 as Coord, 1 as Coord))
+    }
+
     fn filter_item(
         &mut self,
         item_rc: &ItemRc,
@@ -805,7 +1035,9 @@ impl<T: ItemRenderer + ItemRendererFeatures> ItemRenderer for PartialRenderer<'_
             rendering_data.get_entry(&mut cache).map(|e| {
                 let draw = self.item_is_drawn(e.data.bounding_rect());
                 let offset = match &e.data {
-                    CachedItemBoundingBoxAndTransform::RegularItem { offset, .. } => Some(*offset),
+                    CachedItemBoundingBoxAndTransform::RegularItem { offset, size, .. } => {
+                        Some((*offset, *size))
+                    }
                     _ => None,
                 };
                 (draw, offset)
@@ -813,8 +1045,12 @@ impl<T: ItemRenderer + ItemRendererFeatures> ItemRenderer for PartialRenderer<'_
         };
 
         // Items that are not drawn only need their origin; this skips e.g. shaping off-screen text.
-        if let Some((false, Some(offset))) = cached {
-            return (false, offset.to_point(), None);
+        // Drawn ones take the geometry this frame's dirty-region walk computed, instead of
+        // asking the item again.
+        match cached {
+            Some((false, Some((offset, _)))) => return (false, offset.to_point(), None),
+            Some((true, Some((offset, size)))) => return (true, offset.to_point(), Some(size)),
+            _ => {}
         }
 
         // Query untracked, as the bounding rect calculation already registers a dependency on the geometry.
@@ -994,6 +1230,19 @@ impl PartialRenderingState {
         .intersection(screen_region);
 
         region_to_repaint
+    }
+
+    /// Whether the next frame has a region to draw whatever the items say: one marked with
+    /// [`Self::mark_dirty_region`] (a destroyed tree, a layer to draw again) or a forced
+    /// screen refresh.
+    pub fn has_forced_region(&self) -> bool {
+        self.force_screen_refresh.get() || self.force_dirty.borrow().iter().next().is_some()
+    }
+
+    /// The renderer skipped a frame: it walked no item.
+    #[doc(hidden)]
+    pub fn frame_skipped(&self) {
+        self.partial_cache.borrow_mut().walked_items = 0;
     }
 
     /// Add the specified region to the list of regions to include in the next rendering.

@@ -475,6 +475,11 @@ impl<C: RepeatedItemTree> RepeaterInstanceOps for RustRepeaterOps<'_, C> {
             if created {
                 c.1 = Some((self.init)());
             }
+            #[cfg(feature = "std")]
+            crate::frame_profile::record(|p| {
+                p.rows_updated += 1;
+                p.instances_created += created as u64;
+            });
             c.1.as_ref().unwrap().update(row, self.model.row_data(row).unwrap_or_default());
             c.0 = RepeatedInstanceState::Clean;
             (created, c.1.as_ref().unwrap().clone())
@@ -931,6 +936,8 @@ impl<C: RepeatedItemTree + 'static> Conditional<C> {
             self.instance.take().is_some()
         } else if self.instance.borrow().is_none() {
             let i = init();
+            #[cfg(feature = "std")]
+            crate::frame_profile::record(|p| p.instances_created += 1);
             self.instance.replace(Some(i.clone()));
             i.init();
             true
@@ -950,8 +957,12 @@ impl<C: RepeatedItemTree + 'static> Conditional<C> {
     }
 
     /// Set the model binding
+    #[allow(unsafe_code)]
     pub fn set_model_binding(&self, binding: impl Fn() -> bool + 'static) {
-        self.model.set_binding(binding);
+        // Compared: a condition re-evaluated to the same value leaves the conditional and
+        // what reads it clean (equality cut-off, properties.rs).
+        // Safety: a conditional lives pinned in its item tree.
+        unsafe { Pin::new_unchecked(&self.model) }.set_binding_comparing(binding);
     }
 
     /// Call the visitor for the root of each instance.

@@ -6,19 +6,25 @@ import { ButtonView } from "PicoRow.slint";
 // The floor's lead control: MENU with its three bars, or a quiet word (RELOAD).
 // It stands on the floor, never in a scrolled body, so it reveals nothing.
 export component PicoMenuKey {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: button.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: (button.target && button.focused);
     in property <ButtonView> button;
     in property <bool> menu: true;
     width: row.preferred-width;
     height: 12 * Tokens.p;
-    Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: button.focused ? Cycle.now : P8.plate-shadow; }
-    Rectangle { background: button.focused ? P8.pick : P8.plate; }
+    Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: (button.target && button.focused) ? Cycle.now : P8.plate-shadow; }
+    Rectangle { background: (button.target && button.focused) ? P8.pick : P8.plate; }
     row := HorizontalLayout {
         padding-top: 2 * Tokens.p;
         padding-bottom: 2 * Tokens.p;
         padding-left: 3 * Tokens.p;
         padding-right: 3 * Tokens.p;
         spacing: 2 * Tokens.p;
-        property <color> ink: button.focused ? P8.pick-ink : button.disabled ? P8.ink-quiet : P8.plate-ink;
+        property <color> ink: (button.target && button.focused) ? P8.pick-ink : button.disabled ? P8.ink-quiet : P8.plate-ink;
         if menu : Rectangle {
             width: 8 * Tokens.p;
             for bar in 3 : Rectangle { x: Tokens.p; y: (1 + 2 * bar) * Tokens.p; width: 6 * Tokens.p; height: Tokens.p; background: row.ink; }

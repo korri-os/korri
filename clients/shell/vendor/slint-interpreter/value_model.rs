@@ -8,6 +8,7 @@ use i_slint_core::model::{Model, ModelError, ModelRc, ModelTracker};
 /// index. The type-erased equivalent of core's `impl Model for usize`; the
 /// count is baked in — a change to the number re-evaluates the model binding
 /// and produces a new `IntModel`, so the tracker has nothing to track.
+#[allow(dead_code)]
 pub struct IntModel(pub usize);
 
 impl Model for IntModel {
@@ -23,6 +24,50 @@ impl Model for IntModel {
 
     fn model_tracker(&self) -> &dyn ModelTracker {
         &()
+    }
+
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+}
+
+/// A number model whose count can change in place (`for i in n`): rows are added or
+/// removed at the end with notifications, so a repeater keeps the instances of the rows
+/// that stay, as it does for any model whose rows change.
+pub struct CountModel {
+    count: core::cell::Cell<usize>,
+    notify: i_slint_core::model::ModelNotify,
+}
+
+impl CountModel {
+    pub fn new(count: usize) -> Self {
+        Self { count: count.into(), notify: Default::default() }
+    }
+
+    /// Change the count, notifying the rows added or removed at the end.
+    pub fn set_count(&self, count: usize) {
+        let old = self.count.replace(count);
+        if count > old {
+            self.notify.row_added(old, count - old);
+        } else if count < old {
+            self.notify.row_removed(count, old - count);
+        }
+    }
+}
+
+impl Model for CountModel {
+    type Data = Value;
+
+    fn row_count(&self) -> usize {
+        self.count.get()
+    }
+
+    fn row_data(&self, row: usize) -> Option<Self::Data> {
+        (row < self.count.get()).then(|| Value::Number(row as f64))
+    }
+
+    fn model_tracker(&self) -> &dyn ModelTracker {
+        &self.notify
     }
 
     fn as_any(&self) -> &dyn core::any::Any {

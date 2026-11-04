@@ -6,6 +6,12 @@ import { PicoNetworkMarks } from "PicoNetworkMarks.slint";
 
 // One network from Korri's scan, to join.
 export component PicoNetworkRow {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.list-item;
+    accessible-label: ssid;
+    accessible-item-selectable: true;
+    accessible-item-selected: focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <string> ssid;
     in property <int> bars;
@@ -13,7 +19,8 @@ export component PicoNetworkRow {
     in property <bool> connected;
     in property <bool> focused;
     height: Tokens.md + 6 * Tokens.p;
-    if focused : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
+    // Always present, shown by the row's data: a row updates in place.
+    Rectangle { visible: focused; x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
     Rectangle { background: focused ? P8.pick : P8.ink-dark; }
     Text { x: 3 * Tokens.p; y: 3 * Tokens.p; width: root.width - 30 * Tokens.p; text: ssid; font-size: Tokens.md; color: focused ? P8.pick-ink : P8.ink; overflow: elide; }
     HorizontalLayout {

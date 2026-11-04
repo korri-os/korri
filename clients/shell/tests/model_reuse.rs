@@ -33,6 +33,7 @@ fn frames(
             threads: Some(1),
             cutoff: true,
             reuse_models,
+            logic_thread: false,
         };
         bench::run_captured(options, true).unwrap().1
     })

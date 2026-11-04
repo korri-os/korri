@@ -18,7 +18,7 @@ imports.
 | Path | What |
 |---|---|
 | `main.slint` | The binding: the one file that knows the view. `Surface` (catalog and setup) and `Overlay` (pause menu). |
-| `ui/palette.slint`, `ui/tokens.slint` | The only globals: PICO-8's sixteen and Pico's roles; the scale (`Tokens`, from the window's width and height), the focus cycle, where the cursor stands (`Focus`). The ten faces are imported here. |
+| `ui/palette.slint`, `ui/tokens.slint` | The only globals: PICO-8's sixteen and Pico's roles; the scale (`Tokens`, from the window's width and height) and the focus cycle. The ten faces are imported here. |
 | `ui/atoms`, `ui/molecules`, `ui/organisms`, `ui/templates`, `pages/` | One component per file, one per React component of the web Pico at the same layer (`test/inventory.ts`), each with `<Name>.<layer>.preview.slint` beside it. |
 | `logic.ts` → `logic.js` | `globalThis.surface`. Rebuild with `./build.sh` (bun). |
 | `src/state`, `src/pico-*.ts` | Pico's behaviour, from the web Pico. |
@@ -49,6 +49,27 @@ imports.
 - **Displays.** `displays: "all"`. With two or more displays the plan
   (`src/pico-display-plan.ts`) puts the showcase on the main one and every
   control on the other.
+- **Window (contract A2).** The shell sends `Resized { width, height }`
+  before the first view and on every resize. `picoLayoutPlan` in
+  `src/pico-display-plan.ts` turns the window into one plan: the virtual
+  pixel, the grid's columns, whether settings' spines stand beside the card
+  or above it as tabs, and whether a game's screen stacks its cart over its
+  facts. The focus graph moves by that plan, and `view()` hands its
+  decisions to main.slint (`home.columns`, `panel.beside`,
+  `detail.stacked`), which draws them and decides no structure itself.
+  `displays` only place the two screens of a split. A resize keeps the
+  cursor on its control.
+- **Regions and exits (contract 8.4).** Every focus target belongs to a
+  region (`src/native/focus.ts`): `floor`, `menu`, `invites`, `shelf`,
+  `grid`, `hero`, `resume`, `card`, `stage`, `sections`, `orders`, `keys`,
+  `results`, `search`, `play`, `actions`, `spines`, `scopes`, `rows`, `answers`,
+  `list`, `pack`, `go`. Inside a region a press moves to the nearest target
+  ahead. Leaving one follows `picoExits` in `src/pico-display-plan.ts`,
+  which the plan computes per size (spines beside the rows or above them).
+  `view()` emits the convention: `focusRegion` on every entry that is a
+  target, `focusActive` on a region's active one (the chosen cart, the open
+  tab, the chosen order), and `focusPlan`. An entry that is no target drops
+  `focused`. The shell strips these keys before Slint.
 - **Cover art.** `{"$image": url, "pico8": "vivid"}`.
 - **Time.** The shell sends `Tick { idleMs }` once a second (contract A1,
   7.1); attract starts when `idleMs` reaches 45 s (`pico-attract.ts`), and
@@ -69,7 +90,9 @@ Ported from the web Pico's gates and run with `bun test`:
 | `authoring-gate` | No colour outside the palette, which is PICO-8's sixteen; no blend; no pixel literal outside the tokens; the virtual pixel derives from width and height. |
 | `contrast-gate` | A note on a card's plastic reaches 4.5:1; a card's large ink 3:1; components draw notes in the note role. |
 | `previews` | Every preview state renders at 320x240, 640x480, 480x800, 1280x720 and 1920x1080. |
-| `focus-visible` | Every focus target the logic reaches (breadth-first over every button, on 16 models) is drawn inside the window at those five sizes. |
+| `layout-plan` | The plan from the window alone at the five sizes; the grid's rows and the spines' arrangement drawn as the plan says and moved through by it; a resize keeps the cursor. |
+| `focus-convention` | On the logic alone, at 320x240 and 1280x720: every entry with `focused` names its region, one active target per region at most, every exit leads to a region the view has, and every press that leaves a region goes where `focusPlan` says. |
+| `focus-visible` | Every focus target the logic reaches (breadth-first over every button, on 17 models and one with a 1920x1080 display, with `Resized` at each size) is drawn inside the window at those five sizes. `test/walk-plan.ts` runs the same walk on the logic alone first: each model walks, at each size, only as far as its last target no earlier model reached, and the probes run side by side (`PICO_WALK_JOBS`, `PICO_FOCUS_STATES`). |
 
 The last two run the shell's headless probe
 (`clients/shell/examples/surface-probe.rs`); build it with

@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        HorizontalLayout { spacing: Tokens.u; alignment: start; PicoMenuKey { button: { label: "MENU", detail: "", focused: false, disabled: false, warn: false, lit: false }; } PicoMenuKey { button: { label: "MENU", detail: "", focused: true, disabled: false, warn: false, lit: false }; } PicoMenuKey { menu: false; button: { label: "RELOAD", detail: "", focused: false, disabled: false, warn: false, lit: false }; } }
+        HorizontalLayout { spacing: Tokens.u; alignment: start; PicoMenuKey { button: { label: "MENU", detail: "", focused: false, disabled: false, warn: false, lit: false }; } PicoMenuKey { button: { label: "MENU", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false }; } PicoMenuKey { menu: false; button: { label: "RELOAD", detail: "", focused: false, disabled: false, warn: false, lit: false }; } }
     }
 }

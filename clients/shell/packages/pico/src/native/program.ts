@@ -32,17 +32,18 @@ import { PICO_ALL_SECTIONS } from "../pico-library-view"
 import { PICO_ATTRACT_AFTER_MS } from "../pico-attract"
 import { picoLaunchViewFromModel } from "../pico-launch-view"
 import { picoOverlayViewFrom } from "../pico-overlay-view"
-import { picoDisplayPlan } from "../pico-display-plan"
+import { PICO_WINDOW_BEFORE_RESIZED, picoLayoutPlan, type PicoDisplayPlan } from "../pico-display-plan"
 import type { PicoMessage } from "../state/messages"
 import { initialNavigation, topLayer } from "../state/navigation"
 import { initialOnboarding } from "../state/onboarding"
 import { updateOnboarding } from "../state/onboarding-update"
 import { initialOverlay, updateOverlay } from "../state/overlay"
 import type { PicoRequest } from "../state/requests"
-import { attractShowing, inviteNotices, launchOpen, runnerOpen, shownScreen } from "../state/shown"
+import { attractShowing, canAttract, inviteNotices, launchOpen, runnerOpen, shownScreen } from "../state/shown"
 import { update as picoUpdate } from "../state/update"
 import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScreen, sameQuery } from "./catalog"
-import { type Direction, moveFocus, settleFocus } from "./focus"
+import { memo, share } from "./memo"
+import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
 import { cartView } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
 import { qrPath } from "./qr"
@@ -56,16 +57,31 @@ import type { Act, Ctx, Dispatch, Plan, Screen, State } from "./types"
 export const WINDOW = 50
 const EDGE = 8
 
-export function planFor(korri: KorriModel): Plan {
-  const displays = korri.displays ?? []
-  const main = displays.find(display => display.main) ?? displays[0]
-  const width = main?.width ?? 640
-  const height = main?.height ?? 480
-  const p = Math.max(2, Math.floor(Math.min(width, height) / 360))
-  return { width: Math.floor(width / p), height: Math.floor(height / p), p }
+/** The layout plan the focus graph and the view share (contract A2, 8.2). */
+export function planFor(s: State, korri: KorriModel): Plan {
+  return planOf(s.window, korri.displays)
 }
 
-export function init(korri: KorriModel, preferences: Readonly<Record<string, string>>): State {
+const planOf = memo(4, (window: State["window"], displays: KorriModel["displays"]) => [window, displays], picoLayoutPlan)
+
+/**
+ * The shell parses Korri's model afresh on every publish. Parts equal to the
+ * last model's keep the last model's objects, and a model equal in every
+ * part is the last model itself: the screen, the view and every cart built
+ * from it are reused, not rebuilt.
+ */
+let lastIn: KorriModel | undefined
+let lastOut: KorriModel | undefined
+function interned(korri: KorriModel): KorriModel {
+  if (korri === lastIn || korri === lastOut) return lastOut as KorriModel
+  const out = share(lastOut, korri)
+  lastIn = korri
+  lastOut = out
+  return out
+}
+
+export function init(raw: KorriModel, preferences: Readonly<Record<string, string>>): State {
+  const korri = interned(raw)
   return {
     nav: initialNavigation(),
     setup: initialOnboarding(),
@@ -79,6 +95,8 @@ export function init(korri: KorriModel, preferences: Readonly<Record<string, str
     sections: sectionsOf(korri, []),
     typing: undefined,
     noticeRound: 0,
+    window: PICO_WINDOW_BEFORE_RESIZED,
+    remembered: {},
   }
 }
 
@@ -177,8 +195,39 @@ const run = (step: Step, act: Act | undefined, korri: KorriModel): Step =>
 
 /** What the catalog presentation shows now, as a view and focus targets. */
 export function catalogScreen(s: State, korri: KorriModel): Screen {
+  return catalogScreenOf(s, korri)
+}
+
+/**
+ * The parts of Korri's model a screen reads, by identity (the model is
+ * interned, so an unchanged part is the same object). The focused game's
+ * actions matter only to a game's own screen: the publish that answers
+ * FocusGame on the shelf rebuilds nothing.
+ */
+function korriParts(s: State, korri: KorriModel): readonly unknown[] {
+  const parts = PARTS.get(korri) ?? partsOf(korri)
+  return s.nav.detail === undefined ? parts : [...parts, korri.focusedGame]
+}
+
+const PARTS = new WeakMap<KorriModel, readonly unknown[]>()
+
+function partsOf(korri: KorriModel): readonly unknown[] {
+  const record = korri as unknown as Record<string, unknown>
+  const parts = Object.keys(record).filter(key => key !== "focusedGame").sort().flatMap(key => [key, record[key]])
+  PARTS.set(korri, parts)
+  return parts
+}
+
+/** A screen reads only these parts of the state (src/native/*.ts). */
+const catalogScreenOf = memo(
+  6,
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, ...korriParts(s, korri)],
+  (s: State, korri: KorriModel) => screenOf(s, korri),
+)
+
+function screenOf(s: State, korri: KorriModel): Screen {
   const model = picoModelFrom(korri)
-  const ctx: Ctx = { s, korri, model, plan: planFor(korri) }
+  const ctx: Ctx = { s, korri, model, plan: planFor(s, korri) }
   if (model.onboarding !== undefined) return onPage(setupScreen(ctx), "setup")
   const runner = model.runnerChoice
   if (runner !== undefined && runner._tag !== "Closed") return runnerScreen(runner, s.focus)
@@ -219,8 +268,17 @@ function onPage(screen: Screen, page: "setup" | "launch" | "settings" | "store")
 
 function overlayView(s: State, korri: KorriModel): Screen | undefined {
   if (korri.presentation.kind !== "gameplay-overlay") return undefined
-  return overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status), s.overlay, s.overlayFocus)
+  return overlayScreenOf(s.overlay, s.overlayFocus, korri)
 }
+
+const overlayScreenOf = memo(
+  4,
+  (overlay: State["overlay"], focus: State["overlayFocus"], korri: KorriModel) => [overlay, focus, korri],
+  (overlay: State["overlay"], focus: State["overlayFocus"], korri: KorriModel) =>
+    korri.presentation.kind !== "gameplay-overlay"
+      ? undefined as never
+      : overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status), overlay, focus),
+)
 
 /** Keep the cursor on a target of the screen shown, starting where the
  * screen says when the screen changed or its target went. */
@@ -359,7 +417,7 @@ function pressed(step: Step, button: string, korri: KorriModel): Step {
         if ((direction === "left" || direction === "right") && current?.horizontal !== undefined) {
           return run(step, direction === "left" ? current.horizontal.left : current.horizontal.right, korri)
         }
-        const next = moveFocus(screen.targets, s.overlayFocus, direction)
+        const next = moveFocus(screen.targets, s.overlayFocus, direction, focusPlanOf(s, korri, screen), screen.active, s.remembered)
         if (next === undefined || next === s.overlayFocus) return step
         const leaving: Act = current?.horizontal === undefined || korri.presentation.kind !== "gameplay-overlay" ? [] : leftRange(current.id, korri)
         return run({ ...step, state: { ...s, overlayFocus: next } }, leaving, korri)
@@ -400,7 +458,7 @@ function pressed(step: Step, button: string, korri: KorriModel): Step {
   const current = screen.targets.find(target => target.id === s.focus)
   const horizontal = (direction === "left" || direction === "right") ? current?.horizontal ?? screen.horizontal : undefined
   if (horizontal !== undefined) return run(step, direction === "left" ? horizontal.left : horizontal.right, korri)
-  const next = moveFocus(screen.targets, s.focus, direction)
+  const next = moveFocus(screen.targets, s.focus, direction, focusPlanOf(s, korri, screen), screen.active, s.remembered)
   // A d-pad press is activity, and wakes attract; the move itself stands.
   const moved: Act = model.onboarding === undefined ? [{ to: "nav", message: { _tag: "MovedFocus" } }] : []
   if (next === undefined || next === s.focus) return run(step, moved, korri)
@@ -415,7 +473,25 @@ function leftRange(id: string, korri: KorriModel): Act {
   return control === undefined ? [] : [{ to: "overlay", message: { _tag: "LeftRange", control } }]
 }
 
-export function update(state: State, message: SurfaceMessage, korri: KorriModel): { state: State; requests: SurfaceRequest[] } {
+export function update(state: State, message: SurfaceMessage, raw: KorriModel): { state: State; requests: SurfaceRequest[] } {
+  const korri = interned(raw)
+  const result = updated(state, message, korri)
+  // A message that changed nothing returns the same state, so the shell does
+  // not draw again (a publish with the same window, a press with nowhere to go).
+  return { state: share(state, result.state) === state ? state : result.state, requests: result.requests }
+}
+
+function updated(state: State, message: SurfaceMessage, korri: KorriModel): { state: State; requests: SurfaceRequest[] } {
+  // A Tick that crosses no threshold, and a Resized to the same size, change
+  // nothing: the same state object tells the shell not to draw again.
+  if (message._tag === "Tick") {
+    if (message.idleMs < PICO_ATTRACT_AFTER_MS || state.nav.idle._tag !== "Awake" || !canAttract(state.nav, picoModelFrom(korri))) {
+      return { state, requests: [] }
+    }
+  }
+  if (message._tag === "Resized" && message.width === state.window.width && message.height === state.window.height) {
+    return { state, requests: [] }
+  }
   let step: Step = { state, requests: [] }
   const model = picoModelFrom(korri)
   switch (message._tag) {
@@ -426,6 +502,10 @@ export function update(state: State, message: SurfaceMessage, korri: KorriModel)
       if (korri.presentation.kind === "gameplay-overlay") step = run(step, [{ to: "overlay", message: { _tag: "KorriPublished" } }], korri)
       break
     case "PreferenceStored":
+      break
+    case "Resized":
+      // The plan follows the window; the cursor keeps its target by id.
+      step = { ...step, state: { ...step.state, window: { width: message.width, height: message.height } } }
       break
     case "Tick":
       // The shell's idle clock (contract A1, 7.1): attract after
@@ -446,6 +526,7 @@ export function update(state: State, message: SurfaceMessage, korri: KorriModel)
   }
   step = settle(step, korri)
   step = sync(step, korri)
+  step = { ...step, state: remember(step.state, korri) }
   return { state: step.state, requests: step.requests }
 }
 
@@ -453,16 +534,154 @@ export function update(state: State, message: SurfaceMessage, korri: KorriModel)
 
 const fontFor = (id: State["font"]) => PICO_FONTS.find(font => font.id === id) ?? PICO_FONTS.find(font => font.id === PICO_DEFAULT_FONT)
 
-export function view(s: State, korri: KorriModel) {
+/** The plan's exits for the regions on this screen: the view's `focusPlan`. */
+function focusPlanOf(s: State, korri: KorriModel, screen: Screen): FocusPlan {
+  return exitsOf(planFor(s, korri).exits, screen.targets)
+}
+
+const exitsOf = memo(6, (exits: Plan["exits"], targets: Screen["targets"]) => [exits, targets], resolveExits)
+
+/** Each region's last focused target, kept for `remembered` exits. */
+function remember(s: State, korri: KorriModel): State {
+  const overlaid = overlayView(s, korri)
+  const screen = overlaid ?? catalogScreen(s, korri)
+  const focus = overlaid === undefined ? s.focus : s.overlayFocus
+  const region = screen.targets.find(target => target.id === focus)?.region
+  if (region === undefined || focus === undefined || s.remembered[region] === focus) return s
+  return { ...s, remembered: { ...s.remembered, [region]: focus } }
+}
+
+/**
+ * The focus convention (contract 8.4): every entry that stands for a target
+ * carries its region, and a region's active target says so; an entry that
+ * is no target (a disabled button, a cart drawn for show) drops `focused`.
+ * The shell strips these keys before Slint sees the view.
+ */
+function marked(value: unknown, screen: Screen): unknown {
+  return markIn(value, targetsOf(screen), screen.active ?? {})
+}
+
+/** A screen's targets by id, built once per screen. */
+const targetsOf = memo(8, (screen: Screen) => [screen.targets], (screen: Screen) => new Map(screen.targets.map(target => [target.id, target] as const)))
+
+/** Parts of a view with no focus entry inside: they are marked as they are. */
+const PLAIN = new WeakSet<object>()
+
+function markIn(value: unknown, targets: ReadonlyMap<string, Target<Act>>, active: Readonly<Record<string, string>>): unknown {
+  if (value === null || typeof value !== "object" || PLAIN.has(value)) return value
+  if (Array.isArray(value)) {
+    let plain = true
+    const out = value.map(item => {
+      const kept = markIn(item, targets, active)
+      if (kept !== item || (item !== null && typeof item === "object" && !PLAIN.has(item))) plain = false
+      return kept
+    })
+    if (plain) {
+      PLAIN.add(value)
+      return value
+    }
+    return out
+  }
+  const entry = value as Record<string, unknown>
+  if ("$image" in entry) {
+    PLAIN.add(entry)
+    return entry
+  }
+  const focusEntry = "focused" in entry
+  if (focusEntry) {
+    // An entry whose children hold no entry is marked by its own target alone.
+    const id = entry["focusId"]
+    const target = typeof id === "string" ? targets.get(id) : undefined
+    const sign = target === undefined ? "" : `${target.region}|${active[target.region] === target.id}`
+    const cached = ENTRIES.get(entry)
+    if (cached !== undefined && cached.sign === sign && cached.plainChildren) return cached.out
+  }
+  let plain = !focusEntry && !("focusId" in entry)
+  let childrenPlain = true
+  const out: Record<string, unknown> = {}
+  for (const key in entry) {
+    if (key === "focusId") continue
+    const item = entry[key]
+    const kept = markIn(item, targets, active)
+    if (kept !== item || (item !== null && typeof item === "object" && !PLAIN.has(item))) {
+      plain = false
+      childrenPlain = false
+    }
+    out[key] = kept
+  }
+  if (plain) {
+    PLAIN.add(entry)
+    return entry
+  }
+  if ("focused" in entry) {
+    const id = entry["focusId"]
+    const target = typeof id === "string" ? targets.get(id) : undefined
+    const sign = target === undefined ? "" : `${target.region}|${active[target.region] === target.id}`
+    // `target` tells main.slint whether `focused` is current: an entry that
+    // is no target sends no `focused`, and the shell keeps a field it is not
+    // sent, so its old value must not show.
+    out["target"] = target !== undefined
+    if (target === undefined) {
+      delete out["focused"]
+    } else {
+      out["focusRegion"] = target.region
+      if (active[target.region] === target.id) out["focusActive"] = true
+    }
+    ENTRIES.set(entry, { sign, out, plainChildren: childrenPlain })
+  }
+  return out
+}
+
+/** An entry's marked form, by the entry and its target's region and state. */
+const ENTRIES = new WeakMap<object, { readonly sign: string; readonly out: unknown; readonly plainChildren: boolean }>()
+
+/**
+ * The targets a screen lists that its view does not draw (for tests): a
+ * target with no entry in the view is no place for the cursor, and no region
+ * for an exit.
+ */
+export function undrawnTargets(screen: Screen): string[] {
+  const drawn = new Set<string>()
+  const collect = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(collect)
+    else if (value !== null && typeof value === "object") {
+      const entry = value as Record<string, unknown>
+      if (typeof entry["focusId"] === "string") drawn.add(entry["focusId"])
+      for (const item of Object.values(entry)) collect(item)
+    }
+  }
+  collect(screen.view)
+  return screen.targets.filter(target => !drawn.has(target.id)).map(target => target.id)
+}
+
+export function view(s: State, raw: KorriModel) {
+  const built = viewOf(s, interned(raw))
+  if (built === lastBuilt) return lastView
+  lastBuilt = built
+  lastView = share(lastView, built)
+  return lastView
+}
+
+/** The last view, so rows that did not change keep their arrays. */
+let lastBuilt: unknown
+let lastView: ReturnType<typeof buildView> | undefined
+
+/** The view reads the screen's inputs, the notices' round and the font. */
+const viewOf = memo(
+  2,
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.noticeRound, ...korriParts(s, korri)],
+  (s: State, korri: KorriModel) => buildView(s, korri),
+)
+
+function buildView(s: State, korri: KorriModel) {
   const model = picoModelFrom(korri)
   const screen = catalogScreen(s, korri)
   const font = fontFor(s.font)
   const notices = model.onboarding === undefined ? inviteNotices(s.nav, model) : []
   const shown = shownScreen(s.nav, model)
   const attract = model.onboarding === undefined && attractShowing(s.nav, model) && shown._tag === "Home" && shown.view._tag === "Shelf"
-  const displays = korri.displays ?? []
-  const plan = splitPlan(picoDisplayPlan(displays))
-  return {
+  const plan = splitPlan(planFor(s, korri).split)
+  const drawn = {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
     layer: model.onboarding === undefined ? "catalog" : "setup",
@@ -479,23 +698,42 @@ export function view(s: State, korri: KorriModel) {
     },
     split: plan ?? { on: false, showX: 0, showY: 0, showW: 0, showH: 0, chooseX: 0, chooseY: 0, chooseW: 0, chooseH: 0 },
   }
+  return { ...(marked(drawn, screen) as typeof drawn), focusPlan: focusPlanOf(s, korri, screen) }
 }
 
 /** Where Pico's display plan (src/pico-display-plan.ts) puts the two screens, for main.slint. */
-function splitPlan(plan: ReturnType<typeof picoDisplayPlan>) {
+function splitPlan(plan: PicoDisplayPlan | undefined) {
   if (plan === undefined) return undefined
   const { show, choose } = plan
   return { on: true, showX: show.x, showY: show.y, showW: show.width, showH: show.height, chooseX: choose.x, chooseY: choose.y, chooseW: choose.width, chooseH: choose.height }
 }
 
-export function overlay(s: State, korri: KorriModel) {
+export function overlay(s: State, raw: KorriModel) {
+  const built = overlayOf(s, interned(raw))
+  if (built === lastOverlayBuilt) return lastOverlay
+  lastOverlayBuilt = built
+  lastOverlay = share(lastOverlay, built)
+  return lastOverlay
+}
+
+let lastOverlayBuilt: unknown
+let lastOverlay: ReturnType<typeof buildOverlay> | undefined
+
+const overlayOf = memo(
+  2,
+  (s: State, korri: KorriModel) => [s.overlay, s.overlayFocus, s.font, s.window, korri],
+  (s: State, korri: KorriModel) => buildOverlay(s, korri),
+)
+
+function buildOverlay(s: State, korri: KorriModel) {
   const shown = overlayView(s, korri)
   const font = fontFor(s.font)
-  return {
+  const drawn = {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
     ...(shown?.view ?? {}),
   }
+  return shown === undefined ? drawn : { ...(marked(drawn, shown) as typeof drawn), focusPlan: focusPlanOf(s, korri, shown) }
 }
 
 export { PICO_ALL_SECTIONS }

@@ -421,6 +421,14 @@ struct TargetPixelSlice<'a, T> {
     pixel_stride: usize,
 }
 
+#[cfg(feature = "std")]
+std::thread_local! {
+    /// Fonts prepared for glyph runs in the frame being drawn (`draw_glyph_run`), cleared
+    /// before each frame so no font outlives its package.
+    static PREPARED_FONTS: RefCell<std::collections::HashMap<(u64, u32, u32, Vec<i16>), Rc<fonts::vectorfont::VectorFont>>> =
+        RefCell::new(Default::default());
+}
+
 /// A `Layer` (`cache-rendering-hint: true`) rendered once into an image: its children,
 /// premultiplied, over transparency.
 #[cfg(feature = "std")]
@@ -532,9 +540,20 @@ pub struct SoftwareRenderer {
     /// Of the last raster phase: the banded replay (`parallel`).
     #[cfg(feature = "std")]
     last_replay: Cell<std::time::Duration>,
+    /// Dirty pixels from which a frame is rasterised on several threads (`parallel`).
+    #[cfg(feature = "std")]
+    parallel_threshold: Cell<usize>,
     /// The last render's frame profile of the dirty-region walk, when profiling is on.
     #[cfg(feature = "std")]
     walk_profile: RefCell<i_slint_core::frame_profile::FrameProfile>,
+    /// A layer drawn directly last frame: the next frame checks whether its content
+    /// stayed, so it is drawn even when no property changed.
+    #[cfg(feature = "std")]
+    check_layers_again: Cell<bool>,
+    /// The buffer size, scale factor and rotation of the last frame drawn: a frame with
+    /// others is drawn even when no property changed.
+    drawn_frame: Cell<Option<(PhysicalSize, f32, RenderingRotation)>>,
+    skip_quiet_frames: Cell<bool>,
 }
 
 impl Default for SoftwareRenderer {
@@ -559,7 +578,13 @@ impl Default for SoftwareRenderer {
             #[cfg(feature = "std")]
             last_replay: Default::default(),
             #[cfg(feature = "std")]
+            parallel_threshold: Cell::new(parallel::MIN_PARALLEL_PIXELS),
+            #[cfg(feature = "std")]
             walk_profile: Default::default(),
+            #[cfg(feature = "std")]
+            check_layers_again: Default::default(),
+            drawn_frame: Default::default(),
+            skip_quiet_frames: Cell::new(true),
         }
     }
 }
@@ -714,6 +739,7 @@ impl SoftwareRenderer {
             // band threads start and rasterise the recorded calls while the walk goes on
             // (`parallel`); a small region is drawn here once the walk ended.
             let threads = self.render_threads.get();
+            let threshold = self.parallel_threshold.get();
             let lines = buffer.len() / pixel_stride.max(1);
             let stream = std::sync::Arc::new(parallel::OpStream::new());
             let shared = &*stream;
@@ -726,7 +752,7 @@ impl SoftwareRenderer {
                         .iter()
                         .map(|(_, size)| size.width as usize * size.height as usize)
                         .sum();
-                    if pixels < parallel::MIN_PARALLEL_PIXELS {
+                    if pixels < threshold {
                         return None;
                     }
                     let buffer = unclaimed.take().expect("one frame starts its bands once");
@@ -784,6 +810,38 @@ impl SoftwareRenderer {
         self.last_replay.get()
     }
 
+    /// Dirty pixels from which `render` rasterises a frame on several threads; below, one
+    /// thread draws it. For benchmarks that look for the crossover.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_parallel_threshold(&self, pixels: usize) {
+        self.parallel_threshold.set(pixels);
+    }
+
+    /// Whether unscaled glyphs are drawn through the alpha-map fast path (the default) or the
+    /// general texture path. For tests that compare the two; it applies to every renderer.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_glyph_fast_path(fast: bool) {
+        draw_functions::GLYPH_FAST_PATH.store(fast, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether band threads move between bands as chunks are published (the default), or
+    /// each replays a whole band, waiting for each chunk (the former ordering). For
+    /// benchmarks and tests that compare the two; it applies to every renderer.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_interleaved_bands(interleaved: bool) {
+        parallel::INTERLEAVED.store(interleaved, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether a frame where nothing changed is skipped (the default). For benchmarks that
+    /// compare the two.
+    #[doc(hidden)]
+    pub fn set_skip_quiet_frames(&self, skip: bool) {
+        self.skip_quiet_frames.set(skip);
+    }
+
     /// How many threads `render` rasterises a frame with. The default is the
     /// online cores, at most 4; 1 draws on the calling thread only.
     #[doc(hidden)]
@@ -831,6 +889,8 @@ impl SoftwareRenderer {
         let mut recorded = None;
         #[cfg(not(feature = "std"))]
         let recorded = None;
+        #[cfg(feature = "std")]
+        PREPARED_FONTS.with(|f| f.borrow_mut().clear());
         let pixels_per_line = buffer.line_slice(0).len();
         let num_lines = buffer.num_lines();
         let buffer_pixel_count = num_lines * pixels_per_line;
@@ -908,8 +968,24 @@ impl SoftwareRenderer {
         }
         let window_adapter = renderer.window_adapter.clone();
 
+        // Nothing to draw when no property the last frame read changed, nothing marked a
+        // region, and the buffer keeps last frame's pixels (`WindowInner::draw_contents_if_changed`).
+        let frame = Some((size, factor.get(), rotation));
+        let same_frame = self.drawn_frame.replace(frame) == frame;
+        let idle = || {
+            #[cfg(feature = "std")]
+            if self.check_layers_again.get() {
+                return false;
+            }
+            if !same_frame || !self.skip_quiet_frames.get() {
+                return false;
+            }
+            self.repaint_buffer_type.get() == RepaintBufferType::ReusedBuffer
+                && !self.partial_rendering_state.has_forced_region()
+                && self.rendering_metrics_collector.is_none()
+        };
         let region = window_inner
-            .draw_contents(|components, post_render| {
+            .draw_contents_if_changed(idle, |components, post_render| {
                 let logical_size = (size.cast() / factor).cast();
                 #[cfg(feature = "std")]
                 let walk_started = std::time::Instant::now();
@@ -1047,6 +1123,7 @@ impl SoftwareRenderer {
                         }
                     }
                     // A layer that changed this frame: the next frame tells whether it stays.
+                    self.check_layers_again.set(check_again);
                     if check_again {
                         window.window().request_redraw();
                     }
@@ -1068,9 +1145,17 @@ impl SoftwareRenderer {
                 }
 
                 dirty_region
-            })
-            .unwrap_or_default();
-        (region, recorded)
+            });
+        if matches!(region, Some(None)) {
+            // Skipped: no walk, no raster.
+            self.partial_rendering_state.frame_skipped();
+            #[cfg(feature = "std")]
+            {
+                self.last_phases.set(Default::default());
+                self.last_replay.set(Default::default());
+            }
+        }
+        (region.flatten().unwrap_or_default(), recorded)
     }
 
     fn measure_frame_rendered(&self, renderer: &mut dyn ItemRenderer) {
@@ -4007,6 +4092,11 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         self.window
     }
 
+    #[cfg(feature = "std")]
+    fn layer_content_changed(&self, item_rc: &ItemRc) -> bool {
+        self.layer_cache.is_some_and(|cache| cache.is_dirty(item_rc) == Some(true))
+    }
+
     fn as_any(&mut self) -> Option<&mut dyn core::any::Any> {
         None
     }
@@ -4112,19 +4202,37 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
         glyphs_it: &mut dyn Iterator<Item = sharedparley::parley::layout::Glyph>,
     ) {
         let slint_context = self.window.context();
+        // A font at a size is prepared once (its metrics parsed), not for every glyph run:
+        // Zone draws each word as fourteen copies, a run each.
         let font = i_slint_core::frame_profile::time(
             |p| &mut p.glyph_run_setup,
             || {
-                let (swash_key, swash_offset) =
-                    fonts::systemfonts::get_swash_font_info(&font.data, font.index);
-                fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
-                    font.data.clone(),
+                let key = (
+                    font.data.id(),
                     font.index,
-                    swash_key,
-                    swash_offset,
-                    font_size.cast(),
-                    normalized_coords,
-                )
+                    font_size.get().to_bits(),
+                    normalized_coords.to_vec(),
+                );
+                PREPARED_FONTS.with(|fonts_cache| {
+                    let mut fonts_cache = fonts_cache.borrow_mut();
+                    if let Some(prepared) = fonts_cache.get(&key) {
+                        return prepared.clone();
+                    }
+                    let (swash_key, swash_offset) =
+                        fonts::systemfonts::get_swash_font_info(&font.data, font.index);
+                    let prepared = Rc::new(
+                        fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
+                            font.data.clone(),
+                            font.index,
+                            swash_key,
+                            swash_offset,
+                            font_size.cast(),
+                            normalized_coords,
+                        ),
+                    );
+                    fonts_cache.insert(key, prepared.clone());
+                    prepared
+                })
             },
         );
 

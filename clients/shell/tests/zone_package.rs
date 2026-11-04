@@ -72,7 +72,8 @@ impl Platform for Headless {
         Ok(window)
     }
     fn duration_since_start(&self) -> std::time::Duration {
-        self.started.elapsed() + std::time::Duration::from_millis(SKIPPED.load(std::sync::atomic::Ordering::Relaxed))
+        self.started.elapsed()
+            + std::time::Duration::from_millis(SKIPPED.load(std::sync::atomic::Ordering::Relaxed))
     }
 }
 
@@ -148,7 +149,10 @@ fn every_preview_state_draws_at_every_size() {
     assert!(files.len() >= 55, "only {} preview files", files.len());
     let mut failures = Vec::new();
     let mut drawn = 0;
-    let planned: BTreeMap<(u32, u32), Value> = SIZES.iter().map(|&(w, h)| ((w, h), plan_for(&root, w, h))).collect();
+    let planned: BTreeMap<(u32, u32), Value> = SIZES
+        .iter()
+        .map(|&(w, h)| ((w, h), plan_for(&root, w, h)))
+        .collect();
     for file in &files {
         let result =
             pollster::block_on(slint_interpreter::Compiler::default().build_from_path(file));
@@ -194,13 +198,25 @@ fn every_preview_state_draws_at_every_size() {
 /// The logic's plan for a window: its view's `screen` after Resized.
 fn plan_for(root: &Path, width: u32, height: u32) -> Value {
     let source = std::fs::read_to_string(root.join("logic.js")).unwrap();
-    let mut engine = engine::Engine::load(&source, engine::Limits { call: std::time::Duration::from_secs(5), ..engine::Limits::default() }).unwrap();
-    let scenario: Value = serde_json::from_str(&std::fs::read_to_string(root.join("preview/scenarios/games.json")).unwrap()).unwrap();
+    let mut engine = engine::Engine::load(
+        &source,
+        engine::Limits {
+            call: std::time::Duration::from_secs(5),
+            ..engine::Limits::default()
+        },
+    )
+    .unwrap();
+    let scenario: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("preview/scenarios/games.json")).unwrap(),
+    )
+    .unwrap();
     let korri = Korri::new(scenario["models"][0].clone());
     engine.set_model(&korri.published()).unwrap();
     let preferences = engine::effective_preferences(engine.declaration(), &BTreeMap::new());
     engine.init(&preferences).unwrap();
-    engine.update(&json!({"_tag": "Resized", "width": width, "height": height})).unwrap();
+    engine
+        .update(&json!({"_tag": "Resized", "width": width, "height": height}))
+        .unwrap();
     engine.view().unwrap()["screen"].clone()
 }
 
@@ -209,7 +225,16 @@ fn screen_value(screen: &Value) -> slint_interpreter::Value {
     use slint_interpreter::Value as V;
     let mut out = slint_interpreter::Struct::default();
     for (key, value) in screen.as_object().unwrap() {
-        let kebab: String = key.chars().flat_map(|c| if c.is_uppercase() { vec!['-', c.to_ascii_lowercase()] } else { vec![c] }).collect();
+        let kebab: String = key
+            .chars()
+            .flat_map(|c| {
+                if c.is_uppercase() {
+                    vec!['-', c.to_ascii_lowercase()]
+                } else {
+                    vec![c]
+                }
+            })
+            .collect();
         let value = match value {
             Value::Bool(b) => V::Bool(*b),
             Value::Number(n) => V::Number(n.as_f64().unwrap()),
@@ -240,7 +265,11 @@ struct Target {
 
 impl Target {
     fn key(&self) -> (String, i64, i64) {
-        (self.label.clone(), self.x.round() as i64, self.y.round() as i64)
+        (
+            self.label.clone(),
+            self.x.round() as i64,
+            self.y.round() as i64,
+        )
     }
     fn centre(&self) -> (f32, f32) {
         (self.x + self.w / 2.0, self.y + self.h / 2.0)
@@ -289,7 +318,12 @@ struct Regions {
 }
 
 fn regions(view: &Value) -> Regions {
-    fn walk(value: &Value, path: &mut Vec<Value>, out: &mut Regions, seen: &mut BTreeMap<String, usize>) {
+    fn walk(
+        value: &Value,
+        path: &mut Vec<Value>,
+        out: &mut Regions,
+        seen: &mut BTreeMap<String, usize>,
+    ) {
         match value {
             Value::Array(items) => items.iter().enumerate().for_each(|(i, item)| {
                 path.push(json!(i));
@@ -303,7 +337,10 @@ fn regions(view: &Value) -> Regions {
                         .find_map(|key| entry.get(*key).and_then(Value::as_str))
                         .unwrap_or("")
                         .to_owned();
-                    let label = match (entry.get("seat").and_then(Value::as_str), entry.get("name").and_then(Value::as_str)) {
+                    let label = match (
+                        entry.get("seat").and_then(Value::as_str),
+                        entry.get("name").and_then(Value::as_str),
+                    ) {
                         (Some(seat), Some(name)) => format!("{seat} {name}"),
                         _ => label,
                     };
@@ -328,13 +365,22 @@ fn regions(view: &Value) -> Regions {
             _ => {}
         }
     }
-    let mut out = Regions { entries: Vec::new(), of: BTreeMap::new(), active: BTreeMap::new(), focused: None };
+    let mut out = Regions {
+        entries: Vec::new(),
+        of: BTreeMap::new(),
+        active: BTreeMap::new(),
+        focused: None,
+    };
     walk(view, &mut Vec::new(), &mut out, &mut BTreeMap::new());
     // A label several entries of one region carry: `label#*`, any of them.
     for (_, label, name) in &out.entries {
         if !name.ends_with("#1") {
             let region = out.of[name].clone();
-            let one = out.entries.iter().filter(|(_, l, _)| l == label).all(|(_, _, n)| out.of[n] == region);
+            let one = out
+                .entries
+                .iter()
+                .filter(|(_, l, _)| l == label)
+                .all(|(_, _, n)| out.of[n] == region);
             if one {
                 out.of.insert(format!("{label}#*"), region);
             }
@@ -345,7 +391,10 @@ fn regions(view: &Value) -> Regions {
 
 /// Two names of the same target: equal, or the same label where one is `label#*`.
 fn same(a: &str, b: &str) -> bool {
-    let label = |n: &str| n.rsplit_once('#').map_or(n.to_owned(), |(l, _)| l.to_owned());
+    let label = |n: &str| {
+        n.rsplit_once('#')
+            .map_or(n.to_owned(), |(l, _)| l.to_owned())
+    };
     a == b || ((a.ends_with("#*") || b.ends_with("#*")) && label(a) == label(b))
 }
 
@@ -354,7 +403,19 @@ fn unfocused(view: &Value) -> Value {
     match view {
         Value::Array(items) => Value::Array(items.iter().map(unfocused).collect()),
         Value::Object(entry) => Value::Object(
-            entry.iter().map(|(key, inner)| (key.clone(), if key == "focused" { json!(false) } else { unfocused(inner) })).collect(),
+            entry
+                .iter()
+                .map(|(key, inner)| {
+                    (
+                        key.clone(),
+                        if key == "focused" {
+                            json!(false)
+                        } else {
+                            unfocused(inner)
+                        },
+                    )
+                })
+                .collect(),
         ),
         other => other.clone(),
     }
@@ -379,7 +440,9 @@ fn names(
     }
     let mut lit = false;
     for (label, entries) in labels {
-        let drawn: Vec<usize> = (0..targets.len()).filter(|&i| targets[i].label == label).collect();
+        let drawn: Vec<usize> = (0..targets.len())
+            .filter(|&i| targets[i].label == label)
+            .collect();
         if entries.len() == 1 && !drawn.is_empty() {
             for &i in &drawn {
                 out[i] = known.entries[entries[0]].2.clone();
@@ -434,7 +497,9 @@ fn stripped(view: &Value) -> Value {
         Value::Object(entry) => Value::Object(
             entry
                 .iter()
-                .filter(|(key, _)| !matches!(key.as_str(), "focusRegion" | "focusActive" | "focusPlan"))
+                .filter(|(key, _)| {
+                    !matches!(key.as_str(), "focusRegion" | "focusActive" | "focusPlan")
+                })
                 .map(|(key, inner)| (key.clone(), stripped(inner)))
                 .collect(),
         ),
@@ -609,7 +674,11 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                 }
             };
             // The shell's Resized comes before the first view (A2, 8.1).
-            deliver(&mut engine, &mut korri, json!({"_tag": "Resized", "width": width, "height": height}));
+            deliver(
+                &mut engine,
+                &mut korri,
+                json!({"_tag": "Resized", "width": width, "height": height}),
+            );
             deliver(&mut engine, &mut korri, json!({"_tag": "KorriPublished"}));
             let press = |button: &str| json!({"_tag": "Pressed", "button": button});
             for step in &steps {
@@ -627,7 +696,11 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                     deliver(&mut engine, &mut korri, press(step));
                 }
             }
-            let mut check = |engine: &mut engine::Engine, binder: &mut view::Binder, images: &mut ImageCache, label: &str| -> Value {
+            let mut check = |engine: &mut engine::Engine,
+                             binder: &mut view::Binder,
+                             images: &mut ImageCache,
+                             label: &str|
+             -> Value {
                 let view = if overlay {
                     engine.overlay().unwrap().unwrap()
                 } else {
@@ -658,21 +731,46 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                     let from = targets.iter().position(|t| t.selected);
                     let plan = view.get("focusPlan").cloned().unwrap_or(json!({}));
                     deliver(&mut engine, &mut korri, press(direction));
-                    view = check(&mut engine, &mut binder, &mut images, &format!("{direction}{n}"));
-                    let (Some(from), Some((focused, region))) = (from, known.focused.clone()) else { continue };
+                    view = check(
+                        &mut engine,
+                        &mut binder,
+                        &mut images,
+                        &format!("{direction}{n}"),
+                    );
+                    let (Some(from), Some((focused, region))) = (from, known.focused.clone())
+                    else {
+                        continue;
+                    };
                     if !same(&named[from], &focused) {
                         wrong_way.push(format!("{name} {width}x{height}: {direction}{n}: the drawn focus {:?} is not the view's {focused:?}", named[from]));
                         if std::env::var_os("ZONE_GATE_DEBUG").is_some() {
                             for (i, t) in targets.iter().enumerate() {
-                                eprintln!("  drawn {} at ({:.0},{:.0}) {}x{} {}", named[i], t.x, t.y, t.w, t.h, if t.selected { "SELECTED" } else { "" });
+                                eprintln!(
+                                    "  drawn {} at ({:.0},{:.0}) {}x{} {}",
+                                    named[i],
+                                    t.x,
+                                    t.y,
+                                    t.w,
+                                    t.h,
+                                    if t.selected { "SELECTED" } else { "" }
+                                );
                             }
                             eprintln!("  view {:?}", known.of);
                         }
                         continue;
                     }
                     remembered.insert(region.clone(), named[from].clone());
-                    let inside: Vec<usize> = (0..targets.len()).filter(|&i| region_of(i).as_ref() == Some(&region)).collect();
-                    let want = match nearest(&targets[from], &inside.iter().map(|&i| targets[i].clone()).collect::<Vec<_>>(), direction) {
+                    let inside: Vec<usize> = (0..targets.len())
+                        .filter(|&i| region_of(i).as_ref() == Some(&region))
+                        .collect();
+                    let want = match nearest(
+                        &targets[from],
+                        &inside
+                            .iter()
+                            .map(|&i| targets[i].clone())
+                            .collect::<Vec<_>>(),
+                        direction,
+                    ) {
                         Some(t) => format!("{} (in {region})", named[inside[t]]),
                         None => match plan.pointer(&format!("/{region}/{direction}")) {
                             None => format!("{} (stays)", named[from]),
@@ -680,15 +778,26 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                                 let to = exit["to"].as_str().unwrap_or("").to_owned();
                                 let entry = exit["entry"].as_str().unwrap_or("");
                                 // `first`: top to bottom, then left to right, by the box's centre.
-                                let mut there: Vec<usize> = (0..targets.len()).filter(|&i| region_of(i).as_ref() == Some(&to)).collect();
+                                let mut there: Vec<usize> = (0..targets.len())
+                                    .filter(|&i| region_of(i).as_ref() == Some(&to))
+                                    .collect();
                                 there.sort_by(|&a, &b| {
-                                    let ((ax, ay), (bx, by)) = (targets[a].centre(), targets[b].centre());
-                                    ay.round().total_cmp(&by.round()).then(ax.round().total_cmp(&bx.round()))
+                                    let ((ax, ay), (bx, by)) =
+                                        (targets[a].centre(), targets[b].centre());
+                                    ay.round()
+                                        .total_cmp(&by.round())
+                                        .then(ax.round().total_cmp(&bx.round()))
                                 });
                                 // A list scrolled past the region draws none of it: its first entry in the view.
-                                let first = there.first().map(|&i| named[i].clone()).unwrap_or_else(|| {
-                                    known.entries.iter().find(|(_, _, n)| known.of.get(n) == Some(&to)).map(|(_, _, n)| n.clone()).unwrap_or_default()
-                                });
+                                let first =
+                                    there.first().map(|&i| named[i].clone()).unwrap_or_else(|| {
+                                        known
+                                            .entries
+                                            .iter()
+                                            .find(|(_, _, n)| known.of.get(n) == Some(&to))
+                                            .map(|(_, _, n)| n.clone())
+                                            .unwrap_or_default()
+                                    });
                                 let label = match entry {
                                     "active" => known.active.get(&to).cloned().unwrap_or_default(),
                                     "remembered" => remembered.get(&to).cloned().unwrap_or(first),
@@ -699,7 +808,10 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                         },
                     };
                     directions += 1;
-                    let after = regions(&view).focused.map(|(name, _)| name).unwrap_or_else(|| "nothing".into());
+                    let after = regions(&view)
+                        .focused
+                        .map(|(name, _)| name)
+                        .unwrap_or_else(|| "nothing".into());
                     let wanted = want.split(" (").next().unwrap_or_default();
                     if !same(wanted, &after) {
                         wrong_way.push(format!(
@@ -774,7 +886,11 @@ fn the_plan_measures_words_as_slint_draws_them() {
         slint_interpreter::Compiler::default()
             .build_from_source(source.into(), root.join("measure.slint")),
     );
-    assert!(!result.has_errors(), "{:?}", result.diagnostics().collect::<Vec<_>>());
+    assert!(
+        !result.has_errors(),
+        "{:?}",
+        result.diagnostics().collect::<Vec<_>>()
+    );
     let instance = result.component("Measure").unwrap().create().unwrap();
     let measures: Vec<Value> = serde_json::from_str(
         &std::fs::read_to_string(root.join("preview/evidence/measures.json")).unwrap(),
@@ -783,17 +899,36 @@ fn the_plan_measures_words_as_slint_draws_them() {
     let mut wrong = Vec::new();
     for m in &measures {
         use slint_interpreter::Value as V;
-        instance.set_property("look", V::String(m["look"].as_str().unwrap().into())).unwrap();
+        instance
+            .set_property("look", V::String(m["look"].as_str().unwrap().into()))
+            .unwrap();
         // A changed callback runs before the next frame: let it write Tokens.look.
         slint::platform::update_timers_and_animations();
-        instance.set_property("face", V::String(m["face"].as_str().unwrap().into())).unwrap();
-        instance.set_property("cap", V::Number(m["cap"].as_f64().unwrap())).unwrap();
-        instance.set_property("words", V::String(m["text"].as_str().unwrap().into())).unwrap();
-        let V::Number(drawn) = instance.get_property("drawn").unwrap() else { panic!() };
+        instance
+            .set_property("face", V::String(m["face"].as_str().unwrap().into()))
+            .unwrap();
+        instance
+            .set_property("cap", V::Number(m["cap"].as_f64().unwrap()))
+            .unwrap();
+        instance
+            .set_property("words", V::String(m["text"].as_str().unwrap().into()))
+            .unwrap();
+        let V::Number(drawn) = instance.get_property("drawn").unwrap() else {
+            panic!()
+        };
         let planned = m["width"].as_f64().unwrap();
         if (drawn - planned).abs() > 0.25 {
-            wrong.push(format!("{} {} {} {:?}: planned {planned:.2}, drawn {drawn:.2}", m["look"], m["face"], m["cap"], m["text"]));
+            wrong.push(format!(
+                "{} {} {} {:?}: planned {planned:.2}, drawn {drawn:.2}",
+                m["look"], m["face"], m["cap"], m["text"]
+            ));
         }
     }
-    assert!(wrong.is_empty(), "{} of {}:\n{}", wrong.len(), measures.len(), wrong.join("\n"));
+    assert!(
+        wrong.is_empty(),
+        "{} of {}:\n{}",
+        wrong.len(),
+        measures.len(),
+        wrong.join("\n")
+    );
 }

@@ -13,6 +13,8 @@ import { PicoNotice, CardView } from "../molecules/PicoNotice.slint";
 import { PicoGameActions } from "PicoGameActions.slint";
 
 export struct DetailView {
+    // The layout plan's arrangement (contract A2): the cart over the facts.
+    stacked: bool,
     cart: CartView,
     title: string,
     subtitle: string,
@@ -32,8 +34,9 @@ export component PicoGameDetail {
     in property <bool> has-primary: true;
     in property <bool> mark: true;
     in property <CardView> inline;
-    // Narrow boxes stack the cart over the facts.
-    property <bool> stacked: root.width < 240 * Tokens.p;
+    // The plan decides the arrangement (src/pico-display-plan.ts): a narrow
+    // window stacks the cart over the facts.
+    property <bool> stacked: detail.stacked;
     property <length> box-w: stacked ? min(root.width * 50%, 120 * Tokens.p) : min(root.width * 38%, 190 * Tokens.p);
     property <length> box-h: stacked ? min(root.width * 50%, 120 * Tokens.p) : max(16 * Tokens.p, min(Tokens.art-room, 190 * Tokens.p));
     property <bool> art: !Tokens.tiny || stacked;

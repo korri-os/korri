@@ -7,6 +7,12 @@ import { ButtonView } from "PicoRow.slint";
 // The one thing the screen wants pressed: yellow, a play mark, a brown hard
 // shadow that cycles under the cursor.
 export component PicoButton {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: button.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: (button.target && button.focused);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> button;
     in property <length> font-size: Tokens.lg;
@@ -18,7 +24,7 @@ export component PicoButton {
         y: Tokens.drop;
         width: root.width;
         height: root.height;
-        background: button.focused ? Cycle.now : P8.go-shadow;
+        background: (button.target && button.focused) ? Cycle.now : P8.go-shadow;
     }
     Rectangle { background: button.disabled ? P8.slate : P8.go; }
     row := HorizontalLayout {
@@ -37,5 +43,5 @@ export component PicoButton {
         }
         PicoLine { line-height: root.height; text: button.label; font-size: root.font-size; color: P8.go-ink; overflow: clip; }
     }
-    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: (button.target && button.focused); }
 }

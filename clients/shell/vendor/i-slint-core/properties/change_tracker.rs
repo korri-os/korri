@@ -119,6 +119,7 @@ impl ChangeTracker {
                 let _self_raw = _self;
                 let _self = _self as *const BindingHolder<ChangeTrackerInner<T, EF, NF, Data>>;
                 let inner = core::ptr::addr_of!((*_self).binding).as_ref().unwrap();
+                (*core::ptr::addr_of!((*_self).cutoff)).suspects.borrow_mut().clear();
                 *(*core::ptr::addr_of!((*_self).dep_nodes)).get() = Default::default();
                 assert!(!inner.evaluating.get());
                 inner.evaluating.set(true);

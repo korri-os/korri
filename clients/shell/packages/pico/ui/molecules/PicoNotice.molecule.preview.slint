@@ -15,7 +15,7 @@ export component Ask inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoNotice { card: { shown: true, tone: "ask", kicker: "PLAY WHERE?", title: "Tetris", message: "", lines: [], actions: [{ label: "This device", detail: "", focused: true, disabled: false, warn: false, lit: false },{ label: "zao", detail: "", focused: false, disabled: false, warn: false, lit: false }], inline: false }; }
+        PicoNotice { card: { shown: true, tone: "ask", kicker: "PLAY WHERE?", title: "Tetris", message: "", lines: [], actions: [{ label: "This device", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false },{ label: "zao", detail: "", focused: false, disabled: false, warn: false, lit: false }], inline: false }; }
     }
 }
 
@@ -29,7 +29,7 @@ export component Warn inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoNotice { card: { shown: true, tone: "warn", kicker: "ARE YOU SURE?", title: "REMOVE FROM DEVICE?", message: "Hollow Knight — this cannot be undone.", lines: [], actions: [{ label: "REMOVE FROM DEVICE", detail: "", focused: false, disabled: false, warn: true, lit: false },{ label: "CANCEL", detail: "", focused: true, disabled: false, warn: false, lit: false }], inline: false }; }
+        PicoNotice { card: { shown: true, tone: "warn", kicker: "ARE YOU SURE?", title: "REMOVE FROM DEVICE?", message: "Hollow Knight — this cannot be undone.", lines: [], actions: [{ label: "REMOVE FROM DEVICE", detail: "", focused: false, disabled: false, warn: true, lit: false },{ label: "CANCEL", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false }], inline: false }; }
     }
 }
 
@@ -43,6 +43,6 @@ export component Report inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        PicoNotice { card: { shown: true, tone: "ask", kicker: "CHECK FIRST", title: "Turn on Chiptune?", message: "", lines: [{ text: "Publisher @ada, trusted on this device.", focused: true }, { text: "Uses the network." }], actions: [{ label: "TURN ON", detail: "", focused: false, disabled: false, warn: false, lit: false },{ label: "CANCEL", detail: "", focused: false, disabled: false, warn: false, lit: false }], inline: true }; }
+        PicoNotice { card: { shown: true, tone: "ask", kicker: "CHECK FIRST", title: "Turn on Chiptune?", message: "", lines: [{ text: "Publisher @ada, trusted on this device.", focused: true, target: true }, { text: "Uses the network." }], actions: [{ label: "TURN ON", detail: "", focused: false, disabled: false, warn: false, lit: false },{ label: "CANCEL", detail: "", focused: false, disabled: false, warn: false, lit: false }], inline: true }; }
     }
 }

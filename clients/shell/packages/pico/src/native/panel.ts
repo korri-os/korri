@@ -27,7 +27,7 @@ import { qrPath } from "./qr"
 import type { Target } from "./focus"
 import { frame } from "./frame"
 import { keyboard, type KeyPress } from "./keyboard"
-import { A, B, button, type ButtonView, card, type CardView, chip, type ChipView, NO_CARD } from "./kit"
+import { A, B, button, type ButtonView, card, type CardView, chip, type ChipView, mark, NO_CARD } from "./kit"
 import { cardTargets } from "./catalog"
 import { type Act, type Ctx, local, nav, type Screen, type Typing } from "./types"
 
@@ -44,6 +44,7 @@ export interface RowView {
   /** fact, action, cycle, step, pick, text, network */
   readonly kind: string
   readonly focused: boolean
+  readonly focusId?: string
   readonly warn: boolean
   /** idle, saving, problem, failed */
   readonly state: string
@@ -76,10 +77,8 @@ export function stacked(rows: readonly RowView[]): RowView[] {
 /** The spines' colours, in turn (PicoPanelScreen). */
 export const SPINE_TONES = ["blue", "pink", "orange", "yellow", "lime", "peach"] as const
 
-/** Spines stand beside the card when the screen is this wide, in virtual pixels. */
-export const SPINES_BESIDE = 400
 
-export function rowView(row: PicoSettingRowView, focused: boolean): RowView {
+export function rowView(row: PicoSettingRowView, focused: boolean, focusId?: string): RowView {
   const control = row.control
   const state = row.state
   const value = control.kind === "step" ? control.current
@@ -96,6 +95,7 @@ export function rowView(row: PicoSettingRowView, focused: boolean): RowView {
     deviceOnly: row.deviceOnly === true,
     kind: control.kind,
     focused,
+    ...(focusId === undefined ? {} : { focusId }),
     warn: control.kind === "action" && control.destructive,
     state: state === "idle" ? "idle" : state === "saving" ? "saving" : "problem" in state ? "problem" : "failed",
     stateText: typeof state === "object" ? ("problem" in state ? state.problem : state.failed) : state === "saving" ? "SAVING" : "",
@@ -153,24 +153,22 @@ function panelParts(
     const id = `spine:${i}`
     targets.push({
       id,
-      box: beside ? { x: 0, y: top + i * 10, w: 18, h: 8 } : { x: i * 20, y: 0, w: 18, h: 8 },
+      region: "spines", box: beside ? { x: 0, y: top + i * 10, w: 18, h: 8 } : { x: i * 20, y: 0, w: 18, h: 8 },
       act: [nav({ _tag: "ChoseSettingsGroup", group: i })],
       // Moving onto a spine shows its rows, as focusing a tab did.
       enter: [nav({ _tag: "ChoseSettingsGroup", group: i })],
-      ...(beside ? { next: { right: `row:${settings.groups[i]?.rows[0]?.id ?? ""}` } } : {}),
     })
-    return { label: shown.title, detail: "", focused: focused === id, disabled: false, warn: false, lit: i === at }
+    return { label: shown.title, detail: "", ...mark(id, focused), disabled: false, warn: false, lit: i === at }
   })
   const rows = (settings.groups[at]?.rows ?? []).map((row, i) => {
     const id = `row:${row.id}`
     const act = rowAct(row)
     targets.push({
       id,
-      box: beside ? { x: 20, y: top + i * 10, w: 80, h: 8 } : { x: 0, y: top + 10 + i * 10, w: 100, h: 8 },
+      region: "rows", box: beside ? { x: 20, y: top + i * 10, w: 80, h: 8 } : { x: 0, y: top + 10 + i * 10, w: 100, h: 8 },
       ...(act === undefined ? {} : { act }),
-      ...(beside ? { next: { left: `spine:${at}` } } : {}),
     })
-    return rowView(row, focused === id)
+    return rowView(row, focused === id, id)
   })
   return {
     spines,
@@ -272,10 +270,10 @@ export function editorParts(
   const targets: Target<Act>[] = [...keys.targets]
   const actions = options.actions.map((action, i) => {
     const id = `answer:${i}`
-    if (action.disabled !== true) targets.push({ id, box: { x: i * 50, y: 90, w: 48, h: 8 }, act: action.act })
-    return button(action.label, { disabled: action.disabled === true, focused: focused === id })
+    if (action.disabled !== true) targets.push({ id, region: "answers", box: { x: i * 50, y: 90, w: 48, h: 8 }, act: action.act })
+    return button(action.label, { disabled: action.disabled === true, ...mark(id, focused) })
   })
-  if (options.alone !== undefined) targets.push({ id: "alone", box: { x: 0, y: 100, w: 100, h: 8 }, act: options.alone.act })
+  if (options.alone !== undefined) targets.push({ id: "alone", region: "answers", box: { x: 0, y: 100, w: 100, h: 8 }, act: options.alone.act })
   const text = options.draft.text
   return {
     editor: {
@@ -289,7 +287,7 @@ export function editorParts(
       keys: keys.keys,
       keyRows: keys.rows,
       actions,
-      alone: button(options.alone?.label ?? "", { warn: true, focused: focused === "alone" }),
+      alone: button(options.alone?.label ?? "", { warn: true, ...mark("alone", focused) }),
       hasAlone: options.alone !== undefined,
       problem: options.problem ?? "",
     },
@@ -430,12 +428,13 @@ export function settingsScreen(ctx: Ctx, layer: Settings): Screen {
       view: { page: "settings", frame: base, panel: { ...EMPTY_PANEL }, ...asked.screen.view },
     }
   }
-  const parts = panelParts(settings, layer.group, focused, plan.width >= SPINES_BESIDE, 0)
+  const parts = panelParts(settings, layer.group, focused, plan.spinesBeside, 0)
   const problem = model.settingsStatus._tag === "Problem" ? model.settingsStatus : undefined
   const empty = settings.groups.length === 0
   return {
     key: "settings",
     targets: parts.targets,
+    active: { spines: `spine:${parts.spineTone}` },
     fallback: `spine:${parts.spineTone}`,
     view: {
       page: "settings",
@@ -466,7 +465,7 @@ export function launchScreen(ctx: Ctx, launch: PicoLaunchView, layer: Settings):
     hints: [A("SELECT"), B("BACK")],
     hasLead: reload !== undefined,
     leadKind: "plain",
-    lead: button((reload?.label ?? "RELOAD").toUpperCase(), { focused: focused === "lead", disabled: reload?.enabled !== true }),
+    lead: button((reload?.label ?? "RELOAD").toUpperCase(), { ...mark("lead", focused), disabled: reload?.enabled !== true }),
   })
   void model
   if (asked !== undefined && asked.screen.view["page"] === "editor") {
@@ -502,7 +501,7 @@ export function launchScreen(ctx: Ctx, launch: PicoLaunchView, layer: Settings):
       view: { page: "settings", frame: { ...base, hasLead: false }, panel: { ...EMPTY_PANEL }, card: placed.card },
     }
   }
-  const beside = plan.width >= SPINES_BESIDE
+  const beside = plan.spinesBeside
   const parts = panelParts(shown, layer.group, focused, beside, 20)
   const current = launch.layers[Math.max(0, Math.min(layer.group, launch.layers.length - 1))]
   const scopeAt = picoLaunchScope(current, layer.scope)
@@ -510,16 +509,17 @@ export function launchScreen(ctx: Ctx, launch: PicoLaunchView, layer: Settings):
     const id = `scope:${i}`
     parts.targets.push({
       id,
-      box: beside ? { x: 20 + i * 10, y: 10, w: 9, h: 8 } : { x: i * 10, y: 10, w: 9, h: 8 },
+      region: "scopes", box: beside ? { x: 20 + i * 10, y: 10, w: 9, h: 8 } : { x: i * 10, y: 10, w: 9, h: 8 },
       act: [nav({ _tag: "ChoseLaunchScope", scope: i })],
       enter: [nav({ _tag: "ChoseLaunchScope", scope: i })],
     })
-    return button(scope.label.toUpperCase(), { lit: i === scopeAt, focused: focused === id })
+    return button(scope.label.toUpperCase(), { lit: i === scopeAt, ...mark(id, focused) })
   })
-  if (leadAct !== undefined) parts.targets.push({ id: "lead", box: { x: 0, y: 1000, w: 10, h: 8 }, act: leadAct })
+  if (leadAct !== undefined) parts.targets.push({ id: "lead", region: "floor", box: { x: 0, y: 1000, w: 10, h: 8 }, act: leadAct })
   return {
     key: "launch",
     targets: parts.targets,
+    active: { spines: `spine:${parts.spineTone}`, scopes: `scope:${scopeAt}` },
     fallback: `row:${shown.groups[parts.spineTone]?.rows[0]?.id ?? ""}`,
     view: {
       page: "settings",
@@ -635,7 +635,7 @@ export function identityScreen(ctx: Ctx, asking: Extract<SettingsQuestion, { _ta
   }
   const targets: Target<Act>[] = rows
     .filter(row => !row.view.disabled)
-    .map((row, i) => ({ id: row.id, box: { x: 0, y: i * 10, w: 100, h: 8 }, ...(row.act === undefined ? {} : { act: row.act }) }))
+    .map((row, i) => ({ id: row.id, region: "list", box: { x: 0, y: i * 10, w: 100, h: 8 }, ...(row.act === undefined ? {} : { act: row.act }) }))
   return {
     key: `identity:${action}:${status?._tag ?? "Idle"}`,
     targets,
@@ -651,7 +651,7 @@ export function identityScreen(ctx: Ctx, asking: Extract<SettingsQuestion, { _ta
         qr,
         qrSize,
         secret,
-        rows: rows.map(row => ({ ...row.view, focused: focused === row.id })),
+        rows: rows.map(row => ({ ...row.view, ...mark(row.id, focused) })),
       },
     },
   }

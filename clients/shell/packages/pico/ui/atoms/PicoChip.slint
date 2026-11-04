@@ -6,6 +6,12 @@ import { ButtonView } from "PicoRow.slint";
 // A filter or a tab: a plate in its colour, lit when chosen, white with a
 // cycling drop under the cursor.
 export component PicoChip {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: button.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: (button.target && button.focused);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> button;
     in property <color> lit-ground: P8.go;
@@ -16,8 +22,9 @@ export component PicoChip {
     preferred-width: label.preferred-width + 6 * Tokens.p;
     min-width: self.preferred-width;
     height: font-size + 4 * Tokens.p;
-    if button.focused : Rectangle { x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
-    Rectangle { background: button.focused ? P8.pick : button.lit ? lit-ground : ground; }
+    // Always present, shown by the row's data: a row updates in place.
+    Rectangle { visible: (button.target && button.focused); x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
+    Rectangle { background: (button.target && button.focused) ? P8.pick : button.lit ? lit-ground : ground; }
     label := Text {
         x: 3 * Tokens.p;
         y: 2 * Tokens.p;
@@ -25,7 +32,7 @@ export component PicoChip {
         text: button.label;
         font-size: root.font-size;
         overflow: elide;
-        color: button.focused || button.lit ? lit-ink : button.disabled ? P8.ink-quiet : ink;
+        color: (button.target && button.focused) || button.lit ? lit-ink : button.disabled ? P8.ink-quiet : ink;
     }
-    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: button.focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: (button.target && button.focused); }
 }

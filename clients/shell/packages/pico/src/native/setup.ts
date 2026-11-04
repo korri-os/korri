@@ -17,7 +17,7 @@ import { IDENTITY_FORM } from "../state/navigation"
 import type { OnboardingMessage } from "../state/onboarding"
 import type { Target } from "./focus"
 import { frame } from "./frame"
-import { A, B, button, type ButtonView, cartView, type CartView, NO_CARD, type HintView } from "./kit"
+import { A, B, button, type ButtonView, cartView, type CartView, mark, NO_CARD, type HintView } from "./kit"
 import { editorParts, identityScreen, type RowView, rowView, stacked, typingScreen } from "./panel"
 import { type Act, type Ctx, local, type Screen, setup } from "./types"
 
@@ -52,13 +52,13 @@ export interface SetupView {
 
 const EMPTY_PACK = { shown: false, tone: "ask", title: "", message: "", answers: [] as ButtonView[] }
 
-function networkRow(network: PicoNetworkView, focused: boolean): RowView {
+function networkRow(network: PicoNetworkView, focused: boolean, focusId: string): RowView {
   return rowView({
     id: network.id,
     label: network.ssid,
     control: { kind: "network", actionId: network.id, network },
     state: "idle",
-  }, focused)
+  }, focused, focusId)
 }
 
 const SELECT_BACK: readonly HintView[] = [A("SELECT"), B("BACK")]
@@ -127,29 +127,29 @@ export function setupScreen(ctx: Ctx): Screen {
   const targets: Target<Act>[] = []
   const rows = shown.networks.map((network, i) => {
     const id = `network:${network.id}`
-    targets.push({ id, box: { x: 0, y: 10 + i * 10, w: 100, h: 8 }, act: [setup({ _tag: "PickedNetwork", networkId: network.id })] })
-    return networkRow(network, focused === id)
+    targets.push({ id, region: "list", box: { x: 0, y: 10 + i * 10, w: 100, h: 8 }, act: [setup({ _tag: "PickedNetwork", networkId: network.id })] })
+    return networkRow(network, focused === id, id)
   })
   const factRows = shown.facts.map(fact => rowView({ id: fact.label, label: fact.label, value: fact.value, control: { kind: "fact" }, state: "idle" }, false))
   const answers = shown.answers.map((answer, i) => {
     if (answer.disabled !== true) {
       targets.push({
         id: answer.id,
-        box: shown.inline ? { x: i * 50, y: 500, w: 48, h: 8 } : { x: 0, y: 500 + i * 10, w: 100, h: 8 },
+        region: "answers", box: shown.inline ? { x: i * 50, y: 500, w: 48, h: 8 } : { x: 0, y: 500 + i * 10, w: 100, h: 8 },
         act: answer.act ?? (answer.message === undefined ? [] : [setup(answer.message)]),
       })
     }
-    return button(answer.label, { detail: answer.detail ?? "", disabled: answer.disabled === true, focused: focused === answer.id })
+    return button(answer.label, { detail: answer.detail ?? "", disabled: answer.disabled === true, ...mark(answer.id, focused) })
   })
   const pack = shown.pack === undefined ? EMPTY_PACK : {
     ...shown.pack,
     answers: shown.pack.answers.map((answer, i) => {
-      if (answer.disabled !== true) targets.push({ id: answer.id, box: { x: 0, y: 300 + i * 10, w: 100, h: 8 }, act: answer.message === undefined ? [] : [setup(answer.message)] })
-      return button(answer.label, { disabled: answer.disabled === true, focused: focused === answer.id })
+      if (answer.disabled !== true) targets.push({ id: answer.id, region: "pack", box: { x: 0, y: 300 + i * 10, w: 100, h: 8 }, act: answer.message === undefined ? [] : [setup(answer.message)] })
+      return button(answer.label, { disabled: answer.disabled === true, ...mark(answer.id, focused) })
     }),
   }
   if (shown.go !== undefined && shown.go.disabled !== true) {
-    targets.push({ id: shown.go.id, box: { x: 0, y: 700, w: 30, h: 10 }, act: shown.go.message === undefined ? [] : [setup(shown.go.message)] })
+    targets.push({ id: shown.go.id, region: "go", box: { x: 0, y: 700, w: 30, h: 10 }, act: shown.go.message === undefined ? [] : [setup(shown.go.message)] })
   }
   const enabled = targets.map(target => target.id)
   const fallback = cursor.at === "last" ? enabled[enabled.length - 1] : enabled[0]
@@ -175,7 +175,7 @@ export function setupScreen(ctx: Ctx): Screen {
         more: shown.more,
         answers,
         inline: shown.inline,
-        go: button(shown.go?.label ?? "", { focused: shown.go !== undefined && focused === shown.go.id, disabled: shown.go?.disabled === true }),
+        go: button(shown.go?.label ?? "", { ...(shown.go === undefined ? {} : mark(shown.go.id, focused)), disabled: shown.go?.disabled === true }),
         hasGo: shown.go !== undefined,
         pack,
       },

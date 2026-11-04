@@ -8,7 +8,7 @@ import { picoStoreProviderTitle, picoStoreResult, picoStoreSearchFor, PICO_STORE
 import type { PicoStoreShown } from "../pico-types"
 import type { Target } from "./focus"
 import { frame } from "./frame"
-import { A, B, bar, button, card, type CardView, cartView, chip, NO_BAR, NO_CARD } from "./kit"
+import { A, B, bar, button, card, type CardView, cartView, chip, mark, NO_BAR, NO_CARD } from "./kit"
 import { cardTargets, type LaunchStageView } from "./catalog"
 import { editorParts } from "./panel"
 import { type Act, type Ctx, nav, type Screen } from "./types"
@@ -59,8 +59,8 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
     }
     const rows = providers.providers.map((provider, i) => {
       const id = `provider:${provider.id}`
-      targets.push({ id, box: { x: 0, y: i * 10, w: 100, h: 8 }, act: [nav({ _tag: "ChoseStoreProvider", providerId: provider.id })] })
-      return button(provider.title, { focused: focused === id, detail: "▶" })
+      targets.push({ id, region: "list", box: { x: 0, y: i * 10, w: 100, h: 8 }, act: [nav({ _tag: "ChoseStoreProvider", providerId: provider.id })] })
+      return button(provider.title, { ...mark(id, focused), detail: "▶" })
     })
     return {
       key: "store:providers",
@@ -76,8 +76,8 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
 
   if (view === "Results") {
     const search = picoStoreSearchFor(store, shown.providerId)
-    targets.push({ id: "search", box: { x: 0, y: 0, w: 100, h: 8 }, act: [nav({ _tag: "OpenedStoreSearch" })] })
-    const searchRow = button("SEARCH", { focused: focused === "search", detail: search._tag === "Idle" ? "TYPE A NAME" : search.query })
+    targets.push({ id: "search", region: "search", box: { x: 0, y: 0, w: 100, h: 8 }, act: [nav({ _tag: "OpenedStoreSearch" })] })
+    const searchRow = button("SEARCH", { ...mark("search", focused), detail: search._tag === "Idle" ? "TYPE A NAME" : search.query })
     if (search._tag === "Problem") {
       const placed = cardTargets(card({ tone: "warn", kicker: "SEARCH FAILED", message: search.message, actions: search.actions.map(action => button(action.label.toUpperCase(), { disabled: !action.enabled })) }), search.actions.map(action => `action:${action.id}`), search.actions.map(actionAct), focused)
       targets.push(...placed.targets.map(target => ({ ...target, box: { ...target.box, y: target.box.y + 20 } })))
@@ -86,9 +86,9 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
     const entries = search._tag === "Ready" ? search.entries : []
     const results = entries.map((entry, i) => {
       const id = `entry:${entry.id}`
-      targets.push({ id, box: { x: i * 10, y: 20, w: 9, h: 20 }, act: [nav({ _tag: "OpenedStoreEntry", entryId: entry.id })] })
+      targets.push({ id, region: "results", box: { x: i * 10, y: 20, w: 9, h: 20 }, act: [nav({ _tag: "OpenedStoreEntry", entryId: entry.id })] })
       const game = picoStoreResult(entry)
-      return { cart: cartView(game, { focused: focused === id, hero: focused === id, band: false }), title: entry.title, subtitle: game.subtitle ?? "" }
+      return { cart: cartView(game, { ...mark(id, focused), hero: focused === id, band: false }), title: entry.title, subtitle: game.subtitle ?? "" }
     })
     const note = search._tag === "Searching" ? "Searching…"
       : search._tag === "Ready" && entries.length === 0 ? `Nothing matches “${search.query}”.`
@@ -112,6 +112,7 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
   const game = picoStoreResult(entry)
   const cart = cartView(game, { hero: true })
   const entryBase = {
+    stacked: ctx.plan.detailStacked,
     cart,
     title: entry.title,
     subtitle: [entry.system, providerTitle].filter(part => part !== undefined && part !== "").join(" · "),
@@ -137,8 +138,8 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
   switch (get._tag) {
     case "Offer": {
       const [first, ...rest] = get.actions
-      if (first !== undefined && first.enabled) targets.push({ id: `action:${first.id}`, box: { x: 0, y: 0, w: 30, h: 10 }, act: actionAct(first) })
-      rest.forEach((action, i) => { if (action.enabled) targets.push({ id: `action:${action.id}`, box: { x: 0, y: 20 + i * 10, w: 100, h: 8 }, act: actionAct(action) }) })
+      if (first !== undefined && first.enabled) targets.push({ id: `action:${first.id}`, region: "play", box: { x: 0, y: 0, w: 30, h: 10 }, act: actionAct(first) })
+      rest.forEach((action, i) => { if (action.enabled) targets.push({ id: `action:${action.id}`, region: "actions", box: { x: 0, y: 20 + i * 10, w: 100, h: 8 }, act: actionAct(action) }) })
       hints = first === undefined ? [B("BACK")] : [A(first.label.toUpperCase()), B("BACK")]
       return {
         key: "store:entry:offer",
@@ -154,8 +155,8 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
               ...described,
               description: [get.note, described.description].filter(part => part !== undefined && part !== "").join("\n\n"),
               hasPrimary: first !== undefined,
-              primary: button((first?.label ?? "").toUpperCase(), { focused: first !== undefined && focused === `action:${first.id}`, disabled: first?.enabled !== true }),
-              others: rest.map(action => button(action.label, { disabled: !action.enabled, focused: focused === `action:${action.id}` })),
+              primary: button((first?.label ?? "").toUpperCase(), { ...(first === undefined ? {} : mark(`action:${first.id}`, focused)), disabled: first?.enabled !== true }),
+              others: rest.map(action => button(action.label, { disabled: !action.enabled, ...mark(`action:${action.id}`, focused) })),
             },
           },
         },
@@ -196,7 +197,7 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
       break
     }
     case "Working": {
-      get.actions.forEach((action, i) => { if (action.enabled) targets.push({ id: `action:${action.id}`, box: { x: i * 20, y: 0, w: 18, h: 8 }, act: actionAct(action) }) })
+      get.actions.forEach((action, i) => { if (action.enabled) targets.push({ id: `action:${action.id}`, region: "stage", box: { x: i * 20, y: 0, w: 18, h: 8 }, act: actionAct(action) }) })
       const launch: LaunchStageView = {
         kicker: get.kicker,
         detail: get.detail ?? "",
@@ -204,7 +205,7 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
         hasCart: true,
         cart,
         phase: "starting",
-        actions: get.actions.map(action => button(action.label.toUpperCase(), { disabled: !action.enabled, focused: focused === `action:${action.id}` })),
+        actions: get.actions.map(action => button(action.label.toUpperCase(), { disabled: !action.enabled, ...mark(`action:${action.id}`, focused) })),
       }
       return { key: "store:entry:working", targets, view: { page: "store", frame: base([B("BACK")]), card: NO_CARD, store: { ...empty, view: "working", entry: { ...described, launch, working: true } } } }
     }

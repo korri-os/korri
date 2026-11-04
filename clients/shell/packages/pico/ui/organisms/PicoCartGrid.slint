@@ -12,9 +12,9 @@ export component PicoCartGrid inherits VerticalLayout {
     alignment: start;
     in property <[GridSectionView]> sections;
     property <length> slot-w: 30 * Tokens.p;
-    // As many columns as the box it is given holds: the grid answers its
-    // container, not the display.
-    property <int> columns: max(1, floor((root.width + 4 * Tokens.p) / (slot-w + 4 * Tokens.p)));
+    // Carts to a row, as the layout plan decided from the window
+    // (src/pico-display-plan.ts): the focus graph moves by the same rows.
+    in property <int> columns: 1;
     property <length> row-h: 44 * Tokens.p;
     spacing: Tokens.u;
     for section in sections : VerticalLayout {
@@ -27,10 +27,16 @@ export component PicoCartGrid inherits VerticalLayout {
                 y: floor(i / max(1, columns)) * row-h;
                 width: slot-w;
                 height: row-h;
-                if cart.focused : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                accessible-role: AccessibleRole.list-item;
+                accessible-label: cart.title;
+                accessible-item-selectable: true;
+                accessible-item-selected: (cart.target && cart.focused);
+                // Always present, shown by the row's data: a row updates in place.
+                Rectangle { visible: (cart.target && cart.focused); x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
                 shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
                     x: 0;
                     y: parent.height - 4 * Tokens.p - self.shell-h - (cart.hero ? 4 * Tokens.p : 0);
+                   
                     cart: cart;
                     box-w: 22 * Tokens.p;
                     box-h: 30 * Tokens.p;

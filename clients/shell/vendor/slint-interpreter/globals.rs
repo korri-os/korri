@@ -274,7 +274,7 @@ fn install_for_global(g: &Rc<GlobalInstance>, storage: &Rc<GlobalStorage>) {
                 }
                 let expr = expr.clone();
                 let cu = cu.clone();
-                prop.set_binding(move || {
+                prop.set_binding_comparing(move || {
                     let mut ctx = EvalContext::for_global(weak_storage.clone(), cu.clone());
                     eval_expression(&mut ctx, &expr)
                 });
