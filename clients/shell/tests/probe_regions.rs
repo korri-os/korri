@@ -198,15 +198,21 @@ fn a_press_that_clears_the_focus_fails() {
     let package = dir.path().join("lose");
     std::fs::create_dir_all(package.join("fonts")).unwrap();
     for file in ["main.slint", "fonts/tiny5.ttf"] {
-        std::fs::copy(root.join("tests/packages/regions").join(file), package.join(file)).unwrap();
+        std::fs::copy(
+            root.join("tests/packages/regions").join(file),
+            package.join(file),
+        )
+        .unwrap();
     }
     let up = r#"if (b === "up") return { state: { ...s, region: "tabs", tab: s.active }, requests: [] };"#;
     let logic = std::fs::read_to_string(root.join("tests/packages/regions/logic.js")).unwrap();
     assert!(logic.contains(up));
     let logic = logic.replace(
         up,
-        &format!(r#"{up}
-    if (b === "down") return {{ state: {{ ...s, region: "nowhere" }}, requests: [] }};"#),
+        &format!(
+            r#"{up}
+    if (b === "down") return {{ state: {{ ...s, region: "nowhere" }}, requests: [] }};"#
+        ),
     );
     std::fs::write(package.join("logic.js"), logic).unwrap();
     let out = tempfile::tempdir().unwrap();

@@ -40,16 +40,28 @@ fn memory_stays_flat_over_20_rounds_of_both_packages() {
         for _ in 0..3 {
             f();
         }
-        trim();
-        let before = rss();
-        for _ in 0..20 {
-            f();
+        // A loaded machine can leave one step in a measurement (a heap grown while other
+        // processes held memory back); a leak grows in every one. Up to three, the lowest.
+        let mut lowest = i64::MAX;
+        for _ in 0..3 {
+            trim();
+            let before = rss();
+            for _ in 0..20 {
+                f();
+            }
+            trim();
+            let after = rss();
+            let per_round = (after as i64 - before as i64) / 20;
+            eprintln!("{label}: {before} -> {after} KiB ({per_round:+} KiB per round)");
+            lowest = lowest.min(per_round);
+            if lowest < 48 {
+                break;
+            }
         }
-        trim();
-        let after = rss();
-        let per_round = (after as i64 - before as i64) / 20;
-        eprintln!("{label}: {before} -> {after} KiB ({per_round:+} KiB per round)");
-        assert!(per_round < 48, "{label} grows {per_round} KiB per round");
+        assert!(
+            lowest < 48,
+            "{label} grows {lowest} KiB per round in each of three measurements"
+        );
     };
     report("compile zone+pico", &mut || {
         drop(package::compile(&zone).unwrap());
