@@ -94,11 +94,13 @@ pub(super) struct LayerOps {
 }
 
 struct LineSnapshot {
-    /// Pixel type and the x range the pixels cover.
+    /// Pixel type, and the area's x range the arrays cover.
     kind: &'static str,
     x: core::ops::Range<i16>,
     before: Vec<u8>,
     after: Vec<u8>,
+    /// Per pixel: whether `before` and `after` hold a replay's pixels there.
+    valid: Vec<bool>,
 }
 
 // Sound for the reason `SharedOps` is: band threads only read the calls (they never clone
@@ -125,61 +127,86 @@ impl LayerOps {
         Self { ops, area, lines }
     }
 
-    /// Draw the calls into `target` inside `clip`.
+    /// Draw the calls into `target` inside `clip`. Every pixel's result depends only on the
+    /// pixel under it (no call reads its neighbours), so per line: when every pixel to draw
+    /// has the pixel under it that it had when last drawn, it gets last time's result; else
+    /// the line's part is replayed and remembered.
     fn replay<B: target_pixel_buffer::TargetPixelBuffer>(
         &self,
         target: &mut RenderToBuffer<'_, B>,
         clip: &PhysicalRect,
     ) {
         let Some(visible) = clip.intersection(&self.area) else { return };
-        let bounds = target.dirty_region.bounding_rect();
-        let Some(drawn) = visible.intersection(&bounds) else { return };
-        // Copies only where the dirty region covers the layer's visible width in one rectangle.
-        let whole_width = target.dirty_region.iter_box().count() == 1
-            && drawn.min_x() == visible.min_x()
-            && drawn.max_x() == visible.max_x();
-        if !whole_width {
-            self.draw(target, Some(drawn));
-            return;
-        }
         let kind = core::any::type_name::<B::TargetPixel>();
-        let x = drawn.min_x()..drawn.max_x();
-        let (x0, x1) = (x.start as usize, x.end as usize);
-        let mut stale: Vec<i16> = Vec::new();
-        for y in drawn.min_y()..drawn.max_y() {
-            let line = &mut target.buffer.line_slice(y as usize)[x0..x1];
-            let index = (y - self.area.min_y()) as usize;
-            let snapshot = self.lines[index].lock().unwrap();
-            match snapshot.as_ref() {
-                Some(s) if s.kind == kind && s.x == x && s.before == pixel_bytes(line) => {
-                    pixel_bytes_mut(line).copy_from_slice(&s.after);
-                }
-                _ => stale.push(y),
-            }
-        }
-        // Draw the other lines, a run at a time, and remember them.
-        let mut start = 0;
-        while start < stale.len() {
-            let mut end = start + 1;
-            while end < stale.len() && stale[end] == stale[end - 1] + 1 {
-                end += 1;
-            }
-            let (top, bottom) = (stale[start], stale[end - 1] + 1);
-            let before: Vec<Vec<u8>> = (top..bottom)
-                .map(|y| pixel_bytes(&target.buffer.line_slice(y as usize)[x0..x1]).to_vec())
-                .collect();
-            let run = PhysicalRect::new(
-                PhysicalPoint::new(x.start, top),
-                PhysicalSize::new(x.end - x.start, bottom - top),
-            );
-            self.draw(target, Some(run));
-            for (y, before) in (top..bottom).zip(before) {
-                let after = pixel_bytes(&target.buffer.line_slice(y as usize)[x0..x1]).to_vec();
+        let size = core::mem::size_of::<B::TargetPixel>();
+        // Disjoint parts of the dirty region: a pixel is drawn once.
+        for part in target.dirty_clips(&visible) {
+            let (x0, x1) = (part.min_x(), part.max_x());
+            let mut stale: Vec<i16> = Vec::new();
+            for y in part.min_y()..part.max_y() {
                 let index = (y - self.area.min_y()) as usize;
-                *self.lines[index].lock().unwrap() =
-                    Some(LineSnapshot { kind, x: x.clone(), before, after });
+                let line = &mut target.buffer.line_slice(y as usize)[x0 as usize..x1 as usize];
+                let snapshot = self.lines[index].lock().unwrap();
+                let hit = snapshot.as_ref().is_some_and(|s| {
+                    s.kind == kind && s.x.start <= x0 && x1 <= s.x.end && {
+                        let from = (x0 - s.x.start) as usize;
+                        let to = (x1 - s.x.start) as usize;
+                        s.valid[from..to].iter().all(|v| *v)
+                            && s.before[from * size..to * size] == *pixel_bytes(line)
+                    }
+                });
+                if hit {
+                    let s = snapshot.as_ref().unwrap();
+                    let from = (x0 - s.x.start) as usize * size;
+                    let len = line.len() * size;
+                    pixel_bytes_mut(line).copy_from_slice(&s.after[from..from + len]);
+                } else {
+                    stale.push(y);
+                }
             }
-            start = end;
+            let mut start = 0;
+            while start < stale.len() {
+                let mut end = start + 1;
+                while end < stale.len() && stale[end] == stale[end - 1] + 1 {
+                    end += 1;
+                }
+                let (top, bottom) = (stale[start], stale[end - 1] + 1);
+                let before: Vec<Vec<u8>> = (top..bottom)
+                    .map(|y| {
+                        pixel_bytes(&target.buffer.line_slice(y as usize)[x0 as usize..x1 as usize])
+                            .to_vec()
+                    })
+                    .collect();
+                let run = PhysicalRect::new(
+                    PhysicalPoint::new(x0, top),
+                    PhysicalSize::new(x1 - x0, bottom - top),
+                );
+                self.draw(target, Some(run));
+                for (y, before) in (top..bottom).zip(before) {
+                    let after =
+                        pixel_bytes(&target.buffer.line_slice(y as usize)[x0 as usize..x1 as usize]);
+                    let index = (y - self.area.min_y()) as usize;
+                    let mut snapshot = self.lines[index].lock().unwrap();
+                    let width = self.area.width() as usize;
+                    let fresh = !snapshot.as_ref().is_some_and(|s| s.kind == kind);
+                    if fresh {
+                        *snapshot = Some(LineSnapshot {
+                            kind,
+                            x: self.area.min_x()..self.area.max_x(),
+                            before: alloc::vec![0; width * size],
+                            after: alloc::vec![0; width * size],
+                            valid: alloc::vec![false; width],
+                        });
+                    }
+                    let s = snapshot.as_mut().unwrap();
+                    let from = (x0 - s.x.start) as usize;
+                    let to = (x1 - s.x.start) as usize;
+                    s.before[from * size..to * size].copy_from_slice(&before);
+                    s.after[from * size..to * size].copy_from_slice(after);
+                    s.valid[from..to].iter_mut().for_each(|v| *v = true);
+                }
+                start = end;
+            }
         }
     }
 
