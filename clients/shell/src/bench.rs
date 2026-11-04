@@ -346,6 +346,13 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                         .map(|(k, _)| k.as_str())
                         .collect();
                     calls.push(format!("changed=[{}]", changed.join(",")));
+                    let mut paths = Vec::new();
+                    diff_paths(&last_view, &view, "", &mut paths);
+                    calls.push(format!(
+                        "paths({})=[{}]",
+                        paths.len(),
+                        paths.iter().take(12).cloned().collect::<Vec<_>>().join(" ")
+                    ));
                 }
                 last_view = view;
                 frame.convert = binder.timing.0.as_secs_f64() * 1e6;
@@ -508,6 +515,27 @@ fn profile_report(frames: &[Frame], raster_sizes: &BTreeMap<i16, u64>) -> String
         .collect();
     out += &format!("glyphs rasterised by pixel size: {}\n", sizes.join(" "));
     out
+}
+
+/// The leaf paths at which two views differ (an array's length change counts as one).
+fn diff_paths(a: &Value, b: &Value, path: &str, out: &mut Vec<String>) {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => {
+            for (k, v) in y {
+                match x.get(k) {
+                    Some(u) => diff_paths(u, v, &format!("{path}.{k}"), out),
+                    None => out.push(format!("{path}.{k}")),
+                }
+            }
+        }
+        (Value::Array(x), Value::Array(y)) if x.len() == y.len() => {
+            for (i, (u, v)) in x.iter().zip(y).enumerate() {
+                diff_paths(u, v, &format!("{path}[{i}]"), out);
+            }
+        }
+        _ if a != b => out.push(path.to_owned()),
+        _ => {}
+    }
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {

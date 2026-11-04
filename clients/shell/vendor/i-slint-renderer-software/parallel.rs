@@ -511,24 +511,27 @@ fn band_renderer<'b, 'a, T: TargetPixel>(
     })
 }
 
-/// Start one thread per band of `buffer` under `region`; each replays the
-/// chunks of `stream` as they are published, until the last.
-pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
-    scope: &'scope std::thread::Scope<'scope, 'env>,
-    stream: &'scope OpStream,
-    buffer: &'scope mut [T],
-    pixel_stride: usize,
-    region: &PhysicalRegion,
+/// The bands of one frame not yet taken, for the band threads and, once its walk ended, the
+/// UI thread: a band is taken whole and replays every chunk of the stream.
+pub(super) struct BandQueue<'a, T> {
+    bands: std::sync::Mutex<Vec<SendBand<'a, T>>>,
+    region: PhysicalRegion,
     scale_factor: ScaleFactor,
-    threads: usize,
-) {
-    for band in split_bands(buffer, pixel_stride, region, threads) {
-        let region = region.clone();
-        scope.spawn(move || {
-            let band = band; // the whole `SendBand`, not its field
+}
+
+// Sound as `SendBand` is: each band is taken by one thread, and its lines are its own.
+unsafe impl<T> Sync for BandQueue<'_, T> {}
+unsafe impl<T> Send for BandQueue<'_, T> {}
+
+impl<T: TargetPixel> BandQueue<'_, T> {
+    /// Take bands until none is left; replay every chunk of `stream` into each.
+    pub(super) fn work(&self, stream: &OpStream) {
+        loop {
+            let Some(band) = self.bands.lock().unwrap().pop() else { return };
             let mut band = band.0;
-            let Some(mut renderer) = band_renderer(&mut band, &region, scale_factor) else {
-                return;
+            let Some(mut renderer) = band_renderer(&mut band, &self.region, self.scale_factor)
+            else {
+                continue;
             };
             let mut index = 0;
             while let Some(chunk) = stream.chunk(index) {
@@ -537,8 +540,36 @@ pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
                 }
                 index += 1;
             }
-        });
+        }
     }
+}
+
+/// Split `buffer` under `region` into bands several times more than `threads`, and start
+/// `threads` threads taking them; the queue goes back to the caller, whose own thread takes
+/// the bands still left once it has published the last chunk. Balanced by what is left, not
+/// by rows: a thread that finishes early takes another band.
+pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    stream: &'scope OpStream,
+    buffer: &'scope mut [T],
+    pixel_stride: usize,
+    region: &PhysicalRegion,
+    scale_factor: ScaleFactor,
+    threads: usize,
+) -> Arc<BandQueue<'scope, T>> {
+    let mut bands = split_bands(buffer, pixel_stride, region, (threads + 1) * 4);
+    // Taken from the end: the top of the region first.
+    bands.reverse();
+    let queue = Arc::new(BandQueue {
+        bands: std::sync::Mutex::new(bands),
+        region: region.clone(),
+        scale_factor,
+    });
+    for _ in 0..threads {
+        let queue = queue.clone();
+        scope.spawn(move || queue.work(stream));
+    }
+    queue
 }
 
 /// Replay `recorded` into `buffer` on `threads` threads, one band of lines each.

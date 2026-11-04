@@ -720,6 +720,7 @@ impl SoftwareRenderer {
             let mut scratch = LinesOnly::like(buffer, pixel_stride, lines);
             let (region, started) = std::thread::scope(|scope| {
                 let mut unclaimed = Some(&mut *buffer);
+                let mut queue = None;
                 let mut start = |region: &PhysicalRegion, scale_factor: ScaleFactor| {
                     let pixels: usize = region
                         .iter()
@@ -731,7 +732,7 @@ impl SoftwareRenderer {
                     let buffer = unclaimed.take().expect("one frame starts its bands once");
                     // The UI thread keeps recording: one band thread fewer than threads.
                     let bands = (threads - 1).max(1);
-                    parallel::stream_into_bands(
+                    queue = Some(parallel::stream_into_bands(
                         scope,
                         shared,
                         buffer,
@@ -739,7 +740,7 @@ impl SoftwareRenderer {
                         region,
                         scale_factor,
                         bands,
-                    );
+                    ));
                     Some(stream.clone())
                 };
                 let (region, recorded) =
@@ -758,6 +759,10 @@ impl SoftwareRenderer {
                     }
                 } else {
                     shared.publish(Vec::new(), true);
+                }
+                // The walk ended: this thread takes the bands still left.
+                if let Some(queue) = queue.take() {
+                    queue.work(shared);
                 }
                 (region, started)
             });
