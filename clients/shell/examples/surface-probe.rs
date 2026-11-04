@@ -22,13 +22,12 @@
 //!     README.md, Focus plan): inside the focused target's region, the press
 //!     must reach the target drawn nearest (spatial-focus.ts: along + 3 x
 //!     across, ahead by more than 1 px); with none that way, the region's
-//!     declared exit by its entry rule; with no exit, focus stays. A focus target is a view
-//!     entry with a `focused` field. Its drawn box: render the view with that
-//!     entry alone focused and with none focused; the largest connected group
-//!     of changed pixels. (The element tree has no per-target boxes: packages
-//!     draw targets with plain elements, without ids or labels.) A target's
-//!     identity across states is its entry without `focused` and without
-//!     booleans (other highlight flags).
+//!     declared exit by its entry rule; with no exit, focus stays. A focus
+//!     target is a view entry with a `focused` field, drawn by the element
+//!     that sets `accessible-item-selectable` and is selected when that entry
+//!     alone is focused; its box is that element's geometry. Its identity
+//!     across states is its region and its place in the region's drawing
+//!     order, never its label or values (src/targets.rs).
 //!
 //!     With --still, a state whose unchanged view, applied again, changes a
 //!     pixel is a failure too.
@@ -82,17 +81,6 @@ fn save(pixels: &[u16], (w, h): (u32, u32), path: &Path) -> Result<()> {
     }
     img.save(path)
         .with_context(|| format!("save {}", path.display()))
-}
-
-/// One target lit alone: a few quick frames are enough to place its box.
-fn render_quick(instance: &slint_interpreter::ComponentInstance) -> Vec<u16> {
-    let mut frame = Vec::new();
-    for _ in 0..3 {
-        Headless::advance(std::time::Duration::from_millis(20));
-        instance.window().request_redraw();
-        frame = Headless::render().unwrap_or_default();
-    }
-    frame
 }
 
 fn render(instance: &slint_interpreter::ComponentInstance, size: (u32, u32)) -> Vec<u16> {
@@ -284,54 +272,6 @@ struct Rect {
 impl Rect {
     fn center(&self) -> (f32, f32) {
         (self.x + self.w / 2.0, self.y + self.h / 2.0)
-    }
-}
-
-/// Paths (keys and indices) of every object in a view that has `focused`.
-fn targets(view: &Value, path: &mut Vec<Value>, out: &mut Vec<Vec<Value>>) {
-    match view {
-        Value::Object(map) => {
-            if map.contains_key("focused") {
-                out.push(path.clone());
-            }
-            for (k, v) in map {
-                path.push(json!(k));
-                targets(v, path, out);
-                path.pop();
-            }
-        }
-        Value::Array(items) => {
-            for (i, v) in items.iter().enumerate() {
-                path.push(json!(i));
-                targets(v, path, out);
-                path.pop();
-            }
-        }
-        _ => {}
-    }
-}
-
-fn at_mut<'a>(view: &'a mut Value, path: &[Value]) -> &'a mut Value {
-    path.iter().fold(view, |v, step| match step {
-        Value::String(k) => &mut v[k.as_str()],
-        Value::Number(i) => &mut v[i.as_u64().unwrap_or_default() as usize],
-        _ => v,
-    })
-}
-
-/// An entry's identity: the entry without `focused` or any boolean.
-fn identity(entry: &Value) -> String {
-    match entry {
-        Value::Object(map) => Value::Object(
-            map.iter()
-                .filter(|(k, v)| {
-                    k.as_str() != "focused" && k.as_str() != view::FOCUS_REGION && !v.is_boolean()
-                })
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-        )
-        .to_string(),
-        other => other.to_string(),
     }
 }
 
@@ -668,36 +608,38 @@ fn walk(
                     size.1,
                     path.join(" ")
                 ));
-            } else {
-                // A2 (8.3): every target's drawn box, one entry focused at a time.
-                let mut paths = Vec::new();
-                targets(&view, &mut Vec::new(), &mut paths);
-                let mut occurrences: HashMap<String, usize> = HashMap::new();
-                for target in &paths {
-                    let mut alone = quiet_view.clone();
-                    at_mut(&mut alone, target)["focused"] = json!(true);
-                    binder.apply(&instance, &alone, &mut images)?;
-                    let lit = render_quick(&instance);
-                    let mut whole = view.clone();
-                    let entry = at_mut(&mut whole, target).clone();
-                    let base = identity(&entry);
-                    let n = occurrences.entry(base.clone()).or_default();
-                    *n += 1;
-                    if let Some(rect) = changed_box(&lit, &b, &c, size.0) {
-                        if entry["focused"] == json!(true) {
+            }
+            // A2 (8.3): every target's box is the geometry of the element that draws it
+            // (accessible-item-selectable); its identity is its region and its place in
+            // that region's drawing order (src/targets.rs).
+            binder.apply(&instance, &view, &mut images)?;
+            match korri_shell::targets::drawn(&instance, &mut binder, &view, &mut images) {
+                Ok(drawn) => {
+                    for target in drawn {
+                        if target.entry.focused {
                             state.focused = Some(state.targets.len());
                         }
+                        let e = &target.element;
                         state.targets.push(Drawn {
-                            rect,
-                            identity: format!("{base}#{n}"),
-                            region: entry[view::FOCUS_REGION]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_owned(),
-                            active: entry[view::FOCUS_ACTIVE] == json!(true),
+                            rect: Rect {
+                                x: e.x,
+                                y: e.y,
+                                w: e.w,
+                                h: e.h,
+                            },
+                            identity: target.identity,
+                            region: target.entry.region,
+                            active: target.entry.active,
                         });
                     }
                 }
+                Err(error) => failures.push(format!(
+                    "{} at {}x{}: [{}] focus targets: {error:#}",
+                    model_file.display(),
+                    size.0,
+                    size.1,
+                    path.join(" ")
+                )),
             }
             // Restore every property for the next state.
             binder.apply(&instance, &view, &mut images)?;

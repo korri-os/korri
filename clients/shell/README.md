@@ -52,6 +52,27 @@ whose view has a focus target without `focusRegion`, more than one active
 target in a region, a direction other than the four, an entry rule other
 than the three, or an exit whose `to` region has no target in that view.
 
+### Focus targets
+
+Every element that draws a focus target sets three accessible properties
+(also what a screen reader needs):
+
+```slint
+accessible-role: button;                 // or another role that fits
+accessible-item-selectable: true;
+accessible-item-selected: entry.focused; // true exactly while its view entry is focused
+```
+
+The shell finds which element draws which view entry by focusing each entry
+alone and reading which element is selected; the target's box is that
+element's geometry in the window (`src/targets.rs`). A target's identity is
+its region and its place in that region's drawing order, never its label or
+values: labels repeat (two route rows with the same buttons) and values
+change in place (a choice row that left and right step). The verifier fails a
+package whose focus entry, in the first view at 640x480 or after one press of
+each button, selects no element or more than one, or that has an element
+selected while no entry is focused.
+
 `examples/surface-probe.rs walk` judges every d-pad press, at 320x240,
 640x480, 480x800, 1280x720 and 1920x1080, with a display list larger than the
 window:
@@ -65,9 +86,10 @@ window:
   focused along the walked path, or `first` if it never had focus.
 - No exit: focus stays.
 
-A target's drawn box comes from pixels: the view rendered with that entry
-alone focused against the view with none focused. Its identity across states
-is its entry without `focused`, `focusRegion` and booleans.
+A target's drawn box and identity are its element's (Focus targets above).
+The probe runs on its own clock with `animation-tick()` held still, so frames
+it compares differ only by what the views changed; `--still` fails a state
+whose unchanged view, applied again, changes a pixel.
 
 ## Wire
 

@@ -16,6 +16,7 @@ pub mod messages;
 pub mod package;
 pub mod pico8;
 pub mod shell;
+pub mod targets;
 pub mod verify;
 pub mod view;
 
