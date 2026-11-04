@@ -1,0 +1,25 @@
+# RG353M, build 7678ff016 (layer images deferred while layers animate), FULLSPEED=1. Reverted: Zone got worse.
+# run 1 load: 2.00 1.55 1.32 1/365 353253
+# 10.42.0.1 2026-11-04T16:38:43Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 2.16 1.66 1.37 2/369 354677
+# 10.42.0.1 2026-11-04T16:39:19Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 1.93 1.67 1.38 1/369 356106
+# 10.42.0.1 2026-11-04T16:39:55Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [51, 55, 45] (median 51); p95 us [19371, 18147, 17710] (median 18147); max us [78381, 58282, 53729] (median 58282)
+# pico presses: over [4, 5, 4] (median 4); p95 us [4386, 4210, 4259] (median 4259); max us [25705, 28265, 23737] (median 25705)
+# Idle/whole rows:
+bench zone 640x480 frames=600 games=12 presses=0 prefs={"zone.look": "modern"} buffer=reused threads=default
+frames over 16.7 ms: 0 of 600
+bench pico 640x480 frames=600 games=12 presses=0 prefs={} buffer=reused threads=default
+frames over 16.7 ms: 0 of 600
+bench zone 640x480 frames=300 games=12 presses=0 prefs={"zone.look": "modern"} buffer=new threads=default
+frames over 16.7 ms: 3 of 300
+bench pico 640x480 frames=300 games=12 presses=0 prefs={} buffer=new threads=default
+frames over 16.7 ms: 0 of 300
+# Compare b2c715552 (rg353m-a22.txt): Zone over [26,25,23], p95 median 16.1 ms. Deferring images keeps layers drawn directly through the snap, which costs more than rendering one image.

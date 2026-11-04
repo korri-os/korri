@@ -47,6 +47,9 @@ impl Platform for HeadlessPlatform {
     }
 }
 
+/// Where the manual clock starts (`Headless::manual_clock`).
+const MANUAL_START: std::time::Duration = std::time::Duration::from_secs(1);
+
 pub struct Headless;
 
 impl Headless {
@@ -61,13 +64,21 @@ impl Headless {
 
     /// From now on the clock moves only by `advance`: frames are rendered at instants the
     /// caller chooses, not at whatever time the machine took.
+    /// It starts at a fixed instant (one second after start, or later if the process is
+    /// older), so two runs render the same frames at the same instants: motion drawn from
+    /// `animation-tick()` (Zone's ground) lands on the same pixels every run.
     pub fn manual_clock() {
         let now = STARTED
             .with(|s| s.get())
             .map_or_else(Default::default, |s| s.elapsed());
+        let start = if now <= MANUAL_START {
+            MANUAL_START
+        } else {
+            now
+        };
         MANUAL.with(|m| {
             if m.get().is_none() {
-                m.set(Some(now));
+                m.set(Some(start));
             }
         });
     }
@@ -150,9 +161,11 @@ impl Backend for Headless {
                 .find(|candidate| std::ptr::eq(candidate.window(), window))
         });
         if let Some(window) = found {
+            // Attached again (a window mapped anew): its next frame is a first frame again.
             SINKS.with(|s| {
-                s.borrow_mut()
-                    .push((Rc::downgrade(&window), sink, frames, true))
+                let mut sinks = s.borrow_mut();
+                sinks.retain(|(w, ..)| !w.upgrade().is_some_and(|w| Rc::ptr_eq(&w, &window)));
+                sinks.push((Rc::downgrade(&window), sink, frames, true))
             });
         }
     }

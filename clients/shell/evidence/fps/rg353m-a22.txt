@@ -1,0 +1,23 @@
+# RG353M, build b2c715552 (zone a22ed80d9: spare slot draws nothing, filled after the snap), FULLSPEED=1.
+# run 1 load: 1.54 1.31 1.22 1/367 345660
+# 10.42.0.1 2026-11-04T15:36:39Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 1.65 1.37 1.25 1/368 347079
+# 10.42.0.1 2026-11-04T15:37:15Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 1.69 1.42 1.27 4/369 348498
+# 10.42.0.1 2026-11-04T15:37:52Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [26, 25, 23] (median 25); p95 us [16411, 15585, 16058] (median 16058); max us [63651, 56200, 57604] (median 57604)
+# pico presses: over [3, 0, 4] (median 3); p95 us [4201, 4307, 4292] (median 4292); max us [25460, 16460, 26710] (median 25460)
+# One more Zone run, frames over per press (frame:ms):
+# press 0 7 : 31:66.1 32:24.7 33:22.1 34:24.5 35:19.0 43:19.4 44:17.4
+# press 1 7 : 52:45.8 53:21.1 55:20.2 59:17.1 60:16.8 61:17.2 62:17.5
+# press 2 2 : 71:19.8 73:17.4
+# press 3 2 : 91:28.4 92:18.1
+# press 4 4 : 111:51.0 112:24.5 113:21.7 125:17.4
+# press 5 3 : 131:32.9 132:20.3 133:19.2
+# SP: korri-games.slice had 5 processes; not run (a game).
