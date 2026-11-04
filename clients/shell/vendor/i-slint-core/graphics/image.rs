@@ -687,6 +687,10 @@ impl PartialEq for ImageInner {
             #[cfg(not(target_arch = "wasm32"))]
             (Self::BorrowedOpenGLTexture(l0), Self::BorrowedOpenGLTexture(r0)) => l0 == r0,
             (Self::NineSlice(l), Self::NineSlice(r)) => l.0 == r.0 && l.1 == r.1,
+            // Two empty images are the same image. Without this an empty image never equals
+            // itself, so a struct holding one (Pico's cart without art) compared unequal to
+            // its own copy: every set of it counted as a change.
+            (Self::None, Self::None) => true,
             _ => false,
         }
     }
