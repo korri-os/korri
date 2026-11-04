@@ -42,7 +42,7 @@ let
         cd "$KORRI_ROOT"
         for task in ci-plan-check korri-nix-cache-check rpminiv2-delivery-check \
           korrid-fmt-check korrid-treaty-check \
-          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check zone-check \
+          cli-parity-check cli-check cli-build-identity-eval-check cli-build-identity-check korrid-host-check inputd-check limitsd-check zone-check pico-check \
           shell-check korri-published-plugins-check; do
           nix run ".#$task"
         done
@@ -575,6 +575,43 @@ let
       ];
       script = ''
         bash "$KORRI_ROOT/brand/build-assets.sh"
+      '';
+    };
+
+    pico-check = {
+      description = "Run Pico's native package checks: its gates, behaviour tests, previews and focus walk at five sizes, typecheck, and logic.js freshness.";
+      usageSuffix = " -- [bun test arguments]";
+      runtimeInputs = [
+        pkgs.bun
+        pkgs.nodejs
+        pkgs.diffutils
+        pkgs.cargo
+        pkgs.rustc
+        pkgs.stdenv.cc
+        pkgs.pkg-config
+        pkgs.fontconfig
+      ];
+      # The probe renders with the shell's software renderer; fontique opens
+      # fontconfig at run time.
+      env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.fontconfig.lib ];
+      script = ''
+        cd "$KORRI_ROOT/clients/shell"
+        bun install --frozen-lockfile --ignore-scripts
+        # The headless probe the preview and focus tests run (examples/surface-probe.rs).
+        export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/shell-target"
+        cargo build --locked --release --features fixture --example surface-probe
+        export PICO_PROBE="$CARGO_TARGET_DIR/release/examples/surface-probe"
+        bun test "$@" packages/pico/test
+        bun run pico:typecheck
+        # logic.js is the bundle of logic.ts: it must be the one committed.
+        committed=$(mktemp)
+        cp packages/pico/logic.js "$committed"
+        bun run pico:build >/dev/null
+        if ! cmp -s "$committed" packages/pico/logic.js; then
+          cp "$committed" packages/pico/logic.js
+          echo "packages/pico/logic.js is stale: run bun run pico:build in clients/shell" >&2
+          exit 1
+        fi
       '';
     };
 

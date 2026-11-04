@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        Rectangle { background: P8.shell-tell; height: 200 * Tokens.p; PicoPauseMenu { x: 4 * Tokens.p; y: 4 * Tokens.p; width: parent.width - 8 * Tokens.p; items: [{ kind: "row", label: "Continue playing", focused: true }, { kind: "row", label: "Quit game", warn: true }, { kind: "note", label: "Unsaved progress is lost." }, { kind: "section", label: "MGBA" }, { kind: "row", label: "Load state", disabled: true }, { kind: "row", label: "Fast forward", value: "OFF", arrows: true }, { kind: "row", label: "Volume", value: "80", range: true, cells: 8 }, { kind: "fact", label: "System", value: "gba" }]; } }
+        Rectangle { background: P8.shell-tell; height: 200 * Tokens.p; PicoPauseMenu { x: 4 * Tokens.p; y: 4 * Tokens.p; width: parent.width - 8 * Tokens.p; items: [{ kind: "row", label: "Continue playing", focused: true, target: true }, { kind: "row", label: "Quit game", warn: true }, { kind: "note", label: "Unsaved progress is lost." }, { kind: "section", label: "MGBA" }, { kind: "row", label: "Load state", disabled: true }, { kind: "row", label: "Fast forward", value: "OFF", arrows: true }, { kind: "row", label: "Volume", value: "80", range: true, cells: 8 }, { kind: "fact", label: "System", value: "gba" }]; } }
     }
 }

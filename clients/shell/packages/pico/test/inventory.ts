@@ -60,6 +60,7 @@ export const MERGED: Readonly<Record<string, { readonly into: string; readonly w
  */
 export const ADDED: Readonly<Record<string, { readonly layer: Layer; readonly why: string }>> = {
   PicoLine: { layer: "atoms", why: "One line of text in a line box with its glyphs on the pixel grid: CSS line-height did this." },
+  PicoHomeLayout: { layer: "templates", why: "Home's body arrangement (PLAYING NOW over the shelf, grid or hero, the launch stage, the notice): PicoHome.css held it; the page only composes." },
   PicoPara: { layer: "atoms", why: "Words that wrap at the face's size: CSS did this for every block of text." },
   PicoReveal: { layer: "atoms", why: "Says where the cursor's control stands once laid out; the DOM's focus() did this." },
   PicoRail: { layer: "atoms", why: "A row that slides to keep the cursor's item in sight: the host's scrollIntoView did this for the DOM." },

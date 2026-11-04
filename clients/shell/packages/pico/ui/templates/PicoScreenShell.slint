@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoStepTrack, StepView } from "../atoms/PicoStepTrack.slint";
 import { HintView } from "../atoms/PicoHint.slint";
 import { ButtonView } from "../atoms/PicoRow.slint";
@@ -28,6 +28,10 @@ export component PicoScreenShell inherits Rectangle {
     in property <FrameView> frame;
     out property <length> body-y: bar.y + bar.height + (frame.track.length > 0 ? 6 * Tokens.p : 0) + Tokens.u;
     out property <length> body-h: floor.y - Tokens.u - body-y;
+    // What the body holds reports its focused control here.
+    public function show(left: length, top: length, wide: length, tall: length) {
+        body.show(left, top, wide, tall);
+    }
     bar := PicoStatusBar {
         x: 2 * Tokens.u;
         y: Tokens.u;
@@ -38,7 +42,7 @@ export component PicoScreenShell inherits Rectangle {
         clock: frame.clock;
     }
     if frame.track.length > 0 : PicoStepTrack { x: 2 * Tokens.u; y: bar.y + bar.height + 3 * Tokens.p; width: root.width - 4 * Tokens.u; steps: frame.track; }
-    PicoScroll {
+    body := PicoScroll {
         x: 2 * Tokens.u;
         y: body-y;
         width: root.width - 4 * Tokens.u;

@@ -16,6 +16,6 @@ export component Default inherits Window {
         y: 0;
         width: parent.width;
         height: parent.height;
-        sheet: { kicker: "RUNTIMES", title: "Wario Land 4", items: [{ kind: "text", label: "Choose a runner on this device." }, { kind: "heading", label: "retroarch/mgba" }, { kind: "fact", label: "System", value: "gba" }, { kind: "fact", label: "Program", value: "/nix/store/retroarch" }, { kind: "row", label: "Launch once", focused: true }, { kind: "row", label: "Remember for this game" }], focused-item: 0, hints: [{ key: "a", label: "SELECT" }, { key: "b", label: "CANCEL" }] };
+        sheet: { kicker: "RUNTIMES", title: "Wario Land 4", items: [{ kind: "text", label: "Choose a runner on this device." }, { kind: "heading", label: "retroarch/mgba" }, { kind: "fact", label: "System", value: "gba" }, { kind: "fact", label: "Program", value: "/nix/store/retroarch" }, { kind: "row", label: "Launch once", focused: true, target: true }, { kind: "row", label: "Remember for this game" }], focused-item: 0, hints: [{ key: "a", label: "SELECT" }, { key: "b", label: "CANCEL" }] };
     }
 }

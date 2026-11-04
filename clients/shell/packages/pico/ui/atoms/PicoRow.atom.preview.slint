@@ -18,7 +18,7 @@ export component Default inherits Window {
         PicoRow { button: { label: "Verify files", detail: "", focused: false, disabled: false, warn: false, lit: false }; }
         PicoRow { button: { label: "Move to SD", detail: "No card", focused: false, disabled: true, warn: false, lit: false }; }
         PicoRow { button: { label: "Remove from device", detail: "", focused: false, disabled: false, warn: true, lit: false }; }
-        PicoRow { button: { label: "Name", detail: "usu ▶", focused: true, disabled: false, warn: false, lit: false }; }
+        PicoRow { button: { label: "Name", detail: "usu ▶", focused: true, target: true, disabled: false, warn: false, lit: false }; }
     }
 }
 
@@ -32,6 +32,6 @@ export component OnCard inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        Rectangle { background: P8.shell-ask; height: 40 * Tokens.p; VerticalLayout { padding: 4 * Tokens.p; spacing: 2 * Tokens.p; PicoRow { kind: "card"; button: { label: "This device", detail: "", focused: true, disabled: false, warn: false, lit: false }; } PicoRow { kind: "card"; button: { label: "zao", detail: "", focused: false, disabled: false, warn: false, lit: false }; } } }
+        Rectangle { background: P8.shell-ask; height: 40 * Tokens.p; VerticalLayout { padding: 4 * Tokens.p; spacing: 2 * Tokens.p; PicoRow { kind: "card"; button: { label: "This device", detail: "", focused: true, target: true, disabled: false, warn: false, lit: false }; } PicoRow { kind: "card"; button: { label: "zao", detail: "", focused: false, disabled: false, warn: false, lit: false }; } } }
     }
 }

@@ -19,6 +19,7 @@ export interface SheetItem {
   readonly label: string
   readonly value: string
   readonly focused: boolean
+  readonly focusId?: string
   readonly disabled: boolean
   readonly warn: boolean
   /** A range: cells lit of ten, and arrows either side. */
@@ -51,7 +52,8 @@ function finish(items: SheetItem[], focused: string | undefined, ids: readonly (
   let lines = 0
   let heads = 0
   const marked = items.map((shown, i) => {
-    const placed = { ...shown, focused: ids[i] !== undefined && ids[i] === focused, rowsBefore: rows, linesBefore: lines, headsBefore: heads }
+    const id = ids[i]
+    const placed = { ...shown, ...(id === undefined ? { focused: false } : { focused: id === focused, focusId: id }), rowsBefore: rows, linesBefore: lines, headsBefore: heads }
     if (shown.kind === "row") rows += 1
     else if (shown.kind === "heading") heads += 1
     else lines += 1
@@ -123,7 +125,7 @@ export function overlayScreen(view: PicoOverlayView, state: PicoOverlayState, fo
       const right: Act = range === undefined ? [] : [overlay({ _tag: "SteppedRange", control: shown, request: { way: 1, releaseExpected: false } })]
       targets.push({
         id,
-        box: { x: 0, y: targets.length * 10, w: 100, h: 8 },
+        region: "list", box: { x: 0, y: targets.length * 10, w: 100, h: 8 },
         // A range moves with left and right; confirm does nothing on it.
         ...(range === undefined ? { act: [overlay(shown.destructive ? { _tag: "AskedControl", control: shown } : { _tag: "InvokedControl", control: shown })] } : {}),
         ...(range === undefined ? {} : { horizontal: { left, right } }),
@@ -171,7 +173,7 @@ export function runnerScreen(choice: Exclude<SurfaceRunnerChoice, { _tag: "Close
   const row = (action: { readonly id: string; readonly label: string; readonly enabled: boolean }) => {
     const id = `action:${action.id}`
     add(item("row", action.label, { disabled: !action.enabled }), id)
-    if (action.enabled) targets.push({ id, box: { x: 0, y: targets.length * 10, w: 100, h: 8 }, act: [nav({ _tag: "ChoseRunnerAction", actionId: action.id })] })
+    if (action.enabled) targets.push({ id, region: "list", box: { x: 0, y: targets.length * 10, w: 100, h: 8 }, act: [nav({ _tag: "ChoseRunnerAction", actionId: action.id })] })
   }
   add(item("text", choice.message))
   for (const saved of choice.saved) add(item("text", `${saved.label}: ${saved.runnerId}`))

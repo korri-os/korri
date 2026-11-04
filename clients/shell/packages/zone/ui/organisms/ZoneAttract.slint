@@ -1,4 +1,4 @@
-// ZoneAttract
+// ZoneAttract: Zone's idle layer.
 
 import { Tokens } from "../../ui/tokens.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
@@ -6,20 +6,25 @@ import { ZoneCoverWell } from "../atoms/ZoneCoverWell.slint";
 import { ZoneTitleCard } from "../molecules/ZoneTitleCard.slint";
 import { Card } from "../types.slint";
 
-// The idle attract (ZoneAttract): after 30 s with no press on GAMES, the
-// focused game's title card, then its stage (its cover, panning), the next
-// game every 6 s. Drawn on the view's own clock: the contract has no timer
-// message, so the logic never hears that it shows; any press restarts the
-// clock and takes it down.
+// The idle attract (ZoneAttract): the game the logic names (its idle layer,
+// opened by the shell's Tick after 30 s with no press, the next game every
+// 6 s): its title card, then its stage (its cover, panning). Only the turn's
+// motion runs on the view's clock, from the moment this game showed.
 export component ZoneAttract {
     property <length> a: Tokens.a;
     in property <[Card]> cards;
-    in property <int> start;
-    in property <float> idle-ms;
-    property <float> turn-ms: idle-ms - 30000;
-    property <int> index: cards.length == 0 ? 0 : Math.mod(start + Math.floor(turn-ms / 6000), cards.length);
-    property <float> within: Math.mod(turn-ms, 6000);
-    property <Card> card: cards.length == 0 ? { title: "" } : cards[index];
+    in property <int> index;
+    property <float> shown-ms: 0;
+    init => {
+        self.shown-ms = Tokens.clock-ms;
+    }
+    changed index => {
+        self.shown-ms = Tokens.clock-ms;
+    }
+    // A preview holds the turn at a fixed time; -1 runs it on the clock.
+    in property <float> hold-ms: -1;
+    property <float> within: hold-ms >= 0 ? hold-ms : Math.min(Tokens.idle-cycle-ms, Tokens.clock-ms - shown-ms);
+    property <Card> card: cards.length == 0 ? { title: "" } : cards[Math.clamp(index, 0, cards.length - 1)];
     property <bool> stage: within >= 2900;
     if !root.stage: ZoneTitleCard {
         x: 0;

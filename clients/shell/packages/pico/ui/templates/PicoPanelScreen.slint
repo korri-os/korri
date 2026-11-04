@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { ButtonView } from "../atoms/PicoRow.slint";
 import { PicoTabs } from "../molecules/PicoTabs.slint";
 import { PicoCard } from "../molecules/PicoCard.slint";
@@ -8,14 +8,17 @@ import { PicoCard } from "../molecules/PicoCard.slint";
 // it when the screen is wide, and the card in the chosen spine's colour
 // holding the chosen group.
 export component PicoPanelScreen inherits Rectangle {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <[ButtonView]> spines;
     in property <int> spine-tone;
+    // The layout plan decides (src/pico-display-plan.ts): spines beside the
+    // card, or tabs above it. The focus graph moves by the same arrangement.
     in property <bool> beside;
     property <length> spines-w: beside ? 64 * Tokens.p : 0;
     property <length> tabs-h: beside || spines.length == 0 ? 0 : Tokens.md + 4 * Tokens.p;
     preferred-height: tabs-h + 3 * Tokens.p + card.preferred-height + 5 * Tokens.p;
     min-height: self.preferred-height;
-    PicoTabs {
+    PicoTabs { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: 0;
         y: 0;
         width: beside ? spines-w - 4 * Tokens.p : root.width;

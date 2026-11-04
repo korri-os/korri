@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "zone:build": "cd packages/zone && bun build logic.ts --outfile logic.js --format iife --target browser --minify",
-    "zone:typecheck": "tsc -p packages/zone"
+    "zone:typecheck": "tsc -p packages/zone",
+    "pico:build": "cd packages/pico && bun build logic.ts --outfile logic.js --format iife --target browser --minify",
+    "pico:typecheck": "tsc -p packages/pico"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

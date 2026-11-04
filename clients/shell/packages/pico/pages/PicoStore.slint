@@ -1,5 +1,5 @@
 import { P8 } from "../ui/palette.slint";
-import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { Tokens } from "../ui/tokens.slint";
 import { ButtonView } from "../ui/atoms/PicoRow.slint";
 import { CardView } from "../ui/molecules/PicoNotice.slint";
 import { PicoModal } from "../ui/organisms/PicoModal.slint";
@@ -29,22 +29,22 @@ export component PicoStore inherits Rectangle {
     in property <CardView> card;
     in property <EditorView> editor;
     in property <string> mode: "store";
-    PicoScreenShell {
+    shell := PicoScreenShell {
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
-        if mode == "modal" : PicoModal { min-height: self.preferred-height; card: card; }
-        if mode == "editor" : PicoTextEditor { editor: editor; }
-        if mode == "store" && store.view == "providers" : PicoStoreProviders { message: store.message; providers: store.providers; }
-        if mode == "store" && store.view == "results" : PicoStoreResults {
+        if mode == "modal" : PicoModal { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
+        if mode == "editor" : PicoTextEditor { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }
+        if mode == "store" && store.view == "providers" : PicoStoreProviders { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  message: store.message; providers: store.providers; }
+        if mode == "store" && store.view == "results" : PicoStoreResults { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); } 
             search: store.search;
             note: store.search-note;
             results: store.results;
             focused-result: store.focused-result;
             problem: store.inline;
         }
-        if mode == "store" && (store.view == "entry" || store.view == "working") : PicoStoreEntry { min-height: 80 * Tokens.p; vertical-stretch: 1; entry: store.entry; }
+        if mode == "store" && (store.view == "entry" || store.view == "working") : PicoStoreEntry { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 80 * Tokens.p; vertical-stretch: 1; entry: store.entry; }
     }
 }

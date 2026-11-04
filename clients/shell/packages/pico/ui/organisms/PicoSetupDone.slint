@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoTitle } from "../atoms/PicoTitle.slint";
 import { PicoButton } from "../atoms/PicoButton.slint";
 import { PicoSettingRow } from "../molecules/PicoSettingRow.slint";
@@ -7,10 +7,11 @@ import { SetupView } from "../molecules/PicoSetupHeading.slint";
 
 // Setup's PLAY: what was set up, and GO TO GAMES.
 export component PicoSetupDone inherits VerticalLayout {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SetupView> setup;
     alignment: center;
     spacing: Tokens.u;
     PicoTitle { text: setup.title; }
-    for fact in setup.rows : PicoSettingRow { item: fact; ink: P8.ink-dim; }
-    if setup.has-go : HorizontalLayout { alignment: start; padding-top: Tokens.u; PicoButton { button: setup.go; } }
+    for fact in setup.rows : PicoSettingRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  item: fact; ink: P8.ink-dim; }
+    if setup.has-go : HorizontalLayout { alignment: start; padding-top: Tokens.u; PicoButton { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: setup.go; } }
 }

@@ -23,6 +23,7 @@ LANES = (
     "inputd",
     "limitsd",
     "zone",
+    "pico",
 )
 SURFACES = {"zone"}
 # Inputs of the existing cache tests and delivery-workflow check. Shared Nix
@@ -116,6 +117,8 @@ def affected(paths):
             # The shell's own crate, packages, vendored Slint and proofs. Its
             # Nix files and lock already selected every lane above and below.
             selected.add("shell")
+            if path.startswith("clients/shell/packages/pico/"):
+                selected.add("pico")
         elif path.startswith("surfaces/"):
             parts = parsed.parts
             surface = parts[1] if len(parts) > 1 else ""

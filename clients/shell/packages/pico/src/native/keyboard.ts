@@ -71,9 +71,9 @@ export function keyboard<Act>(
   const placed = layout(charset, draft)
   const box = (key: Placed): Box => ({ x: key.col * 10, y: top + key.row * 10, w: key.cols * 10, h: 8 })
   return {
-    keys: placed.map(key => ({ cap: key.cap, focused: key.id === focused, lit: key.lit, row: key.row, col: key.col, cols: key.cols })),
+    keys: placed.map(key => ({ cap: key.cap, focused: key.id === focused, focusId: key.id, lit: key.lit, row: key.row, col: key.col, cols: key.cols })),
     rows: charset === "text" ? 5 : 4,
-    targets: placed.map(key => ({ id: key.id, box: box(key), act: act(key.press) })),
+    targets: placed.map(key => ({ id: key.id, region: "keys", box: box(key), act: act(key.press) })),
   }
 }
 

@@ -1,5 +1,5 @@
 import { P8 } from "../ui/palette.slint";
-import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { Tokens } from "../ui/tokens.slint";
 import { PicoLibraryBrowser, FindView } from "../ui/organisms/PicoLibraryBrowser.slint";
 import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slint";
 
@@ -7,12 +7,12 @@ import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slin
 export component PicoLibrary inherits Rectangle {
     in property <FrameView> frame;
     in property <FindView> find;
-    PicoScreenShell {
+    shell := PicoScreenShell {
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
-        PicoLibraryBrowser { find: find; }
+        PicoLibraryBrowser { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  find: find; }
     }
 }

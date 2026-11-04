@@ -1,5 +1,5 @@
 import { P8 } from "../ui/palette.slint";
-import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { Tokens } from "../ui/tokens.slint";
 import { PicoPara } from "../ui/atoms/PicoPara.slint";
 import { ButtonView } from "../ui/atoms/PicoRow.slint";
 import { PicoSettingRow, RowView } from "../ui/molecules/PicoSettingRow.slint";
@@ -20,20 +20,21 @@ export struct PanelView {
 // One group of settings in its spine's card: a launch layer's runner tabs
 // and notes, Korri's word on a failed save, and the rows.
 export component PicoSettingsPanel inherits Rectangle {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <PanelView> panel;
     min-height: screen.min-height;
     preferred-height: screen.preferred-height;
-    screen := PicoPanelScreen {
+    screen := PicoPanelScreen { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         spines: panel.spines;
-        spine-tone: panel.spine-tone;
         beside: panel.beside;
-        if panel.scopes.length > 0 : PicoScopeTabs { scopes: panel.scopes; tone: P8.spine(panel.spine-tone); }
+        spine-tone: panel.spine-tone;
+        if panel.scopes.length > 0 : PicoScopeTabs { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  scopes: panel.scopes; tone: P8.spine(panel.spine-tone); }
         if panel.message != "" : PicoPara { text: panel.message; font-size: Tokens.sm; color: P8.shell-warn; }
         for note in panel.notes : PicoPara { text: note; font-size: Tokens.sm; color: P8.ink-dark; }
-        for item in panel.rows : PicoSettingRow { item: item; }
+        for item in panel.rows : PicoSettingRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  item: item; }
     }
 }

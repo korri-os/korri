@@ -1,3 +1,4 @@
+import type { PicoLayoutPlan, PicoWindow } from "../pico-display-plan"
 /**
  * The native package's own state around Pico's programs, and what a screen
  * hands back: a view for main.slint and the focus targets on it.
@@ -36,13 +37,14 @@ export interface State {
   readonly asked: string | undefined
   /** Sections seen in Korri's windows, in order (Find's collection chips). */
   readonly sections: readonly string[]
-  /** The clock Korri showed last, and how many times it changed with no press. */
-  readonly clock: string | undefined
-  readonly quiet: number
   /** Pico's keyboard over a form field. */
   readonly typing: Typing | undefined
   /** Counts the invite notices raised, so main.slint restarts their 8 s. */
   readonly noticeRound: number
+  /** The window, from the shell's last `Resized` (contract A2, 8.1). */
+  readonly window: PicoWindow
+  /** Each region's last focused target, for an exit that enters by `remembered`. */
+  readonly remembered: Readonly<Record<string, string>>
 }
 
 export type Dispatch =
@@ -58,13 +60,8 @@ export const nav = (message: PicoMessage): Dispatch => ({ to: "nav", message })
 export const setup = (message: OnboardingMessage): Dispatch => ({ to: "setup", message })
 export const local = (change: (state: State) => State): Dispatch => ({ to: "local", change })
 
-/** The screen's size on the focus plan: the main display, in virtual pixels. */
-export interface Plan {
-  readonly width: number
-  readonly height: number
-  /** The virtual pixel in device pixels (pico-tokens.css). */
-  readonly p: number
-}
+/** Pico's one layout plan, from the window (src/pico-display-plan.ts). */
+export type Plan = PicoLayoutPlan
 
 export interface Ctx {
   readonly s: State
@@ -80,6 +77,9 @@ export interface Screen {
   readonly targets: readonly Target<Act>[]
   /** Where the cursor starts, or goes when its target leaves. */
   readonly fallback?: string
+  /** Each region's active target (the chosen cart, the open tab), for an
+   * exit that enters by `active` (contract 8.4). */
+  readonly active?: Readonly<Record<string, string>>
   /** Left and right do this instead of moving, whatever is focused. */
   readonly horizontal?: { readonly left: Act; readonly right: Act }
 }

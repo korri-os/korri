@@ -1,5 +1,5 @@
 import { P8 } from "../ui/palette.slint";
-import { Tokens, Cycle, Focus } from "../ui/tokens.slint";
+import { Tokens } from "../ui/tokens.slint";
 import { CardView } from "../ui/molecules/PicoNotice.slint";
 import { PicoModal } from "../ui/organisms/PicoModal.slint";
 import { PicoChoicePicker } from "../ui/organisms/PicoChoicePicker.slint";
@@ -18,16 +18,16 @@ export component PicoSettings inherits Rectangle {
     in property <EditorView> editor;
     in property <IdentityView> identity;
     in property <string> mode: "panel";
-    PicoScreenShell {
+    shell := PicoScreenShell {
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
-        if mode == "panel" : PicoSettingsPanel { panel: panel; }
-        if mode == "modal" : PicoModal { min-height: self.preferred-height; card: card; }
-        if mode == "choice" : PicoChoicePicker { min-height: self.preferred-height; choices: card; }
-        if mode == "editor" : PicoTextEditor { editor: editor; }
-        if mode == "identity" : PicoIdentityDialog { identity: identity; }
+        if mode == "panel" : PicoSettingsPanel { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  panel: panel; }
+        if mode == "modal" : PicoModal { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
+        if mode == "choice" : PicoChoicePicker { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; choices: card; }
+        if mode == "editor" : PicoTextEditor { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }
+        if mode == "identity" : PicoIdentityDialog { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  identity: identity; }
     }
 }

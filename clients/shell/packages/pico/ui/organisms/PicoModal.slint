@@ -1,16 +1,17 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoNotice, CardView } from "../molecules/PicoNotice.slint";
 
 // A question over the screen: the screen under it goes solid and the card
 // stands in its middle; a report too long for the box scrolls with the cursor.
 export component PicoModal inherits Rectangle {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CardView> card;
     background: P8.bg;
     property <length> w: min(root.width - 5 * Tokens.p, max(200 * Tokens.p, root.width * 70%));
     preferred-height: notice.preferred-height + 5 * Tokens.p;
     min-height: self.preferred-height;
-    notice := PicoNotice {
+    notice := PicoNotice { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: Tokens.snap((root.width - w) / 2);
         y: Tokens.snap(max(0, (root.height - self.preferred-height) / 2));
         width: w;

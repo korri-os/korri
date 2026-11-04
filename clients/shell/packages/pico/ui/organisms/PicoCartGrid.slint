@@ -1,16 +1,20 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens, Cycle } from "../tokens.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 
 export struct GridSectionView { title: string, row-start: int, carts: [CartView] }
 
-// Every collection Korri named, its carts in rows on a floor.
+// Every collection Korri named, its carts in rows on a floor, as many to a
+// row as the box holds.
 export component PicoCartGrid inherits VerticalLayout {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <[GridSectionView]> sections;
-    in property <int> columns: 1;
     property <length> slot-w: 30 * Tokens.p;
+    // Carts to a row, as the layout plan decided from the window
+    // (src/pico-display-plan.ts): the focus graph moves by the same rows.
+    in property <int> columns: 1;
     property <length> row-h: 44 * Tokens.p;
     spacing: Tokens.u;
     for section in sections : VerticalLayout {
@@ -23,10 +27,15 @@ export component PicoCartGrid inherits VerticalLayout {
                 y: floor(i / max(1, columns)) * row-h;
                 width: slot-w;
                 height: row-h;
-                if cart.focused : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
-                shell := PicoCart {
+                accessible-role: AccessibleRole.list-item;
+                accessible-label: cart.title;
+                accessible-item-selectable: true;
+                accessible-item-selected: (cart.target && cart.focused);
+                if (cart.target && cart.focused) : Rectangle { x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
                     x: 0;
                     y: parent.height - 4 * Tokens.p - self.shell-h - (cart.hero ? 4 * Tokens.p : 0);
+                   
                     cart: cart;
                     box-w: 22 * Tokens.p;
                     box-h: 30 * Tokens.p;

@@ -11,12 +11,23 @@
  * - imports point down or stay within a layer, never up, and never into
  *   main.slint;
  * - shapes read no state: only ui/tokens.slint and ui/palette.slint declare
- *   globals, and only main.slint and previews make windows.
+ *   globals; the only writable globals are the window's inputs to Tokens
+ *   (its width, height and face); only the bindings (main.slint, and the
+ *   previews that stand in for it) write a global or read those inputs;
+ *   everything else reads derived values only, and a control's place
+ *   reaches a scroll region through properties and callbacks, never a
+ *   global; and only main.slint and previews make windows.
  */
 import { describe, expect, test } from "bun:test"
 import { basename, dirname, join } from "node:path"
 import { ADDED, FOLDER, LAYERS, type Layer, MERGED, PICO_TREE, SUFFIX } from "./inventory"
-import { code, components, exists, imports, read, rel, ROOT, slintFiles } from "./slint-source"
+import { code, components, exists, imports, read, rel, ROOT, slintFiles, stringsBlanked } from "./slint-source"
+
+/** A global's pure functions (they compute, they do not write). */
+function isPure(global: string, member: string): boolean {
+  const file = global === "P8" ? "ui/palette.slint" : "ui/tokens.slint"
+  return new RegExp(`public\\s+pure\\s+function\\s+${member}\\b`).test(code(read(join(ROOT, file))))
+}
 
 const FOUNDATION = ["ui/tokens.slint", "ui/palette.slint"]
 const rank = (path: string): number => {
@@ -97,6 +108,32 @@ describe("shapes read no state", () => {
   test("only the tokens and the palette declare globals", () => {
     const globals = slintFiles().filter(path => !FOUNDATION.includes(rel(path)) && /(^|\n)\s*(export\s+)?global\s+\w+/.test(code(read(path))))
     expect(globals.map(rel)).toEqual([])
+  })
+
+  /** The window's inputs: the only writable global state, set by the bindings. */
+  const INPUTS = ["Tokens.width", "Tokens.height", "Tokens.rows", "Tokens.family"]
+  const isBinding = (path: string) => rel(path) === "main.slint" || isPreview(path) || FOUNDATION.includes(rel(path))
+  const writable = FOUNDATION.flatMap(file => {
+    const text = code(read(join(ROOT, file)))
+    return [...text.matchAll(/global\s+(\w+)\s*\{([\s\S]*?)\n\}/g)].flatMap(([, name, body]) =>
+      [...(body ?? "").matchAll(/in-out\s+property\s*<[^>]+>\s*([\w-]+)/g)].map(match => `${name}.${match[1]}`))
+  })
+
+  test("the only writable globals are the window's inputs", () => {
+    expect(writable.filter(name => !INPUTS.includes(name))).toEqual([])
+  })
+
+  test("no file but the bindings writes a global or reads its inputs", () => {
+    const globals = [...new Set(writable.map(name => name.split(".")[0]))]
+    const found = slintFiles().filter(path => !isBinding(path)).flatMap(path => {
+      const text = stringsBlanked(read(path))
+      const writes = [...text.matchAll(/\b(\w+)\.([\w-]+)\s*(?:=(?!=)|\+=|-=|\()/g)]
+        .filter(([, global, member]) => ["P8", "Tokens", "Cycle", ...globals].includes(global ?? "") && !isPure(global ?? "", member ?? ""))
+        .map(([whole]) => `${rel(path)} writes ${whole}`)
+      const reads = writable.filter(name => new RegExp(`\\b${name.replace(".", "\\.")}\\b`).test(text)).map(name => `${rel(path)} reads ${name}`)
+      return [...writes, ...reads]
+    })
+    expect(found).toEqual([])
   })
 
   test("only main.slint and previews make windows", () => {

@@ -1,5 +1,5 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoDownloadBar, BarView } from "../atoms/PicoDownloadBar.slint";
 import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
@@ -19,6 +19,7 @@ export struct LaunchStageView {
 // its detail, its actions, and the cart seated in its slot on the floor:
 // running sinks it, paused rests it with a pause mark.
 export component PicoLaunchStage {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <LaunchStageView> launch;
     property <length> slot-y: root.height - 10 * Tokens.p;
     property <bool> cart-room: root.height > 100 * Tokens.p;
@@ -44,7 +45,7 @@ export component PicoLaunchStage {
         if launch.actions.length > 0 : HorizontalLayout {
             alignment: center;
             spacing: 3 * Tokens.p;
-            for action in launch.actions : PicoRow { min-width: max(40 * Tokens.p, self.preferred-width); button: action; }
+            for action in launch.actions : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  min-width: max(40 * Tokens.p, self.preferred-width); button: action; }
         }
     }
     if launch.has-cart && cart-room : Rectangle {
@@ -54,7 +55,7 @@ export component PicoLaunchStage {
         width: seated.shell-w;
         height: seated.shell-h;
         Rectangle { x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: P8.cast-far; }
-        seated := PicoCart { x: 0; y: 0; cart: launch.cart; box-w: 60 * Tokens.p; box-h: min(84 * Tokens.p, slot-y - 100 * Tokens.p); }
+        seated := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; cart: launch.cart; box-w: 60 * Tokens.p; box-h: min(84 * Tokens.p, slot-y - 100 * Tokens.p); }
     }
     if cart-room : Rectangle { x: 0; y: slot-y; width: root.width; height: 10 * Tokens.p; background: P8.floor; }
     if cart-room : Rectangle { x: 0; y: slot-y; width: root.width; height: Tokens.p; background: P8.floor-edge; }

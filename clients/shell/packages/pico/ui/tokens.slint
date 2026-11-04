@@ -45,6 +45,11 @@ export global Tokens {
     // The window's size before a host places it.
     out property <length> window-width: 640px;
     out property <length> window-height: 480px;
+    // The room a game's still cart may take on its own screen.
+    out property <length> art-room: height * 62%;
+    // The floor row's band at the window's foot (PicoScreenShell), for what
+    // stands on it from window level (MENU's list).
+    out property <length> floor-band: snap(sm * 1.5) + u + snap(u * 1.5);
     // Heights in the box: the screen is short, or very short.
     out property <bool> short: height / p < 200;
     out property <bool> tiny: height / p < 150;
@@ -71,26 +76,8 @@ export global Tokens {
 }
 
 // pico-cycle: focus walks red, orange, pink every 200 ms (pico-motion.css).
+// Derived from the animation clock alone: nothing writes it.
 export global Cycle {
-    in-out property <int> phase;
+    out property <int> phase: mod(floor(animation-tick() / 200ms), 3);
     out property <color> now: phase == 0 ? P8.red : phase == 1 ? P8.orange : P8.pink;
-}
-
-// Where the cursor's control stands on screen, written by the focused control
-// when focus arrives; the screen shell scrolls its body to keep it in sight.
-export global Focus {
-    in-out property <length> x;
-    in-out property <length> y;
-    in-out property <length> w;
-    in-out property <length> h;
-    in-out property <int> serial;
-
-    // The focused control says where it stands.
-    public function reveal(left: length, top: length, wide: length, tall: length) {
-        x = left;
-        y = top;
-        w = wide;
-        h = tall;
-        serial += 1;
-    }
 }

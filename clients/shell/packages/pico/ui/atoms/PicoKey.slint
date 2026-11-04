@@ -1,15 +1,22 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens, Cycle } from "../tokens.slint";
 import { PicoReveal } from "PicoReveal.slint";
 
 // One key: navy with a maroon drop; yellow under the cursor; pink when on
 // (CAPS). It stands at a column and row of a ten-column board.
-export struct KeyView { cap: string, focused: bool, lit: bool, row: int, col: int, cols: int }
+export struct KeyView { cap: string, focused: bool, target: bool, lit: bool, row: int, col: int, cols: int }
 
 export component PicoKey {
+    // A focus target, for screen readers and the shell's probe: the
+    // cursor's control is the selected item.
+    accessible-role: AccessibleRole.button;
+    accessible-label: key.cap;
+    accessible-item-selectable: true;
+    accessible-item-selected: (key.target && key.focused);
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <KeyView> key;
-    Rectangle { x: Tokens.p; y: Tokens.p; width: root.width; height: root.height; background: key.focused ? Cycle.now : P8.plate-shadow; }
-    Rectangle { background: key.focused ? P8.go : key.lit ? P8.accent : P8.plate; }
+    Rectangle { x: Tokens.p; y: Tokens.p; width: root.width; height: root.height; background: (key.target && key.focused) ? Cycle.now : P8.plate-shadow; }
+    Rectangle { background: (key.target && key.focused) ? P8.go : key.lit ? P8.accent : P8.plate; }
     Text {
         x: 0;
         y: 0;
@@ -17,10 +24,10 @@ export component PicoKey {
         height: root.height;
         text: key.cap;
         font-size: key.cap.character-count > 1 ? Tokens.sm : Tokens.md;
-        color: key.focused || key.lit ? P8.ink-dark : P8.ink;
+        color: (key.target && key.focused) || key.lit ? P8.ink-dark : P8.ink;
         horizontal-alignment: center;
         vertical-alignment: center;
         overflow: clip;
     }
-    PicoReveal { x: 0; y: 0; width: root.width; height: root.height; focused: key.focused; }
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: (key.target && key.focused); }
 }

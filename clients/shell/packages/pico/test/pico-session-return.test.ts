@@ -16,7 +16,9 @@ const played = () => observe(picoSessionReturnOnPlay(idle, "cart", catalog), act
 test("Play waits for fresh session evidence, not a clock or local navigation publication", () => {
   const requested = picoSessionReturnOnPlay(idle, "cart", catalog)
   expect(observe(requested, catalog)).toEqual(requested)
-  expect(observe(requested, { ...catalog })).toEqual({ _tag: "Idle" })
+  // A republished model with the same games is not an observation: Korri
+  // republishes for the focused game's actions, the clock and more.
+  expect(observe(requested, { ...catalog })).toEqual(requested)
   expect(played()).toEqual({ _tag: "Watching", viewingId: "cart", sessionId: "session" })
 })
 
@@ -39,7 +41,7 @@ test("moving to another detail retires the previous viewed session", () => {
 
 test("an already present unrelated session is not acknowledgement of Play", () => {
   const requested = picoSessionReturnOnPlay(idle, "cart", active)
-  expect(observe(requested, { ...active })).toEqual({ _tag: "Idle" })
+  expect(observe(requested, { ...active })).toEqual(requested)
 })
 
 test("Play while the known session still exists keeps its completion watch", () => {
@@ -50,4 +52,15 @@ test("a fresh Ready without the watched card requests the library once", () => {
   const completed = observe(played(), catalog)
   expect(completed).toEqual({ _tag: "ReturnToLibrary" })
   expect(observe(completed, catalog)).toEqual({ _tag: "Idle" })
+})
+
+test("a window that leaves the session out is not proof it ended", () => {
+  const window: SurfaceCatalog = { _tag: "Ready", games: [{ id: "cart", title: "Game" }], complete: false }
+  expect(observe(played(), window)).toEqual(played())
+})
+
+test("a session card that appears in a partial window starts the watch", () => {
+  const requested = picoSessionReturnOnPlay(idle, "cart", { _tag: "Ready", games: [{ id: "cart", title: "Game" }], complete: false })
+  const seen = observe(requested, { _tag: "Ready", games: [{ id: "cart", title: "Game", resumable: true }], complete: false })
+  expect(seen).toEqual({ _tag: "Watching", viewingId: "cart", sessionId: "cart" })
 })

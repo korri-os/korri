@@ -1,29 +1,35 @@
 import { P8 } from "../palette.slint";
-import { Tokens, Cycle, Focus } from "../tokens.slint";
+import { Tokens } from "../tokens.slint";
 import { PicoCart, CartView } from "PicoCart.slint";
 
 // One game in a rack with its title under it, lit under the cursor: Find's
 // results and the store's.
 export component PicoResultRow {
+    callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CartView> cart;
     in property <string> title;
     in property <string> subtitle;
     in property <length> cart-h: 30 * Tokens.p;
-    PicoCart {
+    accessible-role: AccessibleRole.list-item;
+    accessible-label: title;
+    accessible-item-selectable: true;
+    accessible-item-selected: (cart.target && cart.focused);
+    PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: (root.width - self.width) / 2;
         y: cart-h - self.shell-h - (cart.hero ? 4 * Tokens.p : 0);
+       
         cart: cart;
         box-w: 20 * Tokens.p;
         box-h: max(12 * Tokens.p, cart-h - 16 * Tokens.p);
     }
-    Rectangle { x: 0; y: cart-h + Tokens.p; width: root.width; height: 2 * Tokens.p; background: cart.focused ? P8.go : P8.floor; }
+    Rectangle { x: 0; y: cart-h + Tokens.p; width: root.width; height: 2 * Tokens.p; background: (cart.target && cart.focused) ? P8.go : P8.floor; }
     Rectangle {
         x: 0;
         y: cart-h + 4 * Tokens.p;
         width: root.width;
         height: t.height;
-        background: cart.focused ? P8.go : transparent;
-        t := Text { x: 0; y: 0; width: parent.width; height: min(self.preferred-height, 2.4 * Tokens.sm); text: title; font-size: Tokens.sm; color: cart.focused ? P8.ink-dark : P8.ink; wrap: word-wrap; overflow: elide; }
+        background: (cart.target && cart.focused) ? P8.go : transparent;
+        t := Text { x: 0; y: 0; width: parent.width; height: min(self.preferred-height, 2.4 * Tokens.sm); text: title; font-size: Tokens.sm; color: (cart.target && cart.focused) ? P8.ink-dark : P8.ink; wrap: word-wrap; overflow: elide; }
     }
     Text { x: 0; y: cart-h + 4 * Tokens.p + t.height; width: root.width; text: subtitle; font-size: Tokens.sm; color: P8.ink-quiet; overflow: elide; }
 }
