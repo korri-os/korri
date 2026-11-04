@@ -17,7 +17,7 @@ export component ZoneCard {
     in property <bool> lit;
     // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
     accessible-role: button;
-    accessible-item-selectable: true;
+    accessible-item-selectable: root.visible;
     accessible-item-selected: root.lit;
     accessible-label: root.card.title;
     property <length> a: Tokens.a;

@@ -5,7 +5,7 @@
 // starts. The band snaps to a new focus in 220 ms with one overshoot (M1).
 // The cards travel in the catalog's absolute places (the cursor window's
 // first index plus the card's), so a new window round the same game does
-// not move the band. Only the cards in view exist.
+// not move the band. A fixed pool of card slots follows the focus.
 
 import { Tokens } from "../../ui/tokens.slint";
 import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
@@ -25,6 +25,9 @@ export component ZoneCardBand {
     property <int> focus-index: first-index + focused-card;
     property <int> visible-cards: Tokens.wide ? 5 : 3;
     property <int> reach: Tokens.wide ? 2 : 1;
+    // The pool: reach cards either side of the focus, and the next one each way.
+    property <int> slots: 2 * reach + 3;
+    property <int> base: focused-card - reach - 1;
     property <length> gap: (Tokens.wide ? 10 : 7) * a;
     property <length> tri: (Tokens.wide ? 14 : 12) * a;
     property <length> room: tri + 8 * a;
@@ -71,27 +74,37 @@ export component ZoneCardBand {
         width: root.width;
         height: root.height;
         cache-rendering-hint: true;
-        for c[i] in root.cards: Rectangle {
+        // A fixed pool of slots, one per card from reach + 1 before the focus to
+        // reach + 1 after it. Slot j holds the card whose index is j modulo the
+        // pool, so a move hands only one slot a new card (the one about to
+        // enter, drawn nothing until it is within reach); every other card
+        // keeps its instance, its shaped words and its layer image.
+        for j in root.slots: Rectangle {
+            property <int> i: root.base + Math.mod(j - root.base + root.slots * 1000000, root.slots);
+            property <bool> shown: i >= 0 && i < root.cards.length && Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0;
+            property <Card> c: i >= 0 && i < root.cards.length ? root.cards[i] : { };
             x: 0;
             y: 0;
             width: 0;
             height: 0;
-            if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0: ZoneCard {
+            ZoneCard {
+                visible: parent.shown;
                 cache-rendering-hint: true;
-                x: root.card-x(i + root.first-index);
-                width: root.card-w(i + root.first-index);
-                height: root.side-h + root.share(i + root.first-index) * (root.card-h - root.side-h);
+                x: root.card-x(parent.i + root.first-index);
+                width: root.card-w(parent.i + root.first-index);
+                height: root.side-h + root.share(parent.i + root.first-index) * (root.card-h - root.side-h);
                 y: root.cy - self.height / 2;
-                card: c;
-                focused: i == root.focused-card;
-                lit: root.marks[i].focused;
+                card: parent.c;
+                focused: parent.i == root.focused-card;
+                lit: parent.shown && root.marks[parent.i].focused;
             }
-            if Math.abs(i - root.focused-card) <= root.reach && root.card-h > 0 && c.section != "" && (i == 0 || root.cards[i - 1].section != c.section): ZoneSectionCard {
-                x: root.card-x(i + root.first-index) - root.gap + root.a;
+            ZoneSectionCard {
+                visible: parent.shown && parent.c.section != "" && (parent.i == 0 || root.cards[parent.i - 1].section != parent.c.section);
+                x: root.card-x(parent.i + root.first-index) - root.gap + root.a;
                 y: root.cy - root.side-h / 2;
                 width: root.gap - 2 * root.a;
                 height: root.side-h;
-                caption: c.section;
+                caption: parent.c.section;
             }
         }
     }
