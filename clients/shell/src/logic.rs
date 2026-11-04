@@ -16,6 +16,7 @@
 use crate::{
     engine::{Declaration, Displays, Engine, Limits, Violation},
     messages,
+    view::{Diff, Differ},
 };
 use serde_json::Value;
 use std::{
@@ -50,10 +51,12 @@ impl Call {
 #[derive(Debug)]
 pub struct Step {
     pub requests: Vec<Value>,
-    /// `view()`, when the state or the model changed.
-    pub view: Option<Value>,
-    /// `overlay()`, when it changed and the presentation is the gameplay overlay.
-    pub overlay: Option<Value>,
+    /// `view()`, when the state or the model changed, and how it differs from the view
+    /// before it (`view::Binder::apply_diff`).
+    pub view: Option<(Value, Diff)>,
+    /// `overlay()`, when it changed and the presentation is the gameplay overlay, and its
+    /// diff against the overlay view before it.
+    pub overlay: Option<(Value, Diff)>,
     /// Whether the model asks for the gameplay overlay (after a `Model` call).
     pub gameplay_overlay: Option<bool>,
     /// Wall time of the call on the logic thread.
@@ -73,11 +76,29 @@ type Job = Box<dyn FnOnce(&mut Worker) + Send>;
 pub struct Worker {
     engine: Engine,
     gameplay: bool,
+    views: Differ,
+    overlays: Differ,
 }
 
 impl Worker {
     pub fn engine(&mut self) -> &mut Engine {
         &mut self.engine
+    }
+
+    /// The diff of a view the UI thread applies, against the one it applied before: every
+    /// view the UI thread is given goes through here, in order.
+    pub fn diff_view(&mut self, view: &Value) -> Diff {
+        self.views.next(view)
+    }
+
+    /// `diff_view`, for overlay views. A new overlay starts from no view.
+    pub fn diff_overlay(&mut self, view: &Value) -> Diff {
+        self.overlays.next(view)
+    }
+
+    /// The overlay was dropped: its next view is diffed against none.
+    pub fn overlay_dropped(&mut self) {
+        self.overlays = Differ::default();
     }
 
     fn run(&mut self, call: Call) -> Outcome {
@@ -112,9 +133,15 @@ impl Worker {
         let (mut view, mut overlay) = (None, None);
         if self.engine.view_stale() {
             self.engine.views_drawn();
-            view = Some(self.engine.view()?);
+            let next = self.engine.view()?;
+            view = Some((next.clone(), self.views.next(&next)));
             if self.gameplay && self.engine.has_overlay() {
-                overlay = self.engine.overlay()?;
+                overlay = self
+                    .engine
+                    .overlay()?
+                    .map(|next| (next.clone(), self.overlays.next(&next)));
+            } else {
+                self.overlays = Differ::default();
             }
         }
         Ok(Step {
@@ -170,6 +197,8 @@ impl Logic {
                 let mut worker = Worker {
                     engine,
                     gameplay: false,
+                    views: Differ::default(),
+                    overlays: Differ::default(),
                 };
                 for job in receiver {
                     job(&mut worker);

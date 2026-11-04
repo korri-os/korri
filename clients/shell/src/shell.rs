@@ -28,7 +28,7 @@ use crate::{
     logic::{Call, Done, Logic, Outcome},
     messages::{self, Button},
     package::{self, Package},
-    view::Binder,
+    view::{Binder, Diff},
 };
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
@@ -652,7 +652,12 @@ impl Shell {
                 } else {
                     None
                 };
-                Ok((requests, view, overlay))
+                let diff = worker.diff_view(&view);
+                let overlay = overlay.map(|o| {
+                    let diff = worker.diff_overlay(&o);
+                    (o, diff)
+                });
+                Ok((requests, (view, diff), overlay))
             })
             .and_then(|r| r)
             .map_err(|v| anyhow!("logic: {v}"))?;
@@ -660,7 +665,7 @@ impl Shell {
             check_request(request, logic.declaration()).map_err(|f| anyhow!("{f}"))?;
         }
         let logic_done = started.elapsed();
-        let applied = surface_binder.apply(&surface, &view, &mut images);
+        let applied = surface_binder.apply_diff(&surface, &view.0, &view.1, &mut images);
         if let Err(error) = applied {
             drop(surface);
             return Err(error.context("view"));
@@ -776,7 +781,7 @@ impl Shell {
     /// Show, refresh or remove the Overlay to match the presentation, and
     /// map exactly one of Surface and Overlay.
     /// `view`: the overlay's view when the logic gave a new one.
-    fn render_overlay(&mut self, loaded: &mut Loaded, view: Option<Value>) -> Result<()> {
+    fn render_overlay(&mut self, loaded: &mut Loaded, view: Option<(Value, Diff)>) -> Result<()> {
         let wanted = loaded.gameplay_overlay
             && loaded.overlay_definition.is_some()
             && loaded.logic.has_overlay();
@@ -797,7 +802,7 @@ impl Shell {
             }
             return Ok(());
         }
-        let Some(view) = view else {
+        let Some((view, diff)) = view else {
             // No new overlay view: the one shown stays (the logic sends one with every
             // change, and with the model that asks for the overlay).
             return Ok(());
@@ -812,7 +817,7 @@ impl Shell {
             loaded.overlay = Some((component, binder));
         }
         let (component, binder) = loaded.overlay.as_mut().expect("just created");
-        binder.apply(component, &view, &mut loaded.images)?;
+        binder.apply_diff(component, &view, &diff, &mut loaded.images)?;
         component.show()?;
         if loaded.surface_shown {
             if !self.backend.shared_window() {
@@ -860,10 +865,10 @@ impl Shell {
             if let Some(gameplay) = step.gameplay_overlay {
                 current.gameplay_overlay = gameplay;
             }
-            if let Some(view) = &step.view {
+            if let Some((view, diff)) = &step.view {
                 current
                     .surface_binder
-                    .apply(&current.surface, view, &mut current.images)
+                    .apply_diff(&current.surface, view, diff, &mut current.images)
                     .map_err(Failure::View)?;
             }
             if step.view.is_some() || step.gameplay_overlay.is_some() {

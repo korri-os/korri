@@ -256,23 +256,23 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     let scale = surface.window().scale_factor();
     let logical = surface.window().size().to_logical(scale);
     let first_model = model(&query, &from, count, &focused);
-    let view = logic
-        .now(
-            move |worker| -> std::result::Result<Value, engine::Violation> {
-                let engine = worker.engine();
-                engine.set_model(&first_model)?;
-                engine.init(&preferences)?;
-                engine.update(&messages::resized(logical.width, logical.height))?;
-                engine.views_drawn();
-                engine.view()
-            },
-        )
+    let (view, diff) = logic
+        .now(move |worker| -> std::result::Result<_, engine::Violation> {
+            let engine = worker.engine();
+            engine.set_model(&first_model)?;
+            engine.init(&preferences)?;
+            engine.update(&messages::resized(logical.width, logical.height))?;
+            engine.views_drawn();
+            let view = engine.view()?;
+            let diff = worker.diff_view(&view);
+            Ok((view, diff))
+        })
         .and_then(|r| r)
         .map_err(|v| anyhow!("logic: {v}"))?;
     let mut binder = Binder::new(&views.surface);
     binder.set_reuse_models(options.reuse_models);
     let mut images = ImageCache::new(&package.dir);
-    binder.apply(&surface, &view, &mut images)?;
+    binder.apply_diff(&surface, &view, &diff, &mut images)?;
     let mut last_view = view;
     surface.show()?;
 
@@ -369,9 +369,9 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
                     _ => {}
                 }
             }
-            if let Some(view) = step.view {
+            if let Some((view, diff)) = step.view {
                 let apply = Instant::now();
-                binder.apply(&surface, &view, &mut images)?;
+                binder.apply_diff(&surface, &view, &diff, &mut images)?;
                 frame.view += us(apply.elapsed());
                 if let (Some(new), Some(old)) = (view.as_object(), last_view.as_object()) {
                     let changed: Vec<&str> = new

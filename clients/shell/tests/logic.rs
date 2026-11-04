@@ -52,7 +52,7 @@ fn next(logic: &mut Logic, done: &Done, rx: &mpsc::Receiver<Outcome>) -> Outcome
 
 fn seen(outcome: &Outcome) -> Vec<Value> {
     let step = outcome.result.as_ref().unwrap();
-    serde_json::from_str(step.view.as_ref().unwrap()["seen"].as_str().unwrap()).unwrap()
+    serde_json::from_str(step.view.as_ref().unwrap().0["seen"].as_str().unwrap()).unwrap()
 }
 
 #[test]
