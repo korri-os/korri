@@ -172,6 +172,31 @@ const statusActions = (actions: readonly SurfaceAction[] | undefined, focused: s
     ...mark(`status:${action.id}`, focused),
   }))
 
+/** A shelf cart's target, once per game, place and aim: a shelf of carts is
+ * rebuilt on every press otherwise. */
+function shelfTarget(game: PicoShelfGame, place: number, aiming: boolean): Target<Act> {
+  const key = `${place}|${aiming}`
+  let known = SHELF_TARGETS.get(game)
+  if (known === undefined) {
+    known = new Map()
+    SHELF_TARGETS.set(game, known)
+  }
+  const cached = known.get(key)
+  if (cached !== undefined) return cached
+  const target: Target<Act> = {
+    id: `cart:${game.id}`,
+    region: "shelf",
+    box: { x: place * 10, y: 500, w: 9, h: 20 },
+    act: [nav({ _tag: "OpenedGame", gameId: game.id })],
+    enter: [nav({ _tag: "SelectedCart", gameId: game.id }), ...(aiming ? [nav({ _tag: "AimedMenu", label: undefined })] : [])],
+  }
+  if (known.size > 8) known.clear()
+  known.set(key, target)
+  return target
+}
+
+const SHELF_TARGETS = new WeakMap<object, Map<string, Target<Act>>>()
+
 export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>): Screen {
   const { s, korri, model } = ctx
   const view = shown.view
@@ -251,18 +276,11 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
 
   if (view._tag === "Shelf" && home.mode === "shelf") {
     body = "shelf"
+    const aiming = home.aim !== undefined
     carts = games.map((game, i) => {
       const id = `cart:${game.id}`
-      if (!menuOpen) {
-        targets.push({
-          id,
-          region: "shelf",
-          box: { x: (firstIndex + i) * 10, y: 500, w: 9, h: 20 },
-          act: [nav({ _tag: "OpenedGame", gameId: game.id })],
-          enter: [nav({ _tag: "SelectedCart", gameId: game.id }), ...(home.aim === undefined ? [] : aimAt(undefined))],
-        })
-      }
-      return cartView(game, { hero: i === chosen, ...mark(id, focused) })
+      if (!menuOpen) targets.push(shelfTarget(game, firstIndex + i, aiming))
+      return cartView(game, { hero: i === chosen, focused: focused === id, focusId: id })
     })
     if (chosenGame !== undefined) {
       stage = {
@@ -319,7 +337,8 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     if (pick !== undefined && !menuOpen) {
       targets.push({ id: "hero:open", region: "hero", box: { x: 0, y: 100, w: 30, h: 10 }, act: [nav({ _tag: "OpenedGame", gameId: pick.game.id })], enter: aimAt(undefined) })
     }
-    resumable.forEach((game, i) => {
+    // The RESUME list is drawn under the hero only.
+    if (pick !== undefined) resumable.forEach((game, i) => {
       if (!menuOpen) targets.push({ id: `resume:${game.id}`, region: "resume", box: { x: i * 10, y: 300, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })], enter: aimAt(undefined) })
     })
     hero = pick === undefined ? hero : {

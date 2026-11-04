@@ -170,6 +170,7 @@ export function session(file: Json) {
       for (const button of buttons) deliver({ _tag: "Pressed", button })
     },
     state: () => state,
+    model: () => korri.model(),
     view: () => (overlaid ? (overlay(state, korri.model()) ?? {}) : view(state, korri.model())) as Json,
   }
 }

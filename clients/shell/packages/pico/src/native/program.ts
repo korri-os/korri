@@ -43,7 +43,7 @@ import { attractShowing, canAttract, inviteNotices, launchOpen, runnerOpen, show
 import { update as picoUpdate } from "../state/update"
 import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScreen, sameQuery } from "./catalog"
 import { memo, share } from "./memo"
-import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus } from "./focus"
+import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
 import { cartView } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
 import { qrPath } from "./qr"
@@ -198,31 +198,32 @@ export function catalogScreen(s: State, korri: KorriModel): Screen {
   return catalogScreenOf(s, korri)
 }
 
+/**
+ * The parts of Korri's model a screen reads, by identity (the model is
+ * interned, so an unchanged part is the same object). The focused game's
+ * actions matter only to a game's own screen: the publish that answers
+ * FocusGame on the shelf rebuilds nothing.
+ */
+function korriParts(s: State, korri: KorriModel): readonly unknown[] {
+  const parts = PARTS.get(korri) ?? partsOf(korri)
+  return s.nav.detail === undefined ? parts : [...parts, korri.focusedGame]
+}
+
+const PARTS = new WeakMap<KorriModel, readonly unknown[]>()
+
+function partsOf(korri: KorriModel): readonly unknown[] {
+  const record = korri as unknown as Record<string, unknown>
+  const parts = Object.keys(record).filter(key => key !== "focusedGame").sort().flatMap(key => [key, record[key]])
+  PARTS.set(korri, parts)
+  return parts
+}
+
 /** A screen reads only these parts of the state (src/native/*.ts). */
 const catalogScreenOf = memo(
   6,
-  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, korri],
-  (s: State, korri: KorriModel) => drawnOnly(screenOf(s, korri)),
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, ...korriParts(s, korri)],
+  (s: State, korri: KorriModel) => screenOf(s, korri),
 )
-
-/**
- * Only targets the view draws: a target with no entry in the view (a list
- * not shown yet) is no place for the cursor, and no region for an exit.
- */
-function drawnOnly(screen: Screen): Screen {
-  const drawn = new Set<string>()
-  const collect = (value: unknown): void => {
-    if (Array.isArray(value)) value.forEach(collect)
-    else if (value !== null && typeof value === "object") {
-      const entry = value as Record<string, unknown>
-      if (typeof entry["focusId"] === "string") drawn.add(entry["focusId"])
-      for (const item of Object.values(entry)) collect(item)
-    }
-  }
-  collect(screen.view)
-  const targets = screen.targets.filter(target => drawn.has(target.id))
-  return targets.length === screen.targets.length ? screen : { ...screen, targets }
-}
 
 function screenOf(s: State, korri: KorriModel): Screen {
   const model = picoModelFrom(korri)
@@ -276,7 +277,7 @@ const overlayScreenOf = memo(
   (overlay: State["overlay"], focus: State["overlayFocus"], korri: KorriModel) =>
     korri.presentation.kind !== "gameplay-overlay"
       ? undefined as never
-      : drawnOnly(overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status), overlay, focus)),
+      : overlayScreen(picoOverlayViewFrom(korri.presentation, korri.status), overlay, focus),
 )
 
 /** Keep the cursor on a target of the screen shown, starting where the
@@ -557,17 +558,65 @@ function remember(s: State, korri: KorriModel): State {
  * The shell strips these keys before Slint sees the view.
  */
 function marked(value: unknown, screen: Screen): unknown {
-  if (Array.isArray(value)) return value.map(item => marked(item, screen))
-  if (value === null || typeof value !== "object") return value
+  return markIn(value, targetsOf(screen), screen.active ?? {})
+}
+
+/** A screen's targets by id, built once per screen. */
+const targetsOf = memo(8, (screen: Screen) => [screen.targets], (screen: Screen) => new Map(screen.targets.map(target => [target.id, target] as const)))
+
+/** Parts of a view with no focus entry inside: they are marked as they are. */
+const PLAIN = new WeakSet<object>()
+
+function markIn(value: unknown, targets: ReadonlyMap<string, Target<Act>>, active: Readonly<Record<string, string>>): unknown {
+  if (value === null || typeof value !== "object" || PLAIN.has(value)) return value
+  if (Array.isArray(value)) {
+    let plain = true
+    const out = value.map(item => {
+      const kept = markIn(item, targets, active)
+      if (kept !== item || (item !== null && typeof item === "object" && !PLAIN.has(item))) plain = false
+      return kept
+    })
+    if (plain) {
+      PLAIN.add(value)
+      return value
+    }
+    return out
+  }
   const entry = value as Record<string, unknown>
-  if ("$image" in entry) return entry
+  if ("$image" in entry) {
+    PLAIN.add(entry)
+    return entry
+  }
+  const focusEntry = "focused" in entry
+  if (focusEntry) {
+    // An entry whose children hold no entry is marked by its own target alone.
+    const id = entry["focusId"]
+    const target = typeof id === "string" ? targets.get(id) : undefined
+    const sign = target === undefined ? "" : `${target.region}|${active[target.region] === target.id}`
+    const cached = ENTRIES.get(entry)
+    if (cached !== undefined && cached.sign === sign && cached.plainChildren) return cached.out
+  }
+  let plain = !focusEntry && !("focusId" in entry)
+  let childrenPlain = true
   const out: Record<string, unknown> = {}
-  for (const [key, item] of Object.entries(entry)) {
-    if (key !== "focusId") out[key] = marked(item, screen)
+  for (const key in entry) {
+    if (key === "focusId") continue
+    const item = entry[key]
+    const kept = markIn(item, targets, active)
+    if (kept !== item || (item !== null && typeof item === "object" && !PLAIN.has(item))) {
+      plain = false
+      childrenPlain = false
+    }
+    out[key] = kept
+  }
+  if (plain) {
+    PLAIN.add(entry)
+    return entry
   }
   if ("focused" in entry) {
     const id = entry["focusId"]
-    const target = typeof id === "string" ? screen.targets.find(candidate => candidate.id === id) : undefined
+    const target = typeof id === "string" ? targets.get(id) : undefined
+    const sign = target === undefined ? "" : `${target.region}|${active[target.region] === target.id}`
     // `target` tells main.slint whether `focused` is current: an entry that
     // is no target sends no `focused`, and the shell keeps a field it is not
     // sent, so its old value must not show.
@@ -576,10 +625,33 @@ function marked(value: unknown, screen: Screen): unknown {
       delete out["focused"]
     } else {
       out["focusRegion"] = target.region
-      if (screen.active?.[target.region] === target.id) out["focusActive"] = true
+      if (active[target.region] === target.id) out["focusActive"] = true
     }
+    ENTRIES.set(entry, { sign, out, plainChildren: childrenPlain })
   }
   return out
+}
+
+/** An entry's marked form, by the entry and its target's region and state. */
+const ENTRIES = new WeakMap<object, { readonly sign: string; readonly out: unknown; readonly plainChildren: boolean }>()
+
+/**
+ * The targets a screen lists that its view does not draw (for tests): a
+ * target with no entry in the view is no place for the cursor, and no region
+ * for an exit.
+ */
+export function undrawnTargets(screen: Screen): string[] {
+  const drawn = new Set<string>()
+  const collect = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(collect)
+    else if (value !== null && typeof value === "object") {
+      const entry = value as Record<string, unknown>
+      if (typeof entry["focusId"] === "string") drawn.add(entry["focusId"])
+      for (const item of Object.values(entry)) collect(item)
+    }
+  }
+  collect(screen.view)
+  return screen.targets.filter(target => !drawn.has(target.id)).map(target => target.id)
 }
 
 export function view(s: State, raw: KorriModel) {
@@ -597,7 +669,7 @@ let lastView: ReturnType<typeof buildView> | undefined
 /** The view reads the screen's inputs, the notices' round and the font. */
 const viewOf = memo(
   2,
-  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.noticeRound, korri],
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.noticeRound, ...korriParts(s, korri)],
   (s: State, korri: KorriModel) => buildView(s, korri),
 )
 

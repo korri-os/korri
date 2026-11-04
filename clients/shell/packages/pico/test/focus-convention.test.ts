@@ -14,6 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ROOT } from "./slint-source"
 import { session, walkStates } from "./walk-plan"
+import { catalogScreen, undrawnTargets } from "../src/native/program"
 
 type Json = Record<string, unknown>
 type Exit = { readonly to: string; readonly entry: "remembered" | "active" | "first" }
@@ -77,6 +78,16 @@ describe("the focus convention", () => {
         for (const state of walkStates(file, STATES, { width: size[0], height: size[1] })) {
           const at = `${size[0]}x${size[1]} [${state.path.join(" ")}]`
           const shown = viewAfter(file, size, state.path)
+          {
+            const pico = session(file)
+            pico.resize(size[0], size[1])
+            pico.deliver({ _tag: "KorriPublished" })
+            pico.press(...state.path)
+            if (file["presentation"] === undefined || (file["presentation"] as Json)["kind"] !== "gameplay-overlay") {
+              const undrawn = undrawnTargets(catalogScreen(pico.state(), pico.model()))
+              if (undrawn.length > 0) problems.push(`${at}: targets with no entry in the view: ${undrawn.join(", ")}`)
+            }
+          }
           const all = entries(shown)
           const plan = (shown["focusPlan"] ?? {}) as FocusPlan
           const regions = new Set(all.map(entry => entry.region))
