@@ -88,6 +88,8 @@ export component ZoneCardBand {
         width: root.width;
         height: root.height;
         cache-rendering-hint: true;
+        // The band's image stays the band's size: a parked card is not in it.
+        clip: true;
         // A fixed pool of slots, one per card from reach + 1 before the focus to
         // reach + 1 after it. Slot j holds the card whose index is j modulo the
         // pool, so a move hands only one slot a new card (the one about to
@@ -105,14 +107,14 @@ export component ZoneCardBand {
             y: 0;
             width: 0;
             height: 0;
-            // A spare slot draws nothing.
-            visible: self.shown;
+            // A spare slot stays laid out, parked past the band's right edge
+            // (the band clips it, so nothing of it is drawn): on a move only
+            // its place changes, and its card needs no layout in the press frame.
             ZoneCard {
-                visible: parent.shown;
                 cache-rendering-hint: true;
-                x: root.card-x(parent.i + root.first-index);
-                width: root.card-w(parent.i + root.first-index);
-                height: root.side-h + root.share(parent.i + root.first-index) * (root.card-h - root.side-h);
+                x: parent.shown ? root.card-x(parent.i + root.first-index) : root.width + 4 * root.side-w;
+                width: parent.shown ? root.card-w(parent.i + root.first-index) : root.side-w;
+                height: parent.shown ? root.side-h + root.share(parent.i + root.first-index) * (root.card-h - root.side-h) : root.side-h;
                 y: root.cy - self.height / 2;
                 card: parent.c;
                 focused: parent.i == root.focused-card;
