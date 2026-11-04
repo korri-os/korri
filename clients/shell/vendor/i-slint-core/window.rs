@@ -674,6 +674,8 @@ pub struct WindowInner {
 
     /// Stack of currently active popups
     pub active_popups: RefCell<Vec<PopupWindow>>,
+    /// The item trees and their origins the last frame drew (`draw_contents_if_changed`).
+    drawn_trees: RefCell<Vec<(usize, LogicalPoint)>>,
     next_popup_id: Cell<NonZeroU32>,
     had_popup_on_press: Cell<bool>,
     close_requested: Callback<(), CloseRequestResponse>,
@@ -743,6 +745,7 @@ impl WindowInner {
             last_ime_text: Default::default(),
             cursor_blinker: Default::default(),
             active_popups: Default::default(),
+            drawn_trees: Default::default(),
             next_popup_id: Cell::new(NonZeroU32::MIN),
             had_popup_on_press: Default::default(),
             close_requested: Default::default(),
@@ -1867,6 +1870,26 @@ impl WindowInner {
             &dyn Fn(&mut dyn crate::item_rendering::ItemRenderer),
         ) -> T,
     ) -> Option<T> {
+        self.draw_contents_if_changed(|| false, render_components).flatten()
+    }
+
+    /// [`Self::draw_contents`], but when nothing the last frame read changed, and
+    /// `renderer_idle` (the renderer has nothing of its own to draw), skip the frame and
+    /// return `Some(None)`.
+    ///
+    /// A redraw request does not mean something changed: with the equality cut-off a
+    /// binding that may have changed (one reading `animation-tick()`) requests a frame, and
+    /// only evaluating it tells whether its value did. The window's redraw tracker records
+    /// every property the last frame's walk and drawing read, so when it is clean after
+    /// the item trees were brought up to date, that frame's pixels still hold.
+    pub fn draw_contents_if_changed<T>(
+        &self,
+        renderer_idle: impl FnOnce() -> bool,
+        render_components: impl FnOnce(
+            &[(ItemTreeWeak, LogicalPoint)],
+            &dyn Fn(&mut dyn crate::item_rendering::ItemRenderer),
+        ) -> T,
+    ) -> Option<Option<T>> {
         #[cfg(feature = "std")]
         crate::frame_profile::time(
             |p| &mut p.instantiate,
@@ -1880,10 +1903,41 @@ impl WindowInner {
             cache.begin_frame();
         }
         let component_weak = ItemTreeRc::downgrade(&self.try_component()?);
+        let redraw_tracker = self.pinned_fields.as_ref().project_ref().redraw_tracker;
+        // The trees this frame draws: another component or a popup shown or closed is
+        // drawn, whatever the tracker says (it holds what the last trees read).
+        let trees = {
+            let key = |tree: &ItemTreeWeak, at: LogicalPoint| {
+                (tree.upgrade().map_or(0, |t| {
+                    vtable::VRef::as_ptr(ItemTreeRc::borrow(&t)).as_ptr() as usize
+                }), at)
+            };
+            let mut trees = alloc::vec![key(&component_weak, LogicalPoint::default())];
+            for popup in self.active_popups.borrow().iter() {
+                if let PopupWindowLocation::ChildWindow(location) = &popup.location {
+                    trees.push(key(&ItemTreeRc::downgrade(&popup.component), *location));
+                }
+            }
+            trees
+        };
+        let same_trees = *self.drawn_trees.borrow() == trees;
+        *self.drawn_trees.borrow_mut() = trees;
+        // `is_dirty` settles a maybe-dirty tracker by evaluating what it read. A drag image
+        // is drawn every frame, so a drag never skips.
+        let dragging = {
+            let state = self.mouse_input_state.take();
+            let dragging = state.drag_data.is_some();
+            self.mouse_input_state.set(state);
+            dragging
+        };
+        if same_trees && !dragging && !redraw_tracker.is_dirty() && renderer_idle()
+        {
+            return Some(None);
+        }
         let post_render = |renderer: &mut dyn crate::item_rendering::ItemRenderer| {
             self.render_drag_image_overlay(renderer);
         };
-        Some(self.pinned_fields.as_ref().project_ref().redraw_tracker.evaluate_as_dependency_root(
+        Some(Some(redraw_tracker.evaluate_as_dependency_root(
             || {
                 if !self
                     .active_popups
@@ -1908,7 +1962,7 @@ impl WindowInner {
                     render_components(&item_trees, &post_render)
                 }
             },
-        ))
+        )))
     }
 
     /// Draws the source `DragArea`'s `drag-image` under the cursor when a drag is in flight.

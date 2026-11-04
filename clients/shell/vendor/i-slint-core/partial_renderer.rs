@@ -1009,6 +1009,19 @@ impl PartialRenderingState {
         region_to_repaint
     }
 
+    /// Whether the next frame has a region to draw whatever the items say: one marked with
+    /// [`Self::mark_dirty_region`] (a destroyed tree, a layer to draw again) or a forced
+    /// screen refresh.
+    pub fn has_forced_region(&self) -> bool {
+        self.force_screen_refresh.get() || self.force_dirty.borrow().iter().next().is_some()
+    }
+
+    /// The renderer skipped a frame: it walked no item.
+    #[doc(hidden)]
+    pub fn frame_skipped(&self) {
+        self.partial_cache.borrow_mut().walked_items = 0;
+    }
+
     /// Add the specified region to the list of regions to include in the next rendering.
     pub fn mark_dirty_region(&self, region: DirtyRegion) {
         self.force_dirty.replace_with(|r| r.union(&region));

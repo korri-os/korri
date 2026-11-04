@@ -74,8 +74,14 @@ fn calls_run_one_at_a_time_in_the_order_sent() {
 
 #[test]
 fn ticks_waiting_behind_a_running_call_give_way_to_the_newest() {
-    let (mut logic, done, rx) = start(Limits::default());
-    logic.submit(Call::Message(json!({"_tag": "Busy", "ms": 20})), &done);
+    // The busy call counts as running until the UI side hears it returned (`next`), however
+    // fast it is; a loose budget keeps a loaded machine from breaking it.
+    let limits = Limits {
+        call: Duration::from_secs(10),
+        ..Limits::default()
+    };
+    let (mut logic, done, rx) = start(limits);
+    logic.submit(Call::Message(json!({"_tag": "Busy", "ms": 1})), &done);
     for idle in [1000, 2000, 3000] {
         logic.submit(
             Call::Message(json!({"_tag": "Tick", "idleMs": idle})),

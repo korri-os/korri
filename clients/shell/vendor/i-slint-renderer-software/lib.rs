@@ -546,6 +546,13 @@ pub struct SoftwareRenderer {
     /// The last render's frame profile of the dirty-region walk, when profiling is on.
     #[cfg(feature = "std")]
     walk_profile: RefCell<i_slint_core::frame_profile::FrameProfile>,
+    /// A layer drawn directly last frame: the next frame checks whether its content
+    /// stayed, so it is drawn even when no property changed.
+    #[cfg(feature = "std")]
+    check_layers_again: Cell<bool>,
+    /// The buffer size, scale factor and rotation of the last frame drawn: a frame with
+    /// others is drawn even when no property changed.
+    drawn_frame: Cell<Option<(PhysicalSize, f32, RenderingRotation)>>,
 }
 
 impl Default for SoftwareRenderer {
@@ -573,6 +580,9 @@ impl Default for SoftwareRenderer {
             parallel_threshold: Cell::new(parallel::MIN_PARALLEL_PIXELS),
             #[cfg(feature = "std")]
             walk_profile: Default::default(),
+            #[cfg(feature = "std")]
+            check_layers_again: Default::default(),
+            drawn_frame: Default::default(),
         }
     }
 }
@@ -932,8 +942,24 @@ impl SoftwareRenderer {
         }
         let window_adapter = renderer.window_adapter.clone();
 
+        // Nothing to draw when no property the last frame read changed, nothing marked a
+        // region, and the buffer keeps last frame's pixels (`WindowInner::draw_contents_if_changed`).
+        let frame = Some((size, factor.get(), rotation));
+        let same_frame = self.drawn_frame.replace(frame) == frame;
+        let idle = || {
+            #[cfg(feature = "std")]
+            if self.check_layers_again.get() {
+                return false;
+            }
+            if !same_frame {
+                return false;
+            }
+            self.repaint_buffer_type.get() == RepaintBufferType::ReusedBuffer
+                && !self.partial_rendering_state.has_forced_region()
+                && self.rendering_metrics_collector.is_none()
+        };
         let region = window_inner
-            .draw_contents(|components, post_render| {
+            .draw_contents_if_changed(idle, |components, post_render| {
                 let logical_size = (size.cast() / factor).cast();
                 #[cfg(feature = "std")]
                 let walk_started = std::time::Instant::now();
@@ -1071,6 +1097,7 @@ impl SoftwareRenderer {
                         }
                     }
                     // A layer that changed this frame: the next frame tells whether it stays.
+                    self.check_layers_again.set(check_again);
                     if check_again {
                         window.window().request_redraw();
                     }
@@ -1092,9 +1119,17 @@ impl SoftwareRenderer {
                 }
 
                 dirty_region
-            })
-            .unwrap_or_default();
-        (region, recorded)
+            });
+        if matches!(region, Some(None)) {
+            // Skipped: no walk, no raster.
+            self.partial_rendering_state.frame_skipped();
+            #[cfg(feature = "std")]
+            {
+                self.last_phases.set(Default::default());
+                self.last_replay.set(Default::default());
+            }
+        }
+        (region.flatten().unwrap_or_default(), recorded)
     }
 
     fn measure_frame_rendered(&self, renderer: &mut dyn ItemRenderer) {
