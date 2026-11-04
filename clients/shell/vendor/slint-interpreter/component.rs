@@ -393,6 +393,7 @@ pub async fn build_from_source(
     path: std::path::PathBuf,
     mut config: i_slint_compiler::CompilerConfiguration,
     animation_mode: AnimationMode,
+    retain_type_loaders: bool,
 ) -> BuildResult {
     // If the native style should be used, resolve it here as we know the backend.
     if config.style.as_deref() == Some("native") {
@@ -434,7 +435,7 @@ pub async fn build_from_source(
     // map source-level elements back to runtime items.
     config.debug_info = true;
     let diag = i_slint_compiler::diagnostics::BuildDiagnostics::default();
-    let (path, mut diag, loader, raw_loader) =
+    let (path, mut diag, loader, raw_loader) = if retain_type_loaders {
         i_slint_compiler::load_root_file_with_raw_type_loader(
             &path,
             &path,
@@ -442,7 +443,12 @@ pub async fn build_from_source(
             diag,
             config.clone(),
         )
-        .await;
+        .await
+    } else {
+        let (path, diag, loader) =
+            i_slint_compiler::load_root_file(&path, &path, source_code, diag, config.clone()).await;
+        (path, diag, loader, None)
+    };
     #[cfg(feature = "internal")]
     let watch_paths = loader.all_files_to_watch().into_iter().collect();
     let error_result = |diagnostics| BuildResult {
@@ -477,7 +483,10 @@ pub async fn build_from_source(
         }
     };
     let mut components = std::collections::HashMap::new();
-    for def in build_from_document(doc, &config, type_loaders, animation_mode) {
+    for mut def in build_from_document(doc, &config, type_loaders, animation_mode) {
+        if !retain_type_loaders {
+            def.type_loaders = TypeLoaders::default();
+        }
         components.insert(def.name().to_string(), def);
     }
     if components.is_empty() {

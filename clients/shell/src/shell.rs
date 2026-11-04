@@ -611,6 +611,7 @@ impl Shell {
         // Interrupts a running call and joins the logic thread.
         drop(logic);
         drop(images);
+        crate::memory::release_free_heap();
     }
 
     fn load(&mut self, index: usize) -> Result<Loaded> {

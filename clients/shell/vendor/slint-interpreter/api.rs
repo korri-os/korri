@@ -842,6 +842,7 @@ impl ComponentCompiler {
             path.into(),
             self.config.clone(),
             AnimationMode::Running,
+            true,
         )
         .await;
         self.diagnostics = r.diagnostics.into_iter().collect();
@@ -874,6 +875,7 @@ impl ComponentCompiler {
             path,
             self.config.clone(),
             AnimationMode::Running,
+            true,
         )
         .await;
         self.diagnostics = r.diagnostics.into_iter().collect();
@@ -885,6 +887,7 @@ impl ComponentCompiler {
 /// compile it into a [`CompilationResult`].
 pub struct Compiler {
     config: i_slint_compiler::CompilerConfiguration,
+    retain_type_loaders: bool,
 }
 
 impl Default for Compiler {
@@ -892,7 +895,7 @@ impl Default for Compiler {
         let config = i_slint_compiler::CompilerConfiguration::new(
             i_slint_compiler::generator::OutputFormat::Interpreter,
         );
-        Self { config }
+        Self { config, retain_type_loaders: true }
     }
 }
 
@@ -900,6 +903,16 @@ impl Compiler {
     /// Returns a new Compiler.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether the definitions keep the compiler's object trees (the type loaders and
+    /// the exported components), which only highlighting, the live preview and
+    /// `root_component()` read. A definition runs from its lowered tree alone; not
+    /// keeping them frees the object trees once the compilation result is dropped.
+    /// Default: kept.
+    #[doc(hidden)]
+    pub fn set_retain_type_loaders(&mut self, retain: bool) {
+        self.retain_type_loaders = retain;
     }
 
     #[doc(hidden)]
@@ -1031,8 +1044,14 @@ impl Compiler {
             }
         };
 
-        build_compilation_result(source, path.into(), self.config.clone(), AnimationMode::Running)
-            .await
+        build_compilation_result(
+            source,
+            path.into(),
+            self.config.clone(),
+            AnimationMode::Running,
+            self.retain_type_loaders,
+        )
+        .await
     }
 
     /// Compile some .slint code
@@ -1048,8 +1067,14 @@ impl Compiler {
     /// If that is not used, then it is fine to use a very simple executor, such as the one
     /// provided by the `spin_on` crate
     pub async fn build_from_source(&self, source_code: String, path: PathBuf) -> CompilationResult {
-        build_compilation_result(source_code, path, self.config.clone(), AnimationMode::Running)
-            .await
+        build_compilation_result(
+            source_code,
+            path,
+            self.config.clone(),
+            AnimationMode::Running,
+            self.retain_type_loaders,
+        )
+        .await
     }
 
     /// Compile Slint code without timers or animations.
@@ -1061,7 +1086,13 @@ impl Compiler {
         path: PathBuf,
         _: i_slint_core::InternalToken,
     ) -> CompilationResult {
-        build_compilation_result(source_code, path, self.config.clone(), AnimationMode::Static)
+        build_compilation_result(
+            source_code,
+            path,
+            self.config.clone(),
+            AnimationMode::Static,
+            self.retain_type_loaders,
+        )
             .await
     }
 }
@@ -1079,9 +1110,16 @@ async fn build_compilation_result(
     path: PathBuf,
     config: i_slint_compiler::CompilerConfiguration,
     animation_mode: AnimationMode,
+    retain_type_loaders: bool,
 ) -> CompilationResult {
-    let result =
-        crate::component::build_from_source(source_code, path, config, animation_mode).await;
+    let result = crate::component::build_from_source(
+        source_code,
+        path,
+        config,
+        animation_mode,
+        retain_type_loaders,
+    )
+    .await;
     let components = result
         .components
         .into_iter()

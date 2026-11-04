@@ -87,7 +87,10 @@ pub struct Views {
 
 /// Compile `main.slint` with the pinned interpreter. Diagnostics are kept.
 pub fn compile(package: &Package) -> Result<Views> {
-    let compiler = Compiler::default();
+    let mut compiler = Compiler::default();
+    // The shell runs a definition from its lowered tree; the compiler's object
+    // trees (about 40 MB for Zone) go with the compilation result.
+    compiler.set_retain_type_loaders(false);
     let result = pollster::block_on(compiler.build_from_path(package.dir.join(VIEW)));
     let diagnostics: Vec<String> = result.diagnostics().map(|d| d.to_string()).collect();
     if result.has_errors() {
@@ -100,9 +103,12 @@ pub fn compile(package: &Package) -> Result<Views> {
     let surface = result
         .component("Surface")
         .with_context(|| format!("{} must export component Surface", package.id))?;
+    let overlay = result.component("Overlay");
+    drop(result);
+    crate::memory::release_free_heap();
     Ok(Views {
         surface,
-        overlay: result.component("Overlay"),
+        overlay,
         diagnostics,
     })
 }
@@ -118,6 +124,16 @@ mod tests {
         assert!(!valid_id("Zone"));
         assert!(!valid_id("../x"));
         assert!(!valid_id(""));
+    }
+
+    /// The compiler's object trees are not kept with the views: the definition runs
+    /// from its lowered tree, and the trees were about 40 MB of Zone's heap.
+    #[test]
+    #[should_panic(expected = "without compiler state")]
+    fn compiled_views_keep_no_object_tree() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/zone");
+        let views = compile(&Package::at(&dir).unwrap()).unwrap();
+        let _ = views.surface.root_component();
     }
 
     #[test]
