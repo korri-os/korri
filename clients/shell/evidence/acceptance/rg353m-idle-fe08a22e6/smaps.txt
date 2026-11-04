@@ -1,0 +1,168 @@
+== zone-idle pid 455759 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/korri-she
+aaaab8e93000-ffffd0a6a000 ---p 00000000 00:00 0                          [rollup]
+Rss:              143052 kB
+Pss:              140364 kB
+Pss_Dirty:        119470 kB
+Pss_Anon:         117932 kB
+Pss_File:          20894 kB
+Pss_Shmem:          1538 kB
+Shared_Clean:       2268 kB
+Shared_Dirty:       3076 kB
+Private_Clean:     19776 kB
+Private_Dirty:    117932 kB
+Referenced:       134356 kB
+Anonymous:        117932 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+  104968 KiB [heap]
+   18828 KiB /tmp/korri-preview/bin/korri-shell
+   11136 KiB 
+    3076 KiB /memfd:softbuffer
+    1556 KiB /tmp/korri-preview/lib/libc.so.6
+== zone-idle pid 455746 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/fixture-k
+aaaabe6a8000-ffffc45d7000 ---p 00000000 00:00 0                          [rollup]
+Rss:                4432 kB
+Pss:                3286 kB
+Pss_Dirty:          1144 kB
+Pss_Anon:           1144 kB
+Pss_File:           2142 kB
+Pss_Shmem:             0 kB
+Shared_Clean:       2260 kB
+Shared_Dirty:          0 kB
+Private_Clean:      1028 kB
+Private_Dirty:      1144 kB
+Referenced:         3116 kB
+Anonymous:          1144 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+    1556 KiB /tmp/korri-preview/lib/libc.so.6
+    1064 KiB /tmp/korri-preview/bin/fixture-korrid
+     828 KiB 
+== pico-idle pid 455759 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/korri-she
+aaaab8e93000-ffffd0a6a000 ---p 00000000 00:00 0                          [rollup]
+Rss:              181016 kB
+Pss:              178666 kB
+Pss_Dirty:        157772 kB
+Pss_Anon:         156572 kB
+Pss_File:          20894 kB
+Pss_Shmem:          1200 kB
+Shared_Clean:       2268 kB
+Shared_Dirty:       2400 kB
+Private_Clean:     19776 kB
+Private_Dirty:    156572 kB
+Referenced:       172372 kB
+Anonymous:        156572 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+  143064 KiB [heap]
+   18828 KiB /tmp/korri-preview/bin/korri-shell
+   12360 KiB 
+    2400 KiB /memfd:softbuffer
+    1556 KiB /tmp/korri-preview/lib/libc.so.6
+== pico-idle pid 455746 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/fixture-k
+aaaabe6a8000-ffffc45d7000 ---p 00000000 00:00 0                          [rollup]
+Rss:                4900 kB
+Pss:                3754 kB
+Pss_Dirty:          1612 kB
+Pss_Anon:           1612 kB
+Pss_File:           2142 kB
+Pss_Shmem:             0 kB
+Shared_Clean:       2260 kB
+Shared_Dirty:          0 kB
+Private_Clean:      1028 kB
+Private_Dirty:      1612 kB
+Referenced:         3600 kB
+Anonymous:          1612 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+    1556 KiB /tmp/korri-preview/lib/libc.so.6
+    1296 KiB 
+    1064 KiB /tmp/korri-preview/bin/fixture-korrid
+== zone-again-idle pid 455759 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/korri-she
+aaaab8e93000-ffffd0a6a000 ---p 00000000 00:00 0                          [rollup]
+Rss:              188236 kB
+Pss:              185548 kB
+Pss_Dirty:        164654 kB
+Pss_Anon:         163116 kB
+Pss_File:          20894 kB
+Pss_Shmem:          1538 kB
+Shared_Clean:       2268 kB
+Shared_Dirty:       3076 kB
+Private_Clean:     19776 kB
+Private_Dirty:    163116 kB
+Referenced:       179596 kB
+Anonymous:        163116 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+  145508 KiB [heap]
+   18828 KiB /tmp/korri-preview/bin/korri-shell
+   16456 KiB 
+    3076 KiB /memfd:softbuffer
+    1556 KiB /tmp/korri-preview/lib/libc.so.6
+== zone-again-idle pid 455746 ./lib/ld-linux-aarch64.so.1 --inhibit-cache --library-path ./lib ./bin/fixture-k
+aaaabe6a8000-ffffc45d7000 ---p 00000000 00:00 0                          [rollup]
+Rss:                4868 kB
+Pss:                3722 kB
+Pss_Dirty:          1580 kB
+Pss_Anon:           1580 kB
+Pss_File:           2142 kB
+Pss_Shmem:             0 kB
+Shared_Clean:       2260 kB
+Shared_Dirty:          0 kB
+Private_Clean:      1028 kB
+Private_Dirty:      1580 kB
+Referenced:         3568 kB
+Anonymous:          1580 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+    1556 KiB /tmp/korri-preview/lib/libc.so.6
+    1264 KiB 
+    1064 KiB /tmp/korri-preview/bin/fixture-korrid
