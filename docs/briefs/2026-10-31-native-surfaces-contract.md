@@ -225,3 +225,81 @@ Both platform workers build against exactly this, so they can work in parallel.
 - `app.surface.preferences { surface_id }` → stored preference values.
 - surface_id is the package folder id (`pico`, `zone`).
 - The capability and port are injected exactly as the portal gets them today; never in a URL, file, log or asset.
+
+## 7. Amendment A1 (owner, 2026-11-02, during review round 1)
+
+### 7.1 Tick (idle time signal)
+- New message: `SurfaceMessage::Tick { idle_ms: u32 }`. JSON: `{"_tag":"Tick","idleMs":31000}`.
+- The shell sends it to the active surface once a second.
+- `idle_ms` is the time since the last `Pressed` it delivered to that surface, or since the surface loaded if none came after. Any `Pressed` resets it to 0.
+- Each surface owns its own threshold: Zone 30 s, Pico 45 s, as the portal had. Slint never enters attract or idle on its own; attract shows only while the logic says so.
+- The verifier sweeps Tick values in its seeded sequence.
+
+### 7.2 Back cancels (decline marking)
+- `decline_action_id: Option<String>` (`declineActionId`), today present only on shared play's Confirm, is set by korrid on every Confirm.
+- It is added, optional, to the Busy, ChooseSave and Paused statuses.
+- korrid publishes a cancel action, and marks it, for the busy states that offer none today: acquisition "Checking", saves Checking, Reading and Picking. Each cancels what the portal's Back cancelled (`git show main:clients/portal/src/surface/SurfaceRoot.tsx`, lines 334–348).
+- A surface's Back runs the marked action, if any, before its own Back handling. Surfaces never infer meaning from action ids.
+
+## 8. Amendment A2 (owner, 2026-11-02): the logic knows its container
+
+Owner: "the correct systemic holistic approach so that the d-pad works just as
+a user would expect and that every design follows intrinsic design values."
+
+### 8.1 Resized
+- New message: `SurfaceMessage::Resized { width: f32, height: f32 }`, the
+  surface window's size in logical pixels (the same units `.slint` lays out
+  in). JSON: `{"_tag":"Resized","width":640,"height":480}`.
+- The shell sends it once before the first `view()` of every load and switch,
+  then on every window size or scale-factor change. `init` keeps its signature;
+  the first `Resized` follows it immediately.
+- `SurfaceModel.displays` stays as it is: facts about displays for placement
+  and for "all" surfaces, never a stand-in for the window.
+
+### 8.2 One plan drives both layout and focus
+- A surface computes its layout plan in logic as a pure function of
+  (width, height): column counts, which regions sit beside or above each
+  other, what is visible. That is the intrinsic-design rule. Its focus graph
+  and its `view()` both read that one plan.
+- `view()` passes the plan's decisions (columns, arrangement) to `.slint`,
+  which draws them. `.slint` may size and space from its own window, but it
+  never makes a structural decision that the focus graph does not know.
+- Result: a d-pad press always moves to the item drawn in that direction, at
+  every size.
+
+### 8.3 Proof required of every surface
+- The verifier sweeps `Resized` at 320x240, 640x480, 480x800, 1280x720 and
+  1920x1080, including a display list larger than the window.
+- For each size, a geometric test: from every focus target, each direction
+  moves to the target the plan draws in that direction (nearest along the
+  pressed axis, as `spatial-focus.ts` defined it), or stays when none exists.
+  This extends the existing "focus is visible" walks; it does not replace
+  them.
+
+### 8.4 Regions and exits (refines 8.3; decided 2026-11-02)
+- Focus targets are grouped into regions that the plan declares: a row of
+  buttons, the tabs, a key grid, a list, the card band.
+- Inside a region, a press moves to the target drawn nearest along the pressed
+  axis (spatial-focus.ts's rule), or stays when there is none.
+- Leaving a region follows the region's declared exits, per direction. An exit
+  names a target region and an entry rule: `remembered` (the target the region
+  last had focused), `active` (for example the active tab), or `first`. A
+  direction with no exit stays.
+- Exits are decided by the plan, so they may differ by size. The probe judges
+  in-region moves geometrically, and judges exits against the declared exits.
+- How a surface declares regions and exits to the probe is set by the shell (a
+  generic convention, identical for every surface). Surfaces never write
+  their own judge.
+
+## 9. Amendment A3 (owner, 2026-11-02): no design compromise for hardware
+
+- Every surface runs as designed at 60 fps or more on every device Korri
+  supports, idle and while the person presses buttons.
+- A surface never trims motion, effects or detail to fit weaker hardware.
+  Performance is the shell's and the code's job: the renderer, the shell, and
+  each package's logic and view cost.
+- The pass mark in section 4 becomes: 0 frames over 16.7 ms, idle and with
+  presses, on the RG353M and the RG35XX SP, measured with `korri-shell bench`
+  on the device.
+- The RG353M's 61 % CPU default is removed (owner: "the artificial cap was a
+  mistake in the first place").
