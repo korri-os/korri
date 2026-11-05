@@ -39,7 +39,9 @@ impl Platform for Manual {
 // A slow pan (an image, a gradient and a rounded rectangle moving 0.15 px a frame) under a
 // still word and path, a rectangle breathing by a fraction of a pixel, and from `covered` on, an opaque cover over the
 // whole window with its own slow pan, under which a square keeps moving.
+// A packaged font: the Nix build sandbox has no system font.
 const SOURCE: &str = r#"
+import "fonts/tiny5.ttf";
 global Clock {
     out property <float> ms: animation-tick() / 1ms;
 }
@@ -48,6 +50,7 @@ export component Surface inherits Window {
     in property <image> art;
     property <length> pan: -Clock.ms / 16 * 0.15px;
     background: #102030;
+    default-font-family: "Pico Tiny5";
     for i in 12: Rectangle {
         x: mod(i, 4) * 60px + 8px;
         y: floor(i / 4) * 50px + 8px;
@@ -124,7 +127,7 @@ struct Window {
 #[test]
 fn frames_with_the_image_shown_are_not_drawn_and_the_pixels_match_full_redraws() {
     let _ = slint::platform::set_platform(Box::new(Manual));
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/identical.slint");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/packages/probe/identical.slint");
     let result = pollster::block_on(
         slint_interpreter::Compiler::default().build_from_source(SOURCE.into(), path),
     );
