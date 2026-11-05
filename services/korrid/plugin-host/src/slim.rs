@@ -111,6 +111,112 @@ impl Upstream {
         Ok(staged)
     }
 
+    /// Fetch the narinfos of `paths` that this run has not seen yet,
+    /// concurrently over reused connections. Only definite results are
+    /// recorded: a 200 whose metadata Nix reads, or a real 404. Any other
+    /// outcome stays unrecorded, so `info` fetches that path alone and fails
+    /// closed with its own error.
+    pub(crate) fn prefetch<'a>(
+        &mut self,
+        paths: impl IntoIterator<Item = &'a String>,
+    ) -> Result<(), String> {
+        #[cfg(test)]
+        if self.file_cache.is_some() {
+            return Ok(());
+        }
+        let mut wanted = BTreeMap::new();
+        for path in paths {
+            package::validate_store_path(Path::new(path))?;
+            if !self.seen.contains_key(path) {
+                wanted.insert(path.clone(), narinfo_name(path)?);
+            }
+        }
+        if wanted.len() < 2 {
+            return Ok(());
+        }
+        self.cache_info()?;
+        let transfers = wanted
+            .values()
+            .map(|name| {
+                Ok((
+                    SourceUrl::parse(&format!("{UPSTREAM}/{name}"))?,
+                    self.notes.path().join(name),
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let results =
+            repository::download_many_optional(&self.curl, &transfers, self.ca.as_deref())?;
+        let mut found = Vec::new();
+        for ((path, name), result) in wanted.iter().zip(results) {
+            match result {
+                Some(true) => found.push(path.as_str()),
+                Some(false) => {
+                    fs::remove_file(self.notes.path().join(name)).map_err(|e| e.to_string())?;
+                    self.seen.insert(path.clone(), None);
+                }
+                None => {
+                    let _ = fs::remove_file(self.notes.path().join(name));
+                }
+            }
+        }
+        if found.is_empty() {
+            return Ok(());
+        }
+        // One Nix call reads every fetched narinfo instead of one per path.
+        let mut args = vec![
+            "--extra-experimental-features".to_owned(),
+            "nix-command".into(),
+            "path-info".into(),
+            "--json".into(),
+            "--store".into(),
+            archive::path_to_file_uri(self.notes.path())?,
+        ];
+        args.extend(found.iter().map(|path| (*path).to_owned()));
+        let json = process::checked_uncapped(&self.nix, args, Some(Duration::from_secs(60)))?;
+        let mut infos: BTreeMap<String, NarInfo> = serde_json::from_str(&json)
+            .map_err(|error| format!("invalid Nix path metadata: {error}"))?;
+        for path in found {
+            let info = infos
+                .remove(path)
+                .ok_or("Nix metadata names another output")?;
+            self.seen.insert(path.to_owned(), Some(info));
+        }
+        if !infos.is_empty() {
+            return Err("Nix metadata names another output".into());
+        }
+        Ok(())
+    }
+
+    /// Nix reads a file cache only after it has checked its nix-cache-info.
+    fn cache_info(&self) -> Result<(), String> {
+        if self.notes.path().join("nix-cache-info").exists() {
+            return Ok(());
+        }
+        repository::download(
+            &self.curl,
+            &SourceUrl::parse(&format!("{UPSTREAM}/nix-cache-info"))?,
+            self.ca.as_deref(),
+            &self.notes.path().join("nix-cache-info"),
+            repository::TransferBounds::Limited {
+                max_bytes: 1024 * 1024,
+                timeout: Duration::from_secs(30),
+            },
+        )?;
+        process::checked(
+            &self.nix,
+            [
+                "--extra-experimental-features",
+                "nix-command",
+                "store",
+                "info",
+                "--store",
+                &archive::path_to_file_uri(self.notes.path())?,
+            ],
+            Duration::from_secs(30),
+        )?;
+        Ok(())
+    }
+
     /// A 404 is absence. No TLS, transport, parsing or signing failure can
     /// silently turn a NixOS path into one the publisher is allowed to supply.
     pub(crate) fn info(&mut self, path: &str) -> Result<Option<NarInfo>, String> {
@@ -118,14 +224,7 @@ impl Upstream {
         if let Some(info) = self.seen.get(path) {
             return Ok(info.clone());
         }
-        let name = format!(
-            "{}.narinfo",
-            &Path::new(path)
-                .file_name()
-                .ok_or("invalid path")?
-                .to_str()
-                .ok_or("invalid path")?[..32]
-        );
+        let name = narinfo_name(path)?;
         let destination = self.notes.path().join(&name);
         #[cfg(test)]
         if let Some(cache) = &self.file_cache {
@@ -146,30 +245,7 @@ impl Upstream {
         #[cfg(not(test))]
         let https = true;
         if https {
-            if !self.notes.path().join("nix-cache-info").exists() {
-                repository::download(
-                    &self.curl,
-                    &SourceUrl::parse(&format!("{UPSTREAM}/nix-cache-info"))?,
-                    self.ca.as_deref(),
-                    &self.notes.path().join("nix-cache-info"),
-                    repository::TransferBounds::Limited {
-                        max_bytes: 1024 * 1024,
-                        timeout: Duration::from_secs(30),
-                    },
-                )?;
-                process::checked(
-                    &self.nix,
-                    [
-                        "--extra-experimental-features",
-                        "nix-command",
-                        "store",
-                        "info",
-                        "--store",
-                        &archive::path_to_file_uri(self.notes.path())?,
-                    ],
-                    Duration::from_secs(30),
-                )?;
-            }
+            self.cache_info()?;
             if !repository::download_optional(
                 &self.curl,
                 &SourceUrl::parse(&format!("{UPSTREAM}/{name}"))?,
@@ -189,6 +265,17 @@ impl Upstream {
         self.seen.insert(path.into(), Some(info.clone()));
         Ok(Some(info))
     }
+}
+
+fn narinfo_name(path: &str) -> Result<String, String> {
+    Ok(format!(
+        "{}.narinfo",
+        &Path::new(path)
+            .file_name()
+            .ok_or("invalid path")?
+            .to_str()
+            .ok_or("invalid path")?[..32]
+    ))
 }
 
 pub(crate) fn normal_keys(nix: &Path, publisher: &str) -> Result<Vec<String>, String> {
@@ -344,6 +431,61 @@ fn verify(nix: &Path, keys: &[String], paths: &[String], signatures: bool) -> Re
     Ok(())
 }
 
+/// Content already on the device needs no archive and no upstream lookup
+/// (owner decision 2026-11-05). Every closure path outside `excluded` must be
+/// valid locally and carry a signature from a normal trusted key or from the
+/// publisher key. Korri checks each signature over the local fingerprint, then
+/// Nix verifies contents and signatures with only those keys, without any
+/// substituter. `false` means a path is missing or carries no such signature:
+/// the caller then takes the per-path import route, which reads upstream.
+pub(crate) fn verify_present(
+    nix: &Path,
+    root: &Path,
+    key: &str,
+    upstream: &Upstream,
+    excluded: &BTreeSet<PathBuf>,
+    forbidden: &BTreeSet<PathBuf>,
+) -> Result<bool, String> {
+    package::validate_store_path(root)?;
+    if !root.exists() {
+        return Ok(false);
+    }
+    // A directory that Nix does not list as valid is not present content.
+    let Ok(snapshot) = package::StoreSnapshot::query(nix, &[root]) else {
+        return Ok(false);
+    };
+    let publisher = vec![key.to_owned()];
+    let trusted = upstream.trusted_keys(nix, key)?;
+    let mut queue = vec![root.to_path_buf()];
+    let mut seen = BTreeSet::new();
+    let mut shared = Vec::new();
+    let mut private = Vec::new();
+    while let Some(path) = queue.pop() {
+        if forbidden.contains(&path) {
+            return Err("required plugin closure contains its parent".into());
+        }
+        if !seen.insert(path.clone()) || excluded.contains(&path) {
+            continue;
+        }
+        if seen.len() > archive::MAX_ENTRY_COUNT {
+            return Err("package closure exceeds archive entry bound".into());
+        }
+        let text = path.to_str().ok_or("invalid path")?.to_owned();
+        let info = snapshot.info(&path)?;
+        if signed(&text, info, &trusted)? {
+            shared.push(text);
+        } else if signed(&text, info, &publisher)? {
+            private.push(text);
+        } else {
+            return Ok(false);
+        }
+        queue.extend(info.references.iter().map(PathBuf::from));
+    }
+    verify(nix, &trusted, &shared, true)?;
+    verify(nix, &publisher, &private, true)?;
+    Ok(true)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum SharedAuthority {
     LocalSignature,
@@ -480,6 +622,11 @@ fn acquire(
     excluded: &BTreeSet<PathBuf>,
     forbidden: &BTreeSet<PathBuf>,
 ) -> Result<(), String> {
+    if matches!(source, PrivateSource::Local)
+        && verify_present(nix, root, key, upstream, excluded, forbidden)?
+    {
+        return Ok(());
+    }
     let publisher = vec![key.to_owned()];
     let trusted = upstream.trusted_keys(nix, key)?;
     let mut queue = vec![root.to_string_lossy().into_owned()];
@@ -488,95 +635,105 @@ fn acquire(
     let mut private = Vec::new();
     let mut adopt = Vec::new();
     let mut expected = BTreeMap::new();
-    while let Some(path) = queue.pop() {
-        if forbidden.contains(Path::new(&path)) {
-            return Err("required plugin closure contains its parent".into());
-        }
-        if !seen.insert(path.clone()) || excluded.contains(Path::new(&path)) {
-            continue;
-        }
-        if seen.len() > archive::MAX_ENTRY_COUNT {
-            return Err("package closure exceeds archive entry bound".into());
-        }
-        let local = if Path::new(&path).exists() {
-            Some(package::path_info(nix, &path, None)?)
-        } else {
-            None
-        };
-        let supplied = source.info(nix, &path, &local)?;
-        let remote = upstream.info(&path).map_err(|error| {
-            let missing = match source {
-                PrivateSource::Archive { uri, paths } => paths
-                    .iter()
-                    .filter_map(|p| package::path_info(nix, p, Some(uri)).ok())
-                    .flat_map(|i| i.references)
-                    .filter(|p| !paths.contains(p) && !Path::new(p).exists())
-                    .collect::<BTreeSet<_>>()
-                    .len(),
-                _ => supplied.as_ref().map_or(0, |info| {
-                    info.references
-                        .iter()
-                        .filter(|p| !Path::new(p).exists())
-                        .count()
-                }),
-            };
-            unavailable(missing, &error)
-        })?;
-        let info = if let Some(remote) = remote {
-            if let Some(copy) = &supplied {
-                match source {
-                    PrivateSource::Archive { .. } => {
-                        return Err(format!(
-                            "{path} is served by {UPSTREAM}; the archive must not supply it"
-                        ))
-                    }
-                    PrivateSource::Cache(_)
-                        if !signed(&path, copy, &trusted)?
-                            && !upstream_match(&path, copy, &remote, &trusted)? =>
-                    {
-                        return Err(format!("{path} is served by {UPSTREAM}; a publisher-signed cache copy cannot supply an upstream path"));
-                    }
-                    _ => {}
-                }
+    while !queue.is_empty() {
+        // Each wave's upstream metadata is fetched concurrently before the
+        // per-path checks below read it from `upstream`. A failed prefetch
+        // records nothing: `info` then fails closed for that path alone.
+        let wave = std::mem::take(&mut queue);
+        let _ = upstream.prefetch(
+            wave.iter()
+                .filter(|p| !seen.contains(*p) && !excluded.contains(Path::new(p))),
+        );
+        for path in wave {
+            if forbidden.contains(Path::new(&path)) {
+                return Err("required plugin closure contains its parent".into());
             }
-            let info = if let Some(local) = local {
-                shared_authority(&path, &local, &remote, &trusted)?;
-                local
+            if !seen.insert(path.clone()) || excluded.contains(Path::new(&path)) {
+                continue;
+            }
+            if seen.len() > archive::MAX_ENTRY_COUNT {
+                return Err("package closure exceeds archive entry bound".into());
+            }
+            let local = if Path::new(&path).exists() {
+                Some(package::path_info(nix, &path, None)?)
             } else {
-                if !signed(&path, &remote, &trusted)? {
-                    return Err(format!(
-                        "{path} is not signed by a normal trusted NixOS cache key"
-                    ));
-                }
-                remote
+                None
             };
-            shared.push(path.clone());
-            info
-        } else {
-            let info = supplied.or_else(|| local.clone()).ok_or_else(|| {
-                format!("archive plus {UPSTREAM} do not complete the closure: missing {path}")
+            let supplied = source.info(nix, &path, &local)?;
+            let remote = upstream.info(&path).map_err(|error| {
+                let missing = match source {
+                    PrivateSource::Archive { uri, paths } => paths
+                        .iter()
+                        .filter_map(|p| package::path_info(nix, p, Some(uri)).ok())
+                        .flat_map(|i| i.references)
+                        .filter(|p| !paths.contains(p) && !Path::new(p).exists())
+                        .collect::<BTreeSet<_>>()
+                        .len(),
+                    _ => supplied.as_ref().map_or(0, |info| {
+                        info.references
+                            .iter()
+                            .filter(|p| !Path::new(p).exists())
+                            .count()
+                    }),
+                };
+                unavailable(missing, &error)
             })?;
-            if !signed(&path, &info, &publisher)? {
-                return Err(format!("{path} is not signed by the publisher key"));
-            }
-            if let Some(local) = local {
-                if package::fingerprint(&path, &local)? != package::fingerprint(&path, &info)? {
-                    return Err(format!(
-                        "{path} local NAR differs from its authorized cache"
-                    ));
+            let info = if let Some(remote) = remote {
+                if let Some(copy) = &supplied {
+                    match source {
+                        PrivateSource::Archive { .. } => {
+                            return Err(format!(
+                                "{path} is served by {UPSTREAM}; the archive must not supply it"
+                            ))
+                        }
+                        PrivateSource::Cache(_)
+                            if !signed(&path, copy, &trusted)?
+                                && !upstream_match(&path, copy, &remote, &trusted)? =>
+                        {
+                            return Err(format!("{path} is served by {UPSTREAM}; a publisher-signed cache copy cannot supply an upstream path"));
+                        }
+                        _ => {}
+                    }
                 }
-                // The same bytes may already exist under another signer, for
-                // example a local build. The publisher signed this exact
-                // fingerprint, so retain its signature instead of refusing.
-                if !signed(&path, &local, &publisher)? {
-                    adopt.push(path.clone());
+                let info = if let Some(local) = local {
+                    shared_authority(&path, &local, &remote, &trusted)?;
+                    local
+                } else {
+                    if !signed(&path, &remote, &trusted)? {
+                        return Err(format!(
+                            "{path} is not signed by a normal trusted NixOS cache key"
+                        ));
+                    }
+                    remote
+                };
+                shared.push(path.clone());
+                info
+            } else {
+                let info = supplied.or_else(|| local.clone()).ok_or_else(|| {
+                    format!("archive plus {UPSTREAM} do not complete the closure: missing {path}")
+                })?;
+                if !signed(&path, &info, &publisher)? {
+                    return Err(format!("{path} is not signed by the publisher key"));
                 }
-            }
-            private.push(path.clone());
-            info
-        };
-        expected.insert(path.clone(), package::fingerprint(&path, &info)?);
-        queue.extend(info.references);
+                if let Some(local) = local {
+                    if package::fingerprint(&path, &local)? != package::fingerprint(&path, &info)? {
+                        return Err(format!(
+                            "{path} local NAR differs from its authorized cache"
+                        ));
+                    }
+                    // The same bytes may already exist under another signer, for
+                    // example a local build. The publisher signed this exact
+                    // fingerprint, so retain its signature instead of refusing.
+                    if !signed(&path, &local, &publisher)? {
+                        adopt.push(path.clone());
+                    }
+                }
+                private.push(path.clone());
+                info
+            };
+            expected.insert(path.clone(), package::fingerprint(&path, &info)?);
+            queue.extend(info.references);
+        }
     }
     invocation(nix, &upstream.uri()?, &trusted, &shared, true).map_err(|error| {
         unavailable(

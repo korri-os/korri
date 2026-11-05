@@ -408,6 +408,9 @@ impl Host {
         if self.acquiring.borrow().len() > crate::dependencies::MAX_PLUGINS {
             return Err("too many required plugins".into());
         }
+        if let Some(package) = self.fetch_present_record(config, source, record)? {
+            return Ok(package);
+        }
         let stage = self.state.staging()?;
         let archive_path = stage.path().join("archive.tar");
         repository::download(
@@ -566,14 +569,29 @@ impl Host {
         if record.is_some_and(|(_, r)| r.public_key.is_some()) && !signed {
             return Err("catalog publicKey requires an in-archive signature".into());
         }
+        self.admit_candidate(&package, record, key, signed, sideload_digest)
+    }
+
+    /// Record a verified package as this request's candidate, with the
+    /// provenance and publisher state that its approval binds.
+    fn admit_candidate(
+        &self,
+        package: &Path,
+        record: Option<(&SourceUrl, &crate::catalog::CatalogRecord)>,
+        key: Option<&str>,
+        signed: bool,
+        sideload_digest: Option<String>,
+    ) -> Result<PathBuf, Refusal> {
+        let namespace = package::manifest_namespace(package)?;
+        let pins = self.pins()?;
         let publisher = crate::trust::inspect(
             &namespace,
             signed.then_some(key).flatten(),
             &self.publishers,
             &pins,
         )?;
-        let platform = if package::architecture_independent(&package)?
-            && package::no_references(&self.nix, &package)?
+        let platform = if package::architecture_independent(package)?
+            && package::no_references(&self.nix, package)?
         {
             "any"
         } else {
@@ -601,8 +619,66 @@ impl Host {
         };
         self.candidates
             .borrow_mut()
-            .insert(package.clone(), (provenance, publisher));
-        Ok(package)
+            .insert(package.to_path_buf(), (provenance, publisher));
+        Ok(package.to_path_buf())
+    }
+
+    /// A signed record whose exact package and complete closure are already
+    /// valid here with trusted local signatures needs neither its archive nor
+    /// cache.nixos.org (owner decision 2026-11-05). `None` means the caller
+    /// takes the normal download route. The approval is still computed from
+    /// this exact, locally verified package.
+    fn fetch_present_record(
+        &self,
+        config: &Configuration,
+        source: &SourceUrl,
+        record: &crate::catalog::CatalogRecord,
+    ) -> Result<Option<PathBuf>, Refusal> {
+        let package = PathBuf::from(&record.store_path);
+        package::validate_store_path(&package)?;
+        let Some(key) = record.public_key.as_deref() else {
+            return Ok(None);
+        };
+        if !package.exists() {
+            return Ok(None);
+        }
+        let Ok(info) = package::path_info(&self.nix, &record.store_path, None) else {
+            return Ok(None);
+        };
+        if !crate::slim::signed(&record.store_path, &info, &[key.to_owned()])? {
+            return Ok(None);
+        }
+        let namespace = package::manifest_namespace(&package)?;
+        crate::trust::inspect(&namespace, Some(key), &self.publishers, &self.pins()?)?;
+        let requires = package::manifest_requires(&package)?;
+        if requires.iter().any(|required| !required.exists()) {
+            return Ok(None);
+        }
+        storage::root_link(&self.paths.roots.join("download"), &package)?;
+        let mut excluded = BTreeSet::new();
+        for required in requires {
+            self.acquire_exact_for_slim(config, Some(source), None, &required, &package)?;
+            excluded.extend(
+                package::StoreSnapshot::query(&self.nix, &[&required])?.closure(&required)?,
+            );
+        }
+        if excluded.contains(&package) {
+            return Err("required plugin closure contains its parent".into());
+        }
+        let upstream = self.shared_cache(config)?;
+        if !crate::slim::verify_present(
+            &self.nix,
+            &package,
+            key,
+            &upstream,
+            &excluded,
+            &BTreeSet::new(),
+        )? {
+            return Ok(None);
+        }
+        self.pin_candidate(&package)?;
+        self.admit_candidate(&package, Some((source, record)), Some(key), true, None)
+            .map(Some)
     }
 
     fn shared_cache(&self, config: &Configuration) -> Result<crate::slim::Upstream, Refusal> {
