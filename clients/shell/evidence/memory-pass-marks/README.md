@@ -28,6 +28,13 @@ moves; Zone's definition stays compiled while Pico shows):
 | 0. before | 94 613 | 100 263 | 110 406 | `large-10000-step0.txt` |
 | 1. lowered unit shrunk to fit | 91 078 | 95 617 | 104 548 | `large-10000-step1-shrink.txt` |
 | 2. + compiler-only tables dropped | 79 805 | 84 313 | 93 349 | `large-10000.txt` |
+| 3. + `dist` build, desktop portal reader off | 80 297 | 85 323 | 94 385 | `large-10000-step3-dist.txt` |
+
+Steps 0-2 ran the release binary from the target directory; step 3 a
+settled copy of the `dist` binary. The same step-2 source, settled, measured
+Zone 90 274-90 526 and Pico 98 774-98 922 after moves (file-backed 22.9-23.0
+MB): a freshly linked file maps fewer pages, so the step 0-2 file-backed
+figures are low.
 
 fps at step 2: 61.0-62.4 in every 5 s window (`large-10000-fps.txt`).
 
@@ -35,8 +42,12 @@ Step 2 split by kind (`smaps_rollup`, `rollup-*.txt`):
 
 | after moves | PSS | anonymous | file-backed | shmem |
 | --- | --- | --- | --- | --- |
-| Zone | 84 481 | 66 564 | 17 317 | 600 |
-| Pico | 93 509 | 75 408 | 17 501 | 600 |
+| Zone, step 2 (fresh file) | 84 481 | 66 564 | 17 317 | 600 |
+| Pico, step 2 (fresh file) | 93 509 | 75 408 | 17 501 | 600 |
+| Zone, step 2 (settled copy) | 90 274 | 66 768 | 22 906 | 600 |
+| Pico, step 2 (settled copy) | 98 774 | 75 236 | 22 938 | 600 |
+| Zone, step 3 (`dist`, settled) | 85 464 | 66 548 | 18 316 | 600 |
+| Pico, step 3 (`dist`, settled) | 94 536 | 75 492 | 18 444 | 600 |
 
 The file-backed part is almost all the binary's code (shared, clean,
 reclaimable). The anonymous part is the heap: Zone's compiled definition, the
@@ -66,8 +77,19 @@ used.
 | lowering twice, keep the second | no change | |
 | jemalloc | 123 MB | returns memory only after a delay |
 | mimalloc (purge delay 0) | 80.7 MB after compile | worse than glibc (67.8 MB) |
+| per-package lowering threads (own arenas), real shell, after moves | Zone anon 71.1, Pico 79.8 MB (kept); Pico 76.3 (not kept) | worse than one arena (66.8 / 75.2) |
+| jemalloc, decay 0 (one arena / default), real shell, after moves | Zone anon 67.7-69.8, Pico 72.2-74.4 MB | at most 3 MB on Pico, worse on Zone |
 
 Where Zone's heap still goes (heaptrack, compiled and created, live 31.1 MB):
 bindings (`property_init`, 376 bytes each, 18 580) 9.6 MB, item geometries
 5.3 MB (each a struct literal held as a `BTreeMap` leaf of 11 slots for 4
 fields), other lowered expressions 7.4 MB, the instance about 5.5 MB.
+
+## What the anonymous part holds in Pico after Zone
+
+With Zone's definition kept, the heap holds 49.5 MB live (mallinfo) in Pico.
+Not kept, 25 MB live, yet anonymous PSS only falls 1.6 MB (73.7 MB): Zone's
+freed definition, instance and catalog state leave the heap's pages partly
+used under Pico's. Headless, without the 10 000-game state, dropping Zone's
+views does return 29 MB. The gap is the main heap's fragmentation across a
+surface switch.

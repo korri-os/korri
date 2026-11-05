@@ -142,6 +142,12 @@ and keeps the compiled views until it exits; a later switch back creates the
 surface from them. Zone's compile is most of its load: 0.4 s on a workstation,
 2.6 to 3.6 s on the RG353M.
 
+The shipped binary is Cargo's `dist` profile (`package.nix`): link-time
+optimised in one unit, the Slint compiler optimised for size. Its code is
+mapped into the shell's memory: `.text` 15.7 MB, against 20.1 MB in
+`release`. Measure memory with a `dist` build copied out of the target
+directory (a freshly linked file maps differently).
+
 Each surface's logic runs under three limits (`src/engine.rs`):
 
 | Constant | Value | Covers |

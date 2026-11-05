@@ -48,6 +48,10 @@ pkgs.rustPlatform.buildRustPackage {
   cargoRoot = "clients/shell";
   cargoLock.lockFile = ./Cargo.lock;
 
+  # The shipped binary is the `dist` profile (Cargo.toml); the tests run in release, as
+  # `nix run .#shell-check` does.
+  buildType = "dist";
+  checkType = "release";
   checkFeatures = [ "fixture" ];
   # The credential test needs a filesystem that keeps POSIX modes; the Nix
   # sandbox does. Every test is display-free.

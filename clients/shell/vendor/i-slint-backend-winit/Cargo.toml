@@ -36,6 +36,8 @@ features = [
 rustdoc-args = ["--generate-link-to-definition"]
 
 [features]
+# Off for Korri: the desktop portal settings (D-Bus) are read only with it (vendor/README.md).
+xdg-desktop-settings = []
 accessibility = [
     "dep:accesskit",
     "dep:accesskit_winit",

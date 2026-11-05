@@ -88,6 +88,17 @@ fixture = []
 opt-level = 3
 codegen-units = 4
 
+# The shipped build (package.nix): one code unit, link-time optimised, the compiler (which
+# runs once per package and process) optimised for size. Its mapped code is part of the
+# shell's memory (contract section 4): .text 20.1 MB in release, 17.1 MB here.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+[profile.dist.package.i-slint-compiler]
+opt-level = "s"
+
 [profile.dev.package.rquickjs-sys]
 opt-level = 3
 
