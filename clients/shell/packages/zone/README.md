@@ -46,6 +46,18 @@ bash packages/zone/preview/probe.sh PROBE   # the shell's probe (built surface-p
 nix run .#zone-check                   # the bun checks and logic.js freshness
 ```
 
+## Limits
+
+Each `view()` call runs under the shell's 50 ms budget, and the RG353M at
+408 MHz runs Zone's logic about 28 times slower than an i9-11900H.
+`tests/zone_package.rs` (`view_calls_stay_well_inside_the_budget_on_a_slow_clock`)
+times the calls over 10,000 games at 640x480. On the workstation the
+attract's next game takes about 0.23 ms (about 6 ms on the device; it
+patches the last view), and a move along the band about 0.6 ms (about
+17 ms on the device). The view sends whole cards only for the band's pool
+and the attract's game, and the focus passes walk only the keys that hold
+focus entries.
+
 ## Differences from the web Zone
 
 See the report of the conversion (stage `native-zone`); the lasting ones:
