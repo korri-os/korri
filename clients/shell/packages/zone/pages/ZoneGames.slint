@@ -52,6 +52,10 @@ export component ZoneGames {
     property <length> a: Tokens.a;
     property <bool> has-games: catalog == "Ready" && cards.length > 0;
     shell := ZoneShell {
+        // The attract is opaque from its first frame (the title card's ground)
+        // and leaves at once on a press: while it shows, the page under it
+        // is not drawn (its ground, band and triangles stop animating).
+        visible: !root.attract;
         x: 0;
         y: 0;
         width: root.width;
