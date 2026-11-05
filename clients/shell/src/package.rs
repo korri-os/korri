@@ -107,6 +107,7 @@ pub fn compile(package: &Package) -> Result<Views> {
     let overlay = result.component("Overlay");
     drop(result);
     crate::memory::release_free_heap();
+    crate::memory::release_code();
     Ok(Views {
         surface,
         overlay,

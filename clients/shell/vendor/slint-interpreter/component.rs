@@ -321,11 +321,15 @@ pub fn build_from_document(
     compiler_config: &i_slint_compiler::CompilerConfiguration,
     mut type_loaders: TypeLoaders,
     animation_mode: AnimationMode,
+    retain_type_loaders: bool,
 ) -> Vec<ComponentDefinitionInner> {
     let mut unit =
         i_slint_compiler::llr::lower_to_item_tree::lower_to_item_tree(document, compiler_config);
     if matches!(animation_mode, AnimationMode::Static) {
         make_static(&mut unit);
+    }
+    if !retain_type_loaders {
+        drop_tooling_tables(&mut unit);
     }
     shrink_to_fit(&mut unit);
     let unit = Rc::new(unit);
@@ -339,6 +343,21 @@ pub fn build_from_document(
             type_loaders: type_loaders.clone(),
         })
         .collect()
+}
+
+/// Drop what only the code generators and the tooling read, for a definition that keeps no
+/// type loaders (so it serves no highlighting or live preview): each property's analysis
+/// (`prop_analysis`, read through `EvaluationContext::property_info` by the generators) and
+/// the source locations of the items (`debug_info`, read by `highlight.rs`). The element
+/// infos that `ElementHandle` queries read stay.
+fn drop_tooling_tables(unit: &mut CompilationUnit) {
+    for sub in unit.sub_components.iter_mut() {
+        sub.prop_analysis = Default::default();
+        sub.debug_info = None;
+    }
+    for global in unit.globals.iter_mut() {
+        global.prop_analysis = Default::default();
+    }
 }
 
 /// Give back the spare capacity of the unit's growable containers. Lowering fills them a
@@ -360,7 +379,6 @@ fn shrink_to_fit(unit: &mut CompilationUnit) {
         sub.pre_init_code.shrink_to_fit();
         sub.init_code.shrink_to_fit();
         sub.geometries.shrink_to_fit();
-        sub.prop_analysis.shrink_to_fit();
     }
     unit.sub_components.shrink_to_fit();
     unit.globals.shrink_to_fit();
@@ -509,7 +527,7 @@ pub async fn build_from_source(
         }
     };
     let mut components = std::collections::HashMap::new();
-    for mut def in build_from_document(doc, &config, type_loaders, animation_mode) {
+    for mut def in build_from_document(doc, &config, type_loaders, animation_mode, retain_type_loaders) {
         if !retain_type_loaders {
             def.type_loaders = TypeLoaders::default();
         }
