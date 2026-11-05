@@ -127,7 +127,8 @@ struct Window {
 #[test]
 fn frames_with_the_image_shown_are_not_drawn_and_the_pixels_match_full_redraws() {
     let _ = slint::platform::set_platform(Box::new(Manual));
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/packages/probe/identical.slint");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/packages/probe/identical.slint");
     let result = pollster::block_on(
         slint_interpreter::Compiler::default().build_from_source(SOURCE.into(), path),
     );
