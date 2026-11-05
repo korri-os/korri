@@ -1,0 +1,32 @@
+Nov 05 00:15:56.493619 haku systemd[1]: Started [systemd-run] /run/current-system/sw/bin/sh -c "/tmp/korri-preview/run-shell.sh install --packages /tmp/korri-preview/packages --cache /run/korri-preview/cache && exec /tmp/korri-preview/run-shell.sh --packages /tmp/korri-preview/packages --cache /run/korri-preview/cache --surfaces zone,pico --placement fullscreen --stats".
+Nov 05 00:16:42.805628 haku sh[506965]: pico pass
+Nov 05 00:17:12.306931 haku sh[506965]: zone pass
+Nov 05 00:17:15.936928 haku sh[506960]: Error watching for xdg desktop settings: Failed to connect to address `unix:path=/run/korri-accept-shell/bus`: No such file or directory (os error 2)
+Nov 05 00:17:16.053769 haku sh[506960]: SHELL_STATS package=zone compile_ms=3269.057 logic_ms=107.676 korrid_ms=8.031 first_frame_ms=3572.093
+Nov 05 00:17:20.926295 haku sh[506960]: SHELL_STATS fps=63.193 frames=316 seconds=5.001 heap_bytes=719591 interval_ms_p50=17.3 p95=19.9 max=122.3
+Nov 05 00:17:25.926487 haku sh[506960]: SHELL_STATS fps=64.795 frames=324 seconds=5.000 heap_bytes=718655 interval_ms_p50=17.3 p95=22.8 max=58.1
+Nov 05 00:17:30.926656 haku sh[506960]: SHELL_STATS fps=69.595 frames=348 seconds=5.000 heap_bytes=718655 interval_ms_p50=17.1 p95=19.1 max=25.4
+Nov 05 00:17:35.926806 haku sh[506960]: SHELL_STATS fps=70.202 frames=351 seconds=5.000 heap_bytes=718655 interval_ms_p50=17.2 p95=19.1 max=25.5
+Nov 05 00:17:40.926252 haku sh[506960]: SHELL_STATS fps=69.402 frames=347 seconds=5.000 heap_bytes=718655 interval_ms_p50=17.2 p95=19.0 max=23.3
+Nov 05 00:17:45.926587 haku sh[506960]: SHELL_STATS fps=68.801 frames=344 seconds=5.000 heap_bytes=718655 interval_ms_p50=17.1 p95=19.0 max=27.8
+Nov 05 00:17:50.926738 haku sh[506960]: SHELL_STATS fps=69.396 frames=347 seconds=5.000 heap_bytes=718655 interval_ms_p50=17.1 p95=19.1 max=29.3
+Nov 05 00:17:55.926051 haku sh[506960]: SHELL_STATS fps=64.407 frames=322 seconds=4.999 heap_bytes=717119 interval_ms_p50=17.3 p95=22.3 max=78.8
+Nov 05 00:18:00.926837 haku sh[506960]: SHELL_STATS fps=63.795 frames=319 seconds=5.000 heap_bytes=717119 interval_ms_p50=17.8 p95=24.5 max=74.7
+Nov 05 00:18:05.927259 haku sh[506960]: SHELL_STATS fps=62.195 frames=311 seconds=5.000 heap_bytes=717119 interval_ms_p50=18.0 p95=31.6 max=60.4
+Nov 05 00:18:10.927314 haku sh[506960]: SHELL_STATS fps=61.791 frames=309 seconds=5.001 heap_bytes=717119 interval_ms_p50=18.0 p95=32.1 max=47.9
+Nov 05 00:18:15.927862 haku sh[506960]: SHELL_STATS fps=61.400 frames=307 seconds=5.000 heap_bytes=717977 interval_ms_p50=18.0 p95=28.2 max=63.2
+Nov 05 00:18:20.927257 haku sh[506960]: SHELL_STATS fps=64.206 frames=321 seconds=5.000 heap_bytes=718700 interval_ms_p50=18.3 p95=24.2 max=45.8
+Nov 05 00:18:25.935257 haku sh[506960]: SHELL_STATS fps=64.694 frames=324 seconds=5.008 heap_bytes=719423 interval_ms_p50=17.9 p95=25.6 max=79.4
+Nov 05 00:18:30.938312 haku sh[506960]: SHELL_STATS fps=65.588 frames=328 seconds=5.001 heap_bytes=719423 interval_ms_p50=18.0 p95=20.7 max=56.7
+Nov 05 00:18:35.937454 haku sh[506960]: SHELL_STATS fps=62.783 frames=314 seconds=5.001 heap_bytes=720146 interval_ms_p50=17.9 p95=28.5 max=64.8
+Nov 05 00:18:40.938648 haku sh[506960]: SHELL_STATS fps=60.589 frames=303 seconds=5.001 heap_bytes=720869 interval_ms_p50=18.1 p95=31.1 max=55.8
+Nov 05 00:18:45.973656 haku sh[506960]: SHELL_STATS fps=60.970 frames=307 seconds=5.035 heap_bytes=721576 interval_ms_p50=18.1 p95=27.7 max=50.8
+Nov 05 00:18:49.035199 haku sh[506960]: SHELL_STATS package=pico compile_ms=829.712 logic_ms=111.889 korrid_ms=7.733 first_frame_ms=1073.631
+Nov 05 00:18:50.975059 haku sh[506960]: SHELL_STATS fps=41.590 frames=208 seconds=5.001 heap_bytes=1091027 interval_ms_p50=16.9 p95=22.0 max=1033.9
+Nov 05 00:18:55.974910 haku sh[506960]: SHELL_STATS fps=49.403 frames=247 seconds=5.000 heap_bytes=1091027 interval_ms_p50=21.3 p95=22.2 max=23.6
+Nov 05 00:19:00.974976 haku sh[506960]: SHELL_STATS fps=48.796 frames=244 seconds=5.000 heap_bytes=1091027 interval_ms_p50=21.6 p95=22.4 max=26.7
+Nov 05 00:19:05.975847 haku sh[506960]: SHELL_STATS fps=49.593 frames=248 seconds=5.001 heap_bytes=1091027 interval_ms_p50=21.1 p95=22.2 max=24.4
+Nov 05 00:19:10.975516 haku sh[506960]: SHELL_STATS fps=50.005 frames=250 seconds=5.000 heap_bytes=1091027 interval_ms_p50=20.7 p95=22.2 max=25.9
+Nov 05 00:19:15.977000 haku sh[506960]: SHELL_STATS fps=50.583 frames=253 seconds=5.002 heap_bytes=1091027 interval_ms_p50=20.6 p95=22.2 max=28.8
+Nov 05 00:19:20.978783 haku sh[506960]: SHELL_STATS fps=48.185 frames=241 seconds=5.002 heap_bytes=1091027 interval_ms_p50=21.7 p95=22.4 max=25.2
+Nov 05 00:19:25.978414 haku sh[506960]: SHELL_STATS fps=51.397 frames=257 seconds=5.000 heap_bytes=1091027 interval_ms_p50=20.3 p95=22.1 max=24.5
