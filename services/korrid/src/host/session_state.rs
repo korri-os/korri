@@ -332,6 +332,9 @@ pub struct HostSessionControl {
     /// One process-local focus observation for the accepted exact launch.
     /// The journal deliberately contains no historical screen ownership.
     initial_handoff: Arc<Mutex<Option<(String, InitialHandoff)>>>,
+    /// When the exact launch's unit started, until its window is observed.
+    /// Feeds the LaunchHandoff journal line.
+    handoff_since: Arc<Mutex<Option<(String, std::time::Instant)>>>,
     /// Required to prove that an exact launch owns focus before Game input can
     /// return. Absence is a product-path focus failure, never implicit success.
     compositor: Option<Arc<dyn CompositorControl>>,
@@ -402,6 +405,7 @@ impl HostSessionControl {
             seat_lease: Arc::new(Mutex::new(None)),
             recovered_overlay_intent: Arc::new(Mutex::new(None)),
             initial_handoff: Arc::new(Mutex::new(None)),
+            handoff_since: Arc::new(Mutex::new(None)),
             compositor: None,
             placement_applied: Arc::new(Mutex::new(None)),
             display_content: Arc::new(Mutex::new(Vec::new())),
@@ -863,6 +867,14 @@ impl HostSessionControl {
             if exact == launch_id {
                 *phase = InitialHandoff::Observed;
             }
+        }
+        let since = self
+            .handoff_since
+            .lock()
+            .expect("handoff mutex poisoned")
+            .take_if(|(exact, _)| exact == launch_id);
+        if let Some((_, since)) = since {
+            eprintln!("{}", handoff_line(launch_id, since.elapsed()));
         }
     }
 
@@ -2469,6 +2481,8 @@ impl HostSessionControl {
                     .lock()
                     .expect("initial handoff mutex poisoned") =
                     Some((launch_id.clone(), InitialHandoff::Waiting));
+                *self.handoff_since.lock().expect("handoff mutex poisoned") =
+                    Some((launch_id.clone(), std::time::Instant::now()));
                 *state = active_from_observed(observed, launch_id.clone(), Some(game_id.into()));
                 if let Err(message) = self.reconcile_portal(&state) {
                     let _ = self.record_focus_failure(
@@ -2489,6 +2503,8 @@ impl HostSessionControl {
                     .lock()
                     .expect("initial handoff mutex poisoned") =
                     Some((launch_id.clone(), InitialHandoff::Waiting));
+                *self.handoff_since.lock().expect("handoff mutex poisoned") =
+                    Some((launch_id.clone(), std::time::Instant::now()));
                 let _ = seat_lease.stop(&launch_id);
                 *state = ActiveState::Stopping {
                     launch_id,
@@ -3576,6 +3592,16 @@ impl HostSessionControl {
 /// a freezer transition is tracked as `Frozen`: its processes may not be
 /// scheduled, and the next freeze or thaw request re-reads the unit before
 /// acting.
+/// From the exact launch's unit start to the first compositor observation of
+/// its window owning focus. korrid sees the window, not a presented frame,
+/// and observes it on status reads and the portal watch, about once a second.
+fn handoff_line(launch_id: &str, elapsed: std::time::Duration) -> String {
+    format!(
+        "<6>korrid: LaunchHandoff {{ launch_id: {launch_id}, unit_start_to_window_ms: {} }}",
+        elapsed.as_millis()
+    )
+}
+
 fn active_from_observed(
     observed: LaunchUnitState,
     launch_id: String,
@@ -3757,6 +3783,14 @@ fn recovery_blocked_failure() -> RpcFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn handoff_line_names_the_launch_and_the_time_to_its_window() {
+        assert_eq!(
+            handoff_line("launch-1", std::time::Duration::from_millis(6830)),
+            "<6>korrid: LaunchHandoff { launch_id: launch-1, unit_start_to_window_ms: 6830 }"
+        );
+    }
     use crate::host::play_log::PlayEntry;
     use std::{
         os::unix::fs::PermissionsExt,
