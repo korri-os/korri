@@ -78,7 +78,7 @@ assert c.systemd.services.korrid.environment.KORRID_SHELL_FREEZER_ENABLED == "tr
 # No credential is exposed through the environment.
 assert lib.hasInfix "/bin/korri-shell " shell.serviceConfig.ExecStart;
 assert lib.hasInfix " --installed " shell.serviceConfig.ExecStart;
-assert shell.serviceConfig.User == "korri-portal";
+assert shell.serviceConfig.User == "korri-shell";
 assert shell.serviceConfig.NoNewPrivileges;
 assert shell.serviceConfig.ProtectSystem == "strict";
 assert shell.serviceConfig.PrivateTmp;
@@ -91,7 +91,7 @@ assert shell.environment.KORRID_SHELL_ORIGIN == c.systemd.services.korrid.enviro
 assert shell.environment.WAYLAND_DISPLAY == compositor.environment.KORRI_WAYLAND_DISPLAY;
 assert
   shell.serviceConfig.BindReadOnlyPaths == [
-    "/run/user/1000/korri-wayland:/run/korri-portal/korri-wayland"
+    "/run/user/1000/korri-wayland:/run/korri-shell/korri-wayland"
   ];
 assert lib.elem "korri-compositor.service" shell.requires;
 assert lib.elem "korrid.service" shell.requires;

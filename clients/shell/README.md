@@ -13,13 +13,37 @@ korri-shell install --packages DIR [--cache DIR]   # verify every package, write
 korri-shell verify PACKAGE_DIR                     # one summary as JSON
 ```
 
-Environment, as for `clients/linux`: `KORRID_ADDRESS` (127.0.0.1:PORT),
-`KORRID_PORTAL_ORIGIN`, and `CREDENTIALS_DIRECTORY/KORRID_RPC_CAPABILITY`
-(private to the user). The shell refuses to run as root and never writes the
-capability or port to a file, URL or log. F2 or L1+R1 switches to the next surface.
+Environment: `KORRID_ADDRESS` (127.0.0.1:PORT), `KORRID_SHELL_ORIGIN` (the
+Origin korrid accepts from its surface host), and
+`CREDENTIALS_DIRECTORY/KORRID_RPC_CAPABILITY` (private to the user). The shell
+refuses to run as root and never writes the capability or port to a file, URL
+or log. F2 or L1+R1 switches to the next surface.
 
 Nix: `nix run .#shell-check` (fmt, clippy, tests), `nix run .#shell-run`,
 `nix run .#shell-proof`, `nix build .#korri-shell`.
+
+## Device migration: the `korri-shell` user (2026-11)
+
+The shell runs as the system user `korri-shell`, with its state in
+`/var/lib/korri-shell` and `/run/korri-shell`. Devices installed before this
+change ran it as `korri-portal`. Korri reads no old name. Each such device
+needs one run of `migrate-shell-user.sh`, in this order:
+
+1. Update the device to a system generation that contains this change, with
+   the device's normal update path. The switch starts `korri-shell.service` as
+   `korri-shell` with a new, empty home. NixOS normally deletes the old
+   account at the switch; its files keep the old numeric owner.
+2. Copy `migrate-shell-user.sh` to the device and run it as root. It stops
+   the shell, moves `/var/lib/korri-portal` to `/var/lib/korri-shell` (the
+   empty home goes to `/var/lib/korri-shell.before-migration`), gives every
+   file the old account owned on the root filesystem to `korri-shell`,
+   removes `/run/korri-portal`, deletes the old user and group if they still
+   exist, and starts the shell again. A second run finds nothing to do.
+3. Check: `systemctl show korri-shell -p User` prints `User=korri-shell`,
+   `getent passwd korri-portal` prints nothing, and the screen shows the shell.
+   Then remove `/var/lib/korri-shell.before-migration`.
+
+A device installed after this change needs no migration.
 
 ## Package
 
@@ -31,7 +55,7 @@ previews and walks its focus at five sizes.
 `globalThis.surface = { displays?, preferences, init, update, view, overlay? }`.
 `displays` is `"main"` (the default when absent) or `"all"`; the shell passes
 it in `app.surface.declare` and korrid publishes `model.displays` only for
-`"all"`. Zone declares `"main"`, Pico `"all"`, as the portal registry does.
+`"all"`. Zone declares `"main"`, Pico `"all"`.
 
 ## Focus plan
 
@@ -131,7 +155,7 @@ direction against the drawn geometry (section 8.3).
 
 Only one shell window is mapped at a time: the Surface, or the Overlay during
 the gameplay overlay. korrid places the one window owned by the processes of
-the unit named in `KORRID_PORTAL_UNIT`, so the shell must run as that unit.
+the unit named in `KORRID_SHELL_UNIT`, so the shell must run as that unit.
 During a switch the new surface's window is mapped until its first frame, then
 the old one is removed.
 

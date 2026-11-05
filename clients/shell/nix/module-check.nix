@@ -73,27 +73,27 @@ assert daemon.environment.KORRID_SHELL_FREEZER_ENABLED == "false";
 assert (daemon.serviceConfig.ExecStopPost or [ ]) == [ ];
 assert !(lib.hasInfix "korri-shell" enabled.security.polkit.extraConfig);
 # The isolated account: a system user with no groups, never root.
-assert enabled.users.users.korri-portal.isSystemUser;
-assert enabled.users.users.korri-portal.uid == null;
-assert enabled.users.users.korri-portal.extraGroups == [ ];
-assert service.serviceConfig.User == "korri-portal";
-assert service.serviceConfig.Group == "korri-portal";
+assert enabled.users.users.korri-shell.isSystemUser;
+assert enabled.users.users.korri-shell.uid == null;
+assert enabled.users.users.korri-shell.extraGroups == [ ];
+assert service.serviceConfig.User == "korri-shell";
+assert service.serviceConfig.Group == "korri-shell";
 assert service.serviceConfig.NoNewPrivileges;
 # Input only through korrid: no device nodes, no input-group membership.
 assert service.serviceConfig.PrivateDevices;
 assert !(service.serviceConfig ? DeviceAllow);
 assert !(service.serviceConfig ? SupplementaryGroups);
 assert service.serviceConfig.KillMode == "control-group";
-assert service.serviceConfig.RuntimeDirectory == "korri-portal";
+assert service.serviceConfig.RuntimeDirectory == "korri-shell";
 assert service.serviceConfig.RuntimeDirectoryMode == "0700";
 assert lib.hasPrefix "+" service.serviceConfig.ExecStartPre;
 assert
   service.serviceConfig.BindReadOnlyPaths == [
-    "/run/user/1001/korri-wayland:/run/korri-portal/korri-wayland"
+    "/run/user/1001/korri-wayland:/run/korri-shell/korri-wayland"
   ];
-assert service.environment.XDG_RUNTIME_DIR == "/run/korri-portal";
+assert service.environment.XDG_RUNTIME_DIR == "/run/korri-shell";
 assert service.environment.WAYLAND_DISPLAY == "korri-wayland";
-assert service.environment.HOME == "/var/lib/korri-portal";
+assert service.environment.HOME == "/var/lib/korri-shell";
 assert !(service.environment ? DBUS_SESSION_BUS_ADDRESS);
 assert !(service.environment ? KORRID_RPC_CAPABILITY);
 assert !(daemon.environment ? KORRID_RPC_CAPABILITY);
@@ -136,7 +136,7 @@ assert builtins.elem "pico,zone" argv;
 assert
   builtins.elem "zone,pico" (lib.splitString " " started.systemd.services.korri-shell.serviceConfig.ExecStart);
 pkgs.runCommand "korri-shell-module-check" { } ''
-  grep -F 'User=korri-portal' ${pkgs.writeText "korri-shell.service" unit}
+  grep -F 'User=korri-shell' ${pkgs.writeText "korri-shell.service" unit}
   grep -F 'Restart=on-failure' ${pkgs.writeText "korri-shell.service" unit}
   # Build-time install: one passing summary per package and the index.
   test -s ${installed}/cache/index.json

@@ -420,7 +420,7 @@ mod tests {
         assert!(run(retired).is_err());
         assert!(run(vec![
             "--action-user".into(),
-            "korri-portal".into(),
+            "korri-shell".into(),
             "revoke".into()
         ])
         .is_err());

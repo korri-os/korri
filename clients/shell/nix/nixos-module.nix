@@ -16,7 +16,7 @@ let
   compositor = config.systemd.services.korri-compositor;
   display = compositor.environment.KORRI_WAYLAND_DISPLAY;
   system = pkgs.stdenv.hostPlatform.system;
-  user = "korri-portal";
+  user = "korri-shell";
   group = user;
   home = "/var/lib/${user}";
   runtimeDir = "/run/${user}";

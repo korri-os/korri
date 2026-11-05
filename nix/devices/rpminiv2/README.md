@@ -444,7 +444,7 @@ Then verify on the device:
    unbound in this first milestone; they must not produce a shell keyboard
    shortcut or a second controller. Exercise both analog triggers through their
    full travel.
-3. The shell runs as `korri-portal`, never root, with no device nodes:
+3. The shell runs as `korri-shell`, never root, with no device nodes:
    `systemctl show korri-shell -p User -p PrivateDevices` and no
    `/dev/input` entry in `ls -l /proc/$(systemctl show -P MainPID korri-shell)/fd`.
 4. Use the controller continuously for more than five minutes. The OLED must
