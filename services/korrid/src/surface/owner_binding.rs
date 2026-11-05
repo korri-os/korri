@@ -84,6 +84,7 @@ pub fn owner_binding_status(
             kicker: "Approve in your signer".into(),
             detail: Some("Choose the same person key as your other Korri devices and approve this device's owner binding.".into()),
             progress: None,
+            steps: None,
             actions: None,
             decline_action_id: None,
             game_id: None,

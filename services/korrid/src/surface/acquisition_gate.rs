@@ -146,6 +146,7 @@ pub fn acquiring_status(
             kicker,
             detail,
             progress,
+            steps: None,
             // Back is the cancel on offer, as the portal's Back was.
             decline_action_id: actions
                 .as_ref()
@@ -277,6 +278,7 @@ impl AcquisitionGate {
             kicker,
             detail: Some(detail.into()),
             progress: None,
+            steps: None,
             actions: None,
             decline_action_id: None,
             game_id: Some(launch.game.surface_id.clone()),
@@ -290,6 +292,7 @@ impl AcquisitionGate {
                     kicker: format!("Starting {}…", launch.game.title),
                     detail: Some("Checking what it needs".into()),
                     progress: None,
+                    steps: None,
                     decline_action_id: Some(cancel.id.clone()),
                     actions: Some(vec![cancel]),
                     game_id: Some(launch.game.surface_id.clone()),

@@ -303,3 +303,20 @@ a user would expect and that every design follows intrinsic design values."
   on the device.
 - The RG353M's 61 % CPU default is removed (owner: "the artificial cap was a
   mistake in the first place").
+
+## 10. Amendment A4 (owner, 2026-11-05): honest launch progress as named steps
+
+- `SurfaceStatus::Busy` gains one optional field, `steps?: SurfaceSteps`,
+  with `SurfaceSteps { labels: string[], current: number }`.
+- `labels` are the launch's steps in order, in plain user-facing words. They
+  list only the steps that really run on this launch.
+- `current` is the zero-based index of the step running now.
+- The list is fixed for the whole launch. Korri never adds or removes a step
+  during a launch. A step that turns out to be unneeded completes at once.
+- A surface renders it under Busy's kicker, in its own visual language: a
+  segmented bar with one segment per step (done, current and pending can be
+  told apart), and "Step i of n · <current label>". The bar shrinks with its
+  container, and the text wraps or elides; it never clips.
+- Grounding: korrid's launch timeline (`services/korrid/src/launch_timeline.rs`)
+  names the stages a launch passes through; the steps are those stages, as
+  the person sees them.

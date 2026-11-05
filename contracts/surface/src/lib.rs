@@ -97,6 +97,19 @@ pub struct SurfaceProgress {
     pub total: Option<f64>,
 }
 
+/// A launch's steps, named, in order. `labels` lists only the steps that run
+/// on this launch, in plain user-facing words. `current` is the zero-based
+/// index of the step running now. Korri fixes the list when the launch
+/// begins and never adds or removes a step: a step that turns out to be
+/// unneeded completes at once. A surface draws one segment per step.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceSteps {
+    pub labels: Vec<String>,
+    pub current: u32,
+}
+
 /// Where one download stands, wherever it shows: a game's own download and a
 /// store entry being got. Korri fetches one thing at a time, so a download can
 /// wait its turn. Surfaces word both facts themselves.
@@ -549,10 +562,12 @@ pub struct SurfaceSaveSide {
 /// - `Busy`: work is under way. `kicker` is a short, calm headline
 ///   ("Starting…"). `detail` is optional progress detail, never an error code
 ///   or raw output. `progress` is measured progress when the work has a known
-///   position; without it the work has no known end. `actions` are supplied
-///   by the host for this work, such as real cancellation; the surface never
-///   infers cancellation from a label. `gameId` names the game this work
-///   belongs to, when it belongs to exactly one.
+///   position; without it the work has no known end. `steps` names a
+///   launch's steps and the one running now, when the work is a launch.
+///   `actions` are supplied by the host for this work, such as real
+///   cancellation; the surface never infers cancellation from a label.
+///   `gameId` names the game this work belongs to, when it belongs to
+///   exactly one.
 /// - `Confirm`: Korri needs the user's say-so before it does something, such
 ///   as a large download. The surface renders exactly the host's actions and
 ///   reports the chosen one through `RunAction`. `declineActionId` is the id
@@ -585,6 +600,8 @@ pub enum SurfaceStatus {
         detail: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         progress: Option<SurfaceProgress>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        steps: Option<SurfaceSteps>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         actions: Option<Vec<SurfaceAction>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1747,6 +1764,7 @@ mod tests {
                 kicker: "Checking saves…".into(),
                 detail: None,
                 progress: None,
+                steps: None,
                 actions: Some(vec![SurfaceAction::new("saves:cancel", "Cancel", true)]),
                 decline_action_id: Some("saves:cancel".into()),
                 game_id: None,
@@ -1755,6 +1773,23 @@ mod tests {
             json!({"_tag": "Busy", "kicker": "Checking saves…",
                 "actions": [{"id": "saves:cancel", "label": "Cancel", "enabled": true}],
                 "declineActionId": "saves:cancel"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceStatus::Busy {
+                kicker: "Starting Anguna…".into(),
+                detail: None,
+                progress: None,
+                steps: Some(SurfaceSteps {
+                    labels: vec!["Checking saves".into(), "Starting RetroArch".into()],
+                    current: 1,
+                }),
+                actions: None,
+                decline_action_id: None,
+                game_id: None,
+            })
+            .unwrap(),
+            json!({"_tag": "Busy", "kicker": "Starting Anguna…",
+                "steps": {"labels": ["Checking saves", "Starting RetroArch"], "current": 1}})
         );
         let request: SurfaceRequest = serde_json::from_value(json!({
             "_tag": "MoveCatalog",

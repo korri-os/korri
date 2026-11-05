@@ -335,6 +335,7 @@ impl Inner {
                 kicker: kicker.into(),
                 detail: None,
                 progress: None,
+                steps: None,
                 decline_action_id: back.then(|| cancel.id.clone()),
                 actions: {
                     if back {
