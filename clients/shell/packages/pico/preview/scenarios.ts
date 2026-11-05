@@ -80,6 +80,19 @@ export const SCENARIOS: readonly Scenario[] = [
     ref: "PicoHome.page/StartingWithCancel",
     model: withStatus({ _tag: "Busy", kicker: "Starting Hollow…", detail: "Opening your session", gameId: "hollow", actions: [{ id: "cancel", label: "Cancel", enabled: true }] }),
   },
+  {
+    // Amendment A4: a launch's named steps. Written after the cut: no Caliper reference.
+    name: "home-starting-steps",
+    ref: "PicoLaunchStage.organism/Steps",
+    model: withStatus({
+      _tag: "Busy",
+      kicker: "Starting Hollow…",
+      steps: { labels: ["Checking saves", "Downloading", "Getting the game ready", "Starting the game"], current: 2 },
+      gameId: "hollow",
+      actions: [{ id: "cancel-launch", label: "Cancel", enabled: true }],
+      declineActionId: "cancel-launch",
+    }),
+  },
   { name: "home-running", ref: "PicoHome.page/Running", model: withStatus({ _tag: "Running", kicker: "PLAYING", gameId: "hollow" }) },
   {
     name: "home-needs-download",

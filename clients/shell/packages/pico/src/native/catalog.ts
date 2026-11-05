@@ -37,6 +37,9 @@ import {
   type HintView,
   NO_BAR,
   NO_CARD,
+  NO_STEPS,
+  stepsView,
+  type StepsView,
   narrowestArt,
   art,
   mark,
@@ -86,6 +89,7 @@ export interface LaunchStageView {
   readonly kicker: string
   readonly detail: string
   readonly bar: ReturnType<typeof bar>
+  readonly steps: StepsView
   readonly hasCart: boolean
   readonly cart: CartView
   /** "starting", "running" or "paused". */
@@ -234,7 +238,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   let sections: GridSectionView[] = []
   let hero: HeroView = { title: "", subtitle: "", reason: "", chips: [], open: button("OPEN"), resume: [] }
   let shownCard: CardView = NO_CARD
-  let launch: LaunchStageView = { kicker: "", detail: "", bar: NO_BAR, hasCart: false, cart: EMPTY_CART, phase: "starting", actions: [] }
+  let launch: LaunchStageView = { kicker: "", detail: "", bar: NO_BAR, steps: NO_STEPS, hasCart: false, cart: EMPTY_CART, phase: "starting", actions: [] }
   let invites: InviteView[] = []
 
   if (menuOpen) {
@@ -400,8 +404,13 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     launch = {
       kicker: view.kicker,
       detail: view._tag === "Running" ? view.gameTitle ?? "" : view.detail ?? "",
-      // A Busy with no progress keeps the clock meter: every cell lit.
-      bar: view._tag === "Busy" ? (progress === undefined ? { ...NO_BAR, shown: true, cells: 16 } : bar(progress)) : NO_BAR,
+      // A Busy with no progress keeps the clock meter: every cell lit. A
+      // launch's steps are its meter then: a full meter under them would
+      // read as done.
+      bar: view._tag === "Busy"
+        ? (progress !== undefined ? bar(progress) : view.steps === undefined ? { ...NO_BAR, shown: true, cells: 16 } : NO_BAR)
+        : NO_BAR,
+      steps: view._tag === "Busy" ? stepsView(view.steps) : NO_STEPS,
       hasCart: view.cart !== undefined,
       cart: view.cart === undefined ? EMPTY_CART : cartView({ id: view.cart.id, title: view.cart.title, ...(view.cart.artUrl === undefined ? {} : { artUrl: view.cart.artUrl }) }, { band: false }),
       phase: view._tag === "Busy" ? "starting" : view._tag === "Running" ? "running" : "paused",
