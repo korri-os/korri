@@ -327,6 +327,7 @@ pub fn build_from_document(
     if matches!(animation_mode, AnimationMode::Static) {
         make_static(&mut unit);
     }
+    shrink_to_fit(&mut unit);
     let unit = Rc::new(unit);
     // `lower_to_item_tree` builds `public_components` from `exported_roots()`
     // in iteration order, so the indices line up.
@@ -338,6 +339,31 @@ pub fn build_from_document(
             type_loaders: type_loaders.clone(),
         })
         .collect()
+}
+
+/// Give back the spare capacity of the unit's growable containers. Lowering fills them a
+/// push at a time, so each holds up to twice what it needs, for the life of the definition:
+/// Zone's `property_init` lists alone held 32 712 bindings' room for 18 580 (5 MB).
+fn shrink_to_fit(unit: &mut CompilationUnit) {
+    for sub in unit.sub_components.iter_mut() {
+        sub.properties.shrink_to_fit();
+        sub.callbacks.shrink_to_fit();
+        sub.functions.shrink_to_fit();
+        sub.items.shrink_to_fit();
+        sub.repeated.shrink_to_fit();
+        sub.timers.shrink_to_fit();
+        sub.sub_components.shrink_to_fit();
+        sub.property_init.shrink_to_fit();
+        sub.change_callbacks.shrink_to_fit();
+        sub.two_way_bindings.shrink_to_fit();
+        sub.const_properties.shrink_to_fit();
+        sub.pre_init_code.shrink_to_fit();
+        sub.init_code.shrink_to_fit();
+        sub.geometries.shrink_to_fit();
+        sub.prop_analysis.shrink_to_fit();
+    }
+    unit.sub_components.shrink_to_fit();
+    unit.globals.shrink_to_fit();
 }
 
 fn make_static(compilation_unit: &mut CompilationUnit) {
