@@ -191,7 +191,7 @@ Adding a source trusts that HTTPS host. Sources have no priority; identical plug
 | `repository list` | List the configured official source distinctly from user-added sources. |
 | `repository catalog URL` | Fetch a configured source's strict catalog without importing or evaluating plugin source. |
 | `repository inspect URL ID RELEASE` | Verify and import the selected release, then show its provenance, declaration, effective policy and approval digest. |
-| `repository install URL ID RELEASE APPROVAL` | Refetch and verify that exact selection; commit an approved installation, initially disabled. |
+| `repository install URL ID RELEASE APPROVAL` | Verify that exact selection again (from the local store when it is already present, see **Present content**); commit an approved installation, initially disabled. |
 | `repository update ID RELEASE APPROVAL` | Resolve only the source stored in the installed receipt. Preserve desired state. Never try another source. |
 | `repository switch ID URL RELEASE APPROVAL` | Explicitly choose another configured source after inspecting it. Preserve desired state; reject approval from the old source even for identical package bytes. |
 
@@ -201,7 +201,15 @@ Acquisition validates certificates and follows at most three HTTPS redirects. HT
 
 The archive itself supplies signing evidence. Repository admission has no bound-cache fallback. See **Publisher trust** for signed and unsigned namespace rules.
 
-The cost is temporary disk use: the whole archive plus its extracted compressed cache, in addition to imported store paths. Slim publication and installation also need upstream metadata access, even when NARs are local; self-contained publication duplicates shared packages but works offline. Plugins have no size limit. Archive download, cache path-info, Nix import and store verification have no deadline. Nix output that grows with a closure (recursive path-info, and per-path build, copy and verify lines) has no output cap; other helpers keep their 1 MiB cap. The boot store-metadata query and closure listing keep their local deadlines (60 and 30 seconds). Publisher content-address conversion and cache export have no deadline. The archive keeps its 100,000-entry bound. Catalogs, release evidence and plugin source manifests keep their bounds. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A large package holds that lock until it finishes. Stall detection ends a stalled archive transfer, so it releases the lock. A lost connection requires a new download; there is no partial resume.
+The cost is temporary disk use: the whole archive plus its extracted compressed cache, in addition to imported store paths. Slim publication and installation of content that is not yet present also need upstream metadata access; self-contained publication duplicates shared packages but works offline. Plugins have no size limit. Archive download, cache path-info, Nix import and store verification have no deadline. Nix output that grows with a closure (recursive path-info, and per-path build, copy and verify lines) has no output cap; other helpers keep their 1 MiB cap. The boot store-metadata query and closure listing keep their local deadlines (60 and 30 seconds). Publisher content-address conversion and cache export have no deadline. The archive keeps its 100,000-entry bound. Catalogs, release evidence and plugin source manifests keep their bounds. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A large package holds that lock until it finishes. Stall detection ends a stalled archive transfer, so it releases the lock. A lost connection requires a new download; there is no partial resume.
+
+### Present content
+
+Owner decision 2026-11-05. A signed repository record whose exact `store_path` and complete closure are already valid in the local store skips the archive download and every cache.nixos.org lookup. Each closure path (outside separately verified required-plugin closures) must carry a local signature over its actual fingerprint from a normal trusted key or from the record's publisher key. Korri checks each signature, then `nix store verify --sigs-needed 1` rehashes the contents with only those keys and no substituter. `require-sigs` stays on. A missing path, a path without such a signature, an unsigned record or a missing required plugin takes the normal archive route above. Installed required plugins use the same local check. So an `install` or `update` after its `inspect` makes one catalog request and no other network request, and its approval is computed from the same locally verified package.
+
+The cost: a present path is accepted on its local publisher signature without asking whether cache.nixos.org also serves it. Korri imports nothing in this case, so no publisher can introduce bytes this way. The provenance keeps the catalog's `archive_sha256`, which was not measured again. A path that an earlier import accepted by upstream NAR identity or root registration carries no such signature, so it still takes the normal route.
+
+Where upstream lookups remain, the host fetches each closure level's narinfos with one curl process (`--parallel`, connection reuse) and reads them with one Nix call. Any result other than a 200 or a real 404 is fetched again alone and fails closed as before.
 
 ## korrid's admin socket
 
@@ -283,7 +291,7 @@ Independent candidate closures get Nix indirect temporary roots inside the
 existing private staging TempDirs. The current request holds these directories
 through import, inspection and commit. `release_download` drops all of them;
 there is no assumption that a candidate survives into a later admin request.
-Install refetches and reinspects. The next request cleans crash-left staging
+Install reinspects; present signed content is not fetched again. The next request cleans crash-left staging
 before proceeding; dangling Nix `gcroots/auto` links grant no Korri authority and
 do not block later requests. The existing single `roots/download` link keeps
 its original role. Image `seed`/`seed-graph` remain exact-output APIs and refuse
