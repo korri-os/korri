@@ -54,9 +54,9 @@ async fn daemon_pending_projection_preserves_all_owned_reservations_and_hides_fo
         runtime.clone(),
         root.path(),
         "foreign-capability",
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
-    let readonly = router(runtime, root.path(), TOKEN, PortalPermission::ReadOnly);
+    let readonly = router(runtime, root.path(), TOKEN, SurfaceHostPermission::ReadOnly);
     let a = reserve(&app).await;
     let b = reserve(&app).await;
     let own = status(&app).await;
@@ -118,7 +118,7 @@ async fn daemon_preparing_survives_lost_start_request_and_is_reload_observable_w
         runtime.with_reserved_route_probe(Arc::new(move || blocked.block())),
         root.path(),
         TOKEN,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let id = reserve(&app).await;
     let starting_app = app.clone();
@@ -168,13 +168,13 @@ async fn daemon_committing_and_cancelling_are_prompt_unknown_observations_and_do
         runtime.clone(),
         root.path(),
         TOKEN,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let foreign = router(
         runtime,
         root.path(),
         "foreign-capability",
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let id = reserve(&app).await;
     let starting_app = app.clone();
@@ -253,8 +253,8 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
     let (app, native) = native_routers(
         runtime
             .with_compositor(compositor.clone())
-            .with_portal_unit(Arc::new(
-                crate::host::control::RecordingPortalUnit::identity_only(),
+            .with_shell_unit(Arc::new(
+                crate::host::control::RecordingShellUnit::identity_only(),
             )),
         root.path(),
     );
@@ -270,7 +270,7 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
     assert_handoff(&app, &a, "waiting").await;
     *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":true}]});
     assert_handoff(&app, &a, "observed").await;
-    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true}]});
+    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"korri-shell","focused":true}]});
     let lost = assert_handoff(&app, &a, "observed").await;
     assert_eq!(
         lost["outcome"]["payload"]["active"]["focusOwnership"],
@@ -287,7 +287,7 @@ async fn daemon_initial_handoff_is_exact_latched_and_not_recreated_by_focus_loss
     assert!(unavailable["outcome"]["payload"]["active"]
         .get("focusOwnership")
         .is_none());
-    // A new Leave must prove a live kiosk window, unlike the preceding
+    // A new Leave must prove a live shell window, unlike the preceding
     // read-only observation of an unavailable compositor snapshot.
     *compositor.tree.lock().unwrap() = focusable_compositor().tree.lock().unwrap().clone();
     assert_eq!(freeze(&native, &a).await["outcome"]["_tag"], "Ok");
@@ -355,7 +355,7 @@ async fn daemon_reconstructed_live_units_are_not_fabricated_new_initial_startups
             restarted,
             root.path(),
             TOKEN,
-            PortalPermission::LocalSessions,
+            SurfaceHostPermission::LocalSessions,
         );
         let recovered = assert_handoff(&app, &id, "recovered").await;
         assert_eq!(
@@ -379,7 +379,7 @@ async fn daemon_pending_projection_preserves_genuine_observation_failure_and_hom
         runtime,
         root.path(),
         "foreign-capability",
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let a = reserve(&app).await;
     backend.set_window_pids(&a, [9100].into());
@@ -425,7 +425,8 @@ async fn daemon_busy_pending_projection_does_not_clear_home_during_a_failed_retu
     backend.set_window_pids(&a, [9100].into());
     assert_eq!(start(&app, &a).await["outcome"]["_tag"], "Ok");
     assert_eq!(freeze(&native, &a).await["outcome"]["_tag"], "Ok");
-    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true}]});
+    *compositor.tree.lock().unwrap() =
+        json!({"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-shell","focused":true}]});
     assert_overlay(&app, &a).await;
     let b = reserve(&app).await;
     let gate = Arc::new(RouteGate::default());
@@ -460,7 +461,7 @@ async fn daemon_busy_pending_projection_does_not_clear_home_during_a_failed_retu
 }
 
 #[tokio::test]
-async fn daemon_observes_handoff_without_a_browser_poll_and_retains_it_after_later_focus_loss() {
+async fn daemon_observes_handoff_without_a_surface_poll_and_retains_it_after_later_focus_loss() {
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
     let compositor = focusable_compositor();
@@ -468,8 +469,8 @@ async fn daemon_observes_handoff_without_a_browser_poll_and_retains_it_after_lat
     let (app, _) = native_routers(
         runtime
             .with_compositor(compositor.clone())
-            .with_portal_unit(Arc::new(
-                crate::host::control::RecordingPortalUnit::identity_only(),
+            .with_shell_unit(Arc::new(
+                crate::host::control::RecordingShellUnit::identity_only(),
             )),
         root.path(),
     );
@@ -477,8 +478,8 @@ async fn daemon_observes_handoff_without_a_browser_poll_and_retains_it_after_lat
     backend.set_window_pids(&id, [9100].into());
     assert_eq!(start(&app, &id).await["outcome"]["_tag"], "Ok");
     // The native prepare/freezer reconciliation already observed exact focus.
-    // A fresh browser sees the history even though its first poll sees loss.
-    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true}]});
+    // A fresh surface host sees the history even though its first poll sees loss.
+    *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[{"id":3,"pid":9100,"focused":false},{"id":2,"pid":4100,"app_id":"korri-shell","focused":true}]});
     let lost = assert_handoff(&app, &id, "observed").await;
     assert_eq!(
         lost["outcome"]["payload"]["active"]["focusOwnership"],
@@ -499,7 +500,12 @@ async fn daemon_confirmed_early_exit_retires_pending_identity_before_delayed_ack
             blocked.block();
         }
     }));
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let a = reserve(&app).await;
     let starting_app = app.clone();
     let starting_a = a.clone();
@@ -532,7 +538,12 @@ async fn daemon_exit_before_native_prepare_finishes_reports_failure_without_a_ha
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
     backend.set_launch_completed(true);
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let a = reserve(&app).await;
     let failed = start(&app, &a).await;
     assert_eq!(
@@ -558,7 +569,12 @@ async fn daemon_exit_before_native_prepare_finishes_reports_failure_without_a_ha
 async fn daemon_failed_route_retires_only_its_owned_pending_launch() {
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let a = reserve(&app).await;
     let b = reserve(&app).await;
     let failed = rpc(

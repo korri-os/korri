@@ -73,12 +73,12 @@ fn router(
     runtime: host::HostRuntime,
     root: &Path,
     token: &str,
-    permission: PortalPermission,
+    permission: SurfaceHostPermission,
 ) -> Router {
     secure_host_routers(
         runtime,
         &root.join("private"),
-        Some(PortalAccess::new(token, ORIGIN, permission)),
+        Some(SurfaceHostAccess::new(token, ORIGIN, permission)),
     )
     .0
 }
@@ -121,7 +121,12 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
     )
     .with_route_registry(root.path().into(), registry);
     runtime.claim_save_owner();
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let game_id = crate::config::test_fixtures::GBA_ID;
     for runner in [Some("@korri:mgba/mgba"), None] {
         let identity = rpc(&app, "app.session.reserve", json!({"gameId":game_id})).await;
@@ -163,7 +168,12 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
 async fn reserve_cancel_before_start_cannot_spawn_or_write_the_journal() {
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let id = reserve(&app).await;
     assert!(!root
         .path()
@@ -190,7 +200,12 @@ async fn reserve_cancel_before_start_cannot_spawn_or_write_the_journal() {
 async fn cancel_live_exact_launch_and_stale_cancel_never_end_a_replacement() {
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let a = reserve(&app).await;
     let launched = start(&app, &a).await;
     assert_eq!(launched["outcome"]["payload"]["session"]["launchId"], a);
@@ -255,7 +270,7 @@ async fn cancel_does_not_wait_for_delayed_route_preparation_and_late_start_canno
         })),
         root.path(),
         TOKEN,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let id = reserve(&app).await;
     let starting_app = app.clone();
@@ -294,7 +309,12 @@ async fn cancel_during_launch_effects_reports_pending_then_ends_only_that_launch
     let gate = Arc::new(RouteGate::default());
     let blocked = gate.clone();
     backend.set_launch_probe(Arc::new(move || blocked.block()));
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let id = reserve(&app).await;
     let starting_app = app.clone();
     let starting_id = id.clone();
@@ -338,15 +358,15 @@ async fn reservations_are_bound_to_capability_and_permissions_do_not_expand() {
         runtime.clone(),
         root.path(),
         TOKEN,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let other = router(
         runtime.clone(),
         root.path(),
         "other-test-capability",
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
-    let readonly = router(runtime, root.path(), TOKEN, PortalPermission::ReadOnly);
+    let readonly = router(runtime, root.path(), TOKEN, SurfaceHostPermission::ReadOnly);
     let id = reserve(&app).await;
     for (method, payload) in [
         ("app.session.reserve", json!({"gameId":"one"})),
@@ -426,7 +446,7 @@ async fn identity_and_focus_snapshot_hold_the_transition_lock_against_exact_stop
         runtime.with_compositor(compositor.clone()),
         root.path(),
         TOKEN,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let id = reserve(&app).await;
     assert_eq!(start(&app, &id).await["outcome"]["_tag"], "Ok");
@@ -475,18 +495,18 @@ async fn status_observes_exact_focus_without_claiming_no_window_is_ready() {
     let compositor = Arc::new(Compositor {
         gate: Mutex::new(None),
         tree: Mutex::new(json!({"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true}
+            {"id":2,"pid":4100,"app_id":"korri-shell","focused":true}
         ]})),
     });
     let app = router(
         runtime
             .with_compositor(compositor.clone())
-            .with_portal_unit(Arc::new(
-                crate::host::control::RecordingPortalUnit::identity_only(),
+            .with_shell_unit(Arc::new(
+                crate::host::control::RecordingShellUnit::identity_only(),
             )),
         root.path(),
         TOKEN,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let id = reserve(&app).await;
     assert_eq!(start(&app, &id).await["outcome"]["_tag"], "Ok");
@@ -498,7 +518,7 @@ async fn status_observes_exact_focus_without_claiming_no_window_is_ready() {
     assert!(active.get("focusOwnership").is_none(), "{status}");
     for (focused, expected) in [(2, "excluded"), (3, "launch"), (4, "other")] {
         *compositor.tree.lock().unwrap() = json!({"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":focused==2},
+            {"id":2,"pid":4100,"app_id":"korri-shell","focused":focused==2},
             {"id":3,"pid":9100,"focused":focused==3},
             {"id":4,"pid":9200,"focused":focused==4}
         ]});
@@ -522,7 +542,12 @@ async fn status_observes_exact_focus_without_claiming_no_window_is_ready() {
 async fn late_stop_helper_preserves_replacement(fails: bool, method: &'static str) {
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let a = reserve(&app).await;
     assert_eq!(start(&app, &a).await["outcome"]["_tag"], "Ok");
     let gate = Arc::new(RouteGate::default());
@@ -587,10 +612,10 @@ async fn home_accepted_before_delayed_successful_start_reply_remains_authorized(
     let (app, native) = secure_host_routers(
         runtime.with_reserved_start_probe(Arc::new(move || blocked.block())),
         &root.path().join("private"),
-        Some(PortalAccess::new(
+        Some(SurfaceHostAccess::new(
             TOKEN,
             ORIGIN,
-            PortalPermission::LocalSessions,
+            SurfaceHostPermission::LocalSessions,
         )),
     );
     let id = reserve(&app).await;
@@ -627,7 +652,12 @@ async fn cancel_during_commit_exposes_cleanup_recovery_failure_over_rpc() {
     let blocked = gate.clone();
     backend.set_launch_probe(Arc::new(move || blocked.block()));
     backend.configure_stop(false, true, None);
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let app = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let id = reserve(&app).await;
     let starting_app = app.clone();
     let starting_id = id.clone();
@@ -676,7 +706,7 @@ async fn fresh_units_require_an_owner_but_reservation_and_existing_resume_do_not
         runtime.clone(),
         root.path(),
         TOKEN,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let reserved = reserve(&app).await;
     let refused = start(&app, &reserved).await;
@@ -715,8 +745,13 @@ async fn launch_settings_rpc_snapshot_set_profiles_and_revision_conflict_round_t
         root.path().to_owned(),
         plugin_test_fixtures::claims_only_registry(),
     );
-    let full = router(runtime.clone(), root.path(), TOKEN, PortalPermission::Full);
-    let read_only = router(runtime, root.path(), TOKEN, PortalPermission::ReadOnly);
+    let full = router(
+        runtime.clone(),
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::Full,
+    );
+    let read_only = router(runtime, root.path(), TOKEN, SurfaceHostPermission::ReadOnly);
     let initial = rpc(&full, "app.launch-settings.snapshot", json!({})).await;
     assert_eq!(initial["outcome"]["_tag"], "Ok", "{initial}");
     let revision = initial["outcome"]["payload"]["revisions"]["games"]
@@ -798,7 +833,7 @@ async fn launch_settings_rpc_snapshot_set_profiles_and_revision_conflict_round_t
 async fn launch_settings_legacy_prepare_returns_launch_result_not_a_session_identity() {
     let root = tempfile::tempdir().unwrap();
     let (runtime, _) = runtime(root.path());
-    let app = router(runtime, root.path(), TOKEN, PortalPermission::Full);
+    let app = router(runtime, root.path(), TOKEN, SurfaceHostPermission::Full);
     let response = rpc(&app, "app.session.prepare", json!({"gameId":"one"})).await;
     let launch = &response["outcome"]["payload"];
     assert_eq!(launch["session"]["gameId"], "one", "{response}");

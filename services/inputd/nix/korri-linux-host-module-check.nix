@@ -60,12 +60,6 @@ let
     lib.any (entry: !entry.assertion && lib.hasInfix needle entry.message) system.config.assertions;
   valid = evaluate { };
   withAudio = evaluate { services.korriLinuxHost.audio.enable = true; };
-  browserPortal = evaluate {
-    services.korridLinuxDevice.browser = {
-      enable = true;
-      origin = "http://127.0.0.1:8099";
-    };
-  };
   noValidation = evaluate { services.korriLinuxHost.validation.enable = false; };
   physical = evaluate {
     services.korriLinuxHost.compositor = {
@@ -97,7 +91,6 @@ let
     inherit pkgs;
     eventGid = 1000;
   };
-  browserKorrid = browserPortal.config.systemd.services.korrid;
   physicalCompositor = physical.config.systemd.services.korri-compositor;
   validationAction = cfg.services.korriLinuxInput.inputd.actions.workspace-next.command;
 in
@@ -202,11 +195,6 @@ assert
   !(lib.hasInfix "PULSE_SERVER" (
     builtins.readFile valid.config.services.korridLinuxDevice.deviceConfig
   ));
-assert allAssertionsPass browserPortal;
-assert browserKorrid.environment.KORRID_BROWSER_ADDRESS == "127.0.0.1:0";
-assert browserKorrid.environment.KORRID_BROWSER_ORIGIN == "http://127.0.0.1:8099";
-assert browserKorrid.environment.KORRID_BROWSER_INFO_PATH == "/run/korrid-browser/brain.json";
-assert builtins.elem "/run/korrid-browser" browserKorrid.serviceConfig.ReadWritePaths;
 assert allAssertionsPass physical;
 assert physical.config.services.seatd.enable;
 assert physicalCompositor.environment.WLR_BACKENDS == "drm,libinput";

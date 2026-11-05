@@ -11,7 +11,7 @@
 //! | `app.surface.model` | `{surfaceId}` | `SurfaceModel` |
 //! | `app.surface.request` | `{surfaceId, request}` | unit |
 //!
-//! Watch: a WebSocket to `ws://127.0.0.1:PORT/` with `Origin: <portal origin>`.
+//! Watch: a WebSocket to `ws://127.0.0.1:PORT/` with `Origin: <shell origin>`.
 //! First frame `Bearer CAP`, second `{"_tag":"app.surface.watch","payload":
 //! {"surfaceId":…}}`. korrid pushes `{"kind":"model","revision":"N","model":…}`
 //! and sends nothing more until the shell replies `{"kind":"ack","revision":"N"}`.

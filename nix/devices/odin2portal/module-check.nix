@@ -6,7 +6,6 @@ let
   shell = c.systemd.services.korri-shell;
   compositor = c.systemd.services.korri-compositor;
   credential = "KORRID_RPC_CAPABILITY:/run/korri-shell-credentials/KORRID_RPC_CAPABILITY";
-  oldBootstrapAppId = "chrome-127.0.0.1__kiosk-blank.html-Default";
   inputDataNames = map lib.getName c.services.korriLinuxInput.provider.extraDataPackages;
 in
 # Hardware and boot facts.
@@ -62,7 +61,7 @@ assert c.boot.initrd.compressor == "gzip";
 assert !c.boot.initrd.includeDefaultModules;
 assert c.hardware.firmwareCompression == "none";
 
-# The shared product owns the portal, its security, and game-return policy.
+# The shared product owns the shell, its security, and game-return policy.
 assert c.services.korriProduct.installed;
 assert c.services.korriLinuxHost.enable;
 assert c.services.korriLinuxHost.runtimeUser == "korri";
@@ -72,11 +71,8 @@ assert c.services.korriLinuxHost.audio.enable;
 assert c.services.korri.shell.enable;
 assert c.services.korri.shell.startSurface == "pico";
 assert c.services.korri.pluginHost.enable;
-assert c.systemd.services.korrid.environment.KORRID_PORTAL_UNIT == "korri-shell.service";
-assert c.systemd.services.korrid.environment.KORRID_PORTAL_FREEZER_ENABLED == "true";
-assert !(lib.hasInfix oldBootstrapAppId c.services.korriLinuxHost.compositor.extraConfig);
-assert !(configuration.options.services ? korriKiosk);
-assert !(c.systemd.services ? korri-kiosk);
+assert c.systemd.services.korrid.environment.KORRID_SHELL_UNIT == "korri-shell.service";
+assert c.systemd.services.korrid.environment.KORRID_SHELL_FREEZER_ENABLED == "true";
 
 # Odin starts the native shell on the compositor's published Wayland socket.
 # No credential is exposed through the environment.
@@ -91,7 +87,7 @@ assert shell.serviceConfig.LoadCredential == [ credential ];
 assert c.systemd.services.korrid.serviceConfig.LoadCredential == [ credential ];
 assert !(shell.environment ? KORRID_RPC_CAPABILITY);
 assert !(c.systemd.services.korrid.environment ? KORRID_RPC_CAPABILITY);
-assert shell.environment.KORRID_PORTAL_ORIGIN == c.systemd.services.korrid.environment.KORRID_PORTAL_ORIGIN;
+assert shell.environment.KORRID_SHELL_ORIGIN == c.systemd.services.korrid.environment.KORRID_SHELL_ORIGIN;
 assert shell.environment.WAYLAND_DISPLAY == compositor.environment.KORRI_WAYLAND_DISPLAY;
 assert
   shell.serviceConfig.BindReadOnlyPaths == [
@@ -109,8 +105,6 @@ assert !(c.systemd.services ? sunshine);
 assert !(c.systemd.sockets ? korri-certificate-control);
 assert !(lib.elem "sunshine.service" compositor.wants);
 assert c.systemd.services ? korri-shell;
-assert !(c.systemd.services ? korri-chromium-kiosk);
-assert !c.services.nginx.enable;
 
 pkgs.runCommand "odin2portal-module-check" { } ''
   touch "$out"

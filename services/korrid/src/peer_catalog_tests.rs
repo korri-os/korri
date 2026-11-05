@@ -78,7 +78,7 @@ async fn peer_catalog_case(has_local_game: bool) {
     let device_key = identity.device_public_key().unwrap().to_owned();
     let (state, ()) = brain_app_state(
         "catalog-test-capability",
-        "https://portal.example",
+        "https://shell.example",
         readable.path(),
         private.path(),
         plugin_policy::RegistrySource::Selected(Arc::new(local_plugins)),
@@ -88,9 +88,9 @@ async fn peer_catalog_case(has_local_game: bool) {
         None,
         None,
     );
-    let portal = portal_router_from_state(state.clone());
+    let shell = surface_host_router_from_state(state.clone());
     let peer = peer_rpc::PeerRpcServer::new_at(state, private.path(), NOW).unwrap();
-    let peer = serve(peer.router(Some(portal))).await;
+    let peer = serve(peer.router(Some(shell))).await;
     let credentials =
         peer_rpc::test_owned_credentials(caller_private.path(), &"06".repeat(32), &owner_secret);
     let client = upstream_native::NativeClient::new_secure_at(
@@ -224,7 +224,7 @@ async fn peer_catalog_case(has_local_game: bool) {
     );
     reads.store(0, Ordering::SeqCst);
 
-    // The same brain still aggregates for its own portal.
+    // The same brain still aggregates for its own shell.
     let local: serde_json::Value = reqwest::Client::new()
         .post(format!("{}/rpc", peer.origin))
         .bearer_auth("catalog-test-capability")

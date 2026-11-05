@@ -212,7 +212,7 @@ fn provider_launch_passes_ref_and_no_content_path_to_the_installed_runner() {
 }
 
 #[test]
-fn provider_release_reaches_the_portals_selected_launch_path() {
+fn provider_release_reaches_the_shells_selected_launch_path() {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("catalog")).unwrap();
     fs::write(root.path().join("catalog/library.yaml"), LIBRARY).unwrap();

@@ -521,7 +521,7 @@ fn helper_apply_end_and_warning_use_the_actual_socket_protocol() {
     assert!(limits.apply(&unavailable(root.path()), id).is_some());
 }
 #[test]
-fn kiosk_and_owner_authority_cover_set_and_profile_rpcs() {
+fn shell_and_owner_authority_cover_set_and_profile_rpcs() {
     use crate::{
         authorization::{self, AuthorizationContext, Principal},
         RpcRequest,
@@ -551,7 +551,9 @@ fn kiosk_and_owner_authority_cover_set_and_profile_rpcs() {
             authorization::policy_for(&request),
             authorization::PeerPolicy::OwnerDeviceOnly
         );
-        assert!(authorization::authorize(&AuthorizationContext::LocalBrowser, &request).is_ok());
+        assert!(
+            authorization::authorize(&AuthorizationContext::LocalSurfaceHost, &request).is_ok()
+        );
         assert!(authorization::authorize(
             &AuthorizationContext::Peer(Principal::Unknown {
                 device_public_key: "peer".into()

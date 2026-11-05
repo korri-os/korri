@@ -834,7 +834,7 @@ async fn a_second_declare_places_the_new_window_and_keeps_preferences() {
                 .collect::<Vec<_>>()
         })
     };
-    let no_window = json!({ "_tag": "Err", "payload": { "code": "SurfacePlacementFailed", "message": "no unique portal window" } });
+    let no_window = json!({ "_tag": "Err", "payload": { "code": "SurfacePlacementFailed", "message": "no unique shell window" } });
     // The first placement finds no window, or the old one.
     for first in [no_window, window("old-window")] {
         let mut outcomes = idle_outcomes(1);
@@ -1104,20 +1104,20 @@ async fn watch_pushes_whole_models_and_waits_for_each_ack() {
     let (hub, _, _directory) = hub_with(idle_outcomes(60));
     let slot: super::SurfaceSlot = Arc::default();
     let _ = slot.hub.set(Arc::clone(&hub));
-    let access = crate::PortalAccess::new(
+    let access = crate::SurfaceHostAccess::new(
         "watch-capability",
-        "http://portal.test",
-        crate::PortalPermission::Full,
+        "http://shell.test",
+        crate::SurfaceHostPermission::Full,
     );
     let (router, _source) =
-        crate::portal_input::router_with_surfaces(access, slot, Default::default());
+        crate::surface_host_input::router_with_surfaces(access, slot, Default::default());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     let mut request = format!("ws://{address}/").into_client_request().unwrap();
     request
         .headers_mut()
-        .insert("Origin", "http://portal.test".parse().unwrap());
+        .insert("Origin", "http://shell.test".parse().unwrap());
     let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
     socket
         .send(Message::Text("Bearer watch-capability".into()))
@@ -1781,9 +1781,13 @@ mod acquisition_gate {
 async fn native_input_reports_controllers() {
     use crate::native_input::*;
     let link: super::SurfaceSlot = Arc::default();
-    let access = crate::PortalAccess::new("c", "http://portal.test", crate::PortalPermission::Full);
-    let (_router, source) =
-        crate::portal_input::router_with_surfaces(access, Arc::clone(&link), Default::default());
+    let access =
+        crate::SurfaceHostAccess::new("c", "http://shell.test", crate::SurfaceHostPermission::Full);
+    let (_router, source) = crate::surface_host_input::router_with_surfaces(
+        access,
+        Arc::clone(&link),
+        Default::default(),
+    );
     let device = |id: &str, class| NativeInputDeviceInfo {
         device_id: id.into(),
         class,
@@ -3371,7 +3375,7 @@ mod placement {
         json!({ "_tag": "Ok", "payload": [{ "id": id, "main": true, "x": 0, "y": 0, "width": 640, "height": 480, "touch": false }] })
     }
     fn no_window() -> Value {
-        json!({ "_tag": "Err", "payload": { "code": "SurfacePlacementFailed", "message": "no unique portal window" } })
+        json!({ "_tag": "Err", "payload": { "code": "SurfacePlacementFailed", "message": "no unique shell window" } })
     }
     fn shown(root: &Root) -> Option<Vec<String>> {
         root.display_facts()

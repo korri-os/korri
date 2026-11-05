@@ -192,7 +192,7 @@ mod tests {
         units.set_window_pids(&launch, [9100].into());
         let (state, _) = crate::brain_app_state(
             "cap",
-            "http://portal.local",
+            "http://shell.local",
             root.path(),
             root.path().join("local-private"),
             crate::plugin_policy::RegistrySource::Installed,
@@ -218,7 +218,7 @@ mod tests {
             };
             let wire = json!({"_tag":tag,"payload":payload});
             for local in [
-                AuthorizationContext::LocalBrowser,
+                AuthorizationContext::LocalSurfaceHost,
                 AuthorizationContext::LocalUnixControl,
             ] {
                 let request = serde_json::from_value(wire.clone()).unwrap();
@@ -244,9 +244,10 @@ mod tests {
             let request =
                 serde_json::from_value(json!({"_tag":tag,"payload":{"expectedLaunchId":launch}}))
                     .unwrap();
-            let response = crate::dispatch(&state, &AuthorizationContext::LocalBrowser, request)
-                .await
-                .unwrap();
+            let response =
+                crate::dispatch(&state, &AuthorizationContext::LocalSurfaceHost, request)
+                    .await
+                    .unwrap();
             assert_eq!(
                 serde_json::to_value(response).unwrap()["outcome"]["_tag"],
                 "Ok",

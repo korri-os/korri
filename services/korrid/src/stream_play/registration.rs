@@ -197,7 +197,7 @@ mod tests {
         .unwrap();
         let (state, _) = crate::brain_app_state(
             "cap",
-            "http://portal.local",
+            "http://shell.local",
             root.path(),
             root.path().join("private"),
             crate::plugin_policy::RegistrySource::Installed,

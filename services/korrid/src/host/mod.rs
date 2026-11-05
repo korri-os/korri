@@ -26,8 +26,8 @@ mod saves;
 mod session_state;
 mod shared_play;
 mod systemd_unit;
-pub(crate) use prepare::configured_portal;
-pub(crate) use systemd_unit::{configured_runtime_identity, PortalUnit};
+pub(crate) use prepare::configured_shell;
+pub(crate) use systemd_unit::{configured_runtime_identity, ShellUnit};
 
 use crate::launch_timeline;
 use crate::plugin::{
@@ -201,8 +201,8 @@ impl DynamicHostSource {
 
 const MAX_CONCURRENT_CERTIFICATE_CONTROLS: usize = 4;
 
-/// Observe focus and completion even when no browser can poll.
-const PORTAL_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+/// Observe focus and completion even when no surface host can poll.
+const SHELL_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Absorb brief watcher queries without hiding owned startup identity behind
 /// a committing helper that can hold transition authority for seconds.
@@ -311,7 +311,7 @@ impl HostRuntime {
         path: &Path,
         storage_root: Option<PathBuf>,
         private_state_root: PathBuf,
-        native: Option<Arc<crate::portal_input::PortalInputSource>>,
+        native: Option<Arc<crate::surface_host_input::SurfaceHostInputSource>>,
     ) -> Self {
         let config = HostConfig::read(path);
         let socket = std::env::var_os("KORRID_INPUT_SEAT_CONTROL_SOCKET")
@@ -1593,18 +1593,18 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
-    /// Observe session completion and input focus even without a portal freezer.
-    pub fn spawn_portal_watch(&self) {
-        if let Some(watch) = self.portal_watch(PORTAL_WATCH_INTERVAL) {
+    /// Observe session completion and input focus even without a shell freezer.
+    pub fn spawn_shell_watch(&self) {
+        if let Some(watch) = self.shell_watch(SHELL_WATCH_INTERVAL) {
             tokio::spawn(watch);
         }
     }
 
-    /// A frozen portal cannot poll, and a game can end without any caller.
+    /// A frozen shell cannot poll, and a game can end without any caller.
     /// Observe focus as well as liveness, including a delayed first window
-    /// while the portal is still running. The first pass
-    /// runs at once, which releases a portal left frozen by an earlier run.
-    fn portal_watch(
+    /// while the shell is still running. The first pass
+    /// runs at once, which releases a shell left frozen by an earlier run.
+    fn shell_watch(
         &self,
         interval: std::time::Duration,
     ) -> Option<impl std::future::Future<Output = ()> + Send + 'static> {
@@ -1635,8 +1635,8 @@ impl HostRuntime {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_portal_unit(mut self, portal: Arc<dyn systemd_unit::PortalUnit>) -> Self {
-        self.launcher = self.launcher.map(|launcher| launcher.with_portal(portal));
+    pub(crate) fn with_shell_unit(mut self, shell: Arc<dyn systemd_unit::ShellUnit>) -> Self {
+        self.launcher = self.launcher.map(|launcher| launcher.with_shell(shell));
         self
     }
 
@@ -2196,15 +2196,15 @@ esac
             fixture
         }
 
-        fn portal() -> Self {
+        fn shell() -> Self {
             let mut fixture = Self::new();
             let (lan, _) = crate::app_states(fixture.runtime.clone());
-            fixture.router = crate::portal_router_for(
+            fixture.router = crate::surface_host_router_for(
                 &lan,
-                Some(crate::PortalAccess::new(
+                Some(crate::SurfaceHostAccess::new(
                     "startup-test-capability",
                     "http://korrid.test",
-                    crate::PortalPermission::Full,
+                    crate::SurfaceHostPermission::Full,
                 )),
                 None,
             )
@@ -2404,7 +2404,7 @@ esac
 
     #[tokio::test]
     async fn game_startup_failure_is_not_dropped_when_an_owned_launch_is_pending() {
-        let fixture = GameUnitFixture::portal();
+        let fixture = GameUnitFixture::shell();
         let prepared = fixture.prepare().await;
         assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
         let reserved = fixture
@@ -2914,7 +2914,7 @@ esac
     }
 
     #[tokio::test]
-    async fn watcher_releases_completed_session_without_portal_unit_or_browser_polling() {
+    async fn watcher_releases_completed_session_without_shell_unit_or_surface_polling() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         fs::write(&config, "label = \"watch-test\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game\"]\n").unwrap();
@@ -2935,7 +2935,7 @@ esac
         runtime.claim_save_owner();
         runtime.prepare("one", None).await.unwrap();
         assert!(pool.session.lock().unwrap().is_some());
-        let watcher = tokio::spawn(runtime.portal_watch(Duration::from_millis(10)).unwrap());
+        let watcher = tokio::spawn(runtime.shell_watch(Duration::from_millis(10)).unwrap());
         backend.complete_live();
         tokio::time::timeout(Duration::from_secs(2), async {
             while pool.session.lock().unwrap().is_some() {
@@ -2955,7 +2955,7 @@ esac
     }
 
     #[tokio::test]
-    async fn portal_watch_retries_startup_thaw_without_any_client() {
+    async fn shell_watch_retries_startup_thaw_without_any_client() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         fs::write(
@@ -2964,33 +2964,33 @@ esac
         )
         .unwrap();
         let backend = Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default());
-        let portal = Arc::new(systemd_unit::RecordingPortalUnit::left_frozen());
-        portal.refuse_next_thaws(2);
+        let shell = Arc::new(systemd_unit::RecordingShellUnit::left_frozen());
+        shell.refuse_next_thaws(2);
         let runtime = HostRuntime::from_paths_with_backend(
             &config,
             None,
             root.path().join("private"),
             backend.clone(),
         )
-        .with_portal_unit(portal.clone());
+        .with_shell_unit(shell.clone());
 
         let watch = tokio::spawn(
             runtime
-                .portal_watch(Duration::from_millis(10))
-                .expect("a configured portal is watched"),
+                .shell_watch(Duration::from_millis(10))
+                .expect("a configured shell is watched"),
         );
-        // Startup releases a portal an earlier run left frozen and retries
-        // native failures. No prepare/status/portal RPC drives this progress.
-        tokio::time::timeout(Duration::from_secs(10), portal.thawed.notified())
+        // Startup releases a shell an earlier run left frozen and retries
+        // native failures. No prepare/status/shell RPC drives this progress.
+        tokio::time::timeout(Duration::from_secs(10), shell.thawed.notified())
             .await
             .expect("startup thaw retried within ten seconds");
-        assert!(!portal.frozen());
-        assert_eq!(portal.requests(), ["thaw", "thaw", "thaw"]);
+        assert!(!shell.frozen());
+        assert_eq!(shell.requests(), ["thaw", "thaw", "thaw"]);
         watch.abort();
 
         let unwatched =
             HostRuntime::from_paths_with_backend(&config, None, root.path().join("other"), backend);
-        assert!(unwatched.portal_watch(Duration::from_millis(10)).is_some());
+        assert!(unwatched.shell_watch(Duration::from_millis(10)).is_some());
     }
 
     #[test]

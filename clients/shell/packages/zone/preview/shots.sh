@@ -63,12 +63,12 @@ shoot() { # look size name
   "$fixture" --games 12 --credentials "$run/credentials" <"$run/control" >"$run/fixture.out" 2>"$run/fixture.log" &
   local fixture_pid=$!
   exec 7>"$run/control"
-  for _ in $(seq 100); do grep -q KORRID_PORTAL_ORIGIN "$run/fixture.out" 2>/dev/null && break; sleep 0.05; done
+  for _ in $(seq 100); do grep -q KORRID_SHELL_ORIGIN "$run/fixture.out" 2>/dev/null && break; sleep 0.05; done
   echo "model $run/model-0.json" >&7
   echo "store zone zone.look $look" >&7
   sleep 0.2
   KORRID_ADDRESS=$(sed -n 's/^KORRID_ADDRESS=//p' "$run/fixture.out") \
-  KORRID_PORTAL_ORIGIN=$(sed -n 's/^KORRID_PORTAL_ORIGIN=//p' "$run/fixture.out") \
+  KORRID_SHELL_ORIGIN=$(sed -n 's/^KORRID_SHELL_ORIGIN=//p' "$run/fixture.out") \
   CREDENTIALS_DIRECTORY=$run/credentials \
     "$shell" --packages "$packages" --cache "$work/cache" --surfaces zone --placement "$size" 2>"$run/shell.log" &
   local shell_pid=$!

@@ -188,7 +188,7 @@ async fn malformed_library_reports_public_scan_failure_without_echoing_private_c
     fs::write(&library, broken).unwrap();
     let app = korrid::router_with_capability_and_roots(
         "catalog-contract",
-        "https://portal.example",
+        "https://shell.example",
         root.path(),
         private.path().join("state"),
     );

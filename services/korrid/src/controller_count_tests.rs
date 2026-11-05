@@ -40,11 +40,11 @@ impl Fixture {
         }
     }
 
-    fn routers(&self, permission: PortalPermission) -> (Router, Router) {
+    fn routers(&self, permission: SurfaceHostPermission) -> (Router, Router) {
         secure_host_routers(
             self.runtime.clone(),
             &self.root.path().join("private"),
-            Some(PortalAccess::new(TOKEN, ORIGIN, permission)),
+            Some(SurfaceHostAccess::new(TOKEN, ORIGIN, permission)),
         )
     }
 
@@ -117,7 +117,7 @@ fn assert_error(value: &Value, code: &str) {
 #[tokio::test]
 async fn host_count_default_read_update_and_cas_use_real_device_config() {
     let fixture = Fixture::new();
-    let (app, _) = fixture.routers(PortalPermission::LocalSessions);
+    let (app, _) = fixture.routers(SurfaceHostPermission::LocalSessions);
     let before = snapshot(&app).await;
     assert_eq!(before["playerCount"], 4);
     assert_eq!(before["editableSettingIds"], json!([COUNT]));
@@ -167,7 +167,7 @@ async fn host_count_default_read_update_and_cas_use_real_device_config() {
 #[tokio::test]
 async fn host_count_invalid_values_and_unrelated_settings_leave_bytes_unchanged() {
     let fixture = Fixture::new();
-    let (app, _) = fixture.routers(PortalPermission::Full);
+    let (app, _) = fixture.routers(SurfaceHostPermission::Full);
     let before = snapshot(&app).await;
     let revision = before["revision"].as_str().unwrap();
     let bytes = fixture.bytes();
@@ -199,7 +199,7 @@ async fn host_count_invalid_values_and_unrelated_settings_leave_bytes_unchanged(
 #[tokio::test]
 async fn host_count_rejects_running_frozen_and_focus_failed_without_mutation() {
     let fixture = Fixture::new();
-    let (app, _) = fixture.routers(PortalPermission::LocalSessions);
+    let (app, _) = fixture.routers(SurfaceHostPermission::LocalSessions);
     let before = snapshot(&app).await;
     let revision = before["revision"].as_str().unwrap();
     let bytes = fixture.bytes();
@@ -259,7 +259,7 @@ async fn host_count_rejects_running_frozen_and_focus_failed_without_mutation() {
 #[tokio::test]
 async fn host_count_uncertain_recovery_preserves_config_and_journal() {
     let fixture = Fixture::new();
-    let (app, _) = fixture.routers(PortalPermission::LocalSessions);
+    let (app, _) = fixture.routers(SurfaceHostPermission::LocalSessions);
     let before = snapshot(&app).await;
     let bytes = fixture.bytes();
     let directory = fixture.root.path().join("private/host-session");
@@ -284,7 +284,7 @@ async fn host_count_uncertain_recovery_preserves_config_and_journal() {
 #[tokio::test]
 async fn host_count_capability_is_exact_and_keeps_bearer_origin_checks() {
     let fixture = Fixture::new();
-    let (app, _) = fixture.routers(PortalPermission::LocalSessions);
+    let (app, _) = fixture.routers(SurfaceHostPermission::LocalSessions);
     let before = snapshot(&app).await;
     let revision = before["revision"].as_str().unwrap();
     let bytes = fixture.bytes();
@@ -348,7 +348,7 @@ async fn host_count_capability_is_exact_and_keeps_bearer_origin_checks() {
             .unwrap();
         assert_eq!(response.status(), expected);
     }
-    let (read_only, _) = fixture.routers(PortalPermission::ReadOnly);
+    let (read_only, _) = fixture.routers(SurfaceHostPermission::ReadOnly);
     assert_eq!(snapshot(&read_only).await["playerCount"], 4);
     assert_eq!(
         request(
@@ -393,7 +393,7 @@ async fn brain_count_write_fails_closed_without_changing_existing_settings_behav
 #[tokio::test]
 async fn host_count_does_not_expand_peer_lan_or_private_control_authority() {
     let fixture = Fixture::new();
-    let (app, private) = fixture.routers(PortalPermission::Full);
+    let (app, private) = fixture.routers(SurfaceHostPermission::Full);
     let before = snapshot(&app).await;
     let revision = before["revision"].as_str().unwrap();
     let bytes = fixture.bytes();

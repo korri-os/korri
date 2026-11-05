@@ -717,7 +717,7 @@ async fn object_route_authenticates_scopes_ranges_and_rejects_rpc_route_reuse() 
     );
     assert!(a
         .service
-        .heads(&AuthorizationContext::LocalBrowser)
+        .heads(&AuthorizationContext::LocalSurfaceHost)
         .await
         .is_err());
     assert!(a

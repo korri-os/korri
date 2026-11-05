@@ -34,7 +34,7 @@ netlink-packet-route = "0.33"
 netlink-sys = "0.9"
 korri-input-contract = { path = "../../contracts/input" }
 korri-surface-treaty = { path = "../../contracts/surface" }
-# Tungstenite logs complete messages/close frames at trace/debug. A browser
+# Tungstenite logs complete messages/close frames at trace/debug. A surface host
 # capability must stay private even when an embedding host enables trace logs.
 # Cost: log-facade debug/trace diagnostics are unavailable across this build.
 log = { version = "0.4", features = ["max_level_info", "release_max_level_info"] }

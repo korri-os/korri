@@ -350,7 +350,7 @@ in
       environment.systemPackages = [ cfg.inputd.package ];
       # The helper repeats each complete identity and capability match before
       # changing an ACL. Only inputd reads normalized InputPlumber sources.
-      # Portal navigation uses authenticated native delivery, never device ACLs.
+      # Shell navigation uses authenticated native delivery, never device ACLs.
       services.udev.extraRules = ''
         ${lib.optionalString (!cfg.provider.enable)
           ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${inputdUser}", GROUP="${uinputGroup}", MODE="0660", OPTIONS+="static_node=uinput"''

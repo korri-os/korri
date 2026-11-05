@@ -35,9 +35,9 @@ impl std::fmt::Debug for WifiConnectRequest {
             .finish_non_exhaustive()
     }
 }
-// Every clone is zeroized by its own Drop. These requests are local-browser-only,
+// Every clone is zeroized by its own Drop. These requests are local-surface-host-only,
 // so the peer retry clone (upstream_native.rs:515) never carries them. Covered by
-// authorization::tests::network_and_onboarding_require_the_local_portal_and_deny_every_peer.
+// authorization::tests::network_and_onboarding_require_the_local_shell_and_deny_every_peer.
 impl Drop for WifiConnectRequest {
     fn drop(&mut self) {
         self.password.zeroize();
@@ -58,9 +58,9 @@ impl std::fmt::Debug for WifiConnectHiddenRequest {
             .finish_non_exhaustive()
     }
 }
-// Every clone is zeroized by its own Drop. These requests are local-browser-only,
+// Every clone is zeroized by its own Drop. These requests are local-surface-host-only,
 // so the peer retry clone (upstream_native.rs:515) never carries them. Covered by
-// authorization::tests::network_and_onboarding_require_the_local_portal_and_deny_every_peer.
+// authorization::tests::network_and_onboarding_require_the_local_shell_and_deny_every_peer.
 impl Drop for WifiConnectHiddenRequest {
     fn drop(&mut self) {
         self.password.zeroize();

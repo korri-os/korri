@@ -7,7 +7,7 @@ Executable runner records come only from installed plugin contributions.
 `device.yaml` runner records now contain configuration only. Old executable
 runner records require an explicit operational cutover, not a fallback reader.
 
-## Portal API
+## Surface host API
 
 Use the local korrid tagged `/rpc` treaty in `contracts/generated/korrid.ts`.
 These three methods apply to installed Linux games. Peer launch methods are
@@ -34,7 +34,7 @@ embedded in IDs. Several claims for the same system produce one scanned file
 candidate; claims that disagree on system still need system identification.
 This preserves the release record's existing single-system contract.
 
-Route reads are available to read-only portals. Explicit launch also works
+Route reads are available to read-only surface hosts. Explicit launch also works
 with `LocalSessions`. Preference writes require `Full`, like existing settings
 writes. Peer requests for these local actions require an owner device. This
 slice does not expand household/guest or read-only mutation permissions.

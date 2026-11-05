@@ -379,7 +379,7 @@ assert service.environment.KORRID_CONTROL_SOCKET == "/run/korrid-control/control
 assert service.environment.KORRID_CONTROL_DIRECTORY == "/run/korrid-control";
 assert service.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
 # Without a socket, runtime Return and running-session restart recovery fail
-# closed to Portal ownership. Korrid also stays out of the runtime user's group.
+# closed to shell ownership. Korrid also stays out of the runtime user's group.
 assert !(service.environment ? KORRID_COMPOSITOR_CONTROL_SOCKET);
 assert !(service.environment ? KORRID_SWAYMSG);
 assert service.serviceConfig.SupplementaryGroups == [ ];

@@ -354,7 +354,7 @@ impl PeerRpcServer {
         Self::new_with_clock(app, private_state_root, Arc::new(move || now))
     }
 
-    pub fn router(self, portal: Option<Router>) -> Router {
+    pub fn router(self, shell: Option<Router>) -> Router {
         let peer = Router::new()
             .route("/peer-rpc", post(peer_rpc))
             .route("/peer-saves-object", post(saves_object::object_route))
@@ -368,8 +368,8 @@ impl PeerRpcServer {
                 },
                 limit_peer_request,
             ));
-        match portal {
-            Some(portal) => peer.merge(portal),
+        match shell {
+            Some(shell) => peer.merge(shell),
             None => peer.route("/rpc", post(reject_plaintext)),
         }
     }

@@ -120,7 +120,7 @@ in
       validation.enable = true;
       audio.enable = true;
       # Product ownership starts with no guessed or legacy Wayland app id;
-      # device modules cannot carry the old browser-specific exclusion.
+      # device modules cannot carry an app-id-specific exclusion.
       # The product admits the reviewed Sunshine virtual-device identities.
       # The removable plugin still owns whether those devices can exist.
       compositor.allowedInputIdentifiers = [

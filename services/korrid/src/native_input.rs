@@ -1,5 +1,5 @@
 //! Native input wire from legacy `product/platform/input/native/wire-schema.ts`.
-//! Authentication is separate: these events are server-to-browser only.
+//! Authentication is separate: these events are server-to-host only.
 
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;

@@ -42,14 +42,14 @@ let
       "services"
       "korrid"
       "environment"
-      "KORRID_PORTAL_UNIT"
+      "KORRID_SHELL_UNIT"
     ]
     [
       "systemd"
       "services"
       "korrid"
       "environment"
-      "KORRID_PORTAL_FREEZER_ENABLED"
+      "KORRID_SHELL_FREEZER_ENABLED"
     ]
     [
       "systemd"
@@ -84,7 +84,7 @@ let
 in
 {
   inherit product bare;
-  # The portal freeze is product behavior on every device since 2026-09-30.
+  # The shell freeze is product behavior on every device since 2026-09-30.
   # Its D-Bus policy and exact authority come from this independent reference,
   # never from the configuration under test.
   # system-path also changes with the systemd package, so it is not freeze policy.
@@ -92,7 +92,7 @@ in
     unfrozen.config.services.dbus.packages ++ [ product.config.system.path ]
   )) (map toString product.config.services.dbus.packages);
   settings = map (path: {
-    name = "portal freeze ${lib.concatStringsSep "." path}";
+    name = "shell freeze ${lib.concatStringsSep "." path}";
     inherit path;
     expected = lib.getAttrFromPath path product.config;
     # The producer already uses mkForce for KORRID_SYSTEMCTL.

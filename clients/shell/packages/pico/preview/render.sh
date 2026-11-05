@@ -65,13 +65,13 @@ render_device() {
       <"$dir/control" >"$dir/fixture.out" 2>"$dir/fixture.log" &
     local fixture_pid=$!
     exec 7>"$dir/control"
-    for _ in $(seq 100); do grep -q KORRID_PORTAL_ORIGIN "$dir/fixture.out" 2>/dev/null && break; sleep 0.05; done
+    for _ in $(seq 100); do grep -q KORRID_SHELL_ORIGIN "$dir/fixture.out" 2>/dev/null && break; sleep 0.05; done
     (
       export DISPLAY=$display
       unset WAYLAND_DISPLAY
-      export KORRID_ADDRESS KORRID_PORTAL_ORIGIN CREDENTIALS_DIRECTORY=$dir/cred-$i
+      export KORRID_ADDRESS KORRID_SHELL_ORIGIN CREDENTIALS_DIRECTORY=$dir/cred-$i
       KORRID_ADDRESS=$(sed -n 's/^KORRID_ADDRESS=//p' "$dir/fixture.out")
-      KORRID_PORTAL_ORIGIN=$(sed -n 's/^KORRID_PORTAL_ORIGIN=//p' "$dir/fixture.out")
+      KORRID_SHELL_ORIGIN=$(sed -n 's/^KORRID_SHELL_ORIGIN=//p' "$dir/fixture.out")
       "$shell" --packages "$packages" --cache "$work/cache" --surfaces pico --placement "${w}x${h}" \
         >"$dir/shell.log" 2>&1 &
       local shell_pid=$!

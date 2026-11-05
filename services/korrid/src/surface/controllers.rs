@@ -1,6 +1,6 @@
 //! Port of `clients/portal/src/input/controllers.ts`: controller presence
 //! and evidence, fed by the native input korrid already publishes to the
-//! portal socket (`portal_input.rs`). A gamepad's arrival adds it; a live
+//! portal socket (`surface_host_input.rs`). A gamepad's arrival adds it; a live
 //! sample after its baseline proves it was heard; its removal drops it.
 
 use std::{collections::HashSet, sync::Mutex};

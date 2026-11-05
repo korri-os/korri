@@ -1,4 +1,4 @@
-//! The device's local portal can select a peer without giving peer calls a
+//! The device's local shell can select a peer without giving peer calls a
 //! second federation hop. Peer catalog and status always describe this holder.
 use crate::authorization::AuthorizationContext;
 use crate::linux_viewer::LinuxViewerError;
@@ -122,7 +122,7 @@ pub(crate) async fn dispatch(
     }
     if !matches!(
         authorization,
-        AuthorizationContext::LocalBrowser
+        AuthorizationContext::LocalSurfaceHost
             | AuthorizationContext::LocalUnixControl
             | AuthorizationContext::LocalCli
     ) {
@@ -317,7 +317,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn host_portal_keeps_local_catalog_host_labels_launchable() {
+    async fn host_shell_keeps_local_catalog_host_labels_launchable() {
         let root = tempfile::tempdir().unwrap();
         let runtime = holder(root.path(), "local");
         let (mut state, _) = crate::app_states(runtime);
@@ -326,7 +326,7 @@ mod tests {
             json!({"_tag":"app.session.prepare","payload":{"gameId":"local-game","host":"local"}}),
         )
         .unwrap();
-        let response = crate::dispatch(&state, &AuthorizationContext::LocalBrowser, request)
+        let response = crate::dispatch(&state, &AuthorizationContext::LocalSurfaceHost, request)
             .await
             .unwrap();
         assert!(
@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn host_portal_lists_peer_games_and_launches_through_the_injected_viewer() {
+    async fn host_shell_lists_peer_games_and_launches_through_the_injected_viewer() {
         let far_root = tempfile::tempdir().unwrap();
         let far = holder(far_root.path(), "far");
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -358,7 +358,7 @@ mod tests {
         state.remote = Some(peers);
         let request =
             serde_json::from_value(json!({"_tag":"app.catalog.snapshot","payload":{}})).unwrap();
-        let response = crate::dispatch(&state, &AuthorizationContext::LocalBrowser, request)
+        let response = crate::dispatch(&state, &AuthorizationContext::LocalSurfaceHost, request)
             .await
             .unwrap();
         let RpcResponse::CatalogSnapshot(CatalogSnapshotOutcome::Ok(catalog)) = response else {
@@ -373,7 +373,7 @@ mod tests {
             json!({"_tag":"app.session.prepare","payload":{"gameId":"far-game","host":"far"}}),
         )
         .unwrap();
-        let response = crate::dispatch(&state, &AuthorizationContext::LocalBrowser, request)
+        let response = crate::dispatch(&state, &AuthorizationContext::LocalSurfaceHost, request)
             .await
             .unwrap();
         let RpcResponse::SessionPrepare(game_routes::SelectedGameLaunchOutcome::Ok(prepared)) =
@@ -429,12 +429,12 @@ mod tests {
         let remote_state = state.clone();
         let peer_state = state.clone();
         let remote = tokio::spawn(async move {
-            crate::dispatch(&remote_state, &AuthorizationContext::LocalBrowser,
+            crate::dispatch(&remote_state, &AuthorizationContext::LocalSurfaceHost,
             serde_json::from_value(json!({"_tag":"app.session.prepare", "payload":{"gameId":"far-game","host":"far"}})).unwrap()).await.unwrap()
         });
         entered.acquire().await.unwrap().forget();
         let mut local = tokio::spawn(async move {
-            crate::dispatch(&state, &AuthorizationContext::LocalBrowser,
+            crate::dispatch(&state, &AuthorizationContext::LocalSurfaceHost,
             serde_json::from_value(json!({"_tag":"app.session.prepare", "payload":{"gameId":"local-game","host":"local"}})).unwrap()).await.unwrap()
         });
         assert!(
@@ -489,7 +489,7 @@ mod tests {
         state.remote = Some(peers);
         let response = crate::dispatch(
             &state,
-            &AuthorizationContext::LocalBrowser,
+            &AuthorizationContext::LocalSurfaceHost,
             serde_json::from_value(json!({"_tag":"app.session.status","payload":{}})).unwrap(),
         )
         .await
@@ -555,7 +555,7 @@ mod tests {
             state.remote = Some(peers);
             let response = crate::dispatch(
                 &state,
-                &AuthorizationContext::LocalBrowser,
+                &AuthorizationContext::LocalSurfaceHost,
                 RpcRequest::SessionPrepare(SessionPrepareRequest {
                     game_id: "far-game".into(),
                     host: Some("far".into()),
@@ -600,9 +600,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn selected_stream_local_cli_has_browser_and_inputd_status_control_parity() {
+    async fn selected_stream_local_cli_has_surface_host_and_inputd_status_control_parity() {
         for context in [
-            AuthorizationContext::LocalBrowser,
+            AuthorizationContext::LocalSurfaceHost,
             AuthorizationContext::LocalUnixControl,
             AuthorizationContext::LocalCli,
         ] {

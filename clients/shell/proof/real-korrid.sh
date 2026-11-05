@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start a real korrid in host mode with the portal surface wire, for the shell.
+# Start a real korrid in host mode with the surface wire, for the shell.
 # Usage: real-korrid.sh KORRID_BIN_DIR RUNTIME_DIR PORT
 # Writes RUNTIME_DIR/shell-credentials/KORRID_RPC_CAPABILITY and prints the
 # environment the shell needs (never the capability itself). Modelled on
@@ -46,9 +46,9 @@ KORRID_MODE=host \
   KORRID_PRIVATE_STATE_ROOT="$root/state" \
   KORRID_LOCAL_SIGNER_SOCKET="$signer_socket" \
   KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE="$signer_public_key" \
-  KORRID_PORTAL_ORIGIN="$origin" \
+  KORRID_SHELL_ORIGIN="$origin" \
   CREDENTIALS_DIRECTORY="$root/shell-credentials" \
   "$bin/korrid" &
 children+=("$!")
-echo "CREDENTIALS_DIRECTORY=$root/shell-credentials KORRID_ADDRESS=127.0.0.1:$port KORRID_PORTAL_ORIGIN=$origin"
+echo "CREDENTIALS_DIRECTORY=$root/shell-credentials KORRID_ADDRESS=127.0.0.1:$port KORRID_SHELL_ORIGIN=$origin"
 wait -n "${children[@]}"

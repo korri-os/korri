@@ -1,24 +1,24 @@
 use axum::Router;
-use korrid::portal_access::{PortalAccess, PortalPermission};
+use korrid::surface_host_access::{SurfaceHostAccess, SurfaceHostPermission};
 use korrid::{host_routers_with_storage_and_private, router_with_capability_and_roots};
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 
 const ORIGIN: &str = "http://127.0.0.1:8099";
-const TOKEN: &str = "portal-contract-token";
+const TOKEN: &str = "shell-contract-token";
 
-struct RunningPortal {
+struct RunningSurfaceHost {
     address: String,
     server: tokio::task::JoinHandle<()>,
     _root: tempfile::TempDir,
 }
 
-impl RunningPortal {
+impl RunningSurfaceHost {
     async fn start(host: bool) -> Self {
-        Self::with_host_access(host, Some(PortalPermission::LocalSessions)).await
+        Self::with_host_access(host, Some(SurfaceHostPermission::LocalSessions)).await
     }
 
-    async fn with_host_access(host: bool, permission: Option<PortalPermission>) -> Self {
+    async fn with_host_access(host: bool, permission: Option<SurfaceHostPermission>) -> Self {
         let root = tempfile::tempdir().unwrap();
         let private = root.path().join("private");
         let app: Router = if host {
@@ -30,7 +30,7 @@ impl RunningPortal {
                 // catalog tests supply approved installed selections separately.
                 None::<std::path::PathBuf>,
                 &private,
-                permission.map(|permission| PortalAccess::new(TOKEN, ORIGIN, permission)),
+                permission.map(|permission| SurfaceHostAccess::new(TOKEN, ORIGIN, permission)),
             )
             .0
         } else {
@@ -84,19 +84,19 @@ impl RunningPortal {
     }
 }
 
-impl Drop for RunningPortal {
+impl Drop for RunningSurfaceHost {
     fn drop(&mut self) {
         self.server.abort();
     }
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_authenticates_the_same_health_request_in_both_runners() {
+async fn surface_host_rpc_authenticates_the_same_health_request_in_both_runners() {
     for host in [false, true] {
-        let portal = RunningPortal::start(host).await;
+        let shell = RunningSurfaceHost::start(host).await;
         for token in [None, Some("incorrect")] {
             assert_eq!(
-                portal
+                shell
                     .rpc(token, Some(ORIGIN), "system.health")
                     .await
                     .status(),
@@ -104,7 +104,7 @@ async fn shared_portal_rpc_authenticates_the_same_health_request_in_both_runners
                 "host={host}"
             );
         }
-        let response = portal.rpc(Some(TOKEN), Some(ORIGIN), "system.health").await;
+        let response = shell.rpc(Some(TOKEN), Some(ORIGIN), "system.health").await;
         assert_eq!(response.status(), StatusCode::OK, "host={host}");
         assert_eq!(response.headers()["access-control-allow-origin"], ORIGIN);
         assert_eq!(
@@ -115,10 +115,10 @@ async fn shared_portal_rpc_authenticates_the_same_health_request_in_both_runners
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_rejects_a_foreign_origin_even_with_the_token() {
+async fn surface_host_rpc_rejects_a_foreign_origin_even_with_the_token() {
     for host in [false, true] {
-        let portal = RunningPortal::start(host).await;
-        let response = portal
+        let shell = RunningSurfaceHost::start(host).await;
+        let response = shell
             .rpc(
                 Some(TOKEN),
                 Some("https://foreign.example"),
@@ -134,9 +134,9 @@ async fn shared_portal_rpc_rejects_a_foreign_origin_even_with_the_token() {
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_reads_the_actual_linux_catalog_without_android_fixtures() {
-    let portal = RunningPortal::start(true).await;
-    let response = portal
+async fn surface_host_rpc_reads_the_actual_linux_catalog_without_android_fixtures() {
+    let shell = RunningSurfaceHost::start(true).await;
+    let response = shell
         .rpc(Some(TOKEN), Some(ORIGIN), "app.catalog.snapshot")
         .await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -147,9 +147,12 @@ async fn shared_portal_rpc_reads_the_actual_linux_catalog_without_android_fixtur
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local_sessions() {
-    for permission in [PortalPermission::ReadOnly, PortalPermission::LocalSessions] {
-        let portal = RunningPortal::with_host_access(true, Some(permission)).await;
+async fn surface_host_rpc_scoped_permissions_allow_only_initial_reads_and_local_sessions() {
+    for permission in [
+        SurfaceHostPermission::ReadOnly,
+        SurfaceHostPermission::LocalSessions,
+    ] {
+        let shell = RunningSurfaceHost::with_host_access(true, Some(permission)).await;
         for method in [
             "app.catalog.snapshot",
             "system.health",
@@ -158,7 +161,7 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             "app.library.folders.snapshot",
             "app.session.status",
         ] {
-            let response = portal.rpc(Some(TOKEN), Some(ORIGIN), method).await;
+            let response = shell.rpc(Some(TOKEN), Some(ORIGIN), method).await;
             assert_eq!(response.status(), StatusCode::OK, "{method}");
             assert_eq!(response.json::<Value>().await.unwrap()["_tag"], method);
         }
@@ -198,8 +201,9 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
                         | "app.session.leave"
                         | "app.session.resume"
                 );
-            let allowed = read || (permission == PortalPermission::LocalSessions && local_session);
-            let response = portal.request(Some(TOKEN), Some(ORIGIN), body).await;
+            let allowed =
+                read || (permission == SurfaceHostPermission::LocalSessions && local_session);
+            let response = shell.request(Some(TOKEN), Some(ORIGIN), body).await;
             assert_eq!(
                 response.status(),
                 if allowed {
@@ -210,7 +214,7 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
                 "{permission:?}: {method}"
             );
             if allowed {
-                // HTTP 200 proves dispatch, not launch: this portal has neither
+                // HTTP 200 proves dispatch, not launch: this shell has neither
                 // configured games nor peers.
                 let body = response.json::<Value>().await.unwrap();
                 assert_eq!(body["_tag"], method);
@@ -246,12 +250,12 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
 async fn unknown_games_fail_before_owner_or_input_setup_on_every_launch_path() {
     // The production constructor has neither an owner nor usable input seats.
     // Missing game identity must not be hidden by either unrelated refusal.
-    let portal = RunningPortal::with_host_access(true, Some(PortalPermission::Full)).await;
+    let shell = RunningSurfaceHost::with_host_access(true, Some(SurfaceHostPermission::Full)).await;
     for body in [
         json!({"_tag":"app.session.prepare","payload":{"gameId":"missing"}}),
         json!({"_tag":"app.local-games.launch.selected","payload":{"gameId":"missing","runnerId":"@missing:runner/run"}}),
     ] {
-        let response = portal.request(Some(TOKEN), Some(ORIGIN), body).await;
+        let response = shell.request(Some(TOKEN), Some(ORIGIN), body).await;
         assert_eq!(response.status(), StatusCode::OK);
         let response = response.json::<Value>().await.unwrap();
         assert_eq!(
@@ -259,7 +263,7 @@ async fn unknown_games_fail_before_owner_or_input_setup_on_every_launch_path() {
             "{response}"
         );
     }
-    let reserved = portal
+    let reserved = shell
         .request(
             Some(TOKEN),
             Some(ORIGIN),
@@ -270,14 +274,14 @@ async fn unknown_games_fail_before_owner_or_input_setup_on_every_launch_path() {
         .await
         .unwrap();
     assert_eq!(reserved["outcome"]["_tag"], "Ok", "{reserved}");
-    let response=portal.request(Some(TOKEN),Some(ORIGIN),json!({"_tag":"app.session.start","payload":{"gameId":"missing","expectedLaunchId":reserved["outcome"]["payload"]["launchId"]}})).await;
+    let response=shell.request(Some(TOKEN),Some(ORIGIN),json!({"_tag":"app.session.start","payload":{"gameId":"missing","expectedLaunchId":reserved["outcome"]["payload"]["launchId"]}})).await;
     assert_eq!(response.status(), StatusCode::OK);
     let response = response.json::<Value>().await.unwrap();
     assert_eq!(
         response["outcome"]["payload"]["code"], "HostGameNotFound",
         "{response}"
     );
-    assert!(!portal
+    assert!(!shell
         ._root
         .path()
         .join("private/host-session/active.json")
@@ -285,22 +289,22 @@ async fn unknown_games_fail_before_owner_or_input_setup_on_every_launch_path() {
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_local_sessions_still_require_credentials_and_the_exact_origin() {
-    let portal = RunningPortal::start(true).await;
+async fn surface_host_rpc_local_sessions_still_require_credentials_and_the_exact_origin() {
+    let shell = RunningSurfaceHost::start(true).await;
     for body in [
         json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}}),
         json!({"_tag":"app.session.end","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}),
     ] {
         for token in [None, Some("incorrect")] {
             assert_eq!(
-                portal
+                shell
                     .request(token, Some(ORIGIN), body.clone())
                     .await
                     .status(),
                 StatusCode::UNAUTHORIZED
             );
         }
-        let response = portal
+        let response = shell
             .request(Some(TOKEN), Some("https://foreign.example"), body.clone())
             .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -309,7 +313,7 @@ async fn shared_portal_rpc_local_sessions_still_require_credentials_and_the_exac
             .get("access-control-allow-origin")
             .is_none());
         // Native callers may omit Origin, but must still hold the capability.
-        let response = portal.request(Some(TOKEN), None, body).await;
+        let response = shell.request(Some(TOKEN), None, body).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.json::<Value>().await.unwrap()["outcome"]["_tag"],
@@ -319,10 +323,11 @@ async fn shared_portal_rpc_local_sessions_still_require_credentials_and_the_exac
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_full_permission_still_dispatches_commands_on_both_runners() {
+async fn surface_host_rpc_full_permission_still_dispatches_commands_on_both_runners() {
     for host in [false, true] {
-        let portal = RunningPortal::with_host_access(host, Some(PortalPermission::Full)).await;
-        let response = portal
+        let shell =
+            RunningSurfaceHost::with_host_access(host, Some(SurfaceHostPermission::Full)).await;
+        let response = shell
             .request(
                 Some(TOKEN),
                 Some(ORIGIN),
@@ -340,8 +345,8 @@ async fn shared_portal_rpc_full_permission_still_dispatches_commands_on_both_run
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_preserves_encrypted_peer_routing_and_default_plaintext_rejection() {
-    let disabled = RunningPortal::with_host_access(true, None).await;
+async fn surface_host_rpc_preserves_encrypted_peer_routing_and_default_plaintext_rejection() {
+    let disabled = RunningSurfaceHost::with_host_access(true, None).await;
     assert_eq!(
         disabled
             .rpc(Some(TOKEN), Some(ORIGIN), "system.health")
@@ -349,10 +354,10 @@ async fn shared_portal_rpc_preserves_encrypted_peer_routing_and_default_plaintex
             .status(),
         StatusCode::UPGRADE_REQUIRED
     );
-    let enabled = RunningPortal::start(true).await;
-    for portal in [&disabled, &enabled] {
+    let enabled = RunningSurfaceHost::start(true).await;
+    for shell in [&disabled, &enabled] {
         let response = Client::new()
-            .post(format!("{}/peer-rpc", portal.address))
+            .post(format!("{}/peer-rpc", shell.address))
             .bearer_auth(TOKEN)
             .json(&json!({"_tag":"system.health","payload":{}}))
             .send()
@@ -364,12 +369,12 @@ async fn shared_portal_rpc_preserves_encrypted_peer_routing_and_default_plaintex
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_cors_preflight_has_the_same_exact_origin_policy() {
+async fn surface_host_rpc_cors_preflight_has_the_same_exact_origin_policy() {
     for host in [false, true] {
-        let portal = RunningPortal::start(host).await;
+        let shell = RunningSurfaceHost::start(host).await;
         for origin in [ORIGIN, "https://foreign.example"] {
             let response = Client::new()
-                .request(reqwest::Method::OPTIONS, format!("{}/rpc", portal.address))
+                .request(reqwest::Method::OPTIONS, format!("{}/rpc", shell.address))
                 .header("Origin", origin)
                 .header("Access-Control-Request-Method", "POST")
                 .header(
@@ -389,17 +394,14 @@ async fn shared_portal_rpc_cors_preflight_has_the_same_exact_origin_policy() {
             );
         }
         assert_eq!(
-            portal
-                .rpc(Some(TOKEN), None, "system.health")
-                .await
-                .status(),
+            shell.rpc(Some(TOKEN), None, "system.health").await.status(),
             StatusCode::OK
         );
     }
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_browser_permission_does_not_change_private_control_authority() {
+async fn surface_host_rpc_permission_does_not_change_private_control_authority() {
     let root = tempfile::tempdir().unwrap();
     let config = root.path().join("host.toml");
     std::fs::write(&config, "label = \"rg353m\"\n").unwrap();
@@ -407,7 +409,11 @@ async fn shared_portal_rpc_browser_permission_does_not_change_private_control_au
         &config,
         None::<std::path::PathBuf>,
         root.path().join("private"),
-        Some(PortalAccess::new(TOKEN, ORIGIN, PortalPermission::ReadOnly)),
+        Some(SurfaceHostAccess::new(
+            TOKEN,
+            ORIGIN,
+            SurfaceHostPermission::ReadOnly,
+        )),
     );
     let path = root.path().join("control.sock");
     let listener = tokio::net::UnixListener::bind(&path).unwrap();

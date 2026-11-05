@@ -648,7 +648,7 @@ pkgs.testers.runNixOSTest {
           KORRID_MODE = lib.mkForce "brain";
           KORRID_ADDRESS = lib.mkForce "127.0.0.1:49117";
           KORRID_RPC_CAPABILITY = "plugin-host-vm-capability";
-          KORRID_PORTAL_ORIGIN = "http://127.0.0.1:8099";
+          KORRID_SHELL_ORIGIN = "http://127.0.0.1:8099";
           KORRI_LOCAL_STORAGE_ROOT = "/var/lib/korri-brain-smoke";
         };
         system.activationScripts.korriProductVmStorage.text = ''
@@ -993,7 +993,7 @@ pkgs.testers.runNixOSTest {
     generic_refusal = machine.fail("${hostPackage}/bin/korri-plugin remove @example:required-lifecycle 2>&1")
     assert "no authoritative lifecycle policy" in generic_refusal, generic_refusal
     required_refusal = machine.fail("korri-plugin remove @example:required-lifecycle 2>&1")
-    assert "portal accepts local input" in required_refusal, required_refusal
+    assert "shell accepts local input" in required_refusal, required_refusal
     assert "@example:required-lifecycle" in required_refusal, required_refusal
     required_status = json.loads(machine.succeed("korri-plugin status @example:required-lifecycle"))
     assert required_status["package"] == required_lifecycle["package"]

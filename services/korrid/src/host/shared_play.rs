@@ -2,7 +2,7 @@
 use super::*;
 
 /// The title of one launch's game, found once per launch. Session status runs
-/// on every portal and peer poll, so the title is read from the launched
+/// on every shell and peer poll, so the title is read from the launched
 /// game's own entry, never from a full catalog: on the RG353M a catalog took
 /// 2.3 to 3.6 s, and status polls that missed this cache each built one.
 /// A launch's game does not change, so one lookup serves it.

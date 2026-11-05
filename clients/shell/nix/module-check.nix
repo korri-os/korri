@@ -64,17 +64,14 @@ assert !(disabled.systemd.services ? korri-shell);
 assert !(disabled.systemd.services ? korri-shell-credentials);
 # korrid freezes the shell during a focused live game. Without a shell the
 # feature stays inert: no unit name, no grant, no thaw hooks.
-assert !(disabled.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
+assert !(disabled.systemd.services.korrid.environment ? KORRID_SHELL_UNIT);
 assert !(lib.hasInfix "korri-shell" disabled.security.polkit.extraConfig);
 assert (disabled.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ];
 # The shell must not acquire freezer authority on unpatched systemd.
-assert daemon.environment.KORRID_PORTAL_UNIT == "korri-shell.service";
-assert daemon.environment.KORRID_PORTAL_FREEZER_ENABLED == "false";
+assert daemon.environment.KORRID_SHELL_UNIT == "korri-shell.service";
+assert daemon.environment.KORRID_SHELL_FREEZER_ENABLED == "false";
 assert (daemon.serviceConfig.ExecStopPost or [ ]) == [ ];
 assert !(lib.hasInfix "korri-shell" enabled.security.polkit.extraConfig);
-# No web server and no browser remain.
-assert !enabled.services.nginx.enable;
-assert !(enabled.systemd.services ? korri-chromium-kiosk);
 # The isolated account: a system user with no groups, never root.
 assert enabled.users.users.korri-portal.isSystemUser;
 assert enabled.users.users.korri-portal.uid == null;
@@ -104,7 +101,7 @@ assert builtins.elem credential service.serviceConfig.LoadCredential;
 assert builtins.elem credential daemon.serviceConfig.LoadCredential;
 # korrid binds every interface; the shell calls it on loopback.
 assert service.environment.KORRID_ADDRESS == "127.0.0.1:39217";
-assert service.environment.KORRID_PORTAL_ORIGIN == daemon.environment.KORRID_PORTAL_ORIGIN;
+assert service.environment.KORRID_SHELL_ORIGIN == daemon.environment.KORRID_SHELL_ORIGIN;
 assert producer.serviceConfig.Type == "oneshot";
 assert producer.serviceConfig.RemainAfterExit;
 assert producer.serviceConfig.User == "root";

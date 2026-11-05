@@ -51,10 +51,10 @@ async fn local_rpc_download_retry_and_launch_gate_share_cache_truth() {
     let app = secure_host_routers(
         runtime,
         &root.path().join("private"),
-        Some(PortalAccess::new(
+        Some(SurfaceHostAccess::new(
             "acquisition-test",
             "http://127.0.0.1:8099",
-            PortalPermission::LocalSessions,
+            SurfaceHostPermission::LocalSessions,
         )),
     )
     .0;
@@ -254,10 +254,10 @@ async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start()
     let app = secure_host_routers(
         runtime,
         &root.path().join("private"),
-        Some(PortalAccess::new(
+        Some(SurfaceHostAccess::new(
             "acquisition-test",
             "http://127.0.0.1:8099",
-            PortalPermission::LocalSessions,
+            SurfaceHostPermission::LocalSessions,
         )),
     )
     .0;
@@ -299,7 +299,7 @@ async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start()
 }
 
 /// The six game acquisition methods decode at the production `/rpc` boundary
-/// with the portal capability. A device with no installed library answers
+/// with the shell capability. A device with no installed library answers
 /// each with `AcquisitionUnavailable`, and discovery with
 /// `OperationUnsupported`, never a panic.
 #[tokio::test]
@@ -322,10 +322,10 @@ async fn game_acquisition_methods_decode_and_need_a_device_library() {
     let app = secure_host_routers(
         runtime,
         &root.path().join("private"),
-        Some(PortalAccess::new(
+        Some(SurfaceHostAccess::new(
             "acquisition-test",
             "http://127.0.0.1:8099",
-            PortalPermission::LocalSessions,
+            SurfaceHostPermission::LocalSessions,
         )),
     )
     .0;

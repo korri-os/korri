@@ -194,10 +194,10 @@ assert recovery.boot.consoleLogLevel == 4;
 assert c.boot.consoleLogLevel == 0;
 assert c.specialisation.development.configuration.boot.consoleLogLevel == 7;
 # The shell freeze is product behavior, never a recovery or unpatched-systemd feature.
-assert !((recovery.systemd.services.korrid.environment or { }) ? KORRID_PORTAL_UNIT);
+assert !((recovery.systemd.services.korrid.environment or { }) ? KORRID_SHELL_UNIT);
 assert !(lib.hasInfix "korri-shell" recovery.security.polkit.extraConfig);
 assert
-  (c.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT)
+  (c.systemd.services.korrid.environment ? KORRID_SHELL_UNIT)
   == builtins.any (patch: baseNameOf (toString patch) == "stop-thaws-unit.patch") (
     c.systemd.package.patches or [ ]
   );

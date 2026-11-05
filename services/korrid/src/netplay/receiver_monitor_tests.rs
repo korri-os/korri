@@ -136,7 +136,7 @@ impl Fixture {
                     } else {
                         crate::dispatch(
                             &state,
-                            &authorization::AuthorizationContext::LocalBrowser,
+                            &authorization::AuthorizationContext::LocalSurfaceHost,
                             request,
                         )
                         .await
@@ -226,7 +226,7 @@ impl Fixture {
     async fn status(&self) -> SessionStatus {
         let response = crate::dispatch(
             &self.state,
-            &authorization::AuthorizationContext::LocalBrowser,
+            &authorization::AuthorizationContext::LocalSurfaceHost,
             RpcRequest::SessionStatus(SessionStatusRequest {}),
         )
         .await
@@ -277,7 +277,7 @@ impl Fixture {
         ));
         let response = crate::dispatch(
             &self.state,
-            &authorization::AuthorizationContext::LocalBrowser,
+            &authorization::AuthorizationContext::LocalSurfaceHost,
             RpcRequest::SessionStatus(SessionStatusRequest {}),
         )
         .await
@@ -313,7 +313,7 @@ impl Fixture {
         assert_eq!(invite.netplay, Some(InviteNetplay::Ready));
         let response = crate::dispatch(
             &self.state,
-            &authorization::AuthorizationContext::LocalBrowser,
+            &authorization::AuthorizationContext::LocalSurfaceHost,
             RpcRequest::InvitesNetplay(InviteRequest {
                 invite_id: invite.invite_id,
             }),
@@ -331,7 +331,7 @@ impl Fixture {
         let status = self.status().await;
         let response = crate::dispatch(
             &self.state,
-            &authorization::AuthorizationContext::LocalBrowser,
+            &authorization::AuthorizationContext::LocalSurfaceHost,
             RpcRequest::SessionLeave(SessionLeaveRequest {
                 expected_launch_id: Some(status.active.unwrap().launch_id),
             }),
@@ -433,7 +433,7 @@ async fn netplay_failed_leave_keeps_the_copy_monitored() {
     fixture.backend.configure_stop(false, true, None);
     let response = crate::dispatch(
         &fixture.state,
-        &authorization::AuthorizationContext::LocalBrowser,
+        &authorization::AuthorizationContext::LocalSurfaceHost,
         RpcRequest::SessionLeave(SessionLeaveRequest {
             expected_launch_id: Some(fixture.launch.clone()),
         }),
@@ -558,7 +558,7 @@ async fn netplay_leave_uses_the_observed_identity_after_a_reconnect_relaunch() {
     assert_ne!(replacement, fixture.launch);
     let refused = crate::dispatch(
         &fixture.state,
-        &authorization::AuthorizationContext::LocalBrowser,
+        &authorization::AuthorizationContext::LocalSurfaceHost,
         RpcRequest::SessionLeave(SessionLeaveRequest {
             expected_launch_id: Some("another-run".into()),
         }),
@@ -570,7 +570,7 @@ async fn netplay_leave_uses_the_observed_identity_after_a_reconnect_relaunch() {
     );
     let response = crate::dispatch(
         &fixture.state,
-        &authorization::AuthorizationContext::LocalBrowser,
+        &authorization::AuthorizationContext::LocalSurfaceHost,
         RpcRequest::SessionLeave(SessionLeaveRequest {
             expected_launch_id: Some(observed.clone()),
         }),

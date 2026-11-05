@@ -167,7 +167,7 @@ impl UpstreamClient {
     }
 
     pub async fn session_stop(&self, force: bool) -> Result<UpstreamSessionStop, UpstreamError> {
-        // The portal's explicit stop action is the user confirmation. The
+        // The shell's explicit stop action is the user confirmation. The
         // legacy host refuses mutation without this bit and returns
         // ConfirmationRequired.
         let value = self

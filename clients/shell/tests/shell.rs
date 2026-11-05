@@ -361,7 +361,7 @@ fn the_overlay_follows_the_presentation() {
     assert!(
         matches!(rig.shell.overlay_property("heading"), Some(SlintValue::String(s)) if s.as_str() == "Paused")
     );
-    // One mapped window: korrid places the one window its kiosk unit owns.
+    // One mapped window: korrid places the one window its shell unit owns.
     assert_eq!(Headless::live_windows(), 1);
     rig.key(Key::Escape); // back: DismissGameplayOverlay
     rig.until("overlay gone", |r| !r.shell.overlay_shown());

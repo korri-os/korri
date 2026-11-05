@@ -155,7 +155,7 @@ impl AuthorizationContext {
     /// owned. Trust reconciliation is not a person.
     pub fn person_public_key<'a>(&'a self, local_owner: Option<&'a str>) -> Option<&'a str> {
         match self {
-            Self::LocalBrowser | Self::LocalCli | Self::LocalUnixControl => local_owner,
+            Self::LocalSurfaceHost | Self::LocalCli | Self::LocalUnixControl => local_owner,
             Self::Peer(principal) => principal.person_public_key(),
             Self::TrustReconciliation => None,
         }
@@ -164,7 +164,7 @@ impl AuthorizationContext {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthorizationContext {
-    LocalBrowser,
+    LocalSurfaceHost,
     LocalCli,
     LocalUnixControl,
     Peer(Principal),
@@ -173,9 +173,9 @@ pub enum AuthorizationContext {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeerPolicy {
-    LocalPortalOnly,
+    LocalSurfaceHostOnly,
     /// Person surfaces and verified owner devices, never inputd or reconciliation.
-    LocalPortalOrOwnerDevice,
+    LocalSurfaceHostOrOwnerDevice,
     LocalOnly,
     OwnerDeviceOnly,
     ExplicitScope(Scope),
@@ -208,7 +208,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::WifiConnectHidden(_)
         | RpcRequest::OnboardingStatus(_)
         | RpcRequest::OnboardingFinish(_)
-        | RpcRequest::OnboardingRestart(_) => PeerPolicy::LocalPortalOnly,
+        | RpcRequest::OnboardingRestart(_) => PeerPolicy::LocalSurfaceHostOnly,
         RpcRequest::CatalogSnapshot(_) => PeerPolicy::CatalogOrStreamScope,
         RpcRequest::MoonlightCertificateAttest(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::MoonlightCertificateProvision(_) => {
@@ -238,7 +238,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::AcquisitionDetails(_)
         | RpcRequest::AcquisitionAcquire(_)
         | RpcRequest::AcquisitionAcquireStatus(_)
-        | RpcRequest::AcquisitionAcquireCancel(_) => PeerPolicy::LocalPortalOnly,
+        | RpcRequest::AcquisitionAcquireCancel(_) => PeerPolicy::LocalSurfaceHostOnly,
         RpcRequest::SessionReserve(_)
         | RpcRequest::SessionStart(_)
         | RpcRequest::SessionCancel(_) => PeerPolicy::LocalOnly,
@@ -267,7 +267,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::SurfaceModel(_)
         | RpcRequest::SurfaceRequest(_)
         | RpcRequest::SurfacePreferences(_)
-        | RpcRequest::SurfaceDeclare(_) => PeerPolicy::LocalPortalOnly,
+        | RpcRequest::SurfaceDeclare(_) => PeerPolicy::LocalSurfaceHostOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LibraryFoldersSnapshot(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LibraryFolderAdd(_) | RpcRequest::LibraryFolderChange(_) => {
@@ -283,7 +283,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SteamGridDbCredentialSet(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SteamGridDbCredentialClear(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::OwnerBindingSnapshot(_) | RpcRequest::OwnerBindingStart(_) => {
-            PeerPolicy::LocalPortalOnly
+            PeerPolicy::LocalSurfaceHostOnly
         }
         RpcRequest::IdentityStatus(_)
         | RpcRequest::IdentityBackupExport(_)
@@ -307,7 +307,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::PluginArchiveFinish(_)
         | RpcRequest::PluginArchiveInspect(_)
         | RpcRequest::PluginArchiveInstall(_)
-        | RpcRequest::PluginSetEnabled(_) => PeerPolicy::LocalPortalOrOwnerDevice,
+        | RpcRequest::PluginSetEnabled(_) => PeerPolicy::LocalSurfaceHostOrOwnerDevice,
     }
 }
 
@@ -316,27 +316,27 @@ pub fn authorize(
     request: &RpcRequest,
 ) -> Result<(), AuthorizationDenied> {
     let allowed = match context {
-        AuthorizationContext::LocalBrowser | AuthorizationContext::LocalCli => true,
+        AuthorizationContext::LocalSurfaceHost | AuthorizationContext::LocalCli => true,
         AuthorizationContext::LocalUnixControl => !matches!(
             policy_for(request),
-            PeerPolicy::LocalPortalOnly | PeerPolicy::LocalPortalOrOwnerDevice
+            PeerPolicy::LocalSurfaceHostOnly | PeerPolicy::LocalSurfaceHostOrOwnerDevice
         ),
         AuthorizationContext::TrustReconciliation => !matches!(
             policy_for(request),
             PeerPolicy::LocalOnly
-                | PeerPolicy::LocalPortalOnly
-                | PeerPolicy::LocalPortalOrOwnerDevice
+                | PeerPolicy::LocalSurfaceHostOnly
+                | PeerPolicy::LocalSurfaceHostOrOwnerDevice
         ),
         AuthorizationContext::Peer(Principal::OwnerDevice { .. }) => !matches!(
             policy_for(request),
-            PeerPolicy::LocalOnly | PeerPolicy::LocalPortalOnly
+            PeerPolicy::LocalOnly | PeerPolicy::LocalSurfaceHostOnly
         ),
         AuthorizationContext::Peer(principal @ Principal::Household { .. })
         | AuthorizationContext::Peer(principal @ Principal::Guest { .. }) => {
             match policy_for(request) {
                 PeerPolicy::LocalOnly
-                | PeerPolicy::LocalPortalOnly
-                | PeerPolicy::LocalPortalOrOwnerDevice
+                | PeerPolicy::LocalSurfaceHostOnly
+                | PeerPolicy::LocalSurfaceHostOrOwnerDevice
                 | PeerPolicy::OwnerDeviceOnly => false,
                 PeerPolicy::ExplicitScope(scope) => principal.has_scope(scope),
                 PeerPolicy::CatalogOrStreamScope => {
@@ -1245,7 +1245,7 @@ mod tests {
                 overlay: false,
                 launch_id: None,
             });
-        assert_eq!(policy_for(&surface), PeerPolicy::LocalPortalOnly);
+        assert_eq!(policy_for(&surface), PeerPolicy::LocalSurfaceHostOnly);
         assert!(authorize(&AuthorizationContext::LocalUnixControl, &surface).is_err());
         assert!(authorize(&AuthorizationContext::LocalCli, &surface).is_ok());
         let wake = RpcRequest::DisplayWake(crate::host::display_placement::DisplayWakeRequest {});
@@ -1424,13 +1424,13 @@ mod tests {
             assert_eq!(policy_for(&request), expected);
             assert_eq!(
                 authorize(&AuthorizationContext::LocalCli, &request),
-                authorize(&AuthorizationContext::LocalBrowser, &request)
+                authorize(&AuthorizationContext::LocalSurfaceHost, &request)
             );
         }
     }
 
     #[test]
-    fn network_and_onboarding_require_the_local_portal_and_deny_every_peer() {
+    fn network_and_onboarding_require_the_local_shell_and_deny_every_peer() {
         let owner = AuthorizationContext::Peer(Principal::OwnerDevice {
             device_public_key: DEVICE.into(),
             owner_statement: "event".into(),
@@ -1452,8 +1452,8 @@ mod tests {
             ("system.onboarding.restart", serde_json::json!({})),
         ] {
             let request = request(serde_json::json!({"_tag":tag,"payload":payload}));
-            assert_eq!(policy_for(&request), PeerPolicy::LocalPortalOnly);
-            assert!(authorize(&AuthorizationContext::LocalBrowser, &request).is_ok());
+            assert_eq!(policy_for(&request), PeerPolicy::LocalSurfaceHostOnly);
+            assert!(authorize(&AuthorizationContext::LocalSurfaceHost, &request).is_ok());
             assert!(authorize(&AuthorizationContext::LocalCli, &request).is_ok());
             for denied in [
                 &owner,
@@ -1557,10 +1557,13 @@ mod tests {
             ),
         ] {
             let request = request(serde_json::json!({"_tag":tag,"payload":payload}));
-            assert_eq!(policy_for(&request), PeerPolicy::LocalPortalOrOwnerDevice);
+            assert_eq!(
+                policy_for(&request),
+                PeerPolicy::LocalSurfaceHostOrOwnerDevice
+            );
             for context in [
                 allowed.context(),
-                &AuthorizationContext::LocalBrowser,
+                &AuthorizationContext::LocalSurfaceHost,
                 &AuthorizationContext::LocalCli,
             ] {
                 assert!(authorize(context, &request).is_ok(), "{tag}");
@@ -1656,7 +1659,7 @@ mod tests {
 
         // Local surfaces act for the local owner; reconciliation is nobody.
         assert_eq!(
-            AuthorizationContext::LocalBrowser.person_public_key(Some(&local_owner_key)),
+            AuthorizationContext::LocalSurfaceHost.person_public_key(Some(&local_owner_key)),
             Some(local_owner_key.as_str())
         );
         assert_eq!(
@@ -1692,7 +1695,7 @@ mod tests {
             assert!(authorize(&unknown, &request).is_err());
         }
         let identity = request(serde_json::json!({"_tag":"system.identity.status","payload":{}}));
-        assert!(authorize(&AuthorizationContext::LocalBrowser, &identity).is_ok());
+        assert!(authorize(&AuthorizationContext::LocalSurfaceHost, &identity).is_ok());
         assert!(authorize(&owner, &identity).is_err());
     }
 

@@ -106,10 +106,10 @@ impl Fixture {
         let app = secure_host_routers(
             runtime,
             &root.path().join("private"),
-            Some(PortalAccess::new(
+            Some(SurfaceHostAccess::new(
                 "artifact-games",
                 "http://127.0.0.1:8099",
-                PortalPermission::LocalSessions,
+                SurfaceHostPermission::LocalSessions,
             )),
         )
         .0;
@@ -683,10 +683,10 @@ async fn package_games_resolve_content_path_offline_and_become_unavailable_when_
     let app = secure_host_routers(
         runtime.clone(),
         &private,
-        Some(PortalAccess::new(
+        Some(SurfaceHostAccess::new(
             "artifact-games",
             "http://127.0.0.1:8099",
-            PortalPermission::LocalSessions,
+            SurfaceHostPermission::LocalSessions,
         )),
     )
     .0;

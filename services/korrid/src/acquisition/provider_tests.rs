@@ -205,7 +205,7 @@ struct World {
     context: GameContext,
     coordinator: AcquisitionCoordinator,
     blocks: Arc<sleep::InMemoryBlocks>,
-    /// The device's local `/rpc` with the portal capability.
+    /// The device's local `/rpc` with the shell capability.
     app: axum::Router,
     runtime: crate::host::HostRuntime,
     backend: Arc<crate::host::control::InMemoryLaunchUnitBackend>,
@@ -254,10 +254,10 @@ fn world_gated(server: HttpFixture, pinned: Option<(&str, &str)>, games: GameAcq
     let app = crate::secure_host_routers_with_acquisition(
         runtime.clone(),
         &private,
-        Some(crate::PortalAccess::new(
+        Some(crate::SurfaceHostAccess::new(
             "device",
             "http://127.0.0.1:8099",
-            crate::PortalPermission::Full,
+            crate::SurfaceHostPermission::Full,
         )),
         coordinator.clone(),
     )

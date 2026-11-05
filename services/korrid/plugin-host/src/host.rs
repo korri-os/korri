@@ -3520,7 +3520,7 @@ mod tests {
         let selected = report("@test:clock", "clock-required");
         let lifecycle = LifecyclePolicy::new(vec![RequiredPlugin::new(
             &selected.id,
-            "portal accepts local input",
+            "shell accepts local input",
         )
         .unwrap()])
         .unwrap();
@@ -3536,7 +3536,7 @@ mod tests {
 
         let error = host.remove(&selected.id, false).unwrap_err();
 
-        assert!(error.contains("portal accepts local input"), "{error}");
+        assert!(error.contains("shell accepts local input"), "{error}");
         assert_eq!(host.status(&selected.id).unwrap(), before);
     }
 

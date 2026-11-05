@@ -177,7 +177,7 @@ const REFUSED_HEADERS: [&str; 5] = [
 ];
 
 /// Why a provider operation produced no admitted result. The string is a
-/// diagnostic for logs at debug level only; the portal gets fixed copy.
+/// diagnostic for logs at debug level only; the shell gets fixed copy.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum ProviderError {
     /// Transport: DNS, connect, timeout, stall, oversize body, refused redirect.

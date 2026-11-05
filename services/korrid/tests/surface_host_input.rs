@@ -1,11 +1,11 @@
-//! Real loopback WebSockets; no device, inputd, browser injection, or IPC stub.
+//! Real loopback WebSockets; no device, inputd, surface host injection, or IPC stub.
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use korrid::{
     native_input::*,
-    portal_access::{PortalAccess, PortalPermission},
-    portal_input::{self, PortalInputLimits, PortalInputSource, PublishError},
+    surface_host_access::{SurfaceHostAccess, SurfaceHostPermission},
+    surface_host_input::{self, PublishError, SurfaceHostInputLimits, SurfaceHostInputSource},
 };
 use serde_json::{json, Value};
 use tokio::{net::TcpStream, task::JoinHandle, time::timeout};
@@ -31,20 +31,22 @@ impl Drop for Server {
     }
 }
 
-fn limits() -> PortalInputLimits {
-    PortalInputLimits {
+fn limits() -> SurfaceHostInputLimits {
+    SurfaceHostInputLimits {
         handshake_timeout: Duration::from_millis(500),
         max_queue_age: Duration::from_secs(2),
-        ..PortalInputLimits::default()
+        ..SurfaceHostInputLimits::default()
     }
 }
 
 async fn server_with(
-    limits: PortalInputLimits,
-    permission: PortalPermission,
-) -> (Server, PortalInputSource) {
-    let (router, source) =
-        portal_input::router(PortalAccess::new(CAPABILITY, ORIGIN, permission), limits);
+    limits: SurfaceHostInputLimits,
+    permission: SurfaceHostPermission,
+) -> (Server, SurfaceHostInputSource) {
+    let (router, source) = surface_host_input::router(
+        SurfaceHostAccess::new(CAPABILITY, ORIGIN, permission),
+        limits,
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/", listener.local_addr().unwrap());
     let task = tokio::spawn(async move {
@@ -53,8 +55,8 @@ async fn server_with(
     (Server { url, task }, source)
 }
 
-async fn server() -> (Server, PortalInputSource) {
-    server_with(limits(), PortalPermission::LocalSessions).await
+async fn server() -> (Server, SurfaceHostInputSource) {
+    server_with(limits(), SurfaceHostPermission::LocalSessions).await
 }
 
 async fn connect(server: &Server) -> Socket {
@@ -153,7 +155,7 @@ fn removed(id: &str) -> NativeInputEvent {
     decode(json!({"kind":"device-removed","deviceId":id}))
 }
 
-async fn subscribed(server: &Server, source: &PortalInputSource) -> Socket {
+async fn subscribed(server: &Server, source: &SurfaceHostInputSource) -> Socket {
     source.publish(added("pad", "gamepad")).unwrap();
     let mut socket = connect(server).await;
     authenticate(&mut socket, &["gamepad"]).await;
@@ -266,9 +268,9 @@ async fn trace_logger_cannot_capture_capability_from_messages_or_close_frames() 
 #[tokio::test]
 async fn accepted_origin_and_capability_under_each_existing_permission() {
     for permission in [
-        PortalPermission::Full,
-        PortalPermission::ReadOnly,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::Full,
+        SurfaceHostPermission::ReadOnly,
+        SurfaceHostPermission::LocalSessions,
     ] {
         let (server, source) = server_with(limits(), permission).await;
         let mut socket = subscribed(&server, &source).await;
@@ -422,11 +424,11 @@ async fn oversized_auth_subscription_and_fragmented_auth_are_closed() {
         Frame,
     };
     let (server, _source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             incoming_bytes: 128,
             ..limits()
         },
-        PortalPermission::Full,
+        SurfaceHostPermission::Full,
     )
     .await;
     for authenticated in [false, true] {
@@ -458,7 +460,7 @@ async fn oversized_auth_subscription_and_fragmented_auth_are_closed() {
 }
 
 #[tokio::test]
-async fn browser_injection_and_malformed_subscription_close_the_connection() {
+async fn client_injection_and_malformed_subscription_close_the_connection() {
     let (server, source) = server().await;
     source.publish(added("pad", "gamepad")).unwrap();
     for bad in [
@@ -532,11 +534,11 @@ async fn source_loss_closes_authenticated_and_pending_sockets_and_refuses_reconn
 #[tokio::test]
 async fn connection_budget_counts_unauthenticated_sockets_and_reclaims_expired_slot() {
     let (server, _source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             connections: 1,
             ..limits()
         },
-        PortalPermission::Full,
+        SurfaceHostPermission::Full,
     )
     .await;
     let mut first = connect(&server).await;
@@ -559,11 +561,11 @@ async fn connection_budget_counts_unauthenticated_sockets_and_reclaims_expired_s
 async fn per_connection_queue_overflow_disconnects_without_draining_and_does_not_harm_other_classes(
 ) {
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             queued_events: 2,
             ..limits()
         },
-        PortalPermission::Full,
+        SurfaceHostPermission::Full,
     )
     .await;
     let mut lagging = subscribed(&server, &source).await;
@@ -588,11 +590,11 @@ async fn per_connection_queue_overflow_disconnects_without_draining_and_does_not
 #[tokio::test]
 async fn stale_queued_event_closes_instead_of_replaying_after_executor_stall() {
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             max_queue_age: Duration::from_millis(75),
             ..limits()
         },
-        PortalPermission::Full,
+        SurfaceHostPermission::Full,
     )
     .await;
     let mut socket = subscribed(&server, &source).await;
@@ -604,12 +606,12 @@ async fn stale_queued_event_closes_instead_of_replaying_after_executor_stall() {
 #[tokio::test]
 async fn metadata_count_and_serialized_bytes_are_bounded_without_corrupting_snapshot() {
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             devices: 1,
             event_bytes: 512,
             ..limits()
         },
-        PortalPermission::Full,
+        SurfaceHostPermission::Full,
     )
     .await;
     assert_eq!(
@@ -646,12 +648,12 @@ async fn metadata_count_and_serialized_bytes_are_bounded_without_corrupting_snap
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn snapshot_and_live_lifecycle_are_ordered_under_concurrent_publication() {
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             devices: 64,
             queued_events: 256,
             ..limits()
         },
-        PortalPermission::Full,
+        SurfaceHostPermission::Full,
     )
     .await;
     source.publish(added("pad", "gamepad")).unwrap();
@@ -698,7 +700,7 @@ async fn snapshot_and_live_lifecycle_are_ordered_under_concurrent_publication() 
 async fn non_reading_socket_hits_write_deadline_and_releases_connection_budget() {
     use std::os::fd::AsRawFd;
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             connections: 1,
             devices: 8,
             event_bytes: 2 * 1024 * 1024,
@@ -706,7 +708,7 @@ async fn non_reading_socket_hits_write_deadline_and_releases_connection_budget()
             max_queue_age: Duration::from_secs(10),
             ..limits()
         },
-        PortalPermission::Full,
+        SurfaceHostPermission::Full,
     )
     .await;
     for id in 0..8 {
@@ -790,11 +792,11 @@ async fn non_reading_socket_hits_write_deadline_and_releases_connection_budget()
 #[tokio::test]
 async fn active_client_disposal_releases_slot_and_reconnect_gets_current_baseline() {
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             connections: 1,
             ..limits()
         },
-        PortalPermission::Full,
+        SurfaceHostPermission::Full,
     )
     .await;
     let mut socket = subscribed(&server, &source).await;
@@ -878,13 +880,13 @@ fn lifecycle_struct_union_preserves_exact_flat_wire_and_rejects_extra_fields() {
 #[tokio::test]
 async fn all_physical_and_remote_sources_attach_above_64_without_expanding_live_queues() {
     let count = korri_input_contract::MAX_PHYSICAL_SOURCES + 16;
-    assert_eq!(PortalInputLimits::default().devices, count);
+    assert_eq!(SurfaceHostInputLimits::default().devices, count);
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             queued_events: 2,
             ..limits()
         },
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     )
     .await;
     for index in 0..count {
@@ -981,11 +983,11 @@ async fn measured_frames_preserve_short_press_release_and_canonical_report_bound
 async fn attachment_racing_a_split_start_to_a_frame_never_captures_transient_neutral() {
     use std::sync::Arc;
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             queued_events: 4096,
             ..limits()
         },
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     )
     .await;
     let source = Arc::new(source);
@@ -1042,11 +1044,11 @@ async fn attachment_racing_a_split_start_to_a_frame_never_captures_transient_neu
 #[tokio::test]
 async fn local_retirement_winning_selection_releases_budget_and_is_not_a_suspend_participant() {
     let (server, source) = server_with(
-        PortalInputLimits {
+        SurfaceHostInputLimits {
             connections: 1,
             ..limits()
         },
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     )
     .await;
     for _ in 0..8 {
@@ -1094,8 +1096,8 @@ async fn suspend_selection_winning_local_retirement_keeps_exact_ack_channel() {
 
 #[tokio::test]
 async fn local_retirement_does_not_turn_selected_eof_into_success_or_accept_foreign_generation() {
-    use portal_input::SuspendError;
     use std::sync::Arc;
+    use surface_host_input::SuspendError;
     for valid_generation in [true, false] {
         let (server, source) = server().await;
         let source = Arc::new(source);
@@ -1239,8 +1241,8 @@ async fn suspension_waits_for_every_subscriber_then_resume_requires_new_generati
 
 #[tokio::test]
 async fn stale_or_forged_lifecycle_ack_cannot_complete_freezer_barrier() {
-    use portal_input::SuspendError;
     use std::sync::Arc;
+    use surface_host_input::SuspendError;
     for wrong_field in ["generation", "requestId"] {
         let (server, source) = server().await;
         let source = Arc::new(source);
@@ -1264,8 +1266,8 @@ async fn stale_or_forged_lifecycle_ack_cannot_complete_freezer_barrier() {
 
 #[tokio::test]
 async fn acknowledgement_from_previous_suspension_cannot_retire_a_new_connection() {
-    use portal_input::SuspendError;
     use std::sync::Arc;
+    use surface_host_input::SuspendError;
     let (server, source) = server().await;
     let source = Arc::new(source);
     let (mut first, _) = attach(&server).await;
@@ -1291,8 +1293,8 @@ async fn acknowledgement_from_previous_suspension_cannot_retire_a_new_connection
 
 #[tokio::test]
 async fn missing_ack_is_explicit_timeout_and_unsolicited_ack_is_not_authority() {
-    use portal_input::SuspendError;
     use std::sync::Arc;
+    use surface_host_input::SuspendError;
     let (server, source) = server().await;
     let source = Arc::new(source);
     let (mut socket, generation) = attach(&server).await;

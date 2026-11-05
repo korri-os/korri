@@ -13,7 +13,7 @@ It passed `git apply --check` against that base.
 | `src/lib.rs` | `RpcRequest::{SaveHeads, SaveRecords, SaveInUse, SaveObject}` with the approved request payloads; the first three `RpcResponse` variants use the existing tagged Ok/Err outcome grammar |
 | `src/lib.rs` | `AppState.saves: Option<Arc<saves::peer::SavePeerService>>`; dispatch heads/records/inUse to that shared service; reject SaveObject in normal RPC dispatch |
 | `src/authorization.rs` | All four peer variants use `PeerPolicy::OwnerDeviceOnly`. Service methods additionally require `AuthorizationContext::Peer(Principal::OwnerDevice { .. })`, rejecting browser and reconciliation contexts too |
-| `src/portal_access.rs` | Add the four peer variants to the exhaustive non-initial-read arm. This is needed to compile, not permission to expose peer saves locally |
+| `src/surface_host_access.rs` | Add the four peer variants to the exhaustive non-initial-read arm. This is needed to compile, not permission to expose peer saves locally |
 | `src/peer_rpc.rs` | Extract the existing signature, recipient, clock, authorization, revocation and nonce checks into `authenticate`. Both routes use that function and the same replay guard. Reject `SaveObject` on `/peer-rpc`, and every other method on `/peer-saves-object` |
 | `src/peer_rpc.rs` | Load `saves/peer/object_route.rs` as a private child module and register `POST /peer-saves-object` under the existing 8 MiB request-body limit. The response is streamed bytes, not JSON |
 | `typeshare.toml` | Map the existing untagged `SaveInUse` to `SaveInUseActive \| SaveInUseIdle`. Outcomes need Typeshare annotations because exported `RpcResponse` references them; regenerate contracts through the usual Core check |

@@ -32,11 +32,11 @@ fn caller_without_authoritative_policy_cannot_remove_any_plugin() {
 
 #[test]
 fn required_behavior_refuses_removal_by_name_without_treating_other_plugins_as_required() {
-    let required = RequiredPlugin::new("@example:clock", "portal accepts local input").unwrap();
+    let required = RequiredPlugin::new("@example:clock", "shell accepts local input").unwrap();
     let policy = LifecyclePolicy::new(vec![required]).unwrap();
 
     let error = policy.check_removal("@example:clock").unwrap_err();
-    assert!(error.contains("portal accepts local input"), "{error}");
+    assert!(error.contains("shell accepts local input"), "{error}");
     assert!(error.contains("@example:clock"), "{error}");
     policy.check_removal("@example:optional").unwrap();
 

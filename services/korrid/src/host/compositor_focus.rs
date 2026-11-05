@@ -102,8 +102,8 @@ impl SwaymsgCompositorControl {
     }
 
     /// Focus a stream viewer and fill its output. Moonlight runs windowed,
-    /// and Sway otherwise tiles it beside the portal, which kept half of the
-    /// RG353M's screen for a stream. Focusing the portal later leaves
+    /// and Sway otherwise tiles it beside the shell, which kept half of the
+    /// RG353M's screen for a stream. Focusing the shell later leaves
     /// fullscreen again, so each return to the viewer requests it anew.
     pub(crate) fn focus_fullscreen(&self, node_id: i64) -> Result<(), String> {
         self.run(&[
@@ -198,30 +198,30 @@ pub(crate) fn window_rectangle(tree: &str, node_id: i64) -> Result<WindowRectang
         .ok_or_else(|| "exact launch has no committed window rectangle".into())
 }
 
-pub(crate) fn portal_node(tree: &str, portal_pids: &BTreeSet<i32>) -> Result<i64, String> {
-    portal_window(tree, portal_pids).map(|window| window.node_id)
+pub(crate) fn shell_node(tree: &str, shell_pids: &BTreeSet<i32>) -> Result<i64, String> {
+    shell_window(tree, shell_pids).map(|window| window.node_id)
 }
 
-pub(crate) fn portal_window(
+pub(crate) fn shell_window(
     tree: &str,
-    portal_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
 ) -> Result<FocusCandidate, String> {
-    fn visit(node: &TreeNode, portal_pids: &BTreeSet<i32>, windows: &mut Vec<FocusCandidate>) {
-        if let Some(pid) = node.pid.filter(|pid| portal_pids.contains(pid)) {
+    fn visit(node: &TreeNode, shell_pids: &BTreeSet<i32>, windows: &mut Vec<FocusCandidate>) {
+        if let Some(pid) = node.pid.filter(|pid| shell_pids.contains(pid)) {
             windows.push(FocusCandidate {
                 node_id: node.id,
                 pid,
             });
         }
         for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
-            visit(child, portal_pids, windows);
+            visit(child, shell_pids, windows);
         }
     }
     let root: TreeNode = serde_json::from_str(tree).map_err(|e| e.to_string())?;
     let mut windows = Vec::new();
-    visit(&root, portal_pids, &mut windows);
+    visit(&root, shell_pids, &mut windows);
     if windows.len() != 1 {
-        return Err("no unique portal window".into());
+        return Err("no unique shell window".into());
     }
     Ok(windows.remove(0))
 }
@@ -250,30 +250,30 @@ pub(crate) enum FocusTarget {
 
 /// Select the window of one launch from a Sway tree snapshot.
 ///
-/// `launch_pids` are the processes of that exact launch unit. `portal_pids`
-/// are the current processes owned by the kiosk unit, never window metadata.
+/// `launch_pids` are the processes of that exact launch unit. `shell_pids`
+/// are the current processes owned by the shell unit, never window metadata.
 pub(crate) fn select_focus_target(
     tree: &str,
     launch_pids: &BTreeSet<i32>,
-    portal_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
 ) -> FocusTarget {
     let root: TreeNode = match serde_json::from_str(tree) {
         Ok(root) => root,
         Err(error) => return FocusTarget::Unreadable(error.to_string()),
     };
-    select_focus_target_from_root(&root, launch_pids, portal_pids)
+    select_focus_target_from_root(&root, launch_pids, shell_pids)
 }
 
 fn select_focus_target_from_root(
     root: &TreeNode,
     launch_pids: &BTreeSet<i32>,
-    portal_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
 ) -> FocusTarget {
     if launch_pids.is_empty() {
         return FocusTarget::NoWindow;
     }
     let mut candidates = Vec::new();
-    collect(root, launch_pids, portal_pids, &mut candidates);
+    collect(root, launch_pids, shell_pids, &mut candidates);
     candidates.sort_by_key(|candidate| candidate.node_id);
     match candidates.len() {
         0 => FocusTarget::NoWindow,
@@ -285,13 +285,13 @@ fn select_focus_target_from_root(
 fn collect(
     node: &TreeNode,
     launch_pids: &BTreeSet<i32>,
-    portal_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
     found: &mut Vec<FocusCandidate>,
 ) {
     if let Some(pid) = node.pid {
         // A window is only a game window when the launch itself owns the
         // process. Titles and classes are attacker-controlled decoration.
-        if launch_pids.contains(&pid) && !is_excluded(node, portal_pids) {
+        if launch_pids.contains(&pid) && !is_excluded(node, shell_pids) {
             found.push(FocusCandidate {
                 node_id: node.id,
                 pid,
@@ -299,7 +299,7 @@ fn collect(
         }
     }
     for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
-        collect(child, launch_pids, portal_pids, found);
+        collect(child, launch_pids, shell_pids, found);
     }
 }
 
@@ -308,10 +308,10 @@ fn collect(
 pub(crate) fn focused_ownership(
     tree: &str,
     launch_pids: &BTreeSet<i32>,
-    portal_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
 ) -> Result<FocusOwnership, String> {
     let root: TreeNode = serde_json::from_str(tree).map_err(|error| error.to_string())?;
-    let candidate = match select_focus_target_from_root(&root, launch_pids, portal_pids) {
+    let candidate = match select_focus_target_from_root(&root, launch_pids, shell_pids) {
         FocusTarget::Window(candidate) => candidate,
         FocusTarget::NoWindow => return Err("exact launch has no compositor window".into()),
         FocusTarget::Ambiguous(_) => {
@@ -327,7 +327,7 @@ pub(crate) fn focused_ownership(
     let focused = focused[0];
     if focused.id == candidate.node_id && focused.pid == Some(candidate.pid) {
         Ok(FocusOwnership::Launch)
-    } else if is_excluded(focused, portal_pids) {
+    } else if is_excluded(focused, shell_pids) {
         Ok(FocusOwnership::Excluded)
     } else {
         Ok(FocusOwnership::Other)
@@ -343,34 +343,34 @@ fn collect_focused<'a>(node: &'a TreeNode, found: &mut Vec<&'a TreeNode>) {
     }
 }
 
-fn is_excluded(node: &TreeNode, portal_pids: &BTreeSet<i32>) -> bool {
-    node.pid.is_some_and(|pid| portal_pids.contains(&pid))
+fn is_excluded(node: &TreeNode, shell_pids: &BTreeSet<i32>) -> bool {
+    node.pid.is_some_and(|pid| shell_pids.contains(&pid))
 }
 
-/// Focus only the unique window owned by the kiosk unit, then prove it kept
+/// Focus only the unique window owned by the shell unit, then prove it kept
 /// focus. Acknowledgement alone cannot complete Leave.
-pub(crate) fn focus_portal_window(
+pub(crate) fn focus_shell_window(
     control: &dyn CompositorControl,
     pids: &BTreeSet<i32>,
 ) -> Result<i64, String> {
-    let id = portal_node(&control.tree()?, pids)?;
+    let id = shell_node(&control.tree()?, pids)?;
     control.focus(id)?;
-    let focused = portal_focus_target(&control.tree()?, pids)?;
+    let focused = shell_focus_target(&control.tree()?, pids)?;
     if focused != id {
-        return Err("portal window changed during focus".into());
+        return Err("shell window changed during focus".into());
     }
     Ok(focused)
 }
 
 /// Readback of the committed focus, also used after a placement batch that
-/// already focused the portal. Do not send another focus effect just to prove it.
-pub(crate) fn portal_focus_target(tree: &str, pids: &BTreeSet<i32>) -> Result<i64, String> {
-    let id = portal_node(tree, pids)?;
+/// already focused the shell. Do not send another focus effect just to prove it.
+pub(crate) fn shell_focus_target(tree: &str, pids: &BTreeSet<i32>) -> Result<i64, String> {
+    let id = shell_node(tree, pids)?;
     let root: TreeNode = serde_json::from_str(tree).map_err(|error| error.to_string())?;
     let mut focused = Vec::new();
     collect_focused(&root, &mut focused);
     if focused.len() != 1 || focused[0].id != id || !is_excluded(focused[0], pids) {
-        return Err("compositor did not confirm portal focus".into());
+        return Err("compositor did not confirm shell focus".into());
     }
     Ok(id)
 }
@@ -391,7 +391,7 @@ pub(crate) enum FocusOutcome {
 pub(crate) fn focus_launch_window(
     control: &dyn CompositorControl,
     launch_pids: &BTreeSet<i32>,
-    portal_pids: &BTreeSet<i32>,
+    shell_pids: &BTreeSet<i32>,
 ) -> FocusOutcome {
     // A launch with no processes owns no window, so the compositor is not
     // consulted at all and a compositor problem cannot fail that resume.
@@ -402,7 +402,7 @@ pub(crate) fn focus_launch_window(
         Ok(tree) => tree,
         Err(error) => return FocusOutcome::Failed(error),
     };
-    match select_focus_target(&tree, launch_pids, portal_pids) {
+    match select_focus_target(&tree, launch_pids, shell_pids) {
         FocusTarget::Window(candidate) => match control.focus_game(candidate.node_id) {
             Ok(()) => FocusOutcome::Focused(candidate.node_id),
             Err(error) => FocusOutcome::Failed(error),
@@ -443,16 +443,16 @@ mod tests {
     }
 
     #[test]
-    fn reads_exact_launch_and_excluded_portal_focus_from_the_tree() {
+    fn reads_exact_launch_and_excluded_shell_focus_from_the_tree() {
         let launch = pids(&[9100]);
-        let game_focused = r#"{"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-portal","focused":false},{"id":3,"pid":9100,"focused":true}]}"#;
-        let portal_focused = r#"{"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-portal","focused":true},{"id":3,"pid":9100,"focused":false}]}"#;
+        let game_focused = r#"{"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-shell","focused":false},{"id":3,"pid":9100,"focused":true}]}"#;
+        let shell_focused = r#"{"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-shell","focused":true},{"id":3,"pid":9100,"focused":false}]}"#;
         assert_eq!(
             focused_ownership(game_focused, &launch, &pids(&[4100])).unwrap(),
             FocusOwnership::Launch
         );
         assert_eq!(
-            focused_ownership(portal_focused, &launch, &pids(&[4100])).unwrap(),
+            focused_ownership(shell_focused, &launch, &pids(&[4100])).unwrap(),
             FocusOwnership::Excluded
         );
     }
@@ -461,7 +461,7 @@ mod tests {
     fn restart_ownership_rejects_ambiguous_launch_windows_and_focus_facts() {
         let launch = pids(&[9100, 9101]);
         let ambiguous_launch = r#"{"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
+            {"id":2,"pid":4100,"app_id":"korri-shell","focused":true},
             {"id":3,"pid":9100,"focused":false},
             {"id":4,"pid":9101,"focused":false}
         ]}"#;
@@ -474,13 +474,13 @@ mod tests {
         assert!(focused_ownership(multiple_focused_launch_nodes, &launch, &pids(&[4100])).is_err());
 
         let several_focused = r#"{"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
+            {"id":2,"pid":4100,"app_id":"korri-shell","focused":true},
             {"id":3,"pid":9100,"focused":true}
         ]}"#;
         assert!(focused_ownership(several_focused, &pids(&[9100]), &pids(&[4100])).is_err());
 
         let mismatched_pid = r#"{"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
+            {"id":2,"pid":4100,"app_id":"korri-shell","focused":true},
             {"id":3,"pid":9200,"focused":false}
         ]}"#;
         assert!(focused_ownership(mismatched_pid, &pids(&[9100]), &pids(&[4100])).is_err());
@@ -572,13 +572,13 @@ mod tests {
         .is_none());
     }
 
-    /// Two windows of one Sway workspace: the portal browser and a game.
+    /// Two windows of one Sway workspace: the shell and a game.
     fn tree(game_pid: i32) -> String {
         format!(
             r#"{{
               "id": 1, "nodes": [
                 {{"id": 2, "nodes": [
-                  {{"id": 3, "pid": 4100, "app_id": "chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default",
+                  {{"id": 3, "pid": 4100, "app_id": "korri-shell",
                     "nodes": [], "floating_nodes": []}},
                   {{"id": 4, "pid": {game_pid}, "app_id": null,
                     "window_properties": {{"class": "Neverball"}},
@@ -613,8 +613,8 @@ mod tests {
     }
 
     #[test]
-    fn never_focuses_the_portal_browser_even_when_it_shares_the_launch() {
-        // A shared-UID host means the browser can appear among launch
+    fn never_focuses_the_shell_even_when_it_shares_the_launch() {
+        // A shared-UID host means the surface host can appear among launch
         // processes. Focusing it would hide the game behind the hub.
         assert_eq!(
             select_focus_target(&tree(9100), &pids(&[4100]), &pids(&[4100])),

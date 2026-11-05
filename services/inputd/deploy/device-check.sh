@@ -612,10 +612,10 @@ remote_managed_virtual_name() {
 remote_native_input_acceptance() {
   printf '%s\n' 'physical-source-membership=unverified observer=unavailable' >&2
   # Configured count is host.preferences.playerCount in device.yaml, exposed as
-  # SettingsSnapshot.playerCount. Host settings reads require LocalBrowser;
+  # SettingsSnapshot.playerCount. Host settings reads require LocalSurfaceHost;
   # this maintenance gate is not that principal. Do not guess four, equate
   # observed count with configured count, take the coordinator connection, or
-  # extract the portal capability. Ready/socket/PID cannot prove native actions.
+  # extract the shell capability. Ready/socket/PID cannot prove native actions.
   printf '%s\n' 'configured-seat-count=unverified source=host.preferences.playerCount observer=unavailable' >&2
   printf '%s\n' 'native-delivery=unverified reason=no-end-to-end-observer' >&2
   return 1
@@ -1775,7 +1775,7 @@ remote_automated_gates() {
   remote_native_input_acceptance || fail 'native input acceptance is unverified; maintenance delivery is blocked'
   acceptance="$(remote_acceptance_fingerprint "$runtime_user" "$expected_identity" "$profile" "$require_physical")" \
     || fail 'acceptance fingerprint could not be captured'
-  printf 'automated-gates=pass raw-readable=0 source-readable=0 shared-seats-readable=1 portal-device-readable=0 inputd-status=Ready system-korrid=active system-korri-compositor=active system-sunshine=active pairing-state=present credentials=service-specific sunshine-package=attested catalog=Ok delegate=yes controllers=pids\n'
+  printf 'automated-gates=pass raw-readable=0 source-readable=0 shared-seats-readable=1 shell-device-readable=0 inputd-status=Ready system-korrid=active system-korri-compositor=active system-sunshine=active pairing-state=present credentials=service-specific sunshine-package=attested catalog=Ok delegate=yes controllers=pids\n'
   printf '%s\n' "$sunshine_provenance"
   printf 'sunshine-private-state=protected digest=%s\n' "$sunshine_private_state"
   printf 'normalized-fingerprint=%s\n' "$fingerprint"

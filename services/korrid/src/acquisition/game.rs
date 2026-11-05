@@ -47,7 +47,7 @@ pub struct GameContext {
 
 type ClaimKey = (String, String);
 
-/// The claim fields korrid acts on; the portal can never substitute them.
+/// The claim fields korrid acts on; the shell can never substitute them.
 #[derive(Clone)]
 struct HeldClaim {
     url: String,

@@ -1,4 +1,4 @@
-//! Bounded public HTTP/1 transport. Browser upgrades and streaming save replies
+//! Bounded public HTTP/1 transport. WebSocket upgrades and streaming save replies
 //! remain supported; deadlines cover request headers, not response bodies.
 use axum::{extract::ConnectInfo, Extension, Router};
 use hyper_util::{
@@ -76,7 +76,7 @@ async fn serve_with_limits(
                 let app = router.clone().layer(Extension(ConnectInfo(remote)));
                 connections.spawn(async move {
                     let _permit = permit;
-                    // HTTP/1 is the existing native and browser transport. A
+                    // HTTP/1 is the existing native and surface host transport. A
                     // bounded header buffer also bounds unauthenticated parsing.
                     let _ = hyper::server::conn::http1::Builder::new()
                         .timer(TokioTimer::new())

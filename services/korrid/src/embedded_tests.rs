@@ -16,7 +16,7 @@ fn embedded_stream_client_has_an_empty_local_catalog_without_linux_plugins() {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let port = start_local_server(
-        "https://portal.example",
+        "https://shell.example",
         readable.path().to_str().unwrap(),
         private.path().to_str().unwrap(),
         EmbeddedPlatform::default(),
@@ -64,7 +64,7 @@ fn embedded_peer_transport_reads_and_releases_its_platform_network_source() {
         Ok(Vec::new())
     });
     start_local_server(
-        "https://portal.example",
+        "https://shell.example",
         readable.path().to_str().unwrap(),
         private.path().to_str().unwrap(),
         EmbeddedPlatform {

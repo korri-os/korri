@@ -1,19 +1,19 @@
 //! VM entry point for the production host router, launcher, compositor and
-//! portal watcher. No launch/freezer/compositor implementations are replaced.
+//! shell watcher. No launch/freezer/compositor implementations are replaced.
 //! The VM supplies native units, Sway, policy, and the existing host.toml format.
-use korrid::portal_access::{PortalAccess, PortalPermission};
+use korrid::surface_host_access::{SurfaceHostAccess, SurfaceHostPermission};
 
 #[tokio::test]
-#[ignore = "runs as korrid.service in the portal freezer NixOS VM"]
-async fn serve_native_portal_freezer_runtime() {
+#[ignore = "runs as korrid.service in the shell freezer NixOS VM"]
+async fn serve_native_shell_freezer_runtime() {
     let (router, _) = korrid::host_routers_with_storage_and_private(
         "/etc/freezer-host.toml",
         None::<std::path::PathBuf>,
         "/var/lib/korrid",
-        Some(PortalAccess::new(
+        Some(SurfaceHostAccess::new(
             "freezer-vm-only",
             "http://127.0.0.1:8099",
-            PortalPermission::LocalSessions,
+            SurfaceHostPermission::LocalSessions,
         )),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:43117")

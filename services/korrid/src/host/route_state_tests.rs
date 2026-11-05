@@ -453,10 +453,10 @@ async fn unowned_device_can_browse_and_reserve_but_native_start_needs_an_owner()
     let app = crate::secure_host_routers(
         runtime,
         &root.path().join("private"),
-        Some(crate::PortalAccess::new(
+        Some(crate::SurfaceHostAccess::new(
             "unowned-test",
             "http://127.0.0.1:8099",
-            crate::PortalPermission::LocalSessions,
+            crate::SurfaceHostPermission::LocalSessions,
         )),
     )
     .0;
@@ -607,11 +607,11 @@ async fn local_games_uses_the_installed_library_and_preserves_route_failures() {
         .is_empty());
 }
 
-/// The surface host's Device launch settings over the browser's real `/rpc`:
+/// The surface host's Device launch settings over the surface host's real `/rpc`:
 /// the group comes from korrid's own snapshot, and a row's change lands in
 /// device.yaml.
 #[tokio::test]
-async fn surface_device_launch_settings_write_device_yaml_through_the_browser_rpc() {
+async fn surface_device_launch_settings_write_device_yaml_through_the_surface_host_rpc() {
     let root = tempfile::tempdir().unwrap();
     crate::plugin_test_fixtures::write_gba_library(root.path());
     fs::create_dir(root.path().join("roms")).unwrap();
@@ -627,13 +627,13 @@ async fn surface_device_launch_settings_write_device_yaml_through_the_browser_rp
     )
     .with_route_registry(root.path().into(), registry);
     runtime.claim_save_owner();
-    let (mut browser, _) = crate::app_states(runtime);
-    browser.portal_access = Some(crate::PortalAccess::new(
+    let (mut surface_host, _) = crate::app_states(runtime);
+    surface_host.surface_host_access = Some(crate::SurfaceHostAccess::new(
         "surface-test",
         "http://127.0.0.1:8099",
-        crate::PortalPermission::Full,
+        crate::SurfaceHostPermission::Full,
     ));
-    let app = crate::portal_router_with_surfaces(browser, None);
+    let app = crate::surface_host_router_with_surfaces(surface_host, None);
     let call = |method: &'static str, payload: Value| {
         let app = app.clone();
         async move {

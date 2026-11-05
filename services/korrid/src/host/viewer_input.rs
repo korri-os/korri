@@ -71,20 +71,20 @@ impl LocalInputViewer {
                             .input_seats
                             .begin_session(&launch, korri_input_contract::SeatOrder::Attached)?;
                     }
-                    control.thaw_portal()
+                    control.thaw_shell()
                 }
                 Input::Focus => {
                     if session.is_none() {
                         return Err("Viewer input session is absent".into());
                     }
-                    control.reconcile_local_portal(&ActiveState::Running {
+                    control.reconcile_local_shell(&ActiveState::Running {
                         launch_id: launch,
                         game_id: None,
                     })
                 }
-                Input::Background => control.thaw_portal(),
+                Input::Background => control.thaw_shell(),
                 Input::End => {
-                    control.thaw_portal()?;
+                    control.thaw_shell()?;
                     if session.is_some() {
                         control.input_seats.end_session(&launch)?;
                     }

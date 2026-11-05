@@ -133,7 +133,7 @@ struct Loaded {
     drawn: Rc<Cell<bool>>,
     gameplay_overlay: bool,
     /// Whether the Surface window is mapped. Only one of Surface and Overlay
-    /// is mapped at a time: korrid places the one window its kiosk unit owns.
+    /// is mapped at a time: korrid places the one window its shell unit owns.
     surface_shown: bool,
     /// The `app.surface.declare` preferences payload, sent again once this
     /// surface's window is the only one, so korrid places that window.

@@ -358,7 +358,7 @@ pub enum DownloadResolution {
     Failed(FailedDownload),
 }
 
-/// Why plugin output was refused. Diagnostics only; never sent to the portal.
+/// Why plugin output was refused. Diagnostics only; never sent to the shell.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct Inadmissible(pub(super) &'static str);
 

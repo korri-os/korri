@@ -29,7 +29,7 @@ fn authenticated_setup_uses_the_current_native_effect_and_signature_validation()
             plugin_test_fixtures::installed(readable.path()),
         ));
         let port = start_local_server_for_platform(
-            "https://portal.example",
+            "https://shell.example",
             readable.path().to_str().unwrap(),
             private.path().to_str().unwrap(),
             registry,
@@ -164,7 +164,7 @@ fn owner_binding_is_never_a_peer_permission() {
     let request = RpcRequest::OwnerBindingStart(OwnerBindingRequest {});
     assert_eq!(
         authorization::policy_for(&request),
-        authorization::PeerPolicy::LocalPortalOnly
+        authorization::PeerPolicy::LocalSurfaceHostOnly
     );
     assert!(serde_json::from_value::<RpcRequest>(serde_json::json!({"_tag":"system.identity.owner-binding.start","payload":{"signedEvent":"untrusted"}})).is_err());
 }

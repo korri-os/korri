@@ -27,10 +27,10 @@ fn native_routers(runtime: host::HostRuntime, root: &Path) -> (Router, Router) {
     secure_host_routers(
         runtime,
         &root.join("private"),
-        Some(PortalAccess::new(
+        Some(SurfaceHostAccess::new(
             TOKEN,
             ORIGIN,
-            PortalPermission::LocalSessions,
+            SurfaceHostPermission::LocalSessions,
         )),
     )
 }
@@ -38,7 +38,7 @@ fn focusable_compositor() -> Arc<Compositor> {
     Arc::new(Compositor {
         gate: Mutex::new(None),
         tree: Mutex::new(json!({"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true},
+            {"id":2,"pid":4100,"app_id":"korri-shell","focused":true},
             {"id":3,"pid":9100,"focused":false}
         ]})),
     })
@@ -249,7 +249,12 @@ async fn metadata_delayed_native_home_cannot_restore_intent_after_return_and_ful
 async fn held_recovered_status_preserves_newer_control(replacement: bool) {
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
-    let initial = router(runtime, root.path(), TOKEN, PortalPermission::LocalSessions);
+    let initial = router(
+        runtime,
+        root.path(),
+        TOKEN,
+        SurfaceHostPermission::LocalSessions,
+    );
     let a = reserve(&initial).await;
     assert_eq!(start(&initial, &a).await["outcome"]["_tag"], "Ok");
     backend.set_window_pids(&a, [9100].into());
@@ -412,28 +417,28 @@ async fn pending_startup_status_public_protocol_probe() {
         runtime.with_reserved_route_probe(Arc::new(move || blocked.block())),
         root.path(),
         TOKEN,
-        PortalPermission::LocalSessions,
+        SurfaceHostPermission::LocalSessions,
     );
     let id = reserve(&app).await;
     let starting_app = app.clone();
     let starting_id = id.clone();
     let starting = tokio::spawn(async move { start(&starting_app, &starting_id).await });
     gate.entered().await;
-    let fresh_portal_status = rpc(&app, "app.session.status", json!({})).await;
-    println!("PRE-ACTIVE PENDING STARTUP STATUS: {fresh_portal_status}");
+    let fresh_shell_status = rpc(&app, "app.session.status", json!({})).await;
+    println!("PRE-ACTIVE PENDING STARTUP STATUS: {fresh_shell_status}");
     assert_eq!(
-        fresh_portal_status["outcome"]["_tag"], "Ok",
-        "{fresh_portal_status}"
+        fresh_shell_status["outcome"]["_tag"], "Ok",
+        "{fresh_shell_status}"
     );
     assert_eq!(
-        fresh_portal_status["outcome"]["payload"]["pendingLaunches"][0]["session"]["launchId"], id,
-        "{fresh_portal_status}"
+        fresh_shell_status["outcome"]["payload"]["pendingLaunches"][0]["session"]["launchId"], id,
+        "{fresh_shell_status}"
     );
     assert_eq!(
-        fresh_portal_status["outcome"]["payload"]["pendingLaunches"][0]["phase"], "preparing",
-        "{fresh_portal_status}"
+        fresh_shell_status["outcome"]["payload"]["pendingLaunches"][0]["phase"], "preparing",
+        "{fresh_shell_status}"
     );
-    assert!(fresh_portal_status["outcome"]["payload"]
+    assert!(fresh_shell_status["outcome"]["payload"]
         .get("active")
         .is_none());
     assert_eq!(backend.launch_count(), 0);
@@ -452,7 +457,7 @@ async fn pending_startup_status_public_protocol_probe() {
 }
 
 #[tokio::test]
-async fn native_control_status_reads_exact_liveness_without_browser_focus_work() {
+async fn native_control_status_reads_exact_liveness_without_surface_focus_work() {
     #[derive(Debug)]
     struct ObservedCompositor(std::sync::atomic::AtomicUsize);
     impl host::CompositorControl for ObservedCompositor {

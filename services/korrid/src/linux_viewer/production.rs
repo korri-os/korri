@@ -47,7 +47,7 @@ pub fn production_viewer(
         sway_socket: std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")
             .map(PathBuf::from)
             .unwrap_or_default(),
-        portal: crate::host::configured_portal(),
+        shell: crate::host::configured_shell(),
         keydir: PathBuf::from("/home/korri/.config/moonlight"),
         operation: Arc::new(tokio::sync::Mutex::new(())),
     };
@@ -63,7 +63,7 @@ struct ProductionLinuxStreamViewer {
     units: Arc<dyn LaunchUnitBackend>,
     swaymsg: PathBuf,
     sway_socket: PathBuf,
-    portal: Option<Arc<dyn crate::host::PortalUnit>>,
+    shell: Option<Arc<dyn crate::host::ShellUnit>>,
     keydir: PathBuf,
     operation: Arc<tokio::sync::Mutex<()>>,
 }
@@ -476,29 +476,29 @@ impl ProductionLinuxStreamViewer {
         }
         let pids = self.units.window_pids(launch).map_err(unit_error)?;
         let tree = self.control()?.tree().map_err(error)?;
-        let portal_pids = self
-            .portal
+        let shell_pids = self
+            .shell
             .as_ref()
             .map(|unit| unit.window_pids())
             .transpose()
             .map_err(unit_error)?
             .unwrap_or_default();
-        match focused_ownership(&tree, &pids, &portal_pids).map_err(error)? {
+        match focused_ownership(&tree, &pids, &shell_pids).map_err(error)? {
             crate::FocusOwnership::Launch => Ok(LinuxViewerStatus::Running),
             _ => Ok(LinuxViewerStatus::Backgrounded),
         }
     }
-    fn focus(&self, launch: &str, portal: bool) -> Result<(), LinuxViewerError> {
+    fn focus(&self, launch: &str, shell: bool) -> Result<(), LinuxViewerError> {
         let control = self.control()?;
-        let portal_pids = self
-            .portal
+        let shell_pids = self
+            .shell
             .as_ref()
             .map(|unit| unit.window_pids())
             .transpose()
             .map_err(unit_error)?
             .unwrap_or_default();
-        if portal && portal_pids.is_empty() {
-            return Err(error("portal compositor identity is not configured"));
+        if shell && shell_pids.is_empty() {
+            return Err(error("shell compositor identity is not configured"));
         }
         // Moonlight draws its window only after the stream connects. On an
         // RG35XX Pro over Wi-Fi that took about 10 s from unit start.
@@ -509,27 +509,24 @@ impl ProductionLinuxStreamViewer {
             }
             let pids = self.units.window_pids(launch).map_err(unit_error)?;
             let tree = control.tree().map_err(error)?;
-            let target = if portal {
-                Some(
-                    crate::host::compositor_focus::portal_node(&tree, &portal_pids)
-                        .map_err(error)?,
-                )
+            let target = if shell {
+                Some(crate::host::compositor_focus::shell_node(&tree, &shell_pids).map_err(error)?)
             } else {
-                match select_focus_target(&tree, &pids, &portal_pids) {
+                match select_focus_target(&tree, &pids, &shell_pids) {
                     FocusTarget::Window(window) => Some(window.node_id),
                     FocusTarget::NoWindow => None,
                     _ => return Err(error("viewer window is ambiguous or unreadable")),
                 }
             };
             if let Some(node) = target {
-                if portal {
+                if shell {
                     control.focus(node).map_err(error)?;
                 } else {
                     control.focus_fullscreen(node).map_err(error)?;
                 }
                 let tree = control.tree().map_err(error)?;
-                let actual = focused_ownership(&tree, &pids, &portal_pids).map_err(error)?;
-                let expected = if portal {
+                let actual = focused_ownership(&tree, &pids, &shell_pids).map_err(error)?;
+                let expected = if shell {
                     crate::FocusOwnership::Excluded
                 } else {
                     crate::FocusOwnership::Launch
@@ -693,7 +690,7 @@ impl ProductionLinuxStreamViewer {
     fn mutate<'a>(
         &'a self,
         launch: &'a str,
-        portal: Option<bool>,
+        shell: Option<bool>,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(async move {
             validate_launch(launch)?;
@@ -702,8 +699,8 @@ impl ProductionLinuxStreamViewer {
             let launch = launch.to_owned();
             tokio::task::spawn_blocking(move || {
                 let _guard = guard;
-                match portal {
-                    Some(portal) => this.focus(&launch, portal),
+                match shell {
+                    Some(shell) => this.focus(&launch, shell),
                     None => this.confirmed_stop(&launch),
                 }
             })

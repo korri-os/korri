@@ -563,7 +563,7 @@ impl LaunchablesState {
         recovered
     }
 
-    /// Daemon facts, never current focus or browser history, define fresh
+    /// Daemon facts, never current focus or surface host history, define fresh
     /// recovery. `state` is a Ready state's content.
     pub fn recover_startup(
         mut state: Content,

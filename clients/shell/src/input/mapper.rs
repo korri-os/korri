@@ -17,7 +17,7 @@ const BTN_TL: u16 = 0x136;
 const BTN_TR: u16 = 0x137;
 pub const REPEAT_DELAY: f64 = 400.0;
 pub const REPEAT_INTERVAL: f64 = 100.0;
-/// `portal_input.rs`: contracts/input MAX_PHYSICAL_SOURCES plus 16.
+/// `surface_host_input.rs`: contracts/input MAX_PHYSICAL_SOURCES plus 16.
 pub const MAX_DEVICES: usize = 255 + 16;
 
 /// BTN_MODE/Home and system actions belong to the host; they are not here.

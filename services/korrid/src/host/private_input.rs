@@ -121,14 +121,20 @@ mod tests {
         tungstenite::{client::IntoClientRequest, Message as ClientMessage},
     };
 
-    type Browser = tokio_tungstenite::WebSocketStream<
+    type Subscriber = tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >;
-    async fn native_batch(browser: &mut Browser, marker: &str) -> Vec<serde_json::Value> {
+    async fn native_batch(subscriber: &mut Subscriber, marker: &str) -> Vec<serde_json::Value> {
         tokio::time::timeout(Duration::from_secs(2), async {
             let mut frames = Vec::new();
             loop {
-                let text = browser.next().await.unwrap().unwrap().into_text().unwrap();
+                let text = subscriber
+                    .next()
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .into_text()
+                    .unwrap();
                 let value: serde_json::Value = serde_json::from_str(&text).unwrap();
                 let done = if marker == "syn" {
                     value["kind"] == "input"
@@ -146,21 +152,21 @@ mod tests {
         .await
         .unwrap()
     }
-    async fn attach_browser(url: &str) -> Browser {
+    async fn attach_subscriber(url: &str) -> Subscriber {
         let mut request = url.into_client_request().unwrap();
         request
             .headers_mut()
-            .insert("Origin", "http://portal.local".parse().unwrap());
-        let (mut browser, _) = tokio_tungstenite::connect_async(request).await.unwrap();
-        browser
+            .insert("Origin", "http://shell.local".parse().unwrap());
+        let (mut subscriber, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+        subscriber
             .send(ClientMessage::Text("Bearer native-integration-test".into()))
             .await
             .unwrap();
-        browser
+        subscriber
             .send(ClientMessage::Text(r#"{"classes":["gamepad"]}"#.into()))
             .await
             .unwrap();
-        browser
+        subscriber
     }
 
     #[tokio::test]
@@ -225,13 +231,13 @@ mod tests {
     /// kernel implementation. Receiver/kernel behavior needs the separate VM.
     #[tokio::test]
     async fn physical_and_overflow_remote_samples_cross_private_seqpacket_and_native_sockets() {
-        use crate::portal_access::{PortalAccess, PortalPermission};
+        use crate::surface_host_access::{SurfaceHostAccess, SurfaceHostPermission};
         use korri_input_contract::{GamepadState, RemoteEvent, RemoteSource};
-        let (native_app, native_source) = crate::portal_input::router(
-            PortalAccess::new(
+        let (native_app, native_source) = crate::surface_host_input::router(
+            SurfaceHostAccess::new(
                 "native-integration-test",
-                "http://portal.local",
-                PortalPermission::LocalSessions,
+                "http://shell.local",
+                SurfaceHostPermission::LocalSessions,
             ),
             Default::default(),
         );
@@ -309,7 +315,7 @@ mod tests {
         let mut unauthorized = url.as_str().into_client_request().unwrap();
         unauthorized
             .headers_mut()
-            .insert("Origin", "http://portal.local".parse().unwrap());
+            .insert("Origin", "http://shell.local".parse().unwrap());
         let (mut unauthorized, _) = tokio_tungstenite::connect_async(unauthorized)
             .await
             .unwrap();
@@ -323,8 +329,8 @@ mod tests {
         assert!(!matches!(denied, Some(Ok(ClientMessage::Text(_)))));
         drop(unauthorized);
 
-        let mut browser = attach_browser(&url).await;
-        native_batch(&mut browser, "initialization-complete").await;
+        let mut subscriber = attach_subscriber(&url).await;
+        native_batch(&mut subscriber, "initialization-complete").await;
         let connected = SeatRequest::PhysicalConnected {
             device_id: "validated-source".into(),
             name: "Pad".into(),
@@ -339,7 +345,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        let arrival = native_batch(&mut browser, "device-state-complete").await;
+        let arrival = native_batch(&mut subscriber, "device-state-complete").await;
         assert_eq!(
             arrival[0]["device"]["deviceId"],
             "physical:validated-source"
@@ -366,7 +372,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        let frame = native_batch(&mut browser, "syn").await;
+        let frame = native_batch(&mut subscriber, "syn").await;
         let controls: Vec<_> = frame
             .iter()
             .map(|event| {
@@ -383,7 +389,7 @@ mod tests {
         );
         // The consumer sees one commit boundary, never a neutral commit after
         // Start release. A new subscriber sees the complete held A baseline.
-        let mut second = attach_browser(&url).await;
+        let mut second = attach_subscriber(&url).await;
         let snapshot = native_batch(&mut second, "initialization-complete").await;
         assert!(snapshot
             .iter()
@@ -405,7 +411,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        native_batch(&mut browser, "device-removed").await;
+        native_batch(&mut subscriber, "device-removed").await;
 
         let source = RemoteSource {
             client_id: "paired-client-a".into(),
@@ -417,7 +423,7 @@ mod tests {
         remote_events.lock().unwrap().push(RemoteEvent::Connected {
             source: source.clone(),
         });
-        let arrival = native_batch(&mut browser, "device-state-complete").await;
+        let arrival = native_batch(&mut subscriber, "device-state-complete").await;
         assert_eq!(
             arrival[0]["device"]["deviceId"],
             "remote:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:paired-client-a:15"
@@ -436,8 +442,8 @@ mod tests {
                 source: source.clone(),
             },
         ]);
-        let pressed = native_batch(&mut browser, "syn").await;
-        let released = native_batch(&mut browser, "syn").await;
+        let pressed = native_batch(&mut subscriber, "syn").await;
+        let released = native_batch(&mut subscriber, "syn").await;
         assert_eq!(pressed[0]["code"].as_f64(), Some(304.0));
         assert_eq!(pressed[0]["value"].as_f64(), Some(1.0));
         assert_eq!(released[0]["code"].as_f64(), Some(304.0));
@@ -450,13 +456,13 @@ mod tests {
                 if reply.remote_events.len() == 2 { assert!(matches!(&reply.remote_events[0], RemoteEvent::State { source } if source.slot.is_none() && source.state.buttons == 0x1000)); break; }
             }
         }).await.unwrap();
-        browser
+        subscriber
             .send(ClientMessage::Text(
                 serde_json::to_string(&connected).unwrap().into(),
             ))
             .await
             .unwrap();
-        let closed = tokio::time::timeout(Duration::from_secs(2), browser.next())
+        let closed = tokio::time::timeout(Duration::from_secs(2), subscriber.next())
             .await
             .unwrap();
         assert!(!matches!(closed, Some(Ok(ClientMessage::Text(_)))));
@@ -471,7 +477,7 @@ mod tests {
         );
         producer.close(None).await.unwrap();
         drop(producer);
-        drop(browser);
+        drop(subscriber);
         let permit = tokio::time::timeout(
             Duration::from_secs(2),
             coordinator.producer.clone().acquire_owned(),
@@ -577,7 +583,7 @@ mod tests {
         let mut request = "ws://localhost/".into_client_request().unwrap();
         request
             .headers_mut()
-            .insert("Origin", "http://portal.local".parse().unwrap());
+            .insert("Origin", "http://shell.local".parse().unwrap());
         let stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
         let error = client_async(request, stream).await.unwrap_err();
         assert!(

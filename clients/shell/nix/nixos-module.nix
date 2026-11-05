@@ -1,9 +1,9 @@
 # The native shell as the device's screen: one isolated system user draws the
 # installed surface packages on the compositor's private Wayland socket and
-# talks only to the korrid on this device. It replaces the Chromium kiosk and
-# keeps its isolation: the same user, the same private socket bind, the same
-# per-boot capability through LoadCredential. It never runs as root and reads
-# controller input only through korrid.
+# talks only to the korrid on this device: its own system user, a private
+# bind of the compositor socket, and a per-boot capability through
+# LoadCredential. It never runs as root and reads controller input only
+# through korrid.
 { korri }:
 {
   config,
@@ -16,7 +16,6 @@ let
   compositor = config.systemd.services.korri-compositor;
   display = compositor.environment.KORRI_WAYLAND_DISPLAY;
   system = pkgs.stdenv.hostPlatform.system;
-  # The kiosk's isolated account, kept so no device changes owner or UID.
   user = "korri-portal";
   group = user;
   home = "/var/lib/${user}";
@@ -121,8 +120,8 @@ in
     };
     # Both consumers restart when the producer rotates its credential.
     systemd.services.korrid = {
-      environment.KORRID_PORTAL_UNIT = unit;
-      environment.KORRID_PORTAL_ORIGIN = origin;
+      environment.KORRID_SHELL_UNIT = unit;
+      environment.KORRID_SHELL_ORIGIN = origin;
       wantedBy = [ credentialService ];
       requires = [ credentialService ];
       after = [ credentialService ];
@@ -143,7 +142,7 @@ in
         XDG_RUNTIME_DIR = runtimeDir;
         WAYLAND_DISPLAY = display;
         KORRID_ADDRESS = shellAddress;
-        KORRID_PORTAL_ORIGIN = origin;
+        KORRID_SHELL_ORIGIN = origin;
       };
       serviceConfig = {
         Type = "exec";

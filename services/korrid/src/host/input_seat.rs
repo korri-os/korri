@@ -483,7 +483,7 @@ impl InputSeatManager for RecordingInputPool {
         self.calls
             .lock()
             .unwrap()
-            .push(format!("route:{}", id.unwrap_or("portal")));
+            .push(format!("route:{}", id.unwrap_or("shell")));
         if let Some(callback) = self.on_route.lock().unwrap().as_mut() {
             callback(id)?;
         }

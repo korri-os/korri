@@ -1,6 +1,6 @@
 //! The unprivileged coordinator for the root-owned shared pool. No uinput access.
 use super::input_seat::{connect, peer_credentials, wait_ready};
-use crate::{native_input::*, portal_input::PortalInputSource};
+use crate::{native_input::*, surface_host_input::SurfaceHostInputSource};
 use korri_input_contract::{
     GamepadState, RemoteEvent, SeatReply, SeatRequest, COORDINATION_VERSION, MAX_COORDINATION_BYTES,
 };
@@ -45,7 +45,7 @@ pub(crate) struct SeatCoordinator {
 impl SeatCoordinator {
     pub(crate) fn connect(
         path: &Path,
-        native: Option<Arc<PortalInputSource>>,
+        native: Option<Arc<SurfaceHostInputSource>>,
     ) -> Result<Arc<Self>, String> {
         let fd = connect(path)?;
         verify_receiver(&fd)?;
@@ -53,7 +53,7 @@ impl SeatCoordinator {
     }
     fn from_connected(
         fd: OwnedFd,
-        native: Option<Arc<PortalInputSource>>,
+        native: Option<Arc<SurfaceHostInputSource>>,
     ) -> Result<Arc<Self>, String> {
         let hello = exchange(&fd, &SeatRequest::Hello)?;
         if hello.failure.is_some() {
@@ -227,11 +227,11 @@ const AXES: &[(u16, i32, i32, i32)] = &[
     (17, -1, 1, 0),
 ];
 struct NativeSources {
-    native: Option<Arc<PortalInputSource>>,
+    native: Option<Arc<SurfaceHostInputSource>>,
     states: BTreeMap<String, GamepadState>,
 }
 impl NativeSources {
-    fn new(native: Option<Arc<PortalInputSource>>) -> Self {
+    fn new(native: Option<Arc<SurfaceHostInputSource>>) -> Self {
         Self {
             native,
             states: BTreeMap::new(),
@@ -423,14 +423,14 @@ pub(super) mod test_support {
         coordinator_with_native(None, handle)
     }
     pub(crate) fn coordinator_with_native(
-        native: Option<Arc<PortalInputSource>>,
+        native: Option<Arc<SurfaceHostInputSource>>,
         mut handle: impl FnMut(SeatRequest) -> SeatReply + Send + 'static,
     ) -> (Arc<SeatCoordinator>, std::thread::JoinHandle<()>) {
         coordinator_until_disconnect(native, move |request| Some(handle(request)))
     }
     /// None closes the real receiver socket without acknowledging the request.
     pub(crate) fn coordinator_until_disconnect(
-        native: Option<Arc<PortalInputSource>>,
+        native: Option<Arc<SurfaceHostInputSource>>,
         mut handle: impl FnMut(SeatRequest) -> Option<SeatReply> + Send + 'static,
     ) -> (Arc<SeatCoordinator>, std::thread::JoinHandle<()>) {
         let (client, server) = pair();

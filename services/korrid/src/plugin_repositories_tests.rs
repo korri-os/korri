@@ -13,7 +13,7 @@ use tower::ServiceExt;
 const TOKEN: &str = "plugin-repositories-test-token";
 const ORIGIN: &str = "http://127.0.0.1:8099";
 
-fn state(root: &Path, permission: PortalPermission, socket: Option<PathBuf>) -> AppState {
+fn state(root: &Path, permission: SurfaceHostPermission, socket: Option<PathBuf>) -> AppState {
     config::test_fixtures::gba(root);
     let registry = plugin_test_fixtures::installed(root);
     let (mut state, _) = brain_app_state(
@@ -28,7 +28,7 @@ fn state(root: &Path, permission: PortalPermission, socket: Option<PathBuf>) -> 
         None,
         None,
     );
-    state.portal_access = Some(PortalAccess::new(TOKEN, ORIGIN, permission));
+    state.surface_host_access = Some(SurfaceHostAccess::new(TOKEN, ORIGIN, permission));
     state.plugin_admin = socket.map(plugin_repositories::PluginAdminSocket::new);
     state
 }
@@ -173,7 +173,11 @@ async fn plugin_requests_reach_the_host_socket_and_return_its_answers() {
     let root = tempfile::tempdir().unwrap();
     let socket = root.path().join("admin.sock");
     let seen = stand_in_host(&socket, answer);
-    let app = portal_router_from_state(state(root.path(), PortalPermission::Full, Some(socket)));
+    let app = surface_host_router_from_state(state(
+        root.path(),
+        SurfaceHostPermission::Full,
+        Some(socket),
+    ));
 
     let (status, value) = call(
         &app,
@@ -261,7 +265,8 @@ async fn plugin_requests_reach_the_host_socket_and_return_its_answers() {
 async fn plugin_requests_fail_plainly_without_a_reachable_host() {
     let root = tempfile::tempdir().unwrap();
     for socket in [None, Some(root.path().join("missing.sock"))] {
-        let app = portal_router_from_state(state(root.path(), PortalPermission::Full, socket));
+        let app =
+            surface_host_router_from_state(state(root.path(), SurfaceHostPermission::Full, socket));
         let (_, value) = call(
             &app,
             json!({"_tag":"system.plugins.repositories","payload":{}}),
@@ -273,12 +278,15 @@ async fn plugin_requests_fail_plainly_without_a_reachable_host() {
 }
 
 #[tokio::test]
-async fn read_only_portal_may_list_plugins_but_cannot_administer_them() {
+async fn read_only_shell_may_list_plugins_but_cannot_administer_them() {
     let root = tempfile::tempdir().unwrap();
     let socket = root.path().join("admin.sock");
     stand_in_host(&socket, answer);
-    let app =
-        portal_router_from_state(state(root.path(), PortalPermission::ReadOnly, Some(socket)));
+    let app = surface_host_router_from_state(state(
+        root.path(),
+        SurfaceHostPermission::ReadOnly,
+        Some(socket),
+    ));
     let (status, _) = call(
         &app,
         json!({"_tag":"system.plugins.repositories","payload":{}}),
@@ -427,11 +435,11 @@ fn plugin_admin_authority_requires_a_person_surface_or_verified_owner_peer() {
         let request: RpcRequest = serde_json::from_value(body).unwrap();
         assert_eq!(
             authorization::policy_for(&request),
-            authorization::PeerPolicy::LocalPortalOrOwnerDevice
+            authorization::PeerPolicy::LocalSurfaceHostOrOwnerDevice
         );
         assert!(plugin_repositories::is_admin_request(&request));
         for allowed in [
-            &AuthorizationContext::LocalBrowser,
+            &AuthorizationContext::LocalSurfaceHost,
             &AuthorizationContext::LocalCli,
             verified_owner.context(),
         ] {

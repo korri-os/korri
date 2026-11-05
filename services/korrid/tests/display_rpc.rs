@@ -12,7 +12,7 @@ async fn catalog_display_scopes_return_only_main_over_localhost_http() {
     let private = private_parent.path().join("private");
     let app = korrid::router_with_capability_and_roots(
         "display-test-capability",
-        "https://portal.example",
+        "https://shell.example",
         root.path(),
         &private,
     );
@@ -30,7 +30,7 @@ async fn catalog_display_scopes_return_only_main_over_localhost_http() {
     for scope in ["main", "all"] {
         let response = client.post(format!("http://{address}/rpc"))
             .bearer_auth("display-test-capability")
-            .header("origin", "https://portal.example")
+            .header("origin", "https://shell.example")
             .json(&serde_json::json!({"_tag":"app.surface.displays","payload":{"displays":scope,"overlay":false}}))
             .send().await.unwrap();
         assert!(response.status().is_success());

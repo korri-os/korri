@@ -753,13 +753,13 @@ assert builtins.elem (check.nativeSystemdPackageFailure nativeName) (
 );
 # Identity is independent of the existing native freezer prerequisites.
 assert
-  nativeUnpatched.config.systemd.services.korrid.environment.KORRID_PORTAL_UNIT
+  nativeUnpatched.config.systemd.services.korrid.environment.KORRID_SHELL_UNIT
   == "korri-shell.service";
 assert
-  nativeUnpatched.config.systemd.services.korrid.environment.KORRID_PORTAL_FREEZER_ENABLED == "false";
-assert !(nativeWithoutShell.config.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
+  nativeUnpatched.config.systemd.services.korrid.environment.KORRID_SHELL_FREEZER_ENABLED == "false";
+assert !(nativeWithoutShell.config.systemd.services.korrid.environment ? KORRID_SHELL_UNIT);
 assert
-  !(nativeWithoutShell.config.systemd.services.korrid.environment ? KORRID_PORTAL_FREEZER_ENABLED);
+  !(nativeWithoutShell.config.systemd.services.korrid.environment ? KORRID_SHELL_FREEZER_ENABLED);
 # Neither case acquires freezer authority or cleanup hooks.
 assert lib.all
   (

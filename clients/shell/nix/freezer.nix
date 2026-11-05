@@ -21,7 +21,7 @@ in
   # nix/product/systemd/module.nix supplies this exact stop-path patch.
   config = lib.mkMerge [
     (lib.mkIf config.services.korri.shell.enable {
-      systemd.services.korrid.environment.KORRID_PORTAL_FREEZER_ENABLED = lib.boolToString patched;
+      systemd.services.korrid.environment.KORRID_SHELL_FREEZER_ENABLED = lib.boolToString patched;
     })
     (lib.mkIf (config.services.korri.shell.enable && patched) {
       systemd.services.korrid = {

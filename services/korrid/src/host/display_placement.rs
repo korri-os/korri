@@ -317,14 +317,14 @@ pub(crate) fn place_surface(
     displays: &[Display],
     game: Option<&Placement>,
     pids: &std::collections::BTreeSet<i32>,
-    portal_pids: &std::collections::BTreeSet<i32>,
+    shell_pids: &std::collections::BTreeSet<i32>,
 ) -> Result<Vec<SurfaceDisplay>, String> {
     let started = std::time::Instant::now();
     let mut timings = SurfacePlacementTimings::default();
-    let result = place_surface_timed(control, displays, game, pids, portal_pids, &mut timings);
+    let result = place_surface_timed(control, displays, game, pids, shell_pids, &mut timings);
     if displays.len() > 1 && game.is_none() {
         let outcome = if result.is_ok() { "Changed" } else { "Failed" };
-        eprintln!("<6>korrid: PlacementTransition {{ target: Catalog, outcome: {outcome}, total_ms: {}, phases_ms: {{\"portal_tree\": {}, \"portal_power\": {}, \"portal_geometry\": {}}} }}", started.elapsed().as_millis(), timings.tree_ms, timings.power_ms, timings.geometry_ms);
+        eprintln!("<6>korrid: PlacementTransition {{ target: Catalog, outcome: {outcome}, total_ms: {}, phases_ms: {{\"shell_tree\": {}, \"shell_power\": {}, \"shell_geometry\": {}}} }}", started.elapsed().as_millis(), timings.tree_ms, timings.power_ms, timings.geometry_ms);
     }
     result
 }
@@ -341,7 +341,7 @@ pub(crate) fn place_surface_timed(
     displays: &[Display],
     game: Option<&Placement>,
     pids: &std::collections::BTreeSet<i32>,
-    portal_pids: &std::collections::BTreeSet<i32>,
+    shell_pids: &std::collections::BTreeSet<i32>,
     timings: &mut SurfacePlacementTimings,
 ) -> Result<Vec<SurfaceDisplay>, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
@@ -353,12 +353,12 @@ pub(crate) fn place_surface_timed(
     let tree = control.tree();
     timings.tree_ms = start.elapsed().as_millis();
     let tree = tree?;
-    let portal = super::compositor_focus::portal_node(&tree, portal_pids)?;
+    let shell = super::compositor_focus::shell_node(&tree, shell_pids)?;
     let mut occupied = game.map(|p| p.outputs.clone()).unwrap_or_default();
     occupied.extend(rectangles.iter().map(|d| d.id.clone()));
     let mut commands = Vec::new();
     if let Some(game) = game.filter(|p| p.global) {
-        let candidate = match select_focus_target(&tree, pids, portal_pids) {
+        let candidate = match select_focus_target(&tree, pids, shell_pids) {
             FocusTarget::Window(c) => c,
             _ => return Err("no unique game window for overlay".into()),
         };
@@ -386,14 +386,14 @@ pub(crate) fn place_surface_timed(
     let power = power_commands(displays, &occupied);
     if game.is_none() {
         // Surfaces never span outputs. Normal fullscreen selects the main
-        // output even when the previous portal presentation was a free-display
+        // output even when the previous shell presentation was a free-display
         // overlay. Focus before the blocking unused-output power-off tail.
         commands.extend([
-            format!("[con_id={portal}] fullscreen disable"),
-            format!("[con_id={portal}] floating disable"),
-            format!("[con_id={portal}] move container to output {}", origin.name),
-            format!("[con_id={portal}] fullscreen enable"),
-            format!("[con_id={portal}] focus"),
+            format!("[con_id={shell}] fullscreen disable"),
+            format!("[con_id={shell}] floating disable"),
+            format!("[con_id={shell}] move container to output {}", origin.name),
+            format!("[con_id={shell}] fullscreen enable"),
+            format!("[con_id={shell}] focus"),
         ]);
         commands.extend(
             power
@@ -403,17 +403,17 @@ pub(crate) fn place_surface_timed(
         );
     } else {
         commands.extend([
-            format!("[con_id={portal}] fullscreen disable"),
-            format!("[con_id={portal}] floating enable"),
+            format!("[con_id={shell}] fullscreen disable"),
+            format!("[con_id={shell}] floating enable"),
             format!(
-                "[con_id={portal}] resize set width {} px height {} px",
+                "[con_id={shell}] resize set width {} px height {} px",
                 first.width, first.height
             ),
             format!(
-                "[con_id={portal}] move absolute position {} px {} px",
+                "[con_id={shell}] move absolute position {} px {} px",
                 origin.x, origin.y
             ),
-            format!("[con_id={portal}] focus"),
+            format!("[con_id={shell}] focus"),
         ]);
     }
     let start = std::time::Instant::now();
@@ -535,7 +535,7 @@ mod tests {
     ) -> super::super::compositor_focus::SwaymsgCompositorControl {
         use std::os::unix::fs::PermissionsExt;
         let program = directory.join("swaymsg");
-        std::fs::write(directory.join("tree"),r#"{"nodes":[{"id":10,"pid":100,"app_id":"portal"},{"id":20,"pid":200,"app_id":"game"}]}"#).unwrap();
+        std::fs::write(directory.join("tree"),r#"{"nodes":[{"id":10,"pid":100,"app_id":"shell"},{"id":20,"pid":200,"app_id":"game"}]}"#).unwrap();
         std::fs::write(directory.join("reply"), reply).unwrap();
         std::fs::write(
             &program,
@@ -555,8 +555,8 @@ IFS=';'
 for part in $command; do
  part="${{part# }}"
  printf '%s\n' "$part" >> commands
- if test -f validate-portal-restore; then
-  mode=$(cat portal-fullscreen)
+ if test -f validate-shell-restore; then
+  mode=$(cat shell-fullscreen)
   case "$part" in
    '[con_id=10] fullscreen disable') mode=0;;
    '[con_id=10] floating disable')
@@ -565,7 +565,7 @@ for part in $command; do
     if test "$mode" != 0; then printf '[{{"success":false,"error":"enable on already-fullscreen con"}}]'; exit; fi
     mode=1;;
   esac
-  printf '%s' "$mode" > portal-fullscreen
+  printf '%s' "$mode" > shell-fullscreen
  fi
 done
 IFS="$old_ifs"
@@ -589,11 +589,11 @@ fi
     }
 
     #[test]
-    fn catalog_moves_the_owned_portal_to_main_then_powers_off_unused_displays() {
+    fn catalog_moves_the_owned_shell_to_main_then_powers_off_unused_displays() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        std::fs::write(dir.path().join("validate-portal-restore"), "").unwrap();
-        std::fs::write(dir.path().join("portal-fullscreen"), "1").unwrap();
+        std::fs::write(dir.path().join("validate-shell-restore"), "").unwrap();
+        std::fs::write(dir.path().join("shell-fullscreen"), "1").unwrap();
         let facts = place_surface(
             &control,
             &displays(),
@@ -696,7 +696,7 @@ fi
     fn single_display_game_placement_focuses_the_exact_window_in_the_placement_batch() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        std::fs::write(dir.path().join("tree"), r#"{"nodes":[{"id":10,"pid":100,"app_id":"portal","focused":true,"fullscreen_mode":2},{"id":20,"pid":200,"app_id":"retroarch","focused":false}]}"#).unwrap();
+        std::fs::write(dir.path().join("tree"), r#"{"nodes":[{"id":10,"pid":100,"app_id":"shell","focused":true,"fullscreen_mode":2},{"id":20,"pid":200,"app_id":"retroarch","focused":false}]}"#).unwrap();
         let single = choose(None, &runner(), &displays()).unwrap();
         place_game(
             &control,
@@ -787,13 +787,13 @@ fi
     }
 
     #[test]
-    fn surface_placement_refuses_zero_or_multiple_windows_owned_by_the_kiosk_unit() {
+    fn surface_placement_refuses_zero_or_multiple_windows_owned_by_the_shell_unit() {
         let dir = tempfile::tempdir().unwrap();
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
-        let portal_pids = [2603].into_iter().collect();
+        let shell_pids = [2603].into_iter().collect();
         for tree in [
-            r#"{"nodes":[{"id":10,"pid":999,"app_id":"chromium-browser"}]}"#,
-            r#"{"nodes":[{"id":10,"pid":2603,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default"},{"id":11,"pid":2603,"app_id":"second-window"}]}"#,
+            r#"{"nodes":[{"id":10,"pid":999,"app_id":"korri-shell"}]}"#,
+            r#"{"nodes":[{"id":10,"pid":2603,"app_id":"korri-shell"},{"id":11,"pid":2603,"app_id":"second-window"}]}"#,
         ] {
             std::fs::write(dir.path().join("tree"), tree).unwrap();
             assert_eq!(
@@ -802,10 +802,10 @@ fi
                     &displays(),
                     None,
                     &std::collections::BTreeSet::new(),
-                    &portal_pids
+                    &shell_pids
                 )
                 .unwrap_err(),
-                "no unique portal window"
+                "no unique shell window"
             );
             assert!(!dir.path().join("commands").exists());
         }

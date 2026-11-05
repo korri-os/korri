@@ -140,7 +140,7 @@ pub fn save_failure_reason(failure: &RpcFailure) -> String {
         "DeviceNeedsOwner" => "This device needs an owner before it can start a game.",
         "SavesUnavailable" => "Korri could not read or update the saves on this device.",
         "BrainUnreachable" => "Korri did not answer. Try again in a moment.",
-        "PermissionDenied" => "This portal cannot change saves.",
+        "PermissionDenied" => "This device cannot change saves.",
         "GameNotFound" => "Korri has no saves for this game.",
         _ => "Korri could not finish that. Try again in a moment.",
     }

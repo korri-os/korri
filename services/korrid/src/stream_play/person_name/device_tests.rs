@@ -146,8 +146,8 @@ async fn cli_person_name_dispatch_child() {
     .with_route_registry(library, registry);
     let (mut state, _) = crate::app_states(runtime);
     assert!(
-        state.portal_access.is_none(),
-        "the person socket needs no browser access object"
+        state.surface_host_access.is_none(),
+        "the person socket needs no surface host access object"
     );
     let cli = AuthorizationContext::LocalCli;
     let initial = read(&state, &cli).await;
@@ -198,25 +198,25 @@ async fn cli_person_name_dispatch_child() {
     assert_failure(
         write(
             &state,
-            &AuthorizationContext::LocalBrowser,
+            &AuthorizationContext::LocalSurfaceHost,
             &updated.revision,
             "Denied",
         )
         .await,
         "OperationUnsupported",
     );
-    state.portal_access = Some(PortalAccess::new(
+    state.surface_host_access = Some(SurfaceHostAccess::new(
         "person-name-cap",
-        "https://portal.example",
-        PortalPermission::ReadOnly,
+        "https://shell.example",
+        SurfaceHostPermission::ReadOnly,
     ));
     assert!(!editable(
-        &read(&state, &AuthorizationContext::LocalBrowser).await
+        &read(&state, &AuthorizationContext::LocalSurfaceHost).await
     ));
     assert_failure(
         write(
             &state,
-            &AuthorizationContext::LocalBrowser,
+            &AuthorizationContext::LocalSurfaceHost,
             &updated.revision,
             "Denied",
         )
@@ -225,33 +225,39 @@ async fn cli_person_name_dispatch_child() {
     );
     assert!(
         editable(&read(&state, &cli).await),
-        "browser restrictions must not demote the CLI"
+        "surface host restrictions must not demote the CLI"
     );
     assert_eq!(fs::read(&signed_record).unwrap(), signed_bytes);
     // LocalSessions already permits person-name, unlike other owner settings.
-    for permission in [PortalPermission::LocalSessions, PortalPermission::Full] {
-        state.portal_access = Some(PortalAccess::new(
+    for permission in [
+        SurfaceHostPermission::LocalSessions,
+        SurfaceHostPermission::Full,
+    ] {
+        state.surface_host_access = Some(SurfaceHostAccess::new(
             "person-name-cap",
-            "https://portal.example",
+            "https://shell.example",
             permission,
         ));
-        let browser = read(&state, &AuthorizationContext::LocalBrowser).await;
-        assert_eq!(browser.person_name, read(&state, &cli).await.person_name);
-        assert!(editable(&browser));
-        let SettingsUpdateOutcome::Ok(browser_update) = write(
+        let surface_host = read(&state, &AuthorizationContext::LocalSurfaceHost).await;
+        assert_eq!(
+            surface_host.person_name,
+            read(&state, &cli).await.person_name
+        );
+        assert!(editable(&surface_host));
+        let SettingsUpdateOutcome::Ok(host_update) = write(
             &state,
-            &AuthorizationContext::LocalBrowser,
-            &browser.revision,
-            "Browser name",
+            &AuthorizationContext::LocalSurfaceHost,
+            &surface_host.revision,
+            "Shell name",
         )
         .await
         else {
-            panic!("existing {permission:?} browser name write regressed")
+            panic!("existing {permission:?} surface host name write regressed")
         };
-        assert_eq!(browser_update.person_name.as_deref(), Some("Browser name"));
+        assert_eq!(host_update.person_name.as_deref(), Some("Shell name"));
         assert_eq!(
             read(&state, &cli).await.person_name,
-            browser_update.person_name
+            host_update.person_name
         );
     }
 
@@ -259,7 +265,7 @@ async fn cli_person_name_dispatch_child() {
     let _ = server.await;
     let before_unavailable = fs::read(&signed_record).unwrap();
     let unavailable = read(&state, &cli).await;
-    assert_eq!(unavailable.person_name.as_deref(), Some("Browser name"));
+    assert_eq!(unavailable.person_name.as_deref(), Some("Shell name"));
     assert!(
         !editable(&unavailable),
         "unavailable signer must remove the edit affordance"

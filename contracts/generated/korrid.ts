@@ -1810,7 +1810,7 @@ export interface SessionStatus {
 	netplay?: NetplayStatus;
 	streamPlayLaunchId?: string;
 	streamPlayEnded?: StreamPlayEnded;
-	/** All pending reservations owned by this authenticated portal caller; never a selection. */
+	/** All pending reservations owned by this authenticated surface host caller; never a selection. */
 	pendingLaunches?: PendingLaunch[];
 	/**
 	 * Pending identities remain observable when native state is unknown.
@@ -1818,7 +1818,7 @@ export interface SessionStatus {
 	 */
 	observationFailure?: RpcFailure;
 	active?: ActiveSession;
-	/** Ephemeral exact launch authorized for browser overlay handoff. */
+	/** Ephemeral exact launch authorized for surface host overlay handoff. */
 	overlay?: ActiveSession;
 }
 

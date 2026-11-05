@@ -31,9 +31,9 @@ use super::input_seat::DisabledInputSeats;
 use super::input_seat::{InputSeatLease, InputSeatManager};
 use super::play_log::{PlayHistoryKey, PlayLogStore};
 #[cfg(test)]
-use super::systemd_unit::{read_unit_pids, RecordingPortalUnit, SystemdLaunchUnitBackend};
+use super::systemd_unit::{read_unit_pids, RecordingShellUnit, SystemdLaunchUnitBackend};
 use super::systemd_unit::{
-    LaunchUnitBackend, LaunchUnitError, LaunchUnitErrorKind, LaunchUnitState, PortalUnit,
+    LaunchUnitBackend, LaunchUnitError, LaunchUnitErrorKind, LaunchUnitState, ShellUnit,
     RUNNER_ID_ENV,
 };
 
@@ -126,7 +126,7 @@ pub enum HostSessionFreezeChange {
         launch_id: String,
         message: String,
     },
-    /// A native control refused the change. A failed portal thaw during
+    /// A native control refused the change. A failed shell thaw during
     /// Leave rolls back the game freeze before returning this failure.
     HelperFailed {
         launch_id: String,
@@ -171,9 +171,9 @@ enum ActiveState {
     RecoveryBlocked,
 }
 
-/// What korrid last applied to the portal unit's freezer.
+/// What korrid last applied to the shell unit's freezer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PortalFreezerState {
+enum ShellFreezerState {
     /// Not proven since startup, or the last thaw failed.
     Unknown,
     /// Frozen, or a freeze was attempted. A refused freeze costs only power,
@@ -183,15 +183,15 @@ enum PortalFreezerState {
 }
 
 #[derive(Clone)]
-struct PortalFreezer {
-    unit: Arc<dyn PortalUnit>,
-    applied: Arc<Mutex<PortalFreezerState>>,
+struct ShellFreezer {
+    unit: Arc<dyn ShellUnit>,
+    applied: Arc<Mutex<ShellFreezerState>>,
     last_error: Arc<Mutex<Option<String>>>,
 }
 
-/// The session state under its mutex. Releasing it reconciles the portal
+/// The session state under its mutex. Releasing it reconciles the shell
 /// freezer with the state left behind, so no transition or early return can
-/// leave the portal frozen outside a focused live game.
+/// leave the shell frozen outside a focused live game.
 struct SessionStateGuard<'a> {
     control: &'a HostSessionControl,
     state: MutexGuard<'a, ActiveState>,
@@ -234,15 +234,13 @@ impl Drop for SessionStateGuard<'_> {
                 }
             }
             *self.state = ActiveState::RecoveryBlocked;
-            if let Some(portal) = &self.control.portal {
-                *portal
-                    .applied
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner) = PortalFreezerState::Unknown;
+            if let Some(shell) = &self.control.shell {
+                *shell.applied.lock().unwrap_or_else(PoisonError::into_inner) =
+                    ShellFreezerState::Unknown;
             }
-            let _ = self.control.reconcile_portal(&self.state);
+            let _ = self.control.reconcile_shell(&self.state);
         } else if self.reconcile {
-            if let Err(message) = self.control.reconcile_portal(&self.state) {
+            if let Err(message) = self.control.reconcile_shell(&self.state) {
                 eprintln!("korrid: input/freezer transition failed: {message}");
                 if let ActiveState::Running { launch_id, game_id } = &*self.state {
                     let (launch_id, game_id) = (launch_id.clone(), game_id.clone());
@@ -250,7 +248,7 @@ impl Drop for SessionStateGuard<'_> {
                         .control
                         .record_focus_failure(&mut self.state, launch_id, game_id);
                 }
-                let _ = self.control.thaw_portal();
+                let _ = self.control.thaw_shell();
             }
         }
         *self
@@ -327,7 +325,7 @@ pub struct HostSessionControl {
     state_owner: Arc<Mutex<Option<(&'static str, Instant)>>>,
     seat_lease: Arc<Mutex<Option<(String, Box<dyn InputSeatLease>)>>>,
     /// One startup-only exact handoff reconstructed from live compositor facts.
-    /// Browser status consumes it into the server's process-local overlay intent.
+    /// Surface host status consumes it into the server's process-local overlay intent.
     recovered_overlay_intent: Arc<Mutex<Option<String>>>,
     /// One process-local focus observation for the accepted exact launch.
     /// The journal deliberately contains no historical screen ownership.
@@ -341,10 +339,10 @@ pub struct HostSessionControl {
     placement_applied: Arc<Mutex<Option<AppliedDisplayPlacement>>>,
     display_content: Arc<Mutex<Vec<String>>>,
     /// Frozen only while a running exact launch has observed compositor focus.
-    /// Absent, the portal is never touched.
-    portal: Option<PortalFreezer>,
+    /// Absent, the shell is never touched.
+    shell: Option<ShellFreezer>,
     native_input: Option<(
-        Arc<crate::portal_input::PortalInputSource>,
+        Arc<crate::surface_host_input::SurfaceHostInputSource>,
         tokio::runtime::Handle,
     )>,
 }
@@ -409,19 +407,19 @@ impl HostSessionControl {
             compositor: None,
             placement_applied: Arc::new(Mutex::new(None)),
             display_content: Arc::new(Mutex::new(Vec::new())),
-            portal: None,
+            shell: None,
             native_input: None,
         }
     }
 
-    /// Freeze this portal unit while a focused live game owns the screen.
-    /// Its freezer state is unknown until the first reconcile, so a portal
+    /// Freeze this shell unit while a focused live game owns the screen.
+    /// Its freezer state is unknown until the first reconcile, so a shell
     /// left frozen by an earlier korrid is thawed unless a game still holds
     /// proven focus.
-    pub(crate) fn with_portal(mut self, unit: Arc<dyn PortalUnit>) -> Self {
-        self.portal = Some(PortalFreezer {
+    pub(crate) fn with_shell(mut self, unit: Arc<dyn ShellUnit>) -> Self {
+        self.shell = Some(ShellFreezer {
             unit,
-            applied: Arc::new(Mutex::new(PortalFreezerState::Unknown)),
+            applied: Arc::new(Mutex::new(ShellFreezerState::Unknown)),
             last_error: Arc::new(Mutex::new(None)),
         });
         self
@@ -429,7 +427,7 @@ impl HostSessionControl {
 
     pub(crate) fn with_native_input(
         mut self,
-        source: Arc<crate::portal_input::PortalInputSource>,
+        source: Arc<crate::surface_host_input::SurfaceHostInputSource>,
     ) -> Self {
         self.native_input = Some((source, tokio::runtime::Handle::current()));
         self
@@ -502,25 +500,25 @@ impl HostSessionControl {
 
     /// Called only under the session transition mutex. Log a failure once,
     /// then only a different failure or recovery, not once per watcher tick.
-    fn portal_result(
+    fn shell_result(
         &self,
         result: Result<(), super::systemd_unit::LaunchUnitError>,
     ) -> Result<(), String> {
-        let portal = self.portal.as_ref().expect("configured portal");
-        let mut last = portal
+        let shell = self.shell.as_ref().expect("configured shell");
+        let mut last = shell
             .last_error
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         match result {
             Ok(()) => {
                 if last.take().is_some() {
-                    eprintln!("korrid: portal freezer recovered");
+                    eprintln!("korrid: shell freezer recovered");
                 }
                 Ok(())
             }
             Err(error) => {
                 if last.as_ref() != Some(&error.message) {
-                    eprintln!("korrid: portal freezer failed: {}", error.message);
+                    eprintln!("korrid: shell freezer failed: {}", error.message);
                 }
                 *last = Some(error.message.clone());
                 Err(error.message)
@@ -530,18 +528,18 @@ impl HostSessionControl {
 
     /// A Leave acknowledgement must include this result. Drop is only a
     /// safety net for other transitions, not the Leave transaction itself.
-    fn thaw_portal(&self) -> Result<(), String> {
+    fn thaw_shell(&self) -> Result<(), String> {
         // Native resume must never overlap the old gameplay route, including
         // focus loss and guard-driven recovery, not only explicit Leave.
         if let Err(message) = self.input_seats.route(None) {
             if self.input_seats.is_fenced() {
-                self.emergency_thaw_portal()?;
+                self.emergency_thaw_shell()?;
             }
             // Even a successful emergency unit thaw does not acknowledge an
             // input handoff or resume native delivery.
             return Err(message);
         }
-        self.thaw_portal_unit()?;
+        self.thaw_shell_unit()?;
         self.resume_native();
         Ok(())
     }
@@ -549,59 +547,56 @@ impl HostSessionControl {
     /// Terminal coordinator loss retires controller delivery permanently for
     /// this runtime. Thaw only the UI unit so keyboard/mouse recovery remains
     /// possible. Keep the journal/reservations and launch fence untouched.
-    fn emergency_thaw_portal(&self) -> Result<(), String> {
+    fn emergency_thaw_shell(&self) -> Result<(), String> {
         self.input_seats.fence();
         if let Some((source, _)) = &self.native_input {
             source.reset();
         }
-        self.thaw_portal_unit()
+        self.thaw_shell_unit()
     }
 
-    fn thaw_portal_unit(&self) -> Result<(), String> {
-        let Some(portal) = &self.portal else {
+    fn thaw_shell_unit(&self) -> Result<(), String> {
+        let Some(shell) = &self.shell else {
             return Ok(());
         };
-        let mut applied = portal
-            .applied
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if *applied == PortalFreezerState::Thawed {
+        let mut applied = shell.applied.lock().unwrap_or_else(PoisonError::into_inner);
+        if *applied == ShellFreezerState::Thawed {
             return Ok(());
         }
-        *applied = PortalFreezerState::Unknown;
-        self.portal_result(portal.unit.thaw())?;
-        *applied = PortalFreezerState::Thawed;
+        *applied = ShellFreezerState::Unknown;
+        self.shell_result(shell.unit.thaw())?;
+        *applied = ShellFreezerState::Thawed;
         Ok(())
     }
 
     /// Process liveness is not focus. Observe the existing exact-launch
     /// compositor contract before freezing, including initial launch and
-    /// every watcher tick. Missing/delayed windows leave the portal running.
-    fn reconcile_portal(&self, state: &ActiveState) -> Result<(), String> {
+    /// every watcher tick. Missing/delayed windows leave the shell running.
+    fn reconcile_shell(&self, state: &ActiveState) -> Result<(), String> {
         if self.peer_selection.active() {
             return Ok(());
         }
-        self.reconcile_local_portal(state)
+        self.reconcile_local_shell(state)
     }
 
-    fn reconcile_local_portal(&self, state: &ActiveState) -> Result<(), String> {
+    fn reconcile_local_shell(&self, state: &ActiveState) -> Result<(), String> {
         if self.input_seats.is_fenced() {
-            return self.reconcile_local_portal_observed(state, None);
+            return self.reconcile_local_shell_observed(state, None);
         }
         let ownership = match state {
             ActiveState::Running { launch_id, .. } => self.current_focus_ownership(launch_id).ok(),
             _ => None,
         };
-        self.reconcile_local_portal_observed(state, ownership)
+        self.reconcile_local_shell_observed(state, ownership)
     }
 
-    fn reconcile_local_portal_observed(
+    fn reconcile_local_shell_observed(
         &self,
         state: &ActiveState,
         ownership: Option<FocusOwnership>,
     ) -> Result<(), String> {
         if self.input_seats.is_fenced() {
-            self.emergency_thaw_portal()?;
+            self.emergency_thaw_shell()?;
             return Err("input coordination is fenced; restart korrid after resolving the exact active session".into());
         }
         let freeze = matches!(state, ActiveState::Running { .. })
@@ -611,52 +606,43 @@ impl HostSessionControl {
             ActiveState::Running { launch_id, .. } if freeze => Some(launch_id.as_str()),
             _ => None,
         };
-        let Some(portal) = &self.portal else {
+        let Some(shell) = &self.shell else {
             // Focus and controller ownership do not depend on an optional
             // cgroup freezer. The same exact-launch proof selects gameplay.
             return self.input_seats.route(route);
         };
-        if !portal.unit.freezer_enabled() {
+        if !shell.unit.freezer_enabled() {
             return self.input_seats.route(route);
         }
-        let unknown = *portal
-            .applied
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            == PortalFreezerState::Unknown;
+        let unknown = *shell.applied.lock().unwrap_or_else(PoisonError::into_inner)
+            == ShellFreezerState::Unknown;
         if !freeze {
-            return self.thaw_portal();
+            return self.thaw_shell();
         }
         if unknown {
-            self.thaw_portal()?;
+            self.thaw_shell()?;
         }
         self.input_seats.route(route)?;
         if freeze {
-            let mut applied = portal
-                .applied
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if *applied != PortalFreezerState::Frozen {
+            let mut applied = shell.applied.lock().unwrap_or_else(PoisonError::into_inner);
+            if *applied != ShellFreezerState::Frozen {
                 // A refused freeze costs only power. Do not retry until focus
                 // leaves and returns. Every attempted freeze still needs thaw.
                 self.retire_native()?;
-                if self.portal_result(portal.unit.freeze()).is_err() && self.native_input.is_some()
-                {
+                if self.shell_result(shell.unit.freeze()).is_err() && self.native_input.is_some() {
                     // Keep the existing best-effort freezer policy. A refused
                     // helper can have partially frozen the unit: prove thaw
-                    // before resuming the retired browser stream.
-                    *applied = PortalFreezerState::Unknown;
+                    // before resuming the retired surface host stream.
+                    *applied = ShellFreezerState::Unknown;
                     drop(applied);
-                    self.thaw_portal()?;
+                    self.thaw_shell()?;
                     self.input_seats.route(route)?;
                     // Suppress repeated freeze attempts until focus leaves.
-                    *portal
-                        .applied
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner) = PortalFreezerState::Frozen;
+                    *shell.applied.lock().unwrap_or_else(PoisonError::into_inner) =
+                        ShellFreezerState::Frozen;
                     return Ok(());
                 }
-                *applied = PortalFreezerState::Frozen;
+                *applied = ShellFreezerState::Frozen;
             }
         }
         Ok(())
@@ -665,13 +651,10 @@ impl HostSessionControl {
     /// Test observation of a pending release. The production watcher always
     /// observes focus too, even while a delayed game has no mapped window.
     #[cfg(test)]
-    fn portal_watch_needed(&self) -> bool {
-        self.portal.as_ref().is_some_and(|portal| {
-            *portal
-                .applied
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                != PortalFreezerState::Thawed
+    fn shell_watch_needed(&self) -> bool {
+        self.shell.as_ref().is_some_and(|shell| {
+            *shell.applied.lock().unwrap_or_else(PoisonError::into_inner)
+                != ShellFreezerState::Thawed
         })
     }
 
@@ -682,18 +665,18 @@ impl HostSessionControl {
         self
     }
 
-    fn portal_pids(&self) -> Result<std::collections::BTreeSet<i32>, String> {
-        self.portal
+    fn shell_pids(&self) -> Result<std::collections::BTreeSet<i32>, String> {
+        self.shell
             .as_ref()
-            .map(|portal| portal.unit.window_pids().map_err(|error| error.message))
+            .map(|shell| shell.unit.window_pids().map_err(|error| error.message))
             .unwrap_or_else(|| Ok(Default::default()))
     }
 
     /// Opacity belongs to windows proven from this exact launch's live PIDs.
     /// Restoration does not choose a focus target: restore every owned window
-    /// if several exist, but never dim an ambiguous launch or a kiosk window.
+    /// if several exist, but never dim an ambiguous launch or a shell window.
     fn game_opacity(&self, launch_id: &str, dim: bool) -> Result<bool, String> {
-        if self.portal.is_none() {
+        if self.shell.is_none() {
             return Ok(false);
         }
         let pids = self
@@ -707,10 +690,10 @@ impl HostSessionControl {
             .compositor
             .as_ref()
             .ok_or("game compositor unavailable")?;
-        let portal_pids = self.portal_pids()?;
+        let shell_pids = self.shell_pids()?;
         use super::compositor_focus::{select_focus_target, FocusTarget};
         let tree = compositor.tree()?;
-        let candidates = match select_focus_target(&tree, &pids, &portal_pids) {
+        let candidates = match select_focus_target(&tree, &pids, &shell_pids) {
             FocusTarget::Window(candidate) => vec![candidate],
             FocusTarget::NoWindow => return Ok(false),
             FocusTarget::Ambiguous(candidates) if !dim => candidates,
@@ -747,20 +730,20 @@ impl HostSessionControl {
     }
 
     fn place_overlay(&self, launch_id: &str, trace: &mut TransitionTrace) -> Result<(), String> {
-        if self.portal.is_none() {
+        if self.shell.is_none() {
             return Ok(());
         }
         let compositor = self
             .compositor
             .as_ref()
-            .ok_or("portal compositor unavailable")?;
-        let portal_pids = trace.time("portal_identity", || self.portal_pids())?;
+            .ok_or("shell compositor unavailable")?;
+        let shell_pids = trace.time("shell_identity", || self.shell_pids())?;
         let displays = super::display_placement::configured_displays()?;
         if displays.len() > 1 {
             let mut placement_timings =
                 super::display_placement::SurfacePlacementTimings::default();
             self.invalidate_catalog_placement();
-            let result = trace.time("portal_placement", || {
+            let result = trace.time("shell_placement", || {
                 let placement = self.launch_placement(launch_id, &displays)?;
                 let pids = self
                     .backend
@@ -771,20 +754,20 @@ impl HostSessionControl {
                     &displays,
                     Some(&placement),
                     &pids,
-                    &portal_pids,
+                    &shell_pids,
                     &mut placement_timings,
                 )?;
                 Ok::<_, String>((placement, rectangles))
             });
             trace
                 .phases_ms
-                .insert("portal_tree", placement_timings.tree_ms);
+                .insert("shell_tree", placement_timings.tree_ms);
             trace
                 .phases_ms
-                .insert("portal_power", placement_timings.power_ms);
+                .insert("shell_power", placement_timings.power_ms);
             trace
                 .phases_ms
-                .insert("portal_geometry", placement_timings.geometry_ms);
+                .insert("shell_geometry", placement_timings.geometry_ms);
             let (placement, rectangles) = result?;
             trace.overlay_output = rectangles.first().map(|display| display.id.clone());
             let mut occupied = placement.outputs;
@@ -796,7 +779,7 @@ impl HostSessionControl {
             let window = compositor
                 .tree()
                 .ok()
-                .and_then(|tree| super::compositor_focus::portal_window(&tree, &portal_pids).ok());
+                .and_then(|tree| super::compositor_focus::shell_window(&tree, &shell_pids).ok());
             *self
                 .placement_applied
                 .lock()
@@ -805,13 +788,13 @@ impl HostSessionControl {
                 window,
                 rectangles,
             });
-            trace.focus_target = Some(trace.time("portal_focus", || {
-                super::compositor_focus::portal_focus_target(&compositor.tree()?, &portal_pids)
+            trace.focus_target = Some(trace.time("shell_focus", || {
+                super::compositor_focus::shell_focus_target(&compositor.tree()?, &shell_pids)
             })?);
         } else {
             if let Some(display) = displays.first() {
                 let occupied = vec![display.name.clone()];
-                trace.time("portal_placement", || {
+                trace.time("shell_placement", || {
                     super::display_placement::apply(
                         compositor.as_ref(),
                         &super::display_placement::power_commands(&displays, &occupied),
@@ -823,8 +806,8 @@ impl HostSessionControl {
                     .lock()
                     .expect("display content mutex poisoned") = occupied;
             }
-            trace.focus_target = Some(trace.time("portal_focus", || {
-                super::compositor_focus::focus_portal_window(compositor.as_ref(), &portal_pids)
+            trace.focus_target = Some(trace.time("shell_focus", || {
+                super::compositor_focus::focus_shell_window(compositor.as_ref(), &shell_pids)
             })?);
         }
         Ok(())
@@ -839,7 +822,7 @@ impl HostSessionControl {
             .backend
             .window_pids(launch_id)
             .map_err(|error| error.message)?;
-        let excluded = self.portal_pids()?;
+        let excluded = self.shell_pids()?;
         let waiting = self
             .initial_handoff
             .lock()
@@ -937,7 +920,7 @@ impl HostSessionControl {
                 ActiveState::FocusFailed { launch_id, game_id }
             }
             // Ambiguous, missing, unreadable, or unrelated focus still fails
-            // closed to Portal but cannot manufacture an overlay intent.
+            // closed to Shell but cannot manufacture an overlay intent.
             Ok(FocusOwnership::Other) | Err(_) => {
                 recovered_intent.take();
                 ActiveState::FocusFailed { launch_id, game_id }
@@ -1118,7 +1101,7 @@ impl HostSessionControl {
         }
         // A new game placement invalidates the catalog receipt, including
         // partial native failure: cached catalog facts must not claim that
-        // the portal is still the applied presentation.
+        // the shell is still the applied presentation.
         if matches!(*applied, Some(AppliedDisplayPlacement::Catalog { .. })) {
             *applied = None;
         }
@@ -1174,7 +1157,7 @@ impl HostSessionControl {
         pids: &std::collections::BTreeSet<i32>,
     ) -> Option<super::compositor_focus::FocusCandidate> {
         let tree = self.compositor.as_ref()?.tree().ok()?;
-        super::compositor_focus::portal_window(&tree, pids).ok()
+        super::compositor_focus::shell_window(&tree, pids).ok()
     }
 
     /// A catalog receipt holds only for the exact window it placed. A window
@@ -1242,19 +1225,19 @@ impl HostSessionControl {
         // Catalog requests return only main-display facts, even when the surface
         // asks for all. Overlay requests retain their free-display placement.
         // A live unit PID keys the effect-free catalog cache.
-        let catalog_portal_pids = if !request.overlay {
-            let portal_pids = self.portal_pids()?;
-            if let Some(rectangles) = self.cached_catalog_rectangles(&portal_pids) {
+        let catalog_shell_pids = if !request.overlay {
+            let shell_pids = self.shell_pids()?;
+            if let Some(rectangles) = self.cached_catalog_rectangles(&shell_pids) {
                 return Ok(rectangles);
             }
-            Some(portal_pids)
+            Some(shell_pids)
         } else {
             None
         };
         let mut state = self.lock_state_named("surface_displays");
         // Another mounted request may have completed while this one waited
         // for native authority. Do not perform a second synchronous restore.
-        if let Some(pids) = catalog_portal_pids.as_ref() {
+        if let Some(pids) = catalog_shell_pids.as_ref() {
             if let Some(rectangles) = self.cached_catalog_rectangles(pids) {
                 state.reconcile = false;
                 return Ok(rectangles);
@@ -1294,7 +1277,7 @@ impl HostSessionControl {
             // The receipt holds for the exact window it placed: an overlay
             // window mapped anew for the same launch is placed again.
             if let Some((window, rectangles)) = receipt {
-                if self.mapped_surface_window(&self.portal_pids()?).as_ref() == Some(&window) {
+                if self.mapped_surface_window(&self.shell_pids()?).as_ref() == Some(&window) {
                     return Ok(rectangles);
                 }
             }
@@ -1307,14 +1290,14 @@ impl HostSessionControl {
             .transpose()?
             .unwrap_or_default();
         let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
-        let portal_pids = match catalog_portal_pids {
+        let shell_pids = match catalog_shell_pids {
             Some(pids) => pids,
-            None => self.portal_pids()?,
+            None => self.shell_pids()?,
         };
         let catalog_instance = if launch_id.is_none() {
-            Some(super::compositor_focus::portal_window(
+            Some(super::compositor_focus::shell_window(
                 &compositor.tree()?,
-                &portal_pids,
+                &shell_pids,
             )?)
         } else {
             None
@@ -1325,7 +1308,7 @@ impl HostSessionControl {
             &displays,
             placement.as_ref(),
             &pids,
-            &portal_pids,
+            &shell_pids,
         )?;
         let mut occupied = placement.map(|p| p.outputs).unwrap_or_default();
         occupied.extend(rectangles.iter().map(|d| d.id.clone()));
@@ -1335,7 +1318,7 @@ impl HostSessionControl {
             .expect("display content mutex poisoned") = occupied;
         if let Some(id) = launch_id {
             let window =
-                super::compositor_focus::portal_window(&compositor.tree()?, &portal_pids).ok();
+                super::compositor_focus::shell_window(&compositor.tree()?, &shell_pids).ok();
             *self
                 .placement_applied
                 .lock()
@@ -1347,10 +1330,9 @@ impl HostSessionControl {
         } else if let Some(instance) = catalog_instance {
             // Do not publish a receipt for a different window created during
             // the synchronous transaction.
-            if super::compositor_focus::portal_window(&compositor.tree()?, &portal_pids)?
-                != instance
+            if super::compositor_focus::shell_window(&compositor.tree()?, &shell_pids)? != instance
             {
-                return Err("portal instance changed during catalog placement".into());
+                return Err("shell instance changed during catalog placement".into());
             }
             self.record_catalog_placement(instance, rectangles.clone());
         } else {
@@ -1381,7 +1363,7 @@ impl HostSessionControl {
         if pids.is_empty() {
             return Ok(());
         }
-        let excluded = self.portal_pids()?;
+        let excluded = self.shell_pids()?;
         let placement = self.launch_placement(launch_id, &displays)?;
         match super::display_placement::place_game(
             compositor.as_ref(),
@@ -1417,7 +1399,7 @@ impl HostSessionControl {
             Ok(pids) => pids,
             Err(error) => return Some(FocusOutcome::Failed(error.message)),
         };
-        let excluded = match self.portal_pids() {
+        let excluded = match self.shell_pids() {
             Ok(pids) => pids,
             Err(reason) => return Some(FocusOutcome::Failed(reason)),
         };
@@ -1876,7 +1858,7 @@ impl HostSessionControl {
         mutation: impl FnOnce() -> Result<T, RpcFailure>,
     ) -> Result<T, RpcFailure> {
         let mut state = self.lock_state();
-        // Even a rejected settings request must not change portal/game state.
+        // Even a rejected settings request must not change shell/game state.
         state.reconcile = false;
         match &*state {
             ActiveState::Running { .. }
@@ -2054,7 +2036,7 @@ impl HostSessionControl {
                         "input seats failed and the active game was stopped",
                     ));
                 }
-                self.reconcile_portal(&state)
+                self.reconcile_shell(&state)
                     .map_err(|message| failure("InputTransitionFailed", message))?;
                 warnings.clear();
                 return Ok(SessionPrepared {
@@ -2484,7 +2466,7 @@ impl HostSessionControl {
                 *self.handoff_since.lock().expect("handoff mutex poisoned") =
                     Some((launch_id.clone(), std::time::Instant::now()));
                 *state = active_from_observed(observed, launch_id.clone(), Some(game_id.into()));
-                if let Err(message) = self.reconcile_portal(&state) {
+                if let Err(message) = self.reconcile_shell(&state) {
                     let _ = self.record_focus_failure(
                         &mut state,
                         launch_id.clone(),
@@ -2557,7 +2539,7 @@ impl HostSessionControl {
         self.status_snapshot().0
     }
 
-    /// Inputd needs the exact live identity and freezer phase, not browser
+    /// Inputd needs the exact live identity and freezer phase, not surface host
     /// focus, title enrichment or effects before it can stop the game.
     pub(crate) fn control_status(&self) -> HostSessionStatus {
         self.observe_status_locked(
@@ -2663,9 +2645,9 @@ impl HostSessionControl {
         };
         if inspect_focus {
             let reconciliation = if self.peer_selection.active() {
-                self.reconcile_portal(&state)
+                self.reconcile_shell(&state)
             } else {
-                self.reconcile_local_portal_observed(&state, ownership)
+                self.reconcile_local_shell_observed(&state, ownership)
             };
             if let Err(message) = reconciliation {
                 if let ActiveState::Running { launch_id, game_id } = &*state {
@@ -2815,7 +2797,7 @@ impl HostSessionControl {
     {
         let mut state = self.lock_state();
         self.refresh_recovery(&mut state);
-        let (launch_id, game_id, recorded_frozen, portal_owned) = match &*state {
+        let (launch_id, game_id, recorded_frozen, shell_owned) = match &*state {
             ActiveState::Running { launch_id, game_id } if launch_id == expected_launch_id => {
                 (launch_id.clone(), game_id.clone(), false, false)
             }
@@ -2886,7 +2868,7 @@ impl HostSessionControl {
         };
         let seats_were_live = self.seats_are_live_for(&launch_id);
         if let Err(message) = self.ensure_seats(&launch_id) {
-            if portal_owned {
+            if shell_owned {
                 let _ = self.stop_seats(&launch_id);
                 *state = ActiveState::FocusFailed { launch_id, game_id };
             } else if restore_frozen && self.backend.freeze(&launch_id).is_ok() {
@@ -2895,10 +2877,10 @@ impl HostSessionControl {
             return Err(HostSessionEffectFailure::Unavailable(message));
         }
         if let Err(message) = effect() {
-            if !seats_were_live || portal_owned {
+            if !seats_were_live || shell_owned {
                 let _ = self.stop_seats(&launch_id);
             }
-            if portal_owned {
+            if shell_owned {
                 *state = ActiveState::FocusFailed { launch_id, game_id };
             } else if restore_frozen {
                 if self.backend.freeze(&launch_id).is_err() {
@@ -2915,7 +2897,7 @@ impl HostSessionControl {
                 launch_id,
                 game_id,
                 restore_frozen,
-                portal_owned,
+                shell_owned,
                 seats_were_live,
             );
         }
@@ -2947,7 +2929,7 @@ impl HostSessionControl {
         launch_id: String,
         game_id: Option<String>,
         restore_frozen: bool,
-        portal_owned: bool,
+        shell_owned: bool,
         seats_were_live: bool,
     ) -> Result<(), HostSessionEffectFailure> {
         const ATTEMPTS: usize = 40;
@@ -2998,7 +2980,7 @@ impl HostSessionControl {
                 "The game did not finish stopping.".into(),
             ));
         }
-        if portal_owned {
+        if shell_owned {
             if self.stop_seats(&launch_id).is_err() {
                 *state = ActiveState::RecoveryBlocked;
                 return Err(HostSessionEffectFailure::RecoveryBlocked);
@@ -3223,7 +3205,7 @@ impl HostSessionControl {
             if target == FreezerTarget::Frozen {
                 if let Err(message) = trace
                     .time("input_route", || self.input_seats.route(None))
-                    .and_then(|()| trace.time("portal_thaw", || self.thaw_portal()))
+                    .and_then(|()| trace.time("shell_thaw", || self.thaw_shell()))
                     .and_then(|()| self.place_overlay(&launch_id, &mut trace))
                 {
                     // Inputd keeps Game input when Leave fails. Undo the game
@@ -3303,7 +3285,7 @@ impl HostSessionControl {
                     return HostSessionFreezeChange::FocusFailed { launch_id, message };
                 }
             }
-            if let Err(message) = trace.time("reconcile", || self.reconcile_portal(&state)) {
+            if let Err(message) = trace.time("reconcile", || self.reconcile_shell(&state)) {
                 let _ = self.record_focus_failure(&mut state, launch_id.clone(), game_id);
                 return HostSessionFreezeChange::HelperFailed { launch_id, message };
             }
@@ -3372,13 +3354,13 @@ impl HostSessionControl {
             "seat_ready",
             "unit_change",
             "input_route",
-            "portal_thaw",
-            "portal_identity",
-            "portal_placement",
-            "portal_tree",
-            "portal_power",
-            "portal_geometry",
-            "portal_focus",
+            "shell_thaw",
+            "shell_identity",
+            "shell_placement",
+            "shell_tree",
+            "shell_power",
+            "shell_geometry",
+            "shell_focus",
             "seat_restore",
             "seat_reset",
             "game_focus",
@@ -3594,7 +3576,7 @@ impl HostSessionControl {
 /// acting.
 /// From the exact launch's unit start to the first compositor observation of
 /// its window owning focus. korrid sees the window, not a presented frame,
-/// and observes it on status reads and the portal watch, about once a second.
+/// and observes it on status reads and the shell watch, about once a second.
 fn handoff_line(launch_id: &str, elapsed: std::time::Duration) -> String {
     format!(
         "<6>korrid: LaunchHandoff {{ launch_id: {launch_id}, unit_start_to_window_ms: {} }}",
@@ -3895,20 +3877,20 @@ mod tests {
         );
     }
     #[test]
-    fn failed_portal_focus_rolls_back_only_the_exact_launch_and_reports_unproven_game_focus() {
+    fn failed_shell_focus_rolls_back_only_the_exact_launch_and_reports_unproven_game_focus() {
         for rollback_focus_fails in [false, true] {
             let root = tempfile::tempdir().unwrap();
             let backend = Arc::new(DeterministicBackend::default());
             let compositor = Arc::new(RecordingCompositor {
-                portal_focus_fails: AtomicBool::new(true),
+                shell_focus_fails: AtomicBool::new(true),
                 focus_fails: AtomicBool::new(rollback_focus_fails),
                 ..RecordingCompositor::default()
             });
-            let control = portal_control(
+            let control = shell_control(
                 root.path(),
                 backend.clone(),
                 compositor.clone(),
-                Arc::new(RecordingPortalUnit::default()),
+                Arc::new(RecordingShellUnit::default()),
             );
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
@@ -3933,11 +3915,11 @@ mod tests {
     }
 
     #[test]
-    fn leave_focuses_the_kiosk_unit_places_overlay_on_free_display_and_return_focuses_game() {
+    fn leave_focuses_the_shell_unit_places_overlay_on_free_display_and_return_focuses_game() {
         const CHILD: &str = "KORRI_UNIT_LEAVE_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
             let result = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "host::session_state::tests::leave_focuses_the_kiosk_unit_places_overlay_on_free_display_and_return_focuses_game", "--nocapture"])
+                .args(["--exact", "host::session_state::tests::leave_focuses_the_shell_unit_places_overlay_on_free_display_and_return_focuses_game", "--nocapture"])
                 .env(CHILD, "1")
                 .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
                 .output().unwrap();
@@ -3964,13 +3946,13 @@ mod tests {
                     "lock_wait",
                     "unit_read",
                     "unit_change",
-                    "portal_thaw",
-                    "portal_placement",
-                    "portal_tree",
-                    "portal_power",
-                    "portal_geometry",
+                    "shell_thaw",
+                    "shell_placement",
+                    "shell_tree",
+                    "shell_power",
+                    "shell_geometry",
                     "lock_holder",
-                    "portal_focus",
+                    "shell_focus",
                     "seat_reset",
                     "game_focus",
                     "game_dim",
@@ -3986,14 +3968,11 @@ mod tests {
         for identity_only in [false, true] {
             let root = tempfile::tempdir().unwrap();
             let tree = |focused| {
-                compositor_tree_with_focus(9100, focused).replace(
-                    PORTAL_APP_ID,
-                    "chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default",
-                )
+                compositor_tree_with_focus(9100, focused).replace(SHELL_APP_ID, "korri-shell")
             };
             fs::write(root.path().join("tree"), tree(3)).unwrap();
             fs::write(root.path().join("game-tree"), tree(3)).unwrap();
-            fs::write(root.path().join("portal-tree"), tree(2)).unwrap();
+            fs::write(root.path().join("shell-tree"), tree(2)).unwrap();
             let program = root.path().join("swaymsg");
             fs::write(
                 &program,
@@ -4010,7 +3989,7 @@ case "$command" in *'opacity 1'*)
  if test -f refuse-restore; then printf '[{{"success":false,"error":"opacity refused"}}]'; exit; fi;;
 esac
 case "$command" in
- *'[con_id=2] focus'*) cp portal-tree tree;;
+ *'[con_id=2] focus'*) cp shell-tree tree;;
  *'[con_id=3] focus'*) cp game-tree tree;;
 esac
 printf '[{{"success":true}}]'
@@ -4029,14 +4008,14 @@ printf '[{{"success":true}}]'
                 .unwrap(),
             );
             let backend = Arc::new(DeterministicBackend::default());
-            let portal = Arc::new(if identity_only {
-                RecordingPortalUnit::identity_only()
+            let shell = Arc::new(if identity_only {
+                RecordingShellUnit::identity_only()
             } else {
-                RecordingPortalUnit::default()
+                RecordingShellUnit::default()
             });
             let control = HostSessionControl::new(root.path(), backend.clone())
                 .with_compositor(compositor.clone())
-                .with_portal(portal.clone());
+                .with_shell(shell.clone());
             let prepared = prepare(&control, "one");
             backend.set_pids(&prepared.launch_id, &[9100]);
             backend.state.lock().unwrap().sway_events_file = Some(root.path().join("commands"));
@@ -4045,13 +4024,13 @@ printf '[{{"success":true}}]'
                 HostSessionStatus::Running { .. }
             ));
             fs::write(root.path().join("reads"), "").unwrap();
-            let identity_start = portal.identity_reads();
+            let identity_start = shell.identity_reads();
             assert!(matches!(
                 control.control_status(),
                 HostSessionStatus::Running { .. }
             ));
             assert_eq!(
-                portal.identity_reads(),
+                shell.identity_reads(),
                 identity_start,
                 "inputd status must not inspect UI identity"
             );
@@ -4119,10 +4098,10 @@ printf '[{{"success":true}}]'
             // The shell maps a new overlay window in the same process for
             // the same launch: unchanged PID and launch, new compositor
             // window. The receipt was for con_id 2; con_id 7 is placed again.
-            let portal_tree = fs::read_to_string(root.path().join("tree")).unwrap();
+            let shell_tree = fs::read_to_string(root.path().join("tree")).unwrap();
             fs::write(
                 root.path().join("tree"),
-                portal_tree.replace(r#""id": 2,"#, r#""id": 7,"#),
+                shell_tree.replace(r#""id": 2,"#, r#""id": 7,"#),
             )
             .unwrap();
             let replaced = control
@@ -4152,11 +4131,11 @@ printf '[{{"success":true}}]'
                 fs::read_to_string(root.path().join("commands")).unwrap(),
                 placed
             );
-            fs::write(root.path().join("tree"), &portal_tree).unwrap();
+            fs::write(root.path().join("tree"), &shell_tree).unwrap();
             let commands = placed;
             fs::write(root.path().join("reads"), "").unwrap();
             fs::write(root.path().join("commands"), "").unwrap();
-            let identity_reads = portal.identity_reads();
+            let identity_reads = shell.identity_reads();
             assert!(matches!(
                 control.thaw(&prepared.launch_id),
                 HostSessionFreezeChange::Changed { .. }
@@ -4176,7 +4155,7 @@ printf '[{{"success":true}}]'
                 returned.ends_with("[con_id=3] focus; output DSI-1 power off\n"),
                 "{returned}"
             );
-            assert_eq!(portal.identity_reads() - identity_reads, 2,
+            assert_eq!(shell.identity_reads() - identity_reads, 2,
                 "Return must share one identity snapshot between placement and focus, then observe once at reconcile");
             assert_eq!(
                 fs::read_to_string(root.path().join("reads"))
@@ -4227,9 +4206,9 @@ printf '[{{"success":true}}]'
                 backend.state(&prepared.launch_id).unwrap(),
                 LaunchUnitState::Running
             );
-            // A refused portal readback rolls back to the same game, fully opaque.
+            // A refused shell readback rolls back to the same game, fully opaque.
             fs::write(root.path().join("game-tree"), tree(3)).unwrap();
-            fs::write(root.path().join("portal-tree"), tree(3)).unwrap();
+            fs::write(root.path().join("shell-tree"), tree(3)).unwrap();
             fs::write(root.path().join("commands"), "").unwrap();
             assert!(matches!(
                 control.freeze(&prepared.launch_id),
@@ -4244,7 +4223,7 @@ printf '[{{"success":true}}]'
                 backend.state(&prepared.launch_id).unwrap(),
                 LaunchUnitState::Running
             );
-            fs::write(root.path().join("portal-tree"), tree(2)).unwrap();
+            fs::write(root.path().join("shell-tree"), tree(2)).unwrap();
             for reject_dim in [false, true] {
                 fs::write(root.path().join("commands"), "").unwrap();
                 let freeze_count = backend.state.lock().unwrap().frozen.len();
@@ -4354,7 +4333,7 @@ printf '[{{"success":true}}]'
             // The guard also restores a dim if a worker unwinds before freeze.
             let restarted = HostSessionControl::new(root.path(), backend.clone())
                 .with_compositor(compositor.clone())
-                .with_portal(portal.clone());
+                .with_shell(shell.clone());
             assert!(matches!(
                 restarted.status(),
                 HostSessionStatus::Running { .. }
@@ -4377,7 +4356,7 @@ printf '[{{"success":true}}]'
             );
             let completed = HostSessionControl::new(root.path(), backend.clone())
                 .with_compositor(compositor.clone())
-                .with_portal(portal.clone());
+                .with_shell(shell.clone());
             assert!(matches!(
                 completed.status(),
                 HostSessionStatus::Running { .. }
@@ -4414,7 +4393,7 @@ printf '[{{"success":true}}]'
             return;
         }
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("tree"), r#"{"nodes":[{"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true,"fullscreen_mode":2}]}"#).unwrap();
+        fs::write(root.path().join("tree"), r#"{"nodes":[{"id":2,"pid":4100,"app_id":"korri-shell","focused":true,"fullscreen_mode":2}]}"#).unwrap();
         fs::write(
             root.path().join("focused-tree"),
             compositor_tree_with_focus(200, 3),
@@ -4471,11 +4450,11 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
-    fn both_requested_scopes_place_only_main_by_kiosk_unit_identity() {
-        const CHILD: &str = "KORRI_PORTAL_IDENTITY_TEST_CHILD";
+    fn both_requested_scopes_place_only_main_by_shell_unit_identity() {
+        const CHILD: &str = "KORRI_SHELL_IDENTITY_TEST_CHILD";
         if std::env::var_os(CHILD).is_none() {
             let result = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "host::session_state::tests::both_requested_scopes_place_only_main_by_kiosk_unit_identity", "--nocapture"])
+                .args(["--exact", "host::session_state::tests::both_requested_scopes_place_only_main_by_shell_unit_identity", "--nocapture"])
                 .env(CHILD, "1")
                 .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
                 .output().unwrap();
@@ -4491,11 +4470,11 @@ printf '[{{"success":true}}]'
                 stderr.contains("target: Catalog, outcome: Changed"),
                 "{stderr}"
             );
-            assert!(!stderr.contains("portal_settle"), "{stderr}");
-            assert!(!stderr.contains("PortalReadinessRestore"), "{stderr}");
+            assert!(!stderr.contains("shell_settle"), "{stderr}");
+            assert!(!stderr.contains("ShellReadinessRestore"), "{stderr}");
             return;
         }
-        use super::super::systemd_unit::{SystemdLaunchUnitBackend, SystemdPortalUnit};
+        use super::super::systemd_unit::{SystemdLaunchUnitBackend, SystemdShellUnit};
         let root = tempfile::tempdir().unwrap();
         let systemctl = root.path().join("systemctl");
         fs::write(
@@ -4513,14 +4492,14 @@ esac
         )
         .unwrap();
         fs::set_permissions(&systemctl, fs::Permissions::from_mode(0o755)).unwrap();
-        let portal = SystemdPortalUnit::new(
+        let shell = SystemdShellUnit::new(
             SystemdLaunchUnitBackend::new(systemctl.clone(), systemctl, 1000, 1000).unwrap(),
-            "korri-chromium-kiosk.service",
+            "korri-shell.service",
             false,
         )
         .unwrap();
         let swaymsg = root.path().join("swaymsg");
-        let tree = r#"{"nodes":[{"id":10,"pid":2603,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","fullscreen_mode":1}]}"#;
+        let tree = r#"{"nodes":[{"id":10,"pid":2603,"app_id":"korri-shell","fullscreen_mode":1}]}"#;
         fs::write(root.path().join("tree"), tree).unwrap();
         fs::write(
             &swaymsg,
@@ -4547,7 +4526,7 @@ printf '[{{"success":true}}]'
         );
         let control =
             HostSessionControl::new(root.path(), Arc::new(DeterministicBackend::default()))
-                .with_portal(Arc::new(portal))
+                .with_shell(Arc::new(shell))
                 .with_compositor(compositor);
         let displays = control
             .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
@@ -4611,9 +4590,9 @@ printf '[{{"success":true}}]'
             after
         );
         let queries = fs::read_to_string(root.path().join("unit-queries")).unwrap();
-        assert!(queries.contains(
-            "show korri-chromium-kiosk.service --property=ControlGroup --property=MainPID"
-        ));
+        assert!(
+            queries.contains("show korri-shell.service --property=ControlGroup --property=MainPID")
+        );
     }
 
     #[test]
@@ -5434,7 +5413,7 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
-    fn restart_without_compositor_authority_reattaches_fail_closed_to_portal() {
+    fn restart_without_compositor_authority_reattaches_fail_closed_to_shell() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let first = control(root.path(), backend.clone());
@@ -5817,7 +5796,7 @@ printf '[{{"success":true}}]'
             "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0".into(),
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),
-            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control /run/korrid-cli/cli.sock /run/korrid-cli -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into(),
+            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /run/korrid-cli/cli.sock /run/korrid-cli -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into(),
             "--property=RestrictSUIDSGID=yes".into(),
         ] {
             assert!(
@@ -6262,7 +6241,7 @@ printf '[{{"success":true}}]'
         tree: Mutex<String>,
         focused: Mutex<Vec<i64>>,
         focus_fails: AtomicBool,
-        portal_focus_fails: AtomicBool,
+        shell_focus_fails: AtomicBool,
         return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
     }
 
@@ -6281,7 +6260,7 @@ printf '[{{"success":true}}]'
                 events.lock().unwrap().push("focus");
             }
             if self.focus_fails.load(Ordering::SeqCst)
-                || (node_id == 2 && self.portal_focus_fails.load(Ordering::SeqCst))
+                || (node_id == 2 && self.shell_focus_fails.load(Ordering::SeqCst))
             {
                 return Err("compositor refused focus".into());
             }
@@ -6306,7 +6285,7 @@ printf '[{{"success":true}}]'
         }
     }
 
-    const PORTAL_APP_ID: &str = "chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default";
+    const SHELL_APP_ID: &str = "korri-shell";
 
     fn compositor_tree(game_pid: i32) -> String {
         compositor_tree_with_focus(game_pid, 3)
@@ -6315,7 +6294,7 @@ printf '[{{"success":true}}]'
     fn compositor_tree_with_focus(game_pid: i32, focused_id: i64) -> String {
         format!(
             r#"{{"id": 1, "nodes": [
-                 {{"id": 2, "pid": 4100, "app_id": "{PORTAL_APP_ID}",
+                 {{"id": 2, "pid": 4100, "app_id": "{SHELL_APP_ID}",
                   "focused": {}, "nodes": [], "floating_nodes": []}},
                  {{"id": 3, "pid": {game_pid}, "app_id": null,
                   "rect": {{"x":0,"y":0,"width":640,"height":480}},
@@ -6336,7 +6315,7 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
-    fn restart_recovers_portal_ownership_when_the_live_game_is_behind_korri() {
+    fn restart_recovers_shell_ownership_when_the_live_game_is_behind_korri() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
@@ -6347,7 +6326,7 @@ printf '[{{"success":true}}]'
         drop(control);
 
         let recovered = resuming_control(root.path(), backend, compositor)
-            .with_portal(Arc::new(RecordingPortalUnit::default()));
+            .with_shell(Arc::new(RecordingShellUnit::default()));
         let (status, ownership, overlay_intent) = recovered.status_with_recovered_overlay_intent();
         assert_eq!(ownership, Some(FocusOwnership::Excluded));
         assert_eq!(
@@ -6392,7 +6371,7 @@ printf '[{{"success":true}}]'
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = r#"{"id":1,"nodes":[
-            {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true},
+            {"id":2,"pid":4100,"app_id":"korri-shell","focused":true},
             {"id":3,"pid":9100,"focused":false},
             {"id":4,"pid":9100,"focused":false}
         ]}"#
@@ -6470,32 +6449,32 @@ printf '[{{"success":true}}]'
         assert_eq!(manager.state.lock().unwrap().resets, [id]);
     }
 
-    fn portal_control(
+    fn shell_control(
         root: &Path,
         backend: Arc<DeterministicBackend>,
         compositor: Arc<RecordingCompositor>,
-        portal: Arc<RecordingPortalUnit>,
+        shell: Arc<RecordingShellUnit>,
     ) -> HostSessionControl {
-        resuming_control(root, backend, compositor).with_portal(portal)
+        resuming_control(root, backend, compositor).with_shell(shell)
     }
 
     #[test]
-    fn portal_stays_active_until_the_exact_delayed_game_window_has_focus() {
+    fn shell_stays_active_until_the_exact_delayed_game_window_has_focus() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
-        let portal = Arc::new(RecordingPortalUnit::default());
-        let control = portal_control(
+        let shell = Arc::new(RecordingShellUnit::default());
+        let control = shell_control(
             root.path(),
             backend.clone(),
             compositor.clone(),
-            portal.clone(),
+            shell.clone(),
         );
         let id = prepare(&control, "one").launch_id;
-        assert!(!portal.frozen(), "process liveness is not focus");
+        assert!(!shell.frozen(), "process liveness is not focus");
         backend.set_pids(&id, &[9100]);
         // No mapped window, then an unrelated focused process, then a mapped
-        // game behind the portal: none proves that this launch owns focus.
+        // game behind the shell: none proves that this launch owns focus.
         for tree in [
             "{\"nodes\":[]}".to_owned(),
             compositor_tree(9200),
@@ -6503,28 +6482,28 @@ printf '[{{"success":true}}]'
         ] {
             *compositor.tree.lock().unwrap() = tree;
             control.status();
-            assert!(!portal.frozen());
+            assert!(!shell.frozen());
         }
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
         for _ in 0..3 {
             control.status();
         }
-        assert!(portal.frozen());
-        assert_eq!(portal.requests(), ["thaw", "freeze"]);
+        assert!(shell.frozen());
+        assert_eq!(shell.requests(), ["thaw", "freeze"]);
         assert!(matches!(
             control.freeze(&id),
             HostSessionFreezeChange::Changed { .. }
         ));
-        assert!(!portal.frozen(), "Leave thaws before acknowledging success");
+        assert!(!shell.frozen(), "Leave thaws before acknowledging success");
         assert!(matches!(
             control.freeze(&id),
             HostSessionFreezeChange::Unchanged { .. }
         ));
-        assert_eq!(portal.requests(), ["thaw", "freeze", "thaw"]);
+        assert_eq!(shell.requests(), ["thaw", "freeze", "thaw"]);
     }
 
     #[test]
-    fn return_freezes_the_portal_only_after_the_game_is_focused() {
+    fn return_freezes_the_shell_only_after_the_game_is_focused() {
         let root = tempfile::tempdir().unwrap();
         let events = Arc::new(Mutex::new(Vec::new()));
         let backend = Arc::new(DeterministicBackend::default());
@@ -6533,8 +6512,8 @@ printf '[{{"success":true}}]'
             return_events: Some(events.clone()),
             ..RecordingCompositor::default()
         });
-        let portal = Arc::new(RecordingPortalUnit::with_events(events.clone()));
-        let control = portal_control(root.path(), backend.clone(), compositor.clone(), portal);
+        let shell = Arc::new(RecordingShellUnit::with_events(events.clone()));
+        let control = shell_control(root.path(), backend.clone(), compositor.clone(), shell);
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -6547,20 +6526,20 @@ printf '[{{"success":true}}]'
                 launch_id: id.clone()
             }
         );
-        assert_eq!(*events.lock().unwrap(), ["thaw", "focus", "portal-freeze"]);
+        assert_eq!(*events.lock().unwrap(), ["thaw", "focus", "shell-freeze"]);
     }
 
     #[test]
-    fn a_refused_return_leaves_the_portal_running() {
+    fn a_refused_return_leaves_the_shell_running() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
-        let portal = Arc::new(RecordingPortalUnit::default());
-        let control = portal_control(
+        let shell = Arc::new(RecordingShellUnit::default());
+        let control = shell_control(
             root.path(),
             backend.clone(),
             compositor.clone(),
-            portal.clone(),
+            shell.clone(),
         );
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
@@ -6573,27 +6552,27 @@ printf '[{{"success":true}}]'
             control.thaw(&id),
             HostSessionFreezeChange::FocusFailed { .. }
         ));
-        assert!(!portal.frozen());
+        assert!(!shell.frozen());
         assert!(matches!(
             control.status(),
             HostSessionStatus::FocusFailed { .. }
         ));
-        assert_eq!(portal.requests(), ["thaw", "freeze", "thaw"]);
+        assert_eq!(shell.requests(), ["thaw", "freeze", "thaw"]);
     }
 
     #[test]
-    fn exact_stop_thaws_the_portal_before_the_game_stops() {
+    fn exact_stop_thaws_the_shell_before_the_game_stops() {
         let root = tempfile::tempdir().unwrap();
         let events = Arc::new(Mutex::new(Vec::new()));
         let backend = Arc::new(DeterministicBackend::default());
         backend.state.lock().unwrap().return_events = Some(events.clone());
-        let portal = Arc::new(RecordingPortalUnit::with_events(events.clone()));
+        let shell = Arc::new(RecordingShellUnit::with_events(events.clone()));
         let compositor = Arc::new(RecordingCompositor::default());
-        let control = portal_control(
+        let control = shell_control(
             root.path(),
             backend.clone(),
             compositor.clone(),
-            portal.clone(),
+            shell.clone(),
         );
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
@@ -6607,47 +6586,47 @@ printf '[{{"success":true}}]'
                 launch_id: id.clone()
             }
         );
-        assert_eq!(*events.lock().unwrap(), ["portal-thaw", "stop"]);
-        assert!(!portal.frozen());
+        assert_eq!(*events.lock().unwrap(), ["shell-thaw", "stop"]);
+        assert!(!shell.frozen());
     }
 
     #[test]
-    fn a_game_that_ends_on_its_own_thaws_the_portal() {
+    fn a_game_that_ends_on_its_own_thaws_the_shell() {
         for ending in [LaunchUnitState::Completed, LaunchUnitState::Stopping] {
             let root = tempfile::tempdir().unwrap();
             let backend = Arc::new(DeterministicBackend::default());
-            let portal = Arc::new(RecordingPortalUnit::default());
+            let shell = Arc::new(RecordingShellUnit::default());
             let compositor = Arc::new(RecordingCompositor::default());
-            let control = portal_control(
+            let control = shell_control(
                 root.path(),
                 backend.clone(),
                 compositor.clone(),
-                portal.clone(),
+                shell.clone(),
             );
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
             *compositor.tree.lock().unwrap() = compositor_tree(9100);
             control.status();
-            assert!(portal.frozen());
+            assert!(shell.frozen());
             backend.insert(&id, ending);
 
             control.status();
-            assert!(!portal.frozen(), "{ending:?}");
-            assert!(!control.portal_watch_needed(), "{ending:?}");
+            assert!(!shell.frozen(), "{ending:?}");
+            assert!(!control.shell_watch_needed(), "{ending:?}");
         }
     }
 
     #[test]
-    fn a_failed_launch_never_freezes_the_portal() {
+    fn a_failed_launch_never_freezes_the_shell() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         backend.state.lock().unwrap().launch_rejected = true;
-        let portal = Arc::new(RecordingPortalUnit::default());
-        let control = portal_control(
+        let shell = Arc::new(RecordingShellUnit::default());
+        let control = shell_control(
             root.path(),
             backend,
             Arc::new(RecordingCompositor::default()),
-            portal.clone(),
+            shell.clone(),
         );
 
         assert_eq!(
@@ -6657,18 +6636,18 @@ printf '[{{"success":true}}]'
                 .code,
             "HostLaunchFailed"
         );
-        assert!(!portal.frozen());
-        assert!(!portal.requests().contains(&"freeze"));
+        assert!(!shell.frozen());
+        assert!(!shell.requests().contains(&"freeze"));
     }
 
     #[test]
-    fn overlay_controls_on_a_left_game_keep_the_portal_running() {
+    fn overlay_controls_on_a_left_game_keep_the_shell_running() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
-        let portal = Arc::new(RecordingPortalUnit::default());
+        let shell = Arc::new(RecordingShellUnit::default());
         let compositor = Arc::new(RecordingCompositor::default());
         *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
-        let control = portal_control(root.path(), backend.clone(), compositor, portal.clone());
+        let control = shell_control(root.path(), backend.clone(), compositor, shell.clone());
         let id = prepare(&control, "one").launch_id;
         control.freeze(&id);
 
@@ -6677,27 +6656,27 @@ printf '[{{"success":true}}]'
             .invoke_running_effect(&id, false, false, || Ok(()))
             .unwrap();
         assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Frozen);
-        assert!(!portal.frozen());
-        assert_eq!(portal.requests(), ["thaw"]);
+        assert!(!shell.frozen());
+        assert_eq!(shell.requests(), ["thaw"]);
     }
 
     #[test]
-    fn restart_thaws_a_portal_left_frozen_unless_the_game_holds_focus() {
+    fn restart_thaws_a_shell_left_frozen_unless_the_game_holds_focus() {
         // No live game: the leftover freeze is released on first status.
         let root = tempfile::tempdir().unwrap();
-        let portal = Arc::new(RecordingPortalUnit::left_frozen());
-        let control = portal_control(
+        let shell = Arc::new(RecordingShellUnit::left_frozen());
+        let control = shell_control(
             root.path(),
             Arc::new(DeterministicBackend::default()),
             Arc::new(RecordingCompositor::default()),
-            portal.clone(),
+            shell.clone(),
         );
-        assert!(control.portal_watch_needed(), "startup state is unproven");
+        assert!(control.shell_watch_needed(), "startup state is unproven");
         assert_eq!(control.status(), HostSessionStatus::NoActive);
-        assert!(!portal.frozen());
-        assert!(!control.portal_watch_needed());
+        assert!(!shell.frozen());
+        assert!(!control.shell_watch_needed());
 
-        // A live game behind the portal: recovery hands focus to Portal.
+        // A live game behind the shell: recovery hands focus to Shell.
         for (focused, frozen) in [(2, false), (3, true)] {
             let root = tempfile::tempdir().unwrap();
             let backend = Arc::new(DeterministicBackend::default());
@@ -6708,10 +6687,10 @@ printf '[{{"success":true}}]'
             *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, focused);
             drop(first);
 
-            let portal = Arc::new(RecordingPortalUnit::left_frozen());
-            let recovered = portal_control(root.path(), backend, compositor, portal.clone());
+            let shell = Arc::new(RecordingShellUnit::left_frozen());
+            let recovered = shell_control(root.path(), backend, compositor, shell.clone());
             recovered.status();
-            assert_eq!(portal.frozen(), frozen, "focused node {focused}");
+            assert_eq!(shell.frozen(), frozen, "focused node {focused}");
         }
     }
 
@@ -6783,7 +6762,7 @@ printf '[{{"success":true}}]'
     }
 
     #[tokio::test]
-    async fn terminal_control_loss_thaws_only_portal_and_keeps_native_and_launches_fenced() {
+    async fn terminal_control_loss_thaws_only_shell_and_keeps_native_and_launches_fenced() {
         use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
         use futures::{SinkExt, StreamExt};
         use korri_input_contract::SeatRequest;
@@ -6792,12 +6771,12 @@ printf '[{{"success":true}}]'
         // Real seqpacket EOF and native WS; systemd/compositor are recording
         // backends. This proves the host transition, not a kernel freezer.
         for (completed, refuse_first_thaw) in [(false, false), (true, false), (true, true)] {
-            let access = crate::portal_access::PortalAccess::new(
+            let access = crate::surface_host_access::SurfaceHostAccess::new(
                 "test-capability",
-                "http://portal.local",
-                crate::portal_access::PortalPermission::LocalSessions,
+                "http://shell.local",
+                crate::surface_host_access::SurfaceHostPermission::LocalSessions,
             );
-            let (app, source) = crate::portal_input::router(access, Default::default());
+            let (app, source) = crate::surface_host_input::router(access, Default::default());
             let source = Arc::new(source);
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let mut request = format!("ws://{}/", listener.local_addr().unwrap())
@@ -6805,7 +6784,7 @@ printf '[{{"success":true}}]'
                 .unwrap();
             request
                 .headers_mut()
-                .insert("Origin", "http://portal.local".parse().unwrap());
+                .insert("Origin", "http://shell.local".parse().unwrap());
             let reconnect = request.clone();
             let server = tokio::spawn(async move {
                 axum::serve(listener, app).await.unwrap();
@@ -6846,7 +6825,7 @@ printf '[{{"success":true}}]'
             backend.set_pids(id, &[9100]);
             let compositor = Arc::new(RecordingCompositor::default());
             *compositor.tree.lock().unwrap() = compositor_tree(9100);
-            let portal = Arc::new(RecordingPortalUnit::default());
+            let shell = Arc::new(RecordingShellUnit::default());
             let manager = Arc::new(UnixInputSeatManager::new(
                 "unused-mirror-socket".into(),
                 Ok(coordinator.clone()),
@@ -6854,7 +6833,7 @@ printf '[{{"success":true}}]'
             let control =
                 HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
                     .with_compositor(compositor.clone())
-                    .with_portal(portal.clone())
+                    .with_shell(shell.clone())
                     .with_native_input(source.clone());
             control.initialize_input(4).unwrap();
             let observe = control.clone();
@@ -6868,7 +6847,7 @@ printf '[{{"success":true}}]'
                 frozen.await.unwrap(),
                 HostSessionStatus::Running { .. }
             ));
-            assert!(portal.frozen());
+            assert!(shell.frozen());
 
             lost.store(true, Ordering::SeqCst);
             let transport = coordinator.clone();
@@ -6886,7 +6865,7 @@ printf '[{{"success":true}}]'
                 *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
             }
             if refuse_first_thaw {
-                portal.refuse_next_thaws(1);
+                shell.refuse_next_thaws(1);
             }
             let observe = control.clone();
             assert_eq!(
@@ -6896,7 +6875,7 @@ printf '[{{"success":true}}]'
                 HostSessionStatus::RecoveryBlocked
             );
             if refuse_first_thaw {
-                assert!(portal.frozen(), "a refused helper is not claimed as thawed");
+                assert!(shell.frozen(), "a refused helper is not claimed as thawed");
                 let retry = control.clone();
                 assert_eq!(
                     tokio::task::spawn_blocking(move || retry.status())
@@ -6906,7 +6885,7 @@ printf '[{{"success":true}}]'
                 );
             }
             assert!(
-                !portal.frozen(),
+                !shell.frozen(),
                 "keyboard/mouse recovery must survive terminal input loss"
             );
             assert_eq!(
@@ -6919,7 +6898,7 @@ printf '[{{"success":true}}]'
             );
             assert!(
                 backend.state.lock().unwrap().thawed.is_empty(),
-                "emergency portal thaw must not resume the game"
+                "emergency shell thaw must not resume the game"
             );
             assert!(manager.ready().is_err());
             assert!(manager.is_fenced());
@@ -6973,7 +6952,7 @@ printf '[{{"success":true}}]'
             .unwrap();
             assert_eq!(
                 source.suspend(Duration::from_millis(1)).await,
-                Err(crate::portal_input::SuspendError::AlreadySuspended)
+                Err(crate::surface_host_input::SuspendError::AlreadySuspended)
             );
             let error = tokio_tungstenite::connect_async(reconnect)
                 .await
@@ -6999,20 +6978,20 @@ printf '[{{"success":true}}]'
             let backend = Arc::new(DeterministicBackend::default());
             let pool = Arc::new(RecordingInputPool::default());
             let compositor = Arc::new(RecordingCompositor::default());
-            let portal = Arc::new(RecordingPortalUnit::default());
+            let shell = Arc::new(RecordingShellUnit::default());
             let control =
                 HostSessionControl::with_input_seats(root.path(), backend.clone(), pool.clone())
                     .with_compositor(compositor.clone())
-                    .with_portal(portal.clone());
+                    .with_shell(shell.clone());
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
             *compositor.tree.lock().unwrap() = compositor_tree(9100);
             control.status();
-            assert!(portal.frozen());
+            assert!(shell.frozen());
             let (entered, enter) = std::sync::mpsc::sync_channel(1);
             let (release, released) = std::sync::mpsc::sync_channel(1);
             let mut first = true;
-            let observed = portal.clone();
+            let observed = shell.clone();
             *pool.on_route.lock().unwrap() = Some(Box::new(move |route| {
                 assert!(route.is_none());
                 assert!(
@@ -7033,14 +7012,14 @@ printf '[{{"success":true}}]'
             *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
             let worker = thread::spawn(move || control.status());
             enter.recv_timeout(Duration::from_secs(2)).unwrap();
-            assert!(portal.frozen());
+            assert!(shell.frozen());
             release.send(()).unwrap();
             let result = worker.join().unwrap();
             assert!(
                 !pool.is_fenced(),
                 "this is an ordinary route refusal, not terminal transport loss"
             );
-            assert_eq!(portal.frozen(), refuse);
+            assert_eq!(shell.frozen(), refuse);
             if refuse {
                 assert_eq!(result, HostSessionStatus::RecoveryBlocked);
             }
@@ -7049,7 +7028,7 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
-    fn focus_routes_shared_pool_without_a_portal_freezer() {
+    fn focus_routes_shared_pool_without_a_shell_freezer() {
         use super::super::input_seat::RecordingInputPool;
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
@@ -7068,7 +7047,7 @@ printf '[{{"success":true}}]'
         );
         *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
         control.status();
-        assert_eq!(pool.calls.lock().unwrap().last().unwrap(), "route:portal");
+        assert_eq!(pool.calls.lock().unwrap().last().unwrap(), "route:shell");
         assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
         assert_eq!(pool.session.lock().unwrap().as_deref(), Some(id.as_str()));
         backend.insert(&id, LaunchUnitState::Completed);
@@ -7129,16 +7108,16 @@ printf '[{{"success":true}}]'
     }
 
     #[tokio::test]
-    async fn native_retirement_ack_precedes_actual_portal_freeze_and_thaw_resumes() {
+    async fn native_retirement_ack_precedes_actual_shell_freeze_and_thaw_resumes() {
         for acknowledge in [true, false] {
             use futures::{SinkExt, StreamExt};
             use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
-            let access = crate::portal_access::PortalAccess::new(
+            let access = crate::surface_host_access::SurfaceHostAccess::new(
                 "test-capability",
-                "http://portal.local",
-                crate::portal_access::PortalPermission::LocalSessions,
+                "http://shell.local",
+                crate::surface_host_access::SurfaceHostPermission::LocalSessions,
             );
-            let (app, source) = crate::portal_input::router(access, Default::default());
+            let (app, source) = crate::surface_host_input::router(access, Default::default());
             let source = Arc::new(source);
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let mut request = format!("ws://{}/", listener.local_addr().unwrap())
@@ -7146,7 +7125,7 @@ printf '[{{"success":true}}]'
                 .unwrap();
             request
                 .headers_mut()
-                .insert("Origin", "http://portal.local".parse().unwrap());
+                .insert("Origin", "http://shell.local".parse().unwrap());
             let server = tokio::spawn(async move {
                 axum::serve(listener, app).await.unwrap();
             });
@@ -7166,12 +7145,12 @@ printf '[{{"success":true}}]'
             let root = tempfile::tempdir().unwrap();
             let backend = Arc::new(DeterministicBackend::default());
             let compositor = Arc::new(RecordingCompositor::default());
-            let portal = Arc::new(RecordingPortalUnit::default());
-            let control = portal_control(
+            let shell = Arc::new(RecordingShellUnit::default());
+            let control = shell_control(
                 root.path(),
                 backend.clone(),
                 compositor.clone(),
-                portal.clone(),
+                shell.clone(),
             )
             .with_native_input(source);
             let launch = control.clone();
@@ -7187,8 +7166,8 @@ printf '[{{"success":true}}]'
                     .unwrap();
             assert_eq!(retire["kind"], "suspend");
             assert!(
-                !portal.frozen(),
-                "the unit cannot freeze before browser retirement acknowledgement"
+                !shell.frozen(),
+                "the unit cannot freeze before surface host retirement acknowledgement"
             );
             if !acknowledge {
                 assert!(matches!(
@@ -7196,7 +7175,7 @@ printf '[{{"success":true}}]'
                     HostSessionStatus::FocusFailed { .. }
                 ));
                 assert!(
-                    !portal.frozen(),
+                    !shell.frozen(),
                     "missing acknowledgement must fail rather than bypass retirement"
                 );
                 assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
@@ -7211,7 +7190,7 @@ printf '[{{"success":true}}]'
                 frozen.await.unwrap(),
                 HostSessionStatus::Running { .. }
             ));
-            assert!(portal.frozen());
+            assert!(shell.frozen());
             let leave = control.clone();
             assert!(matches!(
                 tokio::task::spawn_blocking(move || leave.freeze(&id))
@@ -7223,7 +7202,7 @@ printf '[{{"success":true}}]'
                 serde_json::from_str(client.next().await.unwrap().unwrap().to_text().unwrap())
                     .unwrap();
             assert_eq!(resumed["kind"], "resume");
-            assert!(!portal.frozen());
+            assert!(!shell.frozen());
             drop(client);
             drop(control);
             server.abort();
@@ -7233,21 +7212,21 @@ printf '[{{"success":true}}]'
 
     #[tokio::test]
     async fn refused_best_effort_freeze_thaws_before_native_resume_without_retrying() {
-        let access = crate::portal_access::PortalAccess::new(
+        let access = crate::surface_host_access::SurfaceHostAccess::new(
             "test-capability",
-            "http://portal.local",
-            crate::portal_access::PortalPermission::LocalSessions,
+            "http://shell.local",
+            crate::surface_host_access::SurfaceHostPermission::LocalSessions,
         );
-        let (_app, source) = crate::portal_input::router(access, Default::default());
+        let (_app, source) = crate::surface_host_input::router(access, Default::default());
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
-        let portal = Arc::new(RecordingPortalUnit::default());
-        let control = portal_control(
+        let shell = Arc::new(RecordingShellUnit::default());
+        let control = shell_control(
             root.path(),
             backend.clone(),
             compositor.clone(),
-            portal.clone(),
+            shell.clone(),
         )
         .with_native_input(Arc::new(source));
         let first = control.clone();
@@ -7256,7 +7235,7 @@ printf '[{{"success":true}}]'
             .unwrap();
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
-        portal.refuse_freeze();
+        shell.refuse_freeze();
         tokio::task::spawn_blocking(move || {
             assert!(matches!(
                 control.status(),
@@ -7266,49 +7245,49 @@ printf '[{{"success":true}}]'
         })
         .await
         .unwrap();
-        assert!(!portal.frozen());
-        assert_eq!(portal.requests(), ["thaw", "freeze", "thaw"]);
+        assert!(!shell.frozen());
+        assert_eq!(shell.requests(), ["thaw", "freeze", "thaw"]);
     }
 
     #[test]
-    fn a_refused_portal_thaw_is_retried_and_a_refused_freeze_is_not() {
+    fn a_refused_shell_thaw_is_retried_and_a_refused_freeze_is_not() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
-        let portal = Arc::new(RecordingPortalUnit::default());
-        let control = portal_control(
+        let shell = Arc::new(RecordingShellUnit::default());
+        let control = shell_control(
             root.path(),
             backend.clone(),
             compositor.clone(),
-            portal.clone(),
+            shell.clone(),
         );
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
         control.status();
-        portal.refuse_next_thaws(1);
+        shell.refuse_next_thaws(1);
 
         assert!(matches!(
             control.freeze(&id),
             HostSessionFreezeChange::HelperFailed { .. }
         ));
-        assert!(portal.frozen(), "the refused thaw left it frozen");
+        assert!(shell.frozen(), "the refused thaw left it frozen");
         assert_eq!(
             backend.state(&id).unwrap(),
             LaunchUnitState::Running,
             "failed Leave rolls back game freeze before returning to Game input"
         );
-        assert!(control.portal_watch_needed());
+        assert!(control.shell_watch_needed());
         // The failed Leave kept Game input. A subsequent focus loss still
-        // retries the portal thaw, independently of any browser request.
+        // retries the shell thaw, independently of any surface host request.
         *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
         control.status();
-        assert!(!portal.frozen(), "the next observation retried the thaw");
+        assert!(!shell.frozen(), "the next observation retried the thaw");
         control.status();
-        assert_eq!(portal.requests(), ["thaw", "freeze", "thaw", "thaw"]);
+        assert_eq!(shell.requests(), ["thaw", "freeze", "thaw", "thaw"]);
         control.freeze(&id);
 
-        portal.refuse_freeze();
+        shell.refuse_freeze();
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
         assert_eq!(
             control.thaw(&id),
@@ -7318,9 +7297,9 @@ printf '[{{"success":true}}]'
         );
         control.status();
         control.status();
-        assert!(!portal.frozen());
+        assert!(!shell.frozen());
         assert_eq!(
-            portal.requests(),
+            shell.requests(),
             ["thaw", "freeze", "thaw", "thaw", "freeze"]
         );
     }
@@ -7328,26 +7307,26 @@ printf '[{{"success":true}}]'
     #[test]
     fn a_panicking_transition_thaws_and_allows_the_watcher_to_retry() {
         let root = tempfile::tempdir().unwrap();
-        let portal = Arc::new(RecordingPortalUnit::default());
-        let control = portal_control(
+        let shell = Arc::new(RecordingShellUnit::default());
+        let control = shell_control(
             root.path(),
             Arc::new(DeterministicBackend::default()),
             Arc::new(RecordingCompositor::default()),
-            portal.clone(),
+            shell.clone(),
         );
         control.status();
-        portal.refuse_next_thaws(1);
+        shell.refuse_next_thaws(1);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _guard = control.lock_state();
             // A panic after the native effect but before the applied-state
             // update must not trust the earlier Thawed cache.
-            portal.freeze().unwrap();
+            shell.freeze().unwrap();
             panic!("interrupted transition");
         }));
         assert!(result.is_err());
-        assert!(portal.frozen());
+        assert!(shell.frozen());
         assert_eq!(control.status(), HostSessionStatus::NoActive);
-        assert!(!portal.frozen());
+        assert!(!shell.frozen());
     }
 
     #[test]
@@ -7361,12 +7340,12 @@ printf '[{{"success":true}}]'
                 return_events: Some(events.clone()),
                 ..RecordingCompositor::default()
             });
-            let portal = Arc::new(RecordingPortalUnit::with_events(events.clone()));
-            let control = portal_control(
+            let shell = Arc::new(RecordingShellUnit::with_events(events.clone()));
+            let control = shell_control(
                 root.path(),
                 backend.clone(),
                 compositor.clone(),
-                portal.clone(),
+                shell.clone(),
             );
             let id = prepare(&control, "one").launch_id;
             backend.set_pids(&id, &[9100]);
@@ -7375,7 +7354,7 @@ printf '[{{"success":true}}]'
             if already {
                 backend.insert(&id, LaunchUnitState::Frozen);
             }
-            portal.refuse_next_thaws(1);
+            shell.refuse_next_thaws(1);
             events.lock().unwrap().clear();
             assert!(matches!(
                 control.freeze(&id),
@@ -7383,13 +7362,13 @@ printf '[{{"success":true}}]'
             ));
             events.lock().unwrap().push("failed-ack");
             let expected = if already {
-                vec!["portal-thaw", "thaw", "focus", "failed-ack"]
+                vec!["shell-thaw", "thaw", "focus", "failed-ack"]
             } else {
-                vec!["freeze", "portal-thaw", "thaw", "focus", "failed-ack"]
+                vec!["freeze", "shell-thaw", "thaw", "focus", "failed-ack"]
             };
             assert_eq!(*events.lock().unwrap(), expected);
             assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
-            assert!(portal.frozen());
+            assert!(shell.frozen());
         }
     }
 
@@ -7510,12 +7489,12 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
-    fn resuming_without_one_exact_game_window_fails_closed_to_portal() {
+    fn resuming_without_one_exact_game_window_fails_closed_to_shell() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
         let control = resuming_control(root.path(), backend.clone(), compositor.clone())
-            .with_portal(Arc::new(RecordingPortalUnit::default()));
+            .with_shell(Arc::new(RecordingShellUnit::default()));
         let id = prepare(&control, "one").launch_id;
         // The hub shares the runtime user, so its process can appear here.
         backend.set_pids(&id, &[4100]);
@@ -7545,7 +7524,7 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
-    fn resuming_with_ambiguous_exact_game_windows_fails_closed_to_portal() {
+    fn resuming_with_ambiguous_exact_game_windows_fails_closed_to_shell() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
@@ -7678,7 +7657,7 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
-    fn a_host_without_compositor_authority_fails_return_closed_to_portal() {
+    fn a_host_without_compositor_authority_fails_return_closed_to_shell() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let control = HostSessionControl::new(root.path(), backend.clone());
@@ -8255,7 +8234,7 @@ printf '[{{"success":true}}]'
             )
             .unwrap();
         assert!(launch.contains(
-            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korrid-browser /run/korri-test/control/device.sock /run/korri-test/control /run/korrid-cli/cli.sock /run/korrid-cli -/home/gameplay/.config/sunshine /run/korri-test/compositor-control -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into()
+            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korri-test/control/device.sock /run/korri-test/control /run/korrid-cli/cli.sock /run/korrid-cli -/home/gameplay/.config/sunshine /run/korri-test/compositor-control -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight".into()
         ));
     }
 

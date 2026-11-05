@@ -268,7 +268,7 @@ limits, environment, arguments, working directory and hooks. The plugin's
 null unsets a key. Final arguments are place prepend, plugin arguments, then
 place append. Place cwd overrides plugin cwd. These changes happen once before
 modifier composition, in korrid's private handoff, never in plugin input.
-The portal cannot author environment, arguments, cwd, hooks or raw config.
+The shell cannot author environment, arguments, cwd, hooks or raw config.
 One-launch requests carry only the restricted `launch: LaunchOverride` shape;
 plugin `PluginLaunchInput.overrides` remains the authored runner settings and
 file-only native config consumed by the callback.
@@ -395,7 +395,7 @@ unpack program, the version directory contains verified files named by the
 percent-decoded last segment of each declared URL. Unsafe or duplicate names
 fail. Ready means that the version directory exists. There is no journal.
 
-The local portal polls `app.acquisition.status`, starts IDs through
+The shell polls `app.acquisition.status`, starts IDs through
 `app.acquisition.start`, and cancels one download through
 `app.acquisition.cancel`. Downloading reports `bytesDone`, optional
 `bytesTotal`, and a rate sampled over the last five seconds. Failure copy never
@@ -693,7 +693,7 @@ retries a store download, so a POST is sent at most once per hop.
 
 #### RPC
 
-Local `/rpc`, portal capability only (like `app.acquisition.status`), legacy
+Local `/rpc`, surface host capability only (like `app.acquisition.status`), legacy
 method names. As for every method, the response is `{ _tag, outcome }`; each
 outcome is `{ _tag: "Ok", payload }` or `{ _tag: "Err", payload: RpcFailure }`.
 The store runs wherever discovery runs on the device's own library: the

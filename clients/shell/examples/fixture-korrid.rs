@@ -5,7 +5,7 @@
 //! ```
 //!
 //! Writes `DIR/KORRID_RPC_CAPABILITY` (mode 0600) and prints
-//! `KORRID_ADDRESS=…` and `KORRID_PORTAL_ORIGIN=…` lines on stdout. Then it
+//! `KORRID_ADDRESS=…` and `KORRID_SHELL_ORIGIN=…` lines on stdout. Then it
 //! reads commands on stdin, one per line:
 //!
 //! | Command | Effect |
@@ -71,7 +71,7 @@ fn main() -> std::io::Result<()> {
     let credentials = credentials.expect("--credentials DIR");
     fixture.write_credential(std::path::Path::new(&credentials))?;
     println!("KORRID_ADDRESS=127.0.0.1:{}", fixture.port());
-    println!("KORRID_PORTAL_ORIGIN={}", fixture.origin());
+    println!("KORRID_SHELL_ORIGIN={}", fixture.origin());
     std::io::stdout().flush()?;
     let key = |code: u16, value: u8| json!({"kind": "input", "deviceId": "fixture-pad", "class": "gamepad", "type": 1, "code": code, "value": value, "timestamp": 0});
     let report = json!({"kind": "input", "deviceId": "fixture-pad", "class": "gamepad", "type": 0, "code": 0, "value": 0, "timestamp": 0});

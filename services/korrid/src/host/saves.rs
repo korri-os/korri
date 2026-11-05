@@ -1555,7 +1555,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prelaunch_check_returns_remembered_warning_before_portal_deadline() {
+    async fn prelaunch_check_returns_remembered_warning_before_shell_deadline() {
         let device = MigratedDevice::new(b"local").await;
         let mut slow = MigratedDevice::new(b"peer").await;
         slow.server.abort();

@@ -265,7 +265,7 @@ fn lifecycle_policy() -> Result<LifecyclePolicy, String> {
     // same production Host boundary. The normal package never enables it.
     LifecyclePolicy::new(vec![RequiredPlugin::new(
         "@example:required-lifecycle",
-        "portal accepts local input",
+        "shell accepts local input",
     )?])
 }
 

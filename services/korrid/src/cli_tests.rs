@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 #[test]
-fn cli_has_browser_authority_without_changing_inputd() {
+fn cli_has_surface_host_authority_without_changing_inputd() {
     for request in [
         RpcRequest::IdentityStatus(IdentityStatusRequest {}),
         RpcRequest::NetworkStatus(network::NetworkStatusRequest {}),
@@ -17,7 +17,7 @@ fn cli_has_browser_authority_without_changing_inputd() {
     ] {
         assert_eq!(
             authorization::authorize(&AuthorizationContext::LocalCli, &request),
-            authorization::authorize(&AuthorizationContext::LocalBrowser, &request)
+            authorization::authorize(&AuthorizationContext::LocalSurfaceHost, &request)
         );
     }
     let network = RpcRequest::NetworkStatus(network::NetworkStatusRequest {});
@@ -247,8 +247,8 @@ fn folder_fixture(
         crate::plugin_test_fixtures::installed(&readable),
     ));
     let (state, _) = brain_app_state(
-        "browser-token",
-        "https://portal.example",
+        "shell-token",
+        "https://shell.example",
         &readable,
         &private,
         registry,
@@ -258,7 +258,7 @@ fn folder_fixture(
         Some(resources.clone()),
         None,
     );
-    let browser = portal_router_from_state(state.clone());
+    let surface_host = surface_host_router_from_state(state.clone());
     let peer = peer_rpc::PeerRpcServer::with_shared_authority(
         state.clone(),
         &private,
@@ -267,7 +267,13 @@ fn folder_fixture(
     )
     .unwrap()
     .router(None);
-    (root, super::router(state, resources), browser, peer, grants)
+    (
+        root,
+        super::router(state, resources),
+        surface_host,
+        peer,
+        grants,
+    )
 }
 async fn post_json(
     app: Router,
@@ -324,7 +330,7 @@ async fn folder_snapshot_when_idle(app: Router) -> LibraryFoldersSnapshot {
 }
 #[tokio::test]
 async fn cli_folder_selection_issues_real_shared_one_use_receipt_and_pairs() {
-    let (root, cli, browser, peer, _) = folder_fixture(std::time::Duration::from_secs(300));
+    let (root, cli, surface_host, peer, _) = folder_fixture(std::time::Duration::from_secs(300));
     let selected = root.path().join("selected");
     std::fs::create_dir(&selected).unwrap();
     std::fs::write(selected.join("game.gba"), b"game content").unwrap();
@@ -380,7 +386,7 @@ async fn cli_folder_selection_issues_real_shared_one_use_receipt_and_pairs() {
             serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
         assert_eq!(failure.code, "FolderUnavailable");
     }
-    for router in [browser, peer] {
+    for router in [surface_host, peer] {
         let response = post_json(router, "/folder-selection", &selected).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }

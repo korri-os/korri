@@ -37,10 +37,10 @@ mkfifo "$work/control"
   <"$work/control" >"$work/fixture.out" 2>"$out/fixture.log" &
 pids+=($!)
 exec 7>"$work/control"
-for _ in $(seq 100); do grep -q KORRID_PORTAL_ORIGIN "$work/fixture.out" 2>/dev/null && break; sleep 0.05; done
-export KORRID_ADDRESS KORRID_PORTAL_ORIGIN CREDENTIALS_DIRECTORY=$work/credentials
+for _ in $(seq 100); do grep -q KORRID_SHELL_ORIGIN "$work/fixture.out" 2>/dev/null && break; sleep 0.05; done
+export KORRID_ADDRESS KORRID_SHELL_ORIGIN CREDENTIALS_DIRECTORY=$work/credentials
 KORRID_ADDRESS=$(sed -n 's/^KORRID_ADDRESS=//p' "$work/fixture.out")
-KORRID_PORTAL_ORIGIN=$(sed -n 's/^KORRID_PORTAL_ORIGIN=//p' "$work/fixture.out")
+KORRID_SHELL_ORIGIN=$(sed -n 's/^KORRID_SHELL_ORIGIN=//p' "$work/fixture.out")
 "$shell" install --packages "$packages" --cache "$work/cache" >"$out/install.log" 2>&1
 
 start() {

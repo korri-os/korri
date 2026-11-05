@@ -1037,7 +1037,7 @@ mod tests {
         state.netplay_receiver.activate(&attempt, active).unwrap();
         let status = dispatch(
             &state,
-            &authorization::AuthorizationContext::LocalBrowser,
+            &authorization::AuthorizationContext::LocalSurfaceHost,
             &RpcRequest::SessionStatus(SessionStatusRequest {}),
         )
         .await
@@ -1049,7 +1049,7 @@ mod tests {
         assert_eq!(status.netplay.unwrap().launch_id, "receiving-run");
         let response = crate::dispatch(
             &state,
-            &authorization::AuthorizationContext::LocalBrowser,
+            &authorization::AuthorizationContext::LocalSurfaceHost,
             RpcRequest::SessionEnd(SessionEndRequest {
                 expected_launch_id: Some(copy.launch_id.clone()),
                 force: None,
@@ -1062,7 +1062,7 @@ mod tests {
         );
         let response = crate::dispatch(
             &state,
-            &authorization::AuthorizationContext::LocalBrowser,
+            &authorization::AuthorizationContext::LocalSurfaceHost,
             RpcRequest::SessionLeave(SessionLeaveRequest {
                 expected_launch_id: Some("receiving-run".into()),
             }),

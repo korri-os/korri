@@ -106,8 +106,8 @@ fn linux_viewer_helper_exercises_real_command_and_propagates_failure() {
     );
     assert!(run(Path::new("/nonexistent/helper"), &[]).is_err());
 }
-struct ViewerPortal;
-impl crate::host::PortalUnit for ViewerPortal {
+struct ViewerShell;
+impl crate::host::ShellUnit for ViewerShell {
     fn window_pids(&self) -> Result<std::collections::BTreeSet<i32>, crate::host::LaunchUnitError> {
         Ok([4343].into_iter().collect())
     }
@@ -218,18 +218,18 @@ async fn linux_viewer_production_lifecycle_uses_broker_seats_focus_and_confirmed
     std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let certificate = "-----BEGIN CERTIFICATE-----\nY2VydA==\n-----END CERTIFICATE-----\n";
     let focus = root.path().join("focus");
-    std::fs::write(&focus, "portal").unwrap();
+    std::fs::write(&focus, "shell").unwrap();
     let commands = root.path().join("commands");
     let compositor = root.path().join("swaymsg");
     std::fs::write(&compositor, format!(r##"#!/bin/sh
 case "$*" in
  *get_outputs*) printf '[{{"active":true,"current_mode":{{"width":1280,"height":720}}}}]' ;;
  *get_tree*)
-   viewer=false; portal=false
-   if [ "$(cat '{focus}')" = viewer ]; then viewer=true; else portal=true; fi
-   printf '{{"nodes":[{{"id":11,"pid":4242,"focused":%s}},{{"id":22,"pid":4343,"app_id":"chrome-_text_html,%%3Ctitle%%3EKorri%%3C_title%%3E-Default","focused":%s}}]}}' "$viewer" "$portal" ;;
+   viewer=false; shell=false
+   if [ "$(cat '{focus}')" = viewer ]; then viewer=true; else shell=true; fi
+   printf '{{"nodes":[{{"id":11,"pid":4242,"focused":%s}},{{"id":22,"pid":4343,"app_id":"korri-shell","focused":%s}}]}}' "$viewer" "$shell" ;;
  *con_id=11*) printf viewer > '{focus}'; printf '%s\n' "$*" >> '{commands}'; printf '[{{"success":true}}]' ;;
- *con_id=22*) printf portal > '{focus}'; printf '%s\n' "$*" >> '{commands}'; printf '[{{"success":true}}]' ;;
+ *con_id=22*) printf shell > '{focus}'; printf '%s\n' "$*" >> '{commands}'; printf '[{{"success":true}}]' ;;
  *) exit 1 ;;
 esac
 "##, focus=focus.display(), commands=commands.display())).unwrap();
@@ -281,7 +281,7 @@ esac
         units: units.clone(),
         swaymsg: compositor,
         sway_socket: root.path().join("sway.sock"),
-        portal: Some(Arc::new(ViewerPortal)),
+        shell: Some(Arc::new(ViewerShell)),
         keydir: root.path().join("unreadable-identity"),
         operation: Arc::new(tokio::sync::Mutex::new(())),
     };
@@ -313,7 +313,7 @@ esac
         viewer.status(launch).await.unwrap(),
         LinuxViewerStatus::Running
     );
-    // The viewer fills its output on every return; the portal never does.
+    // The viewer fills its output on every return; the shell never does.
     let commands = std::fs::read_to_string(&commands).unwrap();
     let viewer_commands: Vec<_> = commands
         .lines()

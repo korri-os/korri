@@ -55,11 +55,11 @@ fn failure(mapping: Mapping, refusal: Refusal) -> RpcFailure {
     match (mapping, refusal) {
         (Mapping::Route, Refusal::Denied) => RpcFailure {
             code: "PermissionDenied".into(),
-            message: "This portal does not have permission for this action. Runtime reads remain available.".into(),
+            message: "This device does not have permission for this action. Runtime reads remain available.".into(),
         },
         (Mapping::SettingWrite, Refusal::Denied) => RpcFailure {
             code: "PermissionDenied".into(),
-            message: "This portal cannot change this setting.".into(),
+            message: "This device cannot change this setting.".into(),
         },
         (_, Refusal::Denied) => RpcFailure {
             code: "BrainUnreachable".into(),

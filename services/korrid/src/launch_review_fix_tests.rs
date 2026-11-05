@@ -20,12 +20,12 @@ async fn short_watcher_hold(pending: bool) {
     *compositor.gate.lock().unwrap() = Some(gate.clone());
     // The actual production watcher acquires transition authority before
     // querying this configured compositor, exactly like an ordinary tick.
-    runtime.spawn_portal_watch();
+    runtime.spawn_shell_watch();
     gate.entered().await;
-    let mut portal_status = tokio::spawn(async move { status(&app).await });
+    let mut shell_status = tokio::spawn(async move { status(&app).await });
     let mut native_status = tokio::spawn(async move { status(&native).await });
     assert!(
-        tokio::time::timeout(Duration::from_millis(40), &mut portal_status)
+        tokio::time::timeout(Duration::from_millis(40), &mut shell_status)
             .await
             .is_err(),
         "ordinary watcher contention must not immediately become HostSessionBusy"
@@ -37,7 +37,7 @@ async fn short_watcher_hold(pending: bool) {
         "native readers retain blocking observation even with foreign pending work"
     );
     gate.release();
-    let portal_status = tokio::time::timeout(Duration::from_secs(2), portal_status)
+    let shell_status = tokio::time::timeout(Duration::from_secs(2), shell_status)
         .await
         .unwrap()
         .unwrap();
@@ -45,7 +45,7 @@ async fn short_watcher_hold(pending: bool) {
         .await
         .unwrap()
         .unwrap();
-    for observed in [&portal_status, &native_status] {
+    for observed in [&shell_status, &native_status] {
         assert_eq!(observed["outcome"]["_tag"], "Ok", "{observed}");
         assert_eq!(
             observed["outcome"]["payload"]["active"]["launchId"], active,
@@ -62,9 +62,9 @@ async fn short_watcher_hold(pending: bool) {
         .get("pendingLaunches")
         .is_none());
     if let Some(pending) = pending {
-        assert_eq!(pending_ids(&portal_status), BTreeSet::from([pending]));
+        assert_eq!(pending_ids(&shell_status), BTreeSet::from([pending]));
     } else {
-        assert!(portal_status["outcome"]["payload"]
+        assert!(shell_status["outcome"]["payload"]
             .get("pendingLaunches")
             .is_none());
     }
@@ -84,16 +84,16 @@ async fn owned_pending_status_absorbs_an_ordinary_short_watcher_hold() {
 async fn input_transition_failed_start_retains_this_daemons_handoff_history() {
     let root = tempfile::tempdir().unwrap();
     let (runtime, backend) = runtime(root.path());
-    let portal = Arc::new(host::control::RecordingPortalUnit::left_frozen());
-    portal.refuse_next_thaws(1);
-    let (app, _) = native_routers(runtime.with_portal_unit(portal.clone()), root.path());
+    let shell = Arc::new(host::control::RecordingShellUnit::left_frozen());
+    shell.refuse_next_thaws(1);
+    let (app, _) = native_routers(runtime.with_shell_unit(shell.clone()), root.path());
     let id = reserve(&app).await;
     let failed = start(&app, &id).await;
     assert_eq!(
         failed["outcome"]["payload"]["code"], "InputTransitionFailed",
         "{failed}"
     );
-    assert!(portal.requests().contains(&"thaw"));
+    assert!(shell.requests().contains(&"thaw"));
     assert_eq!(backend.launch_count(), 1);
     let live = assert_handoff(&app, &id, "waiting").await;
     assert_eq!(

@@ -1,6 +1,6 @@
 //! Plugin answers that korrid gives again without running the plugin (#289).
 //!
-//! An idle device asks the same questions on timers. The portal polls save
+//! An idle device asks the same questions on timers. The shell polls save
 //! marks, and the invite watch projects netplay routes. Each poll used to
 //! transpile and evaluate the same plugins with the same input. Most of an
 //! idle korrid's CPU went there.

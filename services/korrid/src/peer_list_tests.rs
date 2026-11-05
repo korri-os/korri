@@ -87,7 +87,7 @@ impl PeerListFixture {
     fn router(&self) -> Router {
         router_with_capability_and_federation(
             CAPABILITY,
-            "https://portal.example",
+            "https://shell.example",
             self.readable.path(),
             self.root.path(),
             Some(self.resources.clone()),

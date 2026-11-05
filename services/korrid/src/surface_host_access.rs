@@ -1,4 +1,5 @@
-//! Browser authority for `/rpc` and the local portal's native-input socket.
+//! Authority of the local surface host (the shell; Android's WebView) for
+//! `/rpc` and the native-input socket.
 
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 
@@ -6,13 +7,13 @@ use crate::RpcRequest;
 use subtle::ConstantTimeEq;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PortalPermission {
+pub enum SurfaceHostPermission {
     Full,
     ReadOnly,
     LocalSessions,
 }
 
-impl PortalPermission {
+impl SurfaceHostPermission {
     fn permits(self, request: &RpcRequest) -> bool {
         let initial_read = match request {
             RpcRequest::SessionStreamPlay(_) | RpcRequest::SessionNetplay(_) | RpcRequest::ReleaseObject(_) => false,
@@ -22,7 +23,7 @@ impl PortalPermission {
             | RpcRequest::SaveObject(_) => false,
             // The surface host checks each effect it performs against this
             // same permission (`surface_hub_for`); the surface's own reads,
-            // window, focus and preferences need none beyond the portal's.
+            // window, focus and preferences need none beyond the shell's.
             RpcRequest::SurfaceModel(_)
             | RpcRequest::SurfaceRequest(_)
             | RpcRequest::SurfacePreferences(_)
@@ -100,7 +101,7 @@ impl PortalPermission {
             | RpcRequest::IdentityRetiredExport(_)
             | RpcRequest::IdentityRetiredDelete(_)
             // Catalog and inspect fetch over the network and import into the
-            // store as root; they need the full portal permission.
+            // store as root; they need the full shell permission.
             | RpcRequest::PluginRepositoryAdd(_)
             | RpcRequest::PluginRepositoryRemove(_)
             | RpcRequest::PluginCatalog(_)
@@ -153,12 +154,12 @@ impl PortalPermission {
                         | RpcRequest::SessionReserve(_)
                         | RpcRequest::SessionStart(_)
                         | RpcRequest::SessionCancel(_)
-                        // The kiosk on this device edits launch settings; values are percents and profile names, applied by limitsd's own checks.
+                        // The shell on this device edits launch settings; values are percents and profile names, applied by limitsd's own checks.
                         | RpcRequest::LaunchSettingsSet(_)
                         | RpcRequest::LaunchProfileSave(_)
                         | RpcRequest::LaunchProfileRemove(_)
                         | RpcRequest::LaunchProfileSelect(_)
-                        // The kiosk on this device drives first-boot setup and Settings Wi-Fi.
+                        // The shell on this device drives first-boot setup and Settings Wi-Fi.
                         // NetworkManager polkit limits korrid to three actions.
                         | RpcRequest::WifiScan(_)
                         | RpcRequest::WifiConnect(_)
@@ -172,24 +173,24 @@ impl PortalPermission {
     }
 }
 
-/// Configuration from the existing token and portal-origin producers. The
+/// Configuration from the existing token and surface host origin producers. The
 /// capability is intentionally absent from Debug output and wire serialization.
 #[derive(Clone)]
-pub struct PortalAccess {
+pub struct SurfaceHostAccess {
     capability: String,
     allowed_origins: Vec<HeaderValue>,
-    permission: PortalPermission,
+    permission: SurfaceHostPermission,
 }
 
-impl PortalAccess {
-    pub fn new(capability: &str, allowed_origin: &str, permission: PortalPermission) -> Self {
+impl SurfaceHostAccess {
+    pub fn new(capability: &str, allowed_origin: &str, permission: SurfaceHostPermission) -> Self {
         assert!(
             !capability.is_empty(),
-            "portal capability must not be empty"
+            "surface host capability must not be empty"
         );
         let origin: HeaderValue = allowed_origin
             .parse()
-            .expect("allowed portal origin must be a valid header value");
+            .expect("allowed surface host origin must be a valid header value");
         Self {
             capability: capability.into(),
             allowed_origins: vec![origin],
@@ -206,13 +207,13 @@ impl PortalAccess {
         &self.allowed_origins
     }
 
-    /// Permission check for an already authenticated local browser caller.
+    /// Permission check for an already authenticated local surface host caller.
     /// This is not a substitute for bearer and origin validation.
     pub(crate) fn permits(&self, request: &RpcRequest) -> bool {
         self.permission.permits(request)
     }
 
-    /// Browser sockets require exactly one allowed Origin before upgrading.
+    /// Surface host sockets require exactly one allowed Origin before upgrading.
     /// RPC retains its separate allowance for native callers without Origin.
     pub(crate) fn authorize_socket_origin(&self, headers: &HeaderMap) -> Result<(), StatusCode> {
         let mut origins = headers.get_all(header::ORIGIN).iter();
@@ -285,7 +286,7 @@ mod tests {
     use tower::ServiceExt;
 
     #[test]
-    fn owner_binding_requires_full_portal_authority_but_status_is_readable() {
+    fn owner_binding_requires_full_shell_authority_but_status_is_readable() {
         let read: RpcRequest = serde_json::from_value(
             json!({"_tag":"system.identity.owner-binding.snapshot","payload":{}}),
         )
@@ -294,19 +295,22 @@ mod tests {
             json!({"_tag":"system.identity.owner-binding.start","payload":{}}),
         )
         .unwrap();
-        for permission in [PortalPermission::ReadOnly, PortalPermission::LocalSessions] {
+        for permission in [
+            SurfaceHostPermission::ReadOnly,
+            SurfaceHostPermission::LocalSessions,
+        ] {
             assert!(permission.permits(&read));
             assert!(!permission.permits(&start));
         }
-        assert!(PortalPermission::Full.permits(&start));
+        assert!(SurfaceHostPermission::Full.permits(&start));
     }
 
-    const TOKEN: &str = "portal-test-token";
+    const TOKEN: &str = "shell-test-token";
     const ORIGIN: &str = "http://127.0.0.1:8099";
 
     #[test]
     fn bearer_requires_an_exact_token() {
-        let access = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full);
+        let access = SurfaceHostAccess::new(TOKEN, ORIGIN, SurfaceHostPermission::Full);
         assert_eq!(access.authorize_bearer(&format!("Bearer {TOKEN}")), Ok(()));
         for value in [
             "".to_owned(),
@@ -326,7 +330,7 @@ mod tests {
 
     #[test]
     fn rpc_native_origin_remains_optional_but_socket_origin_is_required() {
-        let access = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::ReadOnly);
+        let access = SurfaceHostAccess::new(TOKEN, ORIGIN, SurfaceHostPermission::ReadOnly);
         let request = RpcRequest::Health(crate::HealthRequest {});
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -366,21 +370,21 @@ mod tests {
                 host: host.map(str::to_owned),
             });
             assert_eq!(
-                PortalPermission::LocalSessions.permits(&request),
+                SurfaceHostPermission::LocalSessions.permits(&request),
                 allowed,
                 "host={host:?}"
             );
-            assert!(!PortalPermission::ReadOnly.permits(&request));
-            assert!(PortalPermission::Full.permits(&request));
+            assert!(!SurfaceHostPermission::ReadOnly.permits(&request));
+            assert!(SurfaceHostPermission::Full.permits(&request));
         }
         // Stop has no host selector; the host executor requires an exact launch ID.
         let stop = RpcRequest::SessionEnd(crate::SessionEndRequest {
             force: Some(true),
             expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
         });
-        assert!(PortalPermission::LocalSessions.permits(&stop));
-        assert!(!PortalPermission::ReadOnly.permits(&stop));
-        assert!(PortalPermission::Full.permits(&stop));
+        assert!(SurfaceHostPermission::LocalSessions.permits(&stop));
+        assert!(!SurfaceHostPermission::ReadOnly.permits(&stop));
+        assert!(SurfaceHostPermission::Full.permits(&stop));
 
         for request in [
             RpcRequest::SessionLeave(crate::SessionLeaveRequest {
@@ -395,17 +399,17 @@ mod tests {
                 value: None,
             }),
         ] {
-            assert!(PortalPermission::LocalSessions.permits(&request));
-            assert!(!PortalPermission::ReadOnly.permits(&request));
-            assert!(PortalPermission::Full.permits(&request));
+            assert!(SurfaceHostPermission::LocalSessions.permits(&request));
+            assert!(!SurfaceHostPermission::ReadOnly.permits(&request));
+            assert!(SurfaceHostPermission::Full.permits(&request));
         }
     }
 
     #[test]
     fn attention_reads_do_not_grant_discovery_mutation_permission() {
         let list = RpcRequest::AttentionList(crate::AttentionListRequest {});
-        assert!(PortalPermission::ReadOnly.permits(&list));
-        assert!(PortalPermission::LocalSessions.permits(&list));
+        assert!(SurfaceHostPermission::ReadOnly.permits(&list));
+        assert!(SurfaceHostPermission::LocalSessions.permits(&list));
         for request in [
             RpcRequest::LibraryFolderAdd(crate::LibraryFolderAddRequest {
                 receipt: "receipt".into(),
@@ -424,16 +428,16 @@ mod tests {
             }),
             RpcRequest::AttentionIgnore(crate::AttentionIgnoreRequest { item: "id".into() }),
         ] {
-            assert!(PortalPermission::Full.permits(&request));
-            assert!(!PortalPermission::ReadOnly.permits(&request));
-            assert!(!PortalPermission::LocalSessions.permits(&request));
+            assert!(SurfaceHostPermission::Full.permits(&request));
+            assert!(!SurfaceHostPermission::ReadOnly.permits(&request));
+            assert!(!SurfaceHostPermission::LocalSessions.permits(&request));
         }
     }
 
     #[test]
     fn local_sessions_authorize_wifi_and_onboarding_without_full_admin_access() {
-        let local = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::LocalSessions);
-        let read_only = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::ReadOnly);
+        let local = SurfaceHostAccess::new(TOKEN, ORIGIN, SurfaceHostPermission::LocalSessions);
+        let read_only = SurfaceHostAccess::new(TOKEN, ORIGIN, SurfaceHostPermission::ReadOnly);
         let mut headers = HeaderMap::new();
         headers.insert(
             header::AUTHORIZATION,
@@ -496,14 +500,14 @@ mod tests {
         // The handler only reads the federation directory, and authorization
         // already limits it to the owner's own devices.
         let request = RpcRequest::PeerList(crate::PeerListRequest {});
-        assert!(PortalPermission::ReadOnly.permits(&request));
-        assert!(PortalPermission::LocalSessions.permits(&request));
-        assert!(PortalPermission::Full.permits(&request));
+        assert!(SurfaceHostPermission::ReadOnly.permits(&request));
+        assert!(SurfaceHostPermission::LocalSessions.permits(&request));
+        assert!(SurfaceHostPermission::Full.permits(&request));
     }
 
     #[test]
     fn local_sessions_reject_duplicate_authorization_and_origin_headers() {
-        let access = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::LocalSessions);
+        let access = SurfaceHostAccess::new(TOKEN, ORIGIN, SurfaceHostPermission::LocalSessions);
         let request = RpcRequest::SessionPrepare(crate::SessionPrepareRequest {
             game_id: "neverball".into(),
             host: None,
@@ -616,7 +620,7 @@ mod tests {
         let backend = Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default());
         let compositor = Arc::new(InMemoryCompositor {
             tree: Mutex::new(json!({"id":1,"nodes":[
-                {"id":2,"pid":4100,"app_id":"chrome-_text_html,%3Ctitle%3EKorri%3C_title%3E-Default","focused":true,"opacity":1.0},
+                {"id":2,"pid":4100,"app_id":"korri-shell","focused":true,"opacity":1.0},
                 {"id":3,"pid":9100,"app_id":"retroarch","focused":false,"opacity":1.0}
             ]})),
         });
@@ -667,15 +671,19 @@ mod tests {
         .with_route_registry(root.path().into(), registry.clone())
         .with_retroarch_control_port(control_port)
         .with_compositor(compositor.clone())
-        .with_portal_unit(Arc::new(
-            crate::host::control::RecordingPortalUnit::identity_only(),
+        .with_shell_unit(Arc::new(
+            crate::host::control::RecordingShellUnit::identity_only(),
         ));
         runtime.claim_save_owner();
         let person_public_key = runtime.owner_public_key().expect("verified fixture owner");
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,
-            Some(PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full)),
+            Some(SurfaceHostAccess::new(
+                TOKEN,
+                ORIGIN,
+                SurfaceHostPermission::Full,
+            )),
         );
         let game_id = crate::config::test_fixtures::GBA_ID;
         let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
@@ -803,7 +811,11 @@ mod tests {
         let (app, _) = crate::secure_host_routers(
             recovered,
             &private,
-            Some(PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full)),
+            Some(SurfaceHostAccess::new(
+                TOKEN,
+                ORIGIN,
+                SurfaceHostPermission::Full,
+            )),
         );
         let recovered_controls =
             rpc(&app, "app.session.controls", json!({"launchId":launch_id})).await;
@@ -828,7 +840,7 @@ mod tests {
         );
         assert_eq!(compositor.tree.lock().unwrap()["nodes"][1]["focused"], true);
         // The runner accepts video_vsync and reports the key it cannot apply.
-        // korrid carries that report to the portal without owning the table.
+        // korrid carries that report to the shell without owning the table.
         assert_eq!(
             launch["outcome"]["payload"]["warnings"][0]["setting"],
             "absent_key"
@@ -935,7 +947,11 @@ mod tests {
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,
-            Some(PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full)),
+            Some(SurfaceHostAccess::new(
+                TOKEN,
+                ORIGIN,
+                SurfaceHostPermission::Full,
+            )),
         );
         let game_id = crate::config::test_fixtures::GBA_ID;
         let routes = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
@@ -975,7 +991,7 @@ mod tests {
     }
 
     #[test]
-    fn kiosk_can_edit_runner_choice_but_readonly_cannot() {
+    fn shell_can_edit_runner_choice_but_readonly_cannot() {
         let request = |tag: &str, payload| {
             serde_json::from_value::<RpcRequest>(json!({"_tag":tag,"payload":payload})).unwrap()
         };
@@ -988,11 +1004,11 @@ mod tests {
             "app.launch-settings.set",
             json!({"place":{"layer":{"_tag":"System","id":"gba"},"scope":{"_tag":"Any"}},"path":{"_tag":"Runner"},"expectedRevision":"r"}),
         );
-        assert!(PortalPermission::ReadOnly.permits(&list));
-        assert!(!PortalPermission::ReadOnly.permits(&launch));
-        assert!(PortalPermission::LocalSessions.permits(&launch));
-        assert!(PortalPermission::LocalSessions.permits(&set));
-        assert!(PortalPermission::Full.permits(&set));
+        assert!(SurfaceHostPermission::ReadOnly.permits(&list));
+        assert!(!SurfaceHostPermission::ReadOnly.permits(&launch));
+        assert!(SurfaceHostPermission::LocalSessions.permits(&launch));
+        assert!(SurfaceHostPermission::LocalSessions.permits(&set));
+        assert!(SurfaceHostPermission::Full.permits(&set));
     }
 
     #[tokio::test]
@@ -1012,10 +1028,10 @@ mod tests {
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,
-            Some(PortalAccess::new(
+            Some(SurfaceHostAccess::new(
                 TOKEN,
                 ORIGIN,
-                PortalPermission::LocalSessions,
+                SurfaceHostPermission::LocalSessions,
             )),
         );
         let prepared = rpc(&app, "app.session.prepare", json!({"gameId":"neverball"})).await;
@@ -1072,7 +1088,7 @@ mod launch_settings_permission_tests {
     use super::*;
     use serde_json::json;
     #[test]
-    fn launch_settings_local_sessions_may_edit_all_portal_kinds() {
+    fn launch_settings_local_sessions_may_edit_all_shell_kinds() {
         for (tag, payload) in [
             (
                 "app.launch-settings.set",
@@ -1093,8 +1109,11 @@ mod launch_settings_permission_tests {
         ] {
             let request: RpcRequest =
                 serde_json::from_value(json!({"_tag":tag,"payload":payload})).unwrap();
-            assert!(PortalPermission::LocalSessions.permits(&request), "{tag}");
-            assert!(!PortalPermission::ReadOnly.permits(&request), "{tag}");
+            assert!(
+                SurfaceHostPermission::LocalSessions.permits(&request),
+                "{tag}"
+            );
+            assert!(!SurfaceHostPermission::ReadOnly.permits(&request), "{tag}");
         }
         assert!(serde_json::from_value::<RpcRequest>(
             json!({"_tag":"app.local-games.runner.set","payload":{}})
@@ -1102,11 +1121,11 @@ mod launch_settings_permission_tests {
         .is_err());
     }
     #[test]
-    fn the_device_portal_can_set_person_name_but_read_only_cannot() {
+    fn the_device_shell_can_set_person_name_but_read_only_cannot() {
         let request: RpcRequest = serde_json::from_value(serde_json::json!({
             "_tag":"system.settings.update", "payload":{"settingId":"person-name", "value":"", "expectedRevision":"observed"}
         })).unwrap();
-        assert!(PortalPermission::LocalSessions.permits(&request));
-        assert!(!PortalPermission::ReadOnly.permits(&request));
+        assert!(SurfaceHostPermission::LocalSessions.permits(&request));
+        assert!(!SurfaceHostPermission::ReadOnly.permits(&request));
     }
 }

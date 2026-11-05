@@ -6,7 +6,7 @@ const NAME: &str = config::settings::DEVICE_NAME_SETTING_ID;
 const CREDENTIAL: &str = "steamgriddb-credential";
 const SECRET: &str = "editability-test-credential-not-a-real-secret";
 
-fn brain_state(root: &std::path::Path, permission: PortalPermission) -> AppState {
+fn brain_state(root: &std::path::Path, permission: SurfaceHostPermission) -> AppState {
     config::test_fixtures::gba(root);
     let registry = plugin_test_fixtures::installed(root);
     let (mut state, _) = brain_app_state(
@@ -21,7 +21,7 @@ fn brain_state(root: &std::path::Path, permission: PortalPermission) -> AppState
         None,
         None,
     );
-    state.portal_access = Some(PortalAccess::new(TOKEN, ORIGIN, permission));
+    state.surface_host_access = Some(SurfaceHostAccess::new(TOKEN, ORIGIN, permission));
     state
 }
 
@@ -48,9 +48,9 @@ async fn host_metadata_reports_only_supported_and_authorized_handlers() {
     config::settings::set_steamgriddb_credential(&fixture.root.path().join("private"), SECRET)
         .unwrap();
     for (permission, ids) in [
-        (PortalPermission::Full, vec![NAME, COUNT]),
-        (PortalPermission::LocalSessions, vec![COUNT]),
-        (PortalPermission::ReadOnly, vec![]),
+        (SurfaceHostPermission::Full, vec![NAME, COUNT]),
+        (SurfaceHostPermission::LocalSessions, vec![COUNT]),
+        (SurfaceHostPermission::ReadOnly, vec![]),
     ] {
         let (app, _) = fixture.routers(permission);
         let before = snapshot(&app).await;
@@ -60,7 +60,7 @@ async fn host_metadata_reports_only_supported_and_authorized_handlers() {
         write["payload"]["editableSettingIds"] = json!([COUNT, NAME, CREDENTIAL]);
         let (status, result) =
             request(&app, write, Some(&format!("Bearer {TOKEN}")), Some(ORIGIN)).await;
-        if permission == PortalPermission::ReadOnly {
+        if permission == SurfaceHostPermission::ReadOnly {
             assert_eq!(status, StatusCode::FORBIDDEN);
         } else {
             assert_eq!(status, StatusCode::OK);
@@ -72,7 +72,7 @@ async fn host_metadata_reports_only_supported_and_authorized_handlers() {
         let rename = update(current["revision"].as_str().unwrap(), NAME, "Host name");
         let (status, result) =
             request(&app, rename, Some(&format!("Bearer {TOKEN}")), Some(ORIGIN)).await;
-        if permission == PortalPermission::Full {
+        if permission == SurfaceHostPermission::Full {
             assert_eq!(status, StatusCode::OK);
             assert_eq!(result["outcome"]["_tag"], "Ok", "{result}");
             assert_eq!(result["outcome"]["payload"]["deviceName"], "Host name");
@@ -83,7 +83,7 @@ async fn host_metadata_reports_only_supported_and_authorized_handlers() {
         }
     }
     // The field is mandatory, including when the list is empty.
-    let (app, _) = fixture.routers(PortalPermission::ReadOnly);
+    let (app, _) = fixture.routers(SurfaceHostPermission::ReadOnly);
     let mut value = snapshot(&app).await;
     assert!(serde_json::from_value::<SettingsSnapshot>(value.clone()).is_ok());
     value.as_object_mut().unwrap().remove("editableSettingIds");
@@ -93,8 +93,8 @@ async fn host_metadata_reports_only_supported_and_authorized_handlers() {
 #[tokio::test]
 async fn brain_metadata_preserves_name_and_secret_writes_but_never_plugin_or_count_writes() {
     let root = tempfile::tempdir().unwrap();
-    let state = brain_state(root.path(), PortalPermission::Full);
-    let app = portal_router_from_state(state);
+    let state = brain_state(root.path(), SurfaceHostPermission::Full);
+    let app = surface_host_router_from_state(state);
     let before = snapshot(&app).await;
     assert_ids(&before, &[NAME, CREDENTIAL]);
     let revision = before["revision"].as_str().unwrap();
@@ -158,11 +158,14 @@ async fn brain_metadata_preserves_name_and_secret_writes_but_never_plugin_or_cou
 
 #[tokio::test]
 async fn restricted_brain_metadata_and_forged_ids_cannot_grant_write_permission() {
-    for permission in [PortalPermission::ReadOnly, PortalPermission::LocalSessions] {
+    for permission in [
+        SurfaceHostPermission::ReadOnly,
+        SurfaceHostPermission::LocalSessions,
+    ] {
         let root = tempfile::tempdir().unwrap();
         let state = brain_state(root.path(), permission);
         config::settings::set_steamgriddb_credential(&root.path().join("private"), SECRET).unwrap();
-        let app = portal_router_from_state(state);
+        let app = surface_host_router_from_state(state);
         // Even a forged snapshot request cannot select the returned permissions.
         let forged_snapshot = rpc(
             &app,
@@ -202,7 +205,7 @@ async fn restricted_brain_metadata_and_forged_ids_cannot_grant_write_permission(
             Some(ORIGIN),
         )
         .await;
-        if permission == PortalPermission::LocalSessions {
+        if permission == SurfaceHostPermission::LocalSessions {
             assert_eq!(count.0, StatusCode::OK);
             assert_error(&count.1, "HostRecoveryBlocked");
         } else {
@@ -223,9 +226,9 @@ async fn restricted_brain_metadata_and_forged_ids_cannot_grant_write_permission(
 }
 
 #[tokio::test]
-async fn non_browser_brain_metadata_uses_dispatch_authority_not_portal_permission() {
+async fn non_surface_host_brain_metadata_uses_dispatch_authority_not_shell_permission() {
     let root = tempfile::tempdir().unwrap();
-    let mut state = brain_state(root.path(), PortalPermission::ReadOnly);
+    let mut state = brain_state(root.path(), SurfaceHostPermission::ReadOnly);
     let owner = AuthorizationContext::Peer(Principal::OwnerDevice {
         device_public_key: "peer".into(),
         owner_statement: "verified upstream".into(),
@@ -262,8 +265,12 @@ async fn non_browser_brain_metadata_uses_dispatch_authority_not_portal_permissio
         assert_eq!(response["outcome"]["_tag"], "Ok", "{response}");
         assert_ids(&response["outcome"]["payload"], &[NAME, CREDENTIAL]);
     }
-    // Full browser permission never turns an untrusted peer into an owner.
-    state.portal_access = Some(PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full));
+    // Full surface host permission never turns an untrusted peer into an owner.
+    state.surface_host_access = Some(SurfaceHostAccess::new(
+        TOKEN,
+        ORIGIN,
+        SurfaceHostPermission::Full,
+    ));
     let pass = authorization::PersonPass {
         event_id: "pass".into(),
         event_json: "verified upstream".into(),

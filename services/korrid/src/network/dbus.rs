@@ -18,7 +18,7 @@ pub(super) mod nearby;
 
 type Connect = Box<dyn Fn() -> BoxFuture<'static, zbus::Result<Connection>> + Send + Sync>;
 
-/// NetworkManager over one system bus connection. The portal reads network
+/// NetworkManager over one system bus connection. The shell reads network
 /// status every 2 s. A new connection for each read made korrid, dbus-daemon
 /// and NetworkManager busy on an idle device (#289). Every failed operation
 /// drops the connection, so the next operation connects again.

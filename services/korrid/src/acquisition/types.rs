@@ -98,8 +98,8 @@ pub enum AcquisitionOutcome {
     Err(RpcFailure),
 }
 
-// Game acquisition RPC (ADR 0016). Legacy portal acquisition RPC names and
-// fields, with korrid holding the claim the portal names.
+// Game acquisition RPC (ADR 0016). Legacy shell acquisition RPC names and
+// fields, with korrid holding the claim the shell names.
 
 /// Legacy `AcquisitionPluginsPayload`.
 #[typeshare]
@@ -261,7 +261,7 @@ pub enum AcquireJobOutcome {
     Err(RpcFailure),
 }
 
-/// Never send transport, filesystem or unpack stderr strings to the portal.
+/// Never send transport, filesystem or unpack stderr strings to the shell.
 /// A closed vocabulary is stronger than trying to redact arbitrary diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Failure {

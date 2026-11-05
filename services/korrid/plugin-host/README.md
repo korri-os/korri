@@ -131,7 +131,7 @@ provenance; a disposable staging path is never part of it.
 
 Korrid exposes the following calls on its existing local RPC and signed peer
 wire. All require the same authority as plugin inspection/install: the local
-full-permission portal or CLI, or a verified same-owner device. No caller names
+full-permission surface host or CLI, or a verified same-owner device. No caller names
 a filesystem path.
 
 | RPC | Payload | Result |
@@ -213,7 +213,7 @@ Where upstream lookups remain, the host fetches each closure level's narinfos wi
 
 ## korrid's admin socket
 
-The portal manages repositories through korrid, which stays unprivileged. When the device also runs korrid (`services.korridLinuxDevice`), the module adds `korri-plugin-admin.socket` at `services.korri.pluginHost.adminSocket` (`/run/korri-plugin-admin/admin.sock`, `root:korrid`, mode 0660). It activates `korri-plugin serve-admin` as root with the restore unit's hardening. The server reads `SO_PEERCRED` and answers only `KORRI_PLUGIN_ADMIN_PEER_UID`, korrid's uid; any other peer gets no answer. One request at a time opens the host, so each request takes the host lock exactly like a CLI command.
+The shell manages repositories through korrid, which stays unprivileged. When the device also runs korrid (`services.korridLinuxDevice`), the module adds `korri-plugin-admin.socket` at `services.korri.pluginHost.adminSocket` (`/run/korri-plugin-admin/admin.sock`, `root:korrid`, mode 0660). It activates `korri-plugin serve-admin` as root with the restore unit's hardening. The server reads `SO_PEERCRED` and answers only `KORRI_PLUGIN_ADMIN_PEER_UID`, korrid's uid; any other peer gets no answer. One request at a time opens the host, so each request takes the host lock exactly like a CLI command.
 
 The socket accepts the typed JSON requests (`services/korrid/src/plugin_admin.rs`). Each calls the same `Host` method as one CLI command:
 
@@ -541,13 +541,13 @@ requires root ownership. The directory is mode 0755 and each published file is
 private. This reader grants no plugin authority. The settings backend still
 refuses plugin enable changes made as setting writes.
 
-Plugin administration from the portal has one separate route, approved
+Plugin administration from the shell has one separate route, approved
 2026-10-20: korrid, and only korrid's uid, reaches typed host operations
 through `korri-plugin-admin.socket` (see **korrid's admin socket** above), including publisher trust/revoke and staged archive inspection/install.
 The host keeps every check for those operations: the lock, catalog
 validation, archive hash, publisher signature and approval digest. korrid
-exposes them only to the full-permission local portal. Verified same-owner
-peer devices have the same plugin authority. Read-only portals can list
+exposes them only to the full-permission local surface host. Verified same-owner
+peer devices have the same plugin authority. Read-only surface hosts can list
 repository settings and installed selections. Catalog and publisher listing,
 inspection, installation and trust changes require full permission.
 

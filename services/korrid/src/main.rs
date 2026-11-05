@@ -361,8 +361,8 @@ fn brain_router(
 ) -> Router {
     let capability = std::env::var("KORRID_RPC_CAPABILITY")
         .expect("KORRID_RPC_CAPABILITY must be set for the brain server");
-    let allowed_origin = std::env::var("KORRID_PORTAL_ORIGIN")
-        .expect("KORRID_PORTAL_ORIGIN must be set for the brain server");
+    let allowed_origin = std::env::var("KORRID_SHELL_ORIGIN")
+        .expect("KORRID_SHELL_ORIGIN must be set for the brain server");
     korrid::router_with_capability_and_federation(
         &capability,
         &allowed_origin,
@@ -430,30 +430,30 @@ fn credential_acl_is_private(acl: &[u8], uid: u32) -> bool {
         })
 }
 
-// Linux startup reads the same capability credential that its browser shell
+// Linux startup reads the same capability credential that its shell
 // receives. Authentication and permissions remain in the shared RPC handler.
-fn host_portal_access(
+fn shell_access(
     origin: Option<&str>,
     credentials: Option<&std::path::Path>,
-) -> Result<Option<korrid::portal_access::PortalAccess>, String> {
+) -> Result<Option<korrid::surface_host_access::SurfaceHostAccess>, String> {
     use std::io::Read;
     use std::os::unix::fs::OpenOptionsExt;
     let Some(origin) = origin else {
         return Ok(None);
     };
-    let directory = credentials.ok_or("portal access requires systemd credentials")?;
+    let directory = credentials.ok_or("shell access requires systemd credentials")?;
     let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(directory.join("KORRID_RPC_CAPABILITY"))
-        .map_err(|_| "cannot open the portal credential")?;
-    if !credential_is_private(&file).map_err(|_| "cannot inspect the portal credential")? {
-        return Err("the portal credential must be private to root and this service".into());
+        .map_err(|_| "cannot open the shell credential")?;
+    if !credential_is_private(&file).map_err(|_| "cannot inspect the shell credential")? {
+        return Err("the shell credential must be private to root and this service".into());
     }
     let mut capability = String::new();
     file.take(4097)
         .read_to_string(&mut capability)
-        .map_err(|_| "cannot read the portal credential")?;
+        .map_err(|_| "cannot read the shell credential")?;
     if capability.ends_with('\n') {
         capability.pop();
     }
@@ -461,12 +461,12 @@ fn host_portal_access(
         || capability.len() > 4096
         || !capability.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
     {
-        return Err("invalid portal credential".into());
+        return Err("invalid shell credential".into());
     }
-    Ok(Some(korrid::portal_access::PortalAccess::new(
+    Ok(Some(korrid::surface_host_access::SurfaceHostAccess::new(
         &capability,
         origin,
-        korrid::portal_access::PortalPermission::LocalSessions,
+        korrid::surface_host_access::SurfaceHostPermission::LocalSessions,
     )))
 }
 
@@ -815,16 +815,16 @@ async fn main() {
             None,
         ),
         Mode::Host => {
-            let origin = std::env::var("KORRID_PORTAL_ORIGIN").ok();
+            let origin = std::env::var("KORRID_SHELL_ORIGIN").ok();
             let credentials = std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from);
-            let portal = host_portal_access(origin.as_deref(), credentials.as_deref())
-                .unwrap_or_else(|error| panic!("invalid portal access: {error}"));
+            let shell = shell_access(origin.as_deref(), credentials.as_deref())
+                .unwrap_or_else(|error| panic!("invalid shell access: {error}"));
             let (lan, local, cli, runtime) = korrid::host_routers_with_federation(
                 host_config_path(),
                 Some(host_storage_root()),
                 private_state_root.clone(),
                 resources,
-                portal,
+                shell,
             );
             (lan, Some(local), Some(cli), Some(runtime))
         }
@@ -1232,28 +1232,28 @@ mod tests {
     }
 
     #[test]
-    fn host_portal_requires_private_credentials_when_an_origin_is_configured() {
-        assert!(host_portal_access(None, None).unwrap().is_none());
-        assert!(host_portal_access(Some("http://127.0.0.1:8099"), None).is_err());
+    fn host_shell_requires_private_credentials_when_an_origin_is_configured() {
+        assert!(shell_access(None, None).unwrap().is_none());
+        assert!(shell_access(Some("http://127.0.0.1:8099"), None).is_err());
         let directory = tempfile::tempdir().unwrap();
-        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+        assert!(shell_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
         let path = directory.path().join("KORRID_RPC_CAPABILITY");
         std::fs::write(&path, "private-token\n").unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+        assert!(shell_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         assert!(
-            host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path()))
+            shell_access(Some("http://127.0.0.1:8099"), Some(directory.path()))
                 .unwrap()
                 .is_some()
         );
         std::fs::write(&path, "\n").unwrap();
-        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+        assert!(shell_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
     }
 
     #[tokio::test]
-    async fn host_portal_credentials_grant_local_sessions_without_other_mutations() {
+    async fn host_shell_credentials_grant_local_sessions_without_other_mutations() {
         use axum::{
             body::Body,
             http::{Request, StatusCode},
@@ -1272,7 +1272,7 @@ mod tests {
             &config,
             None::<PathBuf>,
             root.path().join("private"),
-            host_portal_access(Some(origin), Some(root.path())).unwrap(),
+            shell_access(Some(origin), Some(root.path())).unwrap(),
         );
         for (body, expected) in [
             (
@@ -1326,7 +1326,7 @@ mod tests {
     }
 
     #[test]
-    fn host_portal_reads_acl_credentials_and_rejects_symlinks_and_fifos() {
+    fn host_shell_reads_acl_credentials_and_rejects_symlinks_and_fifos() {
         use std::os::unix::{ffi::OsStrExt, fs::symlink};
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("KORRID_RPC_CAPABILITY");
@@ -1341,18 +1341,18 @@ mod tests {
         (&file).write_all(b"private-token").unwrap();
         set_credential_acl(&file, &credential_acl(unsafe { libc::geteuid() }));
         assert!(
-            host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path()))
+            shell_access(Some("http://127.0.0.1:8099"), Some(directory.path()))
                 .unwrap()
                 .is_some()
         );
         let target = directory.path().join("target");
         fs::rename(&path, &target).unwrap();
         symlink(&target, &path).unwrap();
-        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+        assert!(shell_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
         fs::remove_file(&path).unwrap();
         let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
-        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+        assert!(shell_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
     }
 
     #[test]

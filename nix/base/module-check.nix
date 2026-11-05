@@ -95,7 +95,6 @@ assert lib.all (
   && device.config.security.polkit.enable
 ) (lib.attrValues korri.nixosConfigurations);
 assert korri.nixosConfigurations.rg353m.config.services.korri.shell.enable;
-assert !(korri.nixosConfigurations.odin2portal.options.services ? korriKiosk);
 pkgs.runCommand "korri-base-module-check" { } ''
   touch "$out"
 ''

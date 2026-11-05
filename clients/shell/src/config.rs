@@ -1,19 +1,18 @@
-//! How the shell finds its korrid: exactly as `clients/linux` gives the
-//! portal its binding (contract 2 and 6).
+//! How the shell finds its korrid (contract 2 and 6).
 //!
 //! | Input | Producer |
 //! | --- | --- |
 //! | `CREDENTIALS_DIRECTORY/KORRID_RPC_CAPABILITY` | systemd `LoadCredential` |
 //! | `KORRID_ADDRESS` | korrid's socket address; only its nonzero port is used, on `127.0.0.1` |
-//! | `KORRID_PORTAL_ORIGIN` | korrid's allowed origin; the shell sends it as the WebSocket `Origin` |
+//! | `KORRID_SHELL_ORIGIN` | the one origin korrid accepts from its surface host; the shell sends it as the WebSocket `Origin` |
 //!
 //! The capability never enters a URL, file, log, argument or the child
 //! environment. It is held in zeroising memory, compared nowhere, and
 //! formatted only into the `Authorization` header and the first WebSocket
 //! frame. `Debug` redacts it.
 //!
-//! The credential checks are a port of `clients/linux/src/main.rs`
-//! (`credential_is_private`, `credential_acl_is_private`); keep the two equal.
+//! The credential checks repeat korrid's own (`services/korrid/src/main.rs`,
+//! `credential_is_private`, `credential_acl_is_private`); keep the two equal.
 
 use std::{
     env, fmt, fs,
@@ -68,7 +67,7 @@ impl Connection {
             return Err("korrid must have a nonzero port");
         }
         let origin =
-            env::var("KORRID_PORTAL_ORIGIN").map_err(|_| "KORRID_PORTAL_ORIGIN is required")?;
+            env::var("KORRID_SHELL_ORIGIN").map_err(|_| "KORRID_SHELL_ORIGIN is required")?;
         validate_origin(&origin)?;
         Ok(Self {
             port: address.port(),
@@ -95,14 +94,14 @@ pub fn scrub_environment() {
 fn validate_origin(origin: &str) -> Result<()> {
     let address: SocketAddr = origin
         .strip_prefix("http://")
-        .ok_or("the portal origin must use local HTTP")?
+        .ok_or("the shell origin must use local HTTP")?
         .parse()
-        .map_err(|_| "the portal origin must identify the local HTTP server")?;
+        .map_err(|_| "the shell origin must identify the local HTTP server")?;
     if address.ip() != std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
         || address.port() == 0
         || origin != format!("http://{address}")
     {
-        return Err("the portal origin must be a canonical 127.0.0.1 HTTP origin");
+        return Err("the shell origin must be a canonical 127.0.0.1 HTTP origin");
     }
     Ok(())
 }

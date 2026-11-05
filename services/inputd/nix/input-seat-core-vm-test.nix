@@ -67,7 +67,7 @@ pkgs.testers.runNixOSTest {
         korri.gid = 1000;
         korrid.gid = 976;
         uinput = { };
-        browser = { };
+        shell = { };
       };
       users.users = {
         korri = {
@@ -80,9 +80,9 @@ pkgs.testers.runNixOSTest {
           uid = 976;
           group = "korrid";
         };
-        browser = {
+        shell = {
           isSystemUser = true;
-          group = "browser";
+          group = "shell";
         };
       };
       services.udev.packages = [ seatRules ];
@@ -153,8 +153,8 @@ pkgs.testers.runNixOSTest {
     machine.succeed("test ! -e /run/korri-input-seat/sunshine-active-launch.json")
     node = baseline["1"][0]
     machine.succeed("runuser -u korri -- python3 -c 'import os; os.close(os.open(\"" + node + "\", os.O_RDONLY | os.O_NONBLOCK))'")
-    machine.fail("runuser -u browser -- python3 -c 'import os; os.open(\"" + node + "\", os.O_RDONLY | os.O_NONBLOCK)'")
-    machine.fail("runuser -u browser -- python3 -c 'import socket; s=socket.socket(socket.AF_UNIX,socket.SOCK_SEQPACKET); s.connect(\"/run/korri-input-seat/control.sock\")'")
+    machine.fail("runuser -u shell -- python3 -c 'import os; os.open(\"" + node + "\", os.O_RDONLY | os.O_NONBLOCK)'")
+    machine.fail("runuser -u shell -- python3 -c 'import socket; s=socket.socket(socket.AF_UNIX,socket.SOCK_SEQPACKET); s.connect(\"/run/korri-input-seat/control.sock\")'")
 
     # Plugin-owned group/UHID setup can start and stop without changing seats.
     machine.succeed("systemctl start korri-sunshine-input-setup.service; udevadm settle")

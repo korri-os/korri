@@ -7,7 +7,7 @@
 }:
 let
   runtime = korrid.overrideAttrs (old: {
-    pname = "korrid-portal-freezer-runtime";
+    pname = "korrid-shell-freezer-runtime";
     # This override installs only the harness, not reusable Cargo artifacts.
     outputs = [ "out" ];
     preConfigure = (old.preConfigure or "") + ''
@@ -17,15 +17,15 @@ let
     '';
     buildPhase = ''
       runHook preBuild
-      cargo test --release --offline --locked --test portal_freezer_runtime --no-run
+      cargo test --release --offline --locked --test shell_freezer_runtime --no-run
     '';
     doCheck = false;
     postInstall = "";
     installPhase = ''
       mkdir -p $out/bin
-      find target -type f -name 'portal_freezer_runtime-*' -executable \
-        -exec cp {} $out/bin/portal-freezer-runtime \;
-      test -x $out/bin/portal-freezer-runtime
+      find target -type f -name 'shell_freezer_runtime-*' -executable \
+        -exec cp {} $out/bin/shell-freezer-runtime \;
+      test -x $out/bin/shell-freezer-runtime
     '';
   });
   swayConfig = pkgs.writeText "freezer-sway.conf" ''
@@ -116,7 +116,6 @@ pkgs.testers.runNixOSTest {
           "p /run/freezer-test/map-game 0666 root root -"
           "d /run/freezer-compositor 0777 gameplay users -"
           "d /run/korrid 0755 root root -"
-          "d /run/korrid-browser 0755 root root -"
           "d /run/korrid-control 0755 root root -"
           "f /run/korrid-control/control.sock 0600 root root -"
           "d /var/lib/freezer-stream 0700 root root -"
@@ -154,7 +153,7 @@ pkgs.testers.runNixOSTest {
             wantedBy = [ "multi-user.target" ];
             after = [ "dbus.service" ];
             environment = {
-              KORRID_PORTAL_UNIT = "korri-shell.service";
+              KORRID_SHELL_UNIT = "korri-shell.service";
               KORRID_SYSTEMD_RUN = "${systemd}/bin/systemd-run";
               KORRID_RUNTIME_UID = "1000";
               KORRID_RUNTIME_GID = "100";
@@ -164,7 +163,7 @@ pkgs.testers.runNixOSTest {
               KORRID_COMPOSITOR_CONTROL_SOCKET = "/run/freezer-compositor/sway.sock";
             };
             serviceConfig = {
-              ExecStart = "${runtime}/bin/portal-freezer-runtime --ignored --nocapture";
+              ExecStart = "${runtime}/bin/shell-freezer-runtime --ignored --nocapture";
               User = "korrid";
               StateDirectory = "korrid";
               StateDirectoryMode = "0700";
@@ -248,7 +247,7 @@ pkgs.testers.runNixOSTest {
         machine.fail(f"systemctl is-active {shell}")
         machine.succeed(f"systemctl start {shell}")
 
-    with subtest("stopping and crashing korrid thaw without browser polling"):
+    with subtest("stopping and crashing korrid thaw without surface polling"):
         freeze()
         machine.succeed("systemctl stop korrid.service")
         assert freezer() == "running"
@@ -265,11 +264,11 @@ pkgs.testers.runNixOSTest {
         machine.wait_for_unit("freezer-compositor.service")
         machine.wait_until_succeeds("test -S /tmp/.X11-unix/X0")
         machine.succeed("chmod 0666 /run/freezer-compositor/sway.sock")
-        # Keep an excluded portal window behind the delayed game. Production
+        # Keep an excluded shell window behind the delayed game. Production
         # game units expose only X11, not the compositor control socket.
-        machine.succeed("systemd-run --unit=freezer-portal-window --uid=gameplay --setenv=DISPLAY=:0 ${pkgs.xterm}/bin/xterm -class FreezerPortal -e ${pkgs.coreutils}/bin/sleep infinity")
+        machine.succeed("systemd-run --unit=freezer-shell-window --uid=gameplay --setenv=DISPLAY=:0 ${pkgs.xterm}/bin/xterm -class FreezerShell -e ${pkgs.coreutils}/bin/sleep infinity")
         sway = "swaymsg -s /run/freezer-compositor/sway.sock"
-        machine.wait_until_succeeds(sway + " -t get_tree | jq -e '.. | objects | select(.window_properties?.class == \"FreezerPortal\")'")
+        machine.wait_until_succeeds(sway + " -t get_tree | jq -e '.. | objects | select(.window_properties?.class == \"FreezerShell\")'")
 
         def rpc(method, payload):
             body = shlex.quote(json.dumps({"_tag": method, "payload": payload}))
@@ -283,7 +282,7 @@ pkgs.testers.runNixOSTest {
 
         launch_id = launch()
         game = f"korri-game-{launch_id}.service"
-        assert freezer() == "running", "an unmapped game must not freeze the portal"
+        assert freezer() == "running", "an unmapped game must not freeze the shell"
         # Status observes the live process but must not mistake it for focus.
         for _ in range(3):
             rpc("app.session.status", {})
@@ -303,10 +302,10 @@ pkgs.testers.runNixOSTest {
             raise
         reply = rpc("app.session.leave", {"expectedLaunchId": launch_id})
         assert reply["_tag"] == "Ok", reply
-        assert freezer() == "running", "acknowledged Leave includes portal thaw"
+        assert freezer() == "running", "acknowledged Leave includes shell thaw"
         assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "frozen"
-        machine.succeed(sway + " '[class=FreezerPortal] focus'")
-        # A real compositor refusal must leave the portal active, even after
+        machine.succeed(sway + " '[class=FreezerShell] focus'")
+        # A real compositor refusal must leave the shell active, even after
         # the exact game has thawed. Restoring authority then permits Return.
         machine.succeed("chmod 0600 /run/freezer-compositor/sway.sock")
         reply = rpc("app.session.resume", {"expectedLaunchId": launch_id})
@@ -324,14 +323,14 @@ pkgs.testers.runNixOSTest {
         # Count real native thaw requests, not repeated application logs.
         machine.succeed("systemd-run --unit=freezer-monitor --property=StandardOutput=append:/run/freezer-test/calls busctl --system --match=\"type='method_call',member='ThawUnit'\" monitor org.freedesktop.systemd1")
         machine.wait_until_succeeds("grep -q 'Monitoring bus message stream' /run/freezer-test/calls || journalctl -u freezer-monitor --no-pager | grep -q 'Monitoring bus message stream'", timeout=10)
-        # Deny only native portal ThawUnit. Failed Leave must thaw/refocus the
+        # Deny only native shell ThawUnit. Failed Leave must thaw/refocus the
         # game before returning an existing transition error to inputd.
         denial = """polkit.addRule(function(action, subject) {
           if (subject.user == "korrid" && action.lookup("unit") == "korri-shell.service" && action.lookup("verb") == "start") {
             return polkit.Result.NO;
           }
         });"""
-        machine.succeed("printf %s " + shlex.quote(denial) + " > /etc/polkit-1/rules.d/00-deny-portal-thaw.rules")
+        machine.succeed("printf %s " + shlex.quote(denial) + " > /etc/polkit-1/rules.d/00-deny-shell-thaw.rules")
         machine.succeed("systemctl restart polkit.service")
         machine.fail(native("korrid", "ThawUnit", "s", shell))
         reply = rpc("app.session.leave", {"expectedLaunchId": launch_id})
@@ -343,10 +342,10 @@ pkgs.testers.runNixOSTest {
         # refused thaw and recover once native permission returns.
         machine.succeed(f"kill -TERM $(systemctl show -P MainPID {game})")
         machine.wait_until_succeeds("test $(grep -c 'Member=ThawUnit' /run/freezer-test/calls) -ge 5", timeout=30)
-        machine.succeed("test $(journalctl -u korrid --no-pager | grep -c 'portal freezer failed') -eq 1")
-        machine.succeed("rm /etc/polkit-1/rules.d/00-deny-portal-thaw.rules")
+        machine.succeed("test $(journalctl -u korrid --no-pager | grep -c 'shell freezer failed') -eq 1")
+        machine.succeed("rm /etc/polkit-1/rules.d/00-deny-shell-thaw.rules")
         machine.wait_until_succeeds(f'test "$(systemctl show -P FreezerState {shell})" = running')
-        machine.succeed("journalctl -u korrid --no-pager | grep 'portal freezer recovered'")
+        machine.succeed("journalctl -u korrid --no-pager | grep 'shell freezer recovered'")
 
     with subtest("orderly shutdown delivers SIGTERM without korrid or a thaw companion"):
         machine.succeed("systemctl stop korrid.service")

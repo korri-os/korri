@@ -1,7 +1,7 @@
 //! Native signer effects for an unowned device. No person private key crosses
 //! this boundary. The public snapshot fields and signer kinds come from the
 //! retained KorriOwnerBindingController.snapshotJson / PersonSigner.State.
-//! Unlike the removed bridge, the portal requests work through authenticated RPC;
+//! Unlike the removed bridge, the shell requests work through authenticated RPC;
 //! the native shell consumes an effect and returns its public signer state.
 
 use crate::{

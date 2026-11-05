@@ -83,7 +83,7 @@ impl Invites {
 pub(crate) fn spawn_watch(state: AppState) {
     tokio::spawn(async move {
         // Invite discovery needs only its 2.5-second refresh cadence. The
-        // independent portal watch owns prompt exit/focus detection; list
+        // independent shell watch owns prompt exit/focus detection; list
         // and join still check idle state on demand.
         let mut ticks = tokio::time::interval(Duration::from_millis(2500));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -197,7 +197,7 @@ mod tests {
     use crate::{authorization::AuthorizationContext, host::control::InMemoryLaunchUnitBackend};
 
     #[tokio::test]
-    async fn portal_lists_dismisses_and_hides_invites_when_this_device_starts() {
+    async fn shell_lists_dismisses_and_hides_invites_when_this_device_starts() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         std::fs::write(
@@ -225,7 +225,7 @@ mod tests {
             .unwrap()
             .replace(vec![invite.clone()]);
         let request = || RpcRequest::InvitesList(InvitesListRequest {});
-        let response = crate::dispatch(&state, &AuthorizationContext::LocalBrowser, request())
+        let response = crate::dispatch(&state, &AuthorizationContext::LocalSurfaceHost, request())
             .await
             .unwrap();
         let RpcResponse::InvitesList(InvitesListOutcome::Ok(list)) = response else {
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(list.invites.len(), 1);
         let response = crate::dispatch(
             &state,
-            &AuthorizationContext::LocalBrowser,
+            &AuthorizationContext::LocalSurfaceHost,
             RpcRequest::InvitesDismiss(InviteRequest {
                 invite_id: list.invites[0].invite_id.clone(),
             }),

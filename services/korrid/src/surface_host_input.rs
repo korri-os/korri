@@ -1,8 +1,8 @@
-//! Bounded, receive-only native input for the local portal.
+//! Bounded, receive-only native input for the local surface host.
 //! Attachment captures metadata and current held state atomically. Before the
-//! host freezes Chromium, suspend() requires every subscriber to retire its
+//! host freezes the shell, suspend() requires every subscriber to retire its
 //! callbacks and clear input, then acknowledge the exact connection/request.
-//! Queue age alone cannot invalidate TCP/Chromium buffered messages.
+//! Queue age alone cannot invalidate TCP- or client-buffered messages.
 
 use std::{
     collections::BTreeMap,
@@ -28,11 +28,11 @@ use tokio::{
     time::timeout,
 };
 
-use crate::{native_input::*, portal_access::PortalAccess};
+use crate::{native_input::*, surface_host_access::SurfaceHostAccess};
 
 /// Internal resource budgets, not persisted settings or seat count.
 #[derive(Clone, Copy, Debug)]
-pub struct PortalInputLimits {
+pub struct SurfaceHostInputLimits {
     pub connections: usize,
     pub devices: usize,
     pub queued_events: usize,
@@ -43,13 +43,13 @@ pub struct PortalInputLimits {
     pub max_queue_age: Duration,
 }
 
-impl Default for PortalInputLimits {
+impl Default for SurfaceHostInputLimits {
     fn default() -> Self {
         Self {
             connections: 4,
             // Receiver admits 255 physical sources and controllerNumber 0..=15
             // for its one authenticated remote launch. Seat allocation does not
-            // limit which connected sources can navigate the portal.
+            // limit which connected sources can navigate the shell.
             devices: korri_input_contract::MAX_PHYSICAL_SOURCES + 16,
             queued_events: 64,
             incoming_bytes: 1024,
@@ -131,7 +131,7 @@ struct SourceState {
     clients: Vec<Option<Client>>,
 }
 struct Shared {
-    limits: PortalInputLimits,
+    limits: SurfaceHostInputLimits,
     state: Mutex<SourceState>,
     /// Gamepad presence and evidence for the surface model's `controllers`.
     controllers: Arc<crate::surface::controllers::Controllers>,
@@ -139,10 +139,10 @@ struct Shared {
 
 /// Sole producer (share through Arc when host lifecycle and ingress both use it).
 /// Drop is terminal; reset clears a lost producer without replacing the router.
-pub struct PortalInputSource {
+pub struct SurfaceHostInputSource {
     shared: Arc<Shared>,
 }
-impl PortalInputSource {
+impl SurfaceHostInputSource {
     /// A DeviceAdded without values declares a neutral arrival. Use publish_device
     /// with the complete current baseline for real controller arrivals.
     pub fn publish(&self, event: NativeInputEvent) -> Result<(), PublishError> {
@@ -387,7 +387,7 @@ impl PortalInputSource {
             state.suspended = Some(request_id.clone());
             let mut receivers = Vec::new();
             for client in state.clients.iter_mut().flatten() {
-                // Local retirement won the same mutex: it cleared browser data
+                // Local retirement won the same mutex: it cleared surface host data
                 // before asking for release and can no longer be selected.
                 // Do not cancel the bounded retired reply currently being sent.
                 if client.released {
@@ -474,7 +474,7 @@ fn broadcast(state: &mut SourceState, class: NativeInputDeviceClass, frames: &[A
     }
 }
 
-impl Drop for PortalInputSource {
+impl Drop for SurfaceHostInputSource {
     fn drop(&mut self) {
         self.reset();
         self.shared
@@ -489,7 +489,10 @@ impl Drop for PortalInputSource {
 /// upgrade; first text frame is Bearer, second the unchanged legacy subscription.
 /// No authority is read from URLs, subprotocols, or controller payloads. The
 /// build disables dependency debug/trace logging of raw WS credentials.
-pub fn router(access: PortalAccess, limits: PortalInputLimits) -> (Router, PortalInputSource) {
+pub fn router(
+    access: SurfaceHostAccess,
+    limits: SurfaceHostInputLimits,
+) -> (Router, SurfaceHostInputSource) {
     router_with_surfaces(access, Arc::default(), limits)
 }
 
@@ -497,10 +500,10 @@ pub fn router(access: PortalAccess, limits: PortalInputLimits) -> (Router, Porta
 /// section 6): a second frame naming it, instead of a native input
 /// subscription, hands the authenticated connection to the hub in `surfaces`.
 pub fn router_with_surfaces(
-    access: PortalAccess,
+    access: SurfaceHostAccess,
     surfaces: crate::surface::SurfaceSlot,
-    limits: PortalInputLimits,
-) -> (Router, PortalInputSource) {
+    limits: SurfaceHostInputLimits,
+) -> (Router, SurfaceHostInputSource) {
     assert!(limits.connections > 0 && limits.devices > 0 && limits.queued_events > 0);
     assert!(limits.incoming_bytes > 0 && limits.event_bytes > 0);
     assert!(
@@ -525,11 +528,11 @@ pub fn router_with_surfaces(
         shared: Arc::clone(&shared),
         surfaces,
     });
-    (app, PortalInputSource { shared })
+    (app, SurfaceHostInputSource { shared })
 }
 #[derive(Clone)]
 struct Endpoint {
-    access: PortalAccess,
+    access: SurfaceHostAccess,
     shared: Arc<Shared>,
     surfaces: crate::surface::SurfaceSlot,
 }
@@ -732,7 +735,7 @@ enum Selection {
     Surface(String),
 }
 
-async fn handshake(socket: &mut WebSocket, access: &PortalAccess) -> Option<Selection> {
+async fn handshake(socket: &mut WebSocket, access: &SurfaceHostAccess) -> Option<Selection> {
     let Message::Text(bearer) = socket.recv().await?.ok()? else {
         return None;
     };
@@ -750,7 +753,7 @@ async fn handshake(socket: &mut WebSocket, access: &PortalAccess) -> Option<Sele
 async fn send(
     socket: &mut WebSocket,
     frame: Frame,
-    limits: PortalInputLimits,
+    limits: SurfaceHostInputLimits,
     stop: &mut watch::Receiver<bool>,
 ) -> bool {
     let Some(remaining) = limits.max_queue_age.checked_sub(frame.created.elapsed()) else {
@@ -764,7 +767,7 @@ async fn send(
 }
 async fn serve(
     mut socket: WebSocket,
-    access: PortalAccess,
+    access: SurfaceHostAccess,
     surfaces: crate::surface::SurfaceSlot,
     connection: Connection,
     mut stop: watch::Receiver<bool>,
@@ -798,7 +801,7 @@ async fn serve(
     let mut streaming = true;
     loop {
         // Control is checked before each baseline/live frame. Already-buffered
-        // bytes cannot be recalled; the browser retirement ACK is the barrier.
+        // bytes cannot be recalled; the surface host retirement ACK is the barrier.
         tokio::select! {
             biased;
             _ = stopped(&mut stop) => return,

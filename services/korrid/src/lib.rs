@@ -61,17 +61,17 @@ mod peer_rpc;
 pub mod play_log;
 pub mod plugin_admin;
 pub mod plugin_repositories;
-pub mod portal_access;
-pub mod portal_input;
 pub mod relay;
 pub mod remote_signer;
 mod rename;
 pub mod saves;
 pub mod surface;
+pub mod surface_host_access;
+pub mod surface_host_input;
 
 pub use play_log::{PlayEntry, PlayLog};
 use plugin_admin::{PluginAdminRequest, PluginAdminResponse};
-use portal_access::{PortalAccess, PortalPermission};
+use surface_host_access::{SurfaceHostAccess, SurfaceHostPermission};
 
 fn installed_routes_unsupported() -> RpcFailure {
     RpcFailure {
@@ -644,7 +644,7 @@ pub struct SessionStatus {
     pub stream_play_launch_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_play_ended: Option<StreamPlayEnded>,
-    /// All pending reservations owned by this authenticated portal caller; never a selection.
+    /// All pending reservations owned by this authenticated surface host caller; never a selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_launches: Option<Vec<PendingLaunch>>,
     /// Pending identities remain observable when native state is unknown.
@@ -653,7 +653,7 @@ pub struct SessionStatus {
     pub observation_failure: Option<RpcFailure>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active: Option<ActiveSession>,
-    /** Ephemeral exact launch authorized for browser overlay handoff. */
+    /** Ephemeral exact launch authorized for surface host overlay handoff. */
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overlay: Option<ActiveSession>,
 }
@@ -1791,13 +1791,13 @@ struct AppState {
     /// korrid's only route to the root plugin host, when this device has one.
     plugin_admin: Option<plugin_repositories::PluginAdminSocket>,
     mode: ServerMode,
-    portal_access: Option<PortalAccess>,
+    surface_host_access: Option<SurfaceHostAccess>,
     rpc_surface: RpcSurface,
-    /// Exact Home freeze waiting for the browser handoff. This is deliberately
+    /// Exact Home freeze waiting for the surface host handoff. This is deliberately
     /// process-local and is never written to the active-session journal.
     overlay_intent: Arc<overlay_intent::OverlayIntent>,
-    /// The native surface host of this portal router (`surface/`). Only the
-    /// browser state a portal router serves carries one.
+    /// The native surface host of this surface host router (`surface/`). Only the
+    /// surface host state a surface host router serves carries one.
     surfaces: Option<Arc<surface::SurfaceHub>>,
 }
 
@@ -2378,7 +2378,7 @@ fn host_session_freeze_outcome(
             message: "the host launch is stopping".into(),
         }),
         // The game is running but could not come forward. A separate code lets
-        // the portal show the exact focus failure and offer Return again.
+        // the shell show the exact focus failure and offer Return again.
         Ok(HostSessionFreezeChange::FocusFailed { message, .. }) => {
             SessionTransitionOutcome::Err(RpcFailure {
                 code: "HostFocusFailed".into(),
@@ -2459,7 +2459,7 @@ fn caller_is_owner(
     authorization: &authorization::AuthorizationContext,
 ) -> bool {
     match authorization {
-        authorization::AuthorizationContext::LocalBrowser
+        authorization::AuthorizationContext::LocalSurfaceHost
         | authorization::AuthorizationContext::LocalCli
         | authorization::AuthorizationContext::LocalUnixControl => true,
         authorization::AuthorizationContext::Peer(principal) => match principal {
@@ -2656,15 +2656,18 @@ fn local_launch_caller<'a>(
         return Ok("local-cli");
     }
     if state.rpc_surface == RpcSurface::Lan
-        && matches!(context, authorization::AuthorizationContext::LocalBrowser)
+        && matches!(
+            context,
+            authorization::AuthorizationContext::LocalSurfaceHost
+        )
     {
-        if let Some(access) = &state.portal_access {
+        if let Some(access) = &state.surface_host_access {
             return Ok(access.reservation_caller());
         }
     }
     Err(RpcFailure {
         code: "OperationUnsupported".into(),
-        message: "launch reservations require the local portal capability".into(),
+        message: "launch reservations require the local shell capability".into(),
     })
 }
 
@@ -4307,9 +4310,9 @@ fn editable_setting_ids(
 
     let permitted = |request: &RpcRequest| {
         authorization::authorize(context, request).is_ok()
-            && (!matches!(context, AuthorizationContext::LocalBrowser)
+            && (!matches!(context, AuthorizationContext::LocalSurfaceHost)
                 || state
-                    .portal_access
+                    .surface_host_access
                     .as_ref()
                     .is_none_or(|access| access.permits(request)))
     };
@@ -4614,23 +4617,23 @@ fn surface_accepted(result: Result<(), RpcFailure>) -> surface::SurfaceAcceptedO
     }
 }
 
-/// The native surface host for one portal router. It reaches korrid the way
-/// the portal did: the same typed requests, under the same capability and
+/// The native surface host for one surface host router. It reaches korrid the
+/// way a surface host call does: the same typed requests, under the same capability and
 /// permission, handed to `dispatch` in process.
 fn surface_hub_for(
-    browser: &AppState,
+    surface_host: &AppState,
     controllers: Arc<surface::controllers::Controllers>,
 ) -> Arc<surface::SurfaceHub> {
-    let base = browser.clone();
+    let base = surface_host.clone();
     let send: surface::korrid::Send_ = Arc::new(move |request| {
         let state = base.clone();
         Box::pin(async move {
-            if let Some(access) = &state.portal_access {
+            if let Some(access) = &state.surface_host_access {
                 if !access.permits(&request) {
                     return Err(surface::korrid::Refusal::Denied);
                 }
             }
-            let authorization = authorization::AuthorizationContext::LocalBrowser;
+            let authorization = authorization::AuthorizationContext::LocalSurfaceHost;
             dispatch(&state, &authorization, request)
                 .await
                 .map_err(|_| surface::korrid::Refusal::Denied)
@@ -4638,8 +4641,8 @@ fn surface_hub_for(
     });
     surface::SurfaceHub::new(
         surface::korrid::Korrid::new(send),
-        browser.private_state_root().to_path_buf(),
-        browser.overlay_intent.subscribe(),
+        surface_host.private_state_root().to_path_buf(),
+        surface_host.overlay_intent.subscribe(),
         controllers,
     )
 }
@@ -4649,11 +4652,11 @@ async fn rpc(
     headers: HeaderMap,
     Json(request): Json<RpcRequest>,
 ) -> Result<Json<RpcResponse>, StatusCode> {
-    if let Some(access) = &state.portal_access {
+    if let Some(access) = &state.surface_host_access {
         access.authorize(&headers, &request)?;
     }
     let authorization = match state.rpc_surface {
-        RpcSurface::Lan => authorization::AuthorizationContext::LocalBrowser,
+        RpcSurface::Lan => authorization::AuthorizationContext::LocalSurfaceHost,
         RpcSurface::LocalControl => authorization::AuthorizationContext::LocalUnixControl,
     };
     dispatch(&state, &authorization, request)
@@ -4685,7 +4688,7 @@ fn default_private_state_root() -> PathBuf {
 }
 
 /// Build the localhost router protected by a per-server bearer capability.
-/// The exact portal origin is the only browser origin allowed to send it.
+/// The exact surface host origin is the only origin allowed to send it.
 pub fn router_with_capability(rpc_capability: &str, allowed_origin: &str) -> Router {
     router_with_capability_and_roots(
         rpc_capability,
@@ -4834,7 +4837,7 @@ fn router_with_capability_local_root_provision_and_grants(
         resources,
         federation_wake,
     );
-    portal_router_from_state(state)
+    surface_host_router_from_state(state)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4885,7 +4888,8 @@ fn brain_app_state(
         }
     });
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
-    let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
+    let surface_host_access =
+        SurfaceHostAccess::new(rpc_capability, allowed_origin, SurfaceHostPermission::Full);
     let state = AppState {
         person_names: stream_play::person_name::device::PersonNames::default(),
         netplay_holder: Arc::new(netplay::holder::Holder::default()),
@@ -4911,7 +4915,7 @@ fn brain_app_state(
             discovery,
             settings_write_lock,
         }),
-        portal_access: Some(portal_access),
+        surface_host_access: Some(surface_host_access),
         rpc_surface: RpcSurface::Lan,
         overlay_intent: Arc::new(overlay_intent::OverlayIntent::default()),
         surfaces: None,
@@ -4920,11 +4924,14 @@ fn brain_app_state(
     (state, ())
 }
 
-fn portal_router_from_state(state: AppState) -> Router {
-    portal_router_with_surfaces(state, None)
+fn surface_host_router_from_state(state: AppState) -> Router {
+    surface_host_router_with_surfaces(state, None)
 }
 
-fn portal_router_with_surfaces(mut state: AppState, slot: Option<surface::SurfaceSlot>) -> Router {
+fn surface_host_router_with_surfaces(
+    mut state: AppState,
+    slot: Option<surface::SurfaceSlot>,
+) -> Router {
     if state.surfaces.is_none() {
         // Without a native-input router there are no controllers to report.
         let controllers = slot
@@ -4938,9 +4945,9 @@ fn portal_router_with_surfaces(mut state: AppState, slot: Option<surface::Surfac
         state.surfaces = Some(hub);
     }
     let access = state
-        .portal_access
+        .surface_host_access
         .as_ref()
-        .expect("portal router requires token authority");
+        .expect("shell router requires token authority");
     let allowed_origins = tower_http::cors::AllowOrigin::list(access.allowed_origins().to_vec());
     let cors = tower_http::cors::CorsLayer::new()
         .allow_origin(allowed_origins)
@@ -4994,14 +5001,14 @@ pub fn host_router_with_storage(
 }
 
 /// Build network and private-control routers over one shared device runtime.
-/// Optional portal authority enables the same browser `/rpc` handler used by
+/// Optional surface host authority enables the same `/rpc` handler used by
 /// the embedded brain, alongside encrypted `/peer-rpc` on the existing router.
-/// It does not grant the browser the private-control socket's authority.
+/// It does not grant the surface host the private-control socket's authority.
 pub fn host_routers_with_storage_and_private(
     config_path: impl AsRef<Path>,
     storage_root: Option<impl Into<PathBuf>>,
     private_state_root: impl Into<PathBuf>,
-    portal_access: Option<PortalAccess>,
+    surface_host_access: Option<SurfaceHostAccess>,
 ) -> (Router, Router) {
     let private_state_root = private_state_root.into();
     let resources =
@@ -5011,7 +5018,7 @@ pub fn host_routers_with_storage_and_private(
         storage_root,
         private_state_root,
         resources,
-        portal_access,
+        surface_host_access,
     );
     (lan, local)
 }
@@ -5039,18 +5046,18 @@ pub fn host_routers_with_federation(
     storage_root: Option<impl Into<PathBuf>>,
     private_state_root: impl Into<PathBuf>,
     resources: FederationResources,
-    portal_access: Option<PortalAccess>,
+    surface_host_access: Option<SurfaceHostAccess>,
 ) -> (Router, Router, Router, host::HostRuntime) {
     let private_state_root = private_state_root.into();
     let surfaces: surface::SurfaceSlot = Arc::default();
-    let native = portal_access.clone().map(|access| {
-        portal_input::router_with_surfaces(
+    let native = surface_host_access.clone().map(|access| {
+        surface_host_input::router_with_surfaces(
             access,
             Arc::clone(&surfaces),
-            portal_input::PortalInputLimits {
+            surface_host_input::SurfaceHostInputLimits {
                 devices: korri_input_contract::MAX_PHYSICAL_SOURCES + 16,
                 queued_events: 1024,
-                ..portal_input::PortalInputLimits::default()
+                ..surface_host_input::SurfaceHostInputLimits::default()
             },
         )
     });
@@ -5067,17 +5074,17 @@ pub fn host_routers_with_federation(
         private_state_root.clone(),
         native_source,
     );
-    // A device that freezes its portal keeps observing its own session, so a
-    // game that ends while the portal cannot poll still thaws it.
+    // A device that freezes its shell keeps observing its own session, so a
+    // game that ends while the shell cannot poll still thaws it.
     let (lan, local, cli) = secure_host_routers_with_federation(
         runtime.clone(),
         &private_state_root,
         resources,
-        portal_access,
+        surface_host_access,
         native_router,
         Some(surfaces),
     );
-    runtime.spawn_portal_watch();
+    runtime.spawn_shell_watch();
     (lan, local, cli, runtime)
 }
 
@@ -5145,7 +5152,7 @@ fn app_states_with(
         owner_binding: None,
         plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Host(runtime.clone()),
-        portal_access: None,
+        surface_host_access: None,
         rpc_surface: RpcSurface::Lan,
         overlay_intent: overlay_intent.clone(),
         surfaces: None,
@@ -5166,7 +5173,7 @@ fn app_states_with(
         owner_binding: None,
         plugin_admin: plugin_repositories::PluginAdminSocket::from_env(),
         mode: ServerMode::Host(runtime),
-        portal_access: None,
+        surface_host_access: None,
         rpc_surface: RpcSurface::LocalControl,
         overlay_intent,
         surfaces: None,
@@ -5189,17 +5196,17 @@ pub(crate) fn plain_host_routers_for_tests(runtime: host::HostRuntime) -> (Route
     plain_host_routers(runtime)
 }
 
-/// Give the browser its own `/rpc` router over the LAN state, carrying the
-/// portal's capability and origin without the private-control authority.
-fn portal_router_for(
+/// Give the surface host its own `/rpc` router over the LAN state, carrying the
+/// surface host's capability and origin without the private-control authority.
+fn surface_host_router_for(
     lan: &AppState,
-    portal_access: Option<PortalAccess>,
+    surface_host_access: Option<SurfaceHostAccess>,
     surfaces: Option<surface::SurfaceSlot>,
 ) -> Option<Router> {
-    portal_access.map(|access| {
-        let mut browser = lan.clone();
-        browser.portal_access = Some(access);
-        portal_router_with_surfaces(browser, surfaces)
+    surface_host_access.map(|access| {
+        let mut surface_host = lan.clone();
+        surface_host.surface_host_access = Some(access);
+        surface_host_router_with_surfaces(surface_host, surfaces)
             .layer(axum::middleware::from_fn(require_loopback))
     })
 }
@@ -5208,12 +5215,12 @@ fn portal_router_for(
 fn secure_host_routers(
     runtime: host::HostRuntime,
     private_state_root: &Path,
-    portal_access: Option<PortalAccess>,
+    surface_host_access: Option<SurfaceHostAccess>,
 ) -> (Router, Router) {
     secure_host_routers_with_acquisition(
         runtime,
         private_state_root,
-        portal_access,
+        surface_host_access,
         acquisition::AcquisitionCoordinator::default(),
     )
 }
@@ -5224,15 +5231,15 @@ fn secure_host_routers(
 fn secure_host_routers_with_acquisition(
     runtime: host::HostRuntime,
     private_state_root: &Path,
-    portal_access: Option<PortalAccess>,
+    surface_host_access: Option<SurfaceHostAccess>,
     acquisition: acquisition::AcquisitionCoordinator,
 ) -> (Router, Router) {
     let (lan, local) = app_states_with(runtime, acquisition);
-    let portal = portal_router_for(&lan, portal_access, None);
+    let shell = surface_host_router_for(&lan, surface_host_access, None);
     let peer = peer_rpc::PeerRpcServer::new(lan, private_state_root)
         .expect("load or create peer RPC identity");
     (
-        peer.router(portal),
+        peer.router(shell),
         Router::new().route("/rpc", post(rpc)).with_state(local),
     )
 }
@@ -5241,7 +5248,7 @@ fn secure_host_routers_with_federation(
     runtime: host::HostRuntime,
     private_state_root: &Path,
     resources: FederationResources,
-    portal_access: Option<PortalAccess>,
+    surface_host_access: Option<SurfaceHostAccess>,
     native_router: Option<Router>,
     surfaces: Option<surface::SurfaceSlot>,
 ) -> (Router, Router, Router) {
@@ -5279,11 +5286,12 @@ fn secure_host_routers_with_federation(
     stream_play::person_name::device::spawn_publish(lan.clone());
     lan.identity_switch = identity_switch.clone();
     local.identity_switch = identity_switch;
-    let portal =
-        portal_router_for(&lan, portal_access, surfaces).map(|router| match native_router {
+    let shell = surface_host_router_for(&lan, surface_host_access, surfaces).map(|router| {
+        match native_router {
             Some(native) => router.merge(native),
             None => router,
-        });
+        }
+    });
     let cli = cli::router(lan.clone(), resources.clone());
     // Only the peer-only router receives QUIC traffic.
     let peer = peer_rpc::PeerRpcServer::with_shared_authority(
@@ -5308,7 +5316,7 @@ fn secure_host_routers_with_federation(
         None => local,
     };
     (
-        peer.router(portal).layer(axum::Extension(reach.clone())),
+        peer.router(shell).layer(axum::Extension(reach.clone())),
         local.layer(axum::Extension(reach)),
         cli,
     )
@@ -5472,7 +5480,7 @@ fn start_local_server_for_platform(
     let server_federation_wake = federation_wake.clone();
     let server_upstream = upstream.clone();
     // As on Linux, a selected far session is polled so that its end stops the
-    // exact viewer, even while the portal WebView is paused behind it.
+    // exact viewer, even while the shell is paused behind it.
     let watched_upstream = has_viewer.then(|| upstream.clone());
     let (stop, stopped) = oneshot::channel();
     let thread = std::thread::Builder::new()
@@ -5517,7 +5525,7 @@ fn start_local_server_for_platform(
                 });
                 let server = axum::serve(
                     listener,
-                    portal_router_from_state(app_state).layer(axum::Extension(reach)),
+                    surface_host_router_from_state(app_state).layer(axum::Extension(reach)),
                 )
                 .with_graceful_shutdown(async move {
                     let _ = stopped.await;
@@ -5634,7 +5642,7 @@ pub fn apply_local_owner_binding(
             details: error.to_string(),
         })?;
     // Persist first, then replace inside the original credentials mutex. Existing
-    // clients and discovery see the binding without rotating browser authority.
+    // clients and discovery see the binding without rotating surface host authority.
     credentials
         .reload_identity(&root)
         .map_err(|error| ServerError::StartFailed {
@@ -5767,7 +5775,7 @@ mod tests {
     use tower::ServiceExt;
 
     #[tokio::test]
-    async fn native_browser_route_refuses_non_loopback_and_missing_socket_provenance() {
+    async fn native_surface_host_route_refuses_non_loopback_and_missing_socket_provenance() {
         for (peer, expected) in [
             (None, StatusCode::FORBIDDEN),
             (Some("192.0.2.1:1234"), StatusCode::FORBIDDEN),
@@ -5790,7 +5798,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn portal_rpc_is_unreachable_from_non_loopback_even_with_the_capability() {
+    async fn shell_rpc_is_unreachable_from_non_loopback_even_with_the_capability() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         std::fs::write(&config, "label = \"test\"\ngames = []\n").unwrap();
@@ -5803,10 +5811,10 @@ mod tests {
         let (app, _) = secure_host_routers(
             runtime,
             &root.path().join("private"),
-            Some(PortalAccess::new(
+            Some(SurfaceHostAccess::new(
                 "right-token",
-                "http://portal.test",
-                PortalPermission::Full,
+                "http://shell.test",
+                SurfaceHostPermission::Full,
             )),
         );
         for (peer, expected) in [
@@ -5835,7 +5843,7 @@ mod tests {
                 .extension(axum::extract::ConnectInfo(
                     peer.parse::<std::net::SocketAddr>().unwrap(),
                 ))
-                .header(header::ORIGIN, "http://portal.test")
+                .header(header::ORIGIN, "http://shell.test")
                 .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
                 .body(Body::empty())
                 .unwrap();
@@ -6200,7 +6208,7 @@ mod tests {
     }
 
     #[test]
-    fn host_focus_failure_publishes_the_retained_portal_phase() {
+    fn host_focus_failure_publishes_the_retained_shell_phase() {
         let outcome =
             host_session_status_outcome(Ok(host::control::HostSessionStatus::FocusFailed {
                 launch_id: "launch-a".into(),
@@ -6215,7 +6223,7 @@ mod tests {
     }
 
     #[test]
-    fn restart_portal_focus_reconstructs_exact_intent_for_browser_poll() {
+    fn restart_shell_focus_reconstructs_exact_intent_for_surface_poll() {
         let intent = overlay_intent::OverlayIntent::default();
         restore_recovered_overlay_intent(&intent, Some("a".into()));
         let outcome = correlate_overlay_status(
@@ -6697,7 +6705,7 @@ mod tests {
     ) -> Router {
         router_with_capability_local_root_provision_and_grants(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             readable,
             private,
             plugin_policy::RegistrySource::Selected(Arc::new(
@@ -6780,7 +6788,7 @@ mod tests {
         let receipt = grants.issue_approved_path(games.path()).unwrap().token;
         let (state, _) = brain_app_state(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             readable.path(),
             private.path(),
             plugin_policy::RegistrySource::Selected(Arc::new(
@@ -7068,7 +7076,7 @@ mod tests {
         .unwrap();
         let app = router_with_capability_local_root_provision_and_grants(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             readable.path(),
             private.path(),
             plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::steam(
@@ -7312,7 +7320,7 @@ command = ["sh", "-c", "sleep 1"]
         .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
 
@@ -7471,7 +7479,7 @@ command = ["sh", "-c", "sleep 1"]
             .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
         let body = rpc_body_authorized(
@@ -7852,7 +7860,7 @@ command = ["game-two"]
         std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
         let app = test_router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
         let response = app
@@ -7884,7 +7892,7 @@ command = ["game-two"]
             .unwrap();
         let app = test_router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
 
@@ -7944,7 +7952,7 @@ command = ["game-two"]
     #[cfg(unix)]
     #[tokio::test]
     async fn rpc_rejects_missing_or_wrong_capability() {
-        let app = router_with_capability("right-token", "https://portal.example");
+        let app = router_with_capability("right-token", "https://shell.example");
         for authorization in [None, Some("Bearer wrong-token")] {
             let mut request = Request::builder()
                 .method("POST")
@@ -7967,8 +7975,8 @@ command = ["game-two"]
     }
 
     #[tokio::test]
-    async fn rpc_accepts_the_capability_and_exact_portal_origin() {
-        let app = router_with_capability("right-token", "https://portal.example");
+    async fn rpc_accepts_the_capability_and_exact_shell_origin() {
+        let app = router_with_capability("right-token", "https://shell.example");
         let response = app
             .oneshot(
                 Request::builder()
@@ -7976,7 +7984,7 @@ command = ["game-two"]
                     .uri("/rpc")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::AUTHORIZATION, "Bearer right-token")
-                    .header(header::ORIGIN, "https://portal.example")
+                    .header(header::ORIGIN, "https://shell.example")
                     .body(Body::from(r#"{"_tag":"system.health","payload":{}}"#))
                     .unwrap(),
             )
@@ -7988,7 +7996,7 @@ command = ["game-two"]
                 .headers()
                 .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
                 .unwrap(),
-            "https://portal.example"
+            "https://shell.example"
         );
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert!(String::from_utf8_lossy(&body).contains("system.health"));
@@ -7996,14 +8004,14 @@ command = ["game-two"]
 
     #[tokio::test]
     async fn cors_allows_authorized_preflight_only_for_the_exact_origin() {
-        let app = router_with_capability("right-token", "https://portal.example");
+        let app = router_with_capability("right-token", "https://shell.example");
         let allowed = app
             .clone()
             .oneshot(
                 Request::builder()
                     .method("OPTIONS")
                     .uri("/rpc")
-                    .header(header::ORIGIN, "https://portal.example")
+                    .header(header::ORIGIN, "https://shell.example")
                     .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
                     .header(
                         header::ACCESS_CONTROL_REQUEST_HEADERS,
@@ -8020,7 +8028,7 @@ command = ["game-two"]
                 .headers()
                 .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
                 .unwrap(),
-            "https://portal.example"
+            "https://shell.example"
         );
         assert!(allowed
             .headers()
@@ -8902,7 +8910,7 @@ command = ["game-two"]
         .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
         let provision = rpc_body_authorized(
@@ -8951,7 +8959,7 @@ command = ["game-two"]
         .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
         let body = rpc_body_authorized(
@@ -8997,7 +9005,7 @@ command = ["game-two"]
         .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
         let body = rpc_body_authorized(
@@ -9039,7 +9047,7 @@ command = ["game-two"]
         .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
         let body = rpc_body_authorized(
@@ -9090,7 +9098,7 @@ command = ["game-two"]
             .unwrap();
             let brain = router_with_capability_and_local_root(
                 "right-token",
-                "https://portal.example",
+                "https://shell.example",
                 root.path(),
             );
             let body = rpc_body_authorized(
@@ -9150,7 +9158,7 @@ command = ["game-two"]
         .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
-            "https://portal.example",
+            "https://shell.example",
             root.path(),
         );
         let body = rpc_body_authorized(

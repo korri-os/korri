@@ -3,7 +3,7 @@ use super::{
     config::{HostConfig, HostGame},
     input_seat::InputSeatManager,
     session_state::HostSessionControl,
-    systemd_unit::{LaunchUnitBackend, PortalUnit, SystemdLaunchUnitBackend, SystemdPortalUnit},
+    systemd_unit::{LaunchUnitBackend, ShellUnit, SystemdLaunchUnitBackend, SystemdShellUnit},
 };
 use crate::RpcFailure;
 #[cfg(test)]
@@ -28,13 +28,13 @@ fn configured_compositor() -> Option<Arc<dyn CompositorControl>> {
     Some(Arc::new(control))
 }
 
-/// Read the portal unit korrid freezes during a focused live game. A device
-/// without one, or with an invalid name, never freezes its portal.
-pub(crate) fn configured_portal() -> Option<Arc<dyn PortalUnit>> {
-    match SystemdPortalUnit::from_environment()? {
-        Ok(portal) => Some(Arc::new(portal)),
+/// Read the shell unit korrid freezes during a focused live game. A device
+/// without one, or with an invalid name, never freezes its shell.
+pub(crate) fn configured_shell() -> Option<Arc<dyn ShellUnit>> {
+    match SystemdShellUnit::from_environment()? {
+        Ok(shell) => Some(Arc::new(shell)),
         Err(error) => {
-            eprintln!("korrid: portal freezing disabled: {}", error.message);
+            eprintln!("korrid: shell freezing disabled: {}", error.message);
             None
         }
     }
@@ -57,7 +57,7 @@ impl HostLauncher {
         config: &HostConfig,
         private_state_root: &Path,
         input_seats: Arc<dyn InputSeatManager>,
-        native: Option<Arc<crate::portal_input::PortalInputSource>>,
+        native: Option<Arc<crate::surface_host_input::SurfaceHostInputSource>>,
     ) -> Self {
         let mut launcher = Self::with_backends(
             config,
@@ -68,8 +68,8 @@ impl HostLauncher {
         if let Some(native) = native {
             launcher.control = launcher.control.with_native_input(native);
         }
-        match configured_portal() {
-            Some(portal) => launcher.with_portal(portal),
+        match configured_shell() {
+            Some(shell) => launcher.with_shell(shell),
             None => launcher,
         }
     }
@@ -80,8 +80,8 @@ impl HostLauncher {
         self
     }
 
-    pub(crate) fn with_portal(mut self, portal: Arc<dyn PortalUnit>) -> Self {
-        self.control = self.control.with_portal(portal);
+    pub(crate) fn with_shell(mut self, shell: Arc<dyn ShellUnit>) -> Self {
+        self.control = self.control.with_shell(shell);
         self
     }
 

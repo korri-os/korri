@@ -21,7 +21,6 @@ const MAX_HELPER_OUTPUT_BYTES: u64 = 64 * 1024;
 const DEFAULT_PRIVATE_STATE_ROOT: &str = "/var/lib/korrid";
 const DEFAULT_CONTROL_SOCKET: &str = "/run/korrid-control/control.sock";
 const DEFAULT_CONTROL_DIRECTORY: &str = "/run/korrid-control";
-const DEFAULT_BROWSER_RUNTIME_DIRECTORY: &str = "/run/korrid-browser";
 const DEFAULT_COMPOSITOR_CONTROL_DIRECTORY: &str = "/run/korri-compositor";
 /// Control group of a system unit started by systemd-run.
 const DEFAULT_UNIT_CGROUP_ROOT: &str = "/sys/fs/cgroup/korri.slice/korri-games.slice";
@@ -202,24 +201,24 @@ pub trait LaunchUnitBackend: Send + Sync {
     }
 }
 
-/// Names the portal unit korrid freezes while a focused game owns the
-/// screen. Absent, the portal is never frozen.
-pub(super) const PORTAL_UNIT_ENV: &str = "KORRID_PORTAL_UNIT";
+/// Names the shell unit korrid freezes while a focused game owns the
+/// screen. Absent, the shell is never frozen.
+pub(super) const SHELL_UNIT_ENV: &str = "KORRID_SHELL_UNIT";
 
-/// The portal surface korrid pauses while the player is in a focused live
-/// game. A frozen portal can neither paint nor take input, so every thaw
+/// The shell surface korrid pauses while the player is in a focused live
+/// game. A frozen shell can neither paint nor take input, so every thaw
 /// request must leave it running.
-pub trait PortalUnit: Send + Sync {
+pub trait ShellUnit: Send + Sync {
     /// Identity does not grant native freezer authority.
     fn freezer_enabled(&self) -> bool {
         true
     }
 
-    /// Processes owned by the configured kiosk unit, not window decorations.
+    /// Processes owned by the configured shell unit, not window decorations.
     fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
         Err(LaunchUnitError::new(
             LaunchUnitErrorKind::Failed,
-            "portal process identity unavailable",
+            "shell process identity unavailable",
         ))
     }
     fn freeze(&self) -> Result<(), LaunchUnitError>;
@@ -232,22 +231,22 @@ pub trait PortalUnit: Send + Sync {
 /// process runner as game controls. Unlike systemctl this takes no RefUnit
 /// authority. systemd holds the reply until the kernel freezer settles.
 #[derive(Clone, Debug)]
-pub struct SystemdPortalUnit {
+pub struct SystemdShellUnit {
     helper: SystemdLaunchUnitBackend,
     unit: String,
     freezer_enabled: bool,
 }
 
-impl SystemdPortalUnit {
+impl SystemdShellUnit {
     pub(super) fn new(
         helper: SystemdLaunchUnitBackend,
         unit: &str,
         freezer_enabled: bool,
     ) -> Result<Self, LaunchUnitError> {
-        if !valid_portal_unit(unit) {
+        if !valid_shell_unit(unit) {
             return Err(LaunchUnitError::new(
                 LaunchUnitErrorKind::InvalidConfiguration,
-                "portal unit must be one exact service name that is not a game unit",
+                "shell unit must be one exact service name that is not a game unit",
             ));
         }
         Ok(Self {
@@ -257,16 +256,16 @@ impl SystemdPortalUnit {
         })
     }
 
-    /// Reads the configured portal unit. `None` keeps the feature inert.
+    /// Reads the configured shell unit. `None` keeps the feature inert.
     pub(super) fn from_environment() -> Option<Result<Self, LaunchUnitError>> {
-        let unit = std::env::var(PORTAL_UNIT_ENV).ok()?;
-        let enabled = match std::env::var("KORRID_PORTAL_FREEZER_ENABLED").as_deref() {
+        let unit = std::env::var(SHELL_UNIT_ENV).ok()?;
+        let enabled = match std::env::var("KORRID_SHELL_FREEZER_ENABLED").as_deref() {
             Ok("true") => true,
             Ok("false") | Err(std::env::VarError::NotPresent) => false,
             _ => {
                 return Some(Err(LaunchUnitError::new(
                     LaunchUnitErrorKind::InvalidConfiguration,
-                    "portal freezer gate must be true or false",
+                    "shell freezer gate must be true or false",
                 )))
             }
         };
@@ -278,7 +277,7 @@ impl SystemdPortalUnit {
     }
 
     /// systemd answers a freezer call only once the freezer settles, so the
-    /// call returns with the portal frozen or running.
+    /// call returns with the shell frozen or running.
     fn verb_arguments(&self, method: &str) -> Vec<String> {
         vec![
             "--system".into(),
@@ -304,13 +303,13 @@ impl SystemdPortalUnit {
     }
 }
 
-impl PortalUnit for SystemdPortalUnit {
+impl ShellUnit for SystemdShellUnit {
     fn freezer_enabled(&self) -> bool {
         self.freezer_enabled
     }
     fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
         // ControlGroup and MainPID come from the same exact service already
-        // used for kiosk freeze/thaw. Chromium's app_id is not stable identity.
+        // used for shell freeze/thaw. A window app_id is not stable identity.
         let output = self.helper.require_success(
             &self.helper.systemctl,
             &[
@@ -325,7 +324,7 @@ impl PortalUnit for SystemdPortalUnit {
         let malformed = || {
             LaunchUnitError::new(
                 LaunchUnitErrorKind::Protocol,
-                "invalid portal unit process properties",
+                "invalid shell unit process properties",
             )
         };
         let text = std::str::from_utf8(&output.stdout).map_err(|_| malformed())?;
@@ -378,7 +377,7 @@ impl PortalUnit for SystemdPortalUnit {
     }
 
     /// systemd refuses `thaw` on an inactive unit. Read the freezer state
-    /// first so a stopped or absent portal is not a thaw failure that korrid
+    /// first so a stopped or absent shell is not a thaw failure that korrid
     /// would retry on every status read.
     fn thaw(&self) -> Result<(), LaunchUnitError> {
         if !self.freezer_enabled {
@@ -400,7 +399,7 @@ impl PortalUnit for SystemdPortalUnit {
     }
 }
 
-fn valid_portal_unit(unit: &str) -> bool {
+fn valid_shell_unit(unit: &str) -> bool {
     let Some(stem) = unit.strip_suffix(UNIT_SUFFIX) else {
         return false;
     };
@@ -415,11 +414,11 @@ fn valid_portal_unit(unit: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"-_.:@".contains(&byte))
 }
 
-/// Records portal freezer requests the way the systemd portal unit applies
+/// Records shell freezer requests the way the systemd shell unit applies
 /// them, so session tests can prove when korrid freezes and thaws it.
 #[cfg(test)]
 #[derive(Default)]
-pub(crate) struct RecordingPortalUnit {
+pub(crate) struct RecordingShellUnit {
     identity_reads: std::sync::atomic::AtomicUsize,
     identity_only: bool,
     frozen: Mutex<bool>,
@@ -431,7 +430,7 @@ pub(crate) struct RecordingPortalUnit {
 }
 
 #[cfg(test)]
-impl RecordingPortalUnit {
+impl RecordingShellUnit {
     pub(crate) fn identity_reads(&self) -> usize {
         self.identity_reads
             .load(std::sync::atomic::Ordering::SeqCst)
@@ -442,7 +441,7 @@ impl RecordingPortalUnit {
             ..Self::default()
         }
     }
-    /// A portal an earlier korrid run froze and never thawed.
+    /// A shell an earlier korrid run froze and never thawed.
     pub(crate) fn left_frozen() -> Self {
         Self {
             frozen: Mutex::new(true),
@@ -450,7 +449,7 @@ impl RecordingPortalUnit {
         }
     }
 
-    /// Adds `portal-freeze` and `portal-thaw` to a log shared with other
+    /// Adds `shell-freeze` and `shell-thaw` to a log shared with other
     /// recorders so tests can prove ordering across effects.
     pub(crate) fn with_events(events: Arc<Mutex<Vec<&'static str>>>) -> Self {
         Self {
@@ -484,7 +483,7 @@ impl RecordingPortalUnit {
 }
 
 #[cfg(test)]
-impl PortalUnit for RecordingPortalUnit {
+impl ShellUnit for RecordingShellUnit {
     fn freezer_enabled(&self) -> bool {
         !self.identity_only
     }
@@ -498,11 +497,11 @@ impl PortalUnit for RecordingPortalUnit {
         if self.identity_only {
             return Ok(());
         }
-        self.record("freeze", "portal-freeze");
+        self.record("freeze", "shell-freeze");
         if *self.refuse_freeze.lock().unwrap() {
             return Err(LaunchUnitError::new(
                 LaunchUnitErrorKind::Failed,
-                "portal freeze refused",
+                "shell freeze refused",
             ));
         }
         *self.frozen.lock().unwrap() = true;
@@ -513,13 +512,13 @@ impl PortalUnit for RecordingPortalUnit {
         if self.identity_only {
             return Ok(());
         }
-        self.record("thaw", "portal-thaw");
+        self.record("thaw", "shell-thaw");
         let mut refused = self.refused_thaws.lock().unwrap();
         if *refused > 0 {
             *refused -= 1;
             return Err(LaunchUnitError::new(
                 LaunchUnitErrorKind::Failed,
-                "portal thaw refused",
+                "shell thaw refused",
             ));
         }
         *self.frozen.lock().unwrap() = false;
@@ -1497,9 +1496,8 @@ impl SystemdLaunchUnitBackend {
             // installed. systemd refuses to start the unit for a missing
             // path unless it has the "-" prefix.
             format!(
-                "--property=InaccessiblePaths={} /run/korrid {} {} {} {} {}{} {} -{} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources{}",
+                "--property=InaccessiblePaths={} /run/korrid {} {} {} {}{} {} -{} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources{}",
                 self.private_state_root.display(),
-                DEFAULT_BROWSER_RUNTIME_DIRECTORY,
                 self.control_socket.display(),
                 self.control_directory.display(),
                 self.cli_socket.display(),
@@ -2342,8 +2340,8 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
             .and_then(|value| Self::parse_systemd_environment(value).ok())
             .is_some_and(|values| values.contains(&marker));
         let diagnostics_available = if captures_stderr {
-            // spawn_portal_watch already observes the live session every second,
-            // including when the portal cannot poll. No new maintenance thread.
+            // spawn_shell_watch already observes the live session every second,
+            // including when the shell cannot poll. No new maintenance thread.
             match super::launch_diagnostics::maintain(&directory) {
                 Ok(()) => true,
                 Err(error) => {
@@ -2648,7 +2646,7 @@ mod tests {
         }
     }
 
-    const PORTAL: &str = "korri-chromium-kiosk.service";
+    const SHELL: &str = "korri-shell.service";
 
     #[test]
     fn launch_settings_units_use_the_games_slice_with_an_enabled_cpu_controller() {
@@ -2664,21 +2662,21 @@ mod tests {
     }
 
     #[test]
-    fn identity_only_portal_never_calls_freezer_helpers() {
+    fn identity_only_shell_never_calls_freezer_helpers() {
         // This backend's helper paths are not executables. Either freezer
         // call would fail if the disabled gate performed an effect.
-        let portal = SystemdPortalUnit::new(backend(1000), PORTAL, false).unwrap();
-        assert!(!portal.freezer_enabled());
-        portal.freeze().unwrap();
-        portal.thaw().unwrap();
+        let shell = SystemdShellUnit::new(backend(1000), SHELL, false).unwrap();
+        assert!(!shell.freezer_enabled());
+        shell.freeze().unwrap();
+        shell.thaw().unwrap();
     }
 
     #[test]
-    fn portal_native_calls_need_no_unit_reference_or_extra_authority() {
-        let portal = SystemdPortalUnit::new(backend(1000), PORTAL, true).unwrap();
+    fn shell_native_calls_need_no_unit_reference_or_extra_authority() {
+        let shell = SystemdShellUnit::new(backend(1000), SHELL, true).unwrap();
         for method in ["FreezeUnit", "ThawUnit"] {
             assert_eq!(
-                portal.verb_arguments(method),
+                shell.verb_arguments(method),
                 [
                     "--system",
                     "--allow-interactive-authorization=no",
@@ -2688,38 +2686,38 @@ mod tests {
                     "org.freedesktop.systemd1.Manager",
                     method,
                     "s",
-                    PORTAL,
+                    SHELL,
                 ]
             );
         }
         // Real D-Bus authorization and settled replies are exercised by
-        // clients/portal/nix/kiosk-freezer-vm-test.nix, not shell emulation.
+        // clients/shell/nix/freezer-vm-test.nix, not helper emulation.
     }
 
     #[test]
-    fn portal_unit_must_be_one_exact_non_game_service() {
+    fn shell_unit_must_be_one_exact_non_game_service() {
         for unit in [
             "",
             ".service",
-            "korri-chromium-kiosk",
-            "korri-chromium-kiosk.socket",
-            "-korri-chromium-kiosk.service",
-            "../korri-chromium-kiosk.service",
-            "korri chromium.service",
+            "korri-shell",
+            "korri-shell.socket",
+            "-korri-shell.service",
+            "../korri-shell.service",
+            "korri shell.service",
             "korri-*.service",
             "korri-game-0123456789abcdef0123456789abcdef.service",
         ] {
             assert_eq!(
-                SystemdPortalUnit::new(backend(1000), unit, true)
+                SystemdShellUnit::new(backend(1000), unit, true)
                     .unwrap_err()
                     .kind,
                 LaunchUnitErrorKind::InvalidConfiguration,
                 "accepted {unit:?}"
             );
         }
-        for unit in [PORTAL, "cage@tty1.service"] {
+        for unit in [SHELL, "cage@tty1.service"] {
             assert!(
-                SystemdPortalUnit::new(backend(1000), unit, true).is_ok(),
+                SystemdShellUnit::new(backend(1000), unit, true).is_ok(),
                 "{unit}"
             );
         }
@@ -2883,7 +2881,7 @@ mod tests {
             );
             assert_eq!(launch, expected);
             assert!(launch.contains(&format!(
-                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control /run/korrid-cli/cli.sock /run/korrid-cli -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight"
+                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /run/korrid-cli/cli.sock /run/korrid-cli -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources -/home/korri/.config/moonlight"
             )));
         }
     }

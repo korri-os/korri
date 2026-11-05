@@ -1,4 +1,4 @@
-//! The person socket has no browser capability and no private input routes.
+//! The person socket has no surface host capability and no private input routes.
 //! Its forwarding selector is the same exact key used by SourceStatusRequest.
 use crate::{
     authorization::{self, AuthorizationContext, PeerPolicy},
@@ -74,7 +74,7 @@ async fn forward(
     // The receiving peer still checks its policy independently.
     if matches!(
         authorization::policy_for(&request.request),
-        PeerPolicy::LocalOnly | PeerPolicy::LocalPortalOnly
+        PeerPolicy::LocalOnly | PeerPolicy::LocalSurfaceHostOnly
     ) {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -152,7 +152,8 @@ pub fn failure_response(
 
 pub(crate) fn settings_caller_allowed(state: &AppState, context: &AuthorizationContext) -> bool {
     matches!(context, AuthorizationContext::LocalCli)
-        || (state.portal_access.is_some() && matches!(context, AuthorizationContext::LocalBrowser))
+        || (state.surface_host_access.is_some()
+            && matches!(context, AuthorizationContext::LocalSurfaceHost))
         || match &state.mode {
             crate::ServerMode::Host(host) => {
                 matches!(context, AuthorizationContext::Peer(_))

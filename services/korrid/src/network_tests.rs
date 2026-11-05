@@ -93,12 +93,12 @@ fn request_debug_never_contains_password() {
 }
 
 #[tokio::test]
-async fn network_and_onboarding_rpc_round_trip_uses_portal_authority_and_real_marker() {
+async fn network_and_onboarding_rpc_round_trip_uses_shell_authority_and_real_marker() {
     let local = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     let (mut state, ()) = crate::brain_app_state(
         "onboarding-test-capability",
-        "http://portal.test",
+        "http://shell.test",
         local.path(),
         private.path(),
         crate::plugin_policy::RegistrySource::Installed,
@@ -109,7 +109,7 @@ async fn network_and_onboarding_rpc_round_trip_uses_portal_authority_and_real_ma
         None,
     );
     state.network = service(Some(7));
-    let app = crate::portal_router_from_state(state);
+    let app = crate::surface_host_router_from_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/rpc", listener.local_addr().unwrap());
     let task = tokio::spawn(async {
@@ -203,18 +203,18 @@ async fn local_sessions_wifi_scan_reaches_network_manager_through_host_http_rout
     );
     let (mut lan, _) = crate::app_states(runtime);
     lan.network = service(None);
-    let portal = crate::portal_router_for(
+    let shell = crate::surface_host_router_for(
         &lan,
-        Some(crate::PortalAccess::new(
+        Some(crate::SurfaceHostAccess::new(
             "wifi-test-capability",
-            "http://portal.test",
-            crate::PortalPermission::LocalSessions,
+            "http://shell.test",
+            crate::SurfaceHostPermission::LocalSessions,
         )),
         None,
     );
     let app = crate::peer_rpc::PeerRpcServer::new(lan, &private)
         .unwrap()
-        .router(portal);
+        .router(shell);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/rpc", listener.local_addr().unwrap());
     let task = tokio::spawn(async {
@@ -228,7 +228,7 @@ async fn local_sessions_wifi_scan_reaches_network_manager_through_host_http_rout
     let response = reqwest::Client::new()
         .post(url)
         .bearer_auth("wifi-test-capability")
-        .header("Origin", "http://portal.test")
+        .header("Origin", "http://shell.test")
         .json(&serde_json::json!({"_tag":"system.wifi.scan","payload":{}}))
         .send()
         .await
