@@ -118,6 +118,12 @@ enum SyncPurpose {
     CheckLaunch,
 }
 
+/// How long a launch's save check waits for a peer's first answer. A peer in
+/// reach answers a small `SaveInUse` request well inside it, even through a
+/// relay; an unreachable peer otherwise held every launch for the whole check
+/// deadline (2.4 s) on the RG353M.
+pub(super) const PEER_REACH_BUDGET: std::time::Duration = std::time::Duration::from_millis(1000);
+
 impl SavePeerService {
     fn owner_peers(&self, person: &str) -> Result<Vec<String>, PeerSaveError> {
         self.require_owner(person)?;
@@ -182,8 +188,12 @@ impl SavePeerService {
         let work = self.owner_peers(&person)?.into_iter().map(|peer| {
             let person = person.clone();
             async move {
+                // The first answer proves the peer is reachable. A peer that
+                // has not answered within PEER_REACH_BUDGET is treated as
+                // unreachable, so it cannot hold up the launch. A peer that
+                // answered keeps the whole deadline for its split check.
                 let in_use = match tokio::time::timeout_at(
-                    deadline,
+                    deadline.min(Instant::now() + PEER_REACH_BUDGET),
                     self.remote_in_use(&person, &peer, game),
                 )
                 .await

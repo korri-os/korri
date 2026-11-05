@@ -225,9 +225,6 @@ impl HostRuntime {
             },
         )
     }
-    fn save_support(&self, game: &str) -> Option<SaveMark> {
-        self.save_support_in(&self.save_routes(), game)
-    }
     fn save_support_in(
         &self,
         routes: &Result<SaveRoutes<'_>, RpcFailure>,
@@ -417,17 +414,19 @@ impl HostRuntime {
     }
 
     fn save_check_preparation(&self, request: &SaveCheckRequest) -> SaveCheckPreparation {
-        let support = self.save_support(&request.game_id);
+        // One registry and library read serve the whole check.
+        let routes = self.save_routes();
+        let support = self.save_support_in(&routes, &request.game_id);
         let declaration = self
-            .save_declaration(&request.game_id, request.runner_id.as_deref())
+            .save_declaration_in(&routes, &request.game_id, request.runner_id.as_deref())
             .ok()
             .flatten();
-        let title = self
-            .route_root()
+        let title = routes
+            .as_ref()
             .ok()
-            .and_then(|root| crate::config::settings::runner_choice_snapshot(root).ok())
-            .and_then(|(snapshot, _)| {
-                snapshot
+            .and_then(|routes| {
+                routes
+                    .snapshot
                     .library
                     .get(&request.game_id)
                     .and_then(|game| game.title.clone())

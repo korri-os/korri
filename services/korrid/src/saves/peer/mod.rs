@@ -2,6 +2,8 @@
 mod client;
 mod sync;
 pub use sync::PeerCheckResult;
+#[cfg(test)]
+use sync::PEER_REACH_BUDGET;
 
 #[cfg(test)]
 mod tests;

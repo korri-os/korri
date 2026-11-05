@@ -298,9 +298,6 @@ pub(crate) fn game(
     let RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(games)) = &response else {
         return Ok(Err(response));
     };
-    if games.failures.as_ref().is_some_and(|v| !v.is_empty()) {
-        return Ok(Err(response));
-    }
     if let Some(game) = games.games.iter().find(|g| g.id == query) {
         return Ok(Ok(game.id.clone()));
     }
@@ -310,5 +307,10 @@ pub(crate) fn game(
         .filter(|g| g.title.to_lowercase() == query.to_lowercase())
         .map(|g| (g.id.clone(), g.title.clone()))
         .collect::<Vec<_>>();
+    // Another game's failure (a missing runner, a missing file) never blocks
+    // this one. With no match, the failures may say why the game is absent.
+    if choices.is_empty() && games.failures.as_ref().is_some_and(|v| !v.is_empty()) {
+        return Ok(Err(response));
+    }
     Ok(Ok(choose("game", &choices, json)?))
 }

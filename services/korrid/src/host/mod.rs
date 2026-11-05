@@ -29,6 +29,7 @@ mod systemd_unit;
 pub(crate) use prepare::configured_portal;
 pub(crate) use systemd_unit::{configured_runtime_identity, PortalUnit};
 
+use crate::launch_timeline;
 use crate::plugin::{
     SessionControlDeclarationInteraction, SessionControlEffect, SessionControlOwnerKind,
 };
@@ -237,6 +238,8 @@ pub struct HostRuntime {
     /// The active session's title, found once per launch. See
     /// `shared_play::ActiveTitle`.
     active_title: Arc<std::sync::Mutex<Option<shared_play::ActiveTitle>>>,
+    /// Held by the one title lookup in flight; other status reads wait on it.
+    title_lookup: Arc<std::sync::Mutex<()>>,
     launch_reservations: launch_reservation::LaunchReservations,
     // Tests can delay one response after the real setter releases its lock.
     #[cfg(test)]
@@ -347,6 +350,7 @@ impl HostRuntime {
             save_service: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             active_title: Arc::new(std::sync::Mutex::new(None)),
+            title_lookup: Arc::new(std::sync::Mutex::new(())),
             launch_reservations: launch_reservation::LaunchReservations::default(),
             #[cfg(test)]
             after_launch_settings_write: None,
@@ -393,6 +397,7 @@ impl HostRuntime {
             save_service: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             active_title: Arc::new(std::sync::Mutex::new(None)),
+            title_lookup: Arc::new(std::sync::Mutex::new(())),
             launch_reservations: launch_reservation::LaunchReservations::default(),
             after_launch_settings_write: None,
             before_reserved_route: None,
@@ -665,7 +670,29 @@ impl HostRuntime {
         if config.games.iter().any(|game| game.id == game_id) {
             return Ok(());
         }
-        let declared = match &self.dynamic {
+        if self.declared_in_library(game_id)? {
+            Ok(())
+        } else {
+            Err(RpcFailure {
+                code: "HostGameNotFound".into(),
+                message: format!("host game {game_id:?} is not configured"),
+            })
+        }
+    }
+
+    /// A host.toml game must not also be a library game. Only the launched
+    /// game is checked, so a collision blocks that game alone.
+    fn require_static_game_undeclared(&self, game_id: &str) -> Result<(), RpcFailure> {
+        if self.declared_in_library(game_id)? {
+            return Err(dynamic_failure(format!(
+                "game id {game_id:?} is declared by both host.toml and catalog/library.yaml"
+            )));
+        }
+        Ok(())
+    }
+
+    fn declared_in_library(&self, game_id: &str) -> Result<bool, RpcFailure> {
+        Ok(match &self.dynamic {
             Some(DynamicHostSource::Installed(root)) => {
                 crate::config::settings::runner_choice_snapshot(root)
                     .map_err(crate::game_routes::settings_failure)?
@@ -684,15 +711,7 @@ impl HostRuntime {
             #[cfg(test)]
             Some(DynamicHostSource::Fixed(runtime)) => runtime.declared_ids.contains(game_id),
             None => false,
-        };
-        if declared {
-            Ok(())
-        } else {
-            Err(RpcFailure {
-                code: "HostGameNotFound".into(),
-                message: format!("host game {game_id:?} is not configured"),
-            })
-        }
+        })
     }
 
     /// Every fresh launch obtains its command through this owner gate. The
@@ -704,13 +723,19 @@ impl HostRuntime {
         runner_id: Option<&str>,
         launch_override: Option<crate::launch_settings::LaunchOverride>,
     ) -> Result<HostLaunchCommand, RpcFailure> {
+        use crate::launch_timeline::{measure, LaunchStage};
+        let catalog_started = std::time::Instant::now();
         let owner = self.launch_person()?;
         let config = self.config.as_ref().map_err(config_failure)?;
         let launcher = self.launcher.as_ref().expect("valid host config");
         if config.games.iter().any(|game| game.id == game_id) {
-            if let Some(dynamic) = &self.dynamic {
-                dynamic.load(Some(&owner))?.validate_static_games(config)?;
-            }
+            let collision = self.require_static_game_undeclared(game_id);
+            crate::launch_timeline::record(
+                game_id,
+                LaunchStage::Catalog,
+                catalog_started.elapsed(),
+            );
+            collision?;
             if runner_id.is_some() || launch_override.is_some() {
                 return Err(dynamic_failure(
                     "host command games do not accept installed runner choices or overrides",
@@ -734,35 +759,47 @@ impl HostRuntime {
             });
         }
         let root = self.route_root()?;
-        let registry = self.route_registry()?;
-        let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
-            .map_err(crate::game_routes::settings_failure)?;
-        let route = crate::config::resolver::resolve_linux_route(
-            root, &snapshot, &registry, game_id, runner_id,
-        )
-        .map_err(|error| crate::route_diagnostic_failure(&error))?;
-        crate::acquisition::require_ready(root, &registry, &route)?;
-        let limit_facts = crate::launch_settings::helper::Client::default()
-            .describe()
-            .ok();
-        let resolved = crate::launch_settings::resolve_launch(
-            &snapshot,
-            &route,
-            launch_override.as_ref(),
-            limit_facts.as_ref(),
-        )
-        .map_err(crate::game_routes::settings_failure)?;
-        let mut launch = linux_plugin::launch_route(
-            root,
-            &snapshot,
-            &registry,
-            &route,
-            launch_override,
-            compositor_focus::launch_display(),
-            &owner,
-        )
-        .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
-        self.netplay_launch_input(&mut launch.command, None)?;
+        // Only the launched game's route: another game's missing runner or
+        // content never refuses this launch.
+        let resolved_route = (|| {
+            let registry = self.route_registry()?;
+            let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
+                .map_err(crate::game_routes::settings_failure)?;
+            let route = crate::config::resolver::resolve_linux_route(
+                root, &snapshot, &registry, game_id, runner_id,
+            )
+            .map_err(|error| crate::route_diagnostic_failure(&error))?;
+            crate::acquisition::require_ready(root, &registry, &route)?;
+            Ok::<_, RpcFailure>((registry, snapshot, route))
+        })();
+        crate::launch_timeline::record(game_id, LaunchStage::Catalog, catalog_started.elapsed());
+        let (registry, snapshot, route) = resolved_route?;
+        let resolved = measure(game_id, LaunchStage::Settings, || {
+            let limit_facts = crate::launch_settings::helper::Client::default()
+                .describe()
+                .ok();
+            crate::launch_settings::resolve_launch(
+                &snapshot,
+                &route,
+                launch_override.as_ref(),
+                limit_facts.as_ref(),
+            )
+            .map_err(crate::game_routes::settings_failure)
+        })?;
+        let launch = measure(game_id, LaunchStage::PluginLaunch, || {
+            let mut launch = linux_plugin::launch_route(
+                root,
+                &snapshot,
+                &registry,
+                &route,
+                launch_override,
+                compositor_focus::launch_display(),
+                &owner,
+            )
+            .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
+            self.netplay_launch_input(&mut launch.command, None)?;
+            Ok::<_, RpcFailure>(launch)
+        })?;
         let limits = crate::launch_settings::session::SessionLimits {
             cpu: crate::launch_settings::LaunchPercentRange {
                 min: resolved.limits.cpu.min.value,
@@ -819,29 +856,34 @@ impl HostRuntime {
         game_id: &str,
         person_public_key: Option<&str>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
-        self.require_known_game(game_id)?;
-        let launcher = self.launcher.as_ref().ok_or_else(|| {
-            config_failure(self.config.as_ref().expect_err("invalid host config"))
-        })?;
-        let launch = self.prepare_launch_command(game_id, None, None);
-        let session = launcher.prepare_command_with_limits(
-            game_id,
-            person_public_key,
-            launch
-                .as_ref()
-                .map(|launch| launch.command.as_slice())
-                .map_err(Clone::clone),
-            launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
-            launch
-                .as_ref()
-                .map(|l| l.warnings.clone())
-                .unwrap_or_default(),
-            launch
-                .as_ref()
-                .ok()
-                .and_then(|launch| launch.hooks.as_ref()),
-        )?;
-        Ok(session)
+        timed_start(game_id, || {
+            launch_timeline::measure(game_id, launch_timeline::LaunchStage::Catalog, || {
+                self.require_known_game(game_id)
+            })?;
+            let launcher = self.launcher.as_ref().ok_or_else(|| {
+                config_failure(self.config.as_ref().expect_err("invalid host config"))
+            })?;
+            let launch = self.prepare_launch_command(game_id, None, None);
+            launch_timeline::measure(game_id, launch_timeline::LaunchStage::UnitStart, || {
+                launcher.prepare_command_with_limits(
+                    game_id,
+                    person_public_key,
+                    launch
+                        .as_ref()
+                        .map(|launch| launch.command.as_slice())
+                        .map_err(Clone::clone),
+                    launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
+                    launch
+                        .as_ref()
+                        .map(|l| l.warnings.clone())
+                        .unwrap_or_default(),
+                    launch
+                        .as_ref()
+                        .ok()
+                        .and_then(|launch| launch.hooks.as_ref()),
+                )
+            })
+        })
     }
 
     pub(crate) fn route_root(&self) -> Result<&Path, RpcFailure> {
@@ -1295,12 +1337,26 @@ impl HostRuntime {
         if let Some(probe) = &self.before_reserved_route {
             probe();
         }
-        self.require_known_game(&request.game_id)?;
+        timed_start(&request.game_id, || {
+            self.start_reserved_command(request, reservation, admission)
+        })
+    }
+
+    fn start_reserved_command(
+        &self,
+        request: &crate::SessionStartRequest,
+        reservation: &launch_reservation::LaunchReservation,
+        admission: crate::stream_play::admission::LocalLaunchAdmission,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        let game_id = request.game_id.as_str();
+        launch_timeline::measure(game_id, launch_timeline::LaunchStage::Catalog, || {
+            self.require_known_game(game_id)
+        })?;
         let launcher = self.launcher.as_ref().ok_or_else(|| {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
         let launch = self.prepare_launch_command(
-            &request.game_id,
+            game_id,
             request.runner_id.as_deref(),
             request.launch.clone(),
         );
@@ -1316,16 +1372,19 @@ impl HostRuntime {
             return Err(launch_reservation::cancelled());
         }
         let selection = admission.enter()?;
-        let mut prepared = launcher.prepare_reserved(
-            reservation,
-            runner_id,
-            command,
-            launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
-            launch
-                .as_ref()
-                .ok()
-                .and_then(|launch| launch.hooks.as_ref()),
-        )?;
+        let mut prepared =
+            launch_timeline::measure(game_id, launch_timeline::LaunchStage::UnitStart, || {
+                launcher.prepare_reserved(
+                    reservation,
+                    runner_id,
+                    command,
+                    launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
+                    launch
+                        .as_ref()
+                        .ok()
+                        .and_then(|launch| launch.hooks.as_ref()),
+                )
+            })?;
         let session = prepared.session;
         let mut warnings = launch?.warnings;
         warnings.append(&mut prepared.warnings);
@@ -1368,34 +1427,45 @@ impl HostRuntime {
         let runtime = self.clone();
         let person_public_key = person_public_key.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
-            runtime.require_known_game(&request.game_id)?;
-            let launch = runtime.prepare_launch_command(
-                &request.game_id,
-                Some(&request.runner_id),
-                request.launch.clone(),
-            );
-            let launcher = runtime.launcher.as_ref().ok_or_else(|| {
-                config_failure(runtime.config.as_ref().expect_err("invalid host config"))
-            })?;
-            let mut prepared = launcher.prepare_fresh_route(
-                &request.game_id,
-                &request.runner_id,
-                person_public_key.as_deref(),
-                launch
-                    .as_ref()
-                    .map(|launch| launch.command.as_slice())
-                    .map_err(Clone::clone),
-                launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
-                launch
-                    .as_ref()
-                    .ok()
-                    .and_then(|launch| launch.hooks.as_ref()),
-            )?;
-            let mut warnings = launch?.warnings;
-            warnings.append(&mut prepared.warnings);
-            Ok(crate::game_routes::SelectedGameLaunch {
-                session: prepared.session,
-                warnings,
+            let game_id = request.game_id.as_str();
+            timed_start(game_id, || {
+                launch_timeline::measure(game_id, launch_timeline::LaunchStage::Catalog, || {
+                    runtime.require_known_game(game_id)
+                })?;
+                let launch = runtime.prepare_launch_command(
+                    game_id,
+                    Some(&request.runner_id),
+                    request.launch.clone(),
+                );
+                let launcher = runtime.launcher.as_ref().ok_or_else(|| {
+                    config_failure(runtime.config.as_ref().expect_err("invalid host config"))
+                })?;
+                let mut prepared = launch_timeline::measure(
+                    game_id,
+                    launch_timeline::LaunchStage::UnitStart,
+                    || {
+                        launcher.prepare_fresh_route(
+                            game_id,
+                            &request.runner_id,
+                            person_public_key.as_deref(),
+                            launch
+                                .as_ref()
+                                .map(|launch| launch.command.as_slice())
+                                .map_err(Clone::clone),
+                            launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
+                            launch
+                                .as_ref()
+                                .ok()
+                                .and_then(|launch| launch.hooks.as_ref()),
+                        )
+                    },
+                )?;
+                let mut warnings = launch?.warnings;
+                warnings.append(&mut prepared.warnings);
+                Ok(crate::game_routes::SelectedGameLaunch {
+                    session: prepared.session,
+                    warnings,
+                })
             })
         })
         .await
@@ -1982,6 +2052,19 @@ fn certificate_worker_failure(_error: tokio::task::JoinError) -> RpcFailure {
         code: "StreamCertificateControlFailed".into(),
         message: "Stream certificate control worker failed".into(),
     }
+}
+
+/// Run one start and write its launch timeline, started or refused.
+fn timed_start(
+    game_id: &str,
+    start: impl FnOnce() -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure>,
+) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+    let outcome = start();
+    match &outcome {
+        Ok(launch) => launch_timeline::finish(game_id, Some(&launch.session.launch_id), "started"),
+        Err(failure) => launch_timeline::finish(game_id, None, &failure.code),
+    }
+    outcome
 }
 
 fn host_worker_failure(error: tokio::task::JoinError) -> RpcFailure {

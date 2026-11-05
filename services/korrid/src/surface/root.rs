@@ -1223,6 +1223,7 @@ impl Root {
     /// closes without launching.
     /// The save check and its questions first, then the download gate.
     fn gate(self: &Arc<Self>, game: AcquisitionGameRef, done: StartDone) {
+        crate::launch_timeline::begin(&game.id);
         let weak = Arc::downgrade(self);
         let gate_game = game.clone();
         let gate_done = Arc::clone(&done);
@@ -1242,9 +1243,15 @@ impl Root {
         let weak = Arc::downgrade(self);
         let retry_game = game.clone();
         let proceed_done = Arc::clone(&done);
+        let gate_started = std::time::Instant::now();
         let proceed = Arc::new(move || {
             let Some(root) = weak.upgrade() else { return };
             let game = retry_game.clone();
+            crate::launch_timeline::record(
+                &game.id,
+                crate::launch_timeline::LaunchStage::Downloads,
+                gate_started.elapsed(),
+            );
             let done = Arc::clone(&proceed_done);
             tokio::spawn(async move {
                 let outcome = root
