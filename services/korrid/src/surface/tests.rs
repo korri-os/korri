@@ -951,6 +951,88 @@ async fn a_launch_request_reserves_and_starts_the_exact_local_game() {
     panic!("the handoff never resolved the launch");
 }
 
+/// Amendment A4: a launch names its steps, fixed before it begins, and the
+/// Busy moves through them; the plan ends when the game takes over.
+#[tokio::test]
+async fn a_launch_names_its_fixed_steps_and_moves_through_them() {
+    let mut outcomes = idle_outcomes(2);
+    outcomes.insert(
+        "app.peer.list".into(),
+        json!({ "_tag": "Ok", "payload": { "peers": [
+            { "devicePublicKey": "peer", "label": "aka", "state": "ready", "updatedAt": 1 }
+        ] } }),
+    );
+    outcomes.insert(
+        "app.saves.check".into(),
+        json!({ "_tag": "Ok", "payload": { "warnings": [], "status": "Synced", "inUse": [] } }),
+    );
+    outcomes.insert(
+        "app.session.reserve".into(),
+        json!({ "_tag": "Ok", "payload": { "gameId": "g00001", "launchId": "exact" } }),
+    );
+    outcomes.insert(
+        "app.session.start".into(),
+        json!({ "_tag": "Ok", "payload": { "session": { "gameId": "g00001", "launchId": "exact" }, "warnings": [] } }),
+    );
+    let (hub, outcomes, _directory) = hub_with(outcomes);
+    settled(&hub, "pico").await;
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "pendingLaunches": [
+            { "session": { "gameId": "g00001", "launchId": "exact" }, "phase": "committing" }
+        ] } }),
+    );
+    hub.request(
+        "pico",
+        SurfaceRequest::LaunchGame {
+            game_id: "game:g00001".into(),
+            launch_location_id: None,
+        },
+    )
+    .unwrap();
+    let mut seen = Vec::new();
+    for _ in 0..400 {
+        if let SurfaceStatus::Busy {
+            steps: Some(steps), ..
+        } = hub.model("pico").unwrap().status
+        {
+            assert_eq!(
+                steps.labels,
+                [
+                    "Checking saves",
+                    "Getting the game ready",
+                    "Starting the game"
+                ]
+            );
+            if seen.last() != Some(&steps.current) {
+                seen.push(steps.current);
+            }
+            if steps.current == 2 {
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    assert_eq!(
+        seen.last(),
+        Some(&2),
+        "the launch reached its last step: {seen:?}"
+    );
+    assert!(seen.windows(2).all(|pair| pair[0] < pair[1]), "{seen:?}");
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "active": { "launchId": "exact", "gameId": "g00001", "phase": "running", "initialHandoff": "observed" } } }),
+    );
+    for _ in 0..400 {
+        if hub.model("pico").unwrap().status == SurfaceStatus::Browsing {
+            assert!(hub.root().launch_plan_for_tests().is_none());
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("the handoff never resolved the launch");
+}
+
 /// A1 7.2: the starting launch's Busy marks `cancel-launch`, the portal's
 /// Back while starting; running it cancels the exact launch.
 #[tokio::test]
