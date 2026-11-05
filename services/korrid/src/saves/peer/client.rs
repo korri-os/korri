@@ -99,12 +99,20 @@ impl SavePeerService {
         );
         let mut reach_tried = false;
         while !origins.is_empty() || !reach_tried {
-            let selected = tokio::time::timeout_at(
-                deadline,
-                crate::federation::connect::select_origin(&origins),
-            )
-            .await
-            .map_err(|_| PeerSaveError::Deadline)?;
+            // The origin that answered last is used again without a probe.
+            // Selecting removes it from the list, so a failure probes the rest.
+            let answering = self
+                .answering_origin(peer)
+                .and_then(|known| origins.iter().position(|origin| *origin == known));
+            let selected = match answering {
+                Some(index) => Ok(index),
+                None => tokio::time::timeout_at(
+                    deadline,
+                    crate::federation::connect::select_origin(&origins),
+                )
+                .await
+                .map_err(|_| PeerSaveError::Deadline)?,
+            };
             let (origin, connection) = match selected {
                 Ok(index) => (Some(origins.remove(index)), None),
                 Err(_) if !reach_tried => {
@@ -172,8 +180,11 @@ impl SavePeerService {
                     .map_err(|_| PeerSaveError::Protocol)
             })
             .await
-            .map_err(|_| PeerSaveError::Deadline)?;
-            match result {
+            .map_err(|_| PeerSaveError::Deadline);
+            if let Some(origin) = &origin {
+                self.remember_answering_origin(peer, origin, matches!(result, Ok(Ok(_))));
+            }
+            match result? {
                 // A failed response does not prove a metadata push had no
                 // effects. Only reads may try another origin after HTTP send.
                 Err(PeerSaveError::Network) if read_only => continue,
@@ -181,6 +192,23 @@ impl SavePeerService {
             }
         }
         Err(PeerSaveError::Network)
+    }
+
+    fn answering_origin(&self, peer: &str) -> Option<String> {
+        self.answering_origins
+            .lock()
+            .ok()
+            .and_then(|origins| origins.get(peer).cloned())
+    }
+
+    fn remember_answering_origin(&self, peer: &str, origin: &str, answered: bool) {
+        if let Ok(mut origins) = self.answering_origins.lock() {
+            if answered {
+                origins.insert(peer.to_owned(), origin.to_owned());
+            } else if origins.get(peer).is_some_and(|known| known == origin) {
+                origins.remove(peer);
+            }
+        }
     }
 
     pub(super) async fn remote_heads(

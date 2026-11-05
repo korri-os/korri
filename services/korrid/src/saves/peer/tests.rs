@@ -1735,3 +1735,32 @@ async fn prelaunch_checks_peers_side_by_side_inside_one_budget_child() {
         assert!(records.iter().any(|record| id(record) == id(expected)));
     }
 }
+
+#[tokio::test]
+async fn a_peer_that_answered_is_asked_again_without_a_new_connection() {
+    let behaviour = TransferBehaviour::default();
+    let a = Node::new(5, 3, behaviour.clone()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let head = a.seed(b"progress", vec![]);
+    let check = |deadline| b.service.pull_before_launch(&head.game_id, deadline);
+    let first = check(tokio::time::Instant::now() + Duration::from_secs(3))
+        .await
+        .unwrap();
+    assert!(first[0].transfer.is_ok(), "{:?}", first[0]);
+    let accepted = behaviour
+        .connections
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let again = check(tokio::time::Instant::now() + Duration::from_secs(3))
+        .await
+        .unwrap();
+    assert!(again[0].transfer.is_ok(), "{:?}", again[0]);
+    assert_eq!(
+        behaviour
+            .connections
+            .load(std::sync::atomic::Ordering::Relaxed),
+        accepted,
+        "the second check probed or connected again"
+    );
+}
