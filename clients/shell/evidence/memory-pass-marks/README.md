@@ -17,34 +17,47 @@ adds its compiled definition; after that:
 `tests/memory_probe.rs` bounds a round at 48 KiB. (Measured before the step 2
 and 3 cuts below; they lower the level, not the slope.)
 
-## (b) 10 000 games: 60 fps met; PSS under 80 MiB met for Zone idle only
+## (b) 10 000 games: 60 fps met; PSS under 80 MiB NOT met in steady use
 
-PSS in KiB, `large` scenario (Zone idle, Zone after 30 moves, then F2 to Pico
-and 30 moves; Zone's definition stays compiled while Pico shows):
+The mark counts in steady use: Zone after moves and Pico after moves. PSS in
+KiB, `large` scenario (Zone idle, Zone after 30 moves, then F2 to Pico and 30
+moves; Zone's definition stays compiled while Pico shows):
 
 | step | Zone idle | Zone after moves | Pico after moves | file |
 | --- | --- | --- | --- | --- |
 | 0. before | 94 613 | 100 263 | 110 406 | `large-10000-step0.txt` |
 | 1. lowered unit shrunk to fit | 91 078 | 95 617 | 104 548 | `large-10000-step1-shrink.txt` |
-| 2. + compiler-only tables dropped, compiler code released | 80 944 | 85 797 | 93 015 | `large-10000.txt` |
+| 2. + compiler-only tables dropped | 79 805 | 84 313 | 93 349 | `large-10000.txt` |
 
-fps at step 2: 60.8-62.4 in every 5 s window (`large-10000-fps.txt`).
+fps at step 2: 61.0-62.4 in every 5 s window (`large-10000-fps.txt`).
 
-Step 2, by part (smaps PSS, Zone idle): heap 51.3 MB (was 56.3), the binary's
-mapped code and data 15.5 MB (was 21.0), anonymous maps 10.0 MB, libraries
-3.5 MB.
+Step 2 split by kind (`smaps_rollup`, `rollup-*.txt`):
 
-- Compiler-only tables: a definition that keeps no type loaders drops each
-  property's analysis (`prop_analysis`, read only by the code generators) and
-  the items' source locations (`debug_info`, read only by highlighting).
-  `vendor/README.md`.
-- Compiler code released: after a compile, `memory::release_code` drops the
-  resident pages of the binary's mappings that the program never wrote
-  (`MADV_DONTNEED`); the code the shell runs afterwards is read back from the
-  page cache. About 13-15 MB of the binary stays resident while the shell
-  runs: that is its working set.
+| after moves | PSS | anonymous | file-backed | shmem |
+| --- | --- | --- | --- | --- |
+| Zone | 84 481 | 66 564 | 17 317 | 600 |
+| Pico | 93 509 | 75 408 | 17 501 | 600 |
+
+The file-backed part is almost all the binary's code (shared, clean,
+reclaimable). The anonymous part is the heap: Zone's compiled definition, the
+pages its compile left partly used, Pico's definition, the instances.
+
+Compiler-only tables: a definition that keeps no type loaders drops each
+property's analysis (`prop_analysis`, read only by the code generators) and
+the items' source locations (`debug_info`, read only by highlighting).
+`vendor/README.md`.
+
+Keeping Zone's definition while Pico shows costs little: with each package
+compiled at every load instead, Pico after moves was 91 622 KiB (step 2
+without the release below), because the freed definition's pages stay partly
+used.
 
 ## Tried and not kept
+
+- `MADV_DONTNEED` on the binary's code pages after a compile (9b978dc3e,
+  reverted): the code faults back in as it runs, so it moved the measurement,
+  not the use, and cost page faults on presses.
+
 
 | | Zone, compiled and created (headless RSS) | why not kept |
 | --- | --- | --- |
