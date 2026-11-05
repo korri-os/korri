@@ -13,6 +13,10 @@ pub struct PeerCheckResult {
     /// Signed heads arrived, but their validated head records did not arrive
     /// during this check. This is process-local, not a wire or persisted field.
     pub heads_without_records: Vec<String>,
+    /// When the in-use answer arrived (or the check gave up), from the start.
+    pub answered_after: std::time::Duration,
+    /// When the history pull ended, from the start.
+    pub pulled_after: std::time::Duration,
 }
 
 /// A contact whose heads on both sides match the last complete contact with
@@ -118,12 +122,6 @@ enum SyncPurpose {
     CheckLaunch,
 }
 
-/// How long a launch's save check waits for a peer's first answer. A peer in
-/// reach answers a small `SaveInUse` request well inside it, even through a
-/// relay; an unreachable peer otherwise held every launch for the whole check
-/// deadline (2.4 s) on the RG353M.
-pub(super) const PEER_REACH_BUDGET: std::time::Duration = std::time::Duration::from_millis(1000);
-
 impl SavePeerService {
     fn owner_peers(&self, person: &str) -> Result<Vec<String>, PeerSaveError> {
         self.require_owner(person)?;
@@ -176,74 +174,79 @@ impl SavePeerService {
         .await
     }
 
-    /// Caller owns the 3-second budget and Skip. Dropping this future cancels
-    /// network work; it never writes live save locations, only the private store.
+    /// The caller owns the budget: `deadline` bounds every peer. Each peer
+    /// is checked on its own task, so one peer's signing and verifying never
+    /// waits for another's, and its in-use question and its history pull go
+    /// out together. Dropping this future aborts every peer's network work;
+    /// it never writes live save locations, only the private store.
     /// Keep per-peer failures: one offline device must not hide another's warning.
     pub async fn pull_before_launch(
-        &self,
+        self: &Arc<Self>,
         game: &str,
         deadline: Instant,
     ) -> Result<Vec<PeerCheckResult>, PeerSaveError> {
         let person = self.owner()?;
-        let work = self.owner_peers(&person)?.into_iter().map(|peer| {
-            let person = person.clone();
-            async move {
-                // The first answer proves the peer is reachable. A peer that
-                // has not answered within PEER_REACH_BUDGET is treated as
-                // unreachable, so it cannot hold up the launch. A peer that
-                // answered keeps the whole deadline for its split check.
-                let in_use = match tokio::time::timeout_at(
-                    deadline.min(Instant::now() + PEER_REACH_BUDGET),
-                    self.remote_in_use(&person, &peer, game),
-                )
-                .await
-                {
-                    Ok(Ok(value)) => value,
-                    Ok(Err(error)) => {
-                        return PeerCheckResult {
-                            device: peer,
-                            in_use: None,
-                            transfer: Err(error),
-                            heads_without_records: Vec::new(),
-                        }
-                    }
-                    Err(_) => {
-                        return PeerCheckResult {
-                            device: peer,
-                            in_use: None,
-                            transfer: Err(PeerSaveError::Deadline),
-                            heads_without_records: Vec::new(),
-                        }
-                    }
-                };
-                // This state outlives the timed-out future, but only this check.
-                let mut pending_head_records = BTreeSet::new();
-                let transfer = tokio::time::timeout_at(
-                    deadline,
-                    self.synchronize(
-                        &person,
-                        &peer,
-                        Some(game),
-                        &mut pending_head_records,
-                        SyncPurpose::CheckLaunch,
-                    ),
-                )
-                .await
-                .unwrap_or(Err(PeerSaveError::Deadline));
-                let heads_without_records = if pending_head_records.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![peer.clone()]
-                };
-                PeerCheckResult {
-                    device: peer,
-                    in_use: Some(in_use),
-                    transfer,
-                    heads_without_records,
-                }
+        let mut checks = tokio::task::JoinSet::new();
+        for peer in self.owner_peers(&person)? {
+            let (service, person, game) = (Arc::clone(self), person.clone(), game.to_owned());
+            checks.spawn(async move { service.check_peer(&person, peer, &game, deadline).await });
+        }
+        let mut results = Vec::new();
+        while let Some(result) = checks.join_next().await {
+            // A peer task that panicked gave no answer; the others still count.
+            if let Ok(result) = result {
+                results.push(result);
             }
-        });
-        Ok(futures::future::join_all(work).await)
+        }
+        Ok(results)
+    }
+
+    async fn check_peer(
+        &self,
+        person: &str,
+        peer: String,
+        game: &str,
+        deadline: Instant,
+    ) -> PeerCheckResult {
+        let started = Instant::now();
+        // This state outlives the timed-out future, but only this check.
+        let mut pending_head_records = BTreeSet::new();
+        let in_use = async {
+            let answer = tokio::time::timeout_at(deadline, self.remote_in_use(person, &peer, game))
+                .await
+                .ok()
+                .and_then(Result::ok);
+            (answer, started.elapsed())
+        };
+        let transfer = async {
+            let transfer = tokio::time::timeout_at(
+                deadline,
+                self.synchronize(
+                    person,
+                    &peer,
+                    Some(game),
+                    &mut pending_head_records,
+                    SyncPurpose::CheckLaunch,
+                ),
+            )
+            .await
+            .unwrap_or(Err(PeerSaveError::Deadline));
+            (transfer, started.elapsed())
+        };
+        let ((in_use, answered_after), (transfer, pulled_after)) = tokio::join!(in_use, transfer);
+        let heads_without_records = if pending_head_records.is_empty() {
+            Vec::new()
+        } else {
+            vec![peer.clone()]
+        };
+        PeerCheckResult {
+            device: peer,
+            in_use,
+            transfer,
+            heads_without_records,
+            answered_after,
+            pulled_after,
+        }
     }
 
     /// Fetch files for a snapshot already in local history into the private

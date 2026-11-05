@@ -1106,9 +1106,25 @@ impl SaveRepository for NativeSaveStore {
         self.verified_object(hash)
     }
     fn put_object(&self, person: &str, hash: &str, input: &mut dyn Read) -> Result<(), SaveError> {
+        {
+            let _guard = lock()?;
+            self.authorize_object(person, hash)?;
+        }
+        // An object is named by its hash and appears by atomic rename only
+        // after its bytes match, so copying, hashing and syncing it need no
+        // store lock. Holding the lock here made a launch's save check wait
+        // behind a background contact importing a large savestate.
+        let path = self.object_path(hash, true)?;
+        publish(&path, input, Some(hash))?;
+        // A prune that ran meanwhile may have dropped the record that asked
+        // for these bytes: then they are no one's, and go too.
         let _guard = lock()?;
-        self.authorize_object(person, hash)?;
-        publish(&self.object_path(hash, true)?, input, Some(hash))
+        if let Err(SaveError::Missing) = self.authorize_object(person, hash) {
+            if regular(&path).is_ok() {
+                fs::remove_file(&path).map_err(io)?;
+            }
+        }
+        Ok(())
     }
     fn complete(&self, person: &str, game: &str, id: &str) -> Result<bool, SaveError> {
         let _guard = lock()?;
@@ -1348,6 +1364,68 @@ mod observation_tests {
         walk(root, root, &mut result);
         result
     }
+    #[test]
+    fn a_slow_object_import_does_not_hold_the_store_lock() {
+        struct Slow(Option<&'static [u8]>);
+        impl Read for Slow {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                Ok(match self.0.take() {
+                    Some(bytes) => {
+                        buffer[..bytes.len()].copy_from_slice(bytes);
+                        bytes.len()
+                    }
+                    None => 0,
+                })
+            }
+        }
+        let person = "11".repeat(32);
+        let root = tempfile::tempdir().unwrap();
+        let store = NativeSaveStore::new(root.path());
+        let hash = super::super::record::hash(b"slow");
+        let record = SnapshotRecord {
+            parents: vec![],
+            game_id: "game".into(),
+            release_id: None,
+            runner_id: "runner".into(),
+            device: "22".repeat(32),
+            ended_at: "2026-10-21T00:00:00.000Z".into(),
+            duration_seconds: 1,
+            interrupted: false,
+            locations: vec![SnapshotLocation {
+                key: "saves".into(),
+                kind: SaveKind::Save,
+                files: vec![SaveFile {
+                    path: "game.srm".into(),
+                    sha256: hash.clone(),
+                    bytes: 4,
+                }],
+            }],
+        };
+        store.put_record(&person, &record).unwrap();
+        let importing = {
+            let (store, person, hash) = (
+                NativeSaveStore::new(root.path()),
+                person.clone(),
+                hash.clone(),
+            );
+            std::thread::spawn(move || store.put_object(&person, &hash, &mut Slow(Some(b"slow"))))
+        };
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let started = std::time::Instant::now();
+        assert_eq!(store.records(&person, "game").unwrap().len(), 1);
+        assert_ne!(store.reconcile(&person, "game").unwrap(), SaveMark::Split);
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(200),
+            "a history read waited {:?} behind an object import",
+            started.elapsed()
+        );
+        importing.join().unwrap().unwrap();
+        assert!(store
+            .complete(&person, "game", &snapshot_id(&record).unwrap())
+            .unwrap());
+    }
+
     #[test]
     fn observation_matches_reconciliation_without_changing_record_bytes() {
         let person = "11".repeat(32);

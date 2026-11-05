@@ -106,6 +106,73 @@ fn baseline_deferral(game: &str, error: &SaveDiagnostic) -> String {
 // requests: plugin selection, routes and settings can change between checks.
 // Each request still resolves routes and settings again. Only plugin answers
 // to identical source and input are reused across requests (script/reuse.rs).
+/// The whole pre-launch save check, from the request's arrival to the
+/// answer. The launch waits for it.
+const SAVE_CHECK_BUDGET: std::time::Duration = std::time::Duration::from_millis(1000);
+/// The part of SAVE_CHECK_BUDGET the peers and the local route facts share.
+/// The rest folds their answers into history and runs the split check.
+const SAVE_CHECK_PEER_BUDGET: std::time::Duration = std::time::Duration::from_millis(700);
+
+/// One journal line per save check: where its time went, so a slow check on
+/// a device names its cause (peers, local route facts, or history writes).
+struct SaveCheckTimeline {
+    game_id: String,
+    arrived: tokio::time::Instant,
+    remembered: Option<std::time::Duration>,
+    /// None: the local route facts missed the budget.
+    preparation: Option<std::time::Duration>,
+    pulled: Option<std::time::Duration>,
+    /// Per peer: in-use answer after, pull ended after, answered, pulled.
+    peers: Vec<(std::time::Duration, std::time::Duration, bool, bool)>,
+    /// None: folding the answers missed the budget.
+    refreshed: Option<std::time::Duration>,
+}
+
+impl SaveCheckTimeline {
+    fn new(game_id: &str, arrived: tokio::time::Instant) -> Self {
+        Self {
+            game_id: game_id.to_owned(),
+            arrived,
+            remembered: None,
+            preparation: None,
+            pulled: None,
+            peers: Vec::new(),
+            refreshed: None,
+        }
+    }
+
+    fn line(&self) -> String {
+        let ms = |elapsed: Option<std::time::Duration>| {
+            elapsed.map_or_else(|| "missed".to_owned(), |e| e.as_millis().to_string())
+        };
+        let peers = self
+            .peers
+            .iter()
+            .map(|(answered, pulled, in_use, transfer)| {
+                format!(
+                    "{{in_use_ms: {}, pull_ms: {}, answered: {in_use}, pulled: {transfer}}}",
+                    answered.as_millis(),
+                    pulled.as_millis()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "<6>korrid: SaveCheckTimeline {{ game_id: {}, total_ms: {}, remembered_ms: {}, preparation_ms: {}, peers_ms: {}, peers: [{peers}], refreshed_ms: {} }}",
+            self.game_id,
+            self.arrived.elapsed().as_millis(),
+            ms(self.remembered),
+            ms(self.preparation),
+            ms(self.pulled),
+            ms(self.refreshed),
+        )
+    }
+
+    fn write(&self) {
+        eprintln!("{}", self.line());
+    }
+}
+
 struct SaveCheckPreparation {
     support: Option<SaveMark>,
     declaration: Option<(
@@ -113,6 +180,18 @@ struct SaveCheckPreparation {
         crate::launcher::plugin_launch::PreparedLaunch,
     )>,
     title: String,
+}
+
+impl SaveCheckPreparation {
+    /// The local route facts were not read in time: no Steam or unsynced
+    /// mark and no release or runner warnings, only history.
+    fn unknown() -> Self {
+        Self {
+            support: None,
+            declaration: None,
+            title: "this game".into(),
+        }
+    }
 }
 
 fn now() -> String {
@@ -510,11 +589,14 @@ impl HostRuntime {
         directory: Option<crate::federation::FederationDirectory>,
         arrived: tokio::time::Instant,
     ) -> Result<SaveCheck, RpcFailure> {
-        // The portal waits 3 seconds. This is one total request budget, not a
-        // fresh network budget after preparation. Reserve 100 ms for publication
-        // and leave a further 500 ms for the HTTP response to reach the portal.
-        let deadline = arrived + std::time::Duration::from_millis(2500);
-        let peer_deadline = deadline - std::time::Duration::from_millis(100);
+        // The launch waits for this answer, so the whole check has one budget
+        // (SAVE_CHECK_BUDGET). The peers, the owner's remembered warnings and
+        // the local route facts all start at once and share the first part
+        // of it; the rest is for folding the peers' answers into the local
+        // history, where the split check runs.
+        let deadline = arrived + SAVE_CHECK_BUDGET;
+        let peer_deadline = arrived + SAVE_CHECK_PEER_BUDGET;
+        let mut timeline = SaveCheckTimeline::new(&request.game_id, arrived);
         let host = self.clone();
         let game = request.game_id.clone();
         let remembered = tokio::task::spawn_blocking(move || {
@@ -525,39 +607,18 @@ impl HostRuntime {
                 .map_err(failure)?;
             Ok::<_, RpcFailure>((person, warnings))
         });
-        let (person, in_use) = tokio::time::timeout_at(deadline, remembered)
-            .await
-            .map_err(|_| RpcFailure {
-                code: "SavesUnavailable".into(),
-                message: "Saved warnings could not be read in time. Try again.".into(),
-            })?
-            .map_err(host_worker_failure)??;
-        let mut answer = SaveCheck {
-            status: SaveMark::NotChecked,
-            warnings: Vec::new(),
-            in_use,
-        };
-        let peers = directory
-            .and_then(|directory| directory.snapshot().ok())
-            .unwrap_or_default();
         let host = self.clone();
         let selected = request.clone();
-        let owner = person.clone();
-        let known_peers = peers.clone();
-        let details = tokio::task::spawn_blocking(move || {
-            let preparation = host.save_check_preparation(&selected);
-            let details = host.save_check_details(&selected, &owner, &known_peers, &preparation)?;
-            Ok::<_, RpcFailure>((preparation, details))
-        });
+        let preparation =
+            tokio::task::spawn_blocking(move || host.save_check_preparation(&selected));
         // Pulls need only the owner and game, never a route or declaration.
-        // They write private history/objects, not live save locations, so they
-        // can run while the blocking worker prepares the local route facts.
+        // They write private history/objects, not live save locations.
         // Keep this future scoped to the request so a timeout cancels network IO.
         let pull = async {
-            match peer {
+            match &peer {
                 Some(peer) => Some(
                     tokio::time::timeout_at(
-                        deadline,
+                        peer_deadline,
                         peer.pull_before_launch(&request.game_id, peer_deadline),
                     )
                     .await,
@@ -565,109 +626,140 @@ impl HostRuntime {
                 None => None,
             }
         };
-        let (details, checks) = tokio::join!(tokio::time::timeout_at(peer_deadline, details), pull);
-        let preparation = match details {
-            Ok(Ok(Ok((preparation, details)))) => {
-                answer.status = details.status;
-                answer.warnings = details.warnings;
-                preparation
-            }
-            Ok(Ok(Err(error))) => return Err(error),
+        let timed = |started: tokio::time::Instant| started.elapsed();
+        let (remembered, preparation, checks) = tokio::join!(
+            async {
+                let outcome = tokio::time::timeout_at(deadline, remembered).await;
+                (outcome, timed(arrived))
+            },
+            async {
+                let outcome = tokio::time::timeout_at(peer_deadline, preparation).await;
+                (outcome, timed(arrived))
+            },
+            async {
+                let outcome = pull.await;
+                (outcome, timed(arrived))
+            },
+        );
+        timeline.remembered = Some(remembered.1);
+        timeline.preparation = preparation.0.as_ref().ok().map(|_| preparation.1);
+        let (person, in_use) = remembered
+            .0
+            .map_err(|_| RpcFailure {
+                code: "SavesUnavailable".into(),
+                message: "Saved warnings could not be read in time. Try again.".into(),
+            })?
+            .map_err(host_worker_failure)??;
+        // Local route facts only add warnings and the Steam or unsynced mark.
+        // When they miss the budget the check still answers from history.
+        let preparation = match preparation.0 {
+            Ok(Ok(preparation)) => preparation,
             Ok(Err(error)) => return Err(host_worker_failure(error)),
-            Err(_) => return Ok(answer),
+            Err(_) => SaveCheckPreparation::unknown(),
         };
-        let Some(checks) = checks else {
-            if answer.status == SaveMark::Synced {
-                answer.status = SaveMark::NotChecked;
-            }
-            return Ok(answer);
-        };
-        let checks = match checks {
-            Ok(Ok(checks)) => checks,
-            _ => {
-                if answer.status == SaveMark::Synced {
-                    answer.status = SaveMark::NotChecked;
-                }
-                return Ok(answer);
-            }
-        };
+        let peers = directory
+            .and_then(|directory| directory.snapshot().ok())
+            .unwrap_or_default();
+        timeline.pulled = Some(checks.1);
+        // None: no peer service. Some(None): the pull failed or missed the budget.
+        let checks = checks.0.map(|checks| match checks {
+            Ok(Ok(checks)) => Some(checks),
+            _ => None,
+        });
+        if let Some(Some(checks)) = &checks {
+            timeline.peers = checks
+                .iter()
+                .map(|check| {
+                    (
+                        check.answered_after,
+                        check.pulled_after,
+                        check.in_use.is_some(),
+                        check.transfer.is_ok(),
+                    )
+                })
+                .collect();
+        }
+        let peer_checked = matches!(checks, Some(Some(_)));
+        let mut warnings = Vec::new();
         let mut observations = Vec::new();
         let mut answered = false;
         let mut failed = false;
-        let mut missing_records = std::collections::BTreeSet::new();
-        for check in checks {
-            missing_records.extend(check.heads_without_records);
-            // An unreachable peer cannot veto another peer's completed check.
-            // Its remembered risks remain below. A peer that did answer but
-            // could not finish its transfer still keeps the result NotChecked.
-            failed |= check.in_use.is_some() && check.transfer.is_err();
-            if let Some(in_use) = check.in_use {
-                answered = true;
-                let since = match in_use {
-                    SaveInUse::Active(active) => Some(active.since),
-                    SaveInUse::Idle(_) => None,
-                };
-                // An idle reply clears its persisted in-use claim below, but
-                // cannot clear remembered newer/incomplete-head risk by itself.
-                // Keep the conservative warning if publication hits the deadline.
-                if let Some(since) = since {
-                    answer
-                        .in_use
-                        .retain(|warning| warning.device != check.device);
-                    answer.in_use.push(SaveInUseWarning {
-                        device: check.device.clone(),
-                        since,
-                    });
+        if let Some(Some(checks)) = checks {
+            let mut missing_records = std::collections::BTreeSet::new();
+            for check in checks {
+                missing_records.extend(check.heads_without_records);
+                // An unreachable peer cannot veto another peer's completed check.
+                // Its remembered risks remain. A peer that did answer but could
+                // not finish its transfer still keeps the result NotChecked.
+                failed |= check.in_use.is_some() && check.transfer.is_err();
+                if let Some(in_use) = check.in_use {
+                    answered = true;
+                    let since = match in_use {
+                        SaveInUse::Active(active) => Some(active.since),
+                        SaveInUse::Idle(_) => None,
+                    };
+                    // An idle reply clears its persisted in-use claim, but
+                    // cannot clear remembered newer/incomplete-head risk by itself.
+                    observations.push((check.device, since));
                 }
-                observations.push((check.device, since));
             }
-        }
-        if answer.status == SaveMark::Synced && (!answered || failed) {
-            answer.status = SaveMark::NotChecked;
-        }
-        for device in missing_records {
-            let label = self.save_device_label(&device, &peers);
-            answer.warnings.push(format!("Saves were reported by {label}, but their records have not arrived. You can launch anyway."));
+            for device in missing_records {
+                let label = self.save_device_label(&device, &peers);
+                warnings.push(format!("Saves were reported by {label}, but their records have not arrived. You can launch anyway."));
+            }
         }
         let host = self.clone();
-        let game = request.game_id.clone();
         let owner = person.clone();
+        let refresh_observations = observations.clone();
         let refreshed = tokio::task::spawn_blocking(move || {
-            if host.launch_person()? != owner {
-                return Err(RpcFailure {
-                    code: "SaveIdentityChanged".into(),
-                    message: "The device owner changed. Check saves again.".into(),
-                });
-            }
             let store = host.save_store();
-            for (device, since) in observations {
+            // The split check first: the peers' records are in history now.
+            let mut result = host.save_check_details(&request, &owner, &peers, &preparation)?;
+            for (device, since) in refresh_observations {
                 store
-                    .remember_in_use(&owner, &game, &device, since)
+                    .remember_in_use(&owner, &request.game_id, &device, since)
                     .map_err(failure)?;
             }
-            let mut result = host.save_check_details(&request, &owner, &peers, &preparation)?;
-            result.in_use = store.in_use_warnings(&owner, &game).map_err(failure)?;
-            if result.status == SaveMark::NotChecked && answered && !failed {
-                result.status = SaveMark::Synced;
-            }
-            if result.status == SaveMark::Synced && (!answered || failed) {
-                result.status = SaveMark::NotChecked;
-            }
+            result.in_use = store
+                .in_use_warnings(&owner, &request.game_id)
+                .map_err(failure)?;
             Ok::<_, RpcFailure>(result)
         });
-        match tokio::time::timeout_at(deadline, refreshed).await {
-            Ok(Ok(Ok(mut result))) => {
-                for warning in answer.warnings {
-                    if !result.warnings.contains(&warning) {
-                        result.warnings.push(warning);
+        let outcome = tokio::time::timeout_at(deadline, refreshed).await;
+        timeline.refreshed = outcome.as_ref().ok().map(|_| timed(arrived));
+        timeline.write();
+        let mut result = match outcome {
+            Ok(Ok(Ok(result))) => result,
+            Ok(Ok(Err(error))) => return Err(error),
+            Ok(Err(error)) => return Err(host_worker_failure(error)),
+            // Never discard remembered or newly received risk.
+            Err(_) => {
+                let mut in_use = in_use;
+                for (device, since) in observations {
+                    if let Some(since) = since {
+                        in_use.retain(|warning: &SaveInUseWarning| warning.device != device);
+                        in_use.push(SaveInUseWarning { device, since });
                     }
                 }
-                Ok(result)
+                SaveCheck {
+                    status: SaveMark::NotChecked,
+                    warnings: Vec::new(),
+                    in_use,
+                }
             }
-            Ok(Ok(Err(error))) => Err(error),
-            Ok(Err(error)) => Err(host_worker_failure(error)),
-            Err(_) => Ok(answer), // Never discard remembered or newly received risk.
+        };
+        if result.status == SaveMark::NotChecked && peer_checked && answered && !failed {
+            result.status = SaveMark::Synced;
         }
+        if result.status == SaveMark::Synced && (!peer_checked || !answered || failed) {
+            result.status = SaveMark::NotChecked;
+        }
+        for warning in warnings {
+            if !result.warnings.contains(&warning) {
+                result.warnings.push(warning);
+            }
+        }
+        Ok(result)
     }
     pub(crate) fn save_in_use(&self, person: &str, game: &str) -> Result<Option<u64>, SaveError> {
         let live = self
@@ -1064,7 +1156,7 @@ mod tests {
         writer.join().unwrap().unwrap();
         let checked = checked.expect("object publication must not hide remembered warnings");
         assert!(
-            elapsed < std::time::Duration::from_millis(2500),
+            elapsed < SAVE_CHECK_BUDGET + std::time::Duration::from_millis(100),
             "warning read exceeded its budget: {elapsed:?}"
         );
         assert!(checked
@@ -1380,8 +1472,9 @@ mod tests {
         let mut plugin = std::fs::read_to_string(&source).unwrap();
         // The check asks launch.prepare twice with the same input. korrid
         // reuses the second answer (#289), so one slow evaluation is the slow
-        // path. It stays below the VM's 1 s limit.
-        plugin.push_str("\nhandlers['launch.prepare']=(prepare=>input=>{const end=Date.now()+850;while(Date.now()<end){};return prepare(input)})(handlers['launch.prepare']);");
+        // path. It stays below the VM's 1 s limit and runs past the peers'
+        // share of the check's budget.
+        plugin.push_str("\nhandlers['launch.prepare']=(prepare=>input=>{const end=Date.now()+900;while(Date.now()<end){};return prepare(input)})(handlers['launch.prepare']);");
         std::fs::write(source, plugin).unwrap();
         let (mut state, _) = crate::app_states(device.host.clone());
         state.saves = Some(device.service.clone());
@@ -1417,12 +1510,10 @@ mod tests {
             imported.is_ok(),
             "peer records must arrive during local preparation"
         );
+        // A slow local declaration no longer holds the answer: the peers'
+        // records still decide the mark.
         assert!(
-            elapsed >= std::time::Duration::from_millis(800),
-            "declaration must exercise the slow path: {elapsed:?}"
-        );
-        assert!(
-            elapsed < std::time::Duration::from_millis(2500),
+            elapsed < SAVE_CHECK_BUDGET + std::time::Duration::from_millis(100),
             "check exceeded its budget: {elapsed:?}"
         );
         assert_eq!(result["outcome"]["_tag"], "Ok", "{result}");
@@ -1437,13 +1528,29 @@ mod tests {
         assert_eq!(device.backend.launch_count(), 0);
     }
 
-    #[tokio::test]
-    async fn prelaunch_check_confirms_peer_during_slow_local_declaration() {
-        check_with_slow_declaration(b"local", SaveMark::Synced).await;
+    #[test]
+    fn prelaunch_check_confirms_peer_during_slow_local_declaration() {
+        isolated(
+            "host::saves::tests::prelaunch_check_confirms_peer_during_slow_local_declaration_child",
+        );
     }
 
     #[tokio::test]
-    async fn prelaunch_check_finds_split_during_slow_local_declaration() {
+    #[ignore = "subprocess helper; keeps the 1 s save-check budget clear of other tests' storage lock"]
+    async fn prelaunch_check_confirms_peer_during_slow_local_declaration_child() {
+        check_with_slow_declaration(b"local", SaveMark::Synced).await;
+    }
+
+    #[test]
+    fn prelaunch_check_finds_split_during_slow_local_declaration() {
+        isolated(
+            "host::saves::tests::prelaunch_check_finds_split_during_slow_local_declaration_child",
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "subprocess helper; keeps the 1 s save-check budget clear of other tests' storage lock"]
+    async fn prelaunch_check_finds_split_during_slow_local_declaration_child() {
         check_with_slow_declaration(b"peer", SaveMark::Split).await;
     }
 
@@ -1491,8 +1598,8 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            started.elapsed() < std::time::Duration::from_millis(2800),
-            "daemon must leave transport margin before portal's 3 seconds: {:?}",
+            started.elapsed() < SAVE_CHECK_BUDGET + std::time::Duration::from_millis(100),
+            "the check must answer inside its budget: {:?}",
             started.elapsed()
         );
         assert_eq!(result.in_use.len(), 1);
@@ -1509,12 +1616,12 @@ mod tests {
                 },
                 Some(device.service.clone()),
                 Some(device.federation.directory.clone()),
-                started - std::time::Duration::from_secs(2),
+                started - SAVE_CHECK_PEER_BUDGET + std::time::Duration::from_millis(100),
             )
             .await
             .unwrap();
         assert!(
-            started.elapsed() < std::time::Duration::from_millis(700),
+            started.elapsed() < std::time::Duration::from_millis(500),
             "time already spent by this request must reduce the peer budget"
         );
         assert_eq!(result.in_use[0].since, 123);
@@ -1524,15 +1631,44 @@ mod tests {
     fn reachable_peer_confirms_long_history_despite_endpointless_peer() {
         // Large history setup must not hold the process-wide storage lock
         // inside another parallel test's prelaunch deadline.
+        isolated("host::saves::tests::reachable_peer_confirms_long_history_despite_endpointless_peer_child");
+    }
+
+    #[test]
+    fn save_check_timeline_names_where_the_time_went() {
+        let ms = std::time::Duration::from_millis;
+        let mut timeline = SaveCheckTimeline::new("anguna", tokio::time::Instant::now());
+        timeline.remembered = Some(ms(12));
+        timeline.pulled = Some(ms(700));
+        timeline.peers = vec![
+            (ms(180), ms(420), true, true),
+            (ms(700), ms(700), false, false),
+        ];
+        timeline.refreshed = Some(ms(810));
+        let line = timeline.line();
+        assert!(
+            line.starts_with("<6>korrid: SaveCheckTimeline { game_id: anguna, total_ms: "),
+            "{line}"
+        );
+        assert!(
+            line.ends_with("remembered_ms: 12, preparation_ms: missed, peers_ms: 700, peers: [{in_use_ms: 180, pull_ms: 420, answered: true, pulled: true}, {in_use_ms: 700, pull_ms: 700, answered: false, pulled: false}], refreshed_ms: 810 }"),
+            "{line}"
+        );
+    }
+
+    /// Run one test alone in a child process. The save store's lock is
+    /// process-wide, so other tests' storage work would eat a check's budget.
+    fn isolated(name: &str) {
         let result = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "host::saves::tests::reachable_peer_confirms_long_history_despite_endpointless_peer_child", "--ignored", "--nocapture"])
-            .output().unwrap();
+            .args(["--exact", name, "--ignored", "--nocapture"])
+            .output()
+            .unwrap();
         eprintln!(
             "{}{}",
             String::from_utf8_lossy(&result.stdout),
             String::from_utf8_lossy(&result.stderr)
         );
-        assert!(result.status.success());
+        assert!(result.status.success(), "isolated check failed: {name}");
     }
 
     #[tokio::test]
@@ -1618,7 +1754,7 @@ mod tests {
         let result: SaveCheck =
             serde_json::from_value(response["outcome"]["payload"].clone()).unwrap();
         assert_eq!(result.status, SaveMark::Synced);
-        assert!(started.elapsed() < std::time::Duration::from_millis(2500));
+        assert!(started.elapsed() < SAVE_CHECK_BUDGET + std::time::Duration::from_millis(100));
         assert!(
             result.in_use.iter().any(|warning| warning.device
                 == offline.host.save_device().unwrap()
@@ -1627,8 +1763,14 @@ mod tests {
         );
     }
 
+    #[test]
+    fn prelaunch_check_projects_release_and_runner_warnings_from_pulled_history() {
+        isolated("host::saves::tests::prelaunch_check_projects_release_and_runner_warnings_from_pulled_history_child");
+    }
+
     #[tokio::test]
-    async fn prelaunch_check_projects_release_and_runner_warnings_from_pulled_history() {
+    #[ignore = "subprocess helper; keeps the 1 s save-check budget clear of other tests' storage lock"]
+    async fn prelaunch_check_projects_release_and_runner_warnings_from_pulled_history_child() {
         let device = MigratedDevice::new(b"local").await;
         let peer =
             MigratedDevice::with_peer_delay(b"peer", false, std::time::Duration::from_millis(40))

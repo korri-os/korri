@@ -1627,8 +1627,14 @@ fn isolated_check(name: &str) {
     assert!(result.status.success(), "isolated check failed: {name}");
 }
 
+#[test]
+fn prelaunch_does_not_wait_for_a_peer_out_of_reach_and_still_checks_one_in_reach() {
+    isolated_check("saves::peer::tests::prelaunch_does_not_wait_for_a_peer_out_of_reach_and_still_checks_one_in_reach_child");
+}
+
 #[tokio::test]
-async fn prelaunch_does_not_wait_for_a_peer_out_of_reach_and_still_checks_one_in_reach() {
+#[ignore = "subprocess helper; keeps the prelaunch budget clear of other tests' storage lock"]
+async fn prelaunch_does_not_wait_for_a_peer_out_of_reach_and_still_checks_one_in_reach_child() {
     let silent = Node::new(
         5,
         3,
@@ -1646,17 +1652,15 @@ async fn prelaunch_does_not_wait_for_a_peer_out_of_reach_and_still_checks_one_in
     reachable.remember(&local);
 
     let started = std::time::Instant::now();
+    let budget = Duration::from_millis(700);
     let checks = local
         .service
-        .pull_before_launch(
-            &head.game_id,
-            tokio::time::Instant::now() + Duration::from_secs(3),
-        )
+        .pull_before_launch(&head.game_id, tokio::time::Instant::now() + budget)
         .await
         .unwrap();
     let elapsed = started.elapsed();
     assert!(
-        elapsed < PEER_REACH_BUDGET + Duration::from_millis(500),
+        elapsed < budget + Duration::from_millis(200),
         "the launch waited {elapsed:?} for a peer out of reach"
     );
     let silent_check = checks
@@ -1681,4 +1685,82 @@ async fn prelaunch_does_not_wait_for_a_peer_out_of_reach_and_still_checks_one_in
         .unwrap()
         .iter()
         .any(|record| id(record) == id(&head)));
+}
+
+#[test]
+fn prelaunch_checks_peers_side_by_side_inside_one_budget() {
+    isolated_check(
+        "saves::peer::tests::prelaunch_checks_peers_side_by_side_inside_one_budget_child",
+    );
+}
+
+#[tokio::test]
+#[ignore = "subprocess helper; keeps the prelaunch budget clear of other tests' storage lock"]
+async fn prelaunch_checks_peers_side_by_side_inside_one_budget_child() {
+    let slow = || TransferBehaviour {
+        delay: Duration::from_millis(200),
+        ..Default::default()
+    };
+    let local = Node::new(6, 3, TransferBehaviour::default()).await;
+    let first = Node::new(5, 3, slow()).await;
+    let second = Node::new(7, 3, slow()).await;
+    let head = first.seed(b"progress on the first device", vec![]);
+    let other = second.seed(b"progress on the second device", vec![]);
+    for peer in [&first, &second] {
+        local.remember(peer);
+        peer.remember(&local);
+    }
+    // Each peer has a new head: about four signed round trips of 200 ms
+    // (heads, its record, its payload, the receipt), 800 ms. One peer after
+    // the other would not fit in the budget.
+    let budget = Duration::from_millis(1400);
+    let started = std::time::Instant::now();
+    let checks = local
+        .service
+        .pull_before_launch(&head.game_id, tokio::time::Instant::now() + budget)
+        .await
+        .unwrap();
+    assert!(started.elapsed() < budget, "{:?}", started.elapsed());
+    assert_eq!(checks.len(), 2);
+    for check in &checks {
+        assert!(check.in_use.is_some(), "{check:?}");
+        assert!(check.transfer.is_ok(), "{check:?}");
+    }
+    // Both heads arrived: the split between the two peers is visible here.
+    let records = local
+        .repository
+        .records(&local.owner(), &head.game_id)
+        .unwrap();
+    for expected in [&head, &other] {
+        assert!(records.iter().any(|record| id(record) == id(expected)));
+    }
+}
+
+#[tokio::test]
+async fn a_peer_that_answered_is_asked_again_without_a_new_connection() {
+    let behaviour = TransferBehaviour::default();
+    let a = Node::new(5, 3, behaviour.clone()).await;
+    let b = Node::new(6, 3, TransferBehaviour::default()).await;
+    a.remember(&b);
+    b.remember(&a);
+    let head = a.seed(b"progress", vec![]);
+    let check = |deadline| b.service.pull_before_launch(&head.game_id, deadline);
+    let first = check(tokio::time::Instant::now() + Duration::from_secs(3))
+        .await
+        .unwrap();
+    assert!(first[0].transfer.is_ok(), "{:?}", first[0]);
+    let accepted = behaviour
+        .connections
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let again = check(tokio::time::Instant::now() + Duration::from_secs(3))
+        .await
+        .unwrap();
+    assert!(again[0].transfer.is_ok(), "{:?}", again[0]);
+    assert_eq!(
+        behaviour
+            .connections
+            .load(std::sync::atomic::Ordering::Relaxed),
+        accepted,
+        "the second check probed or connected again"
+    );
 }

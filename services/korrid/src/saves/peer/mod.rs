@@ -2,8 +2,6 @@
 mod client;
 mod sync;
 pub use sync::PeerCheckResult;
-#[cfg(test)]
-use sync::PEER_REACH_BUDGET;
 
 #[cfg(test)]
 mod tests;
@@ -104,6 +102,10 @@ pub struct SavePeerService {
     /// persisted and never sent: a restart forgets it, so the first contact
     /// after a restart is a full one.
     contacts: Arc<std::sync::Mutex<sync::ContactMemory>>,
+    /// The HTTP origin that last answered each peer. The next request goes
+    /// there first on the client's pooled connection, without a new connect
+    /// probe. Process memory only; a failed request forgets it.
+    answering_origins: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 
 impl SavePeerService {
@@ -128,6 +130,7 @@ impl SavePeerService {
             http,
             in_use,
             contacts: Default::default(),
+            answering_origins: Default::default(),
         })
     }
 
