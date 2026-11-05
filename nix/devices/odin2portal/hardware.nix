@@ -1,4 +1,5 @@
-# Odin 2 Portal screen, GPU, and control facts for the shared Korri product.
+# Odin 2 Portal hardware facts: screen, GPU, controls and USB gadget for the
+# shared Korri product.
 { odinRocknix, ... }:
 {
   # The AYN MCU profile is observed device data. The product module owns

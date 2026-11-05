@@ -10,7 +10,7 @@ expects a frozen unit's stop to fail.
 `../nixos-module.nix` imports `module.nix` for every product device. Recovery
 configurations that do not import the product keep the original systemd package.
 The override appends one native C patch and refuses versions other than 261.2.
-It adds no polkit or DBus policy and does not enable kiosk freezing itself.
+It adds no polkit or DBus policy and does not enable shell freezing itself.
 
 The original 258.2 source inspected was
 `/nix/store/zfx7f4w3pmv21n8f79ly9nq3gcv35vlg-source`:
@@ -99,8 +99,8 @@ use native DBus manager methods and await `JobRemoved`, not a wrapper retry.
 | Package isolation | Check asserts product patched, recovery unpatched; evaluation found no patch in any other exported NixOS configuration |
 
 The crash test extracts `wantedBy`, `requires`, `after`, and `partOf` from the
-actual product kiosk, and `Restart`/`RestartSec` from its korrid. Processes are
-fixtures, not the Rust daemon, Chromium, nginx, or the compositor.
+actual product shell unit, and `Restart`/`RestartSec` from its korrid. Processes are
+fixtures, not the Rust daemon, the shell, or the compositor.
 
 All **six** upstream `TEST-38-FREEZER.sh` cases ran on the patched PID1:
 `dbus_api`, `preserve_state`, `recursive`, `systemctl`, `systemctl_show`, and
@@ -133,13 +133,13 @@ acceptance result. `git diff --cached --check` and Nix formatting checks passed.
   pushed, or merged. Parent review and deployment approval remain required.
 - No full systemd integration suite or handheld kernel test ran. In-flight
   freeze is deterministic; thaw/stop interleavings use race stress rather than
-  a separately held kernel thaw. Runtime behavior of real korrid/Chromium is
+  a separately held kernel thaw. Runtime behavior of the real korrid and shell is
   not established by their dependency fixtures.
 - An uninterruptible process must still leave its kernel wait before it can
   handle SIGTERM. Thaw does not solve stuck I/O or replace normal stop timeouts.
 - The native DBus policy already denies an unprivileged Manager.ThawUnit call.
-  The stop patch needs no change to that policy. Permissions for a future
-  kiosk-freeze caller are a separate integration question.
+  The stop patch needs no change to that policy. Permissions for the
+  shell-freeze caller are a separate integration question.
 - A downstream PID1 patch requires review on every systemd update. The ARM
   package exists on Fuji and locally; this work does not publish a signed
   device-download route or authorize activation. Keep the previous generation

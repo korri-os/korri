@@ -58,7 +58,7 @@ describe("the yield order: space, then the hints' words, then a second row", () 
 })
 
 describe("the part ladder: hints and tabs never share a row they do not fit", () => {
-  // Measured in Chromium in art px (Zone Caps, caps-1 tabs and hints, the
+  // Measured in art px (Zone Caps, caps-1 tabs and hints, the
   // caps-2 banner, each hint's column its own width): one row needs 472 at
   // plan size, 414 at the least gaps and tab padding and 307 with the
   // keycaps alone; the two hints with their words need 147.

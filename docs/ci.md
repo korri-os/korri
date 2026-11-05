@@ -3,7 +3,7 @@
 `Korri checks` and `Published plugin acceptance` only validate. They have
 `contents: read`, no publisher secrets, no release upload, and no device effects.
 The signed plugin pins, signed-cache trust, lifecycle VM and negative interface
-controls in published acceptance are unchanged. **Only the Host/portal/surface
+controls in published acceptance are unchanged. **Only the Host/shell/surface
 validation workflow gains affected lanes.** Published acceptance keeps its exact
 workflow from base `7e4bf0500c6dab2c0568230906ddb197dbbf69cf`. It still runs fully on
 every existing PR, push-to-main and manual trigger, including docs-only changes.
@@ -17,8 +17,8 @@ The following controls apply only to `Korri checks`, not published acceptance.
 | --- | --- |
 | Pull request | Conservative merge-base diff; both paths of a rename and deleted paths count. The optional `ci-full` PR label forces full mode. No label is created by CI. |
 | Push to `main` | Conservative affected selection from the event's `before` SHA; unavailable history selects all lanes within the affected profile. |
-| Weekly schedule | Full Host/portal/surface coverage, including Inputd module/package/VM checks. Published acceptance retains its existing triggers. |
-| Manual `full` (default) | Every Host/portal/surface lane, including complete Inputd checks. Dispatch the unchanged published workflow separately for hosted acceptance. |
+| Weekly schedule | Full Host/shell/surface coverage, including Inputd module/package/VM checks. Published acceptance retains its existing triggers. |
+| Manual `full` (default) | Every Host/shell/surface lane, including complete Inputd checks. Dispatch the unchanged published workflow separately for hosted acceptance. |
 | Manual `affected` | Diff if a base is available; otherwise all lanes within the affected profile. |
 | Manual `probe` | Apply the real selector to `probe_paths`, a nonempty JSON array. This measures the selected paths on the tested source; it is not proof about an arbitrary commit's actual diff. |
 
@@ -28,8 +28,8 @@ events this is the tested merge commit, not a moving branch. A manual SHA must
 contain these validation scripts. No source values are fetched from a publisher.
 
 Manual runs can use the same source SHA with `full` and `probe`, for example
-`probe_paths=["clients/portal/src/surface/settings-model.ts"]`. Other useful
-probes are `docs/agents/domain.md`, `surfaces/pico/src/pico-settings-view.ts`,
+`probe_paths=["services/korrid/src/surface/settings_model.rs"]`. Other useful
+probes are `docs/agents/domain.md`, `clients/shell/packages/pico/src/pico-font-preference.ts`,
 `services/korrid/src/main.rs`, `contracts/generated/korrid.ts`,
 `nix/devices/rpminiv2/kernel/default.nix`, and `flake.lock`.
 Host timing runs do not cancel each other. New automatic Host runs cancel older
@@ -58,15 +58,13 @@ Selector logs report
 selection elapsed time, including any bounded fetch; checkout and selector-test
 time remain separate steps in the hosted job timings.
 
-Known portal presentation, CSS, semantic input, overlay and surface code select
-frontend/surface checks without Rust compilation. The separate Python `parity`
+Shell and surface package code under `clients/shell/` selects the `shell` lane,
+and Pico paths also select `pico`, without korrid compilation. The separate Python `parity`
 lane runs only when one of the five producer files read by
 `clients/cli/tests/parity.py` changes, or the parity guard itself changes. Those
-files are `settings-model.ts`, `plugin-repositories.ts`,
-`launch-settings-model.ts`, Pico's `pico-settings-view.ts` and Zone's
-`plan/options.ts`. Transport inputs under `clients/portal/src/korrid/` still
-select real korrid RPC smoke and CLI/backend validation. Unknown portal, surface
-or package inputs select all lanes within the requested profile; there is no
+files are korrid's `surface/settings_model.rs`, `surface/plugins.rs` and
+`surface/launch_model.rs`, Pico's `pico-font-preference.ts` and Zone's
+`logic.ts`. Unknown surface or package inputs select all lanes within the requested profile; there is no
 blanket frontend-directory skip.
 
 Ordinary affected/PR runs intentionally use Inputd's **fast profile**: Rust/core,
@@ -98,28 +96,24 @@ consumers. New documentation is unknown until reviewed, not silently skipped.
 | `cache` | `korri-nix-cache-check` and `rpminiv2-delivery-check`: cache protocol/read tests, workflow snapshot preparation tests and `checks.<system>.rpminiv2-delivery` workflow safety/failure propagation. These validate locally and do not publish or prefetch production closures. |
 | `fmt` | `korrid-fmt-check`: Rust formatting without compilation. |
 | `treaty` | `korrid-treaty-check`: generate into a temporary file, compare without repairing drift, then check local and pinned plugin declarations. |
-| `portal` | `portal-check`, `portal-bundle`: portal typecheck **before** Bun tests, then installed bundle. |
+| `shell` | `shell-check`: the native shell's fmt, clippy and tests with the fixture korrid. |
 | `parity` | `cli-parity-check` / existing Python producer guard, without Nix setup or Rust compilation in the hosted job. Standalone `cli-check` also retains its original parity guard. |
 | `cli` | Existing `cli-check`: parity, fmt, clippy, real-process tests. `cli-build-identity-eval-check` checks dependency reuse and final derivation identity through `checks.<system>.korri-cli-build-identity-eval`, without compiling two stamped packages. |
-| `korrid` | `korrid-host-check`: pinned fixture hashes, script setup, all Rust tests, config review, dev binaries, socket-activated signer and real portal RPC smoke. No individual Rust-test selection. |
+| `korrid` | `korrid-host-check`: pinned fixture hashes, script setup, all Rust tests, config review, dev binaries, socket-activated signer and real surface host RPC smoke. No individual Rust-test selection. |
 | `inputd` | Affected/probe: `inputd-check -- --fast` retains all Rust/core, wasm, portability and deployment-shell checks. Explicit full/scheduled/`ci-full`: default `inputd-check` also retains all eight module/package/VM gates. |
 | `limitsd` | Existing `limitsd-check`: fmt, clippy, real filesystem/socket tests. |
-| `pico`, `zone`, `boxbuster` | Their existing surface check apps, separate from portal tests. |
+| `pico`, `zone` | Their surface package check apps, separate from shell tests. |
 
 The separate, unselected published workflow always runs its existing
 `korri-published-plugins-check`: both signed architecture pins, stability,
 launch/interface negative controls, image/plugin checks and lifecycle VM.
 
-Portal, formatting and treaty jobs depend only on the small selector job, not
-on Rust compilation or Nix store snapshots. Portal setup shares the portal's
-React instance with every registered surface, in standalone and full checks.
-Boxbuster's Bun preload resolves Fiber to its declared real ESM entry, as Vite
-does. The renderer-entry regression test checks real export identity. It replaces
-no renderer behavior and does not use a test double.
+Formatting and treaty jobs depend only on the small selector job, not on Rust
+compilation or Nix store snapshots.
 Korrid compilation/test/config/smoke stay together to avoid redundant cold Cargo
 builds. The acceptance snapshot remains confined to its own job.
 
-The retained korrid, portal and treaty lanes keep the original **30-minute** host
+The retained korrid and treaty lanes keep the original **30-minute** host
 deadline; formatting is limited to 10 minutes. No test timeout is raised. The
 additional CLI, surface, limits and cache lanes have 30-minute budgets. The new
 Inputd lane retains a 45-minute budget for complete runs. Its new module/package/VM
@@ -129,7 +123,7 @@ exclude only that new heavy coverage, as the user requested. Complete runs still
 include every assertion. These full-mode measurements describe the added
 coverage cost, not the affected PR profile.
 
-The stable `Host, portal, and surface` aggregate always runs. It requires the
+The stable `Host, shell, and surface` aggregate always runs. It requires the
 selector to succeed and every selected lane to report success. Missing, skipped,
 failed or cancelled selected lanes fail the aggregate. Unselected lanes must
 report exactly `skipped`. This aggregate covers only its own Host workflow.

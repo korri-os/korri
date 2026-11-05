@@ -74,28 +74,28 @@ async def main():
 
     if len(sys.argv) > 1 and sys.argv[1] == 'unprivileged':
         # Only unit-specific stop/restart rights, not start/thaw or RefUnit.
-        await failure(manager.call_thaw_unit('kiosk.service'), 'AccessDenied')
+        await failure(manager.call_thaw_unit('shell.service'), 'AccessDenied')
         await failure(manager.call_stop_unit('other.service', 'replace'), 'InteractiveAuthorizationRequired')
-        await state('kiosk.service', 'frozen')
-        await job(sys.argv[2], 'kiosk.service')
+        await state('shell.service', 'frozen')
+        await job(sys.argv[2], 'shell.service')
         print('PASS: narrow unit/verb polkit rights; no external thaw permission')
         return
 
-    await job('start', 'kiosk.service')
-    old = await prop('kiosk.service', 'MainPID', DEST + '.Service')
-    await manager.call_freeze_unit('kiosk.service')
-    await job('start', 'kiosk.service')
-    await state('kiosk.service', 'frozen')
-    await job('reload', 'kiosk.service', 'frozen')
-    await state('kiosk.service', 'frozen')
+    await job('start', 'shell.service')
+    old = await prop('shell.service', 'MainPID', DEST + '.Service')
+    await manager.call_freeze_unit('shell.service')
+    await job('start', 'shell.service')
+    await state('shell.service', 'frozen')
+    await job('reload', 'shell.service', 'frozen')
+    await state('shell.service', 'frozen')
     print('PASS: start stays a no-op and reload stays rejected while frozen')
-    await job('restart', 'kiosk.service')
-    assert str(old) + ' SIGTERM' in marker('kiosk')
-    assert old != await prop('kiosk.service', 'MainPID', DEST + '.Service')
-    await state('kiosk.service', 'running')
-    await manager.call_freeze_unit('kiosk.service')
-    await job('stop', 'kiosk.service')
-    assert len(marker('kiosk').splitlines()) == 2
+    await job('restart', 'shell.service')
+    assert str(old) + ' SIGTERM' in marker('shell')
+    assert old != await prop('shell.service', 'MainPID', DEST + '.Service')
+    await state('shell.service', 'running')
+    await manager.call_freeze_unit('shell.service')
+    await job('stop', 'shell.service')
+    assert len(marker('shell').splitlines()) == 2
     print('PASS: first-attempt frozen restart and stop deliver SIGTERM')
 
     # Deterministic in-flight freeze: FUSE keeps a task in a kernel wait.
@@ -113,20 +113,20 @@ async def main():
 
     # Queue freeze/stop and thaw/stop together. Every stop is submitted once.
     for i in range(30):
-        await job('start', 'kiosk.service')
+        await job('start', 'shell.service')
         if i % 2:
-            await manager.call_freeze_unit('kiosk.service')
-            freezer = asyncio.create_task(manager.call_thaw_unit('kiosk.service'))
+            await manager.call_freeze_unit('shell.service')
+            freezer = asyncio.create_task(manager.call_thaw_unit('shell.service'))
         else:
-            freezer = asyncio.create_task(manager.call_freeze_unit('kiosk.service'))
-        stop = asyncio.create_task(job('stop', 'kiosk.service'))
+            freezer = asyncio.create_task(manager.call_freeze_unit('shell.service'))
+        stop = asyncio.create_task(job('stop', 'shell.service'))
         result = await asyncio.gather(freezer, stop, return_exceptions=True)
         assert result[1] is None, result
         if isinstance(result[0], DBusError):
             assert result[0].type.rsplit('.', 1)[-1] in ('FreezeCancelled', 'UnitBusy', 'UnitInactive'), result
         else:
             assert result[0] is None, result
-    assert len(marker('kiosk').splitlines()) == 32
+    assert len(marker('shell').splitlines()) == 32
     print('PASS: 30 freeze/thaw versus stop races; all calls completed')
 
     await job('start', 'held.service')
@@ -187,8 +187,8 @@ async def main():
     # Leave this directly frozen for the driver to power off the VM, not stop it.
     await job('start', 'shutdown-marker.service')
     await manager.call_freeze_unit('shutdown-marker.service')
-    await job('start', 'kiosk.service')
-    await manager.call_freeze_unit('kiosk.service')
+    await job('start', 'shell.service')
+    await manager.call_freeze_unit('shell.service')
     print('PASS: shutdown marker armed')
 
 asyncio.run(asyncio.wait_for(main(), 180))

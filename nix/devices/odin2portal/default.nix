@@ -50,7 +50,7 @@ let
       })
       ./sd-image.nix
       ./memory.nix
-      ./web-session.nix
+      ./hardware.nix
       ./owner-publisher.nix
     ];
   };

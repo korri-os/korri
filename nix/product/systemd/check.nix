@@ -63,7 +63,7 @@ pkgs.testers.runNixOSTest {
       ];
       boot.kernelModules = [ "fuse" ];
       systemd.services = {
-        kiosk = lib.recursiveUpdate (service "kiosk") {
+        shell = lib.recursiveUpdate (service "shell") {
           serviceConfig.ExecReload = "${pkgs.coreutils}/bin/true";
         };
         other = service "other";
@@ -111,7 +111,7 @@ pkgs.testers.runNixOSTest {
         polkit.addRule(function(action, subject) {
           if (subject.user === "freezer-client" &&
               action.id === "org.freedesktop.systemd1.manage-units" &&
-              action.lookup("unit") === "kiosk.service" &&
+              action.lookup("unit") === "shell.service" &&
               (action.lookup("verb") === "stop" || action.lookup("verb") === "restart"))
             return polkit.Result.YES;
         });
@@ -125,7 +125,7 @@ pkgs.testers.runNixOSTest {
     assert machine.succeed("readlink /proc/1/exe").strip() == "${systemd}/lib/systemd/systemd"
     print(machine.succeed("${python}/bin/python ${./regression.py}", timeout=240))
     print(machine.succeed("su -s /bin/sh freezer-client -c '${python}/bin/python ${./regression.py} unprivileged restart'", timeout=60))
-    machine.succeed("busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager FreezeUnit s kiosk.service")
+    machine.succeed("busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager FreezeUnit s shell.service")
     print(machine.succeed("su -s /bin/sh freezer-client -c '${python}/bin/python ${./regression.py} unprivileged stop'", timeout=60))
     machine.succeed("bash ${upstream}/TEST-38-FREEZER.sh > /var/log/upstream-freezer.log 2>&1 || { cat /var/log/upstream-freezer.log; exit 1; }", timeout=180)
     machine.succeed("test -f /testok")

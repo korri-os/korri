@@ -6,15 +6,13 @@ All use their `packages.aarch64-linux.<device>-sd-image` output on
 `ubuntu-24.04-arm`. No Android repacking, installer ISO, plugin integration,
 or first-boot setup is performed.
 
-RG DS is a console bring-up candidate, not an automatic portal session.
+RG DS is a console bring-up candidate, not an automatic shell session.
 Its device-local Linux and U-Boot sources do not alter the other devices.
 See [`../devices/rgds/README.md`](../devices/rgds/README.md) for SD-only
 arrival checks, physical root-console access, and unverified hardware gates.
 
-Odin first builds its existing x86 cross-compiled kernel, rescue kernel, firmware,
-and static portal bundle in a separate `ubuntu-24.04` job. The kiosk already
-selects that x86-built web bundle because its Bun dependency hash is platform-specific.
-Only static web assets enter the ARM image. The job builds sequentially to
+Odin first builds its existing x86 cross-compiled kernel, rescue kernel and
+firmware in a separate `ubuntu-24.04` job. The job builds sequentially to
 bound temporary disk use. That job exports every output and its closure to a
 native signed Nix binary cache, then uploads the cache as an exact workflow
 artifact. The ARM job checks the source revision and imports the paths derived
@@ -133,8 +131,8 @@ only failed native initialization retains its marker for a later retry.
 
 Production images omit `glmark2`, `mesa-demos`, `vulkan-tools`, and the RG353M
 browser benchmark helpers. The layout check guards the package selections and
-retained graphics/seat/kiosk configuration. Benchmark removal does not remove
-Chromium, graphics drivers, or recovery kernels. RG353M firmware now follows the
+retained graphics and seat configuration. Benchmark removal does not remove
+graphics drivers or recovery kernels. RG353M firmware now follows the
 [board/accessory family policy](../devices/rg353m/FIRMWARE.md). RG DS reuses
 that policy and the on-demand pinned Nixpkgs source approach; see its
 [coverage and limits](../devices/rgds/FIRMWARE.md). Odin firmware is unchanged.

@@ -11,7 +11,7 @@
 A normal device imports `product/nixos-module.nix` once and then adds one image
 format and its hardware module. Device modules do not assemble, remove, swap, or
 force-disable product services. The product currently composes the Linux host,
-local portal and browser, plugin host, cache policy, and fixed `korri` runtime
+native shell, plugin host, cache policy, and fixed `korri` runtime
 account. Product constants such as relays, surface selection, and korrid's bind
 address live with that composition rather than in a board module.
 
@@ -38,10 +38,9 @@ board files live under `devices/`, and shared image behavior lives under
 
 ## Hardware limits
 
-A board module may record a limit only where observed hardware requires it. For
-example, RG353M carries its thermal CPU ceiling and the unaccepted Chromium GPU
-path locally; `--disable-gpu` is not universal product policy. Such limits must
-not turn into alternate product composition.
+A board module may record a limit only where observed hardware requires it.
+Such a limit stays in that board module; it is not universal product policy
+and must not turn into alternate product composition.
 
 Bootloaders, partition labels, image compression, console order, kernel and
 device-tree choices, radio settings, and physical input data remain device

@@ -1,7 +1,7 @@
-//! Setup uses the existing portal producers, not a separate setup record.
+//! Setup uses korrid's existing surface producers, not a separate setup record.
 //! `clients/portal/src/surface/network-onboarding.ts` owns status/restart/finish;
 //! `settings-model.ts` owns seat count and device name. Physical controller
-//! testing remains portal-only because no semantic-input CLI RPC exists.
+//! testing remains shell-only because no semantic-input CLI RPC exists.
 //! The optional offer in `starter-pack-onboarding.ts` has the exact generic
 //! equivalent `korri plugins on @korri:starter-pack`, then
 //! `korri library folders rescan`. No future ADR 0033 pack schema is assumed.
@@ -17,8 +17,8 @@ use korrid::{network::*, onboarding::*, *};
 pub struct Setup;
 impl Module for Setup {
     fn command(&self) -> Command {
-        Command::new("setup").about("Start or rerun setup using the portal's network, settings and completion calls; keep the current identity unless explicitly switched")
-            .after_help("Physical controller testing remains in the portal. The optional existing starter-pack offer is available as: korri plugins on @korri:starter-pack, then korri library folders rescan. No new identity is claimed during setup.")
+        Command::new("setup").about("Start or rerun setup using the shell's network, settings and completion calls; keep the current identity unless explicitly switched")
+            .after_help("Physical controller testing remains in the shell. The optional existing starter-pack offer is available as: korri plugins on @korri:starter-pack, then korri library folders rescan. No new identity is claimed during setup.")
             .args_conflicts_with_subcommands(true)
             .arg(Arg::new("seats").long("seats").value_name("COUNT").help("Configured seat count, not physical controller assignment"))
             .arg(Arg::new("name").long("name").value_name("DEVICE_NAME"))
@@ -140,7 +140,7 @@ fn single(response: RpcResponse) -> Result<Output, CliError> {
 }
 fn aggregate(responses: Vec<RpcResponse>) -> Result<Output, CliError> {
     let mut lines: Vec<_> = responses.iter().map(describe).collect();
-    lines.push("Setup steps: configured seats (korri controllers seats), Wi-Fi (korri wifi scan/connect), device name (korri devices rename), then keep this identity or explicitly use korri identity switch. Finish with korri setup finish. Physical controller testing remains in the portal; no assignment RPC exists.\nOptional existing starter pack: korri plugins on @korri:starter-pack, then korri library folders rescan.".into());
+    lines.push("Setup steps: configured seats (korri controllers seats), Wi-Fi (korri wifi scan/connect), device name (korri devices rename), then keep this identity or explicitly use korri identity switch. Finish with korri setup finish. Physical controller testing remains in the shell; no assignment RPC exists.\nOptional existing starter pack: korri plugins on @korri:starter-pack, then korri library folders rescan.".into());
     Ok(Output::many(responses, lines.join("\n")))
 }
 fn describe(response: &RpcResponse) -> String {

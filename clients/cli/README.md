@@ -9,7 +9,7 @@ The cost is that a CLI build also compiles the daemon's library dependencies.
 ## Commands and checks
 
 - `nix run .#korri -- --help`
-- `nix run .#cli-check` — portal setting parity guard, CLI format, clippy, and unit/real-process tests.
+- `nix run .#cli-check` — settings parity guard, CLI format, clippy, and unit/real-process tests.
 - `nix run .#cli-daemon-check` — focused socket, authorization, forwarding,
   sandbox, settings, and daemon-argument tests. This is not the full korrid gate.
 - `nix build .#checks.x86_64-linux.korrid-linux-device-module --no-link`
@@ -36,7 +36,7 @@ are `devices`, `library`, `launch-settings`, `downloads`, `controllers`,
 `plugins`, `wifi`, `saves`, `identity`, `setup` and `metadata`. Session actions
 are `play`, `leave`, `resume` and `end`. Provider acquisition is `get`.
 [Play and library details](PLAY-LIBRARY.md) include launch-setting constraints.
-[Portal parity audit](PARITY.md) maps the actual portal settings and actions,
+[Settings parity audit](PARITY.md) maps the actual shell settings and actions,
 including remaining gaps and recorded exceptions. Download a selected route's
 required artifacts with `downloads status --game GAME --runner RUNNER`, then
 `downloads start --artifact ID` (repeat `--artifact` for more IDs). These are
@@ -173,7 +173,7 @@ substitute for the live identity switch's authorization and journal recovery.
 No games, saves or unrelated person data should be deleted to work around these
 limits.
 
-Physical controller testing remains portal-only; `controllers seats` changes
+Physical controller testing remains shell-only; `controllers seats` changes
 the configured count. Setup does not duplicate the optional starter-pack offer;
 existing effects remain through `plugins on` and `library folders rescan`.
 System launch-setting inspection does not require game context; see
@@ -233,10 +233,10 @@ systemd capabilities; it is not a passing negative connection proof.
 
 | Caller | Device name | Player count |
 | --- | --- | --- |
-| Full browser | Newly supported | Unchanged |
-| Local CLI | Supported, Full-browser authority | Supported |
-| LocalSessions browser | Still denied | Unchanged |
-| ReadOnly browser | Still denied | Still denied |
+| Full surface host | Newly supported | Unchanged |
+| Local CLI | Supported, full surface host authority | Supported |
+| LocalSessions surface host | Still denied | Unchanged |
+| ReadOnly surface host | Still denied | Still denied |
 | inputd LocalUnixControl | Still denied | Still denied |
 | Verified same-owner peer | Newly supported | Still denied |
 | Other, unknown, guest, or household peer | Still denied | Still denied |
@@ -316,8 +316,8 @@ approval. Removing a repository retains installed plugins and their state.
 
 | Caller | Selected launch/status/exact controls | Plugin admin operations | Saves check/choose/restore, identity, Wi-Fi, onboarding |
 | --- | --- | --- | --- |
-| Full browser / local person CLI | Unchanged | Unchanged | Unchanged, local only |
-| LocalSessions / ReadOnly browser | Existing session/read permissions | Still installed/repository listing only | Existing local permissions |
+| Full surface host / local person CLI | Unchanged | Unchanged | Unchanged, local only |
+| LocalSessions / ReadOnly surface host | Existing session/read permissions | Still installed/repository listing only | Existing local permissions |
 | Verified same-owner peer | Existing authority; starter and exact ID required for controls | Newly supported; root host checks unchanged | Still denied |
 | Guest / household peer | Existing scoped stream authority only; no selected launch widening | Still denied | Still denied |
 | Unknown, other-owner or revoked peer | Still denied | Still denied | Still denied |
@@ -354,7 +354,7 @@ response, including publisher facts and refusals.
 
 ### Plugin authors (ADR 0046)
 
-These are the exception to portal mirroring. Nix and `korri-publish` must be
+These are the exception to shell mirroring. Nix and `korri-publish` must be
 installed on the author computer (#327 remains out of scope). New, build and
 publish need no korrid, and reject `--device`. No build runs on the target.
 
@@ -517,8 +517,8 @@ must decide which interfaces/addresses and which mounted filesystem(s) to report
 
 Legacy's Pico `PowerMenu.tsx` and `Panic.tsx` are static pages, not action
 contracts. Legacy inputd's `power-suspend` command is an input action, not a
-shared portal RPC. Current portal settings and `contracts/surface/` provide no
-power action IDs or call payloads. A real portal power action contract must
+shared surface RPC. Current shell settings and `contracts/surface/` provide no
+power action IDs or call payloads. A real shell power action contract must
 define the calls and what Restart Korri restarts. No power command or host/device
 effect is added before that decision; any implementation needs VM systemd/logind
 proof.

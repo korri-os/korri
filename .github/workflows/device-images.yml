@@ -56,7 +56,7 @@ jobs:
           fi
 
   odin-cross:
-    name: Odin Linux cross inputs (kernels, firmware, portal)
+    name: Odin Linux cross inputs (kernels, firmware)
     needs: preflight
     if: ${{ inputs.device == 'odin2portal' }}
     runs-on: ubuntu-24.04

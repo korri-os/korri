@@ -48,7 +48,7 @@ export component ZoneTagRow {
     pure function row-w(k: int) -> length {
         return total(k) - slant * Math.max(0, k - 1);
     }
-    // Chromium shrinks tags in proportion and calls one cut past about 1.5 px.
+    // Tags shrink in proportion; one counts as cut past about 1.5 px.
     pure function cut(k: int) -> bool {
         return fill && row-w(k) > root.width && (row-w(k) - root.width) * widest(k) / Math.max(0.001 * Tokens.unit, total(k)) > 1.5 * Tokens.unit;
     }

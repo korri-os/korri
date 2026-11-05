@@ -146,10 +146,10 @@ repositories, and no Korri client ships an outside repository address.
 
 ## Standing decisions
 
-- The shell is the host and the only screen. The Chromium kiosk and the web
-  portal were removed on 2026-11-01; do not bring back a browser, a web server
-  or a second host. The shell runs as its own unprivileged system user
-  (`korri-shell.service`), never as root, and never opens `/dev/input`.
+- The shell is the host and the only screen. Since 2026-11-01 no browser, web
+  server or second host runs on a Linux device; do not bring one back. The
+  shell runs as its own unprivileged system user (`korri-shell`, in
+  `korri-shell.service`), never as root, and never opens `/dev/input`.
 - Surfaces are hardware-blind: they receive semantic buttons (`up`, `confirm`,
   `back`, …), never key codes. Controller input reaches the shell only through
   korrid's native input socket; `clients/shell/src/input/` maps it to buttons.

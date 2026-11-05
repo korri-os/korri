@@ -20,7 +20,7 @@
  *
  * No tab and no hint is ever hidden, shrunk or cut. Every threshold is in
  * art px (src/plan/art-px.ts): the shell divides its width by its art
- * pixel first. Measured in Chromium (Zone Caps, caps-1 tabs and hints, the
+ * pixel first. Measured in art px (Zone Caps, caps-1 tabs and hints, the
  * caps-2 banner, GAMES, OPTIONS and SAVE DATA), with the hints' columns
  * free to differ so neither hint pays for the other's word: one row needs
  * 472 art px at plan size, 414 once the gaps and the tabs' padding are at
