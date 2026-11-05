@@ -1,15 +1,14 @@
 //! Holder-side shared-play operations. No viewer or peer effects run here.
 use super::*;
 
-/// The title of one launch's game, as the catalog stated it when the launch was
-/// first described. Session status runs on every portal and peer poll;
-/// catalog enrichment runs outside the session lock. Building it evaluates every installed
-/// plugin, so doing that per poll queued status reads for tens of seconds on
-/// a busy handheld. A launch's game does not change, so one lookup serves it.
+/// The title of one launch's game, found once per launch. Session status runs
+/// on every portal and peer poll, so the title is read from the launched
+/// game's own entry, never from a full catalog: on the RG353M a catalog took
+/// 2.3 to 3.6 s, and status polls that missed this cache each built one.
+/// A launch's game does not change, so one lookup serves it.
 pub(super) struct ActiveTitle {
     launch_id: String,
     game_id: String,
-    person: Option<String>,
     title: String,
 }
 
@@ -53,32 +52,36 @@ impl HostRuntime {
             if let Some(game_id) = active.game_id.as_deref() {
                 #[cfg(test)]
                 self.session_rpc_probe("app.session.status.catalog");
-                let person = active.person_public_key.as_deref();
-                if let Some(known) = self.active_title.lock().ok().and_then(|known| {
-                    known
-                        .as_ref()
-                        .filter(|known| {
-                            known.launch_id == active.launch_id
-                                && known.game_id == game_id
-                                && known.person.as_deref() == person
-                        })
-                        .map(|known| known.title.clone())
-                }) {
-                    active.title = Some(known);
+                let known = || {
+                    self.active_title.lock().ok().and_then(|known| {
+                        known
+                            .as_ref()
+                            .filter(|known| {
+                                known.launch_id == active.launch_id && known.game_id == game_id
+                            })
+                            .map(|known| known.title.clone())
+                    })
+                };
+                if let Some(title) = known() {
+                    active.title = Some(title);
                     return Ok(());
                 }
-                let catalog = self.catalog_snapshot_blocking(person)?;
-                active.title = catalog
-                    .games
-                    .into_iter()
-                    .find(|game| game.id == game_id)
-                    .map(|game| game.title);
-                // A game the catalog does not list yet is looked up again next time.
+                // One lookup in flight: concurrent polls wait for it, then
+                // read its answer.
+                let _lookup = self
+                    .title_lookup
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some(title) = known() {
+                    active.title = Some(title);
+                    return Ok(());
+                }
+                active.title = self.game_title(game_id)?;
+                // A game without a title yet is looked up again next time.
                 if let (Some(title), Ok(mut known)) = (&active.title, self.active_title.lock()) {
                     *known = Some(ActiveTitle {
                         launch_id: active.launch_id.clone(),
                         game_id: game_id.to_owned(),
-                        person: person.map(str::to_owned),
                         title: title.clone(),
                     });
                 }
@@ -95,6 +98,30 @@ impl HostRuntime {
         result
     }
 
+    /// One game's title, from its own entry: the host.toml title, or the
+    /// library title. A library game without a title is named by its first
+    /// identified release, as the catalog names a game by its release.
+    pub(super) fn game_title(&self, game_id: &str) -> Result<Option<String>, RpcFailure> {
+        #[cfg(test)]
+        self.session_rpc_probe("host.game_title");
+        let config = self.config.as_ref().map_err(config_failure)?;
+        if let Some(game) = config.games.iter().find(|game| game.id == game_id) {
+            return Ok(Some(game.title.clone()));
+        }
+        let Ok(root) = self.route_root() else {
+            return Ok(None);
+        };
+        let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
+            .map_err(crate::game_routes::settings_failure)?;
+        Ok(snapshot.library.get(game_id).and_then(|game| {
+            game.title.clone().or_else(|| {
+                game.releases
+                    .iter()
+                    .find_map(|release| release.identity.as_ref().map(|i| i.value().to_owned()))
+            })
+        }))
+    }
+
     pub(crate) async fn stream_play(
         &self,
         launch_id: &str,
@@ -109,5 +136,55 @@ impl HostRuntime {
         })
         .await
         .map_err(host_worker_failure)?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn concurrent_status_reads_share_one_title_lookup() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"static\"\ntitle = \"Static game\"\ncommand = [\"game\"]\n",
+        )
+        .unwrap();
+        let lookups = Arc::new(AtomicUsize::new(0));
+        let counted = lookups.clone();
+        let host = HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            root.path().join("private"),
+            Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default()),
+        )
+        .with_session_rpc_probe(Arc::new(move |phase| {
+            if phase == "host.game_title" {
+                counted.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }));
+        let readers: Vec<_> = (0..5)
+            .map(|_| {
+                let host = host.clone();
+                std::thread::spawn(move || {
+                    let mut active: crate::ActiveSession =
+                        serde_json::from_value(serde_json::json!({
+                            "launchId": "launch-1",
+                            "gameId": "static",
+                        }))
+                        .unwrap();
+                    host.describe_active_session_catalog(&mut active).unwrap();
+                    active.title
+                })
+            })
+            .collect();
+        for reader in readers {
+            assert_eq!(reader.join().unwrap().as_deref(), Some("Static game"));
+        }
+        assert_eq!(lookups.load(Ordering::SeqCst), 1);
     }
 }

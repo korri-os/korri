@@ -1626,3 +1626,59 @@ fn isolated_check(name: &str) {
     );
     assert!(result.status.success(), "isolated check failed: {name}");
 }
+
+#[tokio::test]
+async fn prelaunch_does_not_wait_for_a_peer_out_of_reach_and_still_checks_one_in_reach() {
+    let silent = Node::new(
+        5,
+        3,
+        TransferBehaviour {
+            delay: Duration::from_secs(60),
+            ..Default::default()
+        },
+    )
+    .await;
+    let local = Node::new(6, 3, TransferBehaviour::default()).await;
+    let reachable = Node::new(7, 3, TransferBehaviour::default()).await;
+    let head = reachable.seed(b"progress on the device in reach", vec![]);
+    local.remember(&silent);
+    local.remember(&reachable);
+    reachable.remember(&local);
+
+    let started = std::time::Instant::now();
+    let checks = local
+        .service
+        .pull_before_launch(
+            &head.game_id,
+            tokio::time::Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < PEER_REACH_BUDGET + Duration::from_millis(500),
+        "the launch waited {elapsed:?} for a peer out of reach"
+    );
+    let silent_check = checks
+        .iter()
+        .find(|check| check.device == silent.device())
+        .unwrap();
+    assert!(silent_check.in_use.is_none());
+    assert!(matches!(
+        silent_check.transfer,
+        Err(PeerSaveError::Deadline)
+    ));
+    // The peer in reach keeps the split check: its head arrived.
+    let reachable_check = checks
+        .iter()
+        .find(|check| check.device == reachable.device())
+        .unwrap();
+    assert!(reachable_check.in_use.is_some());
+    assert!(reachable_check.transfer.is_ok());
+    assert!(local
+        .repository
+        .records(&local.owner(), &head.game_id)
+        .unwrap()
+        .iter()
+        .any(|record| id(record) == id(&head)));
+}

@@ -746,3 +746,29 @@ async fn surface_device_launch_settings_write_device_yaml_through_the_browser_rp
         "{device:?}"
     );
 }
+
+#[tokio::test]
+async fn a_game_without_a_runner_blocks_only_itself() {
+    let root = tempfile::tempdir().unwrap();
+    let app = library(root.path(), false);
+    let path = root.path().join("catalog/library.yaml");
+    let mut library = fs::read_to_string(&path).unwrap();
+    library.push_str("  no-runner:\n    title: No Runner\n    releases:\n      - id: dos\n        system: dos\n        identity: {kind: hash, value: 'sha1:0123456789abcdef0123456789abcdef01234567'}\n");
+    fs::write(&path, library).unwrap();
+    let catalog = rpc(&app, "app.catalog.snapshot", json!({})).await;
+    assert!(
+        catalog["payload"]["failures"]
+            .to_string()
+            .contains("game no-runner has no installed Linux runner"),
+        "{catalog}"
+    );
+    let refused = rpc(&app, "app.session.prepare", json!({"gameId": "no-runner"})).await;
+    assert_eq!(refused["_tag"], "Err", "{refused}");
+    let started = rpc(&app, "app.session.prepare", json!({"gameId": GAME})).await;
+    assert_eq!(started["_tag"], "Ok", "{started}");
+    let status = rpc(&app, "app.session.status", json!({})).await;
+    assert_eq!(
+        status["payload"]["active"]["title"], "Wario Land 4",
+        "{status}"
+    );
+}

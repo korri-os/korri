@@ -1617,3 +1617,57 @@ fn play_library_remote_ambiguous_device_never_launches_or_installs() {
         assert!(output.stdout.is_empty());
     }
 }
+#[test]
+fn play_library_another_games_failure_does_not_block_this_launch() {
+    use game_routes::*;
+    use saves::types::*;
+    let RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(mut listed)) = games() else {
+        unreachable!()
+    };
+    listed.failures = Some(vec![RpcFailure {
+        code: "LocalRouteUnavailable".into(),
+        message: "game other-game has no installed Linux runner".into(),
+    }]);
+    let listed = RpcResponse::LocalGamesList(LocalGamesListOutcome::Ok(listed));
+    let check = RpcResponse::SavesCheck(SaveCheckOutcome::Ok(SaveCheck {
+        status: SaveMark::Synced,
+        in_use: vec![],
+        warnings: vec![],
+    }));
+    let accepted =
+        RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(SelectedGameLaunch {
+            session: SessionPrepared {
+                game_id: "game".into(),
+                launch_id: "accepted".into(),
+            },
+            warnings: vec![],
+        }));
+    for query in ["game", "A Game"] {
+        let server = Server::start(vec![
+            listed.clone(),
+            route_response(),
+            snapshot_response(test_snapshot()),
+            check.clone(),
+            accepted.clone(),
+        ]);
+        let output = server.run(&["play", query, "--json"]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+            serde_json::json!([check, accepted])
+        );
+    }
+    // The game that has the failure is still refused, with the failure.
+    let server = Server::start(vec![listed.clone()]);
+    let output = server.run(&["play", "other-game", "--json"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+        serde_json::json!([listed])
+    );
+}

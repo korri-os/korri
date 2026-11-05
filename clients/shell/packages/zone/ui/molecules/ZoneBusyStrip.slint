@@ -10,7 +10,10 @@ import { Busy } from "../types.slint";
 // The busy strip (ZoneBusyStrip): a black panel at the page's foot with
 // Korri's kicker at caps-2, its detail, Korri's actions, and SPECIAL STAGE's
 // meter (red fill on the track, its figures at the right end; without a
-// total, red stripes sweeping); the game in yellow on a tab over it.
+// total, red stripes sweeping); the game in yellow on a tab over it. A
+// launch's named steps sit under the kicker: one slanted cell per step on
+// the meter's track (done red, the current one yellow, the rest bare track),
+// and "Step i of n · label" in Korri's facts, wrapped in the words' width.
 export component ZoneBusyStrip {
     in property <Busy> busy;
     property <length> a: Tokens.a;
@@ -21,7 +24,14 @@ export component ZoneBusyStrip {
     property <length> cut: 16 * a;
     property <length> buttons-w: row.width;
     property <length> words-w: root.width - 2 * pad - cut - (busy.buttons.length > 0 ? buttons-w + 6 * a : 0);
-    out property <length> needed: pad + 2 * c1 + (busy.detail != "" ? 6 * a + detail.drawn-h : 0) + (busy.meter ? 8 * a + 4 * a + c1 : 0) + pad;
+    property <bool> stepped: busy.steps > 0;
+    // The cells share the words' width: they shrink with it, never past it.
+    property <length> cell-gap: 2 * a;
+    property <length> cell-h: 4 * a;
+    property <length> cell-w: Math.max(a, (words-w - (busy.steps - 1) * cell-gap) / Math.max(1, busy.steps));
+    property <length> steps-y: pad + 2 * c1 + 6 * a;
+    property <length> steps-h: stepped ? 6 * a + cell-h + 4 * a + step-words.drawn-h : 0;
+    out property <length> needed: pad + 2 * c1 + steps-h + (busy.detail != "" ? 6 * a + detail.drawn-h : 0) + (busy.meter ? 8 * a + 4 * a + c1 : 0) + pad;
     if root.busy.game != "": Rectangle {
         x: 0;
         y: 0;
@@ -62,10 +72,29 @@ export component ZoneBusyStrip {
         cap: 2 * root.c1;
         face: "korri";
     }
+    for i in (root.stepped ? root.busy.steps : 0): ZoneShape {
+        x: root.cut + root.pad + i * (root.cell-w + root.cell-gap);
+        y: root.steps-y;
+        width: root.cell-w;
+        height: root.cell-h;
+        ink: i < root.busy.step ? Tokens.danger : i == root.busy.step ? Tokens.yellow : Tokens.track;
+        commands: "M " + Tokens.pt(Math.min(root.cell-h, root.cell-w / 2), 0) + " L " + Tokens.pt(root.cell-w, 0)
+            + " L " + Tokens.pt(root.cell-w - Math.min(root.cell-h, root.cell-w / 2), root.cell-h) + " L 0 " + (root.cell-h / (1 * Tokens.unit)) + " Z";
+    }
+    step-words := ZoneCaps {
+        visible: root.stepped;
+        x: root.cut + root.pad;
+        y: root.steps-y + root.cell-h + 4 * root.a;
+        box: root.words-w;
+        wrap: true;
+        text: root.busy.step-words;
+        cap: root.c1;
+        face: "fact";
+    }
     detail := ZoneCaps {
         visible: root.busy.detail != "";
         x: root.cut + root.pad;
-        y: root.pad + 2 * root.c1 + 6 * root.a;
+        y: root.pad + 2 * root.c1 + root.steps-h + 6 * root.a;
         box: root.words-w;
         wrap: true;
         text: root.busy.detail;

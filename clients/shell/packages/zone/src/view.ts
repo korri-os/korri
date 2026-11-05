@@ -7,7 +7,7 @@
  * Pure: no clock, no randomness. The day under LAST PLAYED is computed
  * from Korri's epoch milliseconds in UTC.
  */
-import type { SurfaceGame, SurfaceModel, SurfaceNetworkConnection, SurfaceStatus } from "../../../../../contracts/generated/surface"
+import type { SurfaceGame, SurfaceModel, SurfaceNetworkConnection, SurfaceStatus, SurfaceSteps } from "../../../../../contracts/generated/surface"
 import { keyAt, keyGrid } from "./keys"
 import { formatZoneBytes, zoneProgressShare } from "./plan/bytes"
 import { entryHeading, optionsPlan } from "./plan/options"
@@ -184,7 +184,14 @@ function dialogView(headline: string, korri: boolean, lines: readonly string[], 
   return { shown: true, headline, korri, lines: lines.filter(line => line !== ""), title, buttons }
 }
 
-const EMPTY_BUSY = { shown: false, kicker: "", detail: "", game: "", buttons: [] as Btn[], meter: false, share: 0, sweep: false, figures: "", foot: true }
+const EMPTY_BUSY = { shown: false, kicker: "", detail: "", game: "", buttons: [] as Btn[], meter: false, share: 0, sweep: false, figures: "", foot: true, steps: 0, step: 0, stepWords: "" }
+
+/** A launch's named steps (amendment A4): how many, the one running now, and its line. */
+export function zoneSteps(steps: SurfaceSteps | undefined): { steps: number; step: number; stepWords: string } {
+  if (steps === undefined || steps.labels.length === 0) return { steps: 0, step: 0, stepWords: "" }
+  const step = Math.min(Math.max(0, steps.current), steps.labels.length - 1)
+  return { steps: steps.labels.length, step, stepWords: `Step ${step + 1} of ${steps.labels.length} · ${steps.labels[step]}` }
+}
 
 /** Korri's status as the layer over the page (ZoneStatusLayer). */
 function statusView(state: ZoneSurfaceState, korri: SurfaceModel) {
@@ -212,6 +219,7 @@ function statusView(state: ZoneSurfaceState, korri: SurfaceModel) {
         sweep: progress !== undefined && share === undefined,
         figures,
         foot: true,
+        ...zoneSteps(status.steps),
       }
       break
     }
@@ -478,6 +486,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
           sweep: progress !== undefined && share === undefined,
           figures: get.detail ?? (progress?.total !== undefined ? `${formatZoneBytes(progress.done)} / ${formatZoneBytes(progress.total)}` : ""),
           foot: true,
+          ...zoneSteps(undefined),
         }
       }
       break

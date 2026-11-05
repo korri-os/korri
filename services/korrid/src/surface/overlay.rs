@@ -169,6 +169,7 @@ fn model_for(launch_id: &str, title: Option<String>) -> SurfaceModel {
             kicker: "Loading session…".into(),
             detail: None,
             progress: None,
+            steps: None,
             actions: None,
             decline_action_id: None,
             game_id: None,

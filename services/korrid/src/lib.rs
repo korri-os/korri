@@ -15,6 +15,7 @@ use stream_play::{
 #[cfg(test)]
 mod launch_handoff_tests;
 pub mod launch_settings;
+pub(crate) mod launch_timeline;
 
 use axum::{
     extract::State,
@@ -2821,13 +2822,21 @@ async fn dispatch(
         RpcRequest::SavesCheck(request) => {
             let result = match &state.mode {
                 ServerMode::Host(host) => {
-                    host.save_check(
-                        request,
-                        state.saves.clone(),
-                        state.federation.clone(),
-                        request_arrived,
-                    )
-                    .await
+                    let game_id = request.game_id.clone();
+                    let result = host
+                        .save_check(
+                            request,
+                            state.saves.clone(),
+                            state.federation.clone(),
+                            request_arrived,
+                        )
+                        .await;
+                    launch_timeline::record(
+                        &game_id,
+                        launch_timeline::LaunchStage::SavesCheck,
+                        request_arrived.elapsed(),
+                    );
+                    result
                 }
                 _ => Err(installed_routes_unsupported()),
             };

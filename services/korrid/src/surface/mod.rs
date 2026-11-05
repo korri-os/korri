@@ -18,6 +18,7 @@ pub mod downloads;
 pub mod korrid;
 pub mod launch_model;
 pub mod launch_settings;
+pub mod launch_steps;
 pub mod launchables;
 pub mod model;
 pub mod network_onboarding;

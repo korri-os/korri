@@ -210,6 +210,7 @@ pub fn netplay_status_from(
             kicker,
             detail,
             progress,
+            steps: None,
             // Every action shared play puts on a Busy status cancels.
             decline_action_id: actions
                 .as_ref()
@@ -626,6 +627,7 @@ pub fn shared_play_status(model: &SharedPlay) -> Option<SurfaceStatus> {
         kicker,
         detail: None,
         progress: None,
+        steps: None,
         decline_action_id: actions
             .as_ref()
             .and_then(|actions| actions.first())

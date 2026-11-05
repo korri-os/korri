@@ -8,7 +8,7 @@ import { picoStoreProviderTitle, picoStoreResult, picoStoreSearchFor, PICO_STORE
 import type { PicoStoreShown } from "../pico-types"
 import type { Target } from "./focus"
 import { frame } from "./frame"
-import { A, B, bar, button, card, type CardView, cartView, chip, mark, NO_BAR, NO_CARD } from "./kit"
+import { A, B, bar, button, card, type CardView, cartView, chip, mark, NO_BAR, NO_CARD, NO_STEPS } from "./kit"
 import { cardTargets, type LaunchStageView } from "./catalog"
 import { editorParts } from "./panel"
 import { type Act, type Ctx, nav, type Screen } from "./types"
@@ -202,6 +202,7 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
         kicker: get.kicker,
         detail: get.detail ?? "",
         bar: get.progress === undefined ? { ...NO_BAR, shown: true, walking: true } : bar(get.progress),
+        steps: NO_STEPS,
         hasCart: true,
         cart,
         phase: "starting",
@@ -214,7 +215,7 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
 }
 
 function emptyLaunch(): LaunchStageView {
-  return { kicker: "", detail: "", bar: NO_BAR, hasCart: false, cart: cartView({ id: "", title: "" }), phase: "starting", actions: [] }
+  return { kicker: "", detail: "", bar: NO_BAR, steps: NO_STEPS, hasCart: false, cart: cartView({ id: "", title: "" }), phase: "starting", actions: [] }
 }
 
 function emptyEntry() {

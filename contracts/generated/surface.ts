@@ -170,10 +170,12 @@ export type SurfaceStarterPack = { _tag: "Offered"; actions: SurfaceAction[] } |
  * - `Busy`: work is under way. `kicker` is a short, calm headline
  * ("Starting…"). `detail` is optional progress detail, never an error code
  * or raw output. `progress` is measured progress when the work has a known
- * position; without it the work has no known end. `actions` are supplied
- * by the host for this work, such as real cancellation; the surface never
- * infers cancellation from a label. `gameId` names the game this work
- * belongs to, when it belongs to exactly one.
+ * position; without it the work has no known end. `steps` names a
+ * launch's steps and the one running now, when the work is a launch.
+ * `actions` are supplied by the host for this work, such as real
+ * cancellation; the surface never infers cancellation from a label.
+ * `gameId` names the game this work belongs to, when it belongs to
+ * exactly one.
  * - `Confirm`: Korri needs the user's say-so before it does something, such
  * as a large download. The surface renders exactly the host's actions and
  * reports the chosen one through `RunAction`. `declineActionId` is the id
@@ -196,7 +198,7 @@ export type SurfaceStarterPack = { _tag: "Offered"; actions: SurfaceAction[] } |
  * already user-facing copy. `gameId` and `gameTitle` name the game the
  * failure belongs to, when it belongs to exactly one.
  */
-export type SurfaceStatus = { _tag: "Browsing" } | { _tag: "Busy"; kicker: string; detail?: string; progress?: SurfaceProgress; actions?: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Confirm"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "ChooseSave"; gameId: string; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; sides: SurfaceSaveSide[] } | { _tag: "Running"; kicker: string; gameId?: string } | { _tag: "Paused"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Ended"; kicker: string; reason: string; gameId?: string; gameTitle?: string } | { _tag: "Problem"; kicker: string; reason: string; canRetry: boolean; gameId?: string; gameTitle?: string };
+export type SurfaceStatus = { _tag: "Browsing" } | { _tag: "Busy"; kicker: string; detail?: string; progress?: SurfaceProgress; steps?: SurfaceSteps; actions?: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Confirm"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "ChooseSave"; gameId: string; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; sides: SurfaceSaveSide[] } | { _tag: "Running"; kicker: string; gameId?: string } | { _tag: "Paused"; kicker: string; detail?: string; actions: SurfaceAction[]; declineActionId?: string; gameId?: string } | { _tag: "Ended"; kicker: string; reason: string; gameId?: string; gameTitle?: string } | { _tag: "Problem"; kicker: string; reason: string; canRetry: boolean; gameId?: string; gameTitle?: string };
 
 export type SurfaceStoreDetails = { _tag: "Closed" } | { _tag: "Loading"; entry: SurfaceStoreEntry } | { _tag: "Problem"; entry: SurfaceStoreEntry; message: string; actions: SurfaceAction[] } | { _tag: "Ready"; entry: SurfaceStoreEntry; description?: string; get: SurfaceStoreGet };
 
@@ -695,6 +697,18 @@ export interface SurfaceSettingConfirmation {
 	title: string;
 	message: string;
 	confirmLabel: string;
+}
+
+/**
+ * A launch's steps, named, in order. `labels` lists only the steps that run
+ * on this launch, in plain user-facing words. `current` is the zero-based
+ * index of the step running now. Korri fixes the list when the launch
+ * begins and never adds or removes a step: a step that turns out to be
+ * unneeded completes at once. A surface draws one segment per step.
+ */
+export interface SurfaceSteps {
+	labels: string[];
+	current: number;
 }
 
 /**

@@ -1,23 +1,31 @@
 import { P8 } from "../palette.slint";
 import { Tokens } from "../tokens.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
 import { PicoDownloadBar, BarView } from "../atoms/PicoDownloadBar.slint";
 import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
 import { PicoCart, CartView } from "../molecules/PicoCart.slint";
+
+// A launch's named steps (amendment A4): one cell per step, the one running
+// now (from 0), and "Step i of n · its label".
+export struct StepsView { shown: bool, count: int, current: int, words: string }
 
 export struct LaunchStageView {
     kicker: string,
     detail: string,
     bar: BarView,
+    steps: StepsView,
     has-cart: bool,
     cart: CartView,
     phase: string,
     actions: [ButtonView],
 }
 
-// Korri's launch: its word large, the meter (Korri's bytes, or the clock),
-// its detail, its actions, and the cart seated in its slot on the floor:
-// running sinks it, paused rests it with a pause mark.
+// Korri's launch: its word large, a launch's steps (one cell each: done lime,
+// the one running now yellow, the rest floor, and the step's words, wrapped),
+// the meter (Korri's bytes, or the clock), its detail, its actions, and the
+// cart seated in its slot on the floor: running sinks it, paused rests it
+// with a pause mark.
 export component PicoLaunchStage {
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <LaunchStageView> launch;
@@ -37,6 +45,23 @@ export component PicoLaunchStage {
             Rectangle { width: 3 * Tokens.p; height: 9 * Tokens.p; background: P8.ink; }
             Rectangle { width: 3 * Tokens.p; height: 9 * Tokens.p; background: P8.ink; }
         }
+        if launch.steps.shown : HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: min(root.width - 8 * Tokens.u, 200 * Tokens.p);
+                height: 6 * Tokens.p;
+                property <length> gap: 2 * Tokens.p;
+                property <length> cell: (self.width - (launch.steps.count - 1) * gap) / max(1, launch.steps.count);
+                for i in launch.steps.count : Rectangle {
+                    x: Tokens.snap(i * (cell + gap));
+                    y: 0;
+                    width: Tokens.snap(cell);
+                    height: parent.height;
+                    background: i < launch.steps.current ? P8.ok : i == launch.steps.current ? P8.go : P8.floor;
+                }
+            }
+        }
+        if launch.steps.shown : PicoPara { text: launch.steps.words; font-size: Tokens.sm; color: P8.ink-dim; horizontal-alignment: center; }
         if launch.bar.shown : HorizontalLayout {
             alignment: center;
             PicoDownloadBar { width: min(root.width - 8 * Tokens.u, 200 * Tokens.p); bar: launch.bar; }

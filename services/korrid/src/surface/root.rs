@@ -3,6 +3,7 @@
 //! from their facts, and performs each `SurfaceRequest` with the same rules
 //! the portal's `SurfaceHost` methods had.
 
+use super::launch_steps::{LaunchPlan, LaunchStep};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use korri_surface_treaty::{
@@ -287,6 +288,10 @@ enum Presentation {
 
 pub struct Root {
     korrid: Korrid,
+    /// The launch under way from this surface and its steps (amendment A4).
+    launch_plan: std::sync::Mutex<Option<LaunchPlan>>,
+    /// The press's plan is being read: a second press waits for it.
+    planning: std::sync::atomic::AtomicBool,
     presentation: std::sync::Mutex<Presentation>,
     pub launchables: Arc<Launchables>,
     pub network: Arc<NetworkOnboarding>,
@@ -571,6 +576,8 @@ impl Root {
                 last_live_ids: std::sync::Mutex::new(None),
                 runner,
                 korrid: launchables_korrid,
+                launch_plan: std::sync::Mutex::new(None),
+                planning: std::sync::atomic::AtomicBool::new(false),
                 presentation: std::sync::Mutex::new(Presentation::Catalog {
                     retained_failure: None,
                 }),
@@ -1012,6 +1019,7 @@ impl Root {
         {
             status = problem;
         }
+        let status = self.with_launch_steps(status);
         let onboarding = (onboarding_needed == Some(true) && owner.is_unsupported()).then(|| {
             SurfaceOnboarding {
                 controllers: self.controllers.snapshot(),
@@ -1223,16 +1231,134 @@ impl Root {
     /// closes without launching.
     /// The save check and its questions first, then the download gate.
     fn gate(self: &Arc<Self>, game: AcquisitionGameRef, done: StartDone) {
-        let weak = Arc::downgrade(self);
-        let gate_game = game.clone();
-        let gate_done = Arc::clone(&done);
-        let proceed: super::acquisition_gate::Step = Arc::new(move || {
-            if let Some(root) = weak.upgrade() {
-                root.download_gate(gate_game.clone(), Arc::clone(&gate_done));
-            }
+        crate::launch_timeline::begin(&game.id);
+        self.planning
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let root = Arc::clone(self);
+        tokio::spawn(async move {
+            let plan = root.plan_launch(&game).await;
+            *root.launch_plan.lock().expect("launch plan poisoned") = Some(plan);
+            root.planning
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            (root.notify)();
+            let weak = Arc::downgrade(&root);
+            let gate_game = game.clone();
+            let gate_done = Arc::clone(&done);
+            let proceed: super::acquisition_gate::Step = Arc::new(move || {
+                if let Some(root) = weak.upgrade() {
+                    root.reach_step(LaunchStep::Download);
+                    root.download_gate(gate_game.clone(), Arc::clone(&gate_done));
+                }
+            });
+            let abandon_root = Arc::downgrade(&root);
+            let abandon: super::acquisition_gate::Step = Arc::new(move || {
+                if let Some(root) = abandon_root.upgrade() {
+                    root.end_plan();
+                }
+                finish(&done, None)
+            });
+            root.saves.launch(save_ref(&game), proceed, abandon);
         });
-        let abandon: super::acquisition_gate::Step = Arc::new(move || finish(&done, None));
-        self.saves.launch(save_ref(&game), proceed, abandon);
+    }
+
+    /// The launch's steps, fixed before it begins: the save check when a
+    /// peer is in reach, the download when the game needs one.
+    async fn plan_launch(&self, game: &AcquisitionGameRef) -> LaunchPlan {
+        let peers = self.korrid.peer_list();
+        let known = match &game.runner_id {
+            None => self
+                .downloads
+                .facts()
+                .get(&game.id)
+                .map(|facts| facts.needs),
+            // The download facts are for the default runner.
+            Some(_) => None,
+        };
+        let needs = async {
+            match known {
+                Some(needs) => needs,
+                None => match self
+                    .korrid
+                    .acquisition_status(Some(game.id.clone()), game.runner_id.clone())
+                    .await
+                {
+                    crate::acquisition::AcquisitionOutcome::Ok(snapshot) => {
+                        snapshot.artifacts.iter().any(|artifact| {
+                            !matches!(
+                                artifact.state,
+                                crate::acquisition::ArtifactState::Ready { .. }
+                            )
+                        })
+                    }
+                    // The gate reads it again and says what went wrong.
+                    crate::acquisition::AcquisitionOutcome::Err(_) => false,
+                },
+            }
+        };
+        let (peers, needs_download) = tokio::join!(peers, needs);
+        // A peer whose last contact failed is not in reach; the save check
+        // spends at most its reach budget on it.
+        let peer_in_reach = matches!(&peers, crate::PeerListOutcome::Ok(list)
+            if list.peers.iter().any(|peer| !matches!(peer.state, crate::PeerListState::Failed)));
+        LaunchPlan::new(&game.id, peer_in_reach, needs_download)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn launch_plan_for_tests(&self) -> Option<LaunchPlan> {
+        self.launch_plan
+            .lock()
+            .expect("launch plan poisoned")
+            .clone()
+    }
+
+    fn reach_step(&self, step: LaunchStep) {
+        if let Some(plan) = self
+            .launch_plan
+            .lock()
+            .expect("launch plan poisoned")
+            .as_mut()
+        {
+            plan.reach(step);
+        }
+        (self.notify)();
+    }
+
+    fn end_plan(&self) {
+        *self.launch_plan.lock().expect("launch plan poisoned") = None;
+        (self.notify)();
+    }
+
+    /// A Busy of the launch under way names its steps.
+    fn with_launch_steps(&self, status: SurfaceStatus) -> SurfaceStatus {
+        let mut plan = self.launch_plan.lock().expect("launch plan poisoned");
+        let SurfaceStatus::Busy {
+            kicker,
+            detail,
+            progress,
+            actions,
+            decline_action_id,
+            game_id,
+            ..
+        } = status
+        else {
+            // The game has taken over, or the start failed: the launch is over.
+            if plan
+                .as_ref()
+                .is_some_and(|plan| plan.current() == LaunchStep::Start)
+            {
+                *plan = None;
+            }
+            return status;
+        };
+        SurfaceStatus::Busy {
+            kicker,
+            detail,
+            progress,
+            steps: plan.as_ref().map(LaunchPlan::surface_steps),
+            actions,
+            decline_action_id,
+            game_id,
+        }
     }
 
     /// The download gate, then the start. korrid refusing the start over
@@ -1242,15 +1368,34 @@ impl Root {
         let weak = Arc::downgrade(self);
         let retry_game = game.clone();
         let proceed_done = Arc::clone(&done);
+        let gate_started = std::time::Instant::now();
         let proceed = Arc::new(move || {
             let Some(root) = weak.upgrade() else { return };
             let game = retry_game.clone();
+            crate::launch_timeline::record(
+                &game.id,
+                crate::launch_timeline::LaunchStage::Downloads,
+                gate_started.elapsed(),
+            );
             let done = Arc::clone(&proceed_done);
             tokio::spawn(async move {
+                root.reach_step(LaunchStep::Prepare);
                 let outcome = root
                     .launchables
                     .start_catalog_launch(&game.id, game.runner_id.clone())
                     .await;
+                match &outcome {
+                    Some(crate::game_routes::SelectedGameLaunchOutcome::Ok(_)) => {
+                        root.reach_step(LaunchStep::Start)
+                    }
+                    // A refusal that goes back through a gate keeps its plan.
+                    Some(crate::game_routes::SelectedGameLaunchOutcome::Err(failure))
+                        if matches!(
+                            failure.code.as_str(),
+                            "ArtifactsNotReady" | "SavesSplit" | "DeviceNeedsOwner"
+                        ) => {}
+                    _ => root.end_plan(),
+                }
                 if let Some(crate::game_routes::SelectedGameLaunchOutcome::Err(failure)) = &outcome
                 {
                     if failure.code == "ArtifactsNotReady" {
@@ -1289,7 +1434,13 @@ impl Root {
                 finish(&done, outcome);
             });
         });
-        let abandon: super::acquisition_gate::Step = Arc::new(move || finish(&done, None));
+        let abandon_root = Arc::downgrade(self);
+        let abandon: super::acquisition_gate::Step = Arc::new(move || {
+            if let Some(root) = abandon_root.upgrade() {
+                root.end_plan();
+            }
+            finish(&done, None)
+        });
         self.acquisition.launch(game, proceed, abandon);
     }
 
@@ -1321,6 +1472,7 @@ impl Root {
             } => {
                 let current = launchables.state();
                 if !current.is_ready()
+                    || self.planning.load(std::sync::atomic::Ordering::SeqCst)
                     || self.acquisition.status().is_some()
                     || self.saves.status().is_some()
                     || !self.runner.is_closed()
@@ -1408,6 +1560,7 @@ impl Root {
             SurfaceRequest::RunGameAction { game_id, action_id } => {
                 let current = launchables.state();
                 if !current.is_ready()
+                    || self.planning.load(std::sync::atomic::Ordering::SeqCst)
                     || self.acquisition.status().is_some()
                     || self.saves.status().is_some()
                     || !self.runner.is_closed()

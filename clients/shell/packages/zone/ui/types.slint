@@ -124,6 +124,11 @@ export struct Busy {
     sweep: bool,
     figures: string,
     foot: bool,
+    // A launch's named steps (amendment A4): how many, the one running now
+    // (from 0), and "Step i of n · its label". No steps: 0.
+    steps: int,
+    step: int,
+    step-words: string,
 }
 
 export struct Card {

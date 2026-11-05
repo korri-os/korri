@@ -1,4 +1,4 @@
-import type { SurfaceAction, SurfaceModel, SurfaceStatus } from "./model"
+import type { SurfaceAction, SurfaceModel, SurfaceStatus, SurfaceSteps } from "./model"
 import { type PicoHomeView, picoHomeViewFromCatalog } from "./pico-home-view"
 
 /**
@@ -28,6 +28,8 @@ export type PicoScreenView =
       readonly detail?: string
       /** Bytes done and, when Korri knows it, bytes in all: a real bar. */
       readonly progress?: { readonly done: number; readonly total?: number }
+      /** A launch's named steps and the one running now. */
+      readonly steps?: SurfaceSteps
       readonly actions?: readonly SurfaceAction[]
       readonly cart?: PicoLaunchCart
     }
@@ -87,6 +89,7 @@ export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
         kicker: status.kicker,
         ...(status.detail === undefined ? {} : { detail: status.detail }),
         ...(status.progress === undefined ? {} : { progress: status.progress }),
+        ...(status.steps === undefined ? {} : { steps: status.steps }),
         ...(status.actions === undefined ? {} : { actions: status.actions }),
         ...(cart === undefined ? {} : { cart }),
       }

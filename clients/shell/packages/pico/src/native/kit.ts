@@ -101,6 +101,18 @@ export const chip = (text: string, kind: string, caption = ""): ChipView => ({ t
 
 export const NO_BAR: BarView = { shown: false, cells: 0, walking: false, label: "" }
 
+/** A launch's named steps (amendment A4): one cell per step, the one running
+ * now, and "Step i of n · its label". */
+export interface StepsView { readonly shown: boolean; readonly count: number; readonly current: number; readonly words: string }
+
+export const NO_STEPS: StepsView = { shown: false, count: 0, current: 0, words: "" }
+
+export function stepsView(steps: { readonly labels: readonly string[]; readonly current: number } | undefined): StepsView {
+  if (steps === undefined || steps.labels.length === 0) return NO_STEPS
+  const current = Math.min(Math.max(0, steps.current), steps.labels.length - 1)
+  return { shown: true, count: steps.labels.length, current, words: `Step ${current + 1} of ${steps.labels.length} · ${steps.labels[current]}` }
+}
+
 /** Sixteen cells from Korri's bytes, or a walking band when the end is unknown. */
 export function bar(progress: { readonly done: number; readonly total?: number } | undefined, label = ""): BarView {
   if (progress === undefined) return { ...NO_BAR, shown: true, walking: true, label }

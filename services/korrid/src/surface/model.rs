@@ -370,6 +370,7 @@ fn busy(kicker: String, detail: Option<String>, game_id: Option<String>) -> Surf
         kicker,
         detail,
         progress: None,
+        steps: None,
         actions: None,
         decline_action_id: None,
         game_id,
@@ -430,6 +431,7 @@ pub fn status_from(state: &LaunchablesState) -> SurfaceStatus {
                 notice_message.unwrap_or_else(|| "Cancel each launch you do not want.".into()),
             ),
             progress: None,
+            steps: None,
             actions: Some(
                 choices
                     .iter()
@@ -502,6 +504,7 @@ pub fn status_from(state: &LaunchablesState) -> SurfaceStatus {
                 }
             })),
             progress: None,
+            steps: None,
             actions: Some(vec![SurfaceAction::new(
                 "cancel-launch",
                 if *cancelling && *cancel_retry_available == Some(true) {
