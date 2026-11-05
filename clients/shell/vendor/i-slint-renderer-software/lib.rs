@@ -919,6 +919,15 @@ impl SoftwareRenderer {
         draw_functions::GLYPH_FAST_PATH.store(fast, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Whether colour textures are drawn a run of target pixels per source pixel (the
+    /// default) or a pixel at a time (the general path). For tests and benchmarks that
+    /// compare the two; it applies to every renderer.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_scaled_runs(runs: bool) {
+        draw_functions::SCALED_RUNS.store(runs, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Whether band threads move between bands as chunks are published (the default), or
     /// each replays a whole band, waiting for each chunk (the former ordering). For
     /// benchmarks and tests that compare the two; it applies to every renderer.
