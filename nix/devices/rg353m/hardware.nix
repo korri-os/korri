@@ -9,6 +9,8 @@ let
   system = pkgs.stdenv.hostPlatform.system;
 in
 {
+  imports = [ ./owner-publisher.nix ];
+
   # This package contains the controller profile observed for this board. The
   # product module owns InputPlumber and inputd themselves.
   services.korriLinuxInput.provider.extraDataPackages = [
