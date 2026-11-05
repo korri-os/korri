@@ -94,13 +94,25 @@ function signalOf(connection: SurfaceNetworkConnection | undefined) {
   }
 }
 
-/** A game's card, made once per game object Korri publishes (the press rebuild only marks focus). */
+/**
+ * A game's card, made once per game object Korri publishes, and kept across
+ * publishes while the facts it shows are the same: each move along the band
+ * brings a new model (FocusGame), with every game a new object.
+ */
 const cards = new WeakMap<SurfaceGame, ReturnType<typeof makeCard>>()
+const cardsById = new Map<string, { readonly game: SurfaceGame; readonly made: ReturnType<typeof makeCard> }>()
+const sameCardFacts = (a: SurfaceGame, b: SurfaceGame): boolean =>
+  a.title === b.title && a.coverArtUrl === b.coverArtUrl && a.subtitle === b.subtitle && a.section === b.section
+  && a.resumable === b.resumable && a.download?.bytes === b.download?.bytes && (a.download === undefined) === (b.download === undefined)
+  && JSON.stringify(a.launchLocations ?? null) === JSON.stringify(b.launchLocations ?? null)
 const card = (game: SurfaceGame) => {
   let made = cards.get(game)
   if (made === undefined) {
-    made = makeCard(game)
+    const known = cardsById.get(game.id)
+    made = known !== undefined && sameCardFacts(known.game, game) ? known.made : makeCard(game)
     cards.set(game, made)
+    if (cardsById.size > 512) cardsById.clear()
+    cardsById.set(game.id, { game, made })
   }
   return made
 }
@@ -263,13 +275,42 @@ export function attractStep<V extends { attractCard: number; cards: unknown[]; a
   return { ...before, attractCard: attractAt, cards: bandCards(band, nav.card, screen, attractAt, before.attract === true) }
 }
 
+/** A mark out of the pool: a focus target in its place, in the band (src/focus.ts), with no words. Shared: never written. */
+const OFF_MARK = Object.freeze({ focused: false, focusRegion: "band" })
+
+/**
+ * The band's marks, already in their region (src/focus.ts marks only the
+ * focused card's as active): the pool's with their game's words, the rest
+ * OFF_MARK.
+ */
+function bandMarks(band: readonly SurfaceGame[], at: number, cardFocused: boolean, screen: ZoneScreen) {
+  const reach = poolReach(screen)
+  const marks = new Array<Record<string, unknown>>(band.length)
+  for (let index = 0; index < band.length; index++) {
+    marks[index] = Math.abs(index - at) <= reach
+      ? { label: band[index]!.title, focused: index === at && cardFocused, focusRegion: "band" }
+      : OFF_MARK
+  }
+  return marks
+}
+
 /** ZoneCardBand's pool either side of the focus: its reach and the next card each way. */
 const poolReach = (screen: ZoneScreen): number => (screen.select.band === "wide" ? 2 : 1) + 1
 
-/** The band's cards as the view sends them: the pool's and the attract's whole, the rest NO_CARD. */
+/**
+ * The band's cards as the view sends them: the pool's and the attract's
+ * whole, the rest NO_CARD, and none past the pool (and the attract's game)
+ * but one: ZoneCardBand and ZoneAttract read no card further on, and the
+ * one past the pool is the spare slot's until it takes its next card.
+ */
 function bandCards(band: readonly SurfaceGame[], at: number, screen: ZoneScreen, attractAt: number, attracting: boolean) {
   const reach = poolReach(screen)
-  return band.map((game, index) => (Math.abs(index - at) <= reach || (attracting && index === attractAt) ? card(game) : NO_CARD))
+  const end = Math.min(band.length, Math.max(at + reach + 2, attracting ? attractAt + 1 : 0))
+  const cards = new Array<unknown>(end)
+  for (let index = 0; index < end; index++) {
+    cards[index] = Math.abs(index - at) <= reach || (attracting && index === attractAt) ? card(band[index]!) : NO_CARD
+  }
+  return cards
 }
 
 /**
@@ -536,8 +577,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     cards: bandCards(band, nav.card, screen, attractAt, attracting),
     // Every card's mark (each a focus target in its place); the pool's carry
     // their game's words, the rest only their focus, to keep the view small.
-    cardMarks: band.map((game, index) => (Math.abs(index - nav.card) <= poolReach(screen)
-      ? { label: game.title, focused: index === nav.card && cardFocused } : { focused: false })),
+    cardMarks: bandMarks(band, nav.card, cardFocused, screen),
     focusedCard: nav.card,
     cardFocused,
     firstIndex: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.firstIndex : 0,

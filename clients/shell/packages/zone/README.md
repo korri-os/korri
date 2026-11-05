@@ -51,12 +51,14 @@ nix run .#zone-check                   # the bun checks and logic.js freshness
 Each `view()` call runs under the shell's 50 ms budget, and the RG353M at
 408 MHz runs Zone's logic about 28 times slower than an i9-11900H.
 `tests/zone_package.rs` (`view_calls_stay_well_inside_the_budget_on_a_slow_clock`)
-times the calls over 10,000 games at 640x480. On the workstation the
-attract's next game takes about 0.23 ms (about 6 ms on the device; it
-patches the last view), and a move along the band about 0.6 ms (about
-17 ms on the device). The view sends whole cards only for the band's pool
-and the attract's game, and the focus passes walk only the keys that hold
-focus entries.
+counts the instructions of each call over 10,000 games at 640x480 (the CPU's
+own count, so a busy machine does not change it) and holds them to the
+device's time: the attract's next game about 7 ms there (it patches the last
+view), a move along the band about 12–13 ms. A call's JSON is about half
+of it, and it grows with the number of objects, not bytes: the view sends
+whole cards only for the band's pool and the attract's game (and none past
+them), every mark but the pool's as one shared empty target, a hidden layer
+as `{ shown: false }`, and no SAVE DATA or first-boot parts on other pages.
 
 ## Differences from the web Zone
 
