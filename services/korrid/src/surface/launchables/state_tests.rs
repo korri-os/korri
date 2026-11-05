@@ -329,7 +329,7 @@ mod from_sources {
         assert_eq!(
             notice(&state),
             Some(&LaunchNotice::Catalog {
-                message: "local games: LocalStorageUnavailable: storage denied".into()
+                message: "Korri couldn't read this device's games.".into()
             })
         );
     }
@@ -348,9 +348,56 @@ mod from_sources {
         );
         assert_eq!(
             notice(&state).map(LaunchNotice::message),
-            Some("local games: LocalConfigReloadFailed: library.yaml is malformed")
+            Some("This device's library settings couldn't be read.")
         );
         assert!(matches!(&state.entries()[0], Entry::LocalGame { game, .. } if game.id == "wl4"));
+    }
+
+    #[test]
+    fn a_game_without_a_runner_does_not_hide_the_games_that_have_one() {
+        let state = LaunchablesState::from_sources(
+            &games_ok(),
+            None,
+            Some(&from(json!({ "_tag": "Ok", "payload": {
+                "games": [{ "id": "anguna", "title": "Anguna", "system": "Game Boy Advance" }],
+                "failures": [
+                    { "code": "LocalRouteUnavailable", "message": "game eggshell-1 has no installed Linux runner" },
+                    { "code": "LocalRouteUnavailable", "message": "game eggshell-2 has no installed Linux runner" },
+                    { "code": "LocalRomMissing", "message": "The ROM file is missing" },
+                    { "code": "LaunchSettingUnsupported", "message": "shader skipped" }
+                ]
+            } }))),
+            &[],
+            None,
+        );
+        assert_eq!(tag(&state), "Ready");
+        assert!(notice(&state).is_none());
+        assert!(state
+            .entries()
+            .iter()
+            .any(|entry| matches!(entry, Entry::LocalGame { game, .. } if game.id == "anguna")));
+    }
+
+    #[test]
+    fn an_empty_library_says_in_plain_words_why_its_games_are_missing() {
+        let state = LaunchablesState::from_sources(
+            &catalog_of(vec![]),
+            None,
+            Some(&from(json!({ "_tag": "Ok", "payload": {
+                "games": [],
+                "failures": [
+                    { "code": "LocalRouteUnavailable", "message": "game eggshell-1 has no installed Linux runner" },
+                    { "code": "LocalRouteUnavailable", "message": "game eggshell-2 has no installed Linux runner" },
+                    { "code": "LocalConfigReloadFailed", "message": "library.yaml is malformed" }
+                ]
+            } }))),
+            &[],
+            None,
+        );
+        assert_eq!(
+            notice(&state).map(LaunchNotice::message),
+            Some("2 games need a runner that isn't installed. This device's library settings couldn't be read.")
+        );
     }
 
     #[test]
@@ -372,7 +419,7 @@ mod from_sources {
         let state = LaunchablesState::from_sources(&games_err(), None, None, &[], None);
         assert_eq!(
             notice(&state).map(LaunchNotice::message),
-            Some("games: UpstreamUnreachable: host offline")
+            Some("Korri couldn't read the game library.")
         );
     }
 
@@ -412,7 +459,7 @@ mod from_sources {
         );
         assert_eq!(
             notice(&state).map(LaunchNotice::message),
-            Some("peers: X: y")
+            Some("Korri couldn't list your other devices.")
         );
     }
 

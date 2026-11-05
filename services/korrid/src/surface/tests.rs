@@ -96,7 +96,7 @@ mod surface_model {
         );
         assert_eq!(
             serde_json::to_value(status_from(&state)).unwrap(),
-            json!({ "_tag": "Problem", "kicker": "Catalog problem", "reason": "rpminiv2: LocalRomMissing: The ROM file is missing", "canRetry": false })
+            json!({ "_tag": "Problem", "kicker": "Catalog problem", "reason": "1 game is missing its files.", "canRetry": false })
         );
         assert!(games(&state).is_empty());
     }

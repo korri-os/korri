@@ -380,6 +380,59 @@ fn has_local_catalog(entries: &[Entry]) -> bool {
     })
 }
 
+/// The catalog notice in plain words. `Problem.reason` is finished copy
+/// (contract `SurfaceStatus`), so codes and game ids stay in korrid's RPC
+/// results and the CLI; the surface gets one short sentence per kind.
+#[derive(Default)]
+struct CatalogTrouble {
+    missing_runner: usize,
+    missing_files: usize,
+    sentences: Vec<String>,
+}
+
+impl CatalogTrouble {
+    fn add(&mut self, sentence: String) {
+        if !self.sentences.contains(&sentence) {
+            self.sentences.push(sentence);
+        }
+    }
+
+    /// A failure a game source reported beside its games. One game's own
+    /// failure counts only when `counts_games`: nothing is listed at all.
+    fn listed_failure(&mut self, code: &str, host: Option<&str>, counts_games: bool) {
+        match code {
+            // A warning about a setting; the game still launches.
+            "LaunchSettingUnsupported" => {}
+            "LocalRouteUnavailable" if counts_games => self.missing_runner += 1,
+            "LocalRomMissing" if counts_games => self.missing_files += 1,
+            "LocalRouteUnavailable" | "LocalRomMissing" => {}
+            code if code.starts_with("LocalConfig") => {
+                self.add("This device's library settings couldn't be read.".into())
+            }
+            _ => self.add(match host {
+                Some(host) => format!("Korri couldn't read the games on {host}."),
+                None => "Korri couldn't read some of this device's games.".into(),
+            }),
+        }
+    }
+
+    fn message(self) -> Option<String> {
+        let mut parts = Vec::new();
+        match self.missing_runner {
+            0 => {}
+            1 => parts.push("1 game needs a runner that isn't installed.".to_owned()),
+            n => parts.push(format!("{n} games need a runner that isn't installed.")),
+        }
+        match self.missing_files {
+            0 => {}
+            1 => parts.push("1 game is missing its files.".to_owned()),
+            n => parts.push(format!("{n} games are missing their files.")),
+        }
+        parts.extend(self.sentences);
+        (!parts.is_empty()).then(|| parts.join(" "))
+    }
+}
+
 impl LaunchablesState {
     pub fn loaded(&self) -> Option<&Loaded> {
         match self {
@@ -409,7 +462,7 @@ impl LaunchablesState {
         peers: Option<&PeerListOutcome>,
     ) -> LaunchablesState {
         let mut entries = Vec::new();
-        let mut failures: Vec<String> = Vec::new();
+        let mut trouble = CatalogTrouble::default();
         let local_catalog: &[LocalGame] = match local_games {
             Some(LocalGamesListOutcome::Ok(payload)) => &payload.games,
             _ => &[],
@@ -439,47 +492,39 @@ impl LaunchablesState {
                 }
             }
         }
+        // A game that cannot run must not hide the games that can: its own
+        // failure reaches the notice only when no game is listed at all.
+        let nothing_listed = local_catalog.is_empty() && remote_catalog.is_empty();
         match local_games {
             Some(LocalGamesListOutcome::Ok(payload)) => {
                 for failure in payload.failures.iter().flatten() {
-                    failures.push(format!(
-                        "local games: {}: {}",
-                        failure.code, failure.message
-                    ));
+                    trouble.listed_failure(&failure.code, None, nothing_listed);
                 }
             }
             // An absent inventory capability is not a failed read.
             Some(LocalGamesListOutcome::Err(failure)) if failure.code != "OperationUnsupported" => {
-                failures.push(format!(
-                    "local games: {}: {}",
-                    failure.code, failure.message
-                ));
+                trouble.add("Korri couldn't read this device's games.".into());
             }
             _ => {}
         }
-        if let Some(PeerListOutcome::Err(failure)) = peers {
-            failures.push(format!("peers: {}: {}", failure.code, failure.message));
+        if let Some(PeerListOutcome::Err(_)) = peers {
+            trouble.add("Korri couldn't list your other devices.".into());
         }
         match korrid {
             CatalogSnapshotOutcome::Ok(payload) => {
                 // A partial peer read must not block healthy games; keep the
                 // notice only when no game source succeeded.
-                if local_catalog.is_empty() && remote_catalog.is_empty() {
+                if nothing_listed {
                     for failure in payload.failures.iter().flatten() {
-                        failures.push(format!(
-                            "{}: {}: {}",
-                            failure.host, failure.code, failure.message
-                        ));
+                        trouble.listed_failure(&failure.code, Some(&failure.host), true);
                     }
                 }
             }
-            CatalogSnapshotOutcome::Err(failure) => {
-                failures.push(format!("games: {}: {}", failure.code, failure.message));
+            CatalogSnapshotOutcome::Err(_) => {
+                trouble.add("Korri couldn't read the game library.".into());
             }
         }
-        let notice = (!failures.is_empty()).then(|| LaunchNotice::Catalog {
-            message: failures.join(" · "),
-        });
+        let notice = trouble.message().map(|message| LaunchNotice::Catalog { message });
         if let Some(session) = session {
             if !is_authoritative_session_status(session) {
                 let known = previous_entries.iter().find(|entry| {
