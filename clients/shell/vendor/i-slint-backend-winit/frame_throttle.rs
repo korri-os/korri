@@ -87,6 +87,13 @@ std::thread_local! {
     /// Whether the last frame drawn on this thread was presented. Wayland paces redraws by
     /// frame callbacks, which only a presented frame gets.
     static LAST_FRAME_PRESENTED: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+    /// When the last frame drawn on this thread started.
+    static LAST_FRAME_STARTED: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+}
+
+/// Note that a frame starts drawing now.
+pub(crate) fn frame_started() {
+    LAST_FRAME_STARTED.with(|s| s.set(Some(std::time::Instant::now())));
 }
 
 /// Note whether the frame just drawn was presented (its damage was not empty).
@@ -110,23 +117,32 @@ impl PacedWinitFrameThrottle {
 }
 
 /// When the next redraw may come: at once after a presented frame (the frame callback
-/// paces it), else after one frame interval of the display's refresh rate.
+/// paces it), else one frame interval of the display's refresh rate after the last frame
+/// started (`since_frame_start` ago), so frames keep the display's cadence whatever their
+/// drawing took.
 #[doc(hidden)]
 pub fn redraw_delay(
     last_presented: bool,
     refresh_millihertz: Option<u32>,
+    since_frame_start: std::time::Duration,
 ) -> Option<std::time::Duration> {
     if last_presented {
         return None;
     }
     let refresh = refresh_millihertz.unwrap_or(60000).max(1) as u64;
-    Some(std::time::Duration::from_micros(1_000_000_000 / refresh))
+    let interval = std::time::Duration::from_micros(1_000_000_000 / refresh);
+    Some(interval.saturating_sub(since_frame_start))
 }
 
 impl FrameThrottle for PacedWinitFrameThrottle {
     fn request_throttled_redraw(&self, winit_window: &winit::window::Window) {
         let refresh = winit_window.current_monitor().and_then(|m| m.refresh_rate_millihertz());
-        let Some(interval) = redraw_delay(LAST_FRAME_PRESENTED.with(|p| p.get()), refresh) else {
+        let since = LAST_FRAME_STARTED.with(|s| s.get()).map_or(Default::default(), |s| s.elapsed());
+        let Some(delay) = redraw_delay(LAST_FRAME_PRESENTED.with(|p| p.get()), refresh, since)
+        else {
+            // The frame callback paces this one; a wait left from a frame not presented
+            // would add a frame of its own.
+            self.timer.stop();
             winit_window.request_redraw();
             return;
         };
@@ -134,7 +150,7 @@ impl FrameThrottle for PacedWinitFrameThrottle {
             return;
         }
         let window_adapter = self.window_adapter.clone();
-        self.timer.start(TimerMode::SingleShot, interval, move || redraw_now(&window_adapter));
+        self.timer.start(TimerMode::SingleShot, delay, move || redraw_now(&window_adapter));
     }
 }
 

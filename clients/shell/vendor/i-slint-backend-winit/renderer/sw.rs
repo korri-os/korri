@@ -92,6 +92,7 @@ impl super::WinitCompatibleRenderer for WinitSoftwareRenderer {
             return Ok(DrawOutcome::Success);
         };
 
+        crate::frame_throttle::frame_started();
         let mut borrowed_surface = self.surface.borrow_mut();
         let Some(surface) = borrowed_surface.as_mut() else {
             // Nothing to render
