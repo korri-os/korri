@@ -986,14 +986,27 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     );
     deliver(&mut engine, &mut korri, json!({"_tag": "KorriPublished"}));
     engine.view().unwrap();
-    // The best of three runs of each call, so a busy machine does not decide it.
-    let mut timed = |engine: &mut engine::Engine| {
-        let started = std::time::Instant::now();
-        engine.view().unwrap();
-        started.elapsed()
+    // The thread's own CPU time, so other work on a busy machine does not count.
+    // What a call costs: the instructions this thread runs in it (counted by
+    // the CPU, so other work on a busy machine does not count), or, where the
+    // counter is not available, the thread's CPU time.
+    let counter = Instructions::open();
+    // ZONE_VIEW_SKIP=1 leaves the timed calls out (for counting what they cost).
+    let skip = std::env::var_os("ZONE_VIEW_SKIP").is_some();
+    let timed = |engine: &mut engine::Engine| {
+        let started = counter.as_ref().map_or_else(cpu_nanos, Instructions::read);
+        if !skip {
+            engine.view().unwrap();
+        }
+        counter.as_ref().map_or_else(cpu_nanos, Instructions::read) - started
     };
-    let mut times: BTreeMap<&str, Vec<std::time::Duration>> = BTreeMap::new();
-    for _ in 0..10 {
+    let mut times: BTreeMap<&str, Vec<u64>> = BTreeMap::new();
+    // ZONE_VIEW_MOVES: band moves each way (10).
+    let moves: usize = std::env::var("ZONE_VIEW_MOVES")
+        .ok()
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(10);
+    for _ in 0..moves {
         deliver(
             &mut engine,
             &mut korri,
@@ -1004,7 +1017,7 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
             .or_default()
             .push(timed(&mut engine));
     }
-    for _ in 0..10 {
+    for _ in 0..moves {
         deliver(
             &mut engine,
             &mut korri,
@@ -1042,28 +1055,30 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     );
     let mut over = Vec::new();
     for (what, list) in &times {
-        // The attract's next game: under 10 ms on the device (5x headroom).
-        // Every other call: under 25 ms there (2x headroom; band moves
-        // stand at about 17 ms, see README.md, Limits).
-        let device_ms = if *what == "attract next" {
-            10_000.0
-        } else {
-            25_000.0
+        // The attract's next game: under 10 ms on the device (5x headroom);
+        // every other call under 15 ms (band moves estimate about 13 ms; see
+        // README.md, Limits).
+        let device_ms = if *what == "attract next" { 10.0 } else { 15.0 };
+        let limit = match counter {
+            Some(_) => (device_ms * ZONE_INSTRUCTIONS_PER_DEVICE_MS) as u64,
+            // CPU time, with room for a busy machine.
+            None => (2.0 * device_ms * 1_000_000.0 / ZONE_SLOW_FACTOR) as u64,
         };
-        let limit = std::time::Duration::from_micros((device_ms / ZONE_SLOW_FACTOR) as u64);
+        let unit = if counter.is_some() {
+            "instructions"
+        } else {
+            "ns"
+        };
         let mut sorted = list.clone();
         sorted.sort();
-        let worst = *sorted.last().unwrap();
+        let median = sorted[sorted.len() / 2];
         eprintln!(
-            "{what}: median {:?}, worst {:?} (limit {limit:?})",
-            sorted[sorted.len() / 2],
-            worst
+            "{what}: median {median} {unit}, worst {} (limit {limit}; about {:.1} ms on the device)",
+            sorted.last().unwrap(),
+            if counter.is_some() { median as f64 / ZONE_INSTRUCTIONS_PER_DEVICE_MS } else { median as f64 * ZONE_SLOW_FACTOR / 1_000_000.0 }
         );
-        if sorted[sorted.len() / 2] > limit {
-            over.push(format!(
-                "{what}: median {:?} over {limit:?}",
-                sorted[sorted.len() / 2]
-            ));
+        if median > limit {
+            over.push(format!("{what}: median {median} {unit} over {limit}"));
         }
     }
     assert!(over.is_empty(), "{over:#?}");
@@ -1074,3 +1089,73 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
 /// next game against 2.07 ms here for the same call before Zone made it
 /// incremental (25 to 28 times).
 const ZONE_SLOW_FACTOR: f64 = 28.0;
+
+/// Workstation instructions per millisecond of the same call on the RG353M
+/// at 408 MHz: a band move counted 4.38 M instructions here before 597896ae3
+/// and took about 0.6 ms here, about 17 ms on the device.
+const ZONE_INSTRUCTIONS_PER_DEVICE_MS: f64 = 4_380_000.0 / 17.0;
+
+/// The thread's CPU time in ns.
+fn cpu_nanos() -> u64 {
+    let mut now = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) };
+    now.tv_sec as u64 * 1_000_000_000 + now.tv_nsec as u64
+}
+
+/// The CPU's count of user-space instructions this thread retires
+/// (perf_event_open), when the kernel lets a process count its own.
+struct Instructions(i32);
+
+impl Instructions {
+    fn open() -> Option<Self> {
+        // struct perf_event_attr, as far as this needs it (size 128).
+        #[repr(C)]
+        struct Attr {
+            kind: u32,
+            size: u32,
+            config: u64,
+            sample: u64,
+            sample_type: u64,
+            read_format: u64,
+            flags: u64,
+            rest: [u64; 10],
+        }
+        let attr = Attr {
+            kind: 0, // PERF_TYPE_HARDWARE
+            size: std::mem::size_of::<Attr>() as u32,
+            config: 1, // PERF_COUNT_HW_INSTRUCTIONS
+            sample: 0,
+            sample_type: 0,
+            read_format: 0,
+            // exclude_kernel (bit 5) and exclude_hv (bit 6)
+            flags: (1 << 5) | (1 << 6),
+            rest: [0; 10],
+        };
+        let fd = unsafe {
+            libc::syscall(
+                libc::SYS_perf_event_open,
+                &attr as *const Attr,
+                0,
+                -1,
+                -1,
+                0,
+            )
+        };
+        (fd >= 0).then_some(Self(fd as i32))
+    }
+
+    fn read(&self) -> u64 {
+        let mut count = 0u64;
+        unsafe { libc::read(self.0, &mut count as *mut u64 as *mut libc::c_void, 8) };
+        count
+    }
+}
+
+impl Drop for Instructions {
+    fn drop(&mut self) {
+        unsafe { libc::close(self.0) };
+    }
+}
