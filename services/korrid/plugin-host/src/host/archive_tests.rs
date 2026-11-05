@@ -915,3 +915,222 @@ fn slim_real_nix_publish_install_security_and_offline() {
         .ca
         .is_some());
 }
+
+/// Owner decision 2026-11-05: a signed record whose exact closure is already
+/// valid with trusted local signatures makes no network request. A missing or
+/// unsigned package still takes the normal archive route, and an archive that
+/// the record's key did not sign is refused there.
+#[test]
+#[ignore = "requires writable build-machine Nix; creates and removes only this test's unique outputs"]
+fn present_signed_closure_installs_without_any_network_request() {
+    let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
+    let helper = PathBuf::from(std::env::var_os("KORRI_TEST_TRUE").expect("immutable coreutils"));
+    let fixture = FixtureRun::new(&nix);
+    let root = fixture.directory();
+    let run_id = &fixture.id;
+    let generate = |name: &str| {
+        let secret = run(&nix, &["key", "generate-secret", "--key-name", name]);
+        let public = publisher::public_half(&secret).unwrap();
+        let file = root.path().join(format!("{name}.secret"));
+        fs::write(&file, secret).unwrap();
+        (file, public)
+    };
+    let (key, publisher_key) = generate("present-publisher");
+    let (upstream_secret, upstream_key) = generate("present-upstream");
+    let (other_secret, _) = generate("present-other");
+    let tools = root.path().join(format!("tools-{run_id}"));
+    fs::create_dir(&tools).unwrap();
+    fs::write(
+        tools.join("nix"),
+        format!(
+            "#!/bin/sh\nexec {} --option trusted-public-keys '{} {}' \"$@\"\n",
+            nix.display(),
+            upstream_key,
+            publisher_key
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(tools.join("nix"), fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(nix.with_file_name("nix-store"), tools.join("nix-store")).unwrap();
+    let nix = PathBuf::from(run(&nix, &["store", "add-path", tools.to_str().unwrap()])).join("nix");
+    let shared_source = root.path().join(format!("shared-{run_id}"));
+    fs::write(&shared_source, format!("shared {}", root.path().display())).unwrap();
+    let shared = run(
+        &nix,
+        &["store", "add-path", shared_source.to_str().unwrap()],
+    );
+    run(
+        &nix,
+        &[
+            "store",
+            "sign",
+            "--key-file",
+            upstream_secret.to_str().unwrap(),
+            &shared,
+        ],
+    );
+    let upstream_cache = root.path().join("upstream");
+    run(
+        &nix,
+        &[
+            "copy",
+            "--to",
+            &format!("file://{}", upstream_cache.display()),
+            &shared,
+        ],
+    );
+    let source = root.path().join(format!("source-{run_id}"));
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("plugin.ts"), "export const name = 'native';").unwrap();
+    fs::write(source.join("manifest.json"), serde_json::json!({"publisher":{"namespace":"@present"},"entry":"plugin.ts","sources":["plugin.ts"],"packages":{"shared":shared}}).to_string()).unwrap();
+    let source_path = run(&nix, &["store", "add-path", source.to_str().unwrap()]);
+    let expression = format!("derivation {{ name = \"present-native-{}\"; system = \"{}\"; builder = \"{}\"; args = [\"-c\" \"{} -R $source $out\"]; source = builtins.storePath \"{}\"; shared = builtins.storePath \"{}\"; }}", run_id, current_platform(), fs::canonicalize("/bin/sh").unwrap().display(), helper.with_file_name("cp").display(), source_path, shared);
+    let build = || {
+        let built: serde_json::Value = serde_json::from_str(&run(
+            &nix,
+            &[
+                "build",
+                "--impure",
+                "--option",
+                "sandbox",
+                "false",
+                "--no-link",
+                "--json",
+                "--expr",
+                &expression,
+            ],
+        ))
+        .unwrap();
+        (
+            PathBuf::from(built[0]["outputs"]["out"].as_str().unwrap()),
+            built[0]["drvPath"].as_str().unwrap().to_owned(),
+        )
+    };
+    let (package, derivation) = build();
+    let mut upstream = slim::Upstream::file(&nix, &upstream_cache);
+    let publish = |secret: &Path, release: &str, upstream: &mut slim::Upstream| {
+        let output = root.path().join(format!("publication-{release}"));
+        fs::create_dir(&output).unwrap();
+        publisher::publish_archive_with_upstream(
+            &PublishArgs {
+                nix: nix.clone(),
+                secret_key: Some(secret.to_owned()),
+                self_contained: false,
+                input_store_path: package.clone(),
+                release_version: release.into(),
+                platform: current_platform().into(),
+                archive_url: String::new(),
+                output_dir: output,
+            },
+            Some(upstream),
+        )
+        .unwrap()
+    };
+    // The other key signs first: its archive's root carries only that key.
+    let foreign = publish(&other_secret, "foreign", &mut upstream);
+    let signed = publish(&key, "signed", &mut upstream);
+    let record = |published: &publisher::ArchiveResult, name: &str| crate::catalog::CatalogRecord {
+        plugin_id: published.declaration.id(),
+        title: None,
+        description: None,
+        release_version: name.into(),
+        platform: published.platform.clone(),
+        store_path: published.ca_store_path.clone(),
+        archive_url: format!("https://archive.test/{name}.tar"),
+        archive_sha256: published.archive_sha256.clone(),
+        public_key: Some(publisher_key.clone()),
+    };
+    let good = record(&signed, "signed");
+    let forged = record(&foreign, "foreign");
+    assert_eq!(good.store_path, package.to_string_lossy());
+    // Every request goes through this curl. It logs each call and serves only
+    // the two archives; any other address fails like an unreachable network.
+    let log = root.path().join("curl.log");
+    let curl = root.path().join("curl");
+    fs::write(&curl, format!(
+        "#!/bin/sh\necho \"$*\" >> {log}\nout=; url=\nwhile [ $# -gt 0 ]; do case \"$1\" in --output) out=$2; shift;; --url) url=$2; shift;; esac; shift; done\ncase \"$url\" in\n {good}) exec {cp} {signed} \"$out\";;\n {forged}) exec {cp} {foreign} \"$out\";;\nesac\nexit 7\n",
+        log = log.display(), good = good.archive_url, forged = forged.archive_url,
+        cp = helper.with_file_name("cp").display(),
+        signed = signed.archive_path.display(), foreign = foreign.archive_path.display(),
+    )).unwrap();
+    fs::set_permissions(&curl, fs::Permissions::from_mode(0o755)).unwrap();
+    let config = Configuration {
+        curl,
+        ca_bundle: None,
+        official: None,
+    };
+    let repository = SourceUrl::parse("https://catalog.test/").unwrap();
+    let requests = || fs::read_to_string(&log).unwrap_or_default();
+    let new_host = |name: &str, upstream: Option<PathBuf>| {
+        let directory = root.path().join(name);
+        fs::create_dir(&directory).unwrap();
+        let mut host = Host::for_test(
+            &directory,
+            nix.clone(),
+            LifecyclePolicy::new(Vec::new()).unwrap(),
+            TestRuntime::default(),
+        )
+        .unwrap();
+        host.test_runtime = None;
+        host.archive_upstream = upstream;
+        host.trust_publisher("@present", &publisher_key).unwrap();
+        host
+    };
+    let inspect = |host: &Host, record: &crate::catalog::CatalogRecord| {
+        host.fetch_record(&config, &repository, record)
+            .and_then(|package| {
+                let provenance = host.candidates.borrow()[&package].0.clone();
+                host.load(&package, provenance)
+            })
+    };
+
+    // Missing package: the normal route downloads the archive.
+    run(
+        &nix,
+        &["store", "delete", package.to_str().unwrap(), &derivation],
+    );
+    let host = new_host("missing", Some(upstream_cache.clone()));
+    let first = inspect(&host, &good).unwrap();
+    assert!(requests().contains(&good.archive_url), "{}", requests());
+    drop(host);
+
+    // Present and signed: no curl call at all. Upstream lookups would use the
+    // same logging curl, because this host has no file-cache stand-in.
+    fs::remove_file(&log).unwrap();
+    let host = new_host("present", None);
+    let started = std::time::Instant::now();
+    let again = inspect(&host, &good).unwrap();
+    eprintln!("present closure inspected in {:?}", started.elapsed());
+    assert_eq!(
+        requests(),
+        "",
+        "a present signed closure made network requests"
+    );
+    assert_eq!(again.approval, first.approval);
+    assert_eq!(again.provenance, first.provenance);
+    drop(host);
+
+    // Present but unsigned: the local build carries no publisher signature.
+    run(&nix, &["store", "delete", package.to_str().unwrap()]);
+    let (rebuilt, _) = build();
+    assert_eq!(rebuilt, package);
+    let host = new_host("unsigned", Some(upstream_cache.clone()));
+    let error = inspect(&host, &forged).err().unwrap();
+    assert!(requests().contains(&forged.archive_url), "{}", requests());
+    assert!(
+        error.contains("does not verify against the publisher public key"),
+        "{error}"
+    );
+    let local = package::path_info(&nix, package.to_str().unwrap(), None).unwrap();
+    assert!(!slim::signed(
+        package.to_str().unwrap(),
+        &local,
+        std::slice::from_ref(&publisher_key)
+    )
+    .unwrap());
+    // The publisher's own archive still admits the same bytes normally.
+    fs::remove_file(&log).unwrap();
+    let adopted = inspect(&host, &good).unwrap();
+    assert!(requests().contains(&good.archive_url), "{}", requests());
+    assert_eq!(adopted.approval, first.approval);
+}

@@ -706,6 +706,42 @@ pub fn verify_publisher_in(
     Ok(namespace)
 }
 
+/// Metadata for several paths with one `nix path-info --json` call, from the
+/// local store or a binary cache. Every requested path must be described.
+pub(crate) fn path_infos(
+    nix: &Path,
+    paths: &[String],
+    cache: Option<&str>,
+) -> Result<BTreeMap<String, NarInfo>, String> {
+    let mut args = vec![
+        "--extra-experimental-features",
+        "nix-command",
+        "path-info",
+        "--json",
+    ];
+    if let Some(cache) = cache {
+        args.extend(["--store", cache]);
+    }
+    for path in paths {
+        validate_store_path(Path::new(path))?;
+        args.push(path);
+    }
+    let json = process::checked_uncapped(nix, args, None)?;
+    let infos: BTreeMap<String, Option<NarInfo>> = serde_json::from_str(&json)
+        .map_err(|error| format!("invalid Nix path metadata: {error}"))?;
+    let mut described = BTreeMap::new();
+    for (path, info) in infos {
+        if !paths.contains(&path) {
+            return Err("Nix metadata names another output".into());
+        }
+        described.insert(path, info.ok_or("Nix metadata omits a selected path")?);
+    }
+    if described.len() != paths.iter().collect::<BTreeSet<_>>().len() {
+        return Err("Nix must describe exactly the selected packages".into());
+    }
+    Ok(described)
+}
+
 pub fn archive_signature(
     nix: &Path,
     package: &Path,
@@ -714,6 +750,15 @@ pub fn archive_signature(
 ) -> Result<bool, Refusal> {
     let text = package.to_str().ok_or("invalid package path")?;
     let info = path_info(nix, text, Some(cache))?;
+    archive_signature_of(text, &info, key)
+}
+
+/// `archive_signature` over metadata the caller already read from the archive.
+pub(crate) fn archive_signature_of(
+    text: &str,
+    info: &NarInfo,
+    key: Option<&str>,
+) -> Result<bool, Refusal> {
     if info.signatures.is_empty() {
         return Ok(false);
     }
@@ -723,7 +768,7 @@ pub fn archive_signature(
             "signed archive requires a trusted publisher key",
         )
     })?;
-    if !signed_by(&info, &fingerprint(text, &info)?, &public_key_bytes(key)?) {
+    if !signed_by(info, &fingerprint(text, info)?, &public_key_bytes(key)?) {
         return Err("archive signature does not verify against the publisher public key".into());
     }
     Ok(true)

@@ -104,15 +104,82 @@ pub(crate) fn download_optional(
     )
 }
 
-fn transfer(
+/// Fetch many small metadata files, each optional like `download_optional`,
+/// in one curl process. Curl runs the transfers concurrently and reuses its
+/// connections (HTTP/2 multiplexing), instead of one TLS setup per file. Each
+/// result is `Some(true)` for HTTP 200, `Some(false)` for a real 404 and `None`
+/// for any other outcome; the caller retries a `None` alone so that its error
+/// is reported exactly as `download_optional` reports it.
+pub(crate) fn download_many_optional(
     curl: &Path,
-    url: &SourceUrl,
+    transfers: &[(SourceUrl, std::path::PathBuf)],
     ca: Option<&Path>,
-    output: &Path,
-    bounds: TransferBounds,
-    optional: bool,
-) -> Result<bool, String> {
-    let mut args = vec![
+) -> Result<Vec<Option<bool>>, String> {
+    const PARALLEL: usize = 16;
+    const MAX_BYTES: u64 = 1024 * 1024;
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    if transfers.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut args = policy_args();
+    args.extend([
+        "--parallel".into(),
+        "--parallel-max".into(),
+        PARALLEL.to_string(),
+        "--write-out".into(),
+        "%{response_code} %{filename_effective}\n".into(),
+        "--max-filesize".into(),
+        MAX_BYTES.to_string(),
+        "--max-time".into(),
+        TIMEOUT.as_secs_f64().to_string(),
+    ]);
+    if let Some(ca) = ca {
+        args.extend([
+            "--cacert".into(),
+            ca.to_str().ok_or("CA path is not UTF-8")?.into(),
+        ]);
+    }
+    for (url, output) in transfers {
+        let output = output.to_str().ok_or("output path is not UTF-8")?;
+        if output.contains('\n') {
+            return Err("output path contains a newline".into());
+        }
+        args.extend([
+            "--url".into(),
+            url.as_str().into(),
+            "--output".into(),
+            output.into(),
+        ]);
+    }
+    // Every slot of the parallel pool may take the full transfer time.
+    let rounds = transfers.len().div_ceil(PARALLEL) as u32;
+    let result = process::run(curl, args, TIMEOUT * rounds + Duration::from_secs(2))?;
+    let mut statuses = std::collections::BTreeMap::new();
+    for line in result.stdout.lines() {
+        if let Some((status, file)) = line.split_once(' ') {
+            statuses.insert(file.to_owned(), status.to_owned());
+        }
+    }
+    transfers
+        .iter()
+        .map(|(_, output)| {
+            let status = output.to_str().and_then(|file| statuses.get(file));
+            Ok(match status.map(String::as_str) {
+                Some("200")
+                    if std::fs::metadata(output).is_ok_and(|meta| meta.len() <= MAX_BYTES) =>
+                {
+                    Some(true)
+                }
+                Some("404") => Some(false),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
+/// Protocol, redirect and credential policy shared by every transfer.
+fn policy_args() -> Vec<String> {
+    vec![
         "--disable".into(),
         "--globoff".into(),
         "--silent".into(),
@@ -131,9 +198,22 @@ fn transfer(
         "--no-netrc-optional".into(),
         "--connect-timeout".into(),
         "10".into(),
+    ]
+}
+
+fn transfer(
+    curl: &Path,
+    url: &SourceUrl,
+    ca: Option<&Path>,
+    output: &Path,
+    bounds: TransferBounds,
+    optional: bool,
+) -> Result<bool, String> {
+    let mut args = policy_args();
+    args.extend([
         "--output".into(),
         output.to_str().ok_or("output path is not UTF-8")?.into(),
-    ];
+    ]);
     if optional {
         args.extend(["--write-out".into(), "%{http_code}".into()]);
     } else {
