@@ -330,6 +330,7 @@ pub fn build_from_document(
     }
     if !retain_type_loaders {
         drop_tooling_tables(&mut unit);
+        compact_geometries(&mut unit);
     }
     shrink_to_fit(&mut unit);
     let unit = Rc::new(unit);
@@ -357,6 +358,44 @@ fn drop_tooling_tables(unit: &mut CompilationUnit) {
     }
     for global in unit.globals.iter_mut() {
         global.prop_analysis = Default::default();
+    }
+}
+
+/// The four fields of an item geometry that is a struct literal of exactly `x`, `y`, `width`
+/// and `height`, in that order, as a geometry stores them after `compact_geometries`.
+pub(crate) fn geometry_fields(expression: &Expression) -> Option<&[Expression]> {
+    match expression {
+        Expression::Array { values, output: i_slint_compiler::llr::ArrayOutput::Slice, .. }
+            if values.len() == 4 =>
+        {
+            Some(values)
+        }
+        _ => None,
+    }
+}
+
+/// Store each item geometry that is a struct literal of exactly `x`, `y`, `width` and
+/// `height` as its four field expressions in a list (`geometry_fields`), which only
+/// `item_geometry` reads. A struct literal holds its fields in a `BTreeMap` leaf with room
+/// for eleven: Zone's 2 603 geometries took 5.3 MB. A definition without type loaders only:
+/// tooling reads geometries as struct values.
+fn compact_geometries(unit: &mut CompilationUnit) {
+    for sub in unit.sub_components.iter_mut() {
+        for geometry in sub.geometries.iter_mut().flatten() {
+            let mut expression = geometry.borrow_mut();
+            let Expression::Struct { values, .. } = &mut *expression else { continue };
+            const FIELDS: [&str; 4] = ["x", "y", "width", "height"];
+            if values.len() != 4 || !FIELDS.iter().all(|name| values.contains_key(*name)) {
+                continue;
+            }
+            let fields: Vec<Expression> =
+                FIELDS.iter().filter_map(|name| values.remove(*name)).collect();
+            *expression = Expression::Array {
+                element_ty: LangType::LogicalLength,
+                values: fields,
+                output: i_slint_compiler::llr::ArrayOutput::Slice,
+            };
+        }
     }
 }
 

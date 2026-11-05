@@ -13,7 +13,8 @@ use crate::Value;
 use crate::eval::{EvalContext, eval_expression};
 use crate::instance::{Instance, SubComponentInstance};
 use i_slint_compiler::llr::{
-    self, Animation, Expression, LocalMemberIndex, MemberReference, MutExpression, SubComponent,
+    self, Animation, CompilationUnit, Expression, LocalMemberIndex, MemberReference, MutExpression,
+    SubComponent,
 };
 use i_slint_core::Property;
 use i_slint_core::items::PropertyAnimation;
@@ -64,9 +65,8 @@ fn install_property_bindings(sub: &Pin<Rc<SubComponentInstance>>) {
     // Pre-init code (custom font registration) runs before the two-way
     // bindings and property_init.
     for e in &sc.pre_init_code {
-        let expr = mut_expression_clone(e);
         let mut ctx = EvalContext::new(sub.clone());
-        eval_expression(&mut ctx, &expr);
+        eval_expression(&mut ctx, &e.borrow());
     }
 
     for twb in &sc.two_way_bindings {
@@ -178,7 +178,7 @@ fn install_change_callbacks(
     let base = 2 * sc.timers.len();
     for (idx, (target, expr)) in sc.change_callbacks.iter().enumerate() {
         let target = target.clone();
-        let expr = mut_expression_clone(expr);
+        let expr = UnitExpression::new(&sub.compilation_unit, expr);
         let weak_get = weak_sub.clone();
         let weak_set = weak_sub.clone();
         let expr_for_set = expr.clone();
@@ -192,7 +192,7 @@ fn install_change_callbacks(
             move |(), _| {
                 let Some(owner) = weak_set.upgrade() else { return };
                 let mut ctx = EvalContext::new(Pin::new(owner));
-                eval_expression(&mut ctx, &expr_for_set);
+                eval_expression(&mut ctx, expr_for_set.get());
             },
         );
     }
@@ -206,14 +206,14 @@ fn install_repeater_model_bindings(
     let sc: &SubComponent = &cu.sub_components[sub.sub_component_idx];
     for (idx, repeated) in sc.repeated.iter_enumerated() {
         let repeater = &sub.repeaters[idx];
-        let expr = mut_expression_clone(&repeated.model);
+        let expr = UnitExpression::new(cu, &repeated.model);
         let weak_sub = weak_sub.clone();
         if repeater.is_conditional() {
             repeater.set_condition_binding(move || {
                 let Some(owner) = weak_sub.upgrade() else { return false };
                 let mut ctx = EvalContext::new(Pin::new(owner));
                 // The compiler guarantees the condition of an `if` is bool.
-                matches!(eval_expression(&mut ctx, &expr), Value::Bool(true))
+                matches!(eval_expression(&mut ctx, expr.get()), Value::Bool(true))
             });
         } else {
             // A number model is one model whose count follows the number: rows added or
@@ -228,7 +228,7 @@ fn install_repeater_model_bindings(
                     return i_slint_core::model::ModelRc::default();
                 };
                 let mut ctx = EvalContext::new(Pin::new(owner));
-                match eval_expression(&mut ctx, &expr) {
+                match eval_expression(&mut ctx, expr.get()) {
                     Value::Model(m) => m,
                     // A number model (`for i in 42`): the `Cast { to: Model }`
                     // evaluates to the number itself.
@@ -280,7 +280,7 @@ fn install_property_init(
                 .clone();
             let handler = make_callback_handler(
                 weak_sub.clone(),
-                mut_expression_clone(&binding.expression),
+                UnitExpression::new(&sub.compilation_unit, &binding.expression),
                 arg_types,
             );
             callback.set_handler(handler);
@@ -289,7 +289,7 @@ fn install_property_init(
             let prop = Pin::as_ref(&instance.properties[*idx]);
             let cu = &instance.compilation_unit;
             let ty = &cu.sub_components[instance.sub_component_idx].properties[*idx].ty;
-            install_property_binding(prop, binding, weak_sub, ty);
+            install_property_binding(prop, binding, &sub.compilation_unit, weak_sub, ty);
         }
         LocalMemberIndex::Native { item_index, prop_name, kind } => {
             // The lowering pass already disambiguates rtti properties,
@@ -299,7 +299,7 @@ fn install_property_init(
             let item = Pin::as_ref(&instance.items[*item_index]);
             match kind {
                 i_slint_compiler::llr::NativeMemberKind::Callback => {
-                    let expr = mut_expression_clone(&binding.expression);
+                    let expr = UnitExpression::new(&sub.compilation_unit, &binding.expression);
                     let cb_weak = weak_sub.clone();
                     let cu = &instance.compilation_unit;
                     let sc = &cu.sub_components[instance.sub_component_idx];
@@ -313,15 +313,18 @@ fn install_property_init(
                     );
                 }
                 i_slint_compiler::llr::NativeMemberKind::Property => {
-                    let expr = mut_expression_clone(&binding.expression);
+                    let expr = UnitExpression::new(&sub.compilation_unit, &binding.expression);
                     let weak_sub_eval = weak_sub.clone();
                     let closure: Box<dyn Fn() -> Value> = Box::new(move || {
                         let Some(owner) = weak_sub_eval.upgrade() else { return Value::Void };
                         let mut ctx = EvalContext::new(Pin::new(owner));
-                        eval_expression(&mut ctx, &expr)
+                        eval_expression(&mut ctx, expr.get())
                     });
-                    let animation_kind =
-                        animation_for_binding(binding.animation.as_ref(), weak_sub.clone());
+                    let animation_kind = animation_for_binding(
+                        binding.animation.as_ref(),
+                        &sub.compilation_unit,
+                        weak_sub.clone(),
+                    );
                     let _ = item.set_property_binding(prop_name, closure, animation_kind);
                 }
                 i_slint_compiler::llr::NativeMemberKind::Function => {
@@ -359,17 +362,23 @@ fn install_global_property_init(
                 if let Some(prop) =
                     native.as_ref().prepare_property_for_two_way_binding(&g.properties[*idx].name)
                 {
-                    install_property_binding(prop.as_ref(), binding, weak_sub, ty);
+                    install_property_binding(
+                        prop.as_ref(),
+                        binding,
+                        &sub.compilation_unit,
+                        weak_sub,
+                        ty,
+                    );
                 }
             } else {
                 let prop = Pin::as_ref(&global.properties[*idx]);
-                install_property_binding(prop, binding, weak_sub, ty);
+                install_property_binding(prop, binding, &sub.compilation_unit, weak_sub, ty);
             }
         }
         LocalMemberIndex::Callback(idx) => {
             let handler = make_callback_handler(
                 weak_sub.clone(),
-                mut_expression_clone(&binding.expression),
+                UnitExpression::new(&sub.compilation_unit, &binding.expression),
                 g.callbacks[*idx].args.clone(),
             );
             if let Some(native) = &global.native {
@@ -402,20 +411,21 @@ pub(crate) fn animated_value_map(
 fn install_property_binding(
     prop: Pin<&Property<Value>>,
     binding: &llr::BindingExpression,
+    unit: &Rc<CompilationUnit>,
     weak_sub: &Weak<SubComponentInstance>,
     ty: &i_slint_compiler::langtype::Type,
 ) {
-    let expr = mut_expression_clone(&binding.expression);
     let weak_sub_eval = weak_sub.clone();
 
     use i_slint_compiler::llr::BindingKind;
     if binding.kind == BindingKind::Constant {
         if let Some(owner) = weak_sub_eval.upgrade() {
             let mut ctx = EvalContext::new(Pin::new(owner));
-            prop.set(eval_expression(&mut ctx, &expr));
+            prop.set(eval_expression(&mut ctx, &binding.expression.borrow()));
         }
         return;
     }
+    let expr = UnitExpression::new(unit, &binding.expression);
 
     if binding.kind == BindingKind::State {
         // The expression returns the state index; `set_state_binding`
@@ -424,7 +434,7 @@ fn install_property_binding(
         i_slint_core::properties::set_state_binding(prop, move || {
             let Some(owner) = weak.upgrade() else { return 0 };
             let mut ctx = EvalContext::new(Pin::new(owner));
-            match eval_expression(&mut ctx, &expr) {
+            match eval_expression(&mut ctx, expr.get()) {
                 Value::Number(n) => n as i32,
                 _ => 0,
             }
@@ -435,11 +445,11 @@ fn install_property_binding(
     let binding_fn: Box<dyn Fn() -> Value> = Box::new(move || {
         let Some(owner) = weak_sub_eval.upgrade() else { return Value::Void };
         let mut ctx = EvalContext::new(Pin::new(owner));
-        eval_expression(&mut ctx, &expr)
+        eval_expression(&mut ctx, expr.get())
     });
 
     match (
-        animation_for_binding(binding.animation.as_ref(), weak_sub.clone()),
+        animation_for_binding(binding.animation.as_ref(), unit, weak_sub.clone()),
         animated_value_map(ty),
     ) {
         (AnimatedBindingKind::NotAnimated, _) => prop.set_binding_comparing(binding_fn),
@@ -470,27 +480,28 @@ fn install_property_binding(
 
 fn animation_for_binding(
     animation: Option<&Animation>,
+    unit: &Rc<CompilationUnit>,
     weak_sub: Weak<SubComponentInstance>,
 ) -> AnimatedBindingKind {
     match animation {
         None => AnimatedBindingKind::NotAnimated,
         Some(Animation::Static(expr)) => {
-            let expr = expr.clone();
+            let expr = UnitExpression::of(unit, expr);
             AnimatedBindingKind::Animation(Box::new(move || -> PropertyAnimation {
                 let Some(owner) = weak_sub.upgrade() else { return Default::default() };
                 let mut ctx = EvalContext::new(Pin::new(owner));
-                value_to_property_animation(eval_expression(&mut ctx, &expr))
+                value_to_property_animation(eval_expression(&mut ctx, expr.get()))
             }))
         }
         Some(Animation::Transition(expr)) => {
-            let expr = expr.clone();
+            let expr = UnitExpression::of(unit, expr);
             AnimatedBindingKind::Transition(Box::new(
                 move || -> (PropertyAnimation, i_slint_core::animations::Instant) {
                     let Some(owner) = weak_sub.upgrade() else {
                         return (Default::default(), Default::default());
                     };
                     let mut ctx = EvalContext::new(Pin::new(owner));
-                    let v = eval_expression(&mut ctx, &expr);
+                    let v = eval_expression(&mut ctx, expr.get());
                     // The transition expression returns a struct {"0": animation, "1": change_time}
                     let Value::Struct(s) = v else {
                         return (Default::default(), Default::default());
@@ -756,29 +767,55 @@ fn run_init_code(sub: &Pin<Rc<SubComponentInstance>>) {
     let cu = sub.compilation_unit.clone();
     let sc = &cu.sub_components[sub.sub_component_idx];
     for e in &sc.init_code {
-        let expr = mut_expression_clone(e);
         let mut ctx = EvalContext::new(sub.clone());
-        eval_expression(&mut ctx, &expr);
+        eval_expression(&mut ctx, &e.borrow());
     }
 }
 
 use crate::eval::{walk_parent, walk_sub_path};
 
-fn mut_expression_clone(e: &MutExpression) -> Expression {
-    e.borrow().clone()
+/// An expression of the compiled unit, evaluated where it is. A binding used to hold a deep
+/// copy of its expression tree, made when each instance was created (Zone: 7.7 MB an
+/// instance). The unit is kept alive here, and a shared unit is never changed:
+/// `build_from_document` makes its changes before it shares it, and nothing borrows an
+/// expression mutably afterwards.
+#[derive(Clone)]
+struct UnitExpression {
+    _unit: Rc<CompilationUnit>,
+    expression: core::ptr::NonNull<Expression>,
+}
+
+impl UnitExpression {
+    /// `expression` must belong to `unit`.
+    fn new(unit: &Rc<CompilationUnit>, expression: &MutExpression) -> Self {
+        let expression = core::ptr::NonNull::new(expression.as_ptr()).expect("a RefCell's value");
+        Self { _unit: unit.clone(), expression }
+    }
+
+    /// `expression` must belong to `unit`.
+    fn of(unit: &Rc<CompilationUnit>, expression: &Expression) -> Self {
+        Self { _unit: unit.clone(), expression: core::ptr::NonNull::from(expression) }
+    }
+
+    fn get(&self) -> &Expression {
+        // SAFETY: the expression lives in `_unit`, which this holds, and a shared unit is not
+        // changed (see the type's comment), so the pointer stays valid and unaliased by any
+        // mutable reference.
+        unsafe { self.expression.as_ref() }
+    }
 }
 
 /// A handler that evaluates `expr` with the call's arguments in `weak`'s
 /// scope; `Value::Void` once the owner is gone.
 fn make_callback_handler(
     weak: Weak<SubComponentInstance>,
-    expr: Expression,
+    expr: UnitExpression,
     arg_types: Vec<i_slint_compiler::langtype::Type>,
 ) -> impl Fn(&[Value]) -> Value + 'static {
     move |args| {
         let Some(owner) = weak.upgrade() else { return Value::Void };
         let mut ctx = EvalContext::with_arguments(Pin::new(owner), args.to_vec());
         ctx.function_arg_types = arg_types.clone();
-        eval_expression(&mut ctx, &expr)
+        eval_expression(&mut ctx, expr.get())
     }
 }
