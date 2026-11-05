@@ -53,6 +53,12 @@ pkgs.rustPlatform.buildRustPackage {
   buildType = "dist";
   checkType = "release";
   checkFeatures = [ "fixture" ];
+  # Some tests draw text that no package font covers: they need fontconfig (opened with
+  # dlopen, as at run time) and one system font, which the build sandbox lacks.
+  preCheck = ''
+    export LD_LIBRARY_PATH="${lib.makeLibraryPath runtimeLibraries}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export FONTCONFIG_FILE=${pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; }}
+  '';
   # The credential test needs a filesystem that keeps POSIX modes; the Nix
   # sandbox does. Every test is display-free.
   nativeBuildInputs = [ pkgs.patchelf ];
