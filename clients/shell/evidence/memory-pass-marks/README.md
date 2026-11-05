@@ -17,7 +17,7 @@ adds its compiled definition; after that:
 `tests/memory_probe.rs` bounds a round at 48 KiB. (Measured before the step 2
 and 3 cuts below; they lower the level, not the slope.)
 
-## (b) 10 000 games: 60 fps met; PSS under 80 MiB NOT met in steady use
+## (b) 10 000 games: 60 fps met; under 80 MiB met for Zone, NOT for Pico after Zone
 
 The mark counts in steady use: Zone after moves and Pico after moves. PSS in
 KiB, `large` scenario (Zone idle, Zone after 30 moves, then F2 to Pico and 30
@@ -29,6 +29,7 @@ moves; Zone's definition stays compiled while Pico shows):
 | 1. lowered unit shrunk to fit | 91 078 | 95 617 | 104 548 | `large-10000-step1-shrink.txt` |
 | 2. + compiler-only tables dropped | 79 805 | 84 313 | 93 349 | `large-10000.txt` |
 | 3. + `dist` build, desktop portal reader off | 80 297 | 85 323 | 94 385 | `large-10000-step3-dist.txt` |
+| 4. + bindings evaluated in place, geometries as four fields | 77 773-77 865 | 81 239-81 547 | 87 046-87 130 | `large-10000-step4-run{1,2,3}.txt` |
 
 Steps 0-2 ran the release binary from the target directory; step 3 a
 settled copy of the `dist` binary. The same step-2 source, settled, measured
@@ -36,7 +37,7 @@ Zone 90 274-90 526 and Pico 98 774-98 922 after moves (file-backed 22.9-23.0
 MB): a freshly linked file maps fewer pages, so the step 0-2 file-backed
 figures are low.
 
-fps at step 2: 61.0-62.4 in every 5 s window (`large-10000-fps.txt`).
+fps at step 4: 60.2-62.4 in every 5 s window, three runs (`large-10000-fps.txt`).
 
 Step 2 split by kind (`smaps_rollup`, `rollup-*.txt`):
 
@@ -48,6 +49,8 @@ Step 2 split by kind (`smaps_rollup`, `rollup-*.txt`):
 | Pico, step 2 (settled copy) | 98 774 | 75 236 | 22 938 | 600 |
 | Zone, step 3 (`dist`, settled) | 85 464 | 66 548 | 18 316 | 600 |
 | Pico, step 3 (`dist`, settled) | 94 536 | 75 492 | 18 444 | 600 |
+| Zone, step 4 (`dist`, settled) | 81 394 | 62 380 | 18 414 | 600 |
+| Pico, step 4 (`dist`, settled) | 87 198 | 67 992 | 18 606 | 600 |
 
 The file-backed part is almost all the binary's code (shared, clean,
 reclaimable). The anonymous part is the heap: Zone's compiled definition, the

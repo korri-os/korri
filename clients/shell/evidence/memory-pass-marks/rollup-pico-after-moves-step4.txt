@@ -1,0 +1,23 @@
+56214070d000-7ffc05072000 ---p 00000000 00:00 0                          [rollup]
+Rss:               90660 kB
+Pss:               87198 kB
+Pss_Dirty:         68592 kB
+Pss_Anon:          67992 kB
+Pss_File:          18606 kB
+Pss_Shmem:           600 kB
+Shared_Clean:       4124 kB
+Shared_Dirty:       1200 kB
+Private_Clean:     17344 kB
+Private_Dirty:     67992 kB
+Referenced:        90660 kB
+Anonymous:         67992 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
