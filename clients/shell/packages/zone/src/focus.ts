@@ -42,6 +42,9 @@ function lines<T extends Btnish>(buttons: readonly T[], width: number, cap: numb
  * The view's entries are made fresh by each view() call, so this writes
  * into them rather than copying the tree (QuickJS pays for every copy).
  */
+/** The regions that hold a target in the view under way (regionOf notes each; focusView reads them for the exits). */
+let REGIONS = new Set<string>()
+
 function regionOf<T>(value: T, region: string, active?: (entry: Json) => boolean): T {
   if (Array.isArray(value)) {
     for (const item of value) regionOf(item, region, active)
@@ -56,18 +59,31 @@ function regionOf<T>(value: T, region: string, active?: (entry: Json) => boolean
   if ("focused" in entry) {
     entry.focusRegion = region
     if (active?.(entry) === true) entry.focusActive = true
+    if (isTarget(entry)) REGIONS.add(region)
   }
   return value
 }
 
 /** Whether an entry under `value` has the focus. */
-const hasFocus = (value: unknown): boolean =>
-  Array.isArray(value) ? value.some(hasFocus)
-  : value !== null && typeof value === "object" ? (value as Json).focused === true || Object.values(value as Json).some(hasFocus)
-  : false
+function hasFocus(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    for (const item of value) if (hasFocus(item)) return true
+    return false
+  }
+  if (value === null || typeof value !== "object") return false
+  const entry = value as Json
+  if (entry.focused === true) return true
+  for (const key in entry) {
+    const inner = entry[key]
+    if (inner !== null && typeof inner === "object" && hasFocus(inner)) return true
+  }
+  return false
+}
 
 /** `value` with no entry focused. */
 function unfocused<T>(value: T): T {
+  // Nothing under it holds the focus: the same value (no copy).
+  if (!hasFocus(value)) return value
   if (Array.isArray(value)) return value.map(unfocused) as T
   if (value === null || typeof value !== "object" || "$image" in (value as Json)) return value
   const out: Json = {}
@@ -81,11 +97,19 @@ function unfocused<T>(value: T): T {
  * leaves out, so .slint reads `focused` only where it draws the entry.
  */
 function undrawn<T>(value: T): T {
-  if (Array.isArray(value)) return value.map(undrawn) as T
+  // In place: the view's entries are made fresh by each view() call.
+  if (Array.isArray(value)) {
+    for (const item of value) undrawn(item)
+    return value
+  }
   if (value === null || typeof value !== "object" || "$image" in (value as Json)) return value
-  const out: Json = {}
-  for (const [key, inner] of Object.entries(value as Json)) if (key !== "focused") out[key] = undrawn(inner)
-  return out as T
+  const entry = value as Json
+  if ("focused" in entry) delete entry.focused
+  for (const key in entry) {
+    const inner = entry[key]
+    if (inner !== null && typeof inner === "object") undrawn(inner)
+  }
+  return value
 }
 
 /** A list's rows with `focused` dropped from those that never take the cursor (headings, notes). */
@@ -112,6 +136,14 @@ const hasTargets = (value: unknown): boolean => {
   return false
 }
 
+/**
+ * The view's keys that hold focus entries. The passes over focus (one
+ * focus, moments, regions) walk only these: the rest (the cards, the facts,
+ * the foot) never hold an entry with `focused`, and walking them cost most
+ * of a view call in QuickJS.
+ */
+const FOCUS_KEYS = ["tabs", "cardMarks", "actions", "find", "get", "optsRows", "keyboard", "dialog", "busy", "saveCards", "retired", "slab", "seats", "next", "newSave", "rows"] as const
+
 /** The row regions of a page whose rows each take their own region (RUN WITH, GET GAMES). */
 const rowRegion = (index: number) => `row-${index}`
 
@@ -121,7 +153,9 @@ export interface ZoneViewFocus {
 
 /** The view with its regions, exits and the plan's decisions for .slint. */
 export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen): V & { focusPlan: ZoneFocusPlan; screen: Json } {
-  const view: Json = { ...raw }
+  // In place: surfaceView (and overlayView) make the view fresh for this call.
+  const view: Json = raw
+  REGIONS = new Set<string>()
   const page = zoneShown(state, korri)
   const nav = state.nav
   const layer = topLayer(nav)
@@ -168,12 +202,12 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     return layer?.shown === true && ((layer.buttons ?? layer.keys)?.length ?? 0) > 0 && hasFocus(layer)
   })
   if (holder !== undefined) {
-    for (const key of Object.keys(view)) if (key !== holder) view[key] = unfocused(view[key])
+    for (const key of FOCUS_KEYS) if (key !== holder && key in view) view[key] = unfocused(view[key])
   }
 
   // ---- A moment (the title card, the tally, the attract) covers the whole window: nothing under it holds the cursor ----
   const moment = (raw.launchCard as { shown?: boolean } | undefined)?.shown === true || (raw.tally as { shown?: boolean } | undefined)?.shown === true || raw.attract === true
-  if (moment) for (const key of Object.keys(view)) view[key] = unfocused(view[key])
+  if (moment) for (const key of FOCUS_KEYS) if (key in view) view[key] = unfocused(view[key])
 
   // ---- Only what is drawn takes the cursor: what the page does not draw carries no `focused` ----
   if (raw.tabsShown !== true) view.tabs = undrawn(view.tabs)
@@ -207,7 +241,16 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   view.tabs = regionOf(view.tabs, "tabs", entry => entry.active === true)
   const byIndex = (list: unknown, index: unknown) =>
     Array.isArray(list) ? list.map((entry, at) => (at === index ? { ...(entry as Json), focusActive: true } : entry)) : list
-  view.cardMarks = byIndex(regionOf(view.cardMarks, "band"), raw.focusedCard)
+  // The band's marks: flat entries, made fresh by each view, marked in place
+  // (the general walk and a copy cost a view call most in QuickJS).
+  const marks = (view.cardMarks as Json[] | undefined) ?? []
+  for (let index = 0; index < marks.length; index++) {
+    const mark = marks[index]!
+    if (!("focused" in mark)) continue
+    mark.focusRegion = "band"
+    if (index === raw.focusedCard) mark.focusActive = true
+    if (isTarget(mark)) REGIONS.add("band")
+  }
   view.actions = regionOf(view.actions, "actions")
   view.find = regionOf(view.find, "find")
   view.get = regionOf(view.get, "get")
@@ -243,7 +286,12 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
 
   // ---- Exits ----
   const plan: Record<string, ZoneExits> = {}
-  const present = (key: string) => hasTargets(view[key])
+  const presence = new Map<string, boolean>()
+  const present = (key: string) => {
+    let has = presence.get(key)
+    if (has === undefined) presence.set(key, (has = hasTargets(view[key])))
+    return has
+  }
   const shown = (key: string) => (view[key] as { shown?: boolean } | undefined)?.shown === true
   const covered = shown("dialog") || shown("keyboard") || (shown("busy") && ((view.busy as { buttons?: unknown[] }).buttons?.length ?? 0) > 0)
   const gamesError = page === "games" && korri.catalog._tag === "Error"
@@ -324,25 +372,15 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
         break
     }
   }
-  // Every exit names a region with targets in this view.
-  const regions = new Set<string>()
-  const collect = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) collect(item)
-      return
-    }
-    if (value === null || typeof value !== "object" || "$image" in (value as Json)) return
-    const entry = value as Json
-    if (typeof entry.focusRegion === "string" && isTarget(entry)) regions.add(entry.focusRegion)
-    for (const key in entry) collect(entry[key])
-  }
-  collect(view)
+  // Every exit names a region with targets in this view (regionOf noted them).
+  const regions = REGIONS
   const focusPlan: Record<string, ZoneExits> = {}
   for (const [region, exits] of Object.entries(plan)) {
     const kept = Object.fromEntries(Object.entries(exits).filter(([, exit]) => exit !== undefined && regions.has(exit.to)))
     if (regions.has(region)) focusPlan[region] = kept
   }
-  return { ...(view as V), focusPlan, screen: view.screen as Json }
+  view.focusPlan = focusPlan
+  return view as V & { focusPlan: ZoneFocusPlan; screen: Json }
 }
 
 /** The tabs as the plan places them, for the focus graph. */

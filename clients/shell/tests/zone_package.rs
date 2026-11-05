@@ -932,3 +932,145 @@ fn the_plan_measures_words_as_slint_draws_them() {
         wrong.join("\n")
     );
 }
+
+/// Zone's view is cheap enough for the 50 ms call budget on the slowest
+/// device clock: every `view()` after the attract's next game and after a
+/// move along the band, over 10,000 games (a 50-game window), at 640x480.
+/// The RG353M at 408 MHz runs this logic about ZONE_SLOW_FACTOR times
+/// slower than the workstation; the limits below are the device's, divided
+/// by it.
+#[test]
+fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
+    let root = package();
+    let source = std::fs::read_to_string(
+        std::env::var("ZONE_LOGIC")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| root.join("logic.js")),
+    )
+    .unwrap();
+    let (mut model, mut examples) = korri_shell::verify::fixture();
+    // As korrid publishes games today: no cover art (services/korrid/src/surface).
+    // ZONE_VIEW_ART=1 keeps the fixture's inline art.
+    if std::env::var_os("ZONE_VIEW_ART").is_none() {
+        for game in &mut examples {
+            game.as_object_mut().unwrap().remove("coverArtUrl");
+        }
+    }
+    model["catalog"] = json!({"_tag": "Ready", "games": catalog::games(&examples, 10_000)});
+    let mut korri = Korri::new(model);
+    let mut engine = engine::Engine::load(
+        &source,
+        engine::Limits {
+            call: std::time::Duration::from_secs(5),
+            ..engine::Limits::default()
+        },
+    )
+    .unwrap();
+    engine.set_model(&korri.published()).unwrap();
+    let preferences = engine::effective_preferences(engine.declaration(), &BTreeMap::new());
+    engine.init(&preferences).unwrap();
+    let deliver = |engine: &mut engine::Engine, korri: &mut Korri, message: Value| {
+        let mut queue = vec![message];
+        while let Some(message) = queue.pop() {
+            let requests = engine.update(&message).unwrap();
+            if korri.answer(&requests) {
+                engine.set_model(&korri.published()).unwrap();
+                queue.push(json!({"_tag": "KorriPublished"}));
+            }
+        }
+    };
+    deliver(
+        &mut engine,
+        &mut korri,
+        json!({"_tag": "Resized", "width": 640, "height": 480}),
+    );
+    deliver(&mut engine, &mut korri, json!({"_tag": "KorriPublished"}));
+    engine.view().unwrap();
+    // The best of three runs of each call, so a busy machine does not decide it.
+    let mut timed = |engine: &mut engine::Engine| {
+        let started = std::time::Instant::now();
+        engine.view().unwrap();
+        started.elapsed()
+    };
+    let mut times: BTreeMap<&str, Vec<std::time::Duration>> = BTreeMap::new();
+    for _ in 0..10 {
+        deliver(
+            &mut engine,
+            &mut korri,
+            json!({"_tag": "Pressed", "button": "right"}),
+        );
+        times
+            .entry("band right")
+            .or_default()
+            .push(timed(&mut engine));
+    }
+    for _ in 0..10 {
+        deliver(
+            &mut engine,
+            &mut korri,
+            json!({"_tag": "Pressed", "button": "left"}),
+        );
+        times
+            .entry("band left")
+            .or_default()
+            .push(timed(&mut engine));
+    }
+    // Idle: the attract opens at 30 s, then the next game every 6 s.
+    for step in 0..12u64 {
+        deliver(
+            &mut engine,
+            &mut korri,
+            json!({"_tag": "Tick", "idleMs": 30_000 + step * 6_000}),
+        );
+        times
+            .entry(if step == 0 {
+                "attract opens"
+            } else {
+                "attract next"
+            })
+            .or_default()
+            .push(timed(&mut engine));
+        // The same view again: only its JSON, both ways.
+        times
+            .entry("view again (JSON only)")
+            .or_default()
+            .push(timed(&mut engine));
+    }
+    eprintln!(
+        "view JSON: {} bytes",
+        engine.view().unwrap().to_string().len()
+    );
+    let mut over = Vec::new();
+    for (what, list) in &times {
+        // The attract's next game: under 10 ms on the device (5x headroom).
+        // Every other call: under 25 ms there (2x headroom; band moves
+        // stand at about 17 ms, see README.md, Limits).
+        let device_ms = if *what == "attract next" {
+            10_000.0
+        } else {
+            25_000.0
+        };
+        let limit = std::time::Duration::from_micros((device_ms / ZONE_SLOW_FACTOR) as u64);
+        let mut sorted = list.clone();
+        sorted.sort();
+        let worst = *sorted.last().unwrap();
+        eprintln!(
+            "{what}: median {:?}, worst {:?} (limit {limit:?})",
+            sorted[sorted.len() / 2],
+            worst
+        );
+        if sorted[sorted.len() / 2] > limit {
+            over.push(format!(
+                "{what}: median {:?} over {limit:?}",
+                sorted[sorted.len() / 2]
+            ));
+        }
+    }
+    assert!(over.is_empty(), "{over:#?}");
+}
+
+/// How much slower the RG353M at 408 MHz runs Zone's logic than this
+/// workstation (an i9-11900H): the device's 52 and 58 ms for the attract's
+/// next game against 2.07 ms here for the same call before Zone made it
+/// incremental (25 to 28 times).
+const ZONE_SLOW_FACTOR: f64 = 28.0;

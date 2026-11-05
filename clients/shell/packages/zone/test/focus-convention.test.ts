@@ -11,6 +11,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { SIZES, scenarioNames, Walk } from "./walk"
+import { view } from "../logic"
 
 type Json = Record<string, unknown>
 
@@ -93,12 +94,35 @@ describe("the per-press cost (RG353M benchmark)", () => {
     expect(performance.now() - started).toBeLessThan(5)
   })
 
-  test("moving along the band leaves the cards as they were: only the marks change", () => {
+  test("moving along the band changes one card in and one out: the others are the same objects", () => {
     const walk = new Walk("games", 640, 480)
-    const before = JSON.stringify(walk.view().cards)
+    const before = walk.view().cards as unknown[]
     const marks = JSON.stringify(walk.view().cardMarks)
     walk.press("right")
-    expect(JSON.stringify(walk.view().cards)).toBe(before)
+    const after = walk.view().cards as unknown[]
+    const changed = after.filter((card, index) => card !== before[index]).length
+    expect(changed).toBeLessThanOrEqual(2)
     expect(JSON.stringify(walk.view().cardMarks)).not.toBe(marks)
+  })
+
+  test("the view sends whole cards only for the band's pool and the attract's game", () => {
+    const walk = new Walk("games", 640, 480)
+    const shown = walk.view()
+    const cards = shown.cards as Record<string, unknown>[]
+    const at = shown.focusedCard as number
+    const whole = cards.flatMap((card, index) => ("title" in card ? [index] : []))
+    // 640x480 stands three cards: the focus and one each side, and the next one each way.
+    expect(whole).toEqual([at - 2, at - 1, at, at + 1, at + 2].filter(index => index >= 0 && index < cards.length))
+  })
+
+  test("the attract's next game gives the view a full rebuild would", () => {
+    const walk = new Walk("games", 640, 480)
+    walk.deliver({ _tag: "Tick", idleMs: 30_000 })
+    for (let step = 1; step < 14; step++) {
+      walk.deliver({ _tag: "Tick", idleMs: 30_000 + step * 6_000 })
+      const stepped = JSON.stringify(walk.view())
+      const fresh = JSON.stringify(view({ ...walk.state, size: { ...walk.state.size } }, walk.model))
+      expect(stepped).toBe(fresh)
+    }
   })
 })
