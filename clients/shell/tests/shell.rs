@@ -394,6 +394,8 @@ fn switching_replaces_the_surface_after_its_first_frame_and_fonts_do_not_pile_up
         rig.until("switched", |r| r.shell.retiring() == 0);
     }
     assert_eq!(rig.shell.current_id(), Some("zone"));
+    // Each package compiled once: later loads reuse its views.
+    assert_eq!(rig.shell.compilations(), 2);
     // Each font file is registered once, however often its surface loads.
     assert_eq!(fonts::registered_faces("Pico Tiny5"), 1);
     assert_eq!(fonts::registered_faces("Anton"), 1);

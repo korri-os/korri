@@ -78,7 +78,8 @@ impl Package {
     }
 }
 
-/// The compiled views of one package.
+/// The compiled views of one package. A clone shares the definitions.
+#[derive(Clone)]
 pub struct Views {
     pub surface: ComponentDefinition,
     pub overlay: Option<ComponentDefinition>,

@@ -137,6 +137,11 @@ the old one is removed.
 
 ## Limits and performance
 
+The shell compiles a package's `main.slint` the first time the package loads
+and keeps the compiled views until it exits; a later switch back creates the
+surface from them. Zone's compile is most of its load: 0.4 s on a workstation,
+2.6 to 3.6 s on the RG353M.
+
 Each surface's logic runs under three limits (`src/engine.rs`):
 
 | Constant | Value | Covers |

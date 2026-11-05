@@ -5,7 +5,8 @@
 //! [`Post`]. Nothing here re-enters itself from a window callback.
 //!
 //! Lifecycle of a surface (contract 3 and 6):
-//! 1. compile `main.slint` (`Surface`, and `Overlay` when exported)
+//! 1. compile `main.slint` (`Surface`, and `Overlay` when exported), the
+//!    first time the package loads in this process; later loads reuse it
 //! 2. evaluate `logic.js` in a fresh engine and read its preferences
 //! 3. `app.surface.declare`, then `app.surface.preferences`
 //! 4. `app.surface.model`, `init`, `view`, create and show `Surface`
@@ -151,6 +152,11 @@ struct RequestJob {
 
 pub struct Shell {
     packages: Vec<Package>,
+    /// Each package's views, compiled at its first load and kept for the life of the
+    /// process: a compile is most of a load (Zone: about 0.4 s on a workstation, 2.6 to
+    /// 3.6 s on the RG353M), and the package list is fixed at start.
+    compiled: std::collections::HashMap<String, package::Views>,
+    compilations: usize,
     korrid: Korrid,
     backend: Rc<dyn Backend>,
     post: Arc<dyn Post>,
@@ -203,6 +209,8 @@ impl Shell {
             .expect("spawn the request thread");
         Self {
             packages,
+            compiled: Default::default(),
+            compilations: 0,
             korrid,
             backend,
             post,
@@ -244,6 +252,11 @@ impl Shell {
 
     pub fn timing(&self) -> Option<LoadTiming> {
         self.current.as_ref().map(|l| l.timing)
+    }
+
+    /// How many times a package's `main.slint` was compiled, for tests.
+    pub fn compilations(&self) -> usize {
+        self.compilations
     }
 
     /// Lines the shell logged, for tests.
@@ -617,7 +630,15 @@ impl Shell {
     fn load(&mut self, index: usize) -> Result<Loaded> {
         let package = self.packages[index].clone();
         let started = Instant::now();
-        let views = package::compile(&package)?;
+        let views = match self.compiled.get(&package.id) {
+            Some(views) => views.clone(),
+            None => {
+                let views = package::compile(&package)?;
+                self.compilations += 1;
+                self.compiled.insert(package.id.clone(), views.clone());
+                views
+            }
+        };
         let compiled = started.elapsed();
         let logic = Logic::start(package.logic_source()?, self.options.limits, &package.id)
             .map_err(|v| anyhow!("logic: {v}"))?;
