@@ -40,6 +40,7 @@ KEYS = ("[" + ", ".join(
 BOARD = '{ shown: true, title: "Find", draft: "la", caret: 2, count: "2/40", rows: 5, keys: ' + KEYS + ' }'
 DIALOG = '{ shown: true, headline: "Delete save", lines: ["The save on this device is removed. Saves on zao stay."], title: "Spelunky", buttons: [{ label: "No", focused: true }, { label: "Yes" }] }'
 BUSY = '{ shown: true, kicker: "Starting", detail: "Waiting for zao to answer", game: "Spelunky", buttons: [{ label: "Cancel", focused: true, lit: true }] }'
+STEPS = '{ shown: true, kicker: "Starting Hollow Knight", game: "Hollow Knight", buttons: [{ label: "Cancel", focused: true, lit: true }], steps: 4, step: 2, step-words: "Step 3 of 4 · Getting the game ready" }'
 PROGRESS = '{ shown: true, kicker: "Downloading FEX rootfs", game: "Hollow Knight", buttons: [{ label: "Cancel", focused: true, lit: true }], meter: true, share: 0.5, figures: "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left" }'
 SAVE_CARDS = ('[{ header: "Back up", word: "This key", emblem: "key", foot: "New", foot-kind: "open" }, { header: "Switch", word: "From backup", emblem: "restore" },'
               ' { header: "Switch", word: "Bunker", emblem: "link" }, { header: "Retired", word: "npub1e7k…7vj20y4z", emblem: "retired" }]')
@@ -97,7 +98,8 @@ STATES = {
     "molecules/ZoneActionRow": [("Two", f'x: 0; y: (parent.height - self.height) / 2; width: parent.width; buttons: {ACTS};', ""),
                                 ("Wraps", f'x: 0; y: (parent.height - self.height) / 2; width: parent.width; buttons: [{{ label: "Play here", focused: true }}, {{ label: "Play on zao" }}, {{ label: "Play on the-living-room-tv" }}, {{ label: "Opts." }}];', "")],
     "molecules/ZoneBusyStrip": [("Default", f'x: 8 * {A}; width: parent.width - 16 * {A}; y: parent.height - self.needed - 8 * {A}; height: self.needed; busy: {BUSY};', ""),
-                                ("Progress", f'x: 8 * {A}; width: parent.width - 16 * {A}; y: parent.height - self.needed - 8 * {A}; height: self.needed; busy: {PROGRESS};', "")],
+                                ("Progress", f'x: 8 * {A}; width: parent.width - 16 * {A}; y: parent.height - self.needed - 8 * {A}; height: self.needed; busy: {PROGRESS};', ""),
+                                ("Steps", f'x: 8 * {A}; width: parent.width - 16 * {A}; y: parent.height - self.needed - 8 * {A}; height: self.needed; busy: {STEPS};', "")],
     "molecules/ZoneCard": [("Focused", f'{centred(f"104 * {A}", f"133 * {A}")} width: 104 * {A}; height: 133 * {A}; focused: true; lit: true; card: {{ title: "Hollow Knight", initials: "HK", stripes: 3, tags: {TAGS} }};', ""),
                            ("SideLongTitle", f'{centred(f"60 * {A}", f"80 * {A}")} width: 60 * {A}; height: 80 * {A}; card: {{ title: "The Legend of Zelda: Oracle of Seasons", initials: "LZ", stripes: 5, tags: [{{ label: "GBC", kind: "system", korri: true }}, {{ label: "Here", kind: "here" }}] }};', "")],
     "molecules/ZoneCardBand": [("Default", f'{FILL} cards: {CARDS}; focused-card: 1; card-focused: true; marks: [{{ focused: false }}, {{ focused: true }}, {{ focused: false }}, {{ focused: false }}, {{ focused: false }}]; total: 5;', ""),
@@ -142,7 +144,7 @@ STATES = {
                                ("Retired", f'{FILL} cards: {SAVE_CARDS}; at: 3; marked: true; retired: [{{ label: "Back up", focused: true, lit: true }}, {{ label: "Delete" }}];', 'ground: "savedata";')],
     "organisms/ZoneSecretSlab": [("Focused", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; height: parent.height - 16 * {A}; focused: true; secret: "ncry ptse c1wn 4zqd 7meh jmmn 4sa8 a2zy u4qm yvdk vr6z 0dxh 47p0 p2b4 nzc3 kx3j";', 'ground: "savedata";')],
     "organisms/ZoneStatusLayer": [("Busy", f'{FILL} busy: {BUSY};', ""), ("Problem", f'{FILL} dialog: {{ shown: true, headline: "Couldn\'t start", korri: true, lines: ["The emulator exited before the game loaded."], title: "Spelunky", buttons: [{{ label: "Dismiss", focused: true }}, {{ label: "Retry" }}] }};', ""),
-                                  ("Running", f'{FILL} hud: {{ shown: true, kicker: "Playing on zao", title: "The Legend of Zelda: Oracle of Seasons" }};', ""), ("Progress", f'{FILL} busy: {PROGRESS};', "")],
+                                  ("Running", f'{FILL} hud: {{ shown: true, kicker: "Playing on zao", title: "The Legend of Zelda: Oracle of Seasons" }};', ""), ("Progress", f'{FILL} busy: {PROGRESS};', ""), ("Steps", f'{FILL} busy: {STEPS};', "")],
     "organisms/ZoneStepStrip": [("Second", f'x: 0; y: (parent.height - self.height) / 2; width: parent.width; pip: 1;', "")],
     "organisms/ZoneTally": [("Counted", f'{FILL} tally: {{ shown: true, title: "Hollow Knight", counted: true, rows: [{{ label: "Time", value: "33\'05\\"", share: 0.15 }}, {{ label: "Plays", value: "8", share: 1 }}, {{ label: "Total", value: "3H 45M", share: 1 }}] }};', 'ground: "tally";')],
     "organisms/ZoneWarningLines": [("Warning", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; warning: true; line: "video.shader · retroarch-mgba · 1.19.1: the shader preset was not found and the default is used";', 'ground: "options";'),

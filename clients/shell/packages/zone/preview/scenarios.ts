@@ -69,6 +69,8 @@ const scenarios: Scenario[] = [
   { name: "status-problem", ref: ["ZoneStatusLayer", "Problem"], models: [{ ...ready, status: statusProblem }], steps: [] },
   { name: "status-confirm", ref: ["ZoneStatusLayer", "Confirm"], models: [{ ...ready, status: statusConfirm }], steps: [] },
   { name: "status-progress", ref: ["ZoneStatusLayer", "BusyProgress"], models: [{ ...ready, status: statusProgressKnown }], steps: [] },
+  // Amendment A4, written after the cut: a launch's named steps.
+  { name: "status-steps", ref: ["ZoneStatusLayer", "Steps"], models: [{ ...ready, status: { _tag: "Busy", kicker: "Starting Hollow Knight", steps: { labels: ["Checking saves", "Downloading", "Getting the game ready", "Starting the game"], current: 2 }, actions: [{ id: "cancel-launch", label: "Cancel", enabled: true }], declineActionId: "cancel-launch", gameId: "hollow-knight" } }], steps: [] },
   // OPTIONS
   { name: "options", ref: ["ZoneOptions", "default"], models: [options], steps: [...toOptions, "down"] },
   { name: "options-choice", ref: ["ZoneOptions", "Choice"], models: [options], steps: [...toOptions, "down", "down", "down"] },

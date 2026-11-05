@@ -12,3 +12,7 @@ export component Default inherits ZonePreview {
 export component Progress inherits ZonePreview {
     ZoneBusyStrip { x: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; y: parent.height - self.needed - 8 * Tokens.a; height: self.needed; busy: { shown: true, kicker: "Downloading FEX rootfs", game: "Hollow Knight", buttons: [{ label: "Cancel", focused: true, lit: true }], meter: true, share: 0.5, figures: "612 MB of 1.2 GB · 6.4 MB/s · 1:30 left" }; }
 }
+
+export component Steps inherits ZonePreview {
+    ZoneBusyStrip { x: 8 * Tokens.a; width: parent.width - 16 * Tokens.a; y: parent.height - self.needed - 8 * Tokens.a; height: self.needed; busy: { shown: true, kicker: "Starting Hollow Knight", game: "Hollow Knight", buttons: [{ label: "Cancel", focused: true, lit: true }], steps: 4, step: 2, step-words: "Step 3 of 4 · Getting the game ready" }; }
+}
