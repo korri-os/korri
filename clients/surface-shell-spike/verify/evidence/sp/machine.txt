@@ -1,6 +1,0 @@
-Linux rg35xxsp 7.2.0 #1-NixOS SMP PREEMPT Sun Aug 16 21:32:26 UTC 2026 aarch64 GNU/Linux
-               total        used        free      shared  buff/cache   available
-Mem:           975Mi       601Mi        57Mi        24Mi       417Mi       374Mi
-Swap:             0B          0B          0B
-Filesystem      Size  Used Avail Use% Mounted on
-/dev/mmcblk0p2   58G   14G   42G  24% /

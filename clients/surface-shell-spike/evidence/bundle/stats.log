@@ -1,4 +1,0 @@
-SHELL_STATS package=zone compile_ms=1015.667 logic_load_ms=192.799 first_frame_ms=2510.256 show_to_frame_ms=818.676
-SHELL_STATS package=pico compile_ms=349.185 logic_load_ms=94.384 first_frame_ms=729.708 show_to_frame_ms=270.842
-SHELL_STATS fps=8.593 frames=43 seconds=5.004
-SHELL_STATS package=zone compile_ms=472.364 logic_load_ms=87.999 first_frame_ms=997.003 show_to_frame_ms=413.046

@@ -1,1 +1,0 @@
-F2, arrows, state reset, compile failure retention, 1280x720: PASS

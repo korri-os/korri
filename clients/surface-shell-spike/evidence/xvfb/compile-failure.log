@@ -1,7 +1,0 @@
-shell: input /dev/input/event17: Korri Seat P4 (not grabbed)
-shell: input /dev/input/event16: Korri Seat P3 (not grabbed)
-shell: input /dev/input/event15: Korri Seat P2 (not grabbed)
-shell: input /dev/input/event14: Korri Seat P1 (not grabbed)
-SHELL_STATS package=_test/a compile_ms=4.424 logic_load_ms=0.843 first_frame_ms=68.878 show_to_frame_ms=6.137
-shell: /home/simonwjackson/code/sandbox/korri/.worktrees/c-aa02660e0793055693ff8bc77de87c980f0d34d9659ffbec6c9cfc72dfdeb63d/clients/surface-shell-spike/surfaces/_test/missing/main.slint:0: Could not load /home/simonwjackson/code/sandbox/korri/.worktrees/c-aa02660e0793055693ff8bc77de87c980f0d34d9659ffbec6c9cfc72dfdeb63d/clients/surface-shell-spike/surfaces/_test/missing/main.slint: No such file or directory (os error 2)
-shell: compile _test/missing failed; current surface kept

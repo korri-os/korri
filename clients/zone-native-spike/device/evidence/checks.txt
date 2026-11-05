@@ -1,4 +1,0 @@
-shellcheck: passed
-nixfmt: passed
-rustfmt: passed
-boundary tests passed

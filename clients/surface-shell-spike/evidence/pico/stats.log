@@ -1,8 +1,0 @@
-shell: input /dev/input/event17: Korri Seat P4 (not grabbed)
-shell: input /dev/input/event16: Korri Seat P3 (not grabbed)
-shell: input /dev/input/event15: Korri Seat P2 (not grabbed)
-shell: input /dev/input/event14: Korri Seat P1 (not grabbed)
-SHELL_STATS package=pico compile_ms=24.112 logic_load_ms=5.761 first_frame_ms=79.797 show_to_frame_ms=15.345
-SHELL_STATS package=_test/a compile_ms=5.428 logic_load_ms=0.680 first_frame_ms=9.835 show_to_frame_ms=2.902
-SHELL_STATS package=pico compile_ms=20.858 logic_load_ms=5.930 first_frame_ms=38.685 show_to_frame_ms=11.227
-SHELL_STATS fps=5.196 frames=26 seconds=5.004

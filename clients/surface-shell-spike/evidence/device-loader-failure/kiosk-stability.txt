@@ -1,4 +1,0 @@
-ActiveState=active
-SubState=running
-MainPID=17270
-NRestarts=0

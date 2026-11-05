@@ -1,3 +1,0 @@
-ActiveState=active
-SubState=running
-NRestarts=0

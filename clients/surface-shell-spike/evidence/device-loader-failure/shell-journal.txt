@@ -1,7 +1,0 @@
-[10048.569385] rg35xxsp systemd[1]: Started [systemd-run] /tmp/surface-shell-sp/run.sh.
-[10048.962156] rg35xxsp run.sh[17253]: Error: read fixtures/model.json (set SHELL_ROOT)
-[10048.962156] rg35xxsp run.sh[17253]: Caused by:
-[10048.979543] rg35xxsp run.sh[17253]:     No such file or directory (os error 2)
-[10048.978077] rg35xxsp systemd[1]: surface-shell-spike.service: Main process exited, code=exited, status=1/FAILURE
-[10048.978839] rg35xxsp systemd[1]: surface-shell-spike.service: Failed with result 'exit-code'.
-[10048.982319] rg35xxsp systemd[1]: surface-shell-spike.service: Consumed 170ms CPU time over 410ms wall clock time, 6.3M memory peak, 4.1M read from disk.

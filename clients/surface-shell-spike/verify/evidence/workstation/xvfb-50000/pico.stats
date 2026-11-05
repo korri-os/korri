@@ -1,7 +1,0 @@
-shell: input /dev/input/event17: Korri Seat P4 (not grabbed)
-shell: input /dev/input/event16: Korri Seat P3 (not grabbed)
-shell: input /dev/input/event15: Korri Seat P2 (not grabbed)
-shell: input /dev/input/event14: Korri Seat P1 (not grabbed)
-memory allocation of 136 bytes failed
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-shell exited early

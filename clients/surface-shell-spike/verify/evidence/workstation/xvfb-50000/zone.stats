@@ -1,9 +1,0 @@
-shell: input /dev/input/event17: Korri Seat P4 (not grabbed)
-shell: input /dev/input/event16: Korri Seat P3 (not grabbed)
-shell: input /dev/input/event15: Korri Seat P2 (not grabbed)
-shell: input /dev/input/event14: Korri Seat P1 (not grabbed)
-SHELL_STATS package=zone compile_ms=114.731 logic_load_ms=2955.685 first_frame_ms=5944.364 show_to_frame_ms=1537.580
-SHELL_STATS fps=3.327 frames=17 seconds=5.110
-SHELL_STATS fps=1.314 frames=8 seconds=6.088
-SHELL_STATS fps=2.737 frames=14 seconds=5.116
-SHELL_STATS fps=3.397 frames=17 seconds=5.004
