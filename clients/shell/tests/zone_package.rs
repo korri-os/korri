@@ -932,3 +932,230 @@ fn the_plan_measures_words_as_slint_draws_them() {
         wrong.join("\n")
     );
 }
+
+/// Zone's view is cheap enough for the 50 ms call budget on the slowest
+/// device clock: every `view()` after the attract's next game and after a
+/// move along the band, over 10,000 games (a 50-game window), at 640x480.
+/// The RG353M at 408 MHz runs this logic about ZONE_SLOW_FACTOR times
+/// slower than the workstation; the limits below are the device's, divided
+/// by it.
+#[test]
+fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
+    let root = package();
+    let source = std::fs::read_to_string(
+        std::env::var("ZONE_LOGIC")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| root.join("logic.js")),
+    )
+    .unwrap();
+    let (mut model, mut examples) = korri_shell::verify::fixture();
+    // As korrid publishes games today: no cover art (services/korrid/src/surface).
+    // ZONE_VIEW_ART=1 keeps the fixture's inline art.
+    if std::env::var_os("ZONE_VIEW_ART").is_none() {
+        for game in &mut examples {
+            game.as_object_mut().unwrap().remove("coverArtUrl");
+        }
+    }
+    model["catalog"] = json!({"_tag": "Ready", "games": catalog::games(&examples, 10_000)});
+    let mut korri = Korri::new(model);
+    let mut engine = engine::Engine::load(
+        &source,
+        engine::Limits {
+            call: std::time::Duration::from_secs(5),
+            ..engine::Limits::default()
+        },
+    )
+    .unwrap();
+    engine.set_model(&korri.published()).unwrap();
+    let preferences = engine::effective_preferences(engine.declaration(), &BTreeMap::new());
+    engine.init(&preferences).unwrap();
+    let deliver = |engine: &mut engine::Engine, korri: &mut Korri, message: Value| {
+        let mut queue = vec![message];
+        while let Some(message) = queue.pop() {
+            let requests = engine.update(&message).unwrap();
+            if korri.answer(&requests) {
+                engine.set_model(&korri.published()).unwrap();
+                queue.push(json!({"_tag": "KorriPublished"}));
+            }
+        }
+    };
+    deliver(
+        &mut engine,
+        &mut korri,
+        json!({"_tag": "Resized", "width": 640, "height": 480}),
+    );
+    deliver(&mut engine, &mut korri, json!({"_tag": "KorriPublished"}));
+    engine.view().unwrap();
+    // The thread's own CPU time, so other work on a busy machine does not count.
+    // What a call costs: the instructions this thread runs in it (counted by
+    // the CPU, so other work on a busy machine does not count), or, where the
+    // counter is not available, the thread's CPU time.
+    let counter = Instructions::open();
+    // ZONE_VIEW_SKIP=1 leaves the timed calls out (for counting what they cost).
+    let skip = std::env::var_os("ZONE_VIEW_SKIP").is_some();
+    let timed = |engine: &mut engine::Engine| {
+        let started = counter.as_ref().map_or_else(cpu_nanos, Instructions::read);
+        if !skip {
+            engine.view().unwrap();
+        }
+        counter.as_ref().map_or_else(cpu_nanos, Instructions::read) - started
+    };
+    let mut times: BTreeMap<&str, Vec<u64>> = BTreeMap::new();
+    // ZONE_VIEW_MOVES: band moves each way (10).
+    let moves: usize = std::env::var("ZONE_VIEW_MOVES")
+        .ok()
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(10);
+    for _ in 0..moves {
+        deliver(
+            &mut engine,
+            &mut korri,
+            json!({"_tag": "Pressed", "button": "right"}),
+        );
+        times
+            .entry("band right")
+            .or_default()
+            .push(timed(&mut engine));
+    }
+    for _ in 0..moves {
+        deliver(
+            &mut engine,
+            &mut korri,
+            json!({"_tag": "Pressed", "button": "left"}),
+        );
+        times
+            .entry("band left")
+            .or_default()
+            .push(timed(&mut engine));
+    }
+    // Idle: the attract opens at 30 s, then the next game every 6 s.
+    for step in 0..12u64 {
+        deliver(
+            &mut engine,
+            &mut korri,
+            json!({"_tag": "Tick", "idleMs": 30_000 + step * 6_000}),
+        );
+        times
+            .entry(if step == 0 {
+                "attract opens"
+            } else {
+                "attract next"
+            })
+            .or_default()
+            .push(timed(&mut engine));
+        // The same view again: only its JSON, both ways.
+        times
+            .entry("view again (JSON only)")
+            .or_default()
+            .push(timed(&mut engine));
+    }
+    eprintln!(
+        "view JSON: {} bytes",
+        engine.view().unwrap().to_string().len()
+    );
+    let mut over = Vec::new();
+    for (what, list) in &times {
+        // The attract's next game: under 10 ms on the device (5x headroom);
+        // every other call under 15 ms (band moves estimate about 13 ms; see
+        // README.md, Limits).
+        let device_ms = if *what == "attract next" { 10.0 } else { 15.0 };
+        let limit = match counter {
+            Some(_) => (device_ms * ZONE_INSTRUCTIONS_PER_DEVICE_MS) as u64,
+            // CPU time, with room for a busy machine.
+            None => (2.0 * device_ms * 1_000_000.0 / ZONE_SLOW_FACTOR) as u64,
+        };
+        let unit = if counter.is_some() {
+            "instructions"
+        } else {
+            "ns"
+        };
+        let mut sorted = list.clone();
+        sorted.sort();
+        let median = sorted[sorted.len() / 2];
+        eprintln!(
+            "{what}: median {median} {unit}, worst {} (limit {limit}; about {:.1} ms on the device)",
+            sorted.last().unwrap(),
+            if counter.is_some() { median as f64 / ZONE_INSTRUCTIONS_PER_DEVICE_MS } else { median as f64 * ZONE_SLOW_FACTOR / 1_000_000.0 }
+        );
+        if median > limit {
+            over.push(format!("{what}: median {median} {unit} over {limit}"));
+        }
+    }
+    assert!(over.is_empty(), "{over:#?}");
+}
+
+/// How much slower the RG353M at 408 MHz runs Zone's logic than this
+/// workstation (an i9-11900H): the device's 52 and 58 ms for the attract's
+/// next game against 2.07 ms here for the same call before Zone made it
+/// incremental (25 to 28 times).
+const ZONE_SLOW_FACTOR: f64 = 28.0;
+
+/// Workstation instructions per millisecond of the same call on the RG353M
+/// at 408 MHz: a band move counted 4.38 M instructions here before 597896ae3
+/// and took about 0.6 ms here, about 17 ms on the device.
+const ZONE_INSTRUCTIONS_PER_DEVICE_MS: f64 = 4_380_000.0 / 17.0;
+
+/// The thread's CPU time in ns.
+fn cpu_nanos() -> u64 {
+    let mut now = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) };
+    now.tv_sec as u64 * 1_000_000_000 + now.tv_nsec as u64
+}
+
+/// The CPU's count of user-space instructions this thread retires
+/// (perf_event_open), when the kernel lets a process count its own.
+struct Instructions(i32);
+
+impl Instructions {
+    fn open() -> Option<Self> {
+        // struct perf_event_attr, as far as this needs it (size 128).
+        #[repr(C)]
+        struct Attr {
+            kind: u32,
+            size: u32,
+            config: u64,
+            sample: u64,
+            sample_type: u64,
+            read_format: u64,
+            flags: u64,
+            rest: [u64; 10],
+        }
+        let attr = Attr {
+            kind: 0, // PERF_TYPE_HARDWARE
+            size: std::mem::size_of::<Attr>() as u32,
+            config: 1, // PERF_COUNT_HW_INSTRUCTIONS
+            sample: 0,
+            sample_type: 0,
+            read_format: 0,
+            // exclude_kernel (bit 5) and exclude_hv (bit 6)
+            flags: (1 << 5) | (1 << 6),
+            rest: [0; 10],
+        };
+        let fd = unsafe {
+            libc::syscall(
+                libc::SYS_perf_event_open,
+                &attr as *const Attr,
+                0,
+                -1,
+                -1,
+                0,
+            )
+        };
+        (fd >= 0).then_some(Self(fd as i32))
+    }
+
+    fn read(&self) -> u64 {
+        let mut count = 0u64;
+        unsafe { libc::read(self.0, &mut count as *mut u64 as *mut libc::c_void, 8) };
+        count
+    }
+}
+
+impl Drop for Instructions {
+    fn drop(&mut self) {
+        unsafe { libc::close(self.0) };
+    }
+}

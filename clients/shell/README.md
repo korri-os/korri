@@ -103,8 +103,9 @@ window:
 - No exit: focus stays.
 
 A target's drawn box and identity are its element's (Focus targets above).
-The probe runs on its own clock with `animation-tick()` held still, so frames
-it compares differ only by what the views changed; `--still` fails a state
+The probe runs on its own clock, starting at the same instant every run, with
+`animation-tick()` held still, so frames it compares differ only by what the
+views changed and two runs draw the same pixels; `--still` fails a state
 whose unchanged view, applied again, changes a pixel.
 
 ## Wire
@@ -135,6 +136,17 @@ During a switch the new surface's window is mapped until its first frame, then
 the old one is removed.
 
 ## Limits and performance
+
+The shell compiles a package's `main.slint` the first time the package loads
+and keeps the compiled views until it exits; a later switch back creates the
+surface from them. Zone's compile is most of its load: 0.4 s on a workstation,
+2.6 to 3.6 s on the RG353M.
+
+The shipped binary is Cargo's `dist` profile (`package.nix`): link-time
+optimised in one unit, the Slint compiler optimised for size. Its code is
+mapped into the shell's memory: `.text` 15.7 MB, against 20.1 MB in
+`release`. Measure memory with a `dist` build copied out of the target
+directory (a freshly linked file maps differently).
 
 Each surface's logic runs under three limits (`src/engine.rs`):
 

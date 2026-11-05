@@ -1,0 +1,19 @@
+09:49:25 backlight before: /sys/class/backlight/backlight 833/1666 bl_power=0
+[
+  {
+    "success": true
+  }
+]
+[
+  {
+    "success": true
+  }
+]
+09:49:27 backlight after: /sys/class/backlight/backlight 833/1666 bl_power=0
+09:49:52 shot kiosk-idle via korri-wayland
+09:53:03 switch 1 done
+09:53:11 switch 2 done
+09:53:20 switch 3 done
+09:53:28 switch 4 done
+09:53:48 script done
+09:54:22 restored

@@ -1,3 +1,4 @@
+# NOTE (#360, 67c92b2bf): FULLSPEED raised the cap to 1.8 GHz, but korri-limitsd (the 61 % cap on the deployed generation) put it back at 1104 MHz within seconds. These runs mixed 1.8 GHz and 1104 MHz in proportions that varied by run, so their medians and their run-to-run spread are not comparable with one another or with runs at a fixed clock. See rg353m-frequency-cap.txt.
 # RG353M at full clock for the run (FULLSPEED=1 in kbench-run.sh: scaling_max_freq raised to cpuinfo_max_freq, restored after).
 # Build: streamed banded replay + layer images only from unchanged content.
 # 10.42.0.1 2026-11-03T05:38:46Z Anbernic

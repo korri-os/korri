@@ -1,0 +1,48 @@
+== zone-after-attract pid 584949
+aaaacb9bb000-ffffc4349000 ---p 00000000 00:00 0                          [rollup]
+Rss:               81340 kB
+Pss:               78716 kB
+Pss_Dirty:         62238 kB
+Pss_Anon:          60700 kB
+Pss_File:          16478 kB
+Pss_Shmem:          1538 kB
+Shared_Clean:       2140 kB
+Shared_Dirty:       3076 kB
+Private_Clean:     15424 kB
+Private_Dirty:     60700 kB
+Referenced:        74664 kB
+Anonymous:         60700 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+== pico-after-switches pid 584949
+aaaacb9bb000-ffffc4349000 ---p 00000000 00:00 0                          [rollup]
+Rss:               84768 kB
+Pss:               82418 kB
+Pss_Dirty:         65748 kB
+Pss_Anon:          64548 kB
+Pss_File:          16670 kB
+Pss_Shmem:          1200 kB
+Shared_Clean:       2268 kB
+Shared_Dirty:       2400 kB
+Private_Clean:     15552 kB
+Private_Dirty:     64548 kB
+Referenced:        77912 kB
+Anonymous:         64548 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB

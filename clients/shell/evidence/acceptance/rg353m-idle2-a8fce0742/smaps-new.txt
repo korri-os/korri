@@ -1,0 +1,96 @@
+== zone-quiet pid 491881
+aaaaba751000-fffff3413000 ---p 00000000 00:00 0                          [rollup]
+Rss:               97528 kB
+Pss:               94840 kB
+Pss_Dirty:         73690 kB
+Pss_Anon:          72152 kB
+Pss_File:          21150 kB
+Pss_Shmem:          1538 kB
+Shared_Clean:       2268 kB
+Shared_Dirty:       3076 kB
+Private_Clean:     20032 kB
+Private_Dirty:     72152 kB
+Referenced:        88544 kB
+Anonymous:         72152 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+== zone-attract pid 491881
+aaaaba751000-fffff3413000 ---p 00000000 00:00 0                          [rollup]
+Rss:               98688 kB
+Pss:               96000 kB
+Pss_Dirty:         74850 kB
+Pss_Anon:          73312 kB
+Pss_File:          21150 kB
+Pss_Shmem:          1538 kB
+Shared_Clean:       2268 kB
+Shared_Dirty:       3076 kB
+Private_Clean:     20032 kB
+Private_Dirty:     73312 kB
+Referenced:        89724 kB
+Anonymous:         73312 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+== pico-idle pid 491881
+aaaaba751000-fffff3413000 ---p 00000000 00:00 0                          [rollup]
+Rss:              104676 kB
+Pss:              102326 kB
+Pss_Dirty:         81176 kB
+Pss_Anon:          79976 kB
+Pss_File:          21150 kB
+Pss_Shmem:          1200 kB
+Shared_Clean:       2268 kB
+Shared_Dirty:       2400 kB
+Private_Clean:     20032 kB
+Private_Dirty:     79976 kB
+Referenced:        95772 kB
+Anonymous:         79976 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB
+== zone-quiet-again pid 491881
+aaaaba751000-fffff3413000 ---p 00000000 00:00 0                          [rollup]
+Rss:              123604 kB
+Pss:              120916 kB
+Pss_Dirty:         99766 kB
+Pss_Anon:          98228 kB
+Pss_File:          21150 kB
+Pss_Shmem:          1538 kB
+Shared_Clean:       2268 kB
+Shared_Dirty:       3076 kB
+Private_Clean:     20032 kB
+Private_Dirty:     98228 kB
+Referenced:       114704 kB
+Anonymous:         98228 kB
+KSM:                   0 kB
+LazyFree:              0 kB
+AnonHugePages:         0 kB
+ShmemPmdMapped:        0 kB
+FilePmdMapped:         0 kB
+Shared_Hugetlb:        0 kB
+Private_Hugetlb:       0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+Locked:                0 kB

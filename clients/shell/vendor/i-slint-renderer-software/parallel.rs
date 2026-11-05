@@ -58,7 +58,116 @@ pub(super) enum Op {
     },
 }
 
+fn same_color(a: &PremultipliedRgbaColor, b: &PremultipliedRgbaColor) -> bool {
+    bytemuck::bytes_of(a) == bytemuck::bytes_of(b)
+}
+
+fn same_extra(a: &SceneTextureExtra, b: &SceneTextureExtra) -> bool {
+    a.dx == b.dx
+        && a.dy == b.dy
+        && a.off_x == b.off_x
+        && a.off_y == b.off_y
+        && a.colorize == b.colorize
+        && a.alpha == b.alpha
+        && a.rotation == b.rotation
+}
+
+/// The same pixels: the same bytes (the same memory, or equal content).
+fn same_texture(a: &SceneTexture<'_>, b: &SceneTexture<'_>) -> bool {
+    a.format == b.format
+        && a.pixel_stride == b.pixel_stride
+        && same_extra(&a.extra, &b.extra)
+        && a.data.len() == b.data.len()
+        && (core::ptr::eq(a.data.as_ptr(), b.data.as_ptr()) || a.data == b.data)
+}
+
 impl Op {
+    /// Whether replaying `self` draws exactly what replaying `other` draws, on the same
+    /// pixels. A cached layer is the same when it is the same recording (`Arc`), which the
+    /// previous frame's ops keep alive, so its address is not reused meanwhile.
+    pub(super) fn same(&self, other: &Op) -> bool {
+        match (self, other) {
+            (Op::Background(a), Op::Background(b)) => a == b,
+            (Op::SetClip(a), Op::SetClip(b)) => a == b,
+            (Op::Layer(a, ra), Op::Layer(b, rb)) => Arc::ptr_eq(a, b) && ra == rb,
+            (Op::Texture(ga, a), Op::Texture(gb, b)) => ga == gb && same_texture(a, b),
+            (Op::SharedTexture(ga, a), Op::SharedTexture(gb, b)) => {
+                ga == gb && a.source_rect == b.source_rect && same_texture(&a.as_texture(), &b.as_texture())
+            }
+            (Op::Rectangle(ga, a), Op::Rectangle(gb, b)) => ga == gb && same_color(a, b),
+            (Op::RoundedRectangle(ga, a), Op::RoundedRectangle(gb, b)) => {
+                ga == gb
+                    && a.radius == b.radius
+                    && a.width == b.width
+                    && same_color(&a.border_color, &b.border_color)
+                    && same_color(&a.inner_color, &b.inner_color)
+                    && a.left_clip == b.left_clip
+                    && a.right_clip == b.right_clip
+                    && a.top_clip == b.top_clip
+                    && a.bottom_clip == b.bottom_clip
+            }
+            (Op::LinearGradient(ga, a), Op::LinearGradient(gb, b)) => {
+                ga == gb
+                    && same_color(&a.color1, &b.color1)
+                    && same_color(&a.color2, &b.color2)
+                    && a.start == b.start
+                    && a.flags == b.flags
+                    && a.left_clip == b.left_clip
+                    && a.right_clip == b.right_clip
+                    && a.top_clip == b.top_clip
+                    && a.bottom_clip == b.bottom_clip
+            }
+            (Op::RadialGradient(ga, a), Op::RadialGradient(gb, b)) => {
+                ga == gb
+                    && a.stops == b.stops
+                    && a.center_x == b.center_x
+                    && a.center_y == b.center_y
+                    && a.radius == b.radius
+            }
+            (Op::ConicGradient(ga, a), Op::ConicGradient(gb, b)) => {
+                ga == gb && a.stops == b.stops && a.center_x == b.center_x && a.center_y == b.center_y
+            }
+            #[cfg(feature = "path")]
+            (
+                Op::FilledPath { path: pa, clip: ca, commands: a, color: la },
+                Op::FilledPath { path: pb, clip: cb, commands: b, color: lb },
+            ) => pa == pb && ca == cb && a == b && same_color(la, lb),
+            #[cfg(feature = "path")]
+            (
+                Op::StrokedPath {
+                    path: pa,
+                    clip: ca,
+                    commands: a,
+                    color: la,
+                    width: wa,
+                    cap: capa,
+                    join: joina,
+                    miter_limit: ma,
+                },
+                Op::StrokedPath {
+                    path: pb,
+                    clip: cb,
+                    commands: b,
+                    color: lb,
+                    width: wb,
+                    cap: capb,
+                    join: joinb,
+                    miter_limit: mb,
+                },
+            ) => {
+                pa == pb
+                    && ca == cb
+                    && a == b
+                    && same_color(la, lb)
+                    && wa == wb
+                    && capa == capb
+                    && joina == joinb
+                    && ma == mb
+            }
+            _ => false,
+        }
+    }
+
     /// The pixels the op can touch.
     pub(super) fn bounds(&self) -> PhysicalRect {
         match self {
@@ -231,14 +340,43 @@ impl LayerOps {
 pub(super) const CHUNK: usize = 128;
 
 /// Where the scene builder records: the ops, and the stream that takes them in chunks.
+///
+/// Compared with the previous frame's ops over the same region (`compare_with`), the ops
+/// are held back while each is the same as the previous frame's at its place: the band
+/// threads draw nothing yet. At the first one that differs, the held ops are published and
+/// the frame streams on. A frame whose ops all match is the previous frame's image.
+///
+/// An opaque rectangle that covers the whole frame region (`cover_region`) hides every op
+/// before it: those not published yet are dropped.
 pub(super) struct Recorder {
     ops: Vec<Op>,
     stream: Option<Arc<OpStream>>,
+    /// The previous frame's ops over the same region (`compare_with`).
+    previous: Option<Vec<Op>>,
+    /// Whether every op since the frame (or the last cover) began is `previous`'s at its
+    /// place; the matching ops are `held`, not published.
+    matching: bool,
+    held: Vec<Op>,
+    /// Whether a chunk went to the stream: published ops cannot be dropped any more.
+    published: bool,
+    /// The frame region's bounds, when an op covering them hides what is under it.
+    region: Option<PhysicalRect>,
+    /// The clip of the ops recorded last (`Op::SetClip`).
+    clip: Option<PhysicalRect>,
 }
 
 impl Recorder {
     pub(super) fn new() -> Self {
-        Self { ops: Vec::new(), stream: None }
+        Self {
+            ops: Vec::new(),
+            stream: None,
+            previous: None,
+            matching: false,
+            held: Vec::new(),
+            published: false,
+            region: None,
+            clip: None,
+        }
     }
 
     /// From now on, publish every full chunk to `stream`.
@@ -246,18 +384,88 @@ impl Recorder {
         self.stream = Some(stream);
     }
 
+    /// Hold the ops back while they are those of `previous`, the previous frame's over the
+    /// same region.
+    pub(super) fn compare_with(&mut self, previous: Vec<Op>) {
+        self.previous = Some(previous);
+        self.matching = true;
+    }
+
+    /// From now on, an opaque rectangle that covers `bounds` (the frame region's) drops the
+    /// ops before it that are not published yet: it draws every pixel they drew.
+    pub(super) fn cover_region(&mut self, bounds: PhysicalRect) {
+        self.region = Some(bounds);
+    }
+
+    /// Whether `op` paints every pixel of the frame region, whatever was there.
+    fn covers_region(&self, op: &Op) -> bool {
+        let (Some(region), Op::Rectangle(geometry, color)) = (self.region, op) else {
+            return false;
+        };
+        if color.alpha != 255 || region.is_empty() {
+            return false;
+        }
+        let drawn = match self.clip {
+            Some(clip) => geometry.intersection(&clip).unwrap_or_default(),
+            None => *geometry,
+        };
+        drawn.contains_rect(&region)
+    }
+
     pub(super) fn push(&mut self, op: Op) {
+        if let Op::SetClip(clip) = &op {
+            self.clip = *clip;
+        }
+        if !self.published && self.covers_region(&op) {
+            // Everything recorded so far is painted over: keep only the clip it is under,
+            // and compare again from there.
+            self.ops.clear();
+            self.held.clear();
+            self.matching = self.previous.is_some();
+            if let Some(clip) = self.clip {
+                self.push_compared(Op::SetClip(Some(clip)));
+            }
+        }
+        self.push_compared(op);
+    }
+
+    fn push_compared(&mut self, op: Op) {
+        if self.matching {
+            let previous = self.previous.as_ref().expect("matching compares with previous ops");
+            if previous.get(self.held.len()).is_some_and(|p| p.same(&op)) {
+                self.held.push(op);
+                return;
+            }
+            self.matching = false;
+            for held in core::mem::take(&mut self.held) {
+                self.publish(held);
+            }
+        }
+        self.publish(op);
+    }
+
+    fn publish(&mut self, op: Op) {
         self.ops.push(op);
         if self.ops.len() >= CHUNK {
             if let Some(stream) = &self.stream {
+                self.published = true;
                 stream.publish(core::mem::replace(&mut self.ops, Vec::with_capacity(CHUNK)), false);
             }
         }
     }
 
-    /// The ops not published yet: all of them without a stream.
-    pub(super) fn into_ops(self) -> Vec<Op> {
-        self.ops
+    /// The ops not published yet (all of them without a stream), and whether they are all
+    /// the previous frame's: then nothing was published, and they are returned.
+    pub(super) fn into_ops(mut self) -> (Vec<Op>, bool) {
+        if self.matching {
+            if self.previous.as_ref().is_some_and(|p| p.len() == self.held.len()) {
+                return (self.held, true);
+            }
+            for held in core::mem::take(&mut self.held) {
+                self.publish(held);
+            }
+        }
+        (self.ops, false)
     }
 }
 
@@ -340,6 +548,8 @@ impl OpStream {
 /// The ops of one frame and the region they draw.
 pub(super) struct Recorded {
     pub ops: Vec<Op>,
+    /// The ops are all the previous frame's over the same region: its image.
+    pub same_as_previous: bool,
     pub dirty_region: PhysicalRegion,
     pub scale_factor: ScaleFactor,
 }
@@ -667,8 +877,8 @@ static THREAD_START: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicU
 /// Split `buffer` under `region` into bands several times more than `threads`, and start
 /// `threads` threads replaying them; the queue goes back to the caller, whose own thread
 /// helps once it has published the last chunk.
-pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
-    scope: &'scope std::thread::Scope<'scope, 'env>,
+pub(super) fn stream_into_bands<'scope, T: TargetPixel>(
+    scope: &super::pool::Scope<'scope>,
     stream: &'scope OpStream,
     buffer: &'scope mut [T],
     pixel_stride: usize,
@@ -723,7 +933,7 @@ pub(super) fn replay_in_bands<T: TargetPixel>(
             renderer.replay(op);
         }
     };
-    std::thread::scope(|scope| {
+    super::pool::scope(|scope| {
         let mut bands = bands.into_iter();
         let mine = bands.next();
         for band in bands {

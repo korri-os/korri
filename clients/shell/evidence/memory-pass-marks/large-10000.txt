@@ -1,0 +1,3 @@
+zone-large-idle cpu_one_core_percent=1.2 pss_kib=79805 rss_kib=83348
+zone-large-after-moves cpu_one_core_percent=1.3 pss_kib=84313 rss_kib=87872
+pico-large-after-moves cpu_one_core_percent=1.3 pss_kib=93349 rss_kib=96964

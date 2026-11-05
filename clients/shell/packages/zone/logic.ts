@@ -61,7 +61,7 @@ import { zoneTallyRows } from "./src/plan/tally"
 import type { ZoneTally } from "./src/state/tally"
 import type { ZoneRequest } from "./src/state/requests"
 import { update as zoneUpdate, zoneShown, zoneSurfaceStart, type ZoneSurfaceMessage, type ZoneSurfaceState } from "./src/state/surface"
-import { overlayView, view as zoneView } from "./src/view"
+import { attractStep, overlayView, view as zoneView } from "./src/view"
 
 export interface State {
   readonly zone: ZoneSurfaceState
@@ -287,8 +287,27 @@ let lastOverlay: { state: State; model: Model; view: ReturnType<typeof overlayVi
 
 export function view(state: State, model: Model) {
   if (lastView?.state === state && lastView.model === model) return lastView.view
+  // The attract's next game changes the attract's game and nothing else: the
+  // last view with that game (and its card) put in, not a whole new view.
+  const last = lastView
+  if (last !== undefined && last.model === model && last.state.size === state.size && onlyAttractMoved(last.state.zone, state.zone)) {
+    lastView = { state, model, view: attractStep(last.view, state.zone, model, screenOf(state)) }
+    return lastView.view
+  }
   lastView = { state, model, view: zoneView(state.zone, model, screenOf(state)) }
   return lastView.view
+}
+
+/** Two states that differ only in the attract's game (navigation's idleCard). */
+function onlyAttractMoved(before: ZoneSurfaceState, after: ZoneSurfaceState): boolean {
+  if (before === after || before.nav === after.nav) return false
+  for (const key in after) {
+    if (key !== "nav" && (after as unknown as Record<string, unknown>)[key] !== (before as unknown as Record<string, unknown>)[key]) return false
+  }
+  for (const key in after.nav) {
+    if (key !== "idleCard" && (after.nav as unknown as Record<string, unknown>)[key] !== (before.nav as unknown as Record<string, unknown>)[key]) return false
+  }
+  return true
 }
 
 export function overlay(state: State, model: Model) {

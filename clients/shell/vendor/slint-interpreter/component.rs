@@ -321,12 +321,18 @@ pub fn build_from_document(
     compiler_config: &i_slint_compiler::CompilerConfiguration,
     mut type_loaders: TypeLoaders,
     animation_mode: AnimationMode,
+    retain_type_loaders: bool,
 ) -> Vec<ComponentDefinitionInner> {
     let mut unit =
         i_slint_compiler::llr::lower_to_item_tree::lower_to_item_tree(document, compiler_config);
     if matches!(animation_mode, AnimationMode::Static) {
         make_static(&mut unit);
     }
+    if !retain_type_loaders {
+        drop_tooling_tables(&mut unit);
+        compact_geometries(&mut unit);
+    }
+    shrink_to_fit(&mut unit);
     let unit = Rc::new(unit);
     // `lower_to_item_tree` builds `public_components` from `exported_roots()`
     // in iteration order, so the indices line up.
@@ -338,6 +344,83 @@ pub fn build_from_document(
             type_loaders: type_loaders.clone(),
         })
         .collect()
+}
+
+/// Drop what only the code generators and the tooling read, for a definition that keeps no
+/// type loaders (so it serves no highlighting or live preview): each property's analysis
+/// (`prop_analysis`, read through `EvaluationContext::property_info` by the generators) and
+/// the source locations of the items (`debug_info`, read by `highlight.rs`). The element
+/// infos that `ElementHandle` queries read stay.
+fn drop_tooling_tables(unit: &mut CompilationUnit) {
+    for sub in unit.sub_components.iter_mut() {
+        sub.prop_analysis = Default::default();
+        sub.debug_info = None;
+    }
+    for global in unit.globals.iter_mut() {
+        global.prop_analysis = Default::default();
+    }
+}
+
+/// The four fields of an item geometry that is a struct literal of exactly `x`, `y`, `width`
+/// and `height`, in that order, as a geometry stores them after `compact_geometries`.
+pub(crate) fn geometry_fields(expression: &Expression) -> Option<&[Expression]> {
+    match expression {
+        Expression::Array { values, output: i_slint_compiler::llr::ArrayOutput::Slice, .. }
+            if values.len() == 4 =>
+        {
+            Some(values)
+        }
+        _ => None,
+    }
+}
+
+/// Store each item geometry that is a struct literal of exactly `x`, `y`, `width` and
+/// `height` as its four field expressions in a list (`geometry_fields`), which only
+/// `item_geometry` reads. A struct literal holds its fields in a `BTreeMap` leaf with room
+/// for eleven: Zone's 2 603 geometries took 5.3 MB. A definition without type loaders only:
+/// tooling reads geometries as struct values.
+fn compact_geometries(unit: &mut CompilationUnit) {
+    for sub in unit.sub_components.iter_mut() {
+        for geometry in sub.geometries.iter_mut().flatten() {
+            let mut expression = geometry.borrow_mut();
+            let Expression::Struct { values, .. } = &mut *expression else { continue };
+            const FIELDS: [&str; 4] = ["x", "y", "width", "height"];
+            if values.len() != 4 || !FIELDS.iter().all(|name| values.contains_key(*name)) {
+                continue;
+            }
+            let fields: Vec<Expression> =
+                FIELDS.iter().filter_map(|name| values.remove(*name)).collect();
+            *expression = Expression::Array {
+                element_ty: LangType::LogicalLength,
+                values: fields,
+                output: i_slint_compiler::llr::ArrayOutput::Slice,
+            };
+        }
+    }
+}
+
+/// Give back the spare capacity of the unit's growable containers. Lowering fills them a
+/// push at a time, so each holds up to twice what it needs, for the life of the definition:
+/// Zone's `property_init` lists alone held 32 712 bindings' room for 18 580 (5 MB).
+fn shrink_to_fit(unit: &mut CompilationUnit) {
+    for sub in unit.sub_components.iter_mut() {
+        sub.properties.shrink_to_fit();
+        sub.callbacks.shrink_to_fit();
+        sub.functions.shrink_to_fit();
+        sub.items.shrink_to_fit();
+        sub.repeated.shrink_to_fit();
+        sub.timers.shrink_to_fit();
+        sub.sub_components.shrink_to_fit();
+        sub.property_init.shrink_to_fit();
+        sub.change_callbacks.shrink_to_fit();
+        sub.two_way_bindings.shrink_to_fit();
+        sub.const_properties.shrink_to_fit();
+        sub.pre_init_code.shrink_to_fit();
+        sub.init_code.shrink_to_fit();
+        sub.geometries.shrink_to_fit();
+    }
+    unit.sub_components.shrink_to_fit();
+    unit.globals.shrink_to_fit();
 }
 
 fn make_static(compilation_unit: &mut CompilationUnit) {
@@ -393,6 +476,7 @@ pub async fn build_from_source(
     path: std::path::PathBuf,
     mut config: i_slint_compiler::CompilerConfiguration,
     animation_mode: AnimationMode,
+    retain_type_loaders: bool,
 ) -> BuildResult {
     // If the native style should be used, resolve it here as we know the backend.
     if config.style.as_deref() == Some("native") {
@@ -434,7 +518,7 @@ pub async fn build_from_source(
     // map source-level elements back to runtime items.
     config.debug_info = true;
     let diag = i_slint_compiler::diagnostics::BuildDiagnostics::default();
-    let (path, mut diag, loader, raw_loader) =
+    let (path, mut diag, loader, raw_loader) = if retain_type_loaders {
         i_slint_compiler::load_root_file_with_raw_type_loader(
             &path,
             &path,
@@ -442,7 +526,12 @@ pub async fn build_from_source(
             diag,
             config.clone(),
         )
-        .await;
+        .await
+    } else {
+        let (path, diag, loader) =
+            i_slint_compiler::load_root_file(&path, &path, source_code, diag, config.clone()).await;
+        (path, diag, loader, None)
+    };
     #[cfg(feature = "internal")]
     let watch_paths = loader.all_files_to_watch().into_iter().collect();
     let error_result = |diagnostics| BuildResult {
@@ -477,7 +566,10 @@ pub async fn build_from_source(
         }
     };
     let mut components = std::collections::HashMap::new();
-    for def in build_from_document(doc, &config, type_loaders, animation_mode) {
+    for mut def in build_from_document(doc, &config, type_loaders, animation_mode, retain_type_loaders) {
+        if !retain_type_loaders {
+            def.type_loaders = TypeLoaders::default();
+        }
         components.insert(def.name().to_string(), def);
     }
     if components.is_empty() {

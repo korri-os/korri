@@ -20,3 +20,15 @@ pub fn fix_mmap_threshold() {
         libc::mallopt(libc::M_MMAP_THRESHOLD, MMAP_THRESHOLD);
     }
 }
+
+/// Give the heap's free pages back to the system. glibc returns only the free
+/// space at the top of its heap by itself; a compile frees the compiler's
+/// working trees and an unloaded surface frees its instance in the middle of
+/// it, and those pages stayed in the process (RSS) until reused.
+pub fn release_free_heap() {
+    // SAFETY: malloc_trim only releases free memory; it touches no live block.
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}

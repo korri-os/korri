@@ -24,6 +24,8 @@ mod path;
 mod scene;
 #[cfg(feature = "std")]
 mod parallel;
+#[cfg(feature = "std")]
+mod pool;
 
 use self::fonts::GlyphRenderer;
 pub use self::minimal_software_window::MinimalSoftwareWindow;
@@ -210,10 +212,9 @@ pub trait LineBufferProvider {
 const PHYSICAL_REGION_MAX_SIZE: usize = DirtyRegion::MAX_COUNT;
 // cbindgen can't understand associated const correctly, so hardcode the value
 #[cfg(cbindgen)]
-pub const PHYSICAL_REGION_MAX_SIZE: usize = 3;
+pub const PHYSICAL_REGION_MAX_SIZE: usize = 16;
 const _: () = {
-    assert!(PHYSICAL_REGION_MAX_SIZE == 3);
-    assert!(DirtyRegion::MAX_COUNT == 3);
+    assert!(PHYSICAL_REGION_MAX_SIZE == DirtyRegion::MAX_COUNT);
 };
 
 /// Represents a rectangular region on the screen, used for partial rendering.
@@ -289,6 +290,30 @@ impl PhysicalRegion {
                 }
             }
         })
+    }
+
+    /// The same pixels, however the rectangles split them.
+    #[cfg(feature = "std")]
+    fn same(&self, other: &PhysicalRegion) -> bool {
+        let bounds = self.bounding_rect();
+        if bounds != other.bounding_rect() {
+            return false;
+        }
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        let mut line = bounds.min_y();
+        while line < bounds.max_y() {
+            let next_a = region_line_ranges(self, line, &mut a);
+            let next_b = region_line_ranges(other, line, &mut b);
+            if a != b {
+                return false;
+            }
+            line = match (next_a, next_b) {
+                (Some(x), Some(y)) => x.min(y),
+                (Some(x), None) | (None, Some(x)) => x,
+                (None, None) => break,
+            };
+        }
+        true
     }
 
     fn intersection(&self, clip: &PhysicalRect) -> PhysicalRegion {
@@ -441,14 +466,26 @@ struct CachedLayer {
     at: euclid::Point2D<f32, PhysicalPx>,
     /// Where the layer was last drawn at another offset than `at`, if it was.
     shifted_at: Cell<Option<euclid::Point2D<f32, PhysicalPx>>>,
-    /// The screen area the children draw in, in physical pixels.
+    /// The screen area the children's calls draw in, in physical pixels: it may reach past
+    /// their boxes (text past its box, an ellipsis).
     area: euclid::Rect<i32, PhysicalPx>,
+    /// The clip the calls were recorded under, in logical screen coordinates: the clip the
+    /// layer's parent gives it, as drawing the children directly would have. A call clipped
+    /// by another clip can draw other pixels (a tiled image's phase), so the calls are
+    /// replayed only under the same one.
+    clip: LogicalRect,
     /// The children's draw calls, in screen coordinates, and the pixels they last drew.
     ops: std::sync::Arc<parallel::LayerOps>,
 }
 
 /// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
 /// children's rendering read changes, and cleared when the scale factor or window size changes.
+/// Layer image pixels a frame renders before further layers wait for a later frame: the
+/// first image of a frame is always rendered; small ones (captions) share a frame, so many
+/// small layers do not each wait a frame, redrawn directly meanwhile.
+#[cfg(feature = "std")]
+const LAYER_IMAGE_PIXELS: u64 = 24 * 1024;
+
 #[cfg(feature = "std")]
 #[derive(Default)]
 struct LayerCache {
@@ -558,6 +595,14 @@ pub struct SoftwareRenderer {
     #[cfg(feature = "systemfonts")]
     drawn_root: Cell<usize>,
     skip_quiet_frames: Cell<bool>,
+    /// The last frame drawn from recorded ops: its region and ops. A frame recording the
+    /// same ops over the same region draws the same image, so it is not drawn or presented.
+    #[cfg(feature = "std")]
+    last_frame: RefCell<Option<(PhysicalRegion, Vec<parallel::Op>)>>,
+    /// With swapped buffers: the previous frame's dirty region as this frame found it, for a
+    /// frame that is not drawn (the next one must still cover it).
+    #[cfg(feature = "std")]
+    prev_frame_dirty_before: Cell<DirtyRegion>,
 }
 
 impl Default for SoftwareRenderer {
@@ -587,6 +632,10 @@ impl Default for SoftwareRenderer {
             walk_profile: Default::default(),
             #[cfg(feature = "std")]
             check_layers_again: Default::default(),
+            #[cfg(feature = "std")]
+            last_frame: Default::default(),
+            #[cfg(feature = "std")]
+            prev_frame_dirty_before: Default::default(),
             drawn_frame: Default::default(),
             #[cfg(feature = "systemfonts")]
             drawn_root: Default::default(),
@@ -750,7 +799,7 @@ impl SoftwareRenderer {
             let stream = std::sync::Arc::new(parallel::OpStream::new());
             let shared = &*stream;
             let mut scratch = LinesOnly::like(buffer, pixel_stride, lines);
-            let (region, started) = std::thread::scope(|scope| {
+            let region = pool::scope(|scope| {
                 let mut unclaimed = Some(&mut *buffer);
                 let mut queue = None;
                 let mut start = |region: &PhysicalRegion, scale_factor: ScaleFactor| {
@@ -779,14 +828,28 @@ impl SoftwareRenderer {
                     self.render_buffer_inner(&mut scratch, true, Some(&mut start));
                 drop(start);
                 let started = std::time::Instant::now();
+                // The frame's region and ops, kept for the next frame to compare with.
+                let mut frame = None;
+                let mut same_as_previous = false;
                 if let Some(recorded) = recorded {
-                    match unclaimed.take() {
-                        None => shared.publish(recorded.ops, true),
-                        Some(buffer) => {
-                            let mut ops = shared.take_ops();
-                            ops.extend(recorded.ops);
-                            let recorded = parallel::Recorded { ops, ..recorded };
-                            parallel::replay_in_bands(&recorded, buffer, pixel_stride, 1);
+                    if recorded.same_as_previous {
+                        // The previous frame's image: nothing to draw.
+                        same_as_previous = true;
+                        shared.publish(Vec::new(), true);
+                        frame = Some((recorded.dirty_region, recorded.ops));
+                    } else {
+                        match unclaimed.take() {
+                            None => {
+                                shared.publish(recorded.ops, true);
+                                frame = Some((recorded.dirty_region, Vec::new()));
+                            }
+                            Some(buffer) => {
+                                let mut ops = shared.take_ops();
+                                ops.extend(recorded.ops);
+                                let recorded = parallel::Recorded { ops, ..recorded };
+                                parallel::replay_in_bands(&recorded, buffer, pixel_stride, 1);
+                                frame = Some((recorded.dirty_region, recorded.ops));
+                            }
                         }
                     }
                 } else {
@@ -796,8 +859,32 @@ impl SoftwareRenderer {
                 if let Some(queue) = queue.take() {
                     queue.work(shared);
                 }
-                (region, started)
+                (region, started, frame, same_as_previous)
             });
+            let (region, started, frame, same_as_previous) = region;
+            // Every op of a frame streamed to the band threads is in the stream (they ended).
+            let frame = frame.map(|(region, mut ops)| {
+                if ops.is_empty() {
+                    ops = stream.take_ops();
+                }
+                (region, ops)
+            });
+            // A frame not walked (nothing changed) keeps the last one's.
+            if frame.is_some() {
+                *self.last_frame.borrow_mut() = frame;
+            }
+            if same_as_previous {
+                // Not drawn and not presented: with swapped buffers the next frame gets this
+                // frame's buffer again, which lacks what the previous frame changed. This
+                // frame changed no pixel, so that is all the next one must also redraw.
+                if self.repaint_buffer_type.get() == RepaintBufferType::SwappedBuffers {
+                    self.prev_frame_dirty.set(self.prev_frame_dirty_before.take());
+                }
+                self.last_phases.set((self.last_phases.get().0, started.elapsed()));
+                self.last_replay.set(Default::default());
+                return PhysicalRegion::default();
+            }
+
             // The scope waited for the band threads: their tail counts as replay.
             let replay = started.elapsed();
             let (walk, record) = self.last_phases.get();
@@ -830,6 +917,15 @@ impl SoftwareRenderer {
     #[cfg(feature = "std")]
     pub fn set_glyph_fast_path(fast: bool) {
         draw_functions::GLYPH_FAST_PATH.store(fast, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether colour textures are drawn a run of target pixels per source pixel (the
+    /// default) or a pixel at a time (the general path). For tests and benchmarks that
+    /// compare the two; it applies to every renderer.
+    #[doc(hidden)]
+    #[cfg(feature = "std")]
+    pub fn set_scaled_runs(runs: bool) {
+        draw_functions::SCALED_RUNS.store(runs, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Whether band threads move between bands as chunks are published (the default), or
@@ -971,6 +1067,9 @@ impl SoftwareRenderer {
         #[cfg(feature = "std")]
         if record {
             renderer.actual_renderer.processor.recording = Some(parallel::Recorder::new());
+        } else {
+            // Drawn without recording: no ops to compare the next frame with.
+            self.last_frame.take();
         }
         let window_adapter = renderer.window_adapter.clone();
 
@@ -1019,12 +1118,15 @@ impl SoftwareRenderer {
                         );
                     }
                     RepaintBufferType::SwappedBuffers => {
+                        let before = self.prev_frame_dirty.take();
+                        #[cfg(feature = "std")]
+                        self.prev_frame_dirty_before.set(before.clone());
                         let dirty_region_for_this_frame =
                             self.partial_rendering_state.apply_dirty_region(
                                 &mut renderer,
                                 components,
                                 logical_size,
-                                Some(self.prev_frame_dirty.take()),
+                                Some(before),
                             );
                         self.prev_frame_dirty.set(dirty_region_for_this_frame);
                     }
@@ -1062,6 +1164,20 @@ impl SoftwareRenderer {
                 renderer.actual_renderer.processor.dirty_region = dirty_region.clone();
                 #[cfg(feature = "std")]
                 if let Some(recorder) = &mut renderer.actual_renderer.processor.recording {
+                    // Over the region the last recorded frame drew, its ops: the same ops
+                    // draw the same image (`Recorder::compare_with`). A fresh buffer holds
+                    // no image to keep.
+                    let last = self.last_frame.take();
+                    if self.skip_quiet_frames.get()
+                        && self.repaint_buffer_type.get() != RepaintBufferType::NewBuffer
+                    {
+                        if let Some((region, ops)) = last {
+                            if region.same(&dirty_region) {
+                                recorder.compare_with(ops);
+                            }
+                        }
+                    }
+                    recorder.cover_region(dirty_region.bounding_rect());
                     if let Some(stream) = start_bands.as_mut().and_then(|start| start(&dirty_region, factor)) {
                         recorder.stream_to(stream);
                     }
@@ -1152,8 +1268,10 @@ impl SoftwareRenderer {
                 self.measure_frame_rendered(&mut renderer);
                 #[cfg(feature = "std")]
                 if let Some(recorder) = renderer.actual_renderer.processor.recording.take() {
+                    let (ops, same_as_previous) = recorder.into_ops();
                     recorded = Some(parallel::Recorded {
-                        ops: recorder.into_ops(),
+                        ops,
+                        same_as_previous,
                         dirty_region: dirty_region.clone(),
                         scale_factor: factor,
                     });
@@ -2920,6 +3038,14 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 self.render_layer_image(cache, item_rc, size)
             });
         }
+        // Under another clip than it was recorded with: record again under this one.
+        let clip = self.current_state.clip.translate(self.current_state.offset.to_vector());
+        if layer.as_ref().is_some_and(|layer| layer.clip != clip) {
+            cache.release(item_rc);
+            layer = cache.get_or_update_cache_entry(item_rc, || {
+                self.render_layer_image(cache, item_rc, size)
+            });
+        }
         let Some(layer) = layer else { return true };
         let screen_clip = (self.current_state.clip.translate(self.current_state.offset.to_vector()).cast()
             * scale)
@@ -2991,21 +3117,33 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                 self.text_layout_cache,
                 Some(cache),
             );
-            // Recorded where the children are drawn now, clipped to their bounds only: the
-            // replay clips to the layer's clip of the frame it is drawn in.
+            // Recorded where the children are drawn now, under the clip their parent gives
+            // them, exactly as they are drawn directly: no clip of the layer's own, so text
+            // past its box and an ellipsis are drawn. The replay clips to that same clip.
             nested.nested_in_layer_image = true;
             nested.current_state.offset = self.current_state.offset;
-            nested.current_state.clip = bounds;
+            nested.current_state.clip = self.current_state.clip;
             i_slint_core::item_rendering::render_item_children(
                 &mut nested,
                 &item_rc.item_tree(),
                 item_rc.index() as isize,
                 &window_adapter,
             );
-            nested.processor.recording.take().map(|recorder| recorder.into_ops()).unwrap_or_default()
+            nested.processor.recording.take().map(|recorder| recorder.into_ops().0).unwrap_or_default()
+        };
+        // The area is what the calls draw, which may reach past the children's boxes.
+        let drawn = ops
+            .iter()
+            .filter(|op| !matches!(op, parallel::Op::Background(_) | parallel::Op::SetClip(_)))
+            .map(parallel::Op::bounds)
+            .fold(None, |acc: Option<PhysicalRect>, r| Some(acc.map_or(r, |a| a.union(&r))));
+        let area = match drawn {
+            Some(drawn) => drawn.cast::<i32>().union(&area),
+            None => area,
         };
         let ops = std::sync::Arc::new(parallel::LayerOps::new(ops, area.cast()));
-        Some(Rc::new(CachedLayer { at, shifted_at: Cell::new(None), area, ops }))
+        let clip = self.current_state.clip.translate(self.current_state.offset.to_vector());
+        Some(Rc::new(CachedLayer { at, shifted_at: Cell::new(None), area, clip, ops }))
     }
 
     #[cfg(feature = "path")]
@@ -3921,7 +4059,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 // Its content stayed the same for a frame, or it has no image yet. A frame
                 // renders one image: another such layer is drawn directly once more.
                 if direct || state.is_none() {
-                    if cache.rendering.get() {
+                    if cache.rendering.get() && cache.renders.get().1 >= LAYER_IMAGE_PIXELS {
                         cache.visits.set((invalidated, waiting + 1, blitted));
                         let layer =
                             DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: false };

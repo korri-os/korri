@@ -1,3 +1,4 @@
+# NOTE (#360, 67c92b2bf): FULLSPEED raised the cap to 1.8 GHz, but korri-limitsd (the 61 % cap on the deployed generation) put it back at 1104 MHz within seconds. These runs mixed 1.8 GHz and 1104 MHz in proportions that varied by run, so their medians and their run-to-run spread are not comparable with one another or with runs at a fixed clock. See rg353m-frequency-cap.txt.
 # RG353M, build d21acb603: logic thread, quiet-frame skip, targeted walk and subtree draw skip, rows updated in place (zone f77bfee2d, pico 204d743c2 merged). FULLSPEED=1, nice 10, as nobody.
 # Press rows 3x back to back (press3.sh); load average before each run.
 # run 1 load: 1.23 1.31 1.25 1/366 299625

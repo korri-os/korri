@@ -302,6 +302,19 @@ impl i_slint_core::item_tree::ItemTree for Instance {
         // The geometry is usually a struct literal of x, y, width and height. Evaluate its four
         // fields directly instead of building a `Struct` value (a hash map) for every item the
         // renderer's dirty-region walk visits.
+        if let Some(fields) = crate::component::geometry_fields(&expr) {
+            let mut field = |at: usize| -> f32 {
+                match crate::eval::eval_expression(&mut ctx, &fields[at]) {
+                    crate::Value::Number(n) => n as f32,
+                    _ => 0.0,
+                }
+            };
+            let (x, y, width, height) = (field(0), field(1), field(2), field(3));
+            return LogicalRect::new(
+                i_slint_core::lengths::LogicalPoint::new(x, y),
+                i_slint_core::lengths::LogicalSize::new(width, height),
+            );
+        }
         if let i_slint_compiler::llr::Expression::Struct { values, .. } = &*expr {
             let mut field = |name: &str| -> f32 {
                 match values.get(name).map(|e| crate::eval::eval_expression(&mut ctx, e)) {

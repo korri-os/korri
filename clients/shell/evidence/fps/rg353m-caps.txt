@@ -1,0 +1,62 @@
+# NOTE (#360, 67c92b2bf): FULLSPEED raised the cap to 1.8 GHz, but korri-limitsd (the 61 % cap on the deployed generation) put it back at 1104 MHz within seconds. These runs mixed 1.8 GHz and 1104 MHz in proportions that varied by run, so their medians and their run-to-run spread are not comparable with one another or with runs at a fixed clock. See rg353m-frequency-cap.txt.
+# RG353M, Zone modern press row, FULLSPEED=1.
+# A. Build with zone 37840a1c4 (ZoneCaps cached, not elided ones), before the image budget (5722167d1):
+# run 1 load: 1.40 1.20 1.25 1/366 360989
+# 10.42.0.1 2026-11-04T18:36:51Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 1.92 1.36 1.30 2/369 362400
+# 10.42.0.1 2026-11-04T18:37:30Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 2.43 1.59 1.38 6/369 363814
+# 10.42.0.1 2026-11-04T18:38:08Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [41, 41, 60] (median 41); p95 us [19496, 19552, 23186] (median 19552); max us [64895, 66047, 58190] (median 64895)
+# pico presses: over [4, 4, 4] (median 4); p95 us [4357, 4230, 4277] (median 4277); max us [32459, 29195, 30195] (median 30195)
+# 43 over
+# press 0 14 : 31:62.8 32:27.4 33:25.5 34:22.3 35:22.2 36:22.3 37:22.7 38:22.8 39:25.1 40:24.2 41:21.7 42:20.2 43:23.6 44:19.1
+# press 1 14 : 54:41.0 55:24.6 56:20.2 57:19.8 58:21.3 59:23.5 60:16.9 61:16.9 62:19.5 63:23.1 64:18.2 65:17.4 67:16.9 68:18.7
+# press 2 1 : 72:23.9
+# press 3 2 : 91:25.1 92:21.0
+# press 4 6 : 111:51.4 112:25.1 113:23.8 115:17.0 116:17.0 125:20.1
+# press 5 6 : 131:34.0 132:24.6 133:19.4 134:17.1 137:17.6 139:17.1
+# B. Build with the 24 Ki px image budget (d81b... commit 'small layer images share a frame'):
+# run 1 load: 0.84 1.08 1.18 1/365 368241
+# 10.42.0.1 2026-11-04T19:06:41Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 2 load: 1.46 1.22 1.22 2/366 369660
+# 10.42.0.1 2026-11-04T19:07:19Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# run 3 load: 1.61 1.30 1.25 1/369 371072
+# 10.42.0.1 2026-11-04T19:07:58Z Anbernic
+# policy0 cpus 0 1 2 3 scaling_max_freq 1800000 kHz (cpuinfo_max_freq 1800000) governor schedutil
+# after: policy0 scaling_max_freq 1104000 kHz
+# zone presses: over [63, 45, 31] (median 45); p95 us [23761, 19683, 16668] (median 19683); max us [83409, 64507, 59281] (median 64507)
+# pico presses: over [4, 3, 3] (median 3); p95 us [4436, 4289, 4318] (median 4318); max us [25919, 27721, 25804] (median 25919)
+# C. Same build, ZoneCaps cached (zone) vs not (zonenc), alternating, load before each run:
+# run 1 load 1.17 1.30 1.26 3/372 373869
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5552      22827      85603
+frames over 16.7 ms: 63 of 600
+bench zonenc 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          6039      21820      77247
+frames over 16.7 ms: 62 of 600
+# run 2 load 1.66 1.42 1.30 3/372 376542
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5190      17146      53270
+frames over 16.7 ms: 34 of 600
+bench zonenc 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5415      16106      59517
+frames over 16.7 ms: 26 of 600
+# run 3 load 2.22 1.56 1.35 3/372 379220
+bench zone 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          5906      16336      54612
+frames over 16.7 ms: 26 of 600
+bench zonenc 640x480 frames=600 games=12 presses=6 prefs={"zone.look": "modern"} buffer=reused threads=default
+frame total                          6113      22022      63913
+frames over 16.7 ms: 63 of 600
+# korrid used 54% CPU and dbus 16% during these runs (top). The same package varies 26-63 over between runs: no difference between caps cached and not is measurable.

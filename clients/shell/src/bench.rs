@@ -291,6 +291,10 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     slint::platform::software_renderer::SoftwareRenderer::set_interleaved_bands(
         std::env::var_os("KORRI_BENCH_WHOLE_BANDS").is_none(),
     );
+    // KORRI_BENCH_NO_RUNS=1: draw colour textures a pixel at a time, as before the runs.
+    slint::platform::software_renderer::SoftwareRenderer::set_scaled_runs(
+        std::env::var_os("KORRI_BENCH_NO_RUNS").is_none(),
+    );
     // KORRI_BENCH_NO_SKIP=1: draw frames where nothing changed, as before the skip.
     let no_skip = std::env::var_os("KORRI_BENCH_NO_SKIP").is_some();
     let parallel_min: Option<usize> = std::env::var("KORRI_BENCH_PARALLEL_MIN")

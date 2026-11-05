@@ -1,0 +1,6 @@
+CYCLES zone-still cpu_cores=0.195 mean_mhz=796 mcycles_per_s=155 at_1800=12% temp=52500 tis=408:803,600:653,816:431,1104:233,1416:73,1608:17,1800:299,
+CYCLES zone-attract cpu_cores=0.513 mean_mhz=827 mcycles_per_s=424 at_1800=9% temp=61111 tis=408:1726,600:1312,816:1121,1104:907,1416:310,1608:72,1800:561,
+CYCLES pico cpu_cores=0.261 mean_mhz=573 mcycles_per_s=149 at_1800=3% temp=48888 tis=408:2045,600:400,816:232,1104:164,1416:51,1608:13,1800:104,
+BUDGET_UNLOADS 0
+Nov 05 00:17:16 haku sh[506960]: SHELL_STATS package=zone compile_ms=3269.057 logic_ms=107.676 korrid_ms=8.031 first_frame_ms=3572.093
+Nov 05 00:18:49 haku sh[506960]: SHELL_STATS package=pico compile_ms=829.712 logic_ms=111.889 korrid_ms=7.733 first_frame_ms=1073.631

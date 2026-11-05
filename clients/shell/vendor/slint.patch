@@ -1,6 +1,6 @@
 diff -ruN a/i-slint-backend-testing/Cargo.toml b/i-slint-backend-testing/Cargo.toml
---- a/i-slint-backend-testing/Cargo.toml	2026-11-04 09:41:42.624507742 -0700
-+++ b/i-slint-backend-testing/Cargo.toml	2026-11-04 09:41:42.629477649 -0700
+--- a/i-slint-backend-testing/Cargo.toml	2026-11-05 01:39:57.346265550 -0700
++++ b/i-slint-backend-testing/Cargo.toml	2026-11-05 01:39:57.347535057 -0700
 @@ -75,17 +75,8 @@
  name = "i_slint_backend_testing"
  path = "lib.rs"
@@ -20,9 +20,23 @@ diff -ruN a/i-slint-backend-testing/Cargo.toml b/i-slint-backend-testing/Cargo.t
  [dependencies.async-net]
  version = "2.0.0"
 diff -ruN a/i-slint-backend-testing/search_api.rs b/i-slint-backend-testing/search_api.rs
---- a/i-slint-backend-testing/search_api.rs	2026-11-04 09:41:42.625060188 -0700
-+++ b/i-slint-backend-testing/search_api.rs	2026-11-04 09:41:42.629787944 -0700
-@@ -372,7 +372,10 @@
+--- a/i-slint-backend-testing/search_api.rs	2026-11-05 01:39:57.346525179 -0700
++++ b/i-slint-backend-testing/search_api.rs	2026-11-05 01:39:57.347774096 -0700
+@@ -62,7 +62,12 @@
+ pub(crate) const MISSING_DEBUG_INFO_MESSAGE: &str = "The use of the ElementHandle API requires the presence of debug info in Slint compiler generated code. Set the `SLINT_EMIT_DEBUG_INFO=1` environment variable at application build time or use `compile_with_config` and `with_debug_info` with `slint_build`'s `CompilerConfiguration`";
+ 
+ fn warn_missing_debug_info() {
+-    i_slint_core::debug_log!("{}", MISSING_DEBUG_INFO_MESSAGE)
++    // Once per process: a query visits every item, and each item without debug info would
++    // log it again (the verifier's focus-target check logged it thousands of times).
++    static WARNED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
++    if !WARNED.swap(true, core::sync::atomic::Ordering::Relaxed) {
++        i_slint_core::debug_log!("{}", MISSING_DEBUG_INFO_MESSAGE)
++    }
+ }
+ 
+ mod internal {
+@@ -372,7 +377,10 @@
          visit_attached_popups(&self_item, visitor);
  
          self_item.visit_descendants(move |item_rc| {
@@ -34,7 +48,7 @@ diff -ruN a/i-slint-backend-testing/search_api.rs b/i-slint-backend-testing/sear
                  return ControlFlow::Continue(());
              }
  
-@@ -473,6 +476,18 @@
+@@ -473,6 +481,18 @@
      }
  
      /// Returns true if the element still exists in the in UI and is valid to access; false otherwise.
@@ -53,9 +67,163 @@ diff -ruN a/i-slint-backend-testing/search_api.rs b/i-slint-backend-testing/sear
      pub fn is_valid(&self) -> bool {
          self.item.upgrade().is_some()
      }
+diff -ruN a/i-slint-backend-winit/build.rs b/i-slint-backend-winit/build.rs
+--- a/i-slint-backend-winit/build.rs	2026-11-05 01:39:57.348707591 -0700
++++ b/i-slint-backend-winit/build.rs	2026-11-05 01:39:57.350592570 -0700
+@@ -12,7 +12,7 @@
+        enable_accesskit: { all(feature = "accessibility", not(target_arch = "wasm32")) },
+        supports_opengl: { all(any(feature = "renderer-skia-opengl", feature = "renderer-femtovg"), not(ios_and_friends)) },
+        supports_vulkan: { any(all(target_family = "unix", not(target_vendor = "apple")), all(any(target_vendor = "apple", target_family = "windows"), feature = "renderer-skia-vulkan")) },
+-       xdg_desktop_settings: { not(any(target_family = "windows", target_vendor = "apple", target_arch = "wasm32", target_os = "android")) },
++       xdg_desktop_settings: { all(feature = "xdg-desktop-settings", not(any(target_family = "windows", target_vendor = "apple", target_arch = "wasm32", target_os = "android"))) },
+        muda: { all(feature = "muda", any(target_os = "windows", target_os = "macos")) },
+     }
+     println!("cargo:rustc-check-cfg=cfg(slint_nightly_test)");
+diff -ruN a/i-slint-backend-winit/Cargo.toml b/i-slint-backend-winit/Cargo.toml
+--- a/i-slint-backend-winit/Cargo.toml	2026-11-05 01:39:57.348628691 -0700
++++ b/i-slint-backend-winit/Cargo.toml	2026-11-05 01:39:57.350592570 -0700
+@@ -36,6 +36,8 @@
+ rustdoc-args = ["--generate-link-to-definition"]
+ 
+ [features]
++# Off for Korri: the desktop portal settings (D-Bus) are read only with it (vendor/README.md).
++xdg-desktop-settings = []
+ accessibility = [
+     "dep:accesskit",
+     "dep:accesskit_winit",
+diff -ruN a/i-slint-backend-winit/frame_throttle.rs b/i-slint-backend-winit/frame_throttle.rs
+--- a/i-slint-backend-winit/frame_throttle.rs	2026-11-05 01:39:57.348859491 -0700
++++ b/i-slint-backend-winit/frame_throttle.rs	2026-11-05 01:39:57.350106562 -0700
+@@ -16,7 +16,7 @@
+     _is_wayland: bool,
+ ) -> Box<dyn FrameThrottle> {
+     if _is_wayland {
+-        WinitBasedFrameThrottle::create()
++        PacedWinitFrameThrottle::create(window_adapter)
+     } else {
+         #[cfg(target_vendor = "apple")]
+         if let Some(throttle) =
+@@ -83,8 +83,81 @@
+     winit_window.request_redraw();
+ }
+ 
++std::thread_local! {
++    /// Whether the last frame drawn on this thread was presented. Wayland paces redraws by
++    /// frame callbacks, which only a presented frame gets.
++    static LAST_FRAME_PRESENTED: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
++    /// When the last frame drawn on this thread started.
++    static LAST_FRAME_STARTED: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
++}
++
++/// Note that a frame starts drawing now.
++pub(crate) fn frame_started() {
++    LAST_FRAME_STARTED.with(|s| s.set(Some(std::time::Instant::now())));
++}
++
++/// Note whether the frame just drawn was presented (its damage was not empty).
++pub(crate) fn frame_presented(presented: bool) {
++    LAST_FRAME_PRESENTED.with(|p| p.set(presented));
++}
++
++/// Wayland: a redraw follows the compositor's frame callback after a presented frame. A
++/// frame that drew nothing was not presented and gets no callback, so while animations
++/// keep asking for frames the next one would come at once, thousands a second. After
++/// such a frame the next redraw waits for the next frame interval instead.
++struct PacedWinitFrameThrottle {
++    window_adapter: Weak<WinitWindowAdapter>,
++    timer: Rc<Timer>,
++}
++
++impl PacedWinitFrameThrottle {
++    fn create(window_adapter: Weak<WinitWindowAdapter>) -> Box<dyn FrameThrottle> {
++        Box::new(Self { window_adapter, timer: Rc::new(Timer::default()) })
++    }
++}
++
++/// When the next redraw may come: at once after a presented frame (the frame callback
++/// paces it), else one frame interval of the display's refresh rate after the last frame
++/// started (`since_frame_start` ago), so frames keep the display's cadence whatever their
++/// drawing took.
++#[doc(hidden)]
++pub fn redraw_delay(
++    last_presented: bool,
++    refresh_millihertz: Option<u32>,
++    since_frame_start: std::time::Duration,
++) -> Option<std::time::Duration> {
++    if last_presented {
++        return None;
++    }
++    let refresh = refresh_millihertz.unwrap_or(60000).max(1) as u64;
++    let interval = std::time::Duration::from_micros(1_000_000_000 / refresh);
++    Some(interval.saturating_sub(since_frame_start))
++}
++
++impl FrameThrottle for PacedWinitFrameThrottle {
++    fn request_throttled_redraw(&self, winit_window: &winit::window::Window) {
++        let refresh = winit_window.current_monitor().and_then(|m| m.refresh_rate_millihertz());
++        let since = LAST_FRAME_STARTED.with(|s| s.get()).map_or(Default::default(), |s| s.elapsed());
++        let Some(delay) = redraw_delay(LAST_FRAME_PRESENTED.with(|p| p.get()), refresh, since)
++        else {
++            // The frame callback paces this one; a wait left from a frame not presented
++            // would add a frame of its own.
++            self.timer.stop();
++            winit_window.request_redraw();
++            return;
++        };
++        if self.timer.running() {
++            return;
++        }
++        let window_adapter = self.window_adapter.clone();
++        self.timer.start(TimerMode::SingleShot, delay, move || redraw_now(&window_adapter));
++    }
++}
++
++#[allow(dead_code)]
+ struct WinitBasedFrameThrottle;
+ 
++#[allow(dead_code)]
+ impl WinitBasedFrameThrottle {
+     fn create() -> Box<dyn FrameThrottle> {
+         Box::new(Self)
+@@ -96,3 +169,4 @@
+         winit_window.request_redraw();
+     }
+ }
++
+diff -ruN a/i-slint-backend-winit/lib.rs b/i-slint-backend-winit/lib.rs
+--- a/i-slint-backend-winit/lib.rs	2026-11-05 01:39:57.348914756 -0700
++++ b/i-slint-backend-winit/lib.rs	2026-11-05 01:39:57.350302350 -0700
+@@ -35,6 +35,8 @@
+ use winitwindowadapter::*;
+ pub(crate) mod event_loop;
+ mod frame_throttle;
++#[doc(hidden)]
++pub use frame_throttle::redraw_delay;
+ #[cfg(target_os = "ios")]
+ mod ios;
+ #[cfg(target_os = "macos")]
+diff -ruN a/i-slint-backend-winit/renderer/sw.rs b/i-slint-backend-winit/renderer/sw.rs
+--- a/i-slint-backend-winit/renderer/sw.rs	2026-11-05 01:39:57.349102152 -0700
++++ b/i-slint-backend-winit/renderer/sw.rs	2026-11-05 01:39:57.350485777 -0700
+@@ -92,6 +92,7 @@
+             return Ok(DrawOutcome::Success);
+         };
+ 
++        crate::frame_throttle::frame_started();
+         let mut borrowed_surface = self.surface.borrow_mut();
+         let Some(surface) = borrowed_surface.as_mut() else {
+             // Nothing to render
+@@ -160,6 +161,7 @@
+                 })
+             })
+             .collect::<Vec<_>>();
++        crate::frame_throttle::frame_presented(!damage.is_empty());
+         if !damage.is_empty() {
+             winit_window.pre_present_notify();
+             target_buffer
 diff -ruN a/i-slint-core/animations.rs b/i-slint-core/animations.rs
---- a/i-slint-core/animations.rs	2026-11-04 09:41:42.585456691 -0700
-+++ b/i-slint-core/animations.rs	2026-11-04 09:41:42.590366656 -0700
+--- a/i-slint-core/animations.rs	2026-11-05 01:39:57.336544865 -0700
++++ b/i-slint-core/animations.rs	2026-11-05 01:39:57.339105919 -0700
 @@ -300,10 +300,25 @@
  pub fn animation_tick() -> u64 {
      CURRENT_ANIMATION_DRIVER.with(|driver| {
@@ -85,7 +253,7 @@ diff -ruN a/i-slint-core/animations.rs b/i-slint-core/animations.rs
      const D1: f32 = 2.75;
 diff -ruN a/i-slint-core/frame_profile.rs b/i-slint-core/frame_profile.rs
 --- a/i-slint-core/frame_profile.rs	1969-12-31 17:00:00.000000000 -0700
-+++ b/i-slint-core/frame_profile.rs	2026-11-04 09:41:42.593634863 -0700
++++ b/i-slint-core/frame_profile.rs	2026-11-05 01:39:57.339466652 -0700
 @@ -0,0 +1,135 @@
 +// Copyright © SixtyFPS GmbH <info@slint.dev>
 +// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
@@ -223,8 +391,8 @@ diff -ruN a/i-slint-core/frame_profile.rs b/i-slint-core/frame_profile.rs
 +    result
 +}
 diff -ruN a/i-slint-core/graphics/image.rs b/i-slint-core/graphics/image.rs
---- a/i-slint-core/graphics/image.rs	2026-11-04 09:41:42.586220932 -0700
-+++ b/i-slint-core/graphics/image.rs	2026-11-04 09:41:42.591491626 -0700
+--- a/i-slint-core/graphics/image.rs	2026-11-05 01:39:57.336952479 -0700
++++ b/i-slint-core/graphics/image.rs	2026-11-05 01:39:57.339589333 -0700
 @@ -687,6 +687,10 @@
              #[cfg(not(target_arch = "wasm32"))]
              (Self::BorrowedOpenGLTexture(l0), Self::BorrowedOpenGLTexture(r0)) => l0 == r0,
@@ -237,8 +405,8 @@ diff -ruN a/i-slint-core/graphics/image.rs b/i-slint-core/graphics/image.rs
          }
      }
 diff -ruN a/i-slint-core/item_rendering.rs b/i-slint-core/item_rendering.rs
---- a/i-slint-core/item_rendering.rs	2026-11-04 09:41:42.586220932 -0700
-+++ b/i-slint-core/item_rendering.rs	2026-11-04 09:41:42.591741105 -0700
+--- a/i-slint-core/item_rendering.rs	2026-11-05 01:39:57.336952479 -0700
++++ b/i-slint-core/item_rendering.rs	2026-11-05 01:39:57.339686799 -0700
 @@ -107,6 +107,44 @@
              .and_then(|entry| callback(&entry.data))
      }
@@ -325,8 +493,8 @@ diff -ruN a/i-slint-core/item_rendering.rs b/i-slint-core/item_rendering.rs
          &mut self,
          item: &ItemRc,
 diff -ruN a/i-slint-core/items.rs b/i-slint-core/items.rs
---- a/i-slint-core/items.rs	2026-11-04 09:41:42.586922990 -0700
-+++ b/i-slint-core/items.rs	2026-11-04 09:41:42.591839669 -0700
+--- a/i-slint-core/items.rs	2026-11-05 01:39:57.337357723 -0700
++++ b/i-slint-core/items.rs	2026-11-05 01:39:57.339686799 -0700
 @@ -1378,7 +1378,40 @@
      }
  }
@@ -369,8 +537,8 @@ diff -ruN a/i-slint-core/items.rs b/i-slint-core/items.rs
  
      if root_item_in_local_item_tree.downcast::<crate::items::WindowItem>().is_some() {
 diff -ruN a/i-slint-core/item_tree.rs b/i-slint-core/item_tree.rs
---- a/i-slint-core/item_tree.rs	2026-11-04 09:41:42.586220932 -0700
-+++ b/i-slint-core/item_tree.rs	2026-11-04 09:41:42.593634863 -0700
+--- a/i-slint-core/item_tree.rs	2026-11-05 01:39:57.336952479 -0700
++++ b/i-slint-core/item_tree.rs	2026-11-05 01:39:57.339686799 -0700
 @@ -411,11 +411,34 @@
          let (clip, geometry) = self.absolute_clip_rect_and_geometry();
          let clip = clip.to_box2d();
@@ -430,8 +598,8 @@ diff -ruN a/i-slint-core/item_tree.rs b/i-slint-core/item_tree.rs
      item_tree: &ItemTreeRc,
      order: TraversalOrder,
 diff -ruN a/i-slint-core/lib.rs b/i-slint-core/lib.rs
---- a/i-slint-core/lib.rs	2026-11-04 09:41:42.586922990 -0700
-+++ b/i-slint-core/lib.rs	2026-11-04 09:41:42.592406911 -0700
+--- a/i-slint-core/lib.rs	2026-11-05 01:39:57.337357723 -0700
++++ b/i-slint-core/lib.rs	2026-11-05 01:39:57.340034528 -0700
 @@ -39,6 +39,9 @@
  pub mod data_transfer;
  pub mod date_time;
@@ -443,8 +611,8 @@ diff -ruN a/i-slint-core/lib.rs b/i-slint-core/lib.rs
  pub mod graphics;
  pub mod input;
 diff -ruN a/i-slint-core/model/repeater.rs b/i-slint-core/model/repeater.rs
---- a/i-slint-core/model/repeater.rs	2026-11-04 09:41:42.587193283 -0700
-+++ b/i-slint-core/model/repeater.rs	2026-11-04 09:41:42.592694735 -0700
+--- a/i-slint-core/model/repeater.rs	2026-11-05 01:39:57.337548224 -0700
++++ b/i-slint-core/model/repeater.rs	2026-11-05 01:39:57.340251164 -0700
 @@ -475,6 +475,11 @@
              if created {
                  c.1 = Some((self.init)());
@@ -481,8 +649,8 @@ diff -ruN a/i-slint-core/model/repeater.rs b/i-slint-core/model/repeater.rs
  
      /// Call the visitor for the root of each instance.
 diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
---- a/i-slint-core/partial_renderer.rs	2026-11-04 09:41:42.587193283 -0700
-+++ b/i-slint-core/partial_renderer.rs	2026-11-04 09:41:42.593634863 -0700
+--- a/i-slint-core/partial_renderer.rs	2026-11-05 01:39:57.337548224 -0700
++++ b/i-slint-core/partial_renderer.rs	2026-11-05 01:39:57.340251164 -0700
 @@ -91,6 +91,8 @@
          bounding_rect: LogicalRect,
          /// The item's offset relative to its parent.
@@ -606,7 +774,20 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      }
  }
  
-@@ -432,6 +499,13 @@
+@@ -267,8 +334,10 @@
+ }
+ 
+ impl DirtyRegion {
+-    /// The maximum number of rectangles that can be stored in a DirtyRegion
+-    pub const MAX_COUNT: usize = 3;
++    /// The maximum number of rectangles that can be stored in a DirtyRegion.
++    /// Korri: 16, not 3. Small changes far apart (a still screen with a few small
++    /// animations) merged into boxes spanning the screen with only 3.
++    pub const MAX_COUNT: usize = 16;
+ 
+     /// An iterator over the part of the region (they can overlap)
+     pub fn iter(&self) -> impl Iterator<Item = euclid::Box2D<Coord, LogicalPx>> + '_ {
+@@ -432,6 +501,13 @@
      pub actual_renderer: T,
      /// The window adapter the renderer is rendering into.
      pub window_adapter: Rc<dyn WindowAdapter>,
@@ -620,7 +801,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
  }
  
  impl<'a, T: ItemRenderer + ItemRendererFeatures> PartialRenderer<'a, T> {
-@@ -442,7 +516,15 @@
+@@ -442,7 +518,15 @@
          actual_renderer: T,
      ) -> Self {
          let window_adapter = actual_renderer.window().window_adapter();
@@ -637,7 +818,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      }
  
      /// Visit the tree of item and compute what are the dirty regions
-@@ -452,16 +534,6 @@
+@@ -452,16 +536,6 @@
          origin: LogicalPoint,
          size: LogicalSize,
      ) {
@@ -654,7 +835,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
          // Two counters per tree depth to give each item its rank among its z-ordered siblings.
          // `.0` counts every visited item and is what gets stored in the cache entry; `.1`
          // counts only the items that already have a cache entry and is what the stored rank
-@@ -471,199 +543,323 @@
+@@ -471,199 +545,323 @@
          // existing items can never trade places without at least one comparison rank
          // changing.
          let sibling_counters = RefCell::new(alloc::vec::Vec::<(u16, u16)>::new());
@@ -1149,7 +1330,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
                          {
                              new_state.clipped = new_state
                                  .clipped
-@@ -671,32 +867,67 @@
+@@ -671,32 +869,67 @@
                                      &state
                                          .transform_to_screen
                                          .outer_transformed_rect(&geometry.cast())
@@ -1237,7 +1418,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      }
  
      fn mark_dirty_rect(
-@@ -771,6 +1002,25 @@
+@@ -771,6 +1004,25 @@
  }
  
  impl<T: ItemRenderer + ItemRendererFeatures> ItemRenderer for PartialRenderer<'_, T> {
@@ -1263,7 +1444,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      fn filter_item(
          &mut self,
          item_rc: &ItemRc,
-@@ -785,7 +1035,9 @@
+@@ -785,7 +1037,9 @@
              rendering_data.get_entry(&mut cache).map(|e| {
                  let draw = self.item_is_drawn(e.data.bounding_rect());
                  let offset = match &e.data {
@@ -1274,7 +1455,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
                      _ => None,
                  };
                  (draw, offset)
-@@ -793,8 +1045,12 @@
+@@ -793,8 +1047,12 @@
          };
  
          // Items that are not drawn only need their origin; this skips e.g. shaping off-screen text.
@@ -1289,7 +1470,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
          }
  
          // Query untracked, as the bounding rect calculation already registers a dependency on the geometry.
-@@ -820,7 +1076,24 @@
+@@ -820,7 +1078,24 @@
  
      forward_rendering_call!(fn visit_clip(Clip) -> RenderingResult);
      forward_rendering_call!(fn visit_opacity(Opacity) -> RenderingResult);
@@ -1315,7 +1496,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
  
      fn combine_clip(&mut self, rect: LogicalRect, radius: LogicalBorderRadius) -> bool {
          self.actual_renderer.combine_clip(rect, radius)
-@@ -902,6 +1175,12 @@
+@@ -902,6 +1177,12 @@
  }
  
  impl PartialRenderingState {
@@ -1328,7 +1509,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      /// Creates a partial renderer that's initialized with the partial rendering caches maintained in this state structure.
      /// Call [`Self::apply_dirty_region`] after this function to compute the correct partial rendering region.
      pub fn create_partial_renderer<T: ItemRenderer + ItemRendererFeatures>(
-@@ -922,6 +1201,7 @@
+@@ -922,6 +1203,7 @@
          logical_window_size: LogicalSize,
          dirty_region_of_existing_buffer: Option<DirtyRegion>,
      ) -> DirtyRegion {
@@ -1336,7 +1517,7 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
          for (component, origin) in components {
              if let Some(component) = crate::item_tree::ItemTreeWeak::upgrade(component) {
                  partial_renderer.compute_dirty_regions(&component, *origin, logical_window_size);
-@@ -952,6 +1232,19 @@
+@@ -952,6 +1234,19 @@
          region_to_repaint
      }
  
@@ -1357,8 +1538,8 @@ diff -ruN a/i-slint-core/partial_renderer.rs b/i-slint-core/partial_renderer.rs
      pub fn mark_dirty_region(&self, region: DirtyRegion) {
          self.force_dirty.replace_with(|r| r.union(&region));
 diff -ruN a/i-slint-core/properties/change_tracker.rs b/i-slint-core/properties/change_tracker.rs
---- a/i-slint-core/properties/change_tracker.rs	2026-11-04 09:41:42.587369703 -0700
-+++ b/i-slint-core/properties/change_tracker.rs	2026-11-04 09:41:42.592807980 -0700
+--- a/i-slint-core/properties/change_tracker.rs	2026-11-05 01:39:57.337653778 -0700
++++ b/i-slint-core/properties/change_tracker.rs	2026-11-05 01:39:57.340357739 -0700
 @@ -119,6 +119,7 @@
                  let _self_raw = _self;
                  let _self = _self as *const BindingHolder<ChangeTrackerInner<T, EF, NF, Data>>;
@@ -1395,8 +1576,8 @@ diff -ruN a/i-slint-core/properties/change_tracker.rs b/i-slint-core/properties/
                      ((*addr_of!((*node).vtable)).evaluate)(
                          node as *mut BindingHolder,
 diff -ruN a/i-slint-core/properties/properties_animations.rs b/i-slint-core/properties/properties_animations.rs
---- a/i-slint-core/properties/properties_animations.rs	2026-11-04 09:41:42.587369703 -0700
-+++ b/i-slint-core/properties/properties_animations.rs	2026-11-04 09:41:42.592807980 -0700
+--- a/i-slint-core/properties/properties_animations.rs	2026-11-05 01:39:57.337653778 -0700
++++ b/i-slint-core/properties/properties_animations.rs	2026-11-05 01:39:57.340357739 -0700
 @@ -431,7 +431,11 @@
          if self.state.get() == AnimatedBindingState::ShouldStart {
              return;
@@ -1411,8 +1592,8 @@ diff -ruN a/i-slint-core/properties/properties_animations.rs b/i-slint-core/prop
              self.carried_velocity
                  .set(self.animation_data.borrow().current_velocity().unwrap_or(0.0));
 diff -ruN a/i-slint-core/properties.rs b/i-slint-core/properties.rs
---- a/i-slint-core/properties.rs	2026-11-04 09:41:42.587369703 -0700
-+++ b/i-slint-core/properties.rs	2026-11-04 09:41:42.593634863 -0700
+--- a/i-slint-core/properties.rs	2026-11-05 01:39:57.337653778 -0700
++++ b/i-slint-core/properties.rs	2026-11-05 01:39:57.340251164 -0700
 @@ -27,6 +27,73 @@
          value: T,
      }
@@ -2082,8 +2263,8 @@ diff -ruN a/i-slint-core/properties.rs b/i-slint-core/properties.rs
      }
  }
 diff -ruN a/i-slint-core/rtti.rs b/i-slint-core/rtti.rs
---- a/i-slint-core/rtti.rs	2026-11-04 09:41:42.587369703 -0700
-+++ b/i-slint-core/rtti.rs	2026-11-04 09:41:42.592807980 -0700
+--- a/i-slint-core/rtti.rs	2026-11-05 01:39:57.337653778 -0700
++++ b/i-slint-core/rtti.rs	2026-11-05 01:39:57.340357739 -0700
 @@ -256,7 +256,7 @@
          if !matches!(animation, AnimatedBindingKind::NotAnimated) {
              Err(())
@@ -2103,8 +2284,8 @@ diff -ruN a/i-slint-core/rtti.rs b/i-slint-core/rtti.rs
                      });
                      Ok(())
 diff -ruN a/i-slint-core/textlayout/sharedparley/cache.rs b/i-slint-core/textlayout/sharedparley/cache.rs
---- a/i-slint-core/textlayout/sharedparley/cache.rs	2026-11-04 09:41:42.587942536 -0700
-+++ b/i-slint-core/textlayout/sharedparley/cache.rs	2026-11-04 09:41:42.593358010 -0700
+--- a/i-slint-core/textlayout/sharedparley/cache.rs	2026-11-05 01:39:57.337975851 -0700
++++ b/i-slint-core/textlayout/sharedparley/cache.rs	2026-11-05 01:39:57.340673652 -0700
 @@ -11,7 +11,7 @@
  //! with the one shaping function every path must share.
  
@@ -2293,8 +2474,8 @@ diff -ruN a/i-slint-core/textlayout/sharedparley/cache.rs b/i-slint-core/textlay
              last_used: 0, // stamped right below, for both a hit and this miss
          }
 diff -ruN a/i-slint-core/textlayout/sharedparley/layout.rs b/i-slint-core/textlayout/sharedparley/layout.rs
---- a/i-slint-core/textlayout/sharedparley/layout.rs	2026-11-04 09:41:42.587942536 -0700
-+++ b/i-slint-core/textlayout/sharedparley/layout.rs	2026-11-04 09:41:42.593358010 -0700
+--- a/i-slint-core/textlayout/sharedparley/layout.rs	2026-11-05 01:39:57.337975851 -0700
++++ b/i-slint-core/textlayout/sharedparley/layout.rs	2026-11-05 01:39:57.340673652 -0700
 @@ -116,7 +116,7 @@
  pub(super) fn layout(
      layout_builder: &LayoutWithoutLineBreaksBuilder,
@@ -2324,8 +2505,8 @@ diff -ruN a/i-slint-core/textlayout/sharedparley/layout.rs b/i-slint-core/textla
      let get_ellipsis_glyph = |font_context: &mut parley::FontContext| {
          let mut layout = layout_builder.build(font_context, "…", None, None);
 diff -ruN a/i-slint-core/textlayout/sharedparley/shaping.rs b/i-slint-core/textlayout/sharedparley/shaping.rs
---- a/i-slint-core/textlayout/sharedparley/shaping.rs	2026-11-04 09:41:42.587942536 -0700
-+++ b/i-slint-core/textlayout/sharedparley/shaping.rs	2026-11-04 09:41:42.593358010 -0700
+--- a/i-slint-core/textlayout/sharedparley/shaping.rs	2026-11-05 01:39:57.337975851 -0700
++++ b/i-slint-core/textlayout/sharedparley/shaping.rs	2026-11-05 01:39:57.340673652 -0700
 @@ -29,6 +29,7 @@
      pub(super) link_color: Option<Color>,
  }
@@ -2420,8 +2601,8 @@ diff -ruN a/i-slint-core/textlayout/sharedparley/shaping.rs b/i-slint-core/textl
      pub(super) range: Range<usize>,
      pub(super) y: PhysicalLength,
 diff -ruN a/i-slint-core/textlayout/sharedparley.rs b/i-slint-core/textlayout/sharedparley.rs
---- a/i-slint-core/textlayout/sharedparley.rs	2026-11-04 09:41:42.587942536 -0700
-+++ b/i-slint-core/textlayout/sharedparley.rs	2026-11-04 09:41:42.593172464 -0700
+--- a/i-slint-core/textlayout/sharedparley.rs	2026-11-05 01:39:57.337975851 -0700
++++ b/i-slint-core/textlayout/sharedparley.rs	2026-11-05 01:39:57.340541294 -0700
 @@ -5,6 +5,17 @@
  pub use parley;
  pub use parley::fontique;
@@ -2505,8 +2686,8 @@ diff -ruN a/i-slint-core/textlayout/sharedparley.rs b/i-slint-core/textlayout/sh
  
  /// The content widths of the text. See [`crate::renderer::ContentWidths`].
 diff -ruN a/i-slint-core/window.rs b/i-slint-core/window.rs
---- a/i-slint-core/window.rs	2026-11-04 09:41:42.588287943 -0700
-+++ b/i-slint-core/window.rs	2026-11-04 09:41:42.593634863 -0700
+--- a/i-slint-core/window.rs	2026-11-05 01:39:57.338183445 -0700
++++ b/i-slint-core/window.rs	2026-11-05 01:39:57.340673652 -0700
 @@ -571,6 +571,12 @@
      text_input_focused: Property<bool>,
      #[pin]
@@ -2683,9 +2864,9 @@ diff -ruN a/i-slint-core/window.rs b/i-slint-core/window.rs
  
      /// Draws the source `DragArea`'s `drag-image` under the cursor when a drag is in flight.
 diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-software/draw_functions.rs
---- a/i-slint-renderer-software/draw_functions.rs	2026-11-04 09:41:42.603839570 -0700
-+++ b/i-slint-renderer-software/draw_functions.rs	2026-11-04 09:41:42.606683068 -0700
-@@ -17,6 +17,47 @@
+--- a/i-slint-renderer-software/draw_functions.rs	2026-11-05 01:39:57.341787000 -0700
++++ b/i-slint-renderer-software/draw_functions.rs	2026-11-05 01:39:57.342932240 -0700
+@@ -17,6 +17,124 @@
  
  /// Draw one line of the texture in the line buffer
  ///
@@ -2730,10 +2911,87 @@ diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-softw
 +    })
 +}
 +
++/// Whether colour textures take the run path in `draw_texture_line` (the default); off, the
++/// general path draws them, for tests that compare the two.
++#[cfg(feature = "std")]
++pub(super) static SCALED_RUNS: core::sync::atomic::AtomicBool =
++    core::sync::atomic::AtomicBool::new(true);
++
++/// Whether `fill_scaled_runs` draws a line of this texture: a colour texture (RGB, RGBA,
++/// premultiplied RGBA), not colourised, at full opacity, unrotated.
++fn scaled_runs(
++    format: TexturePixelFormat,
++    colorize: Color,
++    alpha: u8,
++    rotation: super::RenderingRotation,
++) -> bool {
++    #[cfg(feature = "std")]
++    let on = SCALED_RUNS.load(core::sync::atomic::Ordering::Relaxed);
++    #[cfg(not(feature = "std"))]
++    let on = true;
++    on && matches!(
++        format,
++        TexturePixelFormat::Rgb | TexturePixelFormat::Rgba | TexturePixelFormat::RgbaPremultiplied
++    ) && colorize.alpha() == 0
++        && alpha == 0xff
++        && rotation == super::RenderingRotation::NoRotation
++}
++
++/// One tile of a texture line, as `fetch_blend_pixel` draws it for the formats `scaled_runs`
++/// takes: target pixel `i` gets source pixel `(pos + i * delta).truncate()` of the row at
++/// `row_offset`. A scaled texture repeats each source pixel over a run of target pixels, so
++/// each source pixel is read and converted once per run: an opaque one is stored in each
++/// pixel of its run, any other is blended into each as the general path blends it, and a
++/// transparent premultiplied one is skipped. Same pixels.
++fn fill_scaled_runs<T: TargetPixel>(
++    line_buffer: &mut [T],
++    format: TexturePixelFormat,
++    data: &[u8],
++    row_offset: usize,
++    mut pos: Fixed<i32, 8>,
++    delta: Fixed<i32, 8>,
++) {
++    enum Source<T> {
++        Opaque(T),
++        Blend(PremultipliedRgbaColor),
++        Skip,
++    }
++    let bpp = format.bpp();
++    let read = |index: i32| -> Source<T> {
++        let at = (row_offset + index as usize) * bpp;
++        let p = &data[at..at + bpp];
++        match (format, if bpp == 4 { p[3] } else { 0xff }) {
++            (_, 0xff) => Source::Opaque(T::from_rgb(p[0], p[1], p[2])),
++            (TexturePixelFormat::Rgba, a) => Source::Blend(PremultipliedRgbaColor::premultiply(
++                Color::from_argb_u8(a, p[0], p[1], p[2]),
++            )),
++            (_, 0) => Source::Skip,
++            (_, a) => Source::Blend(PremultipliedRgbaColor { alpha: a, red: p[0], green: p[1], blue: p[2] }),
++        }
++    };
++    if line_buffer.is_empty() {
++        return;
++    }
++    let mut index = pos.truncate();
++    let mut source = read(index);
++    for pix in line_buffer {
++        if pos.truncate() != index {
++            index = pos.truncate();
++            source = read(index);
++        }
++        match &source {
++            Source::Opaque(value) => *pix = *value,
++            Source::Blend(color) => pix.blend(*color),
++            Source::Skip => {}
++        }
++        pos += delta;
++    }
++}
++
  pub(super) fn draw_texture_line(
      span: &PhysicalRect,
      line: PhysicalLength,
-@@ -32,6 +73,71 @@
+@@ -32,6 +150,71 @@
          extra: super::SceneTextureExtra { colorize, alpha, rotation, dx, dy, off_x, off_y },
      } = *texture;
  
@@ -2805,7 +3063,49 @@ diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-softw
      let source_size = texture.source_size().cast::<i32>();
      let len = line_buffer.len();
      let y = line - span.origin.y_length();
-@@ -206,7 +312,20 @@
+@@ -82,21 +265,27 @@
+         end = end.min(len);
+         let mut begin = 0;
+         let row_fract = row.fract();
++        let runs = scaled_runs(format, colorize, alpha, rotation);
+         while begin < len {
+-            fetch_blend_pixel(
+-                &mut line_buffer[begin..end],
+-                format,
+-                data,
+-                alpha,
+-                colorize,
+-                (pixel_stride as usize, dy),
+-                #[inline(always)]
+-                |bpp| {
+-                    let p = ((row_offset + pos.truncate() as usize) * bpp, pos.fract(), row_fract);
+-                    pos += delta;
+-                    p
+-                },
+-            );
++            if runs {
++                fill_scaled_runs(&mut line_buffer[begin..end], format, data, row_offset, pos, delta);
++            } else {
++                fetch_blend_pixel(
++                    &mut line_buffer[begin..end],
++                    format,
++                    data,
++                    alpha,
++                    colorize,
++                    (pixel_stride as usize, dy),
++                    #[inline(always)]
++                    |bpp| {
++                        let p =
++                            ((row_offset + pos.truncate() as usize) * bpp, pos.fract(), row_fract);
++                        pos += delta;
++                        p
++                    },
++                );
++            }
+             begin = end;
+             end += tile_len;
+             pos = acc_err + Fixed::from_integer(tile_start);
+@@ -206,7 +395,20 @@
                  }
              }
              TexturePixelFormat::Rgba => {
@@ -2827,7 +3127,7 @@ diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-softw
                      for pix in line_buffer {
                          let pos = pos(4).0;
                          let p: &[u8] = &data[pos..pos + 4];
-@@ -248,6 +367,16 @@
+@@ -248,6 +450,16 @@
                  } else if alpha == 0xff {
                      for pix in line_buffer {
                          let pos = pos(4).0;
@@ -2844,7 +3144,7 @@ diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-softw
                          let c = PremultipliedRgbaColor {
                              alpha: data[pos + 3],
                              red: data[pos + 0],
-@@ -272,6 +401,10 @@
+@@ -272,6 +484,10 @@
              TexturePixelFormat::AlphaMap => {
                  for pix in line_buffer {
                      let pos = pos(1).0;
@@ -2856,8 +3156,8 @@ diff -ruN a/i-slint-renderer-software/draw_functions.rs b/i-slint-renderer-softw
                          ((data[pos] as u16 * alpha as u16) / 255) as u8,
                          color.red(),
 diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs b/i-slint-renderer-software/fonts/systemfonts.rs
---- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-04 09:41:42.604452773 -0700
-+++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-04 09:41:42.606683068 -0700
+--- a/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-05 01:39:57.341897572 -0700
++++ b/i-slint-renderer-software/fonts/systemfonts.rs	2026-11-05 01:39:57.342932240 -0700
 @@ -79,7 +79,27 @@
      path: &std::path::Path,
  ) -> Result<(), alloc::boxed::Box<dyn std::error::Error>> {
@@ -2888,8 +3188,8 @@ diff -ruN a/i-slint-renderer-software/fonts/systemfonts.rs b/i-slint-renderer-so
 +    static REGISTERED_FONT_FILES: RefCell<HashMap<std::path::PathBuf, (u64, Option<std::time::SystemTime>)>> = Default::default();
 +}
 diff -ruN a/i-slint-renderer-software/fonts/vectorfont.rs b/i-slint-renderer-software/fonts/vectorfont.rs
---- a/i-slint-renderer-software/fonts/vectorfont.rs	2026-11-04 09:41:42.604452773 -0700
-+++ b/i-slint-renderer-software/fonts/vectorfont.rs	2026-11-04 09:41:42.606683068 -0700
+--- a/i-slint-renderer-software/fonts/vectorfont.rs	2026-11-05 01:39:57.341897572 -0700
++++ b/i-slint-renderer-software/fonts/vectorfont.rs	2026-11-05 01:39:57.342932240 -0700
 @@ -194,6 +194,8 @@
                  return Some(entry.clone());
              }
@@ -2920,18 +3220,20 @@ diff -ruN a/i-slint-renderer-software/fonts/vectorfont.rs b/i-slint-renderer-sof
          })
      }
 diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
---- a/i-slint-renderer-software/lib.rs	2026-11-04 09:41:42.604452773 -0700
-+++ b/i-slint-renderer-software/lib.rs	2026-11-04 09:41:42.606683068 -0700
-@@ -22,6 +22,8 @@
+--- a/i-slint-renderer-software/lib.rs	2026-11-05 01:39:57.341897572 -0700
++++ b/i-slint-renderer-software/lib.rs	2026-11-05 01:39:57.342932240 -0700
+@@ -22,6 +22,10 @@
  #[cfg(feature = "path")]
  mod path;
  mod scene;
 +#[cfg(feature = "std")]
 +mod parallel;
++#[cfg(feature = "std")]
++mod pool;
  
  use self::fonts::GlyphRenderer;
  pub use self::minimal_software_window::MinimalSoftwareWindow;
-@@ -44,7 +46,7 @@
+@@ -44,7 +48,7 @@
      RenderRectangle,
  };
  use i_slint_core::item_tree::ItemTreeWeak;
@@ -2940,7 +3242,51 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
  use i_slint_core::lengths::{
      LogicalBorderRadius, LogicalLength, LogicalPoint, LogicalRect, LogicalSize, LogicalVector,
      PhysicalPx, PointLengths, RectLengths, ScaleFactor, SizeLengths,
-@@ -419,6 +421,78 @@
+@@ -208,10 +212,9 @@
+ const PHYSICAL_REGION_MAX_SIZE: usize = DirtyRegion::MAX_COUNT;
+ // cbindgen can't understand associated const correctly, so hardcode the value
+ #[cfg(cbindgen)]
+-pub const PHYSICAL_REGION_MAX_SIZE: usize = 3;
++pub const PHYSICAL_REGION_MAX_SIZE: usize = 16;
+ const _: () = {
+-    assert!(PHYSICAL_REGION_MAX_SIZE == 3);
+-    assert!(DirtyRegion::MAX_COUNT == 3);
++    assert!(PHYSICAL_REGION_MAX_SIZE == DirtyRegion::MAX_COUNT);
+ };
+ 
+ /// Represents a rectangular region on the screen, used for partial rendering.
+@@ -289,6 +292,30 @@
+         })
+     }
+ 
++    /// The same pixels, however the rectangles split them.
++    #[cfg(feature = "std")]
++    fn same(&self, other: &PhysicalRegion) -> bool {
++        let bounds = self.bounding_rect();
++        if bounds != other.bounding_rect() {
++            return false;
++        }
++        let (mut a, mut b) = (Vec::new(), Vec::new());
++        let mut line = bounds.min_y();
++        while line < bounds.max_y() {
++            let next_a = region_line_ranges(self, line, &mut a);
++            let next_b = region_line_ranges(other, line, &mut b);
++            if a != b {
++                return false;
++            }
++            line = match (next_a, next_b) {
++                (Some(x), Some(y)) => x.min(y),
++                (Some(x), None) | (None, Some(x)) => x,
++                (None, None) => break,
++            };
++        }
++        true
++    }
++
+     fn intersection(&self, clip: &PhysicalRect) -> PhysicalRegion {
+         let mut res = Self::default();
+         let clip = clip.to_box2d();
+@@ -419,6 +446,90 @@
      pixel_stride: usize,
  }
  
@@ -2964,14 +3310,26 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +    at: euclid::Point2D<f32, PhysicalPx>,
 +    /// Where the layer was last drawn at another offset than `at`, if it was.
 +    shifted_at: Cell<Option<euclid::Point2D<f32, PhysicalPx>>>,
-+    /// The screen area the children draw in, in physical pixels.
++    /// The screen area the children's calls draw in, in physical pixels: it may reach past
++    /// their boxes (text past its box, an ellipsis).
 +    area: euclid::Rect<i32, PhysicalPx>,
++    /// The clip the calls were recorded under, in logical screen coordinates: the clip the
++    /// layer's parent gives it, as drawing the children directly would have. A call clipped
++    /// by another clip can draw other pixels (a tiled image's phase), so the calls are
++    /// replayed only under the same one.
++    clip: LogicalRect,
 +    /// The children's draw calls, in screen coordinates, and the pixels they last drew.
 +    ops: std::sync::Arc<parallel::LayerOps>,
 +}
 +
 +/// Rendered layers, invalidated through the property tracking of `ItemCache` when anything the
 +/// children's rendering read changes, and cleared when the scale factor or window size changes.
++/// Layer image pixels a frame renders before further layers wait for a later frame: the
++/// first image of a frame is always rendered; small ones (captions) share a frame, so many
++/// small layers do not each wait a frame, redrawn directly meanwhile.
++#[cfg(feature = "std")]
++const LAYER_IMAGE_PIXELS: u64 = 24 * 1024;
++
 +#[cfg(feature = "std")]
 +#[derive(Default)]
 +struct LayerCache {
@@ -3019,7 +3377,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
  impl<'a, T: TargetPixel> target_pixel_buffer::TargetPixelBuffer for TargetPixelSlice<'a, T> {
      type TargetPixel = T;
  
-@@ -452,6 +526,38 @@
+@@ -452,6 +563,46 @@
      rendering_metrics_collector: Option<Rc<RenderingMetricsCollector>>,
      #[cfg(feature = "systemfonts")]
      text_layout_cache: sharedparley::TextLayoutCache,
@@ -3055,10 +3413,18 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +    #[cfg(feature = "systemfonts")]
 +    drawn_root: Cell<usize>,
 +    skip_quiet_frames: Cell<bool>,
++    /// The last frame drawn from recorded ops: its region and ops. A frame recording the
++    /// same ops over the same region draws the same image, so it is not drawn or presented.
++    #[cfg(feature = "std")]
++    last_frame: RefCell<Option<(PhysicalRegion, Vec<parallel::Op>)>>,
++    /// With swapped buffers: the previous frame's dirty region as this frame found it, for a
++    /// frame that is not drawn (the next one must still cover it).
++    #[cfg(feature = "std")]
++    prev_frame_dirty_before: Cell<DirtyRegion>,
  }
  
  impl Default for SoftwareRenderer {
-@@ -465,6 +571,26 @@
+@@ -465,6 +616,30 @@
              repaint_buffer_type: Default::default(),
              #[cfg(feature = "systemfonts")]
              text_layout_cache: Default::default(),
@@ -3078,6 +3444,10 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +            walk_profile: Default::default(),
 +            #[cfg(feature = "std")]
 +            check_layers_again: Default::default(),
++            #[cfg(feature = "std")]
++            last_frame: Default::default(),
++            #[cfg(feature = "std")]
++            prev_frame_dirty_before: Default::default(),
 +            drawn_frame: Default::default(),
 +            #[cfg(feature = "systemfonts")]
 +            drawn_root: Default::default(),
@@ -3085,7 +3455,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          }
      }
  }
-@@ -498,9 +624,84 @@
+@@ -498,9 +673,84 @@
      pub fn set_repaint_buffer_type(&self, repaint_buffer_type: RepaintBufferType) {
          if self.repaint_buffer_type.replace(repaint_buffer_type) != repaint_buffer_type {
              self.partial_rendering_state.clear_cache();
@@ -3170,7 +3540,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      /// Returns the kind of buffer that must be passed to  [`Self::render`]
      pub fn repaint_buffer_type(&self) -> RepaintBufferType {
          self.repaint_buffer_type.get()
-@@ -536,9 +737,125 @@
+@@ -536,9 +786,172 @@
      /// Returns the physical dirty region for this frame, excluding the extra_draw_region,
      /// in the window frame of reference. It is affected by the screen rotation.
      pub fn render(&self, buffer: &mut [impl TargetPixel], pixel_stride: usize) -> PhysicalRegion {
@@ -3187,7 +3557,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +            let stream = std::sync::Arc::new(parallel::OpStream::new());
 +            let shared = &*stream;
 +            let mut scratch = LinesOnly::like(buffer, pixel_stride, lines);
-+            let (region, started) = std::thread::scope(|scope| {
++            let region = pool::scope(|scope| {
 +                let mut unclaimed = Some(&mut *buffer);
 +                let mut queue = None;
 +                let mut start = |region: &PhysicalRegion, scale_factor: ScaleFactor| {
@@ -3216,14 +3586,28 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                    self.render_buffer_inner(&mut scratch, true, Some(&mut start));
 +                drop(start);
 +                let started = std::time::Instant::now();
++                // The frame's region and ops, kept for the next frame to compare with.
++                let mut frame = None;
++                let mut same_as_previous = false;
 +                if let Some(recorded) = recorded {
-+                    match unclaimed.take() {
-+                        None => shared.publish(recorded.ops, true),
-+                        Some(buffer) => {
-+                            let mut ops = shared.take_ops();
-+                            ops.extend(recorded.ops);
-+                            let recorded = parallel::Recorded { ops, ..recorded };
-+                            parallel::replay_in_bands(&recorded, buffer, pixel_stride, 1);
++                    if recorded.same_as_previous {
++                        // The previous frame's image: nothing to draw.
++                        same_as_previous = true;
++                        shared.publish(Vec::new(), true);
++                        frame = Some((recorded.dirty_region, recorded.ops));
++                    } else {
++                        match unclaimed.take() {
++                            None => {
++                                shared.publish(recorded.ops, true);
++                                frame = Some((recorded.dirty_region, Vec::new()));
++                            }
++                            Some(buffer) => {
++                                let mut ops = shared.take_ops();
++                                ops.extend(recorded.ops);
++                                let recorded = parallel::Recorded { ops, ..recorded };
++                                parallel::replay_in_bands(&recorded, buffer, pixel_stride, 1);
++                                frame = Some((recorded.dirty_region, recorded.ops));
++                            }
 +                        }
 +                    }
 +                } else {
@@ -3233,8 +3617,32 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                if let Some(queue) = queue.take() {
 +                    queue.work(shared);
 +                }
-+                (region, started)
++                (region, started, frame, same_as_previous)
 +            });
++            let (region, started, frame, same_as_previous) = region;
++            // Every op of a frame streamed to the band threads is in the stream (they ended).
++            let frame = frame.map(|(region, mut ops)| {
++                if ops.is_empty() {
++                    ops = stream.take_ops();
++                }
++                (region, ops)
++            });
++            // A frame not walked (nothing changed) keeps the last one's.
++            if frame.is_some() {
++                *self.last_frame.borrow_mut() = frame;
++            }
++            if same_as_previous {
++                // Not drawn and not presented: with swapped buffers the next frame gets this
++                // frame's buffer again, which lacks what the previous frame changed. This
++                // frame changed no pixel, so that is all the next one must also redraw.
++                if self.repaint_buffer_type.get() == RepaintBufferType::SwappedBuffers {
++                    self.prev_frame_dirty.set(self.prev_frame_dirty_before.take());
++                }
++                self.last_phases.set((self.last_phases.get().0, started.elapsed()));
++                self.last_replay.set(Default::default());
++                return PhysicalRegion::default();
++            }
++
 +            // The scope waited for the band threads: their tail counts as replay.
 +            let replay = started.elapsed();
 +            let (walk, record) = self.last_phases.get();
@@ -3269,6 +3677,15 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +        draw_functions::GLYPH_FAST_PATH.store(fast, std::sync::atomic::Ordering::Relaxed);
 +    }
 +
++    /// Whether colour textures are drawn a run of target pixels per source pixel (the
++    /// default) or a pixel at a time (the general path). For tests and benchmarks that
++    /// compare the two; it applies to every renderer.
++    #[doc(hidden)]
++    #[cfg(feature = "std")]
++    pub fn set_scaled_runs(runs: bool) {
++        draw_functions::SCALED_RUNS.store(runs, std::sync::atomic::Ordering::Relaxed);
++    }
++
 +    /// Whether band threads move between bands as chunks are published (the default), or
 +    /// each replays a whole band, waiting for each chunk (the former ordering). For
 +    /// benchmarks and tests that compare the two; it applies to every renderer.
@@ -3296,7 +3713,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      /// Render the window to the given frame buffer.
      ///
      /// The renderer uses a cache internally and will only render the part of the window
-@@ -560,13 +877,33 @@
+@@ -560,13 +973,33 @@
          &self,
          buffer: &mut impl target_pixel_buffer::TargetPixelBuffer,
      ) -> PhysicalRegion {
@@ -3331,7 +3748,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          };
          let window_inner = WindowInner::from_pub(window.window());
          let factor = ScaleFactor::new(window_inner.scale_factor());
-@@ -586,7 +923,14 @@
+@@ -586,7 +1019,14 @@
              (euclid::size2(pixels_per_line as _, num_lines as _), Brush::default())
          };
          if size.is_empty() {
@@ -3347,7 +3764,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          }
          assert!(
              if rotation.is_transpose() {
-@@ -612,17 +956,54 @@
+@@ -612,17 +1052,57 @@
                  dirty_range_cache: Vec::new(),
                  dirty_region: Default::default(),
                  scale_factor: factor,
@@ -3366,6 +3783,9 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +        #[cfg(feature = "std")]
 +        if record {
 +            renderer.actual_renderer.processor.recording = Some(parallel::Recorder::new());
++        } else {
++            // Drawn without recording: no ops to compare the next frame with.
++            self.last_frame.take();
 +        }
          let window_adapter = renderer.window_adapter.clone();
  
@@ -3404,7 +3824,22 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
  
                  match self.repaint_buffer_type.get() {
                      RepaintBufferType::NewBuffer => {
-@@ -649,6 +1030,18 @@
+@@ -638,17 +1118,32 @@
+                         );
+                     }
+                     RepaintBufferType::SwappedBuffers => {
++                        let before = self.prev_frame_dirty.take();
++                        #[cfg(feature = "std")]
++                        self.prev_frame_dirty_before.set(before.clone());
+                         let dirty_region_for_this_frame =
+                             self.partial_rendering_state.apply_dirty_region(
+                                 &mut renderer,
+                                 components,
+                                 logical_size,
+-                                Some(self.prev_frame_dirty.take()),
++                                Some(before),
+                             );
+                         self.prev_frame_dirty.set(dirty_region_for_this_frame);
                      }
                  }
  
@@ -3423,12 +3858,26 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
                  let rotation = RotationInfo { orientation: rotation, screen_size: size };
                  let screen_rect = PhysicalRect::from_size(size);
                  let mut i = renderer.dirty_region.iter().filter_map(|r| {
-@@ -667,6 +1060,28 @@
+@@ -667,6 +1162,42 @@
                  drop(i);
  
                  renderer.actual_renderer.processor.dirty_region = dirty_region.clone();
 +                #[cfg(feature = "std")]
 +                if let Some(recorder) = &mut renderer.actual_renderer.processor.recording {
++                    // Over the region the last recorded frame drew, its ops: the same ops
++                    // draw the same image (`Recorder::compare_with`). A fresh buffer holds
++                    // no image to keep.
++                    let last = self.last_frame.take();
++                    if self.skip_quiet_frames.get()
++                        && self.repaint_buffer_type.get() != RepaintBufferType::NewBuffer
++                    {
++                        if let Some((region, ops)) = last {
++                            if region.same(&dirty_region) {
++                                recorder.compare_with(ops);
++                            }
++                        }
++                    }
++                    recorder.cover_region(dirty_region.bounding_rect());
 +                    if let Some(stream) = start_bands.as_mut().and_then(|start| start(&dirty_region, factor)) {
 +                        recorder.stream_to(stream);
 +                    }
@@ -3452,7 +3901,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
                  if !renderer
                      .actual_renderer
                      .processor
-@@ -702,11 +1117,60 @@
+@@ -702,11 +1233,62 @@
                      post_render(&mut renderer.actual_renderer);
                  }
  
@@ -3491,8 +3940,10 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
                  self.measure_frame_rendered(&mut renderer);
 +                #[cfg(feature = "std")]
 +                if let Some(recorder) = renderer.actual_renderer.processor.recording.take() {
++                    let (ops, same_as_previous) = recorder.into_ops();
 +                    recorded = Some(parallel::Recorded {
-+                        ops: recorder.into_ops(),
++                        ops,
++                        same_as_previous,
 +                        dirty_region: dirty_region.clone(),
 +                        scale_factor: factor,
 +                    });
@@ -3515,7 +3966,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      }
  
      fn measure_frame_rendered(&self, renderer: &mut dyn ItemRenderer) {
-@@ -1161,6 +1625,12 @@
+@@ -1161,6 +1743,12 @@
      ) -> Result<(), i_slint_core::platform::PlatformError> {
          #[cfg(feature = "systemfonts")]
          self.text_layout_cache.component_destroyed(component);
@@ -3528,7 +3979,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.partial_rendering_state.free_graphics_resources(component, items);
          Ok(())
      }
-@@ -1199,6 +1669,8 @@
+@@ -1199,6 +1787,8 @@
          *self.maybe_window_adapter.borrow_mut() = Some(Rc::downgrade(window_adapter));
          #[cfg(feature = "systemfonts")]
          self.text_layout_cache.clear_all();
@@ -3537,7 +3988,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.partial_rendering_state.clear_cache();
      }
  
-@@ -1480,6 +1952,9 @@
+@@ -1480,6 +2070,9 @@
          software_renderer.rotation.get(),
          #[cfg(feature = "systemfonts")]
          &software_renderer.text_layout_cache,
@@ -3547,7 +3998,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      );
      let mut renderer =
          software_renderer.partial_rendering_state.create_partial_renderer(prepare_scene);
-@@ -1579,6 +2054,9 @@
+@@ -1579,6 +2172,9 @@
  }
  
  trait ProcessScene {
@@ -3557,7 +4008,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>);
      fn process_target_texture(
          &mut self,
-@@ -1836,14 +2314,90 @@
+@@ -1836,14 +2432,90 @@
      }
  }
  
@@ -3648,7 +4099,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      fn foreach_ranges(
          &mut self,
          geometry: &PhysicalRect,
-@@ -1903,7 +2457,21 @@
+@@ -1903,7 +2575,21 @@
  }
  
  impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<'_, B> {
@@ -3670,7 +4121,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.process_texture_impl(geometry, texture);
      }
  
-@@ -1912,6 +2480,30 @@
+@@ -1912,6 +2598,30 @@
          texture: &target_pixel_buffer::DrawTextureArgs,
          clip: PhysicalRect,
      ) {
@@ -3701,7 +4152,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          if self.buffer.draw_texture(texture, &self.dirty_region.intersection(&clip)) {
              return;
          }
-@@ -1928,7 +2520,12 @@
+@@ -1928,7 +2638,12 @@
          args: &target_pixel_buffer::DrawRectangleArgs,
          clip: PhysicalRect,
      ) {
@@ -3715,7 +4166,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
              return;
          }
  
-@@ -1937,6 +2534,11 @@
+@@ -1937,6 +2652,11 @@
      }
  
      fn process_rounded_rectangle(&mut self, geometry: PhysicalRect, rr: RoundedRectangle) {
@@ -3727,7 +4178,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
              draw_functions::draw_rounded_rectangle_line(
                  &geometry,
-@@ -1950,12 +2552,22 @@
+@@ -1950,12 +2670,22 @@
      }
  
      fn process_simple_rectangle(&mut self, geometry: PhysicalRect, color: PremultipliedRgbaColor) {
@@ -3750,7 +4201,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, _extra_right_clip| {
              draw_functions::draw_linear_gradient(
                  &geometry,
-@@ -1967,6 +2579,11 @@
+@@ -1967,6 +2697,11 @@
          });
      }
      fn process_radial_gradient(&mut self, geometry: PhysicalRect, g: RadialGradientCommand) {
@@ -3762,7 +4213,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
              draw_functions::draw_radial_gradient(
                  &geometry,
-@@ -1979,6 +2596,11 @@
+@@ -1979,6 +2714,11 @@
          });
      }
      fn process_conic_gradient(&mut self, geometry: PhysicalRect, g: ConicGradientCommand) {
@@ -3774,7 +4225,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          self.foreach_ranges(&geometry, |line, buffer, extra_left_clip, extra_right_clip| {
              draw_functions::draw_conic_gradient(
                  &geometry,
-@@ -1999,7 +2621,16 @@
+@@ -1999,7 +2739,16 @@
          commands: alloc::vec::Vec<path::Command>,
          color: PremultipliedRgbaColor,
      ) {
@@ -3792,7 +4243,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      }
  
      #[cfg(feature = "path")]
-@@ -2014,17 +2645,33 @@
+@@ -2014,17 +2763,33 @@
          stroke_line_join: i_slint_core::items::LineJoin,
          stroke_miter_limit: f32,
      ) {
@@ -3837,7 +4288,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      }
  }
  
-@@ -2036,6 +2683,11 @@
+@@ -2036,6 +2801,11 @@
  }
  
  impl ProcessScene for PrepareScene {
@@ -3849,7 +4300,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>) {
          let texture_index = self.vectors.textures.len() as u16;
          self.vectors.textures.push(texture);
-@@ -2200,6 +2852,13 @@
+@@ -2200,6 +2970,13 @@
      rotation: RotationInfo,
      #[cfg(feature = "systemfonts")]
      text_layout_cache: &'a sharedparley::TextLayoutCache,
@@ -3863,7 +4314,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
  }
  
  impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
-@@ -2210,6 +2869,7 @@
+@@ -2210,6 +2987,7 @@
          processor: T,
          orientation: RenderingRotation,
          #[cfg(feature = "systemfonts")] text_layout_cache: &'a sharedparley::TextLayoutCache,
@@ -3871,7 +4322,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      ) -> Self {
          Self {
              processor,
-@@ -2227,6 +2887,207 @@
+@@ -2227,6 +3005,227 @@
              rotation: RotationInfo { orientation, screen_size },
              #[cfg(feature = "systemfonts")]
              text_layout_cache,
@@ -3903,6 +4354,14 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                cached.shifted_at.set(Some(at));
 +                return false;
 +            }
++            cache.release(item_rc);
++            layer = cache.get_or_update_cache_entry(item_rc, || {
++                self.render_layer_image(cache, item_rc, size)
++            });
++        }
++        // Under another clip than it was recorded with: record again under this one.
++        let clip = self.current_state.clip.translate(self.current_state.offset.to_vector());
++        if layer.as_ref().is_some_and(|layer| layer.clip != clip) {
 +            cache.release(item_rc);
 +            layer = cache.get_or_update_cache_entry(item_rc, || {
 +                self.render_layer_image(cache, item_rc, size)
@@ -3979,21 +4438,33 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                self.text_layout_cache,
 +                Some(cache),
 +            );
-+            // Recorded where the children are drawn now, clipped to their bounds only: the
-+            // replay clips to the layer's clip of the frame it is drawn in.
++            // Recorded where the children are drawn now, under the clip their parent gives
++            // them, exactly as they are drawn directly: no clip of the layer's own, so text
++            // past its box and an ellipsis are drawn. The replay clips to that same clip.
 +            nested.nested_in_layer_image = true;
 +            nested.current_state.offset = self.current_state.offset;
-+            nested.current_state.clip = bounds;
++            nested.current_state.clip = self.current_state.clip;
 +            i_slint_core::item_rendering::render_item_children(
 +                &mut nested,
 +                &item_rc.item_tree(),
 +                item_rc.index() as isize,
 +                &window_adapter,
 +            );
-+            nested.processor.recording.take().map(|recorder| recorder.into_ops()).unwrap_or_default()
++            nested.processor.recording.take().map(|recorder| recorder.into_ops().0).unwrap_or_default()
++        };
++        // The area is what the calls draw, which may reach past the children's boxes.
++        let drawn = ops
++            .iter()
++            .filter(|op| !matches!(op, parallel::Op::Background(_) | parallel::Op::SetClip(_)))
++            .map(parallel::Op::bounds)
++            .fold(None, |acc: Option<PhysicalRect>, r| Some(acc.map_or(r, |a| a.union(&r))));
++        let area = match drawn {
++            Some(drawn) => drawn.cast::<i32>().union(&area),
++            None => area,
 +        };
 +        let ops = std::sync::Arc::new(parallel::LayerOps::new(ops, area.cast()));
-+        Some(Rc::new(CachedLayer { at, shifted_at: Cell::new(None), area, ops }))
++        let clip = self.current_state.clip.translate(self.current_state.offset.to_vector());
++        Some(Rc::new(CachedLayer { at, shifted_at: Cell::new(None), area, clip, ops }))
 +    }
 +
 +    #[cfg(feature = "path")]
@@ -4079,7 +4550,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          }
      }
  
-@@ -2239,6 +3100,21 @@
+@@ -2239,6 +3238,21 @@
      fn draw_image_impl(
          &mut self,
          image_inner: &ImageInner,
@@ -4101,7 +4572,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          i_slint_core::graphics::FitResult {
              clip_rect: source_rect,
              source_to_target_x,
-@@ -2660,6 +3536,7 @@
+@@ -2660,6 +3674,7 @@
          size: LogicalSize,
          _cache: &CachedRenderingData,
      ) {
@@ -4109,7 +4580,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          let geom = LogicalRect::from(size);
          if self.should_draw(&geom) {
              let geom = (geom.translate(self.current_state.offset.to_vector()).cast()
-@@ -2679,6 +3556,7 @@
+@@ -2679,6 +3694,7 @@
              args.rotation = self.rotation.orientation;
              self.processor.process_rectangle(&args, clipped);
          }
@@ -4117,7 +4588,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      }
  
      fn draw_border_rectangle(
-@@ -2688,6 +3566,7 @@
+@@ -2688,6 +3704,7 @@
          size: LogicalSize,
          _: &CachedRenderingData,
      ) {
@@ -4125,7 +4596,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          let geom = LogicalRect::from(size);
          if self.should_draw(&geom) {
              let geom = (geom.translate(self.current_state.offset.to_vector()).cast()
-@@ -2728,6 +3607,7 @@
+@@ -2728,6 +3745,7 @@
  
              self.processor.process_rectangle(&args, clipped);
          }
@@ -4133,7 +4604,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      }
  
      fn draw_window_background(
-@@ -2980,80 +3860,10 @@
+@@ -2980,80 +3998,10 @@
          self_rc: &ItemRc,
          size: LogicalSize,
      ) {
@@ -4218,7 +4689,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      }
  
      fn draw_box_shadow(
-@@ -3065,6 +3875,78 @@
+@@ -3065,6 +4013,78 @@
          // TODO
      }
  
@@ -4268,7 +4739,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
 +                // Its content stayed the same for a frame, or it has no image yet. A frame
 +                // renders one image: another such layer is drawn directly once more.
 +                if direct || state.is_none() {
-+                    if cache.rendering.get() {
++                    if cache.rendering.get() && cache.renders.get().1 >= LAYER_IMAGE_PIXELS {
 +                        cache.visits.set((invalidated, waiting + 1, blitted));
 +                        let layer =
 +                            DirectLayer { item: item_rc.downgrade(), area, changed_this_frame: false };
@@ -4297,7 +4768,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {
          match self.current_state.clip.intersection(&other) {
              Some(r) => {
-@@ -3225,6 +4107,11 @@
+@@ -3225,6 +4245,11 @@
          self.window
      }
  
@@ -4309,7 +4780,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
      fn as_any(&mut self) -> Option<&mut dyn core::any::Any> {
          None
      }
-@@ -3330,15 +4217,38 @@
+@@ -3330,15 +4355,38 @@
          glyphs_it: &mut dyn Iterator<Item = sharedparley::parley::layout::Glyph>,
      ) {
          let slint_context = self.window.context();
@@ -4357,7 +4828,7 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
          );
  
          let global_offset: euclid::Vector2D<f32, PhysicalPx> =
-@@ -3376,6 +4286,7 @@
+@@ -3376,6 +4424,7 @@
              let Some(glyph) = font.render_vector_glyph(id, subpixel_bin, slint_context) else {
                  continue;
              };
@@ -4367,8 +4838,8 @@ diff -ruN a/i-slint-renderer-software/lib.rs b/i-slint-renderer-software/lib.rs
              // i32 so a glyph past the i16 range survives until it is clipped below.
 diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/parallel.rs
 --- a/i-slint-renderer-software/parallel.rs	1969-12-31 17:00:00.000000000 -0700
-+++ b/i-slint-renderer-software/parallel.rs	2026-11-04 09:41:42.606683068 -0700
-@@ -0,0 +1,736 @@
++++ b/i-slint-renderer-software/parallel.rs	2026-11-05 01:39:57.342932240 -0700
+@@ -0,0 +1,946 @@
 +// Copyright © SixtyFPS GmbH <info@slint.dev>
 +// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 +
@@ -4429,7 +4900,116 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 +    },
 +}
 +
++fn same_color(a: &PremultipliedRgbaColor, b: &PremultipliedRgbaColor) -> bool {
++    bytemuck::bytes_of(a) == bytemuck::bytes_of(b)
++}
++
++fn same_extra(a: &SceneTextureExtra, b: &SceneTextureExtra) -> bool {
++    a.dx == b.dx
++        && a.dy == b.dy
++        && a.off_x == b.off_x
++        && a.off_y == b.off_y
++        && a.colorize == b.colorize
++        && a.alpha == b.alpha
++        && a.rotation == b.rotation
++}
++
++/// The same pixels: the same bytes (the same memory, or equal content).
++fn same_texture(a: &SceneTexture<'_>, b: &SceneTexture<'_>) -> bool {
++    a.format == b.format
++        && a.pixel_stride == b.pixel_stride
++        && same_extra(&a.extra, &b.extra)
++        && a.data.len() == b.data.len()
++        && (core::ptr::eq(a.data.as_ptr(), b.data.as_ptr()) || a.data == b.data)
++}
++
 +impl Op {
++    /// Whether replaying `self` draws exactly what replaying `other` draws, on the same
++    /// pixels. A cached layer is the same when it is the same recording (`Arc`), which the
++    /// previous frame's ops keep alive, so its address is not reused meanwhile.
++    pub(super) fn same(&self, other: &Op) -> bool {
++        match (self, other) {
++            (Op::Background(a), Op::Background(b)) => a == b,
++            (Op::SetClip(a), Op::SetClip(b)) => a == b,
++            (Op::Layer(a, ra), Op::Layer(b, rb)) => Arc::ptr_eq(a, b) && ra == rb,
++            (Op::Texture(ga, a), Op::Texture(gb, b)) => ga == gb && same_texture(a, b),
++            (Op::SharedTexture(ga, a), Op::SharedTexture(gb, b)) => {
++                ga == gb && a.source_rect == b.source_rect && same_texture(&a.as_texture(), &b.as_texture())
++            }
++            (Op::Rectangle(ga, a), Op::Rectangle(gb, b)) => ga == gb && same_color(a, b),
++            (Op::RoundedRectangle(ga, a), Op::RoundedRectangle(gb, b)) => {
++                ga == gb
++                    && a.radius == b.radius
++                    && a.width == b.width
++                    && same_color(&a.border_color, &b.border_color)
++                    && same_color(&a.inner_color, &b.inner_color)
++                    && a.left_clip == b.left_clip
++                    && a.right_clip == b.right_clip
++                    && a.top_clip == b.top_clip
++                    && a.bottom_clip == b.bottom_clip
++            }
++            (Op::LinearGradient(ga, a), Op::LinearGradient(gb, b)) => {
++                ga == gb
++                    && same_color(&a.color1, &b.color1)
++                    && same_color(&a.color2, &b.color2)
++                    && a.start == b.start
++                    && a.flags == b.flags
++                    && a.left_clip == b.left_clip
++                    && a.right_clip == b.right_clip
++                    && a.top_clip == b.top_clip
++                    && a.bottom_clip == b.bottom_clip
++            }
++            (Op::RadialGradient(ga, a), Op::RadialGradient(gb, b)) => {
++                ga == gb
++                    && a.stops == b.stops
++                    && a.center_x == b.center_x
++                    && a.center_y == b.center_y
++                    && a.radius == b.radius
++            }
++            (Op::ConicGradient(ga, a), Op::ConicGradient(gb, b)) => {
++                ga == gb && a.stops == b.stops && a.center_x == b.center_x && a.center_y == b.center_y
++            }
++            #[cfg(feature = "path")]
++            (
++                Op::FilledPath { path: pa, clip: ca, commands: a, color: la },
++                Op::FilledPath { path: pb, clip: cb, commands: b, color: lb },
++            ) => pa == pb && ca == cb && a == b && same_color(la, lb),
++            #[cfg(feature = "path")]
++            (
++                Op::StrokedPath {
++                    path: pa,
++                    clip: ca,
++                    commands: a,
++                    color: la,
++                    width: wa,
++                    cap: capa,
++                    join: joina,
++                    miter_limit: ma,
++                },
++                Op::StrokedPath {
++                    path: pb,
++                    clip: cb,
++                    commands: b,
++                    color: lb,
++                    width: wb,
++                    cap: capb,
++                    join: joinb,
++                    miter_limit: mb,
++                },
++            ) => {
++                pa == pb
++                    && ca == cb
++                    && a == b
++                    && same_color(la, lb)
++                    && wa == wb
++                    && capa == capb
++                    && joina == joinb
++                    && ma == mb
++            }
++            _ => false,
++        }
++    }
++
 +    /// The pixels the op can touch.
 +    pub(super) fn bounds(&self) -> PhysicalRect {
 +        match self {
@@ -4602,14 +5182,43 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 +pub(super) const CHUNK: usize = 128;
 +
 +/// Where the scene builder records: the ops, and the stream that takes them in chunks.
++///
++/// Compared with the previous frame's ops over the same region (`compare_with`), the ops
++/// are held back while each is the same as the previous frame's at its place: the band
++/// threads draw nothing yet. At the first one that differs, the held ops are published and
++/// the frame streams on. A frame whose ops all match is the previous frame's image.
++///
++/// An opaque rectangle that covers the whole frame region (`cover_region`) hides every op
++/// before it: those not published yet are dropped.
 +pub(super) struct Recorder {
 +    ops: Vec<Op>,
 +    stream: Option<Arc<OpStream>>,
++    /// The previous frame's ops over the same region (`compare_with`).
++    previous: Option<Vec<Op>>,
++    /// Whether every op since the frame (or the last cover) began is `previous`'s at its
++    /// place; the matching ops are `held`, not published.
++    matching: bool,
++    held: Vec<Op>,
++    /// Whether a chunk went to the stream: published ops cannot be dropped any more.
++    published: bool,
++    /// The frame region's bounds, when an op covering them hides what is under it.
++    region: Option<PhysicalRect>,
++    /// The clip of the ops recorded last (`Op::SetClip`).
++    clip: Option<PhysicalRect>,
 +}
 +
 +impl Recorder {
 +    pub(super) fn new() -> Self {
-+        Self { ops: Vec::new(), stream: None }
++        Self {
++            ops: Vec::new(),
++            stream: None,
++            previous: None,
++            matching: false,
++            held: Vec::new(),
++            published: false,
++            region: None,
++            clip: None,
++        }
 +    }
 +
 +    /// From now on, publish every full chunk to `stream`.
@@ -4617,18 +5226,88 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 +        self.stream = Some(stream);
 +    }
 +
++    /// Hold the ops back while they are those of `previous`, the previous frame's over the
++    /// same region.
++    pub(super) fn compare_with(&mut self, previous: Vec<Op>) {
++        self.previous = Some(previous);
++        self.matching = true;
++    }
++
++    /// From now on, an opaque rectangle that covers `bounds` (the frame region's) drops the
++    /// ops before it that are not published yet: it draws every pixel they drew.
++    pub(super) fn cover_region(&mut self, bounds: PhysicalRect) {
++        self.region = Some(bounds);
++    }
++
++    /// Whether `op` paints every pixel of the frame region, whatever was there.
++    fn covers_region(&self, op: &Op) -> bool {
++        let (Some(region), Op::Rectangle(geometry, color)) = (self.region, op) else {
++            return false;
++        };
++        if color.alpha != 255 || region.is_empty() {
++            return false;
++        }
++        let drawn = match self.clip {
++            Some(clip) => geometry.intersection(&clip).unwrap_or_default(),
++            None => *geometry,
++        };
++        drawn.contains_rect(&region)
++    }
++
 +    pub(super) fn push(&mut self, op: Op) {
++        if let Op::SetClip(clip) = &op {
++            self.clip = *clip;
++        }
++        if !self.published && self.covers_region(&op) {
++            // Everything recorded so far is painted over: keep only the clip it is under,
++            // and compare again from there.
++            self.ops.clear();
++            self.held.clear();
++            self.matching = self.previous.is_some();
++            if let Some(clip) = self.clip {
++                self.push_compared(Op::SetClip(Some(clip)));
++            }
++        }
++        self.push_compared(op);
++    }
++
++    fn push_compared(&mut self, op: Op) {
++        if self.matching {
++            let previous = self.previous.as_ref().expect("matching compares with previous ops");
++            if previous.get(self.held.len()).is_some_and(|p| p.same(&op)) {
++                self.held.push(op);
++                return;
++            }
++            self.matching = false;
++            for held in core::mem::take(&mut self.held) {
++                self.publish(held);
++            }
++        }
++        self.publish(op);
++    }
++
++    fn publish(&mut self, op: Op) {
 +        self.ops.push(op);
 +        if self.ops.len() >= CHUNK {
 +            if let Some(stream) = &self.stream {
++                self.published = true;
 +                stream.publish(core::mem::replace(&mut self.ops, Vec::with_capacity(CHUNK)), false);
 +            }
 +        }
 +    }
 +
-+    /// The ops not published yet: all of them without a stream.
-+    pub(super) fn into_ops(self) -> Vec<Op> {
-+        self.ops
++    /// The ops not published yet (all of them without a stream), and whether they are all
++    /// the previous frame's: then nothing was published, and they are returned.
++    pub(super) fn into_ops(mut self) -> (Vec<Op>, bool) {
++        if self.matching {
++            if self.previous.as_ref().is_some_and(|p| p.len() == self.held.len()) {
++                return (self.held, true);
++            }
++            for held in core::mem::take(&mut self.held) {
++                self.publish(held);
++            }
++        }
++        (self.ops, false)
 +    }
 +}
 +
@@ -4711,6 +5390,8 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 +/// The ops of one frame and the region they draw.
 +pub(super) struct Recorded {
 +    pub ops: Vec<Op>,
++    /// The ops are all the previous frame's over the same region: its image.
++    pub same_as_previous: bool,
 +    pub dirty_region: PhysicalRegion,
 +    pub scale_factor: ScaleFactor,
 +}
@@ -5038,8 +5719,8 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 +/// Split `buffer` under `region` into bands several times more than `threads`, and start
 +/// `threads` threads replaying them; the queue goes back to the caller, whose own thread
 +/// helps once it has published the last chunk.
-+pub(super) fn stream_into_bands<'scope, 'env, T: TargetPixel>(
-+    scope: &'scope std::thread::Scope<'scope, 'env>,
++pub(super) fn stream_into_bands<'scope, T: TargetPixel>(
++    scope: &super::pool::Scope<'scope>,
 +    stream: &'scope OpStream,
 +    buffer: &'scope mut [T],
 +    pixel_stride: usize,
@@ -5094,7 +5775,7 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 +            renderer.replay(op);
 +        }
 +    };
-+    std::thread::scope(|scope| {
++    super::pool::scope(|scope| {
 +        let mut bands = bands.into_iter();
 +        let mine = bands.next();
 +        for band in bands {
@@ -5105,9 +5786,162 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 +        }
 +    });
 +}
+diff -ruN a/i-slint-renderer-software/pool.rs b/i-slint-renderer-software/pool.rs
+--- a/i-slint-renderer-software/pool.rs	1969-12-31 17:00:00.000000000 -0700
++++ b/i-slint-renderer-software/pool.rs	2026-11-05 01:39:57.342932240 -0700
+@@ -0,0 +1,149 @@
++// Copyright © SixtyFPS GmbH <info@slint.dev>
++// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
++
++//! Band threads that stay: started once and parked between frames, instead of one new
++//! thread per band thread and frame (`parallel`).
++//!
++//! [`scope`] works like `std::thread::scope`: a job may borrow from the caller, and `scope`
++//! returns, or unwinds, only once every job it spawned has ended. While it waits, the
++//! calling thread runs its own jobs that no pool thread took yet, so a scope opened while
++//! every pool thread is busy (a layer image drawn in bands while the frame's band threads
++//! wait for the frame's draw calls) still ends.
++
++#![allow(unsafe_code)] // One lifetime erasure, justified where it is written.
++
++use std::boxed::Box;
++use std::collections::VecDeque;
++use std::sync::atomic::{AtomicBool, Ordering};
++use std::sync::{Arc, Condvar, Mutex, OnceLock};
++
++type Job = Box<dyn FnOnce() + Send + 'static>;
++
++/// At most this many pool threads.
++const MAX_THREADS: usize = 8;
++
++struct Pool {
++    state: Mutex<State>,
++    ready: Condvar,
++}
++
++#[derive(Default)]
++struct State {
++    jobs: VecDeque<(Arc<Pending>, Job)>,
++    threads: usize,
++    idle: usize,
++}
++
++/// The jobs of one scope not ended yet.
++#[derive(Default)]
++struct Pending {
++    count: Mutex<usize>,
++    ended: Condvar,
++    panicked: AtomicBool,
++}
++
++impl Pending {
++    fn end_one(&self) {
++        let mut count = self.count.lock().unwrap();
++        *count -= 1;
++        if *count == 0 {
++            self.ended.notify_all();
++        }
++    }
++}
++
++fn pool() -> &'static Pool {
++    static POOL: OnceLock<Pool> = OnceLock::new();
++    POOL.get_or_init(|| Pool { state: Mutex::new(State::default()), ready: Condvar::new() })
++}
++
++fn run(pending: &Pending, job: Job) {
++    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
++        pending.panicked.store(true, Ordering::Relaxed);
++    }
++    pending.end_one();
++}
++
++fn worker() {
++    let pool = pool();
++    let mut state = pool.state.lock().unwrap();
++    loop {
++        if let Some((pending, job)) = state.jobs.pop_front() {
++            drop(state);
++            run(&pending, job);
++            state = pool.state.lock().unwrap();
++            continue;
++        }
++        state.idle += 1;
++        state = pool.ready.wait(state).unwrap();
++        state.idle -= 1;
++    }
++}
++
++/// Where jobs borrowing from `'env` are spawned (`scope`).
++pub(super) struct Scope<'env> {
++    pending: Arc<Pending>,
++    _env: core::marker::PhantomData<&'env mut &'env ()>,
++}
++
++impl<'env> Scope<'env> {
++    /// Run `job` on a pool thread, or on the scope's thread if none takes it first.
++    pub(super) fn spawn(&self, job: impl FnOnce() + Send + 'env) {
++        *self.pending.count.lock().unwrap() += 1;
++        let job: Box<dyn FnOnce() + Send + 'env> = Box::new(job);
++        // SAFETY: `scope` does not return or unwind before every job it spawned ended
++        // (`Wait`), so nothing the job borrows for `'env` is used after it is gone.
++        let job: Job = unsafe { core::mem::transmute(job) };
++        let pool = pool();
++        let mut state = pool.state.lock().unwrap();
++        state.jobs.push_back((self.pending.clone(), job));
++        if state.jobs.len() > state.idle && state.threads < MAX_THREADS {
++            state.threads += 1;
++            let started = std::thread::Builder::new().name("slint-band".into()).spawn(worker);
++            if started.is_err() {
++                // The scope's thread runs the job while it waits.
++                state.threads -= 1;
++            }
++        }
++        drop(state);
++        pool.ready.notify_one();
++    }
++}
++
++/// Wait for every job of the scope; run those no pool thread took.
++struct Wait<'a>(&'a Arc<Pending>);
++
++impl Drop for Wait<'_> {
++    fn drop(&mut self) {
++        let pending = self.0;
++        loop {
++            let mine = {
++                let pool = pool();
++                let mut state = pool.state.lock().unwrap();
++                let position = state.jobs.iter().position(|(p, _)| Arc::ptr_eq(p, pending));
++                position.and_then(|i| state.jobs.remove(i))
++            };
++            match mine {
++                Some((pending, job)) => run(&pending, job),
++                None => break,
++            }
++        }
++        let mut count = pending.count.lock().unwrap();
++        while *count > 0 {
++            count = pending.ended.wait(count).unwrap();
++        }
++    }
++}
++
++/// Run `f` with a scope whose jobs may borrow what `f` may; return once they all ended.
++pub(super) fn scope<'env, R>(f: impl FnOnce(&Scope<'env>) -> R) -> R {
++    let scope = Scope { pending: Arc::new(Pending::default()), _env: core::marker::PhantomData };
++    let result = {
++        let _wait = Wait(&scope.pending);
++        f(&scope)
++    };
++    if scope.pending.panicked.load(Ordering::Relaxed) {
++        panic!("a band thread panicked");
++    }
++    result
++}
 diff -ruN a/i-slint-renderer-software/scene.rs b/i-slint-renderer-software/scene.rs
---- a/i-slint-renderer-software/scene.rs	2026-11-04 09:41:42.604452773 -0700
-+++ b/i-slint-renderer-software/scene.rs	2026-11-04 09:41:42.606683068 -0700
+--- a/i-slint-renderer-software/scene.rs	2026-11-05 01:39:57.341897572 -0700
++++ b/i-slint-renderer-software/scene.rs	2026-11-05 01:39:57.342932240 -0700
 @@ -312,6 +312,7 @@
      },
  }
@@ -5160,11 +5994,183 @@ diff -ruN a/i-slint-renderer-software/scene.rs b/i-slint-renderer-software/scene
  pub struct ConicGradientCommand {
      /// The gradient stops (colors and normalized angle positions)
      /// Position 0 = 0 degrees (north), 1 = 360 degrees
+diff -ruN a/slint-interpreter/api.rs b/slint-interpreter/api.rs
+--- a/slint-interpreter/api.rs	2026-11-05 01:39:57.343939673 -0700
++++ b/slint-interpreter/api.rs	2026-11-05 01:39:57.345223581 -0700
+@@ -842,6 +842,7 @@
+             path.into(),
+             self.config.clone(),
+             AnimationMode::Running,
++            true,
+         )
+         .await;
+         self.diagnostics = r.diagnostics.into_iter().collect();
+@@ -874,6 +875,7 @@
+             path,
+             self.config.clone(),
+             AnimationMode::Running,
++            true,
+         )
+         .await;
+         self.diagnostics = r.diagnostics.into_iter().collect();
+@@ -885,6 +887,7 @@
+ /// compile it into a [`CompilationResult`].
+ pub struct Compiler {
+     config: i_slint_compiler::CompilerConfiguration,
++    retain_type_loaders: bool,
+ }
+ 
+ impl Default for Compiler {
+@@ -892,7 +895,7 @@
+         let config = i_slint_compiler::CompilerConfiguration::new(
+             i_slint_compiler::generator::OutputFormat::Interpreter,
+         );
+-        Self { config }
++        Self { config, retain_type_loaders: true }
+     }
+ }
+ 
+@@ -902,6 +905,16 @@
+         Self::default()
+     }
+ 
++    /// Whether the definitions keep the compiler's object trees (the type loaders and
++    /// the exported components), which only highlighting, the live preview and
++    /// `root_component()` read. A definition runs from its lowered tree alone; not
++    /// keeping them frees the object trees once the compilation result is dropped.
++    /// Default: kept.
++    #[doc(hidden)]
++    pub fn set_retain_type_loaders(&mut self, retain: bool) {
++        self.retain_type_loaders = retain;
++    }
++
+     #[doc(hidden)]
+     #[cfg(feature = "internal")]
+     pub fn set_embed_resources(&mut self, embed_resources: i_slint_compiler::EmbedResourcesKind) {
+@@ -1031,8 +1044,14 @@
+             }
+         };
+ 
+-        build_compilation_result(source, path.into(), self.config.clone(), AnimationMode::Running)
+-            .await
++        build_compilation_result(
++            source,
++            path.into(),
++            self.config.clone(),
++            AnimationMode::Running,
++            self.retain_type_loaders,
++        )
++        .await
+     }
+ 
+     /// Compile some .slint code
+@@ -1048,8 +1067,14 @@
+     /// If that is not used, then it is fine to use a very simple executor, such as the one
+     /// provided by the `spin_on` crate
+     pub async fn build_from_source(&self, source_code: String, path: PathBuf) -> CompilationResult {
+-        build_compilation_result(source_code, path, self.config.clone(), AnimationMode::Running)
+-            .await
++        build_compilation_result(
++            source_code,
++            path,
++            self.config.clone(),
++            AnimationMode::Running,
++            self.retain_type_loaders,
++        )
++        .await
+     }
+ 
+     /// Compile Slint code without timers or animations.
+@@ -1061,7 +1086,13 @@
+         path: PathBuf,
+         _: i_slint_core::InternalToken,
+     ) -> CompilationResult {
+-        build_compilation_result(source_code, path, self.config.clone(), AnimationMode::Static)
++        build_compilation_result(
++            source_code,
++            path,
++            self.config.clone(),
++            AnimationMode::Static,
++            self.retain_type_loaders,
++        )
+             .await
+     }
+ }
+@@ -1079,9 +1110,16 @@
+     path: PathBuf,
+     config: i_slint_compiler::CompilerConfiguration,
+     animation_mode: AnimationMode,
++    retain_type_loaders: bool,
+ ) -> CompilationResult {
+-    let result =
+-        crate::component::build_from_source(source_code, path, config, animation_mode).await;
++    let result = crate::component::build_from_source(
++        source_code,
++        path,
++        config,
++        animation_mode,
++        retain_type_loaders,
++    )
++    .await;
+     let components = result
+         .components
+         .into_iter()
 diff -ruN a/slint-interpreter/bindings.rs b/slint-interpreter/bindings.rs
---- a/slint-interpreter/bindings.rs	2026-11-04 09:41:42.614430150 -0700
-+++ b/slint-interpreter/bindings.rs	2026-11-04 09:41:42.619598298 -0700
-@@ -216,6 +216,13 @@
-                 matches!(eval_expression(&mut ctx, &expr), Value::Bool(true))
+--- a/slint-interpreter/bindings.rs	2026-11-05 01:39:57.343939673 -0700
++++ b/slint-interpreter/bindings.rs	2026-11-05 01:39:57.345223581 -0700
+@@ -13,7 +13,8 @@
+ use crate::eval::{EvalContext, eval_expression};
+ use crate::instance::{Instance, SubComponentInstance};
+ use i_slint_compiler::llr::{
+-    self, Animation, Expression, LocalMemberIndex, MemberReference, MutExpression, SubComponent,
++    self, Animation, CompilationUnit, Expression, LocalMemberIndex, MemberReference, MutExpression,
++    SubComponent,
+ };
+ use i_slint_core::Property;
+ use i_slint_core::items::PropertyAnimation;
+@@ -64,9 +65,8 @@
+     // Pre-init code (custom font registration) runs before the two-way
+     // bindings and property_init.
+     for e in &sc.pre_init_code {
+-        let expr = mut_expression_clone(e);
+         let mut ctx = EvalContext::new(sub.clone());
+-        eval_expression(&mut ctx, &expr);
++        eval_expression(&mut ctx, &e.borrow());
+     }
+ 
+     for twb in &sc.two_way_bindings {
+@@ -178,7 +178,7 @@
+     let base = 2 * sc.timers.len();
+     for (idx, (target, expr)) in sc.change_callbacks.iter().enumerate() {
+         let target = target.clone();
+-        let expr = mut_expression_clone(expr);
++        let expr = UnitExpression::new(&sub.compilation_unit, expr);
+         let weak_get = weak_sub.clone();
+         let weak_set = weak_sub.clone();
+         let expr_for_set = expr.clone();
+@@ -192,7 +192,7 @@
+             move |(), _| {
+                 let Some(owner) = weak_set.upgrade() else { return };
+                 let mut ctx = EvalContext::new(Pin::new(owner));
+-                eval_expression(&mut ctx, &expr_for_set);
++                eval_expression(&mut ctx, expr_for_set.get());
+             },
+         );
+     }
+@@ -206,28 +206,48 @@
+     let sc: &SubComponent = &cu.sub_components[sub.sub_component_idx];
+     for (idx, repeated) in sc.repeated.iter_enumerated() {
+         let repeater = &sub.repeaters[idx];
+-        let expr = mut_expression_clone(&repeated.model);
++        let expr = UnitExpression::new(cu, &repeated.model);
+         let weak_sub = weak_sub.clone();
+         if repeater.is_conditional() {
+             repeater.set_condition_binding(move || {
+                 let Some(owner) = weak_sub.upgrade() else { return false };
+                 let mut ctx = EvalContext::new(Pin::new(owner));
+                 // The compiler guarantees the condition of an `if` is bool.
+-                matches!(eval_expression(&mut ctx, &expr), Value::Bool(true))
++                matches!(eval_expression(&mut ctx, expr.get()), Value::Bool(true))
              });
          } else {
 +            // A number model is one model whose count follows the number: rows added or
@@ -5177,7 +6183,10 @@ diff -ruN a/slint-interpreter/bindings.rs b/slint-interpreter/bindings.rs
              repeater.set_model_binding(move || {
                  let Some(owner) = weak_sub.upgrade() else {
                      return i_slint_core::model::ModelRc::default();
-@@ -225,9 +232,22 @@
+                 };
+                 let mut ctx = EvalContext::new(Pin::new(owner));
+-                match eval_expression(&mut ctx, &expr) {
++                match eval_expression(&mut ctx, expr.get()) {
                      Value::Model(m) => m,
                      // A number model (`for i in 42`): the `Cast { to: Model }`
                      // evaluates to the number itself.
@@ -5203,8 +6212,127 @@ diff -ruN a/slint-interpreter/bindings.rs b/slint-interpreter/bindings.rs
                      _ => i_slint_core::model::ModelRc::default(),
                  }
              });
-@@ -422,7 +442,7 @@
-         animation_for_binding(binding.animation.as_ref(), weak_sub.clone()),
+@@ -260,7 +280,7 @@
+                 .clone();
+             let handler = make_callback_handler(
+                 weak_sub.clone(),
+-                mut_expression_clone(&binding.expression),
++                UnitExpression::new(&sub.compilation_unit, &binding.expression),
+                 arg_types,
+             );
+             callback.set_handler(handler);
+@@ -269,7 +289,7 @@
+             let prop = Pin::as_ref(&instance.properties[*idx]);
+             let cu = &instance.compilation_unit;
+             let ty = &cu.sub_components[instance.sub_component_idx].properties[*idx].ty;
+-            install_property_binding(prop, binding, weak_sub, ty);
++            install_property_binding(prop, binding, &sub.compilation_unit, weak_sub, ty);
+         }
+         LocalMemberIndex::Native { item_index, prop_name, kind } => {
+             // The lowering pass already disambiguates rtti properties,
+@@ -279,7 +299,7 @@
+             let item = Pin::as_ref(&instance.items[*item_index]);
+             match kind {
+                 i_slint_compiler::llr::NativeMemberKind::Callback => {
+-                    let expr = mut_expression_clone(&binding.expression);
++                    let expr = UnitExpression::new(&sub.compilation_unit, &binding.expression);
+                     let cb_weak = weak_sub.clone();
+                     let cu = &instance.compilation_unit;
+                     let sc = &cu.sub_components[instance.sub_component_idx];
+@@ -293,15 +313,18 @@
+                     );
+                 }
+                 i_slint_compiler::llr::NativeMemberKind::Property => {
+-                    let expr = mut_expression_clone(&binding.expression);
++                    let expr = UnitExpression::new(&sub.compilation_unit, &binding.expression);
+                     let weak_sub_eval = weak_sub.clone();
+                     let closure: Box<dyn Fn() -> Value> = Box::new(move || {
+                         let Some(owner) = weak_sub_eval.upgrade() else { return Value::Void };
+                         let mut ctx = EvalContext::new(Pin::new(owner));
+-                        eval_expression(&mut ctx, &expr)
++                        eval_expression(&mut ctx, expr.get())
+                     });
+-                    let animation_kind =
+-                        animation_for_binding(binding.animation.as_ref(), weak_sub.clone());
++                    let animation_kind = animation_for_binding(
++                        binding.animation.as_ref(),
++                        &sub.compilation_unit,
++                        weak_sub.clone(),
++                    );
+                     let _ = item.set_property_binding(prop_name, closure, animation_kind);
+                 }
+                 i_slint_compiler::llr::NativeMemberKind::Function => {
+@@ -339,17 +362,23 @@
+                 if let Some(prop) =
+                     native.as_ref().prepare_property_for_two_way_binding(&g.properties[*idx].name)
+                 {
+-                    install_property_binding(prop.as_ref(), binding, weak_sub, ty);
++                    install_property_binding(
++                        prop.as_ref(),
++                        binding,
++                        &sub.compilation_unit,
++                        weak_sub,
++                        ty,
++                    );
+                 }
+             } else {
+                 let prop = Pin::as_ref(&global.properties[*idx]);
+-                install_property_binding(prop, binding, weak_sub, ty);
++                install_property_binding(prop, binding, &sub.compilation_unit, weak_sub, ty);
+             }
+         }
+         LocalMemberIndex::Callback(idx) => {
+             let handler = make_callback_handler(
+                 weak_sub.clone(),
+-                mut_expression_clone(&binding.expression),
++                UnitExpression::new(&sub.compilation_unit, &binding.expression),
+                 g.callbacks[*idx].args.clone(),
+             );
+             if let Some(native) = &global.native {
+@@ -382,20 +411,21 @@
+ fn install_property_binding(
+     prop: Pin<&Property<Value>>,
+     binding: &llr::BindingExpression,
++    unit: &Rc<CompilationUnit>,
+     weak_sub: &Weak<SubComponentInstance>,
+     ty: &i_slint_compiler::langtype::Type,
+ ) {
+-    let expr = mut_expression_clone(&binding.expression);
+     let weak_sub_eval = weak_sub.clone();
+ 
+     use i_slint_compiler::llr::BindingKind;
+     if binding.kind == BindingKind::Constant {
+         if let Some(owner) = weak_sub_eval.upgrade() {
+             let mut ctx = EvalContext::new(Pin::new(owner));
+-            prop.set(eval_expression(&mut ctx, &expr));
++            prop.set(eval_expression(&mut ctx, &binding.expression.borrow()));
+         }
+         return;
+     }
++    let expr = UnitExpression::new(unit, &binding.expression);
+ 
+     if binding.kind == BindingKind::State {
+         // The expression returns the state index; `set_state_binding`
+@@ -404,7 +434,7 @@
+         i_slint_core::properties::set_state_binding(prop, move || {
+             let Some(owner) = weak.upgrade() else { return 0 };
+             let mut ctx = EvalContext::new(Pin::new(owner));
+-            match eval_expression(&mut ctx, &expr) {
++            match eval_expression(&mut ctx, expr.get()) {
+                 Value::Number(n) => n as i32,
+                 _ => 0,
+             }
+@@ -415,14 +445,14 @@
+     let binding_fn: Box<dyn Fn() -> Value> = Box::new(move || {
+         let Some(owner) = weak_sub_eval.upgrade() else { return Value::Void };
+         let mut ctx = EvalContext::new(Pin::new(owner));
+-        eval_expression(&mut ctx, &expr)
++        eval_expression(&mut ctx, expr.get())
+     });
+ 
+     match (
+-        animation_for_binding(binding.animation.as_ref(), weak_sub.clone()),
++        animation_for_binding(binding.animation.as_ref(), unit, weak_sub.clone()),
          animated_value_map(ty),
      ) {
 -        (AnimatedBindingKind::NotAnimated, _) => prop.set_binding(binding_fn),
@@ -5212,9 +6340,104 @@ diff -ruN a/slint-interpreter/bindings.rs b/slint-interpreter/bindings.rs
          (AnimatedBindingKind::Animation(anim_fn), None) => {
              prop.set_animated_binding(binding_fn, move || (anim_fn(), None));
          }
+@@ -450,27 +480,28 @@
+ 
+ fn animation_for_binding(
+     animation: Option<&Animation>,
++    unit: &Rc<CompilationUnit>,
+     weak_sub: Weak<SubComponentInstance>,
+ ) -> AnimatedBindingKind {
+     match animation {
+         None => AnimatedBindingKind::NotAnimated,
+         Some(Animation::Static(expr)) => {
+-            let expr = expr.clone();
++            let expr = UnitExpression::of(unit, expr);
+             AnimatedBindingKind::Animation(Box::new(move || -> PropertyAnimation {
+                 let Some(owner) = weak_sub.upgrade() else { return Default::default() };
+                 let mut ctx = EvalContext::new(Pin::new(owner));
+-                value_to_property_animation(eval_expression(&mut ctx, &expr))
++                value_to_property_animation(eval_expression(&mut ctx, expr.get()))
+             }))
+         }
+         Some(Animation::Transition(expr)) => {
+-            let expr = expr.clone();
++            let expr = UnitExpression::of(unit, expr);
+             AnimatedBindingKind::Transition(Box::new(
+                 move || -> (PropertyAnimation, i_slint_core::animations::Instant) {
+                     let Some(owner) = weak_sub.upgrade() else {
+                         return (Default::default(), Default::default());
+                     };
+                     let mut ctx = EvalContext::new(Pin::new(owner));
+-                    let v = eval_expression(&mut ctx, &expr);
++                    let v = eval_expression(&mut ctx, expr.get());
+                     // The transition expression returns a struct {"0": animation, "1": change_time}
+                     let Value::Struct(s) = v else {
+                         return (Default::default(), Default::default());
+@@ -736,29 +767,55 @@
+     let cu = sub.compilation_unit.clone();
+     let sc = &cu.sub_components[sub.sub_component_idx];
+     for e in &sc.init_code {
+-        let expr = mut_expression_clone(e);
+         let mut ctx = EvalContext::new(sub.clone());
+-        eval_expression(&mut ctx, &expr);
++        eval_expression(&mut ctx, &e.borrow());
+     }
+ }
+ 
+ use crate::eval::{walk_parent, walk_sub_path};
+ 
+-fn mut_expression_clone(e: &MutExpression) -> Expression {
+-    e.borrow().clone()
++/// An expression of the compiled unit, evaluated where it is. A binding used to hold a deep
++/// copy of its expression tree, made when each instance was created (Zone: 7.7 MB an
++/// instance). The unit is kept alive here, and a shared unit is never changed:
++/// `build_from_document` makes its changes before it shares it, and nothing borrows an
++/// expression mutably afterwards.
++#[derive(Clone)]
++struct UnitExpression {
++    _unit: Rc<CompilationUnit>,
++    expression: core::ptr::NonNull<Expression>,
++}
++
++impl UnitExpression {
++    /// `expression` must belong to `unit`.
++    fn new(unit: &Rc<CompilationUnit>, expression: &MutExpression) -> Self {
++        let expression = core::ptr::NonNull::new(expression.as_ptr()).expect("a RefCell's value");
++        Self { _unit: unit.clone(), expression }
++    }
++
++    /// `expression` must belong to `unit`.
++    fn of(unit: &Rc<CompilationUnit>, expression: &Expression) -> Self {
++        Self { _unit: unit.clone(), expression: core::ptr::NonNull::from(expression) }
++    }
++
++    fn get(&self) -> &Expression {
++        // SAFETY: the expression lives in `_unit`, which this holds, and a shared unit is not
++        // changed (see the type's comment), so the pointer stays valid and unaliased by any
++        // mutable reference.
++        unsafe { self.expression.as_ref() }
++    }
+ }
+ 
+ /// A handler that evaluates `expr` with the call's arguments in `weak`'s
+ /// scope; `Value::Void` once the owner is gone.
+ fn make_callback_handler(
+     weak: Weak<SubComponentInstance>,
+-    expr: Expression,
++    expr: UnitExpression,
+     arg_types: Vec<i_slint_compiler::langtype::Type>,
+ ) -> impl Fn(&[Value]) -> Value + 'static {
+     move |args| {
+         let Some(owner) = weak.upgrade() else { return Value::Void };
+         let mut ctx = EvalContext::with_arguments(Pin::new(owner), args.to_vec());
+         ctx.function_arg_types = arg_types.clone();
+-        eval_expression(&mut ctx, &expr)
++        eval_expression(&mut ctx, expr.get())
+     }
+ }
 diff -ruN a/slint-interpreter/Cargo.toml b/slint-interpreter/Cargo.toml
---- a/slint-interpreter/Cargo.toml	2026-11-04 09:41:42.613839488 -0700
-+++ b/slint-interpreter/Cargo.toml	2026-11-04 09:41:42.619468291 -0700
+--- a/slint-interpreter/Cargo.toml	2026-11-05 01:39:57.343851191 -0700
++++ b/slint-interpreter/Cargo.toml	2026-11-05 01:39:57.344792873 -0700
 @@ -153,17 +153,8 @@
  name = "slint_interpreter"
  path = "lib.rs"
@@ -5233,9 +6456,158 @@ diff -ruN a/slint-interpreter/Cargo.toml b/slint-interpreter/Cargo.toml
  
  [dependencies.derive_more]
  version = "2.0.0"
+diff -ruN a/slint-interpreter/component.rs b/slint-interpreter/component.rs
+--- a/slint-interpreter/component.rs	2026-11-05 01:39:57.343939673 -0700
++++ b/slint-interpreter/component.rs	2026-11-05 01:39:57.345223581 -0700
+@@ -321,12 +321,18 @@
+     compiler_config: &i_slint_compiler::CompilerConfiguration,
+     mut type_loaders: TypeLoaders,
+     animation_mode: AnimationMode,
++    retain_type_loaders: bool,
+ ) -> Vec<ComponentDefinitionInner> {
+     let mut unit =
+         i_slint_compiler::llr::lower_to_item_tree::lower_to_item_tree(document, compiler_config);
+     if matches!(animation_mode, AnimationMode::Static) {
+         make_static(&mut unit);
+     }
++    if !retain_type_loaders {
++        drop_tooling_tables(&mut unit);
++        compact_geometries(&mut unit);
++    }
++    shrink_to_fit(&mut unit);
+     let unit = Rc::new(unit);
+     // `lower_to_item_tree` builds `public_components` from `exported_roots()`
+     // in iteration order, so the indices line up.
+@@ -340,6 +346,83 @@
+         .collect()
+ }
+ 
++/// Drop what only the code generators and the tooling read, for a definition that keeps no
++/// type loaders (so it serves no highlighting or live preview): each property's analysis
++/// (`prop_analysis`, read through `EvaluationContext::property_info` by the generators) and
++/// the source locations of the items (`debug_info`, read by `highlight.rs`). The element
++/// infos that `ElementHandle` queries read stay.
++fn drop_tooling_tables(unit: &mut CompilationUnit) {
++    for sub in unit.sub_components.iter_mut() {
++        sub.prop_analysis = Default::default();
++        sub.debug_info = None;
++    }
++    for global in unit.globals.iter_mut() {
++        global.prop_analysis = Default::default();
++    }
++}
++
++/// The four fields of an item geometry that is a struct literal of exactly `x`, `y`, `width`
++/// and `height`, in that order, as a geometry stores them after `compact_geometries`.
++pub(crate) fn geometry_fields(expression: &Expression) -> Option<&[Expression]> {
++    match expression {
++        Expression::Array { values, output: i_slint_compiler::llr::ArrayOutput::Slice, .. }
++            if values.len() == 4 =>
++        {
++            Some(values)
++        }
++        _ => None,
++    }
++}
++
++/// Store each item geometry that is a struct literal of exactly `x`, `y`, `width` and
++/// `height` as its four field expressions in a list (`geometry_fields`), which only
++/// `item_geometry` reads. A struct literal holds its fields in a `BTreeMap` leaf with room
++/// for eleven: Zone's 2 603 geometries took 5.3 MB. A definition without type loaders only:
++/// tooling reads geometries as struct values.
++fn compact_geometries(unit: &mut CompilationUnit) {
++    for sub in unit.sub_components.iter_mut() {
++        for geometry in sub.geometries.iter_mut().flatten() {
++            let mut expression = geometry.borrow_mut();
++            let Expression::Struct { values, .. } = &mut *expression else { continue };
++            const FIELDS: [&str; 4] = ["x", "y", "width", "height"];
++            if values.len() != 4 || !FIELDS.iter().all(|name| values.contains_key(*name)) {
++                continue;
++            }
++            let fields: Vec<Expression> =
++                FIELDS.iter().filter_map(|name| values.remove(*name)).collect();
++            *expression = Expression::Array {
++                element_ty: LangType::LogicalLength,
++                values: fields,
++                output: i_slint_compiler::llr::ArrayOutput::Slice,
++            };
++        }
++    }
++}
++
++/// Give back the spare capacity of the unit's growable containers. Lowering fills them a
++/// push at a time, so each holds up to twice what it needs, for the life of the definition:
++/// Zone's `property_init` lists alone held 32 712 bindings' room for 18 580 (5 MB).
++fn shrink_to_fit(unit: &mut CompilationUnit) {
++    for sub in unit.sub_components.iter_mut() {
++        sub.properties.shrink_to_fit();
++        sub.callbacks.shrink_to_fit();
++        sub.functions.shrink_to_fit();
++        sub.items.shrink_to_fit();
++        sub.repeated.shrink_to_fit();
++        sub.timers.shrink_to_fit();
++        sub.sub_components.shrink_to_fit();
++        sub.property_init.shrink_to_fit();
++        sub.change_callbacks.shrink_to_fit();
++        sub.two_way_bindings.shrink_to_fit();
++        sub.const_properties.shrink_to_fit();
++        sub.pre_init_code.shrink_to_fit();
++        sub.init_code.shrink_to_fit();
++        sub.geometries.shrink_to_fit();
++    }
++    unit.sub_components.shrink_to_fit();
++    unit.globals.shrink_to_fit();
++}
++
+ fn make_static(compilation_unit: &mut CompilationUnit) {
+     fn make_expression_static(expression: &mut Expression) {
+         let replacement = match expression {
+@@ -393,6 +476,7 @@
+     path: std::path::PathBuf,
+     mut config: i_slint_compiler::CompilerConfiguration,
+     animation_mode: AnimationMode,
++    retain_type_loaders: bool,
+ ) -> BuildResult {
+     // If the native style should be used, resolve it here as we know the backend.
+     if config.style.as_deref() == Some("native") {
+@@ -434,7 +518,7 @@
+     // map source-level elements back to runtime items.
+     config.debug_info = true;
+     let diag = i_slint_compiler::diagnostics::BuildDiagnostics::default();
+-    let (path, mut diag, loader, raw_loader) =
++    let (path, mut diag, loader, raw_loader) = if retain_type_loaders {
+         i_slint_compiler::load_root_file_with_raw_type_loader(
+             &path,
+             &path,
+@@ -442,7 +526,12 @@
+             diag,
+             config.clone(),
+         )
+-        .await;
++        .await
++    } else {
++        let (path, diag, loader) =
++            i_slint_compiler::load_root_file(&path, &path, source_code, diag, config.clone()).await;
++        (path, diag, loader, None)
++    };
+     #[cfg(feature = "internal")]
+     let watch_paths = loader.all_files_to_watch().into_iter().collect();
+     let error_result = |diagnostics| BuildResult {
+@@ -477,7 +566,10 @@
+         }
+     };
+     let mut components = std::collections::HashMap::new();
+-    for def in build_from_document(doc, &config, type_loaders, animation_mode) {
++    for mut def in build_from_document(doc, &config, type_loaders, animation_mode, retain_type_loaders) {
++        if !retain_type_loaders {
++            def.type_loaders = TypeLoaders::default();
++        }
+         components.insert(def.name().to_string(), def);
+     }
+     if components.is_empty() {
 diff -ruN a/slint-interpreter/eval.rs b/slint-interpreter/eval.rs
---- a/slint-interpreter/eval.rs	2026-11-04 09:41:42.614839479 -0700
-+++ b/slint-interpreter/eval.rs	2026-11-04 09:41:42.619839438 -0700
+--- a/slint-interpreter/eval.rs	2026-11-05 01:39:57.343939673 -0700
++++ b/slint-interpreter/eval.rs	2026-11-05 01:39:57.345223581 -0700
 @@ -439,7 +439,9 @@
                  panic!("invoke_function on non-function global reference")
              };
@@ -5278,8 +6650,8 @@ diff -ruN a/slint-interpreter/eval.rs b/slint-interpreter/eval.rs
                  s.get_field(name).cloned().unwrap_or(Value::Void)
              } else {
 diff -ruN a/slint-interpreter/globals.rs b/slint-interpreter/globals.rs
---- a/slint-interpreter/globals.rs	2026-11-04 09:41:42.614839479 -0700
-+++ b/slint-interpreter/globals.rs	2026-11-04 09:41:42.619598298 -0700
+--- a/slint-interpreter/globals.rs	2026-11-05 01:39:57.343939673 -0700
++++ b/slint-interpreter/globals.rs	2026-11-05 01:39:57.345223581 -0700
 @@ -274,7 +274,7 @@
                  }
                  let expr = expr.clone();
@@ -5290,8 +6662,8 @@ diff -ruN a/slint-interpreter/globals.rs b/slint-interpreter/globals.rs
                      eval_expression(&mut ctx, &expr)
                  });
 diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_vtable.rs
---- a/slint-interpreter/item_tree_vtable.rs	2026-11-04 09:41:42.616839463 -0700
-+++ b/slint-interpreter/item_tree_vtable.rs	2026-11-04 09:41:42.619598298 -0700
+--- a/slint-interpreter/item_tree_vtable.rs	2026-11-05 01:39:57.343939673 -0700
++++ b/slint-interpreter/item_tree_vtable.rs	2026-11-05 01:39:57.345223581 -0700
 @@ -242,6 +242,7 @@
      }
  
@@ -5300,7 +6672,7 @@ diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_
          // `item_index` is the flat tree index. Resolve it via `item_table`
          // into the owning sub-component, then look up the geometry by
          // the item's `index_in_tree`. `sc.geometries` is keyed by the
-@@ -281,22 +282,39 @@
+@@ -281,22 +282,52 @@
              parent_sc
                  .geometries
                  .get(placement_idx)
@@ -5326,6 +6698,19 @@ diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_
 +        // The geometry is usually a struct literal of x, y, width and height. Evaluate its four
 +        // fields directly instead of building a `Struct` value (a hash map) for every item the
 +        // renderer's dirty-region walk visits.
++        if let Some(fields) = crate::component::geometry_fields(&expr) {
++            let mut field = |at: usize| -> f32 {
++                match crate::eval::eval_expression(&mut ctx, &fields[at]) {
++                    crate::Value::Number(n) => n as f32,
++                    _ => 0.0,
++                }
++            };
++            let (x, y, width, height) = (field(0), field(1), field(2), field(3));
++            return LogicalRect::new(
++                i_slint_core::lengths::LogicalPoint::new(x, y),
++                i_slint_core::lengths::LogicalSize::new(width, height),
++            );
++        }
 +        if let i_slint_compiler::llr::Expression::Struct { values, .. } = &*expr {
 +            let mut field = |name: &str| -> f32 {
 +                match values.get(name).map(|e| crate::eval::eval_expression(&mut ctx, e)) {
@@ -5342,7 +6727,7 @@ diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_
          let crate::Value::Struct(s) = crate::eval::eval_expression(&mut ctx, &expr) else {
              return LogicalRect::default();
          };
-@@ -310,6 +328,7 @@
+@@ -310,6 +341,7 @@
              i_slint_core::lengths::LogicalPoint::new(as_f32("x"), as_f32("y")),
              i_slint_core::lengths::LogicalSize::new(as_f32("width"), as_f32("height")),
          )
@@ -5350,9 +6735,28 @@ diff -ruN a/slint-interpreter/item_tree_vtable.rs b/slint-interpreter/item_tree_
      }
  
      fn accessible_role(self: Pin<&Self>, item_index: u32) -> AccessibleRole {
+diff -ruN a/slint-interpreter/tests.rs b/slint-interpreter/tests.rs
+--- a/slint-interpreter/tests.rs	2026-11-05 01:39:57.344289404 -0700
++++ b/slint-interpreter/tests.rs	2026-11-05 01:39:57.345223581 -0700
+@@ -121,6 +121,7 @@
+         Default::default(),
+         config,
+         crate::AnimationMode::Running,
++        true,
+     ));
+     assert!(
+         result
+@@ -493,6 +494,7 @@
+         Default::default(),
+         config,
+         crate::AnimationMode::Running,
++        true,
+     ));
+     assert!(
+         result
 diff -ruN a/slint-interpreter/value_model.rs b/slint-interpreter/value_model.rs
---- a/slint-interpreter/value_model.rs	2026-11-04 09:41:42.617717520 -0700
-+++ b/slint-interpreter/value_model.rs	2026-11-04 09:41:42.619598298 -0700
+--- a/slint-interpreter/value_model.rs	2026-11-05 01:39:57.344289404 -0700
++++ b/slint-interpreter/value_model.rs	2026-11-05 01:39:57.345223581 -0700
 @@ -8,6 +8,7 @@
  /// index. The type-erased equivalent of core's `impl Model for usize`; the
  /// count is baked in — a change to the number re-evaluates the model binding

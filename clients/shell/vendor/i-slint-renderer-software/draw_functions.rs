@@ -58,6 +58,83 @@ fn coverage_colors(color: Color, alpha: u8, f: impl FnOnce(&[PremultipliedRgbaCo
     })
 }
 
+/// Whether colour textures take the run path in `draw_texture_line` (the default); off, the
+/// general path draws them, for tests that compare the two.
+#[cfg(feature = "std")]
+pub(super) static SCALED_RUNS: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(true);
+
+/// Whether `fill_scaled_runs` draws a line of this texture: a colour texture (RGB, RGBA,
+/// premultiplied RGBA), not colourised, at full opacity, unrotated.
+fn scaled_runs(
+    format: TexturePixelFormat,
+    colorize: Color,
+    alpha: u8,
+    rotation: super::RenderingRotation,
+) -> bool {
+    #[cfg(feature = "std")]
+    let on = SCALED_RUNS.load(core::sync::atomic::Ordering::Relaxed);
+    #[cfg(not(feature = "std"))]
+    let on = true;
+    on && matches!(
+        format,
+        TexturePixelFormat::Rgb | TexturePixelFormat::Rgba | TexturePixelFormat::RgbaPremultiplied
+    ) && colorize.alpha() == 0
+        && alpha == 0xff
+        && rotation == super::RenderingRotation::NoRotation
+}
+
+/// One tile of a texture line, as `fetch_blend_pixel` draws it for the formats `scaled_runs`
+/// takes: target pixel `i` gets source pixel `(pos + i * delta).truncate()` of the row at
+/// `row_offset`. A scaled texture repeats each source pixel over a run of target pixels, so
+/// each source pixel is read and converted once per run: an opaque one is stored in each
+/// pixel of its run, any other is blended into each as the general path blends it, and a
+/// transparent premultiplied one is skipped. Same pixels.
+fn fill_scaled_runs<T: TargetPixel>(
+    line_buffer: &mut [T],
+    format: TexturePixelFormat,
+    data: &[u8],
+    row_offset: usize,
+    mut pos: Fixed<i32, 8>,
+    delta: Fixed<i32, 8>,
+) {
+    enum Source<T> {
+        Opaque(T),
+        Blend(PremultipliedRgbaColor),
+        Skip,
+    }
+    let bpp = format.bpp();
+    let read = |index: i32| -> Source<T> {
+        let at = (row_offset + index as usize) * bpp;
+        let p = &data[at..at + bpp];
+        match (format, if bpp == 4 { p[3] } else { 0xff }) {
+            (_, 0xff) => Source::Opaque(T::from_rgb(p[0], p[1], p[2])),
+            (TexturePixelFormat::Rgba, a) => Source::Blend(PremultipliedRgbaColor::premultiply(
+                Color::from_argb_u8(a, p[0], p[1], p[2]),
+            )),
+            (_, 0) => Source::Skip,
+            (_, a) => Source::Blend(PremultipliedRgbaColor { alpha: a, red: p[0], green: p[1], blue: p[2] }),
+        }
+    };
+    if line_buffer.is_empty() {
+        return;
+    }
+    let mut index = pos.truncate();
+    let mut source = read(index);
+    for pix in line_buffer {
+        if pos.truncate() != index {
+            index = pos.truncate();
+            source = read(index);
+        }
+        match &source {
+            Source::Opaque(value) => *pix = *value,
+            Source::Blend(color) => pix.blend(*color),
+            Source::Skip => {}
+        }
+        pos += delta;
+    }
+}
+
 pub(super) fn draw_texture_line(
     span: &PhysicalRect,
     line: PhysicalLength,
@@ -188,21 +265,27 @@ pub(super) fn draw_texture_line(
         end = end.min(len);
         let mut begin = 0;
         let row_fract = row.fract();
+        let runs = scaled_runs(format, colorize, alpha, rotation);
         while begin < len {
-            fetch_blend_pixel(
-                &mut line_buffer[begin..end],
-                format,
-                data,
-                alpha,
-                colorize,
-                (pixel_stride as usize, dy),
-                #[inline(always)]
-                |bpp| {
-                    let p = ((row_offset + pos.truncate() as usize) * bpp, pos.fract(), row_fract);
-                    pos += delta;
-                    p
-                },
-            );
+            if runs {
+                fill_scaled_runs(&mut line_buffer[begin..end], format, data, row_offset, pos, delta);
+            } else {
+                fetch_blend_pixel(
+                    &mut line_buffer[begin..end],
+                    format,
+                    data,
+                    alpha,
+                    colorize,
+                    (pixel_stride as usize, dy),
+                    #[inline(always)]
+                    |bpp| {
+                        let p =
+                            ((row_offset + pos.truncate() as usize) * bpp, pos.fract(), row_fract);
+                        pos += delta;
+                        p
+                    },
+                );
+            }
             begin = end;
             end += tile_len;
             pos = acc_err + Fixed::from_integer(tile_start);

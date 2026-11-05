@@ -94,13 +94,25 @@ function signalOf(connection: SurfaceNetworkConnection | undefined) {
   }
 }
 
-/** A game's card, made once per game object Korri publishes (the press rebuild only marks focus). */
+/**
+ * A game's card, made once per game object Korri publishes, and kept across
+ * publishes while the facts it shows are the same: each move along the band
+ * brings a new model (FocusGame), with every game a new object.
+ */
 const cards = new WeakMap<SurfaceGame, ReturnType<typeof makeCard>>()
+const cardsById = new Map<string, { readonly game: SurfaceGame; readonly made: ReturnType<typeof makeCard> }>()
+const sameCardFacts = (a: SurfaceGame, b: SurfaceGame): boolean =>
+  a.title === b.title && a.coverArtUrl === b.coverArtUrl && a.subtitle === b.subtitle && a.section === b.section
+  && a.resumable === b.resumable && a.download?.bytes === b.download?.bytes && (a.download === undefined) === (b.download === undefined)
+  && JSON.stringify(a.launchLocations ?? null) === JSON.stringify(b.launchLocations ?? null)
 const card = (game: SurfaceGame) => {
   let made = cards.get(game)
   if (made === undefined) {
-    made = makeCard(game)
+    const known = cardsById.get(game.id)
+    made = known !== undefined && sameCardFacts(known.game, game) ? known.made : makeCard(game)
     cards.set(game, made)
+    if (cardsById.size > 512) cardsById.clear()
+    cardsById.set(game.id, { game, made })
   }
   return made
 }
@@ -248,10 +260,67 @@ const LAUNCH_TAGS = { Loading: "continue", Ready: "system", Conflict: "remote", 
 
 /** The Surface's view for one window: Zone's view, then its regions, exits and the plan's decisions (src/focus.ts). */
 export function view(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen) {
-  return focusView(surfaceView(state, korri), state, korri, screen)
+  return focusView(surfaceView(state, korri, screen), state, korri, screen)
 }
 
-function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
+/**
+ * The view after the attract's next game, from the view before it: the
+ * attract's game and the cards (the new game's card in, the last one out).
+ * Everything else is as it was; logic.ts uses it when only that changed.
+ */
+export function attractStep<V extends { attractCard: number; cards: unknown[]; attract: boolean }>(before: V, state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen): V {
+  const nav = state.nav
+  const band = bandGames(nav, korri)
+  const attractAt = Math.min(nav.idleCard, Math.max(0, band.length - 1))
+  return { ...before, attractCard: attractAt, cards: bandCards(band, nav.card, screen, attractAt, before.attract === true) }
+}
+
+/** A mark out of the pool: a focus target in its place, in the band (src/focus.ts), with no words. Shared: never written. */
+const OFF_MARK = Object.freeze({ focused: false, focusRegion: "band" })
+
+/**
+ * The band's marks, already in their region (src/focus.ts marks only the
+ * focused card's as active): the pool's with their game's words, the rest
+ * OFF_MARK.
+ */
+function bandMarks(band: readonly SurfaceGame[], at: number, cardFocused: boolean, screen: ZoneScreen) {
+  const reach = poolReach(screen)
+  const marks = new Array<Record<string, unknown>>(band.length)
+  for (let index = 0; index < band.length; index++) {
+    marks[index] = Math.abs(index - at) <= reach
+      ? { label: band[index]!.title, focused: index === at && cardFocused, focusRegion: "band" }
+      : OFF_MARK
+  }
+  return marks
+}
+
+/** ZoneCardBand's pool either side of the focus: its reach and the next card each way. */
+const poolReach = (screen: ZoneScreen): number => (screen.select.band === "wide" ? 2 : 1) + 1
+
+/**
+ * The band's cards as the view sends them: the pool's and the attract's
+ * whole, the rest NO_CARD, and none past the pool (and the attract's game)
+ * but one: ZoneCardBand and ZoneAttract read no card further on, and the
+ * one past the pool is the spare slot's until it takes its next card.
+ */
+function bandCards(band: readonly SurfaceGame[], at: number, screen: ZoneScreen, attractAt: number, attracting: boolean) {
+  const reach = poolReach(screen)
+  const end = Math.min(band.length, Math.max(at + reach + 2, attracting ? attractAt + 1 : 0))
+  const cards = new Array<unknown>(end)
+  for (let index = 0; index < end; index++) {
+    cards[index] = Math.abs(index - at) <= reach || (attracting && index === attractAt) ? card(band[index]!) : NO_CARD
+  }
+  return cards
+}
+
+/**
+ * A card the band and the attract do not draw now: no words, no art. The
+ * shell keeps a row's fields a view leaves out, so the row stays as it was
+ * and the view stays small (each view call writes its JSON whole).
+ */
+const NO_CARD = {}
+
+function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen) {
   const page = zoneShown(state, korri)
   const nav = state.nav
   const band = bandGames(nav, korri)
@@ -471,6 +540,8 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
         })),
       }
 
+  const attracting = onGames && layer === "idle" && band.length > 0
+  const attractAt = Math.min(nav.idleCard, Math.max(0, band.length - 1))
   const cardFocused = onGames && nav.zone === "cards" && layer === "none" && !status.busy.shown && !dialog.shown
   // On the tabs (or LAUNCH SETTINGS' buttons) a page's list keeps its row as the one it enters on, unfocused.
   if (((page === "options" || page === "savedata") && nav.zone === "tabs") || (page === "launch" && state.launchAction !== undefined)) {
@@ -501,8 +572,12 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
     zone: onGames ? nav.zone : "",
     catalog: catalog._tag,
     // The cards stay as they were across a move (one object per game); the marks carry the focus.
-    cards: band.map(card),
-    cardMarks: band.map((game, index) => ({ label: game.title, focused: index === nav.card && cardFocused })),
+    // Only the cards drawn or about to be: ZoneCardBand's pool (the focus and
+    // reach + 1 either side) and the attract's game; the rest are NO_CARD.
+    cards: bandCards(band, nav.card, screen, attractAt, attracting),
+    // Every card's mark (each a focus target in its place); the pool's carry
+    // their game's words, the rest only their focus, to keep the view small.
+    cardMarks: bandMarks(band, nav.card, cardFocused, screen),
     focusedCard: nav.card,
     cardFocused,
     firstIndex: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.firstIndex : 0,
@@ -517,8 +592,8 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel) {
     typing: onGames && layer === "keyboard",
     // Zone's idle layer (navigation.ts), opened by the shell's Tick: the attract
     // shows the game at idleCard (in catalog order) and moves on with each IdleTicked.
-    attract: onGames && layer === "idle" && band.length > 0,
-    attractCard: Math.min(nav.idleCard, Math.max(0, band.length - 1)),
+    attract: attracting,
+    attractCard: attractAt,
     // GAME OPTS.
     optsShown,
     optsTitle: game?.title ?? "",
