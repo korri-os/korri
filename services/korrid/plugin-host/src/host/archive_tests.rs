@@ -1122,7 +1122,12 @@ fn present_signed_closure_installs_without_any_network_request() {
         "{error}"
     );
     let local = package::path_info(&nix, package.to_str().unwrap(), None).unwrap();
-    assert!(!slim::signed(package.to_str().unwrap(), &local, std::slice::from_ref(&publisher_key)).unwrap());
+    assert!(!slim::signed(
+        package.to_str().unwrap(),
+        &local,
+        std::slice::from_ref(&publisher_key)
+    )
+    .unwrap());
     // The publisher's own archive still admits the same bytes normally.
     fs::remove_file(&log).unwrap();
     let adopted = inspect(&host, &good).unwrap();

@@ -72,7 +72,13 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
     // Preserve the image unit's first-registration content check and later
     // immutable-store fast path. Nix's bound signatures are the only cache.
     let mut rehash = mode == "prepare";
-    for pair in rest.chunks_exact(2) {
+    let pairs: Vec<&[String]> = rest.chunks_exact(2).collect();
+    let (mut supplied_metadata, local_metadata) = if mode == "proofs" {
+        proof_metadata(nix, &catalog, platform, &bindings, &pairs)
+    } else {
+        (pairs.iter().map(|_| None).collect(), None)
+    };
+    for (index, pair) in pairs.iter().enumerate() {
         if !seen.insert(&pair[0]) {
             return Err("duplicate selected image plugin".into());
         }
@@ -91,13 +97,23 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             PathBuf::from(&pair[1])
         };
         let uri = archive::path_to_file_uri(&cache)?;
-        if !package::archive_signature(nix, root, &uri, Some(key))
-            .map_err(|error| format!("image archive proof for {}: {error}", root.display()))?
+        let paths = archive::cache_paths(&cache)?;
+        // One Nix call reads the archive metadata for the root and every path.
+        let mut query = paths.clone();
+        if !query.contains(&record.store_path) {
+            query.push(record.store_path.clone());
+        }
+        let proof = |error: String| format!("image archive proof for {}: {error}", root.display());
+        let supplied = supplied_metadata[index]
+            .take()
+            .unwrap_or_else(|| package::path_infos(nix, &query, Some(&uri)))
+            .map_err(proof)?;
+        let info = &supplied[&record.store_path];
+        if !package::archive_signature_of(&record.store_path, info, Some(key))
+            .map_err(|error| proof(error.to_string()))?
         {
             return Err("image archive requires the bound publisher signature".into());
         }
-        let info = package::path_info(nix, &record.store_path, Some(&uri))?;
-        let paths = archive::cache_paths(&cache)?;
         let ca = info.ca.as_deref().is_some_and(|ca| !ca.is_empty());
         if mode == "prepare" {
             if ca {
@@ -115,14 +131,26 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
         // each archive path against those exact bytes before retaining its Sig.
         // Omitted upstream paths remain root-registered, not publisher-signed.
         let key_bytes = package::public_key_bytes(key)?;
+        let actual = match &local_metadata {
+            Some(all) => paths
+                .iter()
+                .map(|path| {
+                    Ok((
+                        path.clone(),
+                        all.get(path).ok_or("missing metadata")?.clone(),
+                    ))
+                })
+                .collect::<Result<BTreeMap<_, _>, String>>()?,
+            None => package::path_infos(nix, &paths, None)?,
+        };
         for path in &paths {
-            let supplied = package::path_info(nix, path, Some(&uri))?;
-            let actual = package::path_info(nix, path, None)?;
-            let fingerprint = package::fingerprint(path, &actual)?;
-            rehash |= !package::signed_by(&actual, &fingerprint, &key_bytes);
+            let supplied = &supplied[path];
+            let actual = &actual[path];
+            let fingerprint = package::fingerprint(path, actual)?;
+            rehash |= !package::signed_by(actual, &fingerprint, &key_bytes);
             expected.insert(path.clone(), (fingerprint.clone(), key.to_owned()));
-            if package::fingerprint(path, &supplied)? != fingerprint
-                || !package::signed_by(&supplied, &fingerprint, &key_bytes)
+            if package::fingerprint(path, supplied)? != fingerprint
+                || !package::signed_by(supplied, &fingerprint, &key_bytes)
             {
                 return Err(format!(
                     "image proof for {path} does not sign the actual store bytes"
@@ -136,7 +164,11 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
             return Err("image catalog identity differs from declaration".into());
         }
         if record.platform == "any"
-            && (!package::architecture_independent(root)? || !package::no_references(nix, root)?)
+            && (!package::architecture_independent(root)?
+                || !match actual.get(&record.store_path) {
+                    Some(info) => info.references.is_empty(),
+                    None => package::no_references(nix, root)?,
+                })
         {
             return Err("any-architecture image package has references or manifest paths".into());
         }
@@ -144,6 +176,12 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
     }
     roots.sort();
     roots.dedup();
+    // Immutable-store fast path: every archive path already carries the bound
+    // publisher's signature over its actual local bytes, checked above. A
+    // previous boot registered these proofs; there is nothing to register.
+    if !rehash {
+        return Ok(());
+    }
     // Retained signatures are the successful first-registration marker. Never
     // publish that marker before checking the complete physical image closure:
     // otherwise a failed first boot can make an incomplete image pass on retry.
@@ -213,6 +251,42 @@ pub fn run(nix: &Path, config: &Configuration, args: &[String]) -> Result<(), St
     // Make local proof registration durable before recovery can use it.
     package::sync_store()?;
     Ok(())
+}
+
+type Metadata = BTreeMap<String, package::NarInfo>;
+
+/// Read every selected archive's metadata concurrently, one Nix call per
+/// archive cache, and the local metadata of all their paths with one call.
+/// This only prepares reads: the caller's ordered loop performs every check
+/// and reports each refusal. A selection that cannot be prepared here (an
+/// invalid record, or a path that is not valid locally) gets `None`, and the
+/// loop reads it itself, so its refusal is unchanged.
+fn proof_metadata(
+    nix: &Path,
+    catalog: &Catalog,
+    platform: &str,
+    bindings: &package::PublisherBindings,
+    pairs: &[&[String]],
+) -> (Vec<Option<Result<Metadata, String>>>, Option<Metadata>) {
+    let supplied = crate::parallel::map(pairs, |pair| {
+        let record = record(catalog, &pair[0], platform, bindings).ok()?;
+        let cache = PathBuf::from(&pair[1]);
+        let uri = archive::path_to_file_uri(&cache).ok()?;
+        let mut query = archive::cache_paths(&cache).ok()?;
+        if !query.contains(&record.store_path) {
+            query.push(record.store_path.clone());
+        }
+        Some(package::path_infos(nix, &query, Some(&uri)))
+    });
+    let mut paths = BTreeSet::new();
+    for pair in pairs {
+        match archive::cache_paths(Path::new(&pair[1])) {
+            Ok(listed) => paths.extend(listed),
+            Err(_) => return (supplied, None),
+        }
+    }
+    let local = package::path_infos(nix, &paths.into_iter().collect::<Vec<_>>(), None).ok();
+    (supplied, local)
 }
 
 fn copy_proofs(nix: &Path, uri: &str, key: &str, paths: &[String]) -> Result<(), String> {
