@@ -524,7 +524,9 @@ impl LaunchablesState {
                 trouble.add("Korri couldn't read the game library.".into());
             }
         }
-        let notice = trouble.message().map(|message| LaunchNotice::Catalog { message });
+        let notice = trouble
+            .message()
+            .map(|message| LaunchNotice::Catalog { message });
         if let Some(session) = session {
             if !is_authoritative_session_status(session) {
                 let known = previous_entries.iter().find(|entry| {
