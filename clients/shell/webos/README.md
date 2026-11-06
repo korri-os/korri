@@ -13,7 +13,13 @@ There is no automatic fallback to sample data on a real-brain error.
 supplies its own loopback ephemeral port and random per-process capability.
 There are no local runners, launchers, installed plugins, systemd units, local
 person signer, D-Bus discovery worker, iroh listener, or native stream viewer.
-The core startup API and identity/federation schemas are unchanged.
+The startup signature and identity/federation schemas are unchanged. Embedded
+startup now wires the existing bounded authenticated root WebSocket and shared
+SurfaceSlot, as the shell requires for `app.surface.watch` model pushes and
+ACKs. The same existing capability and exact Origin protect it. Its retained
+empty input source reports no devices; no controller or input is fabricated.
+This transport composition also applies to the Android/JNI caller of the same
+startup API; no JNI signature or owner-binding effect contract changes.
 
 The launcher starts this binary before the shell, using the existing shell
 credential contract. It creates a fresh 0700 `${TMPDIR:-/tmp}/korri-shell.XXXXXXXX`
@@ -224,7 +230,10 @@ The parent must supply reachable peers and relay configuration:
   read their current `host.relays`; do not assume the TV can reach them.
 - `storage/upstreams.json` or `KORRID_UPSTREAMS` can reuse the existing static
   native peer records (`upstreams.rs::UpstreamHostConfig`: `label`,
-  `kind`, `baseUrl`, `devicePublicKey`, optional `moonlightAddress`). Copy actual
+  `kind`, `baseUrl`, `devicePublicKey`, `moonlightAddress`). The serde reader
+  permits an absent Moonlight field, but `UpstreamRegistry::build` requires a
+  nonempty `moonlightAddress` for secure static native records, even for a
+  catalog-only read. Preserve the actual peer record. Copy actual
   **public** native peer records, not credentials or keys. The record must name
   the real device key. Restart after changing static configuration.
 - This query-only edge has no LAN scan, mDNS, NetworkManager nearby links,
@@ -286,6 +295,11 @@ checks installed file stamps. Choose a fresh output directory for each IPK.
 The focused `webos-korrid` tests run the real embedded brain and typed HTTP
 boundary, test empty local catalogs, request/import and persistent identity over
 restarts, exclusive ownership, permissions, symlinks and credential creation.
+The embedded watch regression tests use a real signed peer and TCP sockets:
+Loading → Ready with its game, later query updates behind exact ACKs, rejection
+of missing/wrong capabilities, and shutdown with a watch open. The existing
+owner-binding-coordinator platform composition (used by JNI) is also exercised
+on the workstation. Android itself is not cross-built or run by these tasks.
 No ARM executable is run by the workstation tasks.
 
 ## Compatibility and acceptance risks

@@ -5521,6 +5521,18 @@ fn start_local_server_for_platform(
                     Some(server_federation_wake.clone()),
                 );
                 app_state.owner_binding = server_owner_binding;
+                // The native shell watches models on the existing authenticated
+                // root socket. Share one hub with /rpc, even when this platform
+                // has no producer of physical input events.
+                let surfaces: surface::SurfaceSlot = Arc::default();
+                let (surface_socket, input_source) = surface_host_input::router_with_surfaces(
+                    app_state
+                        .surface_host_access
+                        .clone()
+                        .expect("embedded surface authority"),
+                    Arc::clone(&surfaces),
+                    surface_host_input::SurfaceHostInputLimits::default(),
+                );
                 let peer = peer_rpc::PeerRpcServer::with_shared_authority(
                     app_state.clone(),
                     Path::new(&private_state_root),
@@ -5541,7 +5553,9 @@ fn start_local_server_for_platform(
                 });
                 let server = axum::serve(
                     listener,
-                    surface_host_router_from_state(app_state).layer(axum::Extension(reach)),
+                    surface_host_router_with_surfaces(app_state, Some(surfaces))
+                        .merge(surface_socket)
+                        .layer(axum::Extension(reach)),
                 )
                 .with_graceful_shutdown(async move {
                     let _ = stopped.await;
@@ -5553,6 +5567,9 @@ fn start_local_server_for_platform(
                 let discovery = tokio::spawn(discovery);
                 let watch = watched_upstream.map(stream_play::device::spawn_watch);
                 let result = server.await;
+                // Dropping the source disconnects the bounded socket. Keep its
+                // empty baseline alive until the server has drained.
+                drop(input_source);
                 if let Some(watch) = watch {
                     watch.abort();
                     let _ = watch.await;
@@ -5767,6 +5784,8 @@ pub mod upstreams;
 
 #[cfg(test)]
 mod embedded_tests;
+#[cfg(test)]
+mod embedded_watch_tests;
 #[cfg(test)]
 mod peer_catalog_tests;
 
