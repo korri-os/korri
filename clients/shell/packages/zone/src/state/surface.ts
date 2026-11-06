@@ -17,6 +17,10 @@
  *                 shows a game's launch settings: OPTIONS' model, run on the
  *                 layers of the runner scope shown (plan/launch-settings.ts)
  *     launchScope that runner scope, by its place on the RUNNER SCOPE row
+ *     dialogLine  the first of Korri's lines the sky dialog shows, for the
+ *                 dialog whose words it names, when they need more height
+ *                 than the window gives (src/plan/dialog-words.ts); any
+ *                 other dialog shows its lines from the first
  *
  * The models stay pure and separate; this file only composes them. A page
  * reports in its own model's words (`Options`, `SaveData`, …) and the
@@ -90,7 +94,16 @@ export interface ZoneSurfaceState {
   readonly launchScope: number
   /** The editor action the cursor is on (RELOAD, CLOSE), when it is on one. */
   readonly launchAction: string | undefined
+  /** The sky dialog's first line shown, and the dialog's words it is for (src/plan/dialog-words.ts dialogKey). */
+  readonly dialogLine: ZoneDialogLine
 }
+
+export interface ZoneDialogLine {
+  readonly words: string
+  readonly line: number
+}
+
+const DIALOG_TOP: ZoneDialogLine = { words: "", line: 0 }
 
 /** What OPTIONS reads: Korri's slices and Zone's own look, for its LOOK row. */
 export const withLook = (state: ZoneSurfaceState, korri: SurfaceModel): ZoneOptionsSlices => ({ ...korri, look: state.look })
@@ -112,6 +125,8 @@ export type ZoneSurfaceMessage =
   /** One of Korri's actions for the editor: Reload, Retry, Choose a runner, Close. */
   | { readonly _tag: "LaunchAction"; readonly actionId: string }
   | { readonly _tag: "FocusedLaunchAction"; readonly actionId: string }
+  /** Up or down that no button took moved the shown dialog's lines (src/press.ts brings `line` inside them). */
+  | { readonly _tag: "ScrolledDialog"; readonly words: string; readonly line: number }
 
 /**
  * What takes the screen, first match wins:
@@ -160,6 +175,7 @@ export function zoneSurfaceStart(korri: SurfaceModel, look: ZoneLook): ZoneSurfa
     launch: OPTIONS_START,
     launchScope: 0,
     launchAction: undefined,
+    dialogLine: DIALOG_TOP,
   }
   return update(start, { _tag: "KorriPublished" }, korri).model
 }
@@ -247,6 +263,9 @@ function route(steps: Steps, message: ZoneSurfaceMessage, korri: SurfaceModel): 
     }
     case "FocusedLaunchAction":
       steps.put("launchAction", { model: launchOpen(korri) ? message.actionId : undefined, requests: [] })
+      return
+    case "ScrolledDialog":
+      steps.put("dialogLine", { model: { words: message.words, line: Math.max(0, message.line) }, requests: [] })
       return
     case "LaunchAction": {
       const launch = korri.launchSettings

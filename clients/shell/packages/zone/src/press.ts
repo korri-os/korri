@@ -22,7 +22,8 @@ import { launchPlan, launchSlices, ZONE_LAUNCH_SCOPE_ROW } from "./plan/launch-s
 import { runWithPlan } from "./plan/options-run-with"
 import { storeRows } from "./rows"
 import { launchChoices, playtime, type ZoneFindKey } from "./state/games"
-import { dayOf, hoursAndMinutes, launchLabel } from "./view"
+import { dayOf, hoursAndMinutes, launchLabel, shownDialog } from "./view"
+import { dialogKey, dialogWords, lastFirst } from "./plan/dialog-words"
 import { identityCardCount, retiredKeyAt } from "./state/identity"
 import { bandGames, cardCount, topLayer, ZONE_TABS, type ZoneNavMessage } from "./state/navigation"
 import { onboardingTargets, TARGET } from "./state/onboarding"
@@ -150,6 +151,7 @@ function statusLayer(state: ZoneSurfaceState, button: Exclude<SurfaceButton, "ba
     const labels = statusLabels(status)
     const next = status._tag === "Busy" ? rowStep(labels, 160 * SCREEN.a, focus, button) : dialogStep(labels, focus, button)
     if (next !== undefined && count > 0) message({ _tag: "FocusedStatusButton", index: next })
+    else if (next === undefined && status._tag !== "Busy") dialogLines(state, korri, button, send)
     return true
   }
   if (button !== "confirm") return true
@@ -185,6 +187,25 @@ function statusLayer(state: ZoneSurfaceState, button: Exclude<SurfaceButton, "ba
       message({ _tag: "ChoseEndedDismiss" })
       return true
   }
+  return true
+}
+
+/**
+ * Up or down that no button of the sky dialog takes moves its lines one
+ * along, when Korri's words need more than one window (src/plan/dialog-words.ts).
+ * True when the lines moved.
+ */
+function dialogLines(state: ZoneSurfaceState, korri: SurfaceModel, button: Direction, send: Send): boolean {
+  if (button !== "up" && button !== "down") return false
+  const { dialog, room } = shownDialog(state, korri, SCREEN)
+  if (!dialog.shown) return false
+  const words = dialogWords(dialog, room, SCREEN)
+  const last = lastFirst(words)
+  const key = dialogKey(dialog)
+  const at = state.dialogLine.words === key ? Math.min(state.dialogLine.line, last) : 0
+  const line = clamp(at + (button === "up" ? -1 : 1), 0, last)
+  if (line === at) return false
+  send({ _tag: "ScrolledDialog", words: key, line })
   return true
 }
 
@@ -262,7 +283,8 @@ function games(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
   // Korri's catalog could not be read: RELOAD is the one button.
   if (korri.catalog._tag === "Error" && nav.zone !== "tabs") {
     if (button === "confirm") go({ _tag: "ChoseReload" })
-    if (button === "up") go({ _tag: "FocusedTab", tab: nav.tab })
+    // Up moves Korri's lines while some stand above, then goes to the tabs.
+    else if (!dialogLines(state, korri, button, send) && button === "up") go({ _tag: "FocusedTab", tab: nav.tab })
     return
   }
   const band = bandGames(nav, korri)
@@ -343,6 +365,7 @@ function gameOpts(state: ZoneSurfaceState, button: Direction | "confirm", korri:
     if (isDirection(button)) {
       const next = dialogStep(["No", "Yes"], nav.opts.answer, button)
       if (next !== undefined) go({ _tag: "FocusedAnswer", index: next })
+      else dialogLines(state, korri, button, send)
       return
     }
     if (button === "confirm") go({ _tag: "AnsweredGameAction", yes: nav.opts.answer === 1 })
@@ -388,7 +411,7 @@ function optionsPage(state: ZoneSurfaceState, button: Direction | "confirm", kor
   const options = state.options
   const slices = withLook(state, korri)
   const message = (inner: Extract<ZoneSurfaceMessage, { _tag: "Options" }>["message"]) => send({ _tag: "Options", message: inner })
-  rowsPage(state, options, optionsPlan(slices).rows, button, message, () => send({ _tag: "Games", message: { _tag: "FocusedTab", tab: state.nav.tab } }))
+  rowsPage(state, options, optionsPlan(slices).rows, button, message, () => send({ _tag: "Games", message: { _tag: "FocusedTab", tab: state.nav.tab } }), korri, send)
 }
 
 /** OPTIONS' rows, keyboard and dialog, shared with LAUNCH SETTINGS. */
@@ -399,6 +422,8 @@ function rowsPage(
   button: Direction | "confirm",
   message: (inner: Extract<ZoneSurfaceMessage, { _tag: "Options" }>["message"]) => void,
   above: (() => void) | undefined,
+  korri: SurfaceModel,
+  send: Send,
 ): void {
   switch (optionsLayer(options)) {
     case "keyboard": {
@@ -414,6 +439,7 @@ function rowsPage(
       if (isDirection(button)) {
         const next = dialogStep(["No", dialog.confirm.confirmLabel], dialog.focused, button)
         if (next !== undefined) message({ _tag: "FocusedDialogButton", index: next === 0 ? 0 : 1 })
+        else dialogLines(state, korri, button, send)
         return
       }
       if (button === "confirm") message({ _tag: "PressedDialogButton", index: dialog.focused })
@@ -489,7 +515,7 @@ function launch(state: ZoneSurfaceState, button: Direction | "confirm", korri: S
   }
   if (optionsLayer(state.launch) === "none" && button === "down" && (rows.length === 0 || at === rows.length - 1)) return toActions()
   if (optionsLayer(state.launch) === "none" && rows.length === 0) return
-  rowsPage(state, state.launch, rows, button, message, undefined)
+  rowsPage(state, state.launch, rows, button, message, undefined, korri, send)
   void ZONE_LAUNCH_SCOPE_ROW
 }
 
@@ -566,6 +592,7 @@ function store(state: ZoneSurfaceState, button: Direction | "confirm", korri: Su
     if (isDirection(button)) {
       const next = dialogStep(shape.dialogActions.map(action => action.label), at, button)
       if (next !== undefined) message({ _tag: "FocusedDialogButton", index: next })
+      else dialogLines(state, korri, button, send)
       return
     }
     const action = shape.dialog[at]
@@ -640,6 +667,7 @@ function saveData(state: ZoneSurfaceState, button: Direction | "confirm", korri:
       if (isDirection(button)) {
         const next = dialogStep(flow._tag === "disposition" ? ["Transfer", "Delete"] : ["No", "Yes"], flow.focus, button)
         if (next !== undefined) message({ _tag: "FocusedChoice", index: next === 0 ? 0 : 1 })
+        else dialogLines(state, korri, button, send)
         return
       }
       if (button !== "confirm") return
@@ -690,6 +718,7 @@ function paused(state: ZoneSurfaceState, button: Direction | "confirm", korri: S
     if (isDirection(button)) {
       const next = dialogStep(["No", "Yes"], model.answer, button)
       if (next !== undefined) message({ _tag: "FocusedAnswer", index: next === 0 ? 0 : 1 })
+      else dialogLines(state, korri, button, send)
       return
     }
     if (button === "confirm") message({ _tag: "ChoseAnswer", yes: model.answer === 1 })
