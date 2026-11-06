@@ -56,6 +56,8 @@ url = "2.5"
 tower-http = { version = "0.6", features = ["cors"] }
 typeshare = "1"
 zeroize = "1"
+# Hidden workstation owner-sign operator tool: disposable private signer state.
+tempfile = "3"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 # ADR 0030: korrid's own pure-Rust archive readers for store downloads, run in
 # the sandbox unit. No encryption, no writing, no C code (zstd stays off).
@@ -81,7 +83,6 @@ tokio = { version = "1", features = ["test-util"] }
 korri-inputd = { path = "../inputd" }
 zbus = { version = "5", default-features = false, features = ["tokio", "p2p"] }
 secp256k1 = { version = "0.30", features = ["global-context"] }
-tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 # Tests build small 7z and rar fixtures in code, including encrypted ones.
 sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress", "aes256"] }

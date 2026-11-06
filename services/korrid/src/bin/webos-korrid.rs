@@ -141,14 +141,13 @@ fn start(
     relays: Option<korrid::relay::RelayList>,
 ) -> Result<Running, String> {
     private_directory(credentials, false).map_err(|error| error.to_string())?;
+    let mut platform = korrid::EmbeddedPlatform::default();
+    platform.relays = relays;
     let port = korrid::start_local_server(
         ORIGIN,
         state.storage.to_str().ok_or("storage path must be UTF-8")?,
         state.private.to_str().ok_or("private path must be UTF-8")?,
-        korrid::EmbeddedPlatform {
-            relays,
-            ..Default::default()
-        },
+        platform,
     )
     .map_err(|error| error.to_string())?;
     let running = Running;

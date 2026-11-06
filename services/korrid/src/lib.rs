@@ -68,6 +68,8 @@ pub mod saves;
 pub mod surface;
 pub mod surface_host_access;
 pub mod surface_host_input;
+#[doc(hidden)]
+pub mod webos_owner_sign;
 
 pub use play_log::{PlayEntry, PlayLog};
 use plugin_admin::{PluginAdminRequest, PluginAdminResponse};

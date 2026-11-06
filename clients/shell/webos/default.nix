@@ -83,6 +83,12 @@ in
       ${desktop}
       exec python3 "$crate/webos/package.py" --verifier "$CARGO_TARGET_DIR/release/korri-shell" "$@"
     '';
+    # Hidden dev-only operator tool. Deliberately absent from product help.
+    shell-webos-owner-sign = makeApp "shell-webos-owner-sign" [ ] ''
+      nix develop "$KORRI_ROOT#korrid" --command cargo build --locked \
+        --manifest-path "$KORRI_ROOT/services/korrid/Cargo.toml" --bin webos-owner-sign >&2
+      exec "$KORRI_ROOT/.cache/korrid-target/debug/webos-owner-sign" "$@"
+    '';
     shell-webos-package-check = makeApp "shell-webos-package-check" [ ] ''
       exec python3 "$crate/webos/package_test.py" "$@"
     '';

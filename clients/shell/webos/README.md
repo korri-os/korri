@@ -114,10 +114,62 @@ key. The offline import contract itself does not take an expected owner argument
 or retain/check the request template; this edge adds neither. Transfer no person
 private key and no other device's private-state directory to the TV.
 
-### Who can sign that public request today?
+### Hidden development-only workstation signer
 
-The user's actual signer is unresolved. Do not confuse existing protocol code
-with a shipped user command. The code/doc review found:
+The parent identified the owner's signer as Amber 6.6.9
+(`com.greenart7c3.nostrsigner`) on a Galaxy Z Fold7. The new **hidden, dev-only**
+`webos-owner-sign` operator binary reuses `Nip46PersonSigner`; it is not shipped
+in the TV IPK or listed in product CLI help. It reads a `bunker://` URL from
+private stdin. The existing adapter supports **only signer-initiated bunker**,
+not client-initiated `nostrconnect://`, so this command cannot print a connect
+URI for `adb am start`. The user must create a fresh bunker connection in Amber
+with the same account as their existing Korri federation. Never export an nsec.
+
+Exact request/sign/import sequence (the parent owns TV and phone operations):
+
+1. On the stopped TV, as the app UID in its jail, run the request command above.
+   Transfer `/tmp/tv-owner-request.json` (public) to the workstation.
+2. Read the existing owner's public key from `korri identity show` on an already
+   owned device. Confirm that this is the account the user selects in Amber.
+3. The user creates/copies a fresh bunker URL in Amber. Save it in a private
+   mode-0600 workstation file `amber-bunker.txt`, in a 0700 directory. Do not put
+   the URL in command arguments, shell history, logs or chat. The token's own
+   relay URLs are the NIP-46 relays; the adapter validates them and does not
+   substitute the TV's discovery relays.
+4. On the workstation (substitute the observed **public** owner key):
+
+   ```sh
+   umask 077
+   nix run .#shell-webos-owner-sign -- \
+     --template /path/to/tv-owner-request.json \
+     --expected-owner "$expected_owner_public_key" \
+     < /private/path/amber-bunker.txt > /path/to/tv-owner-signed.json
+   ```
+
+   The person approves the connection and the kind-30078 TV binding request in
+   Amber on the phone. Each exchange uses the existing 120-second deadline.
+   The parent must coordinate readiness before initiating that timed action.
+   Use a new bunker URL after a failed/consumed connection, not a retry loop.
+   stdout contains only the complete verified signed event; progress/errors
+   go to stderr. The command checks the canonical template before contacting
+   relays, checks exact event equality via the existing signer, then applies
+   the same public owned-statement verifier that TV `import` uses. It also
+   checks the expected owner key before printing. Invalid/wrong-owner results
+   leave stdout empty. The separate disposable NIP-46 client key and existing
+   connection record live only in a 0700 temporary workstation directory,
+   removed on success, error or Ctrl-C. No person private key is received.
+5. Transfer the resulting **public** event back to `/tmp/tv-owner-signed.json`
+   in the TV jail. Run `./bin/webos-korrid identity import --file
+   /tmp/tv-owner-signed.json`, then `identity status`, while the app is stopped.
+   Check its `ownerPublicKey` against the existing federation. Then launch.
+
+The signature is the user's action. These instructions do not claim that Amber
+interoperability, approval or the real owner binding has already been tested.
+
+### Existing signer routes reviewed before adding the operator edge
+
+Do not confuse existing protocol code with a shipped user command. The
+pre-M2 code/doc review found:
 
 | Route | Existing command/action and limitation |
 | --- | --- |
@@ -134,12 +186,11 @@ older than the identity-switch coordinator: the coordinator now exists, but
 still does not provide arbitrary-template signing or a new-TV join flow.
 ADR 0031 keeps the request/import operations hidden operator tools.
 
-**Remaining user action:** identify which signer holds the existing owner key,
-and use its existing arbitrary-event signing route to approve exactly the TV
-request and return the complete signed event. There is no honest universal
-signing command in this repository. Do not claim joining is complete before
-that event is imported and the owner key is checked. A user-facing TV join
-mechanism remains an open product decision, not implemented here.
+**Remaining user action:** create the Amber bunker connection and approve the
+exact TV request using the hidden workstation command above. Do not claim
+joining is complete before that event is imported and the owner key is checked.
+A user-facing TV join mechanism remains an open product decision, not
+implemented here.
 
 ## Finding the other devices after binding
 
