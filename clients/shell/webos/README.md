@@ -47,13 +47,17 @@ All existing surface package files, fonts and licenses are included unchanged.
 
 The new native application id is `org.korri.shell`, with `launch.sh` as `main`.
 The launcher ignores AppManager's optional launch JSON. It must already run
-unprivileged in the native jail and have a writable private `HOME`; it refuses
-UID 0. The B7 spike ran as UID 6269, GID 5000, with no effective capabilities
+unprivileged in the native jail; it refuses UID 0. On the B7 (verified
+2026-11-06), AppManager sets `HOME` to the root-owned app directory, which the
+app cannot write, and runs it as a per-app UID (6236 for `org.korri.shell`).
+The jail's `/tmp` is private and writable. The B7 spike ran as UID 6269, GID 5000, with no effective capabilities
 (parent's observed process, 2026-10-30). No permission, service, startup hook,
 SDL library, firmware library or real korrid is installed by this IPK.
 
 The launcher changes to its app directory and creates a fresh mode-0700
-`$HOME/korri-shell.XXXXXXXX` directory. It starts the fixture korrid with twelve
+`${TMPDIR:-/tmp}/korri-shell.XXXXXXXX` directory, and appends stderr to
+`${TMPDIR:-/tmp}/korri-shell-launch.log` (on the TV:
+`/var/palm/jail/org.korri.shell/tmp/korri-shell-launch.log`). It starts the fixture korrid with twelve
 built-in games, an ephemeral loopback port, and stdin closed. The fixture keeps
 serving after EOF. It generates a 256-bit kernel CSPRNG capability and writes
 only `credentials/KORRID_RPC_CAPABILITY`, mode 0600. Core dumps are disabled.

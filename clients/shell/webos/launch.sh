@@ -21,10 +21,14 @@ if [ "${1:-}" = --surfaces ]; then
 fi
 app=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 cd "$app"
-# AppManager supplies a private writable HOME in the native application jail.
-# Use a new directory for each launch: no stale port, credential or PID reuse.
-: "${HOME:?AppManager must supply a private writable HOME}"
-work=$(mktemp -d "$HOME/korri-shell.XXXXXXXX")
+# On the B7, HOME is the root-owned app directory and is not writable.
+# /tmp is private to this app's jail. Keep stderr there: AppManager sends it
+# to /dev/null. Use a new directory for each launch: no stale port,
+# credential or PID reuse.
+tmp=${TMPDIR:-/tmp}
+exec 2>>"$tmp/korri-shell-launch.log"
+echo "korri-shell launch $(date)" >&2
+work=$(mktemp -d "$tmp/korri-shell.XXXXXXXX")
 fixture_pid=''
 shell_pid=''
 # Called by the EXIT trap.
@@ -51,7 +55,8 @@ while ! grep -q '^KORRID_SHELL_ORIGIN=' "$work/connection"; do
     kill -0 "$fixture_pid" 2>/dev/null || { echo 'fixture-korrid exited during startup' >&2; exit 1; }
     attempt=$((attempt + 1))
     [ "$attempt" -lt 100 ] || { echo 'fixture-korrid startup timed out' >&2; exit 1; }
-    sleep 0.1
+    # BusyBox sleep on webOS takes whole seconds only.
+    usleep 100000 2>/dev/null || sleep 1
 done
 # Read only these two public binding values; never source the output as code.
 KORRID_ADDRESS=$(sed -n 's/^KORRID_ADDRESS=//p' "$work/connection")

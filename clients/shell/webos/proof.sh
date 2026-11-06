@@ -30,6 +30,9 @@ for _ in $(seq 100); do [[ -s "$work/display" ]] && break; sleep 0.1; done
 DISPLAY=":$(cat "$work/display")"
 export DISPLAY
 unset WAYLAND_DISPLAY
+# The launcher keeps its work directory and stderr log under TMPDIR, as on the TV.
+mkdir -p "$work/tmp"
+export TMPDIR="$work/tmp"
 HOME="$work/home" "$work/app/launch.sh" >"$out/shell.log" 2>&1 &
 launcher=$!
 pids+=("$launcher")
