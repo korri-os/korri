@@ -8,13 +8,17 @@ use nostr::{
 use std::io::Cursor;
 
 #[test]
-fn only_existing_public_identity_tools_are_exposed() {
+fn only_existing_public_identity_and_explicit_setup_tools_are_exposed() {
     let args = |words: &[&str]| words.iter().map(OsString::from).collect::<Vec<_>>();
     assert_eq!(
         command(&args(&["identity", "status"])).unwrap(),
         Command::Identity(args(&["status"]))
     );
     assert!(command(&args(&["identity", "owner-binding-request"])).is_ok());
+    assert_eq!(
+        command(&args(&["setup", "finish"])).unwrap(),
+        Command::SetupFinish
+    );
     assert!(command(&args(&["identity", "import", "--stdin"])).is_ok());
     assert!(command(&args(&[
         "identity",
@@ -209,4 +213,35 @@ fn exact_offline_request_import_survives_restart_and_real_brain_has_no_local_gam
         drop(running);
         assert!(korrid::local_server_port().is_none());
     }
+}
+
+#[test]
+fn explicit_setup_finish_uses_existing_marker_and_keeps_the_identity() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("state");
+    let state = State::open(&root).unwrap();
+    let identity = DeviceIdentity::load_or_create(&state.private).unwrap();
+    let before = identity.state().clone();
+    assert!(matches!(
+        korrid::onboarding::status(&state.private),
+        korrid::onboarding::OnboardingStatusOutcome::Ok(korrid::onboarding::OnboardingStatus {
+            needed: true
+        })
+    ));
+    finish_setup(&state.private).unwrap();
+    finish_setup(&state.private).unwrap();
+    drop(state);
+    let state = State::open(&root).unwrap();
+    assert!(matches!(
+        korrid::onboarding::status(&state.private),
+        korrid::onboarding::OnboardingStatusOutcome::Ok(korrid::onboarding::OnboardingStatus {
+            needed: false
+        })
+    ));
+    assert_eq!(
+        DeviceIdentity::load_or_create(&state.private)
+            .unwrap()
+            .state(),
+        &before
+    );
 }

@@ -16,30 +16,42 @@ use std::{
 // Never use HOME (the installed, root-owned app) or the disposable jail /tmp.
 const STATE_ROOT: &str = "/media/developer/org.korri.shell";
 const ORIGIN: &str = "https://shell.korri.example";
+const HELP: &str = "usage: webos-korrid --credentials DIR | identity {status|owner-binding-request|import --stdin|import --file PATH} | setup finish
+Hidden dev/operator tools: identity and setup finish. Run only while the app is stopped.
+setup finish: Finish setup, keeping the existing identity; no new identity is claimed. This does not test a controller.";
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Serve(PathBuf),
     Identity(Vec<OsString>),
+    SetupFinish,
 }
 
 fn command(args: &[OsString]) -> Result<Command, String> {
     match args {
         [flag, directory] if flag == "--credentials" => Ok(Command::Serve(directory.into())),
-        [identity, operation] if identity == "identity"
-            && (operation == "status" || operation == "owner-binding-request") =>
+        [setup, finish] if setup == "setup" && finish == "finish" => Ok(Command::SetupFinish),
+        [identity, operation]
+            if identity == "identity"
+                && (operation == "status" || operation == "owner-binding-request") =>
         {
             Ok(Command::Identity(vec![operation.clone()]))
         }
-        [identity, operation, source] if identity == "identity" && operation == "import" && source == "--stdin" =>
+        [identity, operation, source]
+            if identity == "identity" && operation == "import" && source == "--stdin" =>
         {
             Ok(Command::Identity(vec![operation.clone(), source.clone()]))
         }
-        [identity, operation, flag, path] if identity == "identity" && operation == "import" && flag == "--file" =>
+        [identity, operation, flag, path]
+            if identity == "identity" && operation == "import" && flag == "--file" =>
         {
-            Ok(Command::Identity(vec![operation.clone(), flag.clone(), path.clone()]))
+            Ok(Command::Identity(vec![
+                operation.clone(),
+                flag.clone(),
+                path.clone(),
+            ]))
         }
-        _ => Err("usage: webos-korrid --credentials DIR | identity {status|owner-binding-request|import --stdin|import --file PATH}".into()),
+        _ => Err(HELP.into()),
     }
 }
 
@@ -101,7 +113,7 @@ impl State {
         // SAFETY: lock is an open directory fd; flock does not retain pointers.
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(io::Error::other(
-                "webOS korrid is already using this state; stop the app before identity tools",
+                "webOS korrid is already using this state; stop the app before offline tools",
             ));
         }
         let private = root.join("private");
@@ -126,6 +138,14 @@ fn write_credential(directory: &Path, capability: &str) -> io::Result<()> {
         .open(directory.join("KORRID_RPC_CAPABILITY"))?;
     file.write_all(capability.as_bytes())?;
     file.sync_all()
+}
+
+fn finish_setup(root: &Path) -> Result<(), String> {
+    match korrid::onboarding::finish(root) {
+        korrid::onboarding::OnboardingStatusOutcome::Ok(status) if !status.needed => Ok(()),
+        korrid::onboarding::OnboardingStatusOutcome::Err(failure) => Err(failure.message),
+        _ => Err("Could not finish setup. Try again.".into()),
+    }
 }
 
 struct Running;
@@ -161,7 +181,12 @@ fn start(
 }
 
 async fn run() -> Result<(), String> {
-    let command = command(&std::env::args_os().skip(1).collect::<Vec<_>>())?;
+    let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if arguments == [OsString::from("--help")] {
+        println!("{HELP}");
+        return Ok(());
+    }
+    let command = command(&arguments)?;
     // SAFETY: geteuid and setrlimit use valid arguments and no retained pointers.
     if unsafe { libc::geteuid() } == 0 {
         return Err("webos-korrid refuses root".into());
@@ -181,6 +206,10 @@ async fn run() -> Result<(), String> {
                 "{}",
                 korrid::identity_cli::run_from_environment(&arguments, &state.private)?
             );
+        }
+        Command::SetupFinish => {
+            finish_setup(&state.private)?;
+            println!("Setup: finished");
         }
         Command::Serve(credentials) => {
             let relays = std::env::var("KORRID_RELAYS")

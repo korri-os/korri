@@ -55,7 +55,7 @@ The edge creates only the three allocated directories. It rejects symlinks in
 all ancestors and rejects wrong type, owner or mode on those directories. It
 does not repair, migrate, search alternate roots or use HOME. A nonblocking
 exclusive directory `flock` covers the entire server lifetime and each offline
-identity command. There is no lock filename or stale PID format. Run offline
+operator command. There is no lock filename or stale PID format. Run offline
 commands only while the app is stopped, as the same app UID, in the same jail.
 Do not run a second identity writer against this allocation.
 
@@ -104,10 +104,12 @@ the parent's responsibility; running the command as SSH root is rejected.
 # Or pass that same event on stdin:
 # ./bin/webos-korrid identity import --stdin < /tmp/tv-owner-signed.json
 ./bin/webos-korrid identity status
+# Explicit M2 dev/operator action: keep the identity; claim no new identity.
+./bin/webos-korrid setup finish
 ```
 
-These delegate directly to `identity_cli::run_from_environment`. They preserve
-its bounds, kind 30078, tags, verification and idempotence. Import validates
+The identity commands delegate directly to `identity_cli::run_from_environment`.
+They preserve its bounds, kind 30078, tags, verification and idempotence. Import validates
 that the signed **owned** event names the TV's device key. The operator must
 check that the resulting `ownerPublicKey` equals the owner's existing federation
 key. The offline import contract itself does not take an expected owner argument
@@ -161,7 +163,11 @@ Exact request/sign/import sequence (the parent owns TV and phone operations):
 5. Transfer the resulting **public** event back to `/tmp/tv-owner-signed.json`
    in the TV jail. Run `./bin/webos-korrid identity import --file
    /tmp/tv-owner-signed.json`, then `identity status`, while the app is stopped.
-   Check its `ownerPublicKey` against the existing federation. Then launch.
+   Check its `ownerPublicKey` against the existing federation. Run the hidden
+   dev/operator command `./bin/webos-korrid setup finish` while the app is still
+   stopped, then launch. This calls the existing `onboarding::finish` producer
+   under the same state lock, using its existing marker. It is explicit, never
+   a side effect of import, and does not claim that a controller was tested.
 
 The signature is the user's action. These instructions do not claim that Amber
 interoperability, approval or the real owner binding has already been tested.
@@ -233,10 +239,23 @@ real games once peer HTTP succeeds. Discovery polls every 60 seconds; the other
 devices first need to learn the TV's owner binding and publish endpoint evidence
 addressed to its new device key. Allow more than one discovery cycle on a first
 join, then inspect actual peer status instead of assuming an empty library is
-final. Existing first-run setup still exists; skip
-network changes (webOS owns networking) and finish setup in the existing UI.
-NetworkManager-backed settings can fail on this TV; they are not a new webOS
-configuration surface. No library or sample data is installed into real state.
+final.
+
+**First-run gap:** Zone's Controllers step requires a heard controller
+(`packages/zone/src/state/onboarding.ts::canGoOn`). Those facts come from
+korrid's native-input producer (`surface/controllers.rs`), which this embedded
+composition does not supply. SDL semantic presses do not establish those facts,
+so the first-run Controllers step cannot advance. For M2, the parent explicitly
+runs the hidden dev/operator `setup finish` command above, with the app stopped.
+Its wording mirrors `korri setup finish`: finish setup while keeping the existing
+identity; no new identity is claimed. It uses the existing marker schema, not a
+new field or a fabricated controller. The real fix is the planned TV-side
+korrid native-input source reading the pad from `/dev/input` (parent's earlier
+decision, 2026-11-06). This milestone does not build that source. The shell must
+not open `/dev/input`.
+
+WebOS still owns networking. NetworkManager-backed settings can fail on this
+TV; they are not a new webOS configuration surface. No library or sample data is installed into real state.
 
 ## Build and package (workstation only)
 
