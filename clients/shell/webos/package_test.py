@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check native M1 archives without contacting or executing anything on a TV."""
+"""Check native M2 archives without contacting or executing anything on a TV."""
 import io
 import json
 import pathlib
@@ -19,7 +19,7 @@ def check_ipk(path):
     data = subprocess.check_output(['ar', 'p', str(path), 'data.tar.gz'])
     with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
         names = set(archive.getnames())
-        expected = {'launch.sh', 'bin/korri-shell', 'bin/fixture-korrid',
+        expected = {'launch.sh', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid',
                     'cache/index.json', 'cache/surfaces/zone.json', 'cache/surfaces/pico.json',
                     'packages/zone/main.slint', 'packages/pico/main.slint',
                     'packages/zone/logic.js', 'packages/pico/logic.js'}
@@ -28,7 +28,7 @@ def check_ipk(path):
         metadata = json.load(archive.extractfile(APP_BASE + 'appinfo.json'))
         assert metadata['id'] == APP_ID and metadata['type'] == 'native'
         assert metadata['main'] == 'launch.sh'
-        for name in ('launch.sh', 'bin/korri-shell', 'bin/fixture-korrid'):
+        for name in ('launch.sh', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid'):
             assert archive.getmember(APP_BASE + name).mode == 0o755
         index = json.load(archive.extractfile(APP_BASE + 'cache/index.json'))
         assert {entry['id'] for entry in index['entries']} == {'zone', 'pico'}
@@ -40,11 +40,11 @@ def check_ipk(path):
             summary = json.load(archive.extractfile(APP_BASE + 'cache/surfaces/' + entry['id'] + '.json'))
             assert summary['pass']
         with tempfile.TemporaryDirectory() as directory:
-            for name in ('korri-shell', 'fixture-korrid'):
+            for name in ('korri-shell', 'fixture-korrid', 'webos-korrid'):
                 binary = pathlib.Path(directory) / name
                 binary.write_bytes(archive.extractfile(APP_BASE + 'bin/' + name).read())
                 verify_binary(binary)
-    print('M1_IPK_PAYLOAD_ELF_AND_STAMPS_PASS')
+    print('M2_IPK_PAYLOAD_ELF_AND_STAMPS_PASS')
 
 
 class PackageTests(unittest.TestCase):

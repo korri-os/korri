@@ -102,7 +102,10 @@ case "$action" in
     if [[ "$action" == shell-build ]]; then
       cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/shell/Cargo.toml" \
         --bin korri-shell --bin fixture-korrid --no-default-features --features webos,fixture --target armv7-unknown-linux-gnueabi
-      binaries=("$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-shell"
+      cargo build --locked --release --manifest-path "$KORRI_ROOT/services/korrid/Cargo.toml" \
+        --bin webos-korrid --target armv7-unknown-linux-gnueabi
+      binaries=("$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/webos-korrid"
+        "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-shell"
         "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/fixture-korrid")
     else
       cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/slint-spike/Cargo.toml" \

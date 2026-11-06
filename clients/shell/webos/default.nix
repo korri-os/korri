@@ -1,7 +1,8 @@
-# Workstation-only webOS M1 tasks. No installation, SSH or device access.
-{ pkgs }:
+# Workstation-only webOS M2 tasks. No installation, SSH or device access.
+{ pkgs, proseql }:
 let
   lib = pkgs.lib;
+  proseqlSource = import ../../../services/korrid/proseql-source.nix { inherit pkgs proseql; };
   rust = pkgs.rust-bin.stable.latest.default.override {
     targets = [ "armv7-unknown-linux-gnueabi" ];
   };
@@ -65,6 +66,7 @@ in
           pkgs.util-linux
         ]
         ''
+          ${proseqlSource.hydrateShell}
           export LIBCLANG_PATH="${pkgs.llvmPackages.libclang.lib}/lib"
           export WEBOS_HOST_LOADER="${pkgs.stdenv.cc.libc}/lib/ld-linux-x86-64.so.2"
           export WEBOS_HOST_LIBRARIES="${
@@ -101,7 +103,7 @@ in
   help = ''
 
     nix run .#shell-webos-build
-        Cross-build the shell and sample-data korrid for LG B7 (clean checkout).
+        Cross-build the shell, real korrid and explicit M1 fixture fallback for LG B7 (clean checkout).
     nix run .#shell-webos-package -- OUTPUT --source-sha SHA
         Verify surfaces on the workstation, package pinned ARM binaries as org.korri.shell.
     nix run .#shell-webos-package-check -- [--check-ipk IPK]

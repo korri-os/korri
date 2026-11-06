@@ -33,7 +33,7 @@ unset WAYLAND_DISPLAY
 # The launcher keeps its work directory and stderr log under TMPDIR, as on the TV.
 mkdir -p "$work/tmp"
 export TMPDIR="$work/tmp"
-HOME="$work/home" "$work/app/launch.sh" >"$out/shell.log" 2>&1 &
+HOME="$work/home" "$work/app/launch.sh" --fixture >"$out/shell.log" 2>&1 &
 launcher=$!
 pids+=("$launcher")
 id=''
@@ -72,7 +72,7 @@ find "$work/home" -mindepth 1 -print >"$out/home-files.txt"
 # launch directory and credential must disappear.
 test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
 # The launcher also passes the shell's existing --surfaces ordering through.
-HOME="$work/home" "$work/app/launch.sh" --surfaces pico,zone >"$out/pico-start.log" 2>&1 &
+HOME="$work/home" "$work/app/launch.sh" --fixture --surfaces pico,zone >"$out/pico-start.log" 2>&1 &
 launcher=$!
 pids+=("$launcher")
 sleep 8

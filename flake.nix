@@ -147,7 +147,7 @@
         };
         # The native shell: surface packages over korrid (clients/shell/README.md).
         shell = import ./clients/shell { inherit pkgs; };
-        shellWebos = import ./clients/shell/webos { inherit pkgs; };
+        shellWebos = import ./clients/shell/webos { inherit pkgs proseql; };
         # THROWAWAY SPIKE: native Slint inspector over real korrid (README there).
         slintSpike = import ./clients/slint-spike { inherit pkgs proseql; };
         slintSpikePackage = import ./clients/slint-spike/webos { inherit pkgs; };

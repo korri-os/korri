@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the M1 native shell IPK from pinned binaries and verified surfaces.
+"""Build the M2 native shell IPK from pinned binaries and verified surfaces.
 
 App metadata and archive format follow the already accepted Slint spike.
 The only credential is created at launch, never included in this package.
@@ -59,12 +59,12 @@ def app_info(version):
     return {'id': APP_ID, 'version': version, 'vendor': 'Korri',
             'type': 'native', 'main': 'launch.sh', 'title': 'Korri',
             'icon': 'icon.png',
-            'appDescription': 'Native Korri shell M1 with local sample data.'}
+            'appDescription': 'Native Korri shell M2 with the real local korrid.'}
 
 
 def payload_files(stage, version):
     files = [(APP_BASE + str(path.relative_to(stage)), path.read_bytes(),
-              0o755 if path.name in {'launch.sh', 'korri-shell', 'fixture-korrid'} else 0o644)
+              0o755 if path.name in {'launch.sh', 'korri-shell', 'fixture-korrid', 'webos-korrid'} else 0o644)
              for path in sorted(stage.rglob('*')) if path.is_file()]
     files += [(APP_BASE + 'appinfo.json', json.dumps(app_info(version)).encode(), 0o644),
               (APP_BASE + 'icon.png', (ROOT / 'brand/icons/icon-192.png').read_bytes(), 0o644),
@@ -86,7 +86,7 @@ def main():
     if run('git', '-C', str(ROOT), 'status', '--porcelain').strip():
         parser.error('source checkout must be clean')
     release = ROOT / '.cache/shell-webos-target/armv7-unknown-linux-gnueabi/release'
-    binaries = [release / 'korri-shell', release / 'fixture-korrid']
+    binaries = [release / 'korri-shell', release / 'fixture-korrid', release / 'webos-korrid']
     dependencies = ''
     for binary in binaries:
         verify_build_record(binary, binary.parent, args.source_sha)
@@ -115,7 +115,7 @@ def main():
         control = ('Package: ' + APP_ID + '\nVersion: ' + version +
                    '\nSection: misc\nPriority: optional\nArchitecture: arm\n' +
                    'Installed-Size: ' + str(sum(len(content) for _, content, _ in files)) +
-                   '\nMaintainer: Korri\nDescription: Native Korri shell M1 sample data.\n' +
+                   '\nMaintainer: Korri\nDescription: Native Korri shell M2 federated library.\n' +
                    'webOS-Package-Format-Version: 2\nwebOS-Packager-Version: x.y.x\n')
         with tarfile.open(work / 'control.tar.gz', 'w:gz', format=tarfile.GNU_FORMAT) as archive:
             add_bytes(archive, 'control', control.encode())
