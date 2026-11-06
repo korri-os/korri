@@ -83,14 +83,13 @@ command = ["never-run"]
         let private = tempfile::tempdir().unwrap();
         std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         peer_rpc::test_owned_identity(private.path(), &"22".repeat(32), &owner_secret);
-        let origin = "https://shell.example";
-        let port = start_local_server(
-            origin,
+        let port = start_local_shell_server(
             readable.path().to_str().unwrap(),
             private.path().to_str().unwrap(),
             EmbeddedPlatform::default(),
         )
         .unwrap();
+        let origin = format!("http://127.0.0.1:{port}");
         let _stop = Stop;
         let capability = zeroize::Zeroizing::new(local_server_capability().unwrap());
         let request = || {
@@ -102,6 +101,24 @@ command = ["never-run"]
                 .insert("Origin", origin.parse().unwrap());
             request
         };
+        for other in [
+            None,
+            Some("https://shell.korri.example"),
+            Some("http://127.0.0.1:1"),
+        ] {
+            let mut wrong = request();
+            wrong.headers_mut().remove("Origin");
+            if let Some(origin) = other {
+                wrong
+                    .headers_mut()
+                    .insert("Origin", origin.parse().unwrap());
+            }
+            let error = tokio_tungstenite::connect_async(wrong).await.unwrap_err();
+            let tokio_tungstenite::tungstenite::Error::Http(response) = error else {
+                panic!("unexpected origin rejection: {error}");
+            };
+            assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+        }
         let watch =
             serde_json::json!({"_tag": "app.surface.watch", "payload": {"surfaceId": "zone"}})
                 .to_string();

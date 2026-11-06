@@ -15,7 +15,6 @@ use std::{
 // Explicit M2 allocation chosen after the operator inspected the jail mounts.
 // Never use HOME (the installed, root-owned app) or the disposable jail /tmp.
 const STATE_ROOT: &str = "/media/developer/org.korri.shell";
-const ORIGIN: &str = "https://shell.korri.example";
 const HELP: &str = "usage: webos-korrid --credentials DIR | identity {status|owner-binding-request|import --stdin|import --file PATH} | setup finish
 Hidden dev/operator tools: identity and setup finish. Run only while the app is stopped.
 setup finish: Finish setup, keeping the existing identity; no new identity is claimed. This does not test a controller.";
@@ -163,8 +162,7 @@ fn start(
     private_directory(credentials, false).map_err(|error| error.to_string())?;
     let mut platform = korrid::EmbeddedPlatform::default();
     platform.relays = relays;
-    let port = korrid::start_local_server(
-        ORIGIN,
+    let port = korrid::start_local_shell_server(
         state.storage.to_str().ok_or("storage path must be UTF-8")?,
         state.private.to_str().ok_or("private path must be UTF-8")?,
         platform,
@@ -175,7 +173,7 @@ fn start(
         zeroize::Zeroizing::new(korrid::local_server_capability().ok_or("missing capability")?);
     write_credential(credentials, &capability).map_err(|error| error.to_string())?;
     println!("KORRID_ADDRESS=127.0.0.1:{port}");
-    println!("KORRID_SHELL_ORIGIN={ORIGIN}");
+    println!("KORRID_SHELL_ORIGIN=http://127.0.0.1:{port}");
     io::stdout().flush().map_err(|error| error.to_string())?;
     Ok(running)
 }

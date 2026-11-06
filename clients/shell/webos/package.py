@@ -55,6 +55,16 @@ def stage_surfaces(stage, verifier):
                 raise ValueError('surface stamp differs from the archive payload')
 
 
+def stage_product_relays(stage, source):
+    # The format is the existing KORRID_RELAYS JSON array, not user settings.
+    content = source.read_bytes()
+    values = json.loads(content)
+    if not isinstance(values, list) or not values or not all(
+            isinstance(value, str) and value for value in values):
+        raise ValueError('product relays must be a nonempty JSON array of strings')
+    (stage / 'product-relays.json').write_bytes(content)
+
+
 def app_info(version):
     return {'id': APP_ID, 'version': version, 'vendor': 'Korri',
             'type': 'native', 'main': 'launch.sh', 'title': 'Korri',
@@ -78,6 +88,7 @@ def main():
     parser.add_argument('output', type=pathlib.Path)
     parser.add_argument('--source-sha', required=True)
     parser.add_argument('--verifier', required=True, type=pathlib.Path)
+    parser.add_argument('--product-relays', required=True, type=pathlib.Path)
     args = parser.parse_args()
     if not re.fullmatch(r'[0-9a-f]{40}', args.source_sha):
         parser.error('--source-sha must be a full commit SHA')
@@ -103,6 +114,7 @@ def main():
         stage = work / 'app'
         stage.mkdir()
         stage_surfaces(stage, args.verifier)
+        stage_product_relays(stage, args.product_relays)
         shutil.copyfile(stage / 'verification.txt', output / 'verification.txt')
         (stage / 'verification.txt').unlink()
         (stage / 'bin').mkdir()

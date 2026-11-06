@@ -2,6 +2,10 @@
 { pkgs, proseql }:
 let
   lib = pkgs.lib;
+  # constants.relays does not force the product's korri argument (#315).
+  productRelays = pkgs.writeText "korri-product-relays.json" (
+    builtins.toJSON (import ../../../nix/product/requirements.nix { korri = null; }).constants.relays
+  );
   proseqlSource = import ../../../services/korrid/proseql-source.nix { inherit pkgs proseql; };
   rust = pkgs.rust-bin.stable.latest.default.override {
     targets = [ "armv7-unknown-linux-gnueabi" ];
@@ -81,7 +85,7 @@ in
         '';
     shell-webos-package = makeApp "shell-webos-package" [ pkgs.SDL2 pkgs.fontconfig.lib ] ''
       ${desktop}
-      exec python3 "$crate/webos/package.py" --verifier "$CARGO_TARGET_DIR/release/korri-shell" "$@"
+      exec python3 "$crate/webos/package.py" --verifier "$CARGO_TARGET_DIR/release/korri-shell" --product-relays "${productRelays}" "$@"
     '';
     # Hidden dev-only operator tool. Deliberately absent from product help.
     shell-webos-owner-sign = makeApp "shell-webos-owner-sign" [ ] ''
@@ -90,8 +94,35 @@ in
       exec "$KORRI_ROOT/.cache/korrid-target/debug/webos-owner-sign" "$@"
     '';
     shell-webos-package-check = makeApp "shell-webos-package-check" [ ] ''
-      exec python3 "$crate/webos/package_test.py" "$@"
+      exec python3 "$crate/webos/package_test.py" --product-relays "${productRelays}" "$@"
     '';
+    shell-webos-real-proof =
+      makeApp "shell-webos-real-proof"
+        [
+          pkgs.SDL2
+          pkgs.fontconfig.lib
+          pkgs.xorg-server
+          pkgs.xdotool
+          pkgs.imagemagick
+          pkgs.bubblewrap
+          pkgs.diffutils
+          pkgs.findutils
+        ]
+        ''
+          ${desktop}
+          export CARGO_BUILD_JOBS="''${CARGO_BUILD_JOBS:-1}"
+          nix develop "$KORRI_ROOT#korrid" --command cargo build --locked \
+            --manifest-path "$crate/../../services/korrid/Cargo.toml" --bin webos-korrid
+          out="$(realpath -m "''${1:?output directory}")"
+          mkdir -p "$out"
+          # Preserve the real binary's fixed TV paths without touching host /media.
+          # No network or host D-Bus access; fresh private state and real loopback.
+          exec bwrap --unshare-user --unshare-net --unshare-pid --ro-bind / / \
+            --proc /proc --dev /dev --tmpfs /tmp --tmpfs /run --tmpfs /media --dir /media/developer \
+            --bind "$out" "$out" -- \
+            bash "$crate/webos/proof.sh" "$CARGO_TARGET_DIR/release" "$out" \
+              "$KORRI_ROOT/.cache/korrid-target/debug/webos-korrid" "${productRelays}"
+        '';
     shell-webos-proof =
       makeApp "shell-webos-proof"
         [
@@ -114,6 +145,8 @@ in
         Verify surfaces on the workstation, package pinned ARM binaries as org.korri.shell.
     nix run .#shell-webos-package-check -- [--check-ipk IPK]
         Test packaging or inspect the assembled M2 IPK.
+    nix run .#shell-webos-real-proof -- OUTPUT
+        Prove the real brain, shipped launcher and SDL shell reach Zone in an isolated workstation jail.
     nix run .#shell-webos-proof -- OUTPUT
         Run the webOS SDL shell at 1920x1080 under Xvfb; capture Zone and Pico.
   '';

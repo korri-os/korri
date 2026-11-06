@@ -29,7 +29,7 @@ fn authenticated_setup_uses_the_current_native_effect_and_signature_validation()
             plugin_test_fixtures::installed(readable.path()),
         ));
         let port = start_local_server_for_platform(
-            "https://shell.example",
+            EmbeddedOrigin::Supplied("https://shell.example"),
             readable.path().to_str().unwrap(),
             private.path().to_str().unwrap(),
             registry,

@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
 # The shipped launcher and native SDL backend, on workstation SDL under Xvfb.
 set -euo pipefail
+command -v cmp >/dev/null
+command -v find >/dev/null
 release=$(realpath "${1:?release directory}")
 out=$(realpath -m "${2:?output directory}")
 crate=$(cd "$(dirname "$0")/.." && pwd)
+real_brain=${3:-}
+launch_args=(--fixture)
+if [[ -n "$real_brain" ]]; then
+    real_brain=$(realpath "$real_brain")
+    product_relays=$(realpath "${4:?product relay JSON}")
+    launch_args=()
+fi
 mkdir -p "$out"
 work=$(mktemp -d)
 pids=()
 cleanup() {
     for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || :; done
     wait 2>/dev/null || :
+    if [[ -f "$work/tmp/korri-shell-launch.log" ]]; then
+        cp "$work/tmp/korri-shell-launch.log" "$out/launch.log"
+    fi
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -23,6 +35,13 @@ PY
 mkdir "$work/app/bin"
 cp "$release/korri-shell" "$release/fixture-korrid" "$work/app/bin/"
 cp "$crate/webos/launch.sh" "$work/app/"
+if [[ -n "$real_brain" ]]; then
+    cp "$real_brain" "$work/app/bin/webos-korrid"
+    cp "$product_relays" "$work/app/product-relays.json"
+    # Existing explicit M2 operator operation; no controller is fabricated.
+    "$real_brain" setup finish
+    "$real_brain" identity status >"$out/identity-first.json"
+fi
 # Xvfb chooses an unused display; there is no race with another proof.
 Xvfb -displayfd 3 -screen 0 1920x1080x24 -nolisten tcp 3>"$work/display" >"$out/xvfb.log" 2>&1 &
 pids+=($!)
@@ -33,7 +52,7 @@ unset WAYLAND_DISPLAY
 # The launcher keeps its work directory and stderr log under TMPDIR, as on the TV.
 mkdir -p "$work/tmp"
 export TMPDIR="$work/tmp"
-HOME="$work/home" "$work/app/launch.sh" --fixture >"$out/shell.log" 2>&1 &
+HOME="$work/home" "$work/app/launch.sh" "${launch_args[@]}" >"$out/shell.log" 2>&1 &
 launcher=$!
 pids+=("$launcher")
 id=''
@@ -72,7 +91,7 @@ find "$work/home" -mindepth 1 -print >"$out/home-files.txt"
 # launch directory and credential must disappear.
 test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
 # The launcher also passes the shell's existing --surfaces ordering through.
-HOME="$work/home" "$work/app/launch.sh" --fixture --surfaces pico,zone >"$out/pico-start.log" 2>&1 &
+HOME="$work/home" "$work/app/launch.sh" "${launch_args[@]}" --surfaces pico,zone >"$out/pico-start.log" 2>&1 &
 launcher=$!
 pids+=("$launcher")
 sleep 8
@@ -81,4 +100,10 @@ import -window root "$out/pico-start-1920x1080.png"
 kill "$launcher"
 wait "$launcher" || :
 test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
+if [[ -n "$real_brain" ]]; then
+    "$real_brain" identity status >"$out/identity-after.json"
+    cmp "$out/identity-first.json" "$out/identity-after.json"
+    cp "$work/tmp/korri-shell-launch.log" "$out/launch.log"
+    echo 'REAL_BRAIN_SDL_ZONE_PICO_ZONE_AND_IDENTITY_PERSISTENCE_PASS'
+fi
 echo 'SDL_1920x1080_ZONE_PICO_ZONE_LAUNCHER_CLEANUP_PASS'

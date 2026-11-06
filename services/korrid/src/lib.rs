@@ -5392,7 +5392,8 @@ pub struct EmbeddedPlatform {
     pub(crate) viewer: Option<Arc<dyn linux_viewer::LinuxStreamViewer>>,
 }
 
-/// Start one localhost brain with explicitly supplied native effects.
+/// Start one localhost brain with the embedding host's explicit origin.
+/// JNI callers retain their existing origin contract.
 pub fn start_local_server(
     allowed_origin: &str,
     local_storage_root: &str,
@@ -5400,21 +5401,46 @@ pub fn start_local_server(
     platform: EmbeddedPlatform,
 ) -> Result<u16, ServerError> {
     start_local_server_for_platform(
-        allowed_origin,
+        EmbeddedOrigin::Supplied(allowed_origin),
         local_storage_root,
         private_state_root,
-        // This embedded stream client installs no native plugins. Linux owns
-        // its installed registry through the standalone host composition.
-        plugin_policy::RegistrySource::Selected(Arc::new(
-            plugin::PluginRegistry::new(Vec::new(), Vec::new())
-                .expect("an empty plugin selection is valid"),
-        )),
+        embedded_registry_source(),
         platform,
     )
 }
 
+/// Start an embedded brain for the native local shell. Derive its canonical
+/// HTTP origin from the still-open listener, as in the Linux composition.
+pub fn start_local_shell_server(
+    local_storage_root: &str,
+    private_state_root: &str,
+    platform: EmbeddedPlatform,
+) -> Result<u16, ServerError> {
+    start_local_server_for_platform(
+        EmbeddedOrigin::LocalHttp,
+        local_storage_root,
+        private_state_root,
+        embedded_registry_source(),
+        platform,
+    )
+}
+
+enum EmbeddedOrigin<'a> {
+    Supplied(&'a str),
+    LocalHttp,
+}
+
+fn embedded_registry_source() -> plugin_policy::RegistrySource {
+    // Both public embedded entrypoints use an explicit empty selection,
+    // never the standalone Linux installed registry.
+    plugin_policy::RegistrySource::Selected(Arc::new(
+        plugin::PluginRegistry::new(Vec::new(), Vec::new())
+            .expect("an empty plugin selection is valid"),
+    ))
+}
+
 fn start_local_server_for_platform(
-    allowed_origin: &str,
+    origin: EmbeddedOrigin<'_>,
     local_storage_root: &str,
     private_state_root: &str,
     registry_source: plugin_policy::RegistrySource,
@@ -5446,7 +5472,10 @@ fn start_local_server_for_platform(
     let server_capability = rpc_capability.clone();
     let folder_selection_grants = discovery::FolderSelectionGrantStore::default();
     let server_folder_selection_grants = folder_selection_grants.clone();
-    let allowed_origin = allowed_origin.to_owned();
+    let allowed_origin = match origin {
+        EmbeddedOrigin::Supplied(origin) => origin.to_owned(),
+        EmbeddedOrigin::LocalHttp => format!("http://127.0.0.1:{port}"),
+    };
     let local_storage_root = local_storage_root.to_owned();
     let private_state_root = private_state_root.to_owned();
     let handle_private_state_root = PathBuf::from(&private_state_root);

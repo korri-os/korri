@@ -52,12 +52,17 @@ export CREDENTIALS_DIRECTORY="$work/credentials"
 export APPID=org.korri.shell
 # Physical 1080p output, existing surface layout at the adapter's 720-line scale.
 export SLINT_SCALE_FACTOR=1.5
+# Product composition applies only to the real brain, never the shell or M1.
+unset KORRID_RELAYS
 if [ "$brain" = fixture ]; then
     ./bin/fixture-korrid --games 12 --credentials "$CREDENTIALS_DIRECTORY" \
         </dev/null >"$work/connection" &
 else
-    ./bin/webos-korrid --credentials "$CREDENTIALS_DIRECTORY" \
-        </dev/null >"$work/connection" &
+    (
+        KORRID_RELAYS=$(cat "$app/product-relays.json")
+        export KORRID_RELAYS
+        exec ./bin/webos-korrid --credentials "$CREDENTIALS_DIRECTORY"
+    ) </dev/null >"$work/connection" &
 fi
 brain_pid=$!
 attempt=0

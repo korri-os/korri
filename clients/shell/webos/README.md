@@ -9,8 +9,12 @@ There is no automatic fallback to sample data on a real-brain error.
 ## Composition
 
 `services/korrid/src/bin/webos-korrid.rs` calls the existing
-`korrid::start_local_server`. That API selects an empty plugin registry and
-supplies its own loopback ephemeral port and random per-process capability.
+`korrid::start_local_shell_server`. It selects an empty plugin registry and
+binds one loopback ephemeral listener. It derives the canonical
+`http://127.0.0.1:<port>` shell origin from that still-open listener before
+composing routes. No bind/close/rebind or placeholder origin is used. Its
+per-process capability is random. The existing `start_local_server` entrypoint
+retains its explicit-origin signature and behavior for JNI.
 There are no local runners, launchers, installed plugins, systemd units, local
 person signer, D-Bus discovery worker, iroh listener, or native stream viewer.
 The startup signature and identity/federation schemas are unchanged. Embedded
@@ -212,22 +216,23 @@ statement, but advertises no HTTP endpoint for the TV. The TV then fetches
 catalogs directly using signed native peer RPC. Each peer supplies only its own
 local games. Static configuration never substitutes for signed membership.
 
-The parent must supply reachable peers and relay configuration:
+The package supplies product relays; the parent must verify reachable peers:
 
-- `KORRID_RELAYS` is the existing JSON-array environment override. The binary
-  parses it with `RelayList::from_linux_environment`. It is public product
-  configuration, not a secret. AppManager does not retain an ad-hoc SSH export.
-- For persistence, use existing `host.relays` in
-  `/media/developer/org.korri.shell/storage/device.yaml`. Grounding:
-  `config/snapshot.rs::DEVICE_FILE_NAME`, `config/mod.rs::HostPayload`, and
-  `relay.rs::RelayList::from_device_settings`. Preserve other document fields.
-- The existing Linux product values are in
-  `nix/product/requirements.nix::constants.relays`:
-  `wss://offchain.pub`, `wss://nostr-pub.wellorder.net`,
-  `wss://relay.primal.net`, `wss://nos.lol`, `wss://nostr.oxtr.dev`.
-  `services/korrid/nixos-module.nix` exports the configured list as
-  `KORRID_RELAYS`. Confirm the actual owner's other devices use that list or
-  read their current `host.relays`; do not assume the TV can reach them.
+- Packaging evaluates `nix/product/requirements.nix::constants.relays` (#315),
+  exactly as the Linux product does. This constant does not force the `korri`
+  argument (the webOS composition passes `null`). Nix generates the existing
+  JSON-array format into `product-relays.json` in the installed app directory.
+  There is no hand-maintained copy of the list or new configuration schema.
+- `launch.sh` reads that generated product file and exports `KORRID_RELAYS`
+  only in the real `webos-korrid` subprocess. The binary uses the existing
+  `RelayList::from_linux_environment` parser. The shell and explicit M1 fixture
+  receive no relay environment, including inherited overrides. Missing product
+  data fails startup; it never selects fixture data automatically.
+- **Do not copy product relays into `host.relays` or `storage/device.yaml`.**
+  Those are user data, not the product composition. App replacement updates
+  the generated file without writing the persistent `/media/developer` state.
+  The parent's owned device `haku` was verified to use the same product list.
+  Relay DNS/TLS/reachability from the TV still requires a hardware check.
 - `storage/upstreams.json` or `KORRID_UPSTREAMS` can reuse the existing static
   native peer records (`upstreams.rs::UpstreamHostConfig`: `label`,
   `kind`, `baseUrl`, `devicePublicKey`, `moonlightAddress`). The serde reader
@@ -289,6 +294,14 @@ hydrates the existing pinned proseQL source, and records source SHA plus all
 three binary hashes. Packaging rejects dirty/mismatched source or changed
 binaries. Zone/Pico install verification runs on the workstation; the TV only
 checks installed file stamps. Choose a fresh output directory for each IPK.
+
+`nix run .#shell-webos-real-proof -- OUTPUT` runs the shipped launcher with
+real `webos-korrid` and the real desktop SDL shell. Bubblewrap supplies fresh
+private state at the binary's unchanged `/media/developer` paths, an isolated
+loopback network and no host D-Bus. The proof uses the existing explicit
+`setup finish`, reaches Zone, switches Pico/Zone at 1920x1080, restarts, and
+checks that the device identity is unchanged. It captures images and logs;
+no TV, phone, public relay or live user data is used.
 
 `nix run .#shell-webos-proof -- OUTPUT` remains an **M1 fixture** SDL/Xvfb
 1920x1080 proof with Zone/F2/Pico/F2/Zone. It does not demonstrate federation.
