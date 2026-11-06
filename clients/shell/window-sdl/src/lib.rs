@@ -215,7 +215,7 @@ pub struct SdlPlatform {
     /// TV only: the pressed left button was turned into confirm, so its
     /// release must be too, whatever the mode is by then.
     click_confirming: Cell<bool>,
-    /// TV only: app-owned cursor hiding, paired with motion/484 restoration.
+    /// TV only: app-owned cursor hiding, restored only by LG's 484 decision.
     webos_cursor: Option<webos_cursor::WebosCursor>,
     /// A host's own key handling; when set, keys never reach the view.
     host_keys: Option<HostKeys>,
@@ -308,7 +308,7 @@ impl SdlPlatform {
                 platform.sdl().SDL_SetCursor,
             ) {
                 Ok(cursor) => {
-                    eprintln!("sdl: webOS cursor active: system SDL_ShowCursor with repeated-hide refresh; restore on motion/484; transition trace capped at 200 lines");
+                    eprintln!("sdl: webOS cursor active: system SDL_ShowCursor with repeated-hide refresh; restore only on LG 484, not motion; transition trace capped at 200 lines");
                     platform.webos_cursor = Some(cursor);
                     probe::Record::Cursor(None)
                 }
@@ -474,8 +474,8 @@ impl SdlPlatform {
             }
             // TV: OK on the Magic Remote arrives as a left click wherever the
             // LG pointer last was. While the user drives the D-pad, that click
-            // confirms the focused control instead; once the pointer moves,
-            // clicks aim again. See `keys::Mode`.
+            // confirms the focused control instead; once LG shows its pointer
+            // (484), clicks aim again. See `keys::Mode`.
             ffi::SDL_MOUSEBUTTONDOWN | ffi::SDL_MOUSEBUTTONUP
                 if self.webos_abi && self.click_is_confirm(event, kind) =>
             {
@@ -495,15 +495,13 @@ impl SdlPlatform {
                 let (x, y) = event.motion();
                 let position = self.logical(x, y);
                 self.pointer.set(position);
-                // SDL_ShowCursor(0) stays latched off after a shake. Restore
-                // only a hide we own; LG still owns its normal idle policy.
+                // Motion includes Magic Remote gyro jitter. Only LG's 484
+                // decision restores visibility and pointer mode. First motion
+                // after a hide is diagnostic; later hidden motion does no SDL
+                // cursor calls, logging, or Slint pointer dispatch.
                 if let Some(cursor) = &self.webos_cursor {
                     let (xrel, yrel) = event.motion_delta();
-                    // Failures stay in the bounded trace and leave mode
-                    // alone. This handler delivers the new position below.
-                    if let Ok(true) = cursor.motion(xrel, yrel) {
-                        self.mode.set(keys::Mode::Pointer);
-                    }
+                    let _ = cursor.motion(xrel, yrel);
                 }
                 if !self.webos_abi || self.mode.get() == keys::Mode::Pointer {
                     self.slint_window

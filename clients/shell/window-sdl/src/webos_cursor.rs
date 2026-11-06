@@ -1,7 +1,8 @@
 //! App-owned Magic Remote cursor handover using the system SDL only.
 //!
 //! SDL-webOS's visibility request does not exist on the B7. Pair the proven
-//! SDL_ShowCursor(0) hide with SDL_ShowCursor(1) on motion/484. LG SDL 2.0.4
+//! SDL_ShowCursor(0) hide with SDL_ShowCursor(1) only on LG key 484. Motion
+//! includes gyro jitter and is diagnostic-only. LG SDL 2.0.4
 //! skips its backend when its flag already matches the request; refresh a
 //! repeated hide with SDL_SetCursor(NULL), not a visible toggle. No Wayland
 //! roundtrip, timer, Luna call or power subscription is added.
@@ -37,12 +38,11 @@ fn key_input(scancode: i32, pressed: bool, repeat: bool) -> Option<Input> {
     }
 }
 
-fn visibility_request(hidden_by_keys: bool, input: Input) -> Option<bool> {
+fn visibility_request(input: Input) -> Option<bool> {
     match input {
         // Always honor a physical D-pad press, even if our state says hidden.
         Input::Dpad { .. } => Some(false),
         Input::Shown484 => Some(true),
-        Input::Motion { .. } if hidden_by_keys => Some(true),
         _ => None,
     }
 }
@@ -133,17 +133,17 @@ impl WebosCursor {
         let Some(input) = key_input(scancode, pressed, repeat) else {
             return Ok(());
         };
-        self.update(input).map(|_| ())
+        self.update(input)
     }
 
-    /// True when motion successfully restored our D-pad hide.
-    pub fn motion(&self, xrel: i32, yrel: i32) -> Result<bool, Unavailable> {
+    /// Record only the first motion after a hide; never change visibility.
+    pub fn motion(&self, xrel: i32, yrel: i32) -> Result<(), Unavailable> {
         self.update(Input::Motion { xrel, yrel })
     }
 
-    fn update(&self, input: Input) -> Result<bool, Unavailable> {
+    fn update(&self, input: Input) -> Result<(), Unavailable> {
         let owned_before = self.hidden_by_keys.get();
-        let request = visibility_request(owned_before, input);
+        let request = visibility_request(input);
         let notification_changed = match input {
             Input::Dpad { .. } => {
                 self.trace_motion.set(true);
@@ -155,10 +155,11 @@ impl WebosCursor {
             }
             Input::Motion { .. } => false,
         };
-        let first_motion =
-            matches!(input, Input::Motion { .. }) && self.trace_motion.replace(false);
+        let first_motion = matches!(input, Input::Motion { .. })
+            && self.trace_motion.replace(false)
+            && self.trace.written.get() < TRACE_LIMIT;
         if request.is_none() && !notification_changed && !first_motion {
-            return Ok(false);
+            return Ok(());
         }
         // SAFETY: these SDL 2.0.4 calls remain on the live video thread.
         // ShowCursor returns the PREVIOUS flag, not the requested/current one.
@@ -211,7 +212,7 @@ impl WebosCursor {
             );
         }
         if ok {
-            Ok(request == Some(true))
+            Ok(())
         } else {
             Err(Unavailable::Sdl)
         }
@@ -222,7 +223,27 @@ impl WebosCursor {
 mod tests {
     use super::*;
 
-    const MOTION: Input = Input::Motion { xrel: 1, yrel: -1 };
+    // These adapters count and delegate to real workstation SDL functions.
+    // They never replace SDL's return values or cursor behaviour.
+    std::thread_local! {
+        static NATIVE_SHOW_CURSOR: Cell<Option<unsafe extern "C" fn(c_int) -> c_int>> = const { Cell::new(None) };
+        static NATIVE_SET_CURSOR: Cell<Option<unsafe extern "C" fn(*mut c_void)>> = const { Cell::new(None) };
+        static CURSOR_API_CALLS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    unsafe extern "C" fn counted_show_cursor(toggle: c_int) -> c_int {
+        CURSOR_API_CALLS.with(|count| count.set(count.get() + 1));
+        let show = NATIVE_SHOW_CURSOR.with(Cell::get).unwrap();
+        // SAFETY: configured from live SDL before this adapter is installed.
+        unsafe { show(toggle) }
+    }
+
+    unsafe extern "C" fn counted_set_cursor(cursor: *mut c_void) {
+        CURSOR_API_CALLS.with(|count| count.set(count.get() + 1));
+        let set = NATIVE_SET_CURSOR.with(Cell::get).unwrap();
+        // SAFETY: delegates the unchanged argument to the live SDL function.
+        unsafe { set(cursor) };
+    }
 
     #[test]
     fn only_pressed_directions_request_a_hide() {
@@ -254,36 +275,24 @@ mod tests {
 
     #[test]
     fn dpad_hide_is_not_skipped_after_a_previous_hide() {
-        assert_eq!(
-            visibility_request(
-                true,
-                Input::Dpad {
+        for repeat in [false, false, true] {
+            assert_eq!(
+                visibility_request(Input::Dpad {
                     scancode: 79,
-                    repeat: false
-                }
-            ),
-            Some(false)
-        );
-        assert_eq!(
-            visibility_request(
-                false,
-                Input::Dpad {
-                    scancode: 79,
-                    repeat: false
-                }
-            ),
-            Some(false)
-        );
+                    repeat
+                }),
+                Some(false)
+            );
+        }
     }
 
     #[test]
-    fn motion_restores_only_an_app_owned_hide() {
-        assert_eq!(visibility_request(false, MOTION), None);
-        assert_eq!(visibility_request(true, MOTION), Some(true));
-        for hidden in [false, true] {
-            assert_eq!(visibility_request(hidden, Input::Shown484), Some(true));
-            assert_eq!(visibility_request(hidden, Input::Hidden485), None);
+    fn motion_never_restores_a_dpad_hide() {
+        for (xrel, yrel) in [(0, 0), (2, 0), (7, 0), (-2, 0), (1914, 822)] {
+            assert_eq!(visibility_request(Input::Motion { xrel, yrel }), None);
         }
+        assert_eq!(visibility_request(Input::Shown484), Some(true));
+        assert_eq!(visibility_request(Input::Hidden485), None);
     }
 
     #[test]
@@ -320,7 +329,7 @@ mod tests {
     /// Runs against real workstation SDL with SDL_VIDEODRIVER=dummy. Never
     /// load a copied TV library into this test process.
     #[test]
-    fn system_sdl_hide_is_paired_with_motion_and_shown_key_restore() {
+    fn system_sdl_ignores_jitter_and_restores_only_on_lg_484() {
         use crate::{ffi, HostKey, Placement, SdlPlatform};
         use std::cell::RefCell;
         use std::rc::Rc;
@@ -336,9 +345,11 @@ mod tests {
         // The workstation can have DISPLAY set. Exercise the LG keyboard
         // layout and the real shell's host-key route regardless.
         platform.webos_abi = true;
-        platform.webos_cursor = Some(
-            WebosCursor::open(platform.sdl().SDL_ShowCursor, platform.sdl().SDL_SetCursor).unwrap(),
-        );
+        NATIVE_SHOW_CURSOR.with(|function| function.set(Some(platform.sdl().SDL_ShowCursor)));
+        NATIVE_SET_CURSOR.with(|function| function.set(Some(platform.sdl().SDL_SetCursor)));
+        CURSOR_API_CALLS.with(|count| count.set(0));
+        platform.webos_cursor =
+            Some(WebosCursor::open(counted_show_cursor, counted_set_cursor).unwrap());
         let delivered = Rc::new(RefCell::new(Vec::new()));
         let keys = delivered.clone();
         platform.host_keys = Some(Box::new(move |key, pressed| {
@@ -380,7 +391,29 @@ mod tests {
         assert_eq!(unsafe { show(-1) }, 0);
         let mut motion = ffi::Event::zeroed();
         motion.set_kind(ffi::SDL_MOUSEMOTION);
+        motion.0[28..32].copy_from_slice(&7_i32.to_ne_bytes());
+        let before_first = CURSOR_API_CALLS.with(Cell::get);
         platform.handle(&motion).unwrap();
+        assert_eq!(unsafe { show(-1) }, 0);
+        assert_eq!(platform.mode.get(), crate::keys::Mode::Keys);
+        // First motion has two diagnostic flag queries, but no setter call.
+        assert_eq!(CURSOR_API_CALLS.with(Cell::get) - before_first, 2);
+        let calls = CURSOR_API_CALLS.with(Cell::get);
+        let cursor = platform.webos_cursor.as_ref().unwrap();
+        let trace_lines = cursor.trace.written.get();
+        for xrel in [2_i32, 7, -2, 0, 1914].into_iter().cycle().take(10_000) {
+            motion.0[28..32].copy_from_slice(&xrel.to_ne_bytes());
+            platform.handle(&motion).unwrap();
+        }
+        assert_eq!(CURSOR_API_CALLS.with(Cell::get), calls);
+        assert_eq!(cursor.trace.written.get(), trace_lines);
+        assert_eq!(unsafe { show(-1) }, 0);
+        assert_eq!(platform.mode.get(), crate::keys::Mode::Keys);
+        for kind in [ffi::SDL_MOUSEBUTTONDOWN, ffi::SDL_MOUSEBUTTONUP] {
+            click.set_kind(kind);
+            platform.handle(&click).unwrap();
+        }
+        key(484, true);
         assert_eq!(unsafe { show(-1) }, 1);
         assert_eq!(platform.mode.get(), crate::keys::Mode::Pointer);
         key(82, true);
@@ -394,6 +427,8 @@ mod tests {
             [
                 (HostKey::Right, true),
                 (HostKey::Right, false),
+                (HostKey::Confirm, true),
+                (HostKey::Confirm, false),
                 (HostKey::Confirm, true),
                 (HostKey::Confirm, false),
                 (HostKey::Up, true)
@@ -418,13 +453,15 @@ mod tests {
             key(79, true);
             key(79, false);
             assert_eq!(unsafe { show(-1) }, 0);
-            if cycle % 2 == 0 {
-                platform.handle(&motion).unwrap();
-            } else {
-                key(484, true);
-                // The first motion is still traceable if 484 came first.
-                platform.handle(&motion).unwrap();
-            }
+            motion.0[28..32]
+                .copy_from_slice(&(if cycle % 2 == 0 { 7_i32 } else { -2_i32 }).to_ne_bytes());
+            platform.handle(&motion).unwrap();
+            assert_eq!(unsafe { show(-1) }, 0);
+            assert_eq!(platform.mode.get(), crate::keys::Mode::Keys);
+            key(484, true);
+            assert_eq!(unsafe { show(-1) }, 1);
+            assert_eq!(platform.mode.get(), crate::keys::Mode::Pointer);
+            platform.handle(&motion).unwrap();
             assert_eq!(unsafe { show(-1) }, 1);
         }
         platform.close();

@@ -1,5 +1,20 @@
 # LG B7 cursor source and binary investigation (2026-11-06)
 
+## Latest TV finding: restore only on LG 484
+
+The parent's physical Magic Remote trace from IPK `8cf0b755…` identifies the
+failure: every D-pad hide works. Gyro jitter (`xrel=7`, then `xrel=-2`,
+`yrel=0`) about one second later triggers the motion restore. Trace events 6
+and 8 change SDL's flag back to 1. Real shaking produces LG key 484 (event 3),
+followed by a large pointer warp (event 4, `xrel=1914`, `yrel=822`).
+
+The current change restores **only on 484**, LG's own visibility decision.
+Motion of any size is diagnostic-only and cannot change SDL visibility or
+switch the view out of key mode. No distance threshold, accumulation window,
+or timer fallback is added. The capped transition trace stays in place; a
+first hidden motion now has `request=None` and leaves the queried SDL flag 0.
+The earlier candidates and the source investigation are recorded below.
+
 **The Moonlight cursor API cannot send its request on the B7.** There is no
 webOS 3.x fallback in the pinned SDL source. The observation that Moonlight
 hides the cursor is not proof that this API succeeds. Do not load another SDL,
@@ -307,3 +322,40 @@ relative-motion offsets, and the 200-line trace cap. Adapter all-target Clippy,
 shell webOS Clippy (`-D warnings`), both format checks and `git diff --check`
 passed. The parent owns the full `shell-check` rerun; this follow-up does not
 start a second full suite.
+
+## CPU and logging audit for 484-only restoration
+
+The cursor adapter has no polling loop, timer or worker thread. The host's
+existing event loop uses `SDL_WaitEventTimeout`, with a one-second idle cap
+and 16 ms while animations are active. Cursor calls happen only in response
+to SDL input events. The trace is capped at 200 attempted lines per run.
+
+With 484-only restoration, the first motion after a hide performs two read-only
+SDL flag queries for its diagnostic line. Further motion returns before SDL
+cursor calls, timestamp reads or stderr writes. Once the trace budget is used,
+even the first-motion diagnostic does no SDL calls. Hidden motion also stays
+in key mode, so `SDL_MOUSEMOTION` does not dispatch Slint pointer/hover input.
+
+The focused real-SDL test counts calls through adapters that delegate to the
+actual workstation SDL functions without altering their results. It injects
+10,000 additional motion events after the first diagnostic, checks that SDL's
+flag stays 0 and the view stays in key mode, and checks that both the SDL-call
+count and the trace-line count stay unchanged. OK clicks still reach the
+host's Confirm callback after this jitter stream. The test also exercises 20
+hide/jitter/484/restore cycles.
+
+The parent's 47% TV CPU observation was immediately after relaunch, whereas
+the earlier 10% observation was idle. This child has no comparable TV CPU
+sample and did not contact the TV. Source inspection and the focused test can
+exclude a new cursor polling/logging loop; they cannot attribute total shell
+CPU. The former jitter-driven switch into pointer mode could feed Slint
+continuous hover input; that is an inference, not a measured explanation of
+47%. The 484-only change removes that hidden-pointer input path.
+
+484-only checks: the gyro regression failed before the fix (`Some(true)` on
+motion instead of `None`). After the fix, all **18 adapter tests passed**.
+The 10,000-event test measured **zero additional SDL cursor API calls and zero
+additional trace lines** after the first ignored-motion diagnostic. Flag 0,
+key mode and host Confirm delivery remained intact until 484. Adapter
+all-target Clippy, shell webOS Clippy (`-D warnings`), both format checks and
+`git diff --check` passed. No full-suite rerun was started by this child.
