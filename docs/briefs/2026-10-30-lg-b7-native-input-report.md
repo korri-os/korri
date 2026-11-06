@@ -7,6 +7,58 @@
 - The TV had also started in Homebrew Channel failsafe mode: init.d did not run, so SSH was off and unauthenticated root Telnet was open. One reboot through `com.webos.service.sleep/shutdown/machineReboot` restored key-only SSH and closed Telnet.
 - Rule for later packages: never rely on upgrade cleanup. Remove the previous install first, or verify that the installed file list matches the IPK.
 
+### System SDL controller initialization is tied to TV power
+
+**Correction to the original report below:** LG's system SDL also calls
+`tvpower/registerScreenSaverRequest` when its joystick subsystem starts.
+Successful video-only startup does not establish that controller initialization
+is independent of TV power state.
+
+- Parent's physical-TV result: a fresh install of the gamepad candidate
+  (source `7e89c45f2ab3f29179504d1d9492dfd09e99ac7f`, IPK SHA-256
+  `f12b0bbd6b3692e8eb972d03d30611f0f2f617382d8bdff0bd3bbb4ce456871d`)
+  reached the foreground in 8 s, rendered Zone and used 131 MB RSS. Controller
+  startup failed with `registerScreenSaverRequest(1) failed`. The xpad device
+  was `/dev/input/event2`, `root:compositor` mode 0660; the app had group 505.
+- Verified off-device against the actual LG system library, cached at
+  `~/.cache/research/korri-webos-m1/evidence/tv-libSDL2-2.0.so.0.4.0`, SHA-256
+  `0fbeb44edaa62de9ae9214ac0449250f4e3fb2f6b280db2e68d9a7f7cd6015ce`.
+  The addresses below are ELF virtual addresses, not runtime ASLR addresses.
+  Internal function names identify their role from the disassembly; the
+  library's internal symbols are stripped.
+
+  | Address | Finding |
+  |---|---|
+  | `0x826f0` | Entry identified as `SDL_SYS_JoystickInit`. |
+  | `0x82776`–`0x8277c` | Passes `true` (`r0 = 1`) to the registration helper at `0x82fac`, then branches on a nonzero return. |
+  | `0x8279c`–`0x827a4` | Failure branch sets the exact error `registerScreenSaverRequest(1) failed`. |
+  | `0x82fac` | Helper sends `luna://com.webos.service.tvpower/power/registerScreenSaverRequest`, with `APPID` as `clientName` and `subscribe:true`. |
+  | `0x8277e` onward | Only after registration succeeds does joystick init call udev initialization, register its device callback and enumerate devices. |
+  | `0xcb76`–`0xcb7a` | `SDL_InitSubSystem` adds the joystick flag when the gamecontroller flag is present. |
+  | `0xcb50` | `SDL_InitSubSystem` already calls `SDL_ClearError` internally, at `0xd934`, before subsystem initialization. Its identity is confirmed through the dynapi dispatch slot `0x12c`, populated at `0x28f88` from GOT entry `0xa5b90`. |
+
+- The candidate already checked the nonzero `SDL_InitSubSystem` return code;
+  it did not decide failure from `SDL_GetError` text. LG's implementation also
+  clears the previous SDL error internally before initialization. Adding
+  another `SDL_ClearError` in the caller would not fix this. The binary contains a
+  direct failure path that produces the observed message before udev device
+  enumeration. This is not evidence of an evdev permission failure or a stale
+  error left by video initialization. The exact reason the Luna registration
+  fails in the jail is not established by the binary inspection.
+- JOYSTICK alone, GAMECONTROLLER alone, and a different video/controller init
+  order do not remove this mandatory vendor registration. No new order trial
+  or diagnostic IPK was made. No screensaver flag, power behavior, service
+  permission or vendor library was changed; this investigation did not touch
+  the TV.
+- Decision: LG SDL 2.0.4 joystick and gamecontroller support is unusable in our
+  jail and tied to TV power state. Do not land the SDL controller candidate or
+  bypass its power registration. A successful registration would enter the
+  TV-power path linked to the earlier freeze; that risk is not acceptable.
+  The candidate branch remains reference material only. Do not add an evdev
+  reader to the shell. The architecture-consistent route is the TV-side korrid
+  input edge, through the existing `contracts/input` native subscription and
+  `clients/shell/src/input/` mapper, after the M2 TV binary lands.
+
 The status below is the original 2026-10-30 record.
 
 Status when work paused: the app is installed but does not start. The TV runs, Lightkeeper is in front, and our app is not running. Do not relaunch the app until the open problem below is understood.
