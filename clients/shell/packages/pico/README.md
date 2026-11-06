@@ -105,18 +105,26 @@ Each `update`, `view` and `overlay` call runs under the shell's 50 ms budget
 (contract 3), and the RG353M idles at 408 MHz. `tests/pico_package.rs` in
 `clients/shell` (`calls_stay_well_inside_the_budget_on_a_slow_clock`) counts
 the instructions of every call the shell makes over 10,000 games at 640x480
-and holds each under 10 ms on the device, with Zone's measure of the clock
-(`tests/zone_package.rs`), but for these (`limit_ms`):
+and holds each kind of call under 10 ms on the device (the median, as
+Zone's test), with Zone's measure of the clock (`tests/zone_package.rs`), but
+for these (`limit_ms`):
 
 - A window of games not seen before (the library's first arrival, the shelf
-  after the hero's `recent` window): about 11-14 ms, as every cart it shows
-  is worked out then.
-- Find, the grid and the hero: their views are bound by their size, not by
-  the logic. QuickJS writes JSON by the value (about 42,000 instructions a
-  cart), and Find sends its keyboard (351 values), the grid the window's 50
-  carts (at 640x480 every row is within reach of the cursor, so none can be
-  left out) and the hero its RESUME list. Find's views are about 13-20 ms,
-  the grid's 17-22 ms, the hero's 25-30 ms.
+  or the hero after a change of order): about 11-14 ms, as every cart it
+  shows is worked out then.
+- Find and the grid: their views are bound by their size, not by the logic.
+  QuickJS writes JSON by the value (about 42,000 instructions a cart), and
+  Find sends its keyboard (351 values), the grid the window's 50 carts (at
+  640x480 every row is within reach of the cursor, so none can be left
+  out). Find's views are about 13-20 ms, the grid's 17-22 ms.
+
+QuickJS collects its garbage inside whichever call crosses its threshold,
+which may add up to about 9 ms to that call; the test allows 10 ms more for
+the worst call of each kind. `long_lists_keep_the_cursor_in_sight` (same
+file) walks the shelf, the hero's RESUME list, the grid and Find's results
+far past their first screen and fails a press whose control is out of sight.
+Find's results at 320x240 stay out of sight (on main too) and are not walked
+there until that is fixed.
 
 QuickJS walks and builds objects slowly and writes JSON by the value, so the
 logic does as little of each as it can:
@@ -133,6 +141,13 @@ logic does as little of each as it can:
   sends only the results its rack can show around the focused one and the
   one the cursor comes back to (`resultReach`), with `firstResult` and
   `resultCount` (PicoLibraryBrowser).
+- The hero's RESUME list is a rack that moves only when the cursor passes
+  its right edge (PicoResumeList), and it sends only the carts it can show
+  around the cursor's (`resumeReach`), with `resumeFirst`, `resumeCount`
+  and `resumeFocused`. The rack keeps the place the row of all those carts
+  took, with titles of the design's two lines, whichever carts are sent.
+  (Before, RESUME never moved: the cursor walked into carts clipped out of
+  sight.)
 - Find's keys, their views and targets, the grid's and RESUME's targets and
   entries are kept per layout or game.
 - A layer not drawn is not sent: MENU's list while it is closed, the hero

@@ -85,6 +85,10 @@ export interface HeroView {
   readonly chips: readonly ChipView[]
   readonly open: ButtonView
   readonly resume: readonly { readonly cart: CartView; readonly title: string; readonly subtitle: string }[]
+  /** Where resume[0] stands among the games that resume, how many those are, and the cursor's. */
+  readonly resumeFirst: number
+  readonly resumeCount: number
+  readonly resumeFocused: number
 }
 
 export interface LaunchStageView {
@@ -103,7 +107,7 @@ const EMPTY_CART: CartView = cartView({ id: "", title: "" })
 const NO_STAGE: StageView = { shown: false, title: "", subtitle: "", kicker: "", chips: [], index: 0, total: 0, cart: EMPTY_CART }
 /** A card not drawn: the shell keeps the fields it is not sent. */
 const HIDDEN_CARD = { shown: false }
-const NO_HERO: HeroView = { title: "", subtitle: "", reason: "", chips: [], open: button("OPEN"), resume: [] }
+const NO_HERO: HeroView = { title: "", subtitle: "", reason: "", chips: [], open: button("OPEN"), resume: [], resumeFirst: 0, resumeCount: 0, resumeFocused: 0 }
 const NO_LAUNCH: LaunchStageView = { kicker: "", detail: "", bar: NO_BAR, steps: NO_STEPS, hasCart: false, cart: EMPTY_CART, phase: "starting", actions: [] }
 
 /** RESUME, the download, then the play facts or NEVER PLAYED (PicoGameFacts). */
@@ -280,6 +284,20 @@ const SHELF_TARGETS = new WeakMap<object, Map<string, Target<Act>>>()
 
 /** The games that resume, once per window. */
 const resumableOf = memo(2, (games: readonly PicoShelfGame[]) => [games], (games: readonly PicoShelfGame[]) => games.filter(game => game.resumable === true))
+
+/**
+ * How many RESUME carts PicoResumeList can show either side of the cursor's
+ * on a screen `width` virtual pixels wide (the plan's): the rack moves only
+ * to keep the cursor's cart at its right edge, and a cart is 50 apart.
+ */
+function resumeReach(width: number): number {
+  return Math.ceil((width + 1) / 50) + 1
+}
+
+/** Where the game of target `id` (`prefix` and its id) is among `games`, or -1. */
+function indexOfPrefixed(games: readonly PicoShelfGame[], prefix: string, id: string | undefined): number {
+  return id === undefined || !id.startsWith(prefix) ? -1 : indexOfGame(games, id.slice(prefix.length))
+}
 
 /** A RESUME cart's target, once per game and place. */
 function resumeTarget(game: PicoShelfGame, place: number): Target<Act> {
@@ -476,15 +494,27 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     if (pick !== undefined && !menuOpen) {
       targets.push({ id: "hero:open", region: "hero", box: { x: 0, y: 100, w: 30, h: 10 }, act: [nav({ _tag: "OpenedGame", gameId: pick.game.id })], enter: aimAt(undefined) })
     }
-    // The RESUME list is drawn under the hero only.
-    if (pick !== undefined && !menuOpen) resumable.forEach((game, i) => targets.push(resumeTarget(game, i)))
+    // The RESUME rack is drawn under the hero only. It sends, and makes
+    // targets of, only the carts it can show around the cursor's (and the one
+    // the cursor comes back to), as Find's results.
+    const at = indexOfPrefixed(resumable, "resume:", focused)
+    const back = indexOfPrefixed(resumable, "resume:", s.remembered["resume"])
+    const reach = resumeReach(ctx.plan.width)
+    const anchor = Math.max(0, at)
+    const first = Math.max(0, Math.min(anchor, back === -1 ? anchor : back) - reach)
+    const end = Math.min(resumable.length, Math.max(anchor, back, reach) + 1)
+    const sent = pick === undefined ? [] : resumable.slice(first, end)
+    if (!menuOpen) sent.forEach((game, k) => targets.push(resumeTarget(game, first + k)))
     hero = pick === undefined ? hero : {
       title: pick.game.title,
       subtitle: pick.game.subtitle ?? "",
       reason: pick.reason ?? "",
       chips: factChips(pick.game),
       open: button("OPEN", { ...mark("hero:open", focused) }),
-      resume: resumable.map(game => resumeView(game, focused === `resume:${game.id}`)),
+      resume: sent.map(game => resumeView(game, focused === `resume:${game.id}`)),
+      resumeFirst: first,
+      resumeCount: resumable.length,
+      resumeFocused: anchor,
     }
   } else if (view._tag === "Loading" || view._tag === "Empty" || view._tag === "Failed") {
     body = "card"

@@ -5,37 +5,82 @@ import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 
 export struct ResumeView { cart: CartView, title: string, subtitle: string }
 
-// The games with a save waiting, each a cart with its title and system.
+// The games with a save waiting, each a cart with its title and system, in
+// a rack that moves only when the cursor passes its right edge, so the
+// cursor's cart is always in sight. logic.js sends only the carts the rack
+// can show: games[0] is the first'th of the count games that resume, and
+// focused is the cursor's (0 while the cursor is elsewhere). The rack takes
+// the place the row of all count carts took, laid out as it was with titles
+// of the design's two lines, and draws a title in at most two lines, so
+// neither depends on which carts are sent.
 export component PicoResumeList inherits VerticalLayout {
     callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <[ResumeView]> games;
+    in property <int> first;
+    in property <int> count;
+    in property <int> focused;
     spacing: 2 * Tokens.p;
+    property <length> slot-w: 44 * Tokens.p;
+    property <length> gap: 6 * Tokens.p;
     PicoLine { text: "RESUME"; color: P8.ink-quiet; }
+    // The place the row of all these carts took, laid out as it was;
+    // nothing of it is drawn but the rack, held by the first place.
     HorizontalLayout {
         alignment: start;
-        spacing: 6 * Tokens.p;
-        // The cart, its shadow and its target read the row through the list
-        // by index: after the shell updates a row in place, the row's own
-        // copy can lag a render (seen when the probe reads elements between
-        // renders), which left the cursor's shadow and scroll behind.
-        for game[i] in games : VerticalLayout {
-            width: 44 * Tokens.p;
+        spacing: gap;
+        VerticalLayout {
+            width: slot-w;
             alignment: start;
             spacing: Tokens.p;
             Rectangle {
                 height: 40 * Tokens.p;
-                accessible-role: AccessibleRole.list-item;
-                accessible-label: game.cart.title;
-                accessible-item-selectable: true;
-                accessible-item-selected: root.games[i].cart.target && root.games[i].cart.focused;
-                // Always present, shown by the row's data: a row updates in place.
-                Rectangle { visible: root.games[i].cart.target && root.games[i].cart.focused; x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
-                shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: parent.height - self.shell-h - 2 * Tokens.p; cart: root.games[i].cart; box-w: 20 * Tokens.p; box-h: 28 * Tokens.p; }
-                Rectangle { x: 0; y: parent.height - 2 * Tokens.p; width: parent.width; height: 2 * Tokens.p; background: P8.floor; }
+                // Clipped at the sides only: a cart's badge stands above it.
+                rack := Rectangle {
+                    property <length> above: 8 * Tokens.p;
+                    x: 0;
+                    y: -self.above;
+                    width: root.width;
+                    height: self.above + 40 * Tokens.p + Tokens.p + lines.height + Tokens.p + 1.5 * Tokens.sm;
+                    clip: true;
+                    property <length> scroll: max(0, min(count * (slot-w + gap) - gap - self.width, (focused + 1) * (slot-w + gap) - gap - self.width));
+                    // The cart, its shadow and its target read the row through the list
+                    // by index: after the shell updates a row in place, the row's own
+                    // copy can lag a render (seen when the probe reads elements between
+                    // renders), which left the cursor's shadow and scroll behind.
+                    for game[i] in games : VerticalLayout {
+                        x: (root.first + i) * (slot-w + gap) - rack.scroll;
+                        y: rack.above;
+                        width: slot-w;
+                        height: rack.height - rack.above;
+                        alignment: start;
+                        spacing: Tokens.p;
+                        Rectangle {
+                            height: 40 * Tokens.p;
+                            accessible-role: AccessibleRole.list-item;
+                            accessible-label: game.cart.title;
+                            accessible-item-selectable: true;
+                            accessible-item-selected: root.games[i].cart.target && root.games[i].cart.focused;
+                            // Always present, shown by the row's data: a row updates in place.
+                            Rectangle { visible: root.games[i].cart.target && root.games[i].cart.focused; x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                            shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: parent.height - self.shell-h - 2 * Tokens.p; cart: root.games[i].cart; box-w: 20 * Tokens.p; box-h: 28 * Tokens.p; }
+                            Rectangle { x: 0; y: parent.height - 2 * Tokens.p; width: parent.width; height: 2 * Tokens.p; background: P8.floor; }
+                        }
+                        Text { text: game.title; font-size: Tokens.sm; color: P8.ink; wrap: word-wrap; overflow: elide; height: min(self.preferred-height, lines.height); }
+                        PicoLine { text: game.subtitle; color: P8.ink-quiet; }
+                    }
+                }
             }
-            Text { text: game.title; font-size: Tokens.sm; color: P8.ink; wrap: word-wrap; }
-            PicoLine { text: game.subtitle; color: P8.ink-quiet; }
+            lines := Text { text: "M\nM"; font-size: Tokens.sm; color: transparent; wrap: word-wrap; }
+            PicoLine { text: ""; color: transparent; }
+        }
+        for place in max(0, root.count - 1) : VerticalLayout {
+            width: slot-w;
+            alignment: start;
+            spacing: Tokens.p;
+            Rectangle { height: 40 * Tokens.p; }
+            Text { text: "M\nM"; font-size: Tokens.sm; color: transparent; wrap: word-wrap; }
+            PicoLine { text: ""; color: transparent; }
         }
     }
 }

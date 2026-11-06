@@ -16,7 +16,7 @@ import { PicoModal } from "../organisms/PicoModal.slint";
 
 export struct StageView { shown: bool, title: string, subtitle: string, kicker: string, chips: [ChipView], index: int, total: int, cart: CartView }
 
-export struct HeroView { title: string, subtitle: string, reason: string, chips: [ChipView], open: ButtonView, resume: [ResumeView] }
+export struct HeroView { title: string, subtitle: string, reason: string, chips: [ChipView], open: ButtonView, resume: [ResumeView], resume-first: int, resume-count: int, resume-focused: int }
 
 export struct HomeView {
     body: string,
@@ -86,7 +86,7 @@ export component PicoHomeLayout inherits VerticalLayout {
         if home.body == "hero" : VerticalLayout {
             spacing: Tokens.u;
             PicoGameHero { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  title: home.hero.title; subtitle: home.hero.subtitle; open: home.hero.open; }
-            if home.hero.resume.length > 0 : PicoResumeList { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  games: home.hero.resume; }
+            if home.hero.resume.length > 0 : PicoResumeList { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  games: home.hero.resume; first: home.hero.resume-first; count: home.hero.resume-count; focused: home.hero.resume-focused; }
         }
         if home.body == "stage" : PicoLaunchStage { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  vertical-stretch: 1; min-height: 60 * Tokens.p; launch: home.launch; }
         if home.body == "grid" || home.body == "hero" : Rectangle { vertical-stretch: 1; }
