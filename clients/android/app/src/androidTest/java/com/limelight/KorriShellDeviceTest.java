@@ -152,13 +152,18 @@ public class KorriShellDeviceTest {
     private static void assertCursorMoves(ActivityScenario<KorriShellActivity> scenario, int code, int source) {
         AtomicInteger before = new AtomicInteger();
         scenario.onActivity(a -> before.set(a.shellSelectedIndex()));
-        press(code, source);
-        // A cursor at an edge may not move that way. Try the opposite direction.
-        SystemClock.sleep(250);
-        AtomicBoolean moved = new AtomicBoolean();
-        scenario.onActivity(a -> moved.set(a.shellSelectedIndex() != before.get()));
-        if (!moved.get()) press(code == KeyEvent.KEYCODE_DPAD_LEFT ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT, source);
-        awaitState(scenario, a -> a.shellSelectedIndex() != before.get(), "Injected D-pad did not move surface cursor");
+        // Touch can leave focus on a header or action, not a game. Traverse
+        // real surface regions instead of assuming a horizontal card neighbor.
+        int opposite = code == KeyEvent.KEYCODE_DPAD_LEFT ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT;
+        for (int direction : new int[] { code, opposite, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_UP }) {
+            press(direction, source);
+            SystemClock.sleep(300);
+            AtomicBoolean moved = new AtomicBoolean();
+            scenario.onActivity(a -> moved.set(a.shellSelectedIndex() != before.get()));
+            if (moved.get()) return;
+        }
+        fail("Injected D-pad sequence did not move surface cursor");
     }
 
     private static void awaitState(ActivityScenario<KorriShellActivity> scenario,
