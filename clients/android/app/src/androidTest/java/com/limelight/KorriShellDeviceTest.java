@@ -37,7 +37,7 @@ public class KorriShellDeviceTest {
             });
             assertEquals(401, health(port.get(), null));
             assertEquals(200, health(port.get(), KorridServer.capability()));
-            assertEquals("Owned", new JSONObject(KorridServer.identityStatus()).getString("_tag"));
+            assertOwned(port.get());
             assertDragMovesPico(scenario);
             scenario.onActivity(activity -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
             SystemClock.sleep(1500);
@@ -56,7 +56,7 @@ public class KorriShellDeviceTest {
                 scenario.recreate();
                 awaitReady(scenario);
                 assertEquals(200, health(port.get(), KorridServer.capability()));
-                assertEquals("Owned", new JSONObject(KorridServer.identityStatus()).getString("_tag"));
+                assertOwned(port.get());
             }
         }
     }
@@ -133,6 +133,31 @@ public class KorriShellDeviceTest {
             }
         }
         return false;
+    }
+
+    // Check the public authenticated wire, not a JNI method unused by the
+    // shipped activity (R8 can legitimately remove that Java declaration).
+    private static void assertOwned(int port) throws Exception {
+        HttpURLConnection request = (HttpURLConnection) new URL("http://127.0.0.1:" + port + "/rpc").openConnection();
+        try {
+            request.setConnectTimeout(3000);
+            request.setReadTimeout(3000);
+            request.setRequestMethod("POST");
+            request.setRequestProperty("Content-Type", "application/json");
+            request.setRequestProperty("Authorization", "Bearer " + KorridServer.capability());
+            request.setDoOutput(true);
+            request.getOutputStream().write("{\"_tag\":\"system.identity.status\",\"payload\":{}}".getBytes(StandardCharsets.UTF_8));
+            assertEquals(200, request.getResponseCode());
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream input = request.getInputStream()) {
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = input.read(buffer)) != -1) bytes.write(buffer, 0, count);
+            }
+            JSONObject outcome = new JSONObject(bytes.toString(StandardCharsets.UTF_8.name())).getJSONObject("outcome");
+            assertEquals("Ok", outcome.getString("_tag"));
+            assertEquals("Owned", outcome.getJSONObject("payload").getJSONObject("identity").getString("_tag"));
+        } finally { request.disconnect(); }
     }
 
     private static int health(int port, String capability) throws Exception {
