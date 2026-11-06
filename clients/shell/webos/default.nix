@@ -86,7 +86,7 @@ in
     # Hidden dev-only operator tool. Deliberately absent from product help.
     shell-webos-owner-sign = makeApp "shell-webos-owner-sign" [ ] ''
       nix develop "$KORRI_ROOT#korrid" --command cargo build --locked \
-        --manifest-path "$KORRI_ROOT/services/korrid/Cargo.toml" --bin webos-owner-sign >&2
+        --manifest-path "$crate/../../services/korrid/Cargo.toml" --bin webos-owner-sign >&2
       exec "$KORRI_ROOT/.cache/korrid-target/debug/webos-owner-sign" "$@"
     '';
     shell-webos-package-check = makeApp "shell-webos-package-check" [ ] ''
