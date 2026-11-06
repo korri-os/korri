@@ -148,12 +148,13 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.3.0'
 }
 
-// The APK carries the exact Linux Pico package, not an Android variant.
-def picoAssets = tasks.register('picoAssets', Sync) {
-    from('../../shell/packages/pico') {
-        include '**/*.slint', '**/*.js', 'fonts/**', 'art/**'
+// Both platforms carry the exact same surface files, not Android variants.
+def surfaceAssets = tasks.register('surfaceAssets', Sync) {
+    from('../../shell/packages') {
+        include 'pico/**/*.slint', 'pico/**/*.js', 'pico/fonts/**', 'pico/art/**'
+        include 'zone/**/*.slint', 'zone/**/*.js', 'zone/fonts/**', 'zone/art/**'
     }
-    into(layout.buildDirectory.dir('generated/picoAssets/surfaces/pico'))
+    into(layout.buildDirectory.dir('generated/surfaceAssets/surfaces'))
 }
-android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/picoAssets'))
-tasks.named('preBuild').configure { dependsOn(picoAssets) }
+android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/surfaceAssets'))
+tasks.named('preBuild').configure { dependsOn(surfaceAssets) }

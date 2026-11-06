@@ -31,8 +31,10 @@ case "$mode" in
   apk)
     # Run the same verifier as Linux on the build machine, never the phone.
     mkdir -p "$KORRI_ROOT/.cache"
-    nix run "$KORRI_ROOT#shell-run" -- verify "$KORRI_ROOT/clients/shell/packages/pico" \
-      > "$KORRI_ROOT/.cache/android-pico-verification.json"
+    for surface in pico zone; do
+      nix run "$KORRI_ROOT#shell-run" -- verify "$KORRI_ROOT/clients/shell/packages/$surface" \
+        > "$KORRI_ROOT/.cache/android-$surface-verification.json"
+    done
     cd "$KORRI_ROOT/services/korrid"
     cargo build --locked --release --lib --target aarch64-linux-android
     install -Dm755 "$CARGO_TARGET_DIR/aarch64-linux-android/release/libkorrid.so" \

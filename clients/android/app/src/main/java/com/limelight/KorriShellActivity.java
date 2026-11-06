@@ -22,6 +22,8 @@ public class KorriShellActivity extends NativeActivity {
     private volatile int libraryCount;
     private volatile int selectedIndex = -1;
     private String packagePath;
+    private volatile String surfaceId = "";
+    private volatile String surfacePage = "";
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         // NativeActivity starts android_main in super.onCreate. Publish the
@@ -36,11 +38,13 @@ public class KorriShellActivity extends NativeActivity {
             port = 0;
         }
         try {
-            File pico = new File(getCacheDir(), "surfaces/pico");
-            copyPackage("surfaces/pico", pico);
-            packagePath = pico.getAbsolutePath();
+            File surfaces = new File(getCacheDir(), "surfaces");
+            for (String id : new String[] { "pico", "zone" }) {
+                copyPackage("surfaces/" + id, new File(surfaces, id));
+            }
+            packagePath = surfaces.getAbsolutePath();
         } catch (IOException error) {
-            throw new IllegalStateException("Could not unpack Pico", error);
+            throw new IllegalStateException("Could not unpack surfaces", error);
         }
         super.onCreate(savedInstanceState);
         applyFullscreen();
@@ -52,11 +56,15 @@ public class KorriShellActivity extends NativeActivity {
     public String shellCapability() { return port == 0 ? "" : KorridServer.capability(); }
     public String shellPackagePath() { return packagePath; }
     // Readiness comes from a rendered Pico frame, not just native startup.
-    public void shellRendered(int count, int selected) {
+    public void shellRendered(String id, String page, int count, int selected) {
+        surfacePage = page;
+        surfaceId = id;
         libraryCount = count;
         selectedIndex = selected;
         shellReady = true;
     }
+    public String shellSurfacePage() { return surfacePage; }
+    public String shellSurfaceId() { return surfaceId; }
     public int shellLibraryCount() { return libraryCount; }
     public int shellSelectedIndex() { return selectedIndex; }
     public boolean isShellReady() { return shellReady; }
@@ -101,6 +109,11 @@ public class KorriShellActivity extends NativeActivity {
         super.onWindowFocusChanged(focused);
         if (focused) applyFullscreen();
     }
+
+    // The native input filter consumes BACK and sends semantic Back. Do not
+    // let the framework finish this Activity if a Back arrives before it is ready.
+    @SuppressWarnings("deprecation")
+    @Override public void onBackPressed() { }
 
     // The foreground service, not an activity, owns korrid. In particular do
     // not stop it on rotation, Back, or while Artemis Game is in front.

@@ -3,6 +3,9 @@ package com.limelight;
 import android.os.SystemClock;
 import android.view.View;
 import android.view.MotionEvent;
+import android.view.KeyEvent;
+import android.view.InputDevice;
+import java.util.function.Predicate;
 import android.view.WindowManager;
 import android.content.pm.ActivityInfo;
 import android.os.Build;
@@ -39,6 +42,7 @@ public class KorriShellDeviceTest {
             assertEquals(200, health(port.get(), KorridServer.capability()));
             assertOwned(port.get());
             assertDragMovesPico(scenario);
+            assertControllerAndRemote(scenario);
             scenario.onActivity(activity -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
             SystemClock.sleep(1500);
             awaitReady(scenario);
@@ -108,6 +112,84 @@ public class KorriShellDeviceTest {
             SystemClock.sleep(100);
         } while (SystemClock.elapsedRealtime() < deadline);
         fail("Finger drag did not move Pico's library cursor");
+    }
+
+    private static void assertControllerAndRemote(ActivityScenario<KorriShellActivity> scenario) {
+        assertCursorMoves(scenario, KeyEvent.KEYCODE_DPAD_LEFT, InputDevice.SOURCE_DPAD);
+        // X has Linux's Options meaning; Pico opens Find. Android Back must
+        // close that surface layer through the native queue, not the Activity.
+        press(KeyEvent.KEYCODE_BUTTON_X, InputDevice.SOURCE_GAMEPAD);
+        awaitState(scenario, a -> a.shellSurfacePage().equals("find"), "X did not open Pico Find");
+        press(KeyEvent.KEYCODE_BACK, InputDevice.SOURCE_KEYBOARD);
+        awaitState(scenario, a -> a.shellSurfacePage().equals("home"), "Android Back did not close Find");
+        press(KeyEvent.KEYCODE_BACK, InputDevice.SOURCE_KEYBOARD);
+        SystemClock.sleep(500);
+        scenario.onActivity(a -> {
+            assertFalse("Back at root must not finish the native Activity", a.isFinishing());
+            assertEquals("home", a.shellSurfacePage());
+        });
+        switchSurface();
+        awaitState(scenario, a -> a.shellSurfaceId().equals("zone") && a.shellLibraryCount() > 0,
+                "L1+R1 did not render Zone");
+        assertCursorMoves(scenario, KeyEvent.KEYCODE_DPAD_RIGHT, InputDevice.SOURCE_GAMEPAD);
+        // Remote Center and Enter are Confirm too. Zone's Options button opens
+        // a non-destructive layer, and B returns to the card band.
+        press(KeyEvent.KEYCODE_BUTTON_X, InputDevice.SOURCE_GAMEPAD);
+        press(KeyEvent.KEYCODE_BUTTON_B, InputDevice.SOURCE_GAMEPAD);
+        switchSurface();
+        awaitState(scenario, a -> a.shellSurfaceId().equals("pico") && a.shellLibraryCount() > 0,
+                "L1+R1 did not return to Pico");
+        press(KeyEvent.KEYCODE_DPAD_CENTER, InputDevice.SOURCE_DPAD);
+        awaitState(scenario, a -> a.shellSurfacePage().equals("detail"), "Remote Center did not confirm Pico card");
+        press(KeyEvent.KEYCODE_BACK, InputDevice.SOURCE_KEYBOARD);
+        awaitState(scenario, a -> a.shellSurfacePage().equals("home"), "Back did not close Pico detail");
+        press(KeyEvent.KEYCODE_ENTER, InputDevice.SOURCE_KEYBOARD);
+        awaitState(scenario, a -> a.shellSurfacePage().equals("detail"), "Enter did not confirm Pico card");
+        press(KeyEvent.KEYCODE_BUTTON_B, InputDevice.SOURCE_GAMEPAD);
+        awaitState(scenario, a -> a.shellSurfacePage().equals("home"), "B did not close Pico detail");
+    }
+
+    private static void assertCursorMoves(ActivityScenario<KorriShellActivity> scenario, int code, int source) {
+        AtomicInteger before = new AtomicInteger();
+        scenario.onActivity(a -> before.set(a.shellSelectedIndex()));
+        press(code, source);
+        // A cursor at an edge may not move that way. Try the opposite direction.
+        SystemClock.sleep(250);
+        AtomicBoolean moved = new AtomicBoolean();
+        scenario.onActivity(a -> moved.set(a.shellSelectedIndex() != before.get()));
+        if (!moved.get()) press(code == KeyEvent.KEYCODE_DPAD_LEFT ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT, source);
+        awaitState(scenario, a -> a.shellSelectedIndex() != before.get(), "Injected D-pad did not move surface cursor");
+    }
+
+    private static void awaitState(ActivityScenario<KorriShellActivity> scenario,
+                                   Predicate<KorriShellActivity> condition, String failure) {
+        AtomicBoolean matched = new AtomicBoolean();
+        long deadline = SystemClock.elapsedRealtime() + 15000;
+        do {
+            scenario.onActivity(a -> matched.set(condition.test(a)));
+            if (matched.get()) return;
+            SystemClock.sleep(100);
+        } while (SystemClock.elapsedRealtime() < deadline);
+        fail(failure);
+    }
+
+    private static void switchSurface() {
+        key(KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.ACTION_DOWN, InputDevice.SOURCE_GAMEPAD);
+        key(KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.ACTION_DOWN, InputDevice.SOURCE_GAMEPAD);
+        key(KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.ACTION_UP, InputDevice.SOURCE_GAMEPAD);
+        key(KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.ACTION_UP, InputDevice.SOURCE_GAMEPAD);
+    }
+
+    private static void press(int code, int source) {
+        key(code, KeyEvent.ACTION_DOWN, source);
+        key(code, KeyEvent.ACTION_UP, source);
+    }
+
+    private static void key(int code, int action, int source) {
+        long now = SystemClock.uptimeMillis();
+        KeyEvent event = new KeyEvent(now, now, action, code, 0, 0,
+                -1, 0, 0, source);
+        assertTrue("Key injection failed", InstrumentationRegistry.getInstrumentation().getUiAutomation().injectInputEvent(event, true));
     }
 
     private static void swipe(float x0, float y0, float x1, float y1) {

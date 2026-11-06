@@ -3,14 +3,14 @@
 use super::{Backend, FrameCounter, HostEvent, Placement};
 use crate::{
     config::Connection,
-    input::drag::Drag,
+    input::{android::AndroidInput, drag::Drag, native::NativeEvent},
     korrid::Korrid,
     package::Package,
     shell::{Event, Options, Post, Shell},
 };
 use i_slint_backend_android_activity::{
     android_activity::{
-        input::{InputEvent, MotionAction},
+        input::{Axis, InputEvent, KeyAction, MotionAction},
         MainEvent, PollEvent,
     },
     AndroidPlatform,
@@ -38,16 +38,23 @@ struct Android {
 }
 
 impl Android {
-    fn install(app: AndroidApp) -> anyhow::Result<Self> {
+    fn install(app: AndroidApp, post: mpsc::Sender<Event>) -> anyhow::Result<Self> {
         let front: Front = Default::default();
         let events = front.clone();
         let touch = front.clone();
-        let drag = RefCell::new(Drag::default());
+        let drag = Rc::new(RefCell::new(Drag::default()));
+        let focus_drag = drag.clone();
+        let input = Rc::new(RefCell::new(AndroidInput::default()));
+        let focus_input = input.clone();
         let touch_app = app.clone();
         let platform = AndroidPlatform::new_with_event_listener(app, move |event| {
             let host = match event {
                 PollEvent::Main(MainEvent::GainedFocus) => Some(HostEvent::Focus(true)),
-                PollEvent::Main(MainEvent::LostFocus) => Some(HostEvent::Focus(false)),
+                PollEvent::Main(MainEvent::LostFocus) => {
+                    focus_input.borrow_mut().reset();
+                    focus_drag.borrow_mut().cancel();
+                    Some(HostEvent::Focus(false))
+                }
                 PollEvent::Main(
                     MainEvent::InitWindow { .. }
                     | MainEvent::WindowResized { .. }
@@ -61,11 +68,53 @@ impl Android {
             }
         })
         .with_input_event_filter(Box::new(move |event| {
-            // Controller/key mapping and taps are M2. Only single-finger drags
-            // become momentary directional presses; no view hit-testing here.
+            let send = |events: Vec<NativeEvent>| {
+                for event in events {
+                    let _ = post.send(Event::Native(event));
+                }
+            };
+            if let InputEvent::KeyEvent(key) = event {
+                let code: u32 = key.key_code().into();
+                let pressed = match key.action() {
+                    KeyAction::Down => true,
+                    KeyAction::Up => false,
+                    _ => return false,
+                };
+                return if let Some(events) = input.borrow_mut().key(key.device_id(), code, pressed)
+                {
+                    send(events);
+                    true
+                } else {
+                    false
+                };
+            }
             let InputEvent::MotionEvent(motion) = event else {
                 return false;
             };
+            let source: u32 = motion.source().into();
+            // SOURCE_CLASS_JOYSTICK. Never interpret a touchscreen's pixel X/Y
+            // as stick axes or let gamepad motion enter the touch drag path.
+            if source & 0x10 != 0 {
+                if let Some(pointer) = motion.pointers().next() {
+                    let axis = |axis| {
+                        if motion.action() == MotionAction::Cancel {
+                            0.0
+                        } else {
+                            pointer.axis_value(axis)
+                        }
+                    };
+                    send(input.borrow_mut().axes(
+                        motion.device_id(),
+                        axis(Axis::X),
+                        axis(Axis::Y),
+                        axis(Axis::HatX),
+                        axis(Axis::HatY),
+                    ));
+                }
+                return true;
+            }
+            // Only single-finger drags become momentary directional presses;
+            // no surface hit-testing or focus model lives at this edge.
             let mut drag = drag.borrow_mut();
             if motion.pointer_count() != 1 {
                 drag.cancel();
@@ -171,10 +220,13 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
     let activity = env.new_global_ref(activity)?;
     drop(env);
     let brain = Korrid::new(Connection::new(port as u16, origin, capability));
-    let backend = Rc::new(Android::install(app)?);
     let (tx, rx) = mpsc::channel();
+    let backend = Rc::new(Android::install(app, tx.clone())?);
     let mut shell = Shell::new(
-        vec![Package::at(Path::new(&package))?],
+        vec![
+            Package::at(&Path::new(&package).join("pico"))?,
+            Package::at(&Path::new(&package).join("zone"))?,
+        ],
         brain,
         backend,
         Arc::new(Queue(tx)),
@@ -199,24 +251,49 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
             }
             if frames.get() > last_frame {
                 last_frame = frames.get();
-                // Observe the actual bound Pico view, only after a rendered frame.
-                // This has no bootstrap or model content beyond two public counts.
-                if let Some(Value::Struct(home)) = shell.surface_property("home") {
-                    let number = |name| match home.get_field(name) {
-                        Some(Value::Number(n)) => *n as i32,
-                        _ => 0,
+                // Read the rendered surface, not a test-only input shortcut.
+                let pico = shell.current_id() == Some("pico");
+                let home = shell.surface_property("home");
+                let number = |name: &str| {
+                    let value = if pico {
+                        match &home {
+                            Some(Value::Struct(home)) => home.get_field(name).cloned(),
+                            _ => None,
+                        }
+                    } else {
+                        shell.surface_property(name)
                     };
-                    if let Ok(mut env) = vm.attach_current_thread() {
-                        let _ = env.call_method(
+                    match value {
+                        Some(Value::Number(n)) => n as i32,
+                        _ => 0,
+                    }
+                };
+                if let Ok(mut env) = vm.attach_current_thread() {
+                    let _: jni::errors::Result<()> = env.with_local_frame(4, |env| {
+                        let surface: JObject =
+                            env.new_string(if pico { "pico" } else { "zone" })?.into();
+                        let page = match shell.surface_property("page") {
+                            Some(Value::String(page)) => page.to_string(),
+                            _ => String::new(),
+                        };
+                        let page: JObject = env.new_string(page)?.into();
+                        env.call_method(
                             activity.as_obj(),
                             "shellRendered",
-                            "(II)V",
+                            "(Ljava/lang/String;Ljava/lang/String;II)V",
                             &[
+                                JValue::Object(&surface),
+                                JValue::Object(&page),
                                 JValue::Int(number("total")),
-                                JValue::Int(number("selected-index")),
+                                JValue::Int(number(if pico {
+                                    "selected-index"
+                                } else {
+                                    "focused-card"
+                                })),
                             ],
-                        );
-                    }
+                        )?;
+                        Ok(())
+                    });
                 }
             }
         },

@@ -39,6 +39,13 @@ public class KorriShellActivityLifecycleContractTest {
         assertTrue(source.contains("if (focused) applyFullscreen()"));
     }
 
+    @Test public void back_stays_in_the_native_semantic_input_path() throws Exception {
+        String activity = manifest().split("android:name=\".KorriShellActivity\"")[1].split("</activity>")[0];
+        assertTrue(activity.contains("android:enableOnBackInvokedCallback=\"false\""));
+        assertTrue(source().contains("@Override public void onBackPressed() { }"));
+        assertFalse(source().contains("finish()"));
+    }
+
     private static String manifest() throws Exception {
         return new String(Files.readAllBytes(Path.of("src/main/AndroidManifest.xml")), java.nio.charset.StandardCharsets.UTF_8);
     }

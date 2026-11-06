@@ -103,7 +103,7 @@
             android:exported="true"
             android:label="Korri"
             android:resizeableActivity="true"
-            android:enableOnBackInvokedCallback="true"
+            android:enableOnBackInvokedCallback="false"
             android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="korri_shell" />
             <intent-filter>
