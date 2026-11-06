@@ -24,6 +24,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.*;
 
 /** The shipped NativeActivity, interpreter, QuickJS and authenticated RPC. */
@@ -114,7 +115,7 @@ public class KorriShellDeviceTest {
         fail("Finger drag did not move Pico's library cursor");
     }
 
-    private static void assertControllerAndRemote(ActivityScenario<KorriShellActivity> scenario) {
+    private static void assertControllerAndRemote(ActivityScenario<KorriShellActivity> scenario) throws Exception {
         assertCursorMoves(scenario, KeyEvent.KEYCODE_DPAD_LEFT, InputDevice.SOURCE_DPAD);
         // X has Linux's Options meaning; Pico opens Find. Android Back must
         // close that surface layer through the native queue, not the Activity.
@@ -149,21 +150,55 @@ public class KorriShellDeviceTest {
         awaitState(scenario, a -> a.shellSurfacePage().equals("home"), "B did not close Pico detail");
     }
 
-    private static void assertCursorMoves(ActivityScenario<KorriShellActivity> scenario, int code, int source) {
-        AtomicInteger before = new AtomicInteger();
-        scenario.onActivity(a -> before.set(a.shellSelectedIndex()));
-        // Touch can leave focus on a header or action, not a game. Traverse
-        // real surface regions instead of assuming a horizontal card neighbor.
+    private static void assertCursorMoves(ActivityScenario<KorriShellActivity> scenario, int code, int source) throws Exception {
+        AtomicInteger port = new AtomicInteger();
+        AtomicReference<String> surface = new AtomicReference<>();
+        scenario.onActivity(a -> {
+            port.set(a.shellPort());
+            surface.set(a.shellSurfaceId());
+        });
+        // Pico's pressed() changes state.focus; sync() reports its cart with
+        // FocusGame. Observe that stable game ID through the real model, not
+        // home.selected-index (the chosen cart's position in a moving window).
+        String before = focusedGame(port.get(), surface.get());
         int opposite = code == KeyEvent.KEYCODE_DPAD_LEFT ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT;
         for (int direction : new int[] { code, opposite, KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_UP }) {
             press(direction, source);
-            SystemClock.sleep(300);
-            AtomicBoolean moved = new AtomicBoolean();
-            scenario.onActivity(a -> moved.set(a.shellSelectedIndex() != before.get()));
-            if (moved.get()) return;
+            long deadline = SystemClock.elapsedRealtime() + 2000;
+            do {
+                String after = focusedGame(port.get(), surface.get());
+                if (after != null && !after.equals(before)) return;
+                SystemClock.sleep(100);
+            } while (SystemClock.elapsedRealtime() < deadline);
         }
-        fail("Injected D-pad sequence did not move surface cursor");
+        fail("Injected D-pad sequence did not change the surface's reported focused game");
+    }
+
+    private static String focusedGame(int port, String surface) throws Exception {
+        HttpURLConnection request = (HttpURLConnection) new URL("http://127.0.0.1:" + port + "/rpc").openConnection();
+        try {
+            request.setConnectTimeout(3000);
+            request.setReadTimeout(3000);
+            request.setRequestMethod("POST");
+            request.setRequestProperty("Content-Type", "application/json");
+            request.setRequestProperty("Authorization", "Bearer " + KorridServer.capability());
+            request.setDoOutput(true);
+            JSONObject body = new JSONObject().put("_tag", "app.surface.model")
+                    .put("payload", new JSONObject().put("surfaceId", surface));
+            request.getOutputStream().write(body.toString().getBytes(StandardCharsets.UTF_8));
+            assertEquals(200, request.getResponseCode());
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream input = request.getInputStream()) {
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = input.read(buffer)) != -1) bytes.write(buffer, 0, count);
+            }
+            JSONObject outcome = new JSONObject(bytes.toString(StandardCharsets.UTF_8.name())).getJSONObject("outcome");
+            assertEquals("Ok", outcome.getString("_tag"));
+            JSONObject focused = outcome.getJSONObject("payload").optJSONObject("focusedGame");
+            return focused == null ? null : focused.getString("gameId");
+        } finally { request.disconnect(); }
     }
 
     private static void awaitState(ActivityScenario<KorriShellActivity> scenario,
