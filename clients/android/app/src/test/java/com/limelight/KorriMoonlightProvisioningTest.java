@@ -95,7 +95,16 @@ public class KorriMoonlightProvisioningTest {
         owner.start();
         assertTrue(provisionEntered.await(2, TimeUnit.SECONDS));
         waiter.start();
-        release.countDown();
+        try {
+            // Keep the owner in flight until the waiter reaches InFlight.await().
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (waiter.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
+                Thread.sleep(1);
+            }
+            assertEquals("Waiter did not join the in-flight provision", Thread.State.WAITING, waiter.getState());
+        } finally {
+            release.countDown();
+        }
         owner.join(2000);
         waiter.join(2000);
 
