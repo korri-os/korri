@@ -38,6 +38,11 @@ impl AndroidInput {
         }
     }
 
+    pub fn removed(&mut self, device: i32) -> NativeEvent {
+        self.devices.remove(&device);
+        NativeEvent::DeviceRemoved(device.to_string())
+    }
+
     fn attach(&mut self, device: i32, out: &mut Vec<NativeEvent>) {
         if self.devices.insert(device) {
             let id = device.to_string();
@@ -181,6 +186,21 @@ mod tests {
             vec![Press::Switch]
         );
         assert!(route(&mut router, source.key(7, 103, true).unwrap(), 1.0).is_empty());
+    }
+
+    #[test]
+    fn android_disconnect_releases_repeat_and_allows_reconnection() {
+        let mut source = AndroidInput::default();
+        let mut router = Router::new(true);
+        route(&mut router, source.key(7, 22, true).unwrap(), 0.0);
+        assert!(router.holding());
+        assert!(router.native(source.removed(7), 1.0).is_empty());
+        assert!(!router.holding());
+        assert!(router.tick(1000.0).is_empty());
+        assert_eq!(
+            route(&mut router, source.key(7, 96, true).unwrap(), 1001.0),
+            vec![Press::Button(Button::Confirm)]
+        );
     }
 
     #[test]

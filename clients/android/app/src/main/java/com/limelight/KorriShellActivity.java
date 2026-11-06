@@ -4,6 +4,10 @@ import android.app.NativeActivity;
 import android.os.Bundle;
 import android.os.Build;
 import android.view.WindowManager;
+import android.hardware.input.InputManager;
+import android.content.Context;
+import java.util.ArrayList;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -24,6 +28,13 @@ public class KorriShellActivity extends NativeActivity {
     private String packagePath;
     private volatile String surfaceId = "";
     private volatile String surfacePage = "";
+    private InputManager inputManager;
+    private final ConcurrentLinkedQueue<Integer> removedInputDevices = new ConcurrentLinkedQueue<>();
+    private final InputManager.InputDeviceListener inputDevices = new InputManager.InputDeviceListener() {
+        @Override public void onInputDeviceAdded(int id) { }
+        @Override public void onInputDeviceChanged(int id) { }
+        @Override public void onInputDeviceRemoved(int id) { removedInputDevices.add(id); }
+    };
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         // NativeActivity starts android_main in super.onCreate. Publish the
@@ -47,6 +58,8 @@ public class KorriShellActivity extends NativeActivity {
             throw new IllegalStateException("Could not unpack surfaces", error);
         }
         super.onCreate(savedInstanceState);
+        inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
+        inputManager.registerInputDeviceListener(inputDevices, null);
         applyFullscreen();
     }
 
@@ -55,7 +68,18 @@ public class KorriShellActivity extends NativeActivity {
     public String shellOrigin() { return origin; }
     public String shellCapability() { return port == 0 ? "" : KorridServer.capability(); }
     public String shellPackagePath() { return packagePath; }
-    // Readiness comes from a rendered Pico frame, not just native startup.
+    // Android's device-removal callback has no android-activity equivalent.
+    // The native source drains it so disconnecting a held direction stops repeat.
+    public int[] shellTakeRemovedInputDevices() {
+        ArrayList<Integer> ids = new ArrayList<>();
+        Integer id;
+        while ((id = removedInputDevices.poll()) != null) ids.add(id);
+        int[] result = new int[ids.size()];
+        for (int i = 0; i < result.length; i++) result[i] = ids.get(i);
+        return result;
+    }
+
+    // Readiness comes from a rendered surface frame, not just native startup.
     public void shellRendered(String id, String page, int count, int selected) {
         surfacePage = page;
         surfaceId = id;
@@ -108,6 +132,11 @@ public class KorriShellActivity extends NativeActivity {
     @Override public void onWindowFocusChanged(boolean focused) {
         super.onWindowFocusChanged(focused);
         if (focused) applyFullscreen();
+    }
+
+    @Override protected void onDestroy() {
+        inputManager.unregisterInputDeviceListener(inputDevices);
+        super.onDestroy();
     }
 
     // The native input filter consumes BACK and sends semantic Back. Do not

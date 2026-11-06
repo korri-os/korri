@@ -59,6 +59,7 @@
     public java.lang.String shellOrigin();
     public java.lang.String shellCapability();
     public java.lang.String shellPackagePath();
+    public int[] shellTakeRemovedInputDevices();
     public void shellRendered(java.lang.String, java.lang.String, int, int);
     public java.lang.String shellSurfaceId();
     public java.lang.String shellSurfacePage();

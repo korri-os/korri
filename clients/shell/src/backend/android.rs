@@ -16,7 +16,7 @@ use i_slint_backend_android_activity::{
     AndroidPlatform,
 };
 use jni::{
-    objects::{JObject, JValue},
+    objects::{JIntArray, JObject, JValue},
     JavaVM,
 };
 use slint::android::AndroidApp;
@@ -26,7 +26,7 @@ use std::{
     path::Path,
     rc::Rc,
     sync::{mpsc, Arc},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 type Sink = Rc<dyn Fn(HostEvent)>;
@@ -34,6 +34,7 @@ type Front = Rc<RefCell<Option<(Sink, FrameCounter, bool)>>>;
 
 struct Android {
     front: Front,
+    input: Rc<RefCell<AndroidInput>>,
     notifier_installed: std::cell::Cell<bool>,
 }
 
@@ -46,6 +47,7 @@ impl Android {
         let focus_drag = drag.clone();
         let input = Rc::new(RefCell::new(AndroidInput::default()));
         let focus_input = input.clone();
+        let event_input = input.clone();
         let touch_app = app.clone();
         let platform = AndroidPlatform::new_with_event_listener(app, move |event| {
             let host = match event {
@@ -71,6 +73,7 @@ impl Android {
             }
         })
         .with_input_event_filter(Box::new(move |event| {
+            let input = &event_input;
             let send = |events: Vec<NativeEvent>| {
                 for event in events {
                     let _ = post.send(Event::Native(event));
@@ -154,6 +157,7 @@ impl Android {
         slint::platform::set_platform(Box::new(platform))?;
         Ok(Self {
             front,
+            input,
             notifier_installed: Default::default(),
         })
     }
@@ -225,6 +229,7 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
     let brain = Korrid::new(Connection::new(port as u16, origin, capability));
     let (tx, rx) = mpsc::channel();
     let backend = Rc::new(Android::install(app, tx.clone())?);
+    let input = backend.input.clone();
     let mut shell = Shell::new(
         vec![
             Package::at(&Path::new(&package).join("pico"))?,
@@ -245,12 +250,37 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
     let frames = shell.frames();
     let timer = slint::Timer::default();
     let mut last_frame = 0;
+    let mut last_device_poll = Instant::now();
     timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(16),
         move || {
             for event in rx.try_iter() {
                 shell.handle(event);
+            }
+            if last_device_poll.elapsed() >= Duration::from_millis(100) {
+                last_device_poll = Instant::now();
+                if let Ok(mut env) = vm.attach_current_thread() {
+                    let removed: jni::errors::Result<Vec<i32>> = env.with_local_frame(4, |env| {
+                        let array = env
+                            .call_method(
+                                activity.as_obj(),
+                                "shellTakeRemovedInputDevices",
+                                "()[I",
+                                &[],
+                            )?
+                            .l()?;
+                        let array = JIntArray::from(array);
+                        let mut ids = vec![0; env.get_array_length(&array)? as usize];
+                        env.get_int_array_region(&array, 0, &mut ids)?;
+                        Ok(ids)
+                    });
+                    if let Ok(ids) = removed {
+                        for id in ids {
+                            shell.handle(Event::Native(input.borrow_mut().removed(id)));
+                        }
+                    }
+                }
             }
             if frames.get() > last_frame {
                 last_frame = frames.get();

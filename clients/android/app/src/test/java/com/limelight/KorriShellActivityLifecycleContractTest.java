@@ -46,6 +46,13 @@ public class KorriShellActivityLifecycleContractTest {
         assertFalse(source().contains("finish()"));
     }
 
+    @Test public void input_device_removal_is_observed_and_listener_is_retired() throws Exception {
+        String source = source();
+        assertTrue(source.contains("registerInputDeviceListener(inputDevices, null)"));
+        assertTrue(source.contains("onInputDeviceRemoved(int id) { removedInputDevices.add(id); }"));
+        assertTrue(source.contains("unregisterInputDeviceListener(inputDevices)"));
+    }
+
     private static String manifest() throws Exception {
         return new String(Files.readAllBytes(Path.of("src/main/AndroidManifest.xml")), java.nio.charset.StandardCharsets.UTF_8);
     }

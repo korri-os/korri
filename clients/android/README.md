@@ -84,7 +84,8 @@ Android's BUTTON_A means Confirm and BUTTON_B means Back; the mapping does not
 infer a Nintendo layout from a device name. The mapper gives D-pad/hat priority,
 uses the dominant stick axis above 0.6 (normalized range), and repeats directions
 after 400 ms, then every 100 ms. Android's own key repeats do not double-repeat.
-Focus loss clears held keys, stick state and touch drags.
+Focus loss clears held keys, stick state and touch drags. Android device-removal
+callbacks are drained every 100 ms to release a disconnected controller's held state.
 
 System Back opts out of predictive Activity navigation so its legacy key reaches
 the native input filter. It sends the surface Back, including closing its own
