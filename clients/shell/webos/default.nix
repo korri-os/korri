@@ -48,7 +48,7 @@ let
       ]
     }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     cargo build --locked --release --manifest-path "$crate/Cargo.toml" \
-      --no-default-features --features webos,fixture --bin korri-shell --example fixture-korrid
+      --no-default-features --features webos,fixture --bin korri-shell --bin fixture-korrid
   '';
 in
 {

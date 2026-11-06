@@ -21,7 +21,7 @@ from package import stage_surfaces
 stage_surfaces(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
 PY
 mkdir "$work/app/bin"
-cp "$release/korri-shell" "$release/examples/fixture-korrid" "$work/app/bin/"
+cp "$release/korri-shell" "$release/fixture-korrid" "$work/app/bin/"
 cp "$crate/webos/launch.sh" "$work/app/"
 # Xvfb chooses an unused display; there is no race with another proof.
 Xvfb -displayfd 3 -screen 0 1920x1080x24 -nolisten tcp 3>"$work/display" >"$out/xvfb.log" 2>&1 &

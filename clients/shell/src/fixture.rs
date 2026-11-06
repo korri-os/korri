@@ -7,6 +7,8 @@
 //! call and socket, the WebSocket `Origin`, declared preference keys and
 //! sizes, and the ack before the next model push.
 
+pub mod process;
+
 use crate::{catalog, engine, messages};
 use serde_json::{json, Value};
 use std::{

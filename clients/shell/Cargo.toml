@@ -15,6 +15,11 @@ path = "src/lib.rs"
 name = "korri-shell"
 path = "src/main.rs"
 
+[[bin]]
+name = "fixture-korrid"
+path = "src/bin/fixture-korrid.rs"
+required-features = ["fixture"]
+
 [[example]]
 name = "fixture-korrid"
 required-features = ["fixture"]

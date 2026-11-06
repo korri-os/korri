@@ -33,7 +33,7 @@ def stage_surfaces(stage, verifier):
     preserves the normalized zero mtimes. No target verification or new cache
     schema is needed; --installed checks these same stamps after extraction.
     """
-    shutil.copytree(ROOT / 'clients/shell/packages', stage / 'packages')
+    shutil.copytree(ROOT / 'clients/shell/packages', stage / 'packages', symlinks=True)
     for path in (stage / 'packages').rglob('*'):
         if path.is_symlink():
             raise ValueError('surface payload must not contain symlinks')
@@ -86,7 +86,7 @@ def main():
     if run('git', '-C', str(ROOT), 'status', '--porcelain').strip():
         parser.error('source checkout must be clean')
     release = ROOT / '.cache/shell-webos-target/armv7-unknown-linux-gnueabi/release'
-    binaries = [release / 'korri-shell', release / 'examples/fixture-korrid']
+    binaries = [release / 'korri-shell', release / 'fixture-korrid']
     dependencies = ''
     for binary in binaries:
         verify_build_record(binary, binary.parent, args.source_sha)

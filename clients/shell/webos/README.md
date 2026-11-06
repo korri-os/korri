@@ -98,3 +98,15 @@ Surface fonts are bundled. System fontconfig and fallback fonts are not bundled;
 missing TV fontconfig or coverage may still affect text not covered by the
 package fonts. The system LG SDL 2.0.4 is loaded at runtime. Do not substitute
 the bundled SDL-webOS build that froze this TV; see the 2026-10-30 input report.
+
+The parent diagnosed the later system-SDL hang on 2026-11-06: webOS IPK
+upgrades leave removed payload files behind. A stale
+`lib/backports/libSDL2-2.0.so.0` from the bundled build was still being loaded.
+Removing it let the old app reach the foreground in 3 seconds using the
+system SDL. This package has no `lib` or `lib/backports` directory. Its id is
+new, so the parent's first installation must be fresh. For every subsequent
+test, **uninstall `org.korri.shell` first**, then install this IPK. An in-place
+upgrade is not a clean deployment and is not an accepted test path. The
+parent owns both operations and must verify the installed payload list or
+fresh-install result. Do not uninstall or alter `org.korri.slint-spike` as part
+of these workstation tasks.

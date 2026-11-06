@@ -101,9 +101,9 @@ case "$action" in
     export CARGO_PROFILE_RELEASE_STRIP=symbols
     if [[ "$action" == shell-build ]]; then
       cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/shell/Cargo.toml" \
-        --bin korri-shell --example fixture-korrid --no-default-features --features webos,fixture --target armv7-unknown-linux-gnueabi
+        --bin korri-shell --bin fixture-korrid --no-default-features --features webos,fixture --target armv7-unknown-linux-gnueabi
       binaries=("$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-shell"
-        "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/examples/fixture-korrid")
+        "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/fixture-korrid")
     else
       cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/slint-spike/Cargo.toml" \
         --bin korri-slint-spike --no-default-features --features webos --target armv7-unknown-linux-gnueabi
@@ -114,11 +114,11 @@ case "$action" in
       exit 1
     fi
     for binary in "${binaries[@]}"; do
-    # Reuse SOURCE-SHA.txt and the standard sha256sum format already emitted by
-    # package.py, but bind them at the build producer rather than after labeling.
-    printf '%s\n' "$source_rev" > "${binary%/*}/SOURCE-SHA.txt"
-    sha256sum "$binary" > "$binary.sha256"
-    echo "Built and recorded $binary"
+      # Reuse SOURCE-SHA.txt and the standard sha256sum format already emitted by
+      # package.py, but bind them at the build producer rather than after labeling.
+      printf '%s\n' "$source_rev" > "${binary%/*}/SOURCE-SHA.txt"
+      sha256sum "$binary" > "$binary.sha256"
+      echo "Built and recorded $binary"
     done
     ;;
 esac
