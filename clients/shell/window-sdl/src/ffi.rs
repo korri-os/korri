@@ -352,4 +352,21 @@ mod tests {
             (right, sdlk_right, false)
         );
     }
+
+    #[test]
+    fn lg_f2_layout_reaches_the_shell_host_key() {
+        let scancode = 59_i32;
+        let keycode = scancode | (1 << 30);
+        let lg = key_event(&[
+            (16, &[1]),
+            (20, &scancode.to_ne_bytes()),
+            (24, &keycode.to_ne_bytes()),
+        ]);
+        let key = lg.key(true);
+        assert!(!key.repeat);
+        assert_eq!(
+            crate::keys::host_key(key.keycode, key.scancode),
+            Some(crate::HostKey::F2)
+        );
+    }
 }

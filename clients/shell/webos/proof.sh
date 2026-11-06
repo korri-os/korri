@@ -64,5 +64,18 @@ fi
 kill "$launcher"
 wait "$launcher" || :
 # Normal signal cleanup must remove the ephemeral credentials and fixture.
-test -z "$(find "$work/home" -mindepth 1 -print -quit)"
+find "$work/home" -mindepth 1 -print >"$out/home-files.txt"
+# Fontconfig may create its own non-secret cache in HOME. Only this app's
+# launch directory and credential must disappear.
+test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
+# The launcher also passes the shell's existing --surfaces ordering through.
+HOME="$work/home" "$work/app/launch.sh" --surfaces pico,zone >"$out/pico-start.log" 2>&1 &
+launcher=$!
+pids+=("$launcher")
+sleep 8
+kill -0 "$launcher"
+import -window root "$out/pico-start-1920x1080.png"
+kill "$launcher"
+wait "$launcher" || :
+test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
 echo 'SDL_1920x1080_ZONE_PICO_ZONE_LAUNCHER_CLEANUP_PASS'

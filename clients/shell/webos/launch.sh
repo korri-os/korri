@@ -9,6 +9,16 @@ if [ "$(id -u)" = 0 ]; then
     echo 'korri-shell: launcher refuses root' >&2
     exit 1
 fi
+# Pass through only the shell's existing surface-order CLI. AppManager's
+# optional launch JSON remains ignored, not evaluated or sent to the shell.
+surfaces=zone,pico
+if [ "${1:-}" = --surfaces ]; then
+    [ "$#" = 2 ] || { echo 'usage: launch.sh [--surfaces ID,ID]' >&2; exit 2; }
+    case "$2" in
+        zone|pico|zone,pico|pico,zone) surfaces=$2 ;;
+        *) echo 'only packaged surfaces zone and pico are available' >&2; exit 2 ;;
+    esac
+fi
 app=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 cd "$app"
 # AppManager supplies a private writable HOME in the native application jail.
@@ -49,7 +59,7 @@ KORRID_SHELL_ORIGIN=$(sed -n 's/^KORRID_SHELL_ORIGIN=//p' "$work/connection")
 export KORRID_ADDRESS KORRID_SHELL_ORIGIN
 # AppManager's optional launch JSON is deliberately not forwarded to the shell.
 ./bin/korri-shell --packages packages --cache cache --installed \
-    --surfaces zone,pico --placement fullscreen &
+    --surfaces "$surfaces" --placement fullscreen &
 shell_pid=$!
 status=0
 wait "$shell_pid" || status=$?

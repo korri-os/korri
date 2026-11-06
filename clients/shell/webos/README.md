@@ -68,6 +68,12 @@ existing scale for a physical 1920x1080 output. It starts the real shell with
 `--packages packages --cache cache --installed --surfaces zone,pico
 --placement fullscreen`. Zone starts first. F2 or the existing L1+R1 chord
 switches to Pico and back. No TV-remote switch mapping is invented here.
+The launcher also accepts the shell's existing CLI, e.g.
+`./launch.sh --surfaces pico,zone`, to start with Pico. There is no existing
+surface-order environment variable to forward, and no new one is added.
+The SDL keymap recognizes F2 as keycode `59 | (1 << 30)`; its raw LG-layout
+unit test covers the four-byte ABI shift. Actual TV keyboard delivery still
+needs the parent's physical-device check.
 Exit and HUP/INT/TERM kill and reap both children and remove that launch's
 private directory. SIGKILL/power loss can leave a stale directory, but the next
 launch never reads or reuses it. Fixture preferences are intentionally transient.
