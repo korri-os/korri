@@ -34,9 +34,13 @@ public class KorriShellDeviceTest {
             scenario.moveToState(Lifecycle.State.CREATED);
             scenario.moveToState(Lifecycle.State.RESUMED);
             awaitReady(scenario);
-            scenario.recreate();
-            awaitReady(scenario);
-            assertEquals(200, health(port.get(), KorridServer.capability()));
+            // Each replacement must release the previous EGL surface, not only
+            // survive the first replacement in a fresh process.
+            for (int replacement = 0; replacement < 3; replacement++) {
+                scenario.recreate();
+                awaitReady(scenario);
+                assertEquals(200, health(port.get(), KorridServer.capability()));
+            }
         }
     }
 

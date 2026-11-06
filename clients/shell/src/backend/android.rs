@@ -29,7 +29,10 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
     let capability: String = env.get_string(&capability.into())?.into();
     let brain = Korrid::new(Connection::new(port as u16, String::new(), capability));
 
-    slint::android::init(app)?;
+    slint::android::init(app).map_err(|error| {
+        eprintln!("Korri Android platform initialization failed: {error}");
+        anyhow::anyhow!("platform initialization failed")
+    })?;
     let runtime = rquickjs::Runtime::new()?;
     let context = rquickjs::Context::full(&runtime)?;
     anyhow::ensure!(context.with(|ctx| ctx.eval::<i32, _>("21 * 2"))? == 42);
@@ -82,6 +85,9 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
         },
     );
     env.call_method(&activity, "shellStarted", "()V", &[])?;
-    ui.run()?;
+    ui.run().map_err(|error| {
+        eprintln!("Korri Android event loop failed: {error}");
+        anyhow::anyhow!("event loop failed")
+    })?;
     Ok(())
 }

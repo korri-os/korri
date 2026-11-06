@@ -118,9 +118,11 @@ opt-level = 3
 
 # Slint 1.18.1's software renderer with layer caching for
 # `cache-rendering-hint: true` (vendor/README.md). Same versions, same API.
+# Android also releases Skia surfaces when its native window terminates.
 [patch.crates-io]
 i-slint-core = { path = "vendor/i-slint-core" }
 i-slint-renderer-software = { path = "vendor/i-slint-renderer-software" }
 slint-interpreter = { path = "vendor/slint-interpreter" }
 i-slint-backend-testing = { path = "vendor/i-slint-backend-testing" }
 i-slint-backend-winit = { path = "vendor/i-slint-backend-winit" }
+i-slint-backend-android-activity = { path = "vendor/i-slint-backend-android-activity" }

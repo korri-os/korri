@@ -117,7 +117,9 @@ runner and identity fields; non-owner callers do not receive owner play stats.
 `KorriShellDeviceTest` exercises the shipped NativeActivity, JNI library,
 interpreted Slint view, QuickJS probe and HTTP server. It checks no WebView
 exists in the launch tree, unauthorized health is rejected, authenticated
-health succeeds, and startup succeeds after backgrounding and recreation.
+health succeeds, and startup succeeds after backgrounding and three consecutive recreations.
+The vendored Android backend releases its EGL surface on native-window
+termination and Activity destruction; see `clients/shell/vendor/README.md`.
 Build with `nix run .#android-device-test-apk`, then run on an ARM64 phone:
 
 ```sh

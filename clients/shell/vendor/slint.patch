@@ -6816,3 +6816,19 @@ diff -ruN a/slint-interpreter/value_model.rs b/slint-interpreter/value_model.rs
          self
      }
  }
+--- a/i-slint-backend-android-activity/androidwindowadapter.rs
++++ b/i-slint-backend-android-activity/androidwindowadapter.rs
+@@ -268,7 +268,13 @@
+                     );
+                 }
+             }
++            PollEvent::Main(MainEvent::TerminateWindow { .. }) => {
++                // Release EGL's native-window connection before Android acknowledges
++                // termination. A replacement Activity may reuse the same buffer queue.
++                self.renderer.suspend()?;
++            }
+             PollEvent::Main(MainEvent::Destroy) => {
++                self.renderer.suspend()?;
+                 return Ok(ControlFlow::Break(()));
+             }
+             _ => (),

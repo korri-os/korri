@@ -1,8 +1,9 @@
 # Vendored Slint 1.18.1 crates, patched
 
-Five crates from crates.io, version **1.18.1**, unchanged except for the
+Six crates from crates.io, version **1.18.1**, unchanged except for the
 changes listed below: `i-slint-core`, `i-slint-renderer-software`,
-`slint-interpreter`, `i-slint-backend-testing` and `i-slint-backend-winit`. `../Cargo.toml` substitutes them through
+`slint-interpreter`, `i-slint-backend-testing`, `i-slint-backend-winit` and
+`i-slint-backend-android-activity`. `../Cargo.toml` substitutes them through
 `[patch.crates-io]`. Every other Slint crate is the published 1.18.1. The
 whole difference is `slint.patch`. The public API is unchanged. Nothing in it
 is specific to Korri.
@@ -29,10 +30,25 @@ standard mechanisms did not reach the software renderer:
    registered font blob for the life of the thread, so each switch between
    surfaces grew the process by the size of the package's font files.
 
+## Android native-window lifetime
+
+The Android backend also suspends Skia on `TerminateWindow`, while the old
+native window is still valid, and on `Destroy` before leaving the event loop.
+Upstream 1.18.1 did neither. An explicit Activity recreation on the Fold8
+started the replacement Rust thread and interpreted its view, but EGL rejected
+the replacement surface with `EGL_BAD_ALLOC` (`0x3003`). Releasing the old
+surface before Android acknowledges termination fixes that observed failure.
+
+`KorriShellDeviceTest` backgrounds/resumes the real NativeActivity, then
+recreates it three times in the same process and checks authenticated health.
+The pre-fix build fails the recreation; the teardown patch passes it. No Java
+activity retention, process restart, or window-system workaround is used.
+
 ## Changes, by function
 
 | File | Function or item | Change |
 | --- | --- | --- |
+| `i-slint-backend-android-activity/androidwindowadapter.rs` | `AndroidWindowAdapter::process_event` | Suspend Skia on native-window termination and Activity destruction, releasing the EGL surface before a replacement attaches. |
 | `i-slint-core/partial_renderer.rs` | `PartialRenderingCachedData` | New field `cached_layer`: the item is a `Layer` that the actual renderer drew from its own cache last time. |
 | `i-slint-core/partial_renderer.rs` | `ItemRenderer for PartialRenderer::visit_layer` | Previously forwarded by macro. It still forwards under the item's tracker, then records whether the renderer returned `ContinueRenderingWithoutChildren`. |
 | `i-slint-core/partial_renderer.rs` | `PartialRenderer::compute_dirty_regions` | A layer that was drawn from a cache, is not dirty and did not move returns `SkipChildren`. Its tracker covers every property its children's rendering read, so nothing under it can have changed. |
