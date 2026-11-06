@@ -56,6 +56,7 @@ anyhow = "1"
 libc = "0.2"
 pollster = "0.4"
 zeroize = "1"
+getrandom = { version = "0.3", optional = true }
 korri-window-sdl = { path = "window-sdl", optional = true }
 # Focus targets as drawn (src/targets.rs): each element's place and selected flag.
 i-slint-backend-testing = { version = "=1.18.1", default-features = false }
@@ -81,8 +82,8 @@ desktop = [
 ]
 # webOS: the SDL adapter (window-sdl/), one window, no winit.
 webos = ["dep:korri-window-sdl"]
-# The fixture korrid used by tests and workstation proofs. Never shipped.
-fixture = []
+# The fixture korrid used by tests, proofs and the webOS M1 sample-data IPK only.
+fixture = ["dep:getrandom"]
 
 [profile.release]
 opt-level = 3

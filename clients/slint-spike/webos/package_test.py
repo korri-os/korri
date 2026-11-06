@@ -10,26 +10,9 @@ import unittest
 
 sys.dont_write_bytecode = True
 from package import APP_ID, write_ipk, write_payload
+from ipk import native_headers
 
 NAMES = ('debian-binary', 'control.tar.gz', 'data.tar.gz')
-
-
-def native_headers(filename):
-    data = pathlib.Path(filename).read_bytes()
-    assert data[:8] == b'!<arch>\n', 'archive magic differs'
-    offset = 8
-    for name in NAMES:
-        header = data[offset:offset + 60]
-        assert len(header) == 60, 'truncated header'
-        assert header[:16] == name.encode().ljust(16), 'native member name differs'
-        assert header[40:48].strip() == b'100644', 'native regular-file mode differs'
-        assert header[58:60] == b'`\n', 'header terminator differs'
-        length = int(header[48:58])
-        offset += 60 + length
-        if length % 2:
-            assert data[offset:offset + 1] == b'\n', 'odd-size member padding differs'
-            offset += 1
-    assert offset == len(data), 'unexpected trailing archive content'
 
 
 class NativeArchiveTests(unittest.TestCase):

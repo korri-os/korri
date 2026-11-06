@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# The shipped launcher and native SDL backend, on workstation SDL under Xvfb.
+set -euo pipefail
+release=$(realpath "${1:?release directory}")
+out=$(realpath -m "${2:?output directory}")
+crate=$(cd "$(dirname "$0")/.." && pwd)
+mkdir -p "$out"
+work=$(mktemp -d)
+pids=()
+cleanup() {
+    for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || :; done
+    wait 2>/dev/null || :
+    rm -rf "$work"
+}
+trap cleanup EXIT
+mkdir "$work/app" "$work/home"
+python3 - "$crate/webos" "$work/app" "$release/korri-shell" <<'PY'
+import pathlib, sys
+sys.path.insert(0, sys.argv[1])
+from package import stage_surfaces
+stage_surfaces(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
+PY
+mkdir "$work/app/bin"
+cp "$release/korri-shell" "$release/examples/fixture-korrid" "$work/app/bin/"
+cp "$crate/webos/launch.sh" "$work/app/"
+# Xvfb chooses an unused display; there is no race with another proof.
+Xvfb -displayfd 3 -screen 0 1920x1080x24 -nolisten tcp 3>"$work/display" >"$out/xvfb.log" 2>&1 &
+pids+=($!)
+for _ in $(seq 100); do [[ -s "$work/display" ]] && break; sleep 0.1; done
+export DISPLAY=":$(cat "$work/display")"
+unset WAYLAND_DISPLAY
+HOME="$work/home" "$work/app/launch.sh" >"$out/shell.log" 2>&1 &
+launcher=$!
+pids+=("$launcher")
+id=''
+for _ in $(seq 300); do
+    id=$(xdotool search --onlyvisible --name '^Korri$' 2>/dev/null | head -1 || :)
+    [[ -n "$id" ]] && break
+    kill -0 "$launcher"
+    sleep 0.1
+done
+[[ -n "$id" ]] || { echo 'no SDL window' >&2; exit 1; }
+# Zone compilation and model delivery happen after SDL creates its window.
+sleep 8
+import -window "$id" "$out/zone-1920x1080.png"
+xdotool windowfocus --sync "$id" key F2
+sleep 5
+import -window "$id" "$out/pico-1920x1080.png"
+xdotool windowfocus --sync "$id" key F2
+sleep 5
+import -window "$id" "$out/zone-return-1920x1080.png"
+for image in zone pico zone-return; do
+    test "$(identify -format '%wx%h' "$out/$image-1920x1080.png")" = 1920x1080
+done
+if cmp -s "$out/zone-1920x1080.png" "$out/pico-1920x1080.png"; then
+    echo 'surface switch did not change the frame' >&2
+    exit 1
+fi
+kill "$launcher"
+wait "$launcher" || :
+# Normal signal cleanup must remove the ephemeral credentials and fixture.
+test -z "$(find "$work/home" -mindepth 1 -print -quit)"
+echo 'SDL_1920x1080_ZONE_PICO_ZONE_LAUNCHER_CLEANUP_PASS'

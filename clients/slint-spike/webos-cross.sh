@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Called by webos.nix. Workstation only; no target execution or deployment.
 set -euo pipefail
-action="${1:?expected probe, korrid, or build}"
+action="${1:?expected probe, korrid, build, or shell-build}"
 shift
-case "$action" in probe|korrid|build) ;; *) echo "Unknown action: $action" >&2; exit 2 ;; esac
+case "$action" in probe|korrid|build|shell-build) ;; *) echo "Unknown action: $action" >&2; exit 2 ;; esac
 : "${KORRI_ROOT:?run via webos.nix}"
 : "${WEBOS_HOST_LOADER:?run via webos.nix}"
 : "${WEBOS_HOST_LIBRARIES:?run via webos.nix}"
@@ -27,7 +27,11 @@ if [[ ! -x "$prefix-gcc" ]]; then
   echo "SDK missing: extract the verified archive with clients/slint-spike/webos-sdk.sh" >&2
   exit 1
 fi
-export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/webos-target"
+if [[ "$action" == shell-build ]]; then
+  export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/shell-webos-target"
+else
+  export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/webos-target"
+fi
 mkdir -p "$CARGO_TARGET_DIR"
 # No concurrent writer may use this target directory, even for another action.
 exec 9>"$CARGO_TARGET_DIR/.writer.lock"
@@ -86,7 +90,7 @@ case "$action" in
     exec cargo build --locked --manifest-path "$KORRI_ROOT/services/korrid/Cargo.toml" \
       --lib --target armv7-unknown-linux-gnueabi "$@"
     ;;
-  build)
+  build|shell-build)
     # A receipt must describe this fixed application build, never a stale output
     # left by another Cargo target/profile selection. Diagnostic actions above
     # still accept Cargo arguments; the deployable application action does not.
@@ -95,17 +99,26 @@ case "$action" in
       exit 2
     fi
     export CARGO_PROFILE_RELEASE_STRIP=symbols
-    cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/slint-spike/Cargo.toml" \
-      --bin korri-slint-spike --no-default-features --features webos --target armv7-unknown-linux-gnueabi
+    if [[ "$action" == shell-build ]]; then
+      cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/shell/Cargo.toml" \
+        --bin korri-shell --example fixture-korrid --no-default-features --features webos,fixture --target armv7-unknown-linux-gnueabi
+      binaries=("$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-shell"
+        "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/examples/fixture-korrid")
+    else
+      cargo build --locked --release --manifest-path "$KORRI_ROOT/clients/slint-spike/Cargo.toml" \
+        --bin korri-slint-spike --no-default-features --features webos --target armv7-unknown-linux-gnueabi
+      binaries=("$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-slint-spike")
+    fi
     if [[ "$(git -C "$KORRI_ROOT" rev-parse HEAD)" != "$source_rev" || -n "$(git -C "$KORRI_ROOT" status --porcelain)" ]]; then
       echo "Source changed during the build; refusing to record an artifact" >&2
       exit 1
     fi
-    binary="$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-slint-spike"
+    for binary in "${binaries[@]}"; do
     # Reuse SOURCE-SHA.txt and the standard sha256sum format already emitted by
     # package.py, but bind them at the build producer rather than after labeling.
     printf '%s\n' "$source_rev" > "${binary%/*}/SOURCE-SHA.txt"
     sha256sum "$binary" > "$binary.sha256"
     echo "Built and recorded $binary"
+    done
     ;;
 esac

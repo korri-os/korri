@@ -1,6 +1,7 @@
 //! A fixture korrid for tests and workstation proofs: a real loopback server
 //! that speaks contract section 6 and korrid's native input subscription,
-//! with configurable behaviour. It is never shipped (feature `fixture`).
+//! with configurable behaviour (feature `fixture`). Also shipped only in the
+//! webOS M1 sample-data IPK, never in the production Linux shell package.
 //!
 //! It checks what korrid checks on this wire: the bearer capability on every
 //! call and socket, the WebSocket `Origin`, declared preference keys and
@@ -79,10 +80,9 @@ impl Fixture {
     pub fn start(model: Value, games: Vec<Value>, behaviour: Behaviour) -> io::Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         let port = listener.local_addr()?.port();
-        let capability = format!(
-            "{:064x}",
-            std::process::id() as u128 * 0x9e37_79b9_7f4a_7c15 + port as u128
-        );
+        let mut entropy = [0_u8; 32];
+        getrandom::fill(&mut entropy).map_err(io::Error::other)?;
+        let capability: String = entropy.iter().map(|byte| format!("{byte:02x}")).collect();
         let shared = Arc::new((
             Mutex::new(State {
                 base: model,

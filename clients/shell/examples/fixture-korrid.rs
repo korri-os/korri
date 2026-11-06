@@ -1,4 +1,4 @@
-//! The fixture korrid as a process, for workstation proofs (never shipped).
+//! The fixture korrid as a process, for proofs and the webOS M1 sample-data IPK.
 //!
 //! ```text
 //! fixture-korrid --games N --credentials DIR [--model FILE] [--displays JSON]
@@ -38,6 +38,15 @@ fn code(text: &str) -> Option<u16> {
 }
 
 fn main() -> std::io::Result<()> {
+    // The sample-data process holds the same private capability as the shell.
+    let no_core = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: valid resource and plain struct for this process.
+    if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &no_core) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
     let mut games = 12;
     let mut credentials = None;
     let mut model_file = None;
