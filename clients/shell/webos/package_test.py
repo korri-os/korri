@@ -24,6 +24,7 @@ def check_ipk(path):
                     'packages/zone/main.slint', 'packages/pico/main.slint',
                     'packages/zone/logic.js', 'packages/pico/logic.js'}
         assert {APP_BASE + name for name in expected} <= names
+        assert APP_BASE + 'bin/webos-owner-sign' not in names
         assert not any('KORRID_RPC_CAPABILITY' in name or name.endswith('.so') or '.so.' in name for name in names)
         metadata = json.load(archive.extractfile(APP_BASE + 'appinfo.json'))
         assert metadata['id'] == APP_ID and metadata['type'] == 'native'

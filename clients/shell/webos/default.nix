@@ -113,7 +113,7 @@ in
     nix run .#shell-webos-package -- OUTPUT --source-sha SHA
         Verify surfaces on the workstation, package pinned ARM binaries as org.korri.shell.
     nix run .#shell-webos-package-check -- [--check-ipk IPK]
-        Test packaging or inspect the assembled M1 IPK.
+        Test packaging or inspect the assembled M2 IPK.
     nix run .#shell-webos-proof -- OUTPUT
         Run the webOS SDL shell at 1920x1080 under Xvfb; capture Zone and Pico.
   '';

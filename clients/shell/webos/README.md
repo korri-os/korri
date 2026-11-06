@@ -229,7 +229,11 @@ The parent must supply reachable peers and relay configuration:
   system, not capabilities this composition claims.
 
 After import/configuration, launch the app normally. Zone should show peers'
-real games once peer HTTP succeeds. Existing first-run setup still exists; skip
+real games once peer HTTP succeeds. Discovery polls every 60 seconds; the other
+devices first need to learn the TV's owner binding and publish endpoint evidence
+addressed to its new device key. Allow more than one discovery cycle on a first
+join, then inspect actual peer status instead of assuming an empty library is
+final. Existing first-run setup still exists; skip
 network changes (webOS owns networking) and finish setup in the existing UI.
 NetworkManager-backed settings can fail on this TV; they are not a new webOS
 configuration surface. No library or sample data is installed into real state.
