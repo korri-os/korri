@@ -36,8 +36,9 @@ let
   };
 in
 {
-  android-apk = task "Build the restored Artemis arm64 debug APK, including korrid." "apk";
+  android-shell-check = task "Cross-check the native Slint shell for arm64 Android." "shell-check";
+  android-apk = task "Build the restored Artemis arm64 debug APK, including korrid and the native Slint shell." "apk";
   android-jvm-check = task "Run the restored Android JVM/Robolectric tests." "test";
   android-brain-check = task "Cross-check korrid's library for arm64 Android." "brain-check";
-  android-device-test-apk = task "Build the real WebView/JNI/RPC device test APK." "device-test-apk";
+  android-device-test-apk = task "Build the native shell/JNI/RPC device test APK." "device-test-apk";
 }

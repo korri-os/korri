@@ -52,3 +52,12 @@
 
 # Called through JNI by iroh's TLS certificate verifier.
 -keep,includedescriptorclasses class org.rustls.platformverifier.** { *; }
+
+# Slint's android_main reads this private in-process bootstrap through JNI.
+-keepclassmembers class com.limelight.KorriShellActivity {
+    public int shellPort();
+    public java.lang.String shellCapability();
+    public java.lang.String shellVersion();
+    public void shellStarted();
+    public boolean isShellReady();
+}

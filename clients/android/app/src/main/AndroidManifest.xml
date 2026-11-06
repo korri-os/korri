@@ -97,7 +97,7 @@
         <!-- Samsung DeX support requires explicit placement of android:resizeableActivity="true"
              in each activity even though it is implied by targeting API 24+ -->
 
-        <!-- SPIKE: Korri web-shell launcher hosting the bundled web surface -->
+        <!-- Native Slint shell; Artemis Game remains the stream viewer. -->
         <activity
             android:name=".KorriShellActivity"
             android:exported="true"
@@ -105,6 +105,7 @@
             android:resizeableActivity="true"
             android:enableOnBackInvokedCallback="true"
             android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
+            <meta-data android:name="android.app.lib_name" android:value="korri_shell" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

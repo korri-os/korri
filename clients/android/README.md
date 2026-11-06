@@ -17,7 +17,8 @@ Run these commands from the repository root:
 
 - `nix run .#android-brain-check` checks the Rust library for ARM64 Android.
 - `nix run .#android-jvm-check` runs the kept JVM/Robolectric tests.
-- `nix run .#android-apk` builds korrid, bundles the current portal and builds
+- `nix run .#android-shell-check` checks the native Slint shell for ARM64.
+- `nix run .#android-apk` builds korrid, the native Slint shell and builds
   `clients/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`.
 
 The Nix apps supply the SDK, NDK, host compiler, Java and Rust toolchains. Cargo
@@ -26,33 +27,51 @@ API 22 or later. The minimum follows iroh's Android TLS verifier. Its JVM
 component version comes from `services/korrid/Cargo.lock`; do not update it
 separately. The Rust library uses 16 KiB load-segment alignment.
 
-The SDK farm, native libraries and portal bundle are generated files. Do not
+The SDK farm and native libraries are generated files. Do not
 commit them. Builds run on the development machine, never on the phone.
 
-## Shell boundary
+## Native shell (M0, #356)
 
-The restored WebView origin and navigation policy stay in
-`KorriTrustedPortalWebViewPolicy`. The only portal binding is the current
-`contracts/bridge/korri-rpc-bridge.ts`: `korridPort()` and `korridCapability()`.
-`KorriRpcBinding` installs it at document start, in the trusted top frame only.
-It is frozen and non-enumerable. The host reports ready only after both methods
-are consumed. It fails startup after 15 seconds without that signal.
+`KorriShellActivity` is an Android `NativeActivity`. It starts the existing
+embedded korrid service before Android starts `clients/shell`'s `android_main`.
+`libkorri_shell.so` uses the new `android` feature, Slint 1.18.1's official
+`backend-android-activity-06`, and its Skia renderer. Desktop and webOS keep
+their existing backends. Artemis's `Game` activity is unchanged.
 
-The port and bearer capability live only in memory. Neither enters a page URL,
-static assets, browser storage or logs. A current Android System WebView with
-document-start scripts and origin-scoped web messages is required. The host does
-not fall back to a JavaScript interface exposed to every frame.
+The launch screen interprets `clients/shell/src/backend/android-m0.slint` with
+the vendored `slint-interpreter` and evaluates `21 * 2` with rquickjs 0.14.
+Android enables rquickjs's `bindgen` feature, as korrid already does, because
+rquickjs does not ship an `aarch64-linux-android` binding. Startup readiness
+requires the interpreted view and the QuickJS evaluation to succeed. This is an execution probe, not
+yet Pico/Zone loading or the full surface engine. M1 can replace this view
+inside the same library, dependency pins and Android event loop.
 
-The stream client uses Android's existing app-files directory for korrid's
-readable storage and the restored `no_backup/korrid-state` private root. It does
-not request all-files or accessibility permissions. The old shared-storage
-library, local RetroArch launches and cross-app overlay service are outside this
-slice; their source remains at `android-final` for #293.
+The screen shows BuildConfig's app version and authenticated `system.health`
+status from the embedded korrid. JNI reads the port and capability directly
+from the activity in-process. Only a boolean health result reaches the UI;
+RPC runs on a worker with the shell's existing timeouts. No capability enters
+an intent, URL, argument, log, asset, or new file. The existing origin/CORS
+policy and korrid JNI start signature are unchanged until M5.
+
+Android owns window resize, pause/resume and native-thread teardown. The
+foreground service owns korrid, so activity recreation and backgrounding do
+not stop it. M0 has no owner-signing or game-launch controls. It does not
+change existing private state or Amber ownership. Native signer integration
+and the real surface packages remain later milestones.
+
+The diagnostic uses a quiet navy (`#182b40`) field, white (`#f4f8fc`) status,
+and pale blue (`#c3d4e6`) version text. Android's sans-serif carries a large
+Korri title and two left-aligned readouts. Padding and gaps yield to the
+container; status wraps rather than disappearing. Loading, running and failed
+health use the same layout. There are no lists, counts or user-entered values.
+The version comes from the existing fixed BuildConfig version. Folded,
+unfolded, rotated and background/resumed states need device acceptance; this
+screen does not claim the full surface layout proof.
 
 ## Identity and discovery
 
-A compatible NIP-55 signer such as Amber holds the person key. The native shell
-consumes owner-signing requests from authenticated local RPC and returns public
+A compatible NIP-55 signer such as Amber holds the person key. The retained native
+signer adapter consumes owner-signing requests from authenticated local RPC and returns public
 signer status. Rust creates the unsigned request, verifies the exact signed
 statement, and updates the existing federation credentials. No new JavaScript
 bridge or Java-owned launch authority is involved.
@@ -69,8 +88,8 @@ request across recreation.
 passes that generated input through `BuildConfig` into the embedded brain. It
 neither copies a second relay list into Java nor rewrites existing user data.
 
-Initial owner setup uses the surface's existing confirmation/actions and the
-existing onboarding-finish RPC. This stream-only build does not offer the
+The retained owner setup path uses the surface's existing confirmation/actions
+and the existing onboarding-finish RPC. M0 does not expose these controls. This stream-only build does not offer the
 console's automatic person key or local-plugin starter pack. Identity backup and
 identity switching are not available on Android; the public status reports that
 limit instead of exposing controls which cannot work. Device ownership and peer
@@ -95,10 +114,19 @@ runner and identity fields; non-owner callers do not receive owner play stats.
 
 ## Device check
 
-`KorriRpcBindingDeviceTest` exercises the real WebView, JNI library and RPC
-server. It checks the frozen binding, child-frame exclusion, rejection without
-a capability, successful authenticated health, and absence of the capability
-from browser storage and the URL. Compile the test APK with
-`nix run .#android-device-test-apk`.
-The check still needs a real ARM64 phone. JVM tests alone do not prove this
-boundary.
+`KorriShellDeviceTest` exercises the shipped NativeActivity, JNI library,
+interpreted Slint view, QuickJS probe and HTTP server. It checks no WebView
+exists in the launch tree, unauthorized health is rejected, authenticated
+health succeeds, and startup succeeds after backgrounding and recreation.
+Build with `nix run .#android-device-test-apk`, then run on an ARM64 phone:
+
+```sh
+adb -s SERIAL install -r clients/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s SERIAL shell am instrument -w -e class com.limelight.KorriShellDeviceTest \
+  com.simonwjackson.korri.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Before updating the app, take a protected backup of its private `files`,
+`shared_prefs`, `databases` and `no_backup` directories plus its installed APK.
+Use `install -r`; never uninstall, clear app data, or replace Amber ownership.
+JVM/source tests alone do not prove native rendering or lifecycle behavior.

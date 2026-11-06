@@ -4,10 +4,12 @@
 set -euo pipefail
 : "${KORRI_ROOT:=$(git rev-parse --show-toplevel)}"
 source "$KORRI_ROOT/nix/android-sdk-env.sh"
-mode="${1:?usage: build.sh apk|test|brain-check|device-test-apk}"
+mode="${1:?usage: build.sh apk|test|brain-check|shell-check|device-test-apk}"
 shift
 
 ndk_bin="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+export ANDROID_NDK="$ANDROID_NDK_ROOT"
+export CXX_aarch64_linux_android="$ndk_bin/aarch64-linux-android22-clang++"
 export CC_aarch64_linux_android="$ndk_bin/aarch64-linux-android22-clang"
 export AR_aarch64_linux_android="$ndk_bin/llvm-ar"
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
@@ -17,6 +19,11 @@ export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=aarch64-linux-an
 export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/android-korrid-target"
 
 case "$mode" in
+  shell-check)
+    cd "$KORRI_ROOT/clients/shell"
+    export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/android-shell-target"
+    exec cargo check --locked --lib --target aarch64-linux-android --no-default-features --features android "$@"
+    ;;
   brain-check)
     cd "$KORRI_ROOT/services/korrid"
     exec cargo check --locked --lib --target aarch64-linux-android "$@"
@@ -26,6 +33,11 @@ case "$mode" in
     cargo build --locked --release --lib --target aarch64-linux-android
     install -Dm755 "$CARGO_TARGET_DIR/aarch64-linux-android/release/libkorrid.so" \
       "$KORRI_ROOT/clients/android/app/src/main/jniLibs/arm64-v8a/libkorrid.so"
+    cd "$KORRI_ROOT/clients/shell"
+    CARGO_TARGET_DIR="$KORRI_ROOT/.cache/android-shell-target" cargo build --locked --release --lib \
+      --no-default-features --features android --target aarch64-linux-android
+    install -Dm755 "$KORRI_ROOT/.cache/android-shell-target/aarch64-linux-android/release/libkorri_shell.so" \
+      "$KORRI_ROOT/clients/android/app/src/main/jniLibs/arm64-v8a/libkorri_shell.so"
     cd "$KORRI_ROOT/clients/android"
     exec ./gradlew assembleDebug "$@"
     ;;

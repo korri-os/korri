@@ -6,6 +6,7 @@
 //! | --- | --- | --- |
 //! | [`winit`] | `desktop` (default) | one per component: Wayland (sway) or X11 |
 //! | [`sdl`] | `webos` | one shared SDL window (`window-sdl/`) |
+//! | Android | `android` | one NativeActivity window |
 //! | [`headless`] | tests | one software buffer per component, no display |
 
 #[cfg(feature = "desktop")]
@@ -14,14 +15,20 @@ pub mod winit;
 #[cfg(feature = "webos")]
 pub mod sdl;
 
+#[cfg(all(feature = "android", target_os = "android"))]
+pub mod android;
+
 pub mod headless;
 
 use crate::input::Key;
 use std::rc::Rc;
 
-#[cfg(all(feature = "desktop", feature = "webos"))]
+#[cfg(any(
+    all(feature = "desktop", feature = "webos"),
+    all(feature = "android", any(feature = "desktop", feature = "webos"))
+))]
 compile_error!(
-    "choose one window system: the default `desktop`, or `--no-default-features --features webos`"
+    "choose one window system: desktop, or --no-default-features --features webos or android"
 );
 
 /// What a window reports to the shell.

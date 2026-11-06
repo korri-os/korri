@@ -40,17 +40,14 @@ public class KorriPairingCeremonyRemovalContractTest {
     }
 
     @Test
-    public void publicBridgeAndPortalContainNoPairingState() throws Exception {
+    public void publicBridgeAndNativeSurfacesContainNoPairingState() throws Exception {
         Path repository = Path.of("../../..").normalize();
         List<String> forbidden = List.of(
                 "openPairing(", "NotPaired", "readonly paired", ".paired", "paired:");
         assertTypeScriptTreeContainsNone(
                 repository.resolve("contracts/bridge"), forbidden);
-        try (Stream<Path> surfaces = Files.list(repository.resolve("surfaces"))) {
-            for (Path surface : surfaces.filter(path -> Files.isDirectory(path.resolve("src"))).toList()) {
-                assertTypeScriptTreeContainsNone(surface.resolve("src"), forbidden);
-            }
-        }
+        assertTypeScriptTreeContainsNone(
+                repository.resolve("clients/shell/packages"), forbidden);
     }
 
     @Test

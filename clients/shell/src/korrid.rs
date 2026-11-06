@@ -102,6 +102,11 @@ impl Korrid {
         }
     }
 
+    /// Authenticated liveness, using the existing system.health RPC.
+    pub fn health(&self) -> bool {
+        self.call("system.health", json!({})).is_ok()
+    }
+
     pub fn connection(&self) -> &Connection {
         &self.connection
     }

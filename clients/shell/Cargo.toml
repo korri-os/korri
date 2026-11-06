@@ -10,6 +10,7 @@ description = "Native Korri shell: loads surface packages (.slint views, QuickJS
 
 [lib]
 path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
 
 [[bin]]
 name = "korri-shell"
@@ -66,6 +67,9 @@ korri-window-sdl = { path = "window-sdl", optional = true }
 # Focus targets as drawn (src/targets.rs): each element's place and selected flag.
 i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21", optional = true }
+
 [dev-dependencies]
 tempfile = "3"
 # The Zone walk reads what is drawn: each focus target's place and its selected flag.
@@ -77,6 +81,8 @@ i-slint-backend-winit = { version = "=1.18.1", default-features = false }
 
 [features]
 default = ["desktop"]
+# Android uses Slint's NativeActivity backend; the same interpreter and engine.
+android = ["slint/backend-android-activity-06", "rquickjs/bindgen", "dep:jni"]
 # Workstation and handheld: Slint's winit backend on Wayland and X11.
 desktop = [
   "slint/backend-winit-wayland",
