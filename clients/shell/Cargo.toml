@@ -86,7 +86,9 @@ desktop = [
   "slint-interpreter/backend-winit-x11",
 ]
 # webOS: the SDL adapter (window-sdl/), one window, no winit.
-webos = ["dep:korri-window-sdl"]
+# rquickjs 0.14 ships stale ARMv7 ArrayBuffer bindings. Generate them against
+# its actual QuickJS headers with the SDK target ABI (as korrid already does).
+webos = ["dep:korri-window-sdl", "rquickjs/bindgen"]
 # The fixture korrid used by tests, proofs and the webOS M1 sample-data IPK only.
 fixture = ["dep:getrandom"]
 

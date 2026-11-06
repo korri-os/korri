@@ -88,6 +88,10 @@ and other real target symbols. Both ARM ELFs must need no GLIBC version above
 `/dev/random`. `package-check` checks the actual archived binaries too.
 
 Slint's interpreter and QuickJS are cross-compiled, not replaced by a mock UI.
+The webOS feature enables rquickjs's supported `bindgen` feature (as korrid
+already does): rquickjs 0.14's bundled ARMv7 bindings have the obsolete
+six-argument ArrayBuffer signature, but its actual QuickJS uses seven.
+The SDK target headers and soft-float bindgen flags generate the correct ABI.
 Their TV execution, memory demand and input must still be checked on the TV.
 The renderer is Slint software rasterization, uploaded as a dirty rectangle to
 an SDL streaming texture. The adapter requests an accelerated SDL renderer
