@@ -9,9 +9,21 @@ import { Dialog } from "../types.slint";
 
 // The sky dialog (ZoneDialog): edge to edge over its layer, a black wedge
 // in its top-left and bottom-right corners (legs 0.78 of the panel's
-// height, never more than a quarter of its width), the headline at caps-2,
+// height, never more than a quarter of its width), the headline at caps-2
+// (caps-1, broken between words, when caps-2 is wider than the column),
 // Korri's lines in the fact face as written, the game in yellow, the
 // buttons at caps-2 in Korri's order.
+//
+// The headline, the game and the buttons always stand whole inside the
+// layer; Korri's lines take the height left between them. The plan sends
+// the lines that fit as one text, a line break between each, and how many
+// breaks it holds (src/plan/dialog-words.ts), and, when there are more,
+// `above` and `below`: two triangles beside the lines, black where more
+// stand that way, steel at the end, as the card band's end triangles. One
+// ZoneCaps draws them: lines in separate ZoneCaps, changed in place as the
+// window moves, were left half drawn by the shell's partial renderer. Words
+// the plan did not break (a preview state's sentence) wrap here, and lines
+// that would still not fit are cut at the layer, never the buttons.
 export component ZoneDialog {
     // A focus trap: the walk keeps a press inside the layer that holds the focus.
     accessible-role: groupbox;
@@ -22,12 +34,23 @@ export component ZoneDialog {
     property <length> c1: 10 * a;
     property <length> pad: 8 * a;
     property <length> inner-w: Math.min(root.width - 2 * pad - root.width / 4, 46 * 8 * a);
-    property <length> head-h: 2 * c1;
-    property <length> lines-h: lines.drawn-h;
+    // The headline: the plan's cap (caps-2, or caps-1 broken into lines when caps-2 is wider than the column).
+    property <length> head-cap: dialog.head-cap > 0 ? dialog.head-cap * Tokens.unit : 2 * c1;
+    property <length> head-h: head.drawn-h;
     property <bool> has-lines: dialog.lines.length > 0;
-    property <length> panel-h: pad + head-h + 6 * a + (has-lines ? lines-h + 6 * a : 0) + (dialog.title != "" ? c1 + 6 * a : 0)
-        + row.needed + pad;
+    // Everything but the lines: the pads, the headline, the gaps, the game, the buttons.
+    property <length> fixed-h: pad + head-h + 6 * a + (has-lines ? 6 * a : 0) + (dialog.title != "" ? c1 + 6 * a : 0) + row.needed + pad;
+    property <length> lines-room: Math.max(0, root.height - fixed-h);
+    property <bool> lines-cut: lines.drawn-h > lines-room;
+    property <length> lines-h: has-lines ? Math.min(lines.drawn-h, lines-room) : 0;
+    property <length> panel-h: fixed-h + lines-h;
     property <length> panel-y: (root.height - panel-h) / 2;
+    property <length> lines-y: pad + head-h + 6 * a;
+    property <bool> scrolls: dialog.above || dialog.below;
+    // The scroll triangles: 7 art px wide, in the 14 art px the plan keeps beside the lines.
+    property <length> mark-w: 7 * a;
+    property <length> mark-h: 6 * a;
+    property <length> mark-x: (root.width + root.inner-w) / 2 - 10 * a;
     property <length> leg: Math.min(0.78 * panel-h, root.width / 4);
     ZoneVeil {
         x: 0;
@@ -60,26 +83,54 @@ export component ZoneDialog {
         head := ZoneCaps {
             x: (root.width - self.width) / 2;
             y: root.pad;
-            box: Math.min(self.natural, root.inner-w);
-            elide: true;
+            box: root.dialog.head-breaks > 0 ? root.inner-w : Math.min(self.natural, root.inner-w);
+            elide: root.dialog.head-breaks == 0;
+            centre: root.dialog.head-breaks > 0;
+            wrap: root.dialog.head-breaks > 0;
+            breaks: root.dialog.head-breaks;
             text: root.dialog.headline;
-            cap: 2 * root.c1;
+            cap: root.head-cap;
             face: root.dialog.korri ? "korri" : "caps";
         }
-        lines := ZoneCaps {
+        // Korri's lines, 1.4 caps apart; cut at the layer only when the plan's window was not kept.
+        Rectangle {
             visible: root.has-lines;
             x: (root.width - root.inner-w) / 2;
-            y: root.pad + root.head-h + 6 * root.a;
-            box: root.inner-w;
-            centre: true;
-            wrap: true;
-            text: root.has-lines ? root.dialog.lines[0] : "";
-            cap: root.c1;
-            face: "fact";
+            y: root.lines-y;
+            width: root.inner-w;
+            height: root.lines-h;
+            clip: root.lines-cut;
+            lines := ZoneCaps {
+                x: 0;
+                y: 0;
+                box: root.inner-w;
+                centre: true;
+                wrap: true;
+                text: root.has-lines ? root.dialog.lines[0] : "";
+                breaks: root.dialog.breaks;
+                cap: root.c1;
+                face: "fact";
+            }
+        }
+        if root.scrolls: ZoneShape {
+            x: root.mark-x;
+            y: root.lines-y + root.lines-h / 2 - root.mark-h - root.a;
+            width: root.mark-w;
+            height: root.mark-h;
+            ink: root.dialog.above ? Tokens.black : Tokens.steel;
+            commands: "M 0 " + (root.mark-h / (1 * Tokens.unit)) + " L " + Tokens.pt(root.mark-w / 2, 0) + " L " + Tokens.pt(root.mark-w, root.mark-h) + " Z";
+        }
+        if root.scrolls: ZoneShape {
+            x: root.mark-x;
+            y: root.lines-y + root.lines-h / 2 + root.a;
+            width: root.mark-w;
+            height: root.mark-h;
+            ink: root.dialog.below ? Tokens.black : Tokens.steel;
+            commands: "M 0 0 L " + Tokens.pt(root.mark-w, 0) + " L " + Tokens.pt(root.mark-w / 2, root.mark-h) + " Z";
         }
         if root.dialog.title != "": ZoneCaps {
             x: (root.width - self.width) / 2;
-            y: root.pad + root.head-h + 6 * root.a + (root.has-lines ? root.lines-h + 6 * root.a : 0);
+            y: root.lines-y + (root.has-lines ? root.lines-h + 6 * root.a : 0);
             box: Math.min(self.natural, root.inner-w);
             elide: true;
             text: root.dialog.title;

@@ -8,7 +8,8 @@
  *   region with its entry rule. Inside a region a press goes to the target
  *   drawn nearest that way (src/press.ts reads the same plan).
  * - Each button carries its `line` in its row (the row wraps when its
- *   buttons do not fit), a dialog whether its buttons stand at caps-2, and
+ *   buttons do not fit), a dialog whether its buttons stand at caps-2 and
+ *   the window of Korri's lines it shows (src/plan/dialog-words.ts), and
  *   `screen` the plan's grid and structure for ui/tokens.slint.
  *
  * The shell strips focusRegion, focusActive and focusPlan before it binds a
@@ -16,6 +17,7 @@
  */
 import type { SurfaceModel } from "../../../../../contracts/generated/surface"
 import { buttonRow, dialogButtons, tabsPlan, type ZoneScreen } from "./plan/screen"
+import { dialogKey, dialogRoom, dialogWindow, dialogWords } from "./plan/dialog-words"
 import { planSaveData } from "./plan/save-data"
 import { topLayer, ZONE_TABS } from "./state/navigation"
 import { zoneShown, type ZoneShown, type ZoneSurfaceState } from "./state/surface"
@@ -156,8 +158,11 @@ export interface ZoneViewFocus {
   readonly page: ZoneShown
 }
 
-/** The view with its regions, exits and the plan's decisions for .slint. */
-export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen): V & { focusPlan: ZoneFocusPlan; screen: Json } {
+/**
+ * The view with its regions, exits and the plan's decisions for .slint.
+ * `overlay`: the view is PAUSED's Overlay, whose dialog has the whole window.
+ */
+export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen, overlay = false): V & { focusPlan: ZoneFocusPlan; screen: Json } {
   // In place: surfaceView (and overlayView) make the view fresh for this call.
   const view: Json = raw
   REGIONS = new Set<string>()
@@ -183,9 +188,27 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   }
   view.actions = lines(raw.actions as Btnish[], screen.width, c1, screen)
   view.retired = lines(raw.retired as Btnish[], screen.width, c1, screen)
-  const dialog = raw.dialog as Json & { buttons: Btnish[] }
+  const dialog = raw.dialog as Json & { buttons: Btnish[]; headline: string; korri: boolean; lines: string[]; title: string }
   const planned = dialogButtons(dialog.buttons.map(button => button.label), screen)
-  view.dialog = { ...dialog, cap: planned.cap, buttons: dialog.buttons.map((button, index) => ({ ...button, line: planned.lines[index] ?? 0 })) }
+  // The headline and Korri's lines: the window of them that fits between the
+  // headline and the buttons, from where up and down moved them for this
+  // dialog's words. Each is one text, a line break between each line, drawn
+  // by one ZoneCaps.
+  const room = dialogRoom(screen, overlay, (raw.foot as { shown?: boolean } | undefined)?.shown === true)
+  const words = dialogWords(dialog, room, screen)
+  const shownLines = dialogWindow(words, state.dialogLine.words === dialogKey(dialog) ? state.dialogLine.line : 0)
+  view.dialog = {
+    ...dialog,
+    headline: words.head.join("\n"),
+    headCap: words.headCap,
+    headBreaks: Math.max(0, words.head.length - 1),
+    lines: shownLines.lines.length === 0 ? [] : [shownLines.lines.join("\n")],
+    breaks: Math.max(0, shownLines.lines.length - 1),
+    above: shownLines.above,
+    below: shownLines.below,
+    cap: planned.cap,
+    buttons: dialog.buttons.map((button, index) => ({ ...button, line: planned.lines[index] ?? 0 })),
+  }
   const busy = raw.busy as Json & { buttons: Btnish[] }
   view.busy = { ...busy, buttons: lines(busy.buttons, 160 * a, c1, screen) }
   const well = (raw.well as { shown?: boolean } | undefined)?.shown === true

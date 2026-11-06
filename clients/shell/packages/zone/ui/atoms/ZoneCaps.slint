@@ -40,7 +40,9 @@ export component ZoneCaps {
     out property <length> above: cap * above-share;
     out property <length> natural: measure.preferred-width;
     property <length> text-w: box > 0 ? box : natural + 2 * a;
-    out property <length> line: measure.preferred-height;
+    // Hard line breaks (`\n`) in `text`: one line's height is the measure's over the lines.
+    in property <int> breaks: 0;
+    out property <length> line: measure.preferred-height / (breaks + 1);
     // Wrapped: the lines' height, laid out in the box.
     out property <length> wrapped: wrap ? wrap-measure.preferred-height : line;
     out property <int> lines: wrap ? Math.max(1, Math.round(wrap-measure.preferred-height / Math.max((1 * Tokens.unit), line * spacing))) : 1;

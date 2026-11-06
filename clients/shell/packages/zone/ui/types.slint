@@ -104,9 +104,19 @@ export struct Keyboard {
 
 export struct Dialog {
     shown: bool,
+    // The headline: one line at caps-2, or lines broken between words at
+    // caps-1 (a line break between each); its cap in px (0: caps-2) and breaks.
     headline: string,
+    head-cap: float,
+    head-breaks: int,
     korri: bool,
+    // Korri's words the dialog shows: one entry, the plan's window of its
+    // lines with a line break between each (src/plan/dialog-words.ts); the
+    // breaks it holds; whether more lines stand above and below it.
     lines: [string],
+    breaks: int,
+    above: bool,
+    below: bool,
     title: string,
     buttons: [Btn],
     // The buttons' cap in px: the plan's (src/plan/screen.ts dialogButtons).

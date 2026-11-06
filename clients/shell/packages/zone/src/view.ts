@@ -24,6 +24,7 @@ import { problemButtons } from "./state/status"
 import { withLook, zoneShown, type ZoneShown, type ZoneSurfaceState } from "./state/surface"
 import { focusView, targetRows } from "./focus"
 import type { ZoneScreen } from "./plan/screen"
+import { dialogRoom } from "./plan/dialog-words"
 
 const TAB_WORDS: Readonly<Record<ZoneTab, string>> = { games: "Games", options: "Options", savedata: "Save data" }
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -179,6 +180,16 @@ function keyboardView(fields: {
 }
 
 const EMPTY_DIALOG = { shown: false, headline: "", korri: false, lines: [] as string[], title: "", buttons: [] as Btn[] }
+
+/**
+ * The sky dialog shown now, before the plan's window of its lines, and the
+ * height it stands in (src/plan/dialog-words.ts): press.ts moves its lines.
+ */
+export function shownDialog(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen) {
+  if (zoneShown(state, korri) === "paused") return { dialog: pausedView(state, korri).dialog, room: dialogRoom(screen, true, false) }
+  const raw = surfaceView(state, korri, screen)
+  return { dialog: raw.dialog, room: dialogRoom(screen, false, raw.foot.shown) }
+}
 
 function dialogView(headline: string, korri: boolean, lines: readonly string[], title: string, buttons: Btn[]) {
   return { shown: true, headline, korri, lines: lines.filter(line => line !== ""), title, buttons }
@@ -802,7 +813,7 @@ export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel, screen
   // controls step down-left like stairs, so each control is its own region:
   // up and down go to the control above and below, left and right step its
   // value or stay.
-  const planned = focusView({ actions: [], retired: [], dialog, busy: raw.busy, rows: [], optsRows: [], tabs: [] }, state, korri, screen)
+  const planned = focusView({ actions: [], retired: [], dialog, busy: raw.busy, rows: [], optsRows: [], tabs: [] }, state, korri, screen, true)
   const rows = targetRows(raw.rows as unknown as Record<string, unknown>[])
   const controls = rows.flatMap((entry, index) => ("focused" in entry ? [index] : []))
   const region = (index: number) => `control-${controls.indexOf(index)}`
