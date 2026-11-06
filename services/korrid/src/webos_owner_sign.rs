@@ -64,6 +64,12 @@ fn verify_result(template: &str, owner: &str, state: PersonSignerState) -> Resul
     Ok(event)
 }
 
+// A signer's denial text is untrusted. It can echo the one-use connection
+// secret, so the operator edge must not copy it into stderr or captured logs.
+fn connection_failure(_: crate::remote_signer::RemoteSignerError) -> String {
+    "Remote signer connection failed. Check its relays and use a fresh bunker URL.".into()
+}
+
 pub async fn sign(template: &str, expected_owner: &str, bunker: &str) -> Result<String, String> {
     validate_owned_statement_template(template).map_err(|error| error.to_string())?;
     let owner = nostr::key::PublicKey::from_hex(expected_owner)
@@ -92,7 +98,7 @@ pub async fn sign(template: &str, expected_owner: &str, bunker: &str) -> Result<
         signer
             .establish(crate::peer_rpc::unix_time())
             .await
-            .map_err(|error| format!("Could not connect to signer: {error}"))?;
+            .map_err(connection_failure)?;
         let state = signer
             .request(PersonSignerRequest {
                 unsigned_event_template: template.into(),

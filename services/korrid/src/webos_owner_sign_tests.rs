@@ -128,3 +128,14 @@ fn operator_inputs_are_bounded_and_malformed_templates_never_reach_the_signer() 
         .is_err());
     });
 }
+
+#[test]
+fn connection_diagnostics_do_not_echo_signer_text_or_connection_secrets() {
+    let message = connection_failure(crate::remote_signer::RemoteSignerError::Denied {
+        method: "connect".into(),
+        reason: "bunker://private-connection?secret=one-use-secret".into(),
+    });
+    assert!(!message.contains("private-connection"));
+    assert!(!message.contains("one-use-secret"));
+    assert!(!message.contains("bunker://"));
+}
