@@ -68,14 +68,85 @@ export function keyboard<Act>(
   top: number,
   act: (press: KeyPress) => Act,
 ): Keyboard<Act> {
-  const placed = layout(charset, draft)
-  const box = (key: Placed): Box => ({ x: key.col * 10, y: top + key.row * 10, w: key.cols * 10, h: 8 })
+  // A screen is built on every press: its keys, their views and targets are
+  // worked out once per layout (and `act`, and the cursor) instead.
+  const placed = placedFor(charset, draft)
+  const views = viewsOf(placed)
+  const at = focused === undefined ? -1 : placed.findIndex(key => key.id === focused)
   return {
-    keys: placed.map(key => ({ cap: key.cap, focused: key.id === focused, focusId: key.id, lit: key.lit, row: key.row, col: key.col, cols: key.cols })),
+    keys: at === -1 ? views.unfocused : keysFocusedAt(views, at),
     rows: charset === "text" ? 5 : 4,
-    targets: placed.map(key => ({ id: key.id, region: "keys", box: box(key), act: act(key.press) })),
+    targets: targetsFor(placed, top, act),
   }
 }
+
+/** The keys of a layout, one list per charset and draft's look. */
+function placedFor(charset: "search" | "text", draft: Pick<PicoTextDraft, "capitals" | "symbols">): readonly Placed[] {
+  const key = `${charset}|${draft.capitals}|${draft.symbols}`
+  let placed = LAYOUTS.get(key)
+  if (placed === undefined) {
+    placed = layout(charset, draft)
+    LAYOUTS.set(key, placed)
+  }
+  return placed
+}
+
+const LAYOUTS = new Map<string, readonly Placed[]>()
+
+interface KeyViews {
+  /** Each key's view, unfocused and focused. */
+  readonly views: readonly (readonly [KeyView, KeyView])[]
+  readonly unfocused: readonly KeyView[]
+  /** The list with key `i` focused, once made. */
+  readonly focusedAt: Map<number, readonly KeyView[]>
+}
+
+function viewsOf(placed: readonly Placed[]): KeyViews {
+  let known = VIEWS.get(placed)
+  if (known === undefined) {
+    const views = placed.map(key => {
+      const view = (focused: boolean): KeyView => ({ cap: key.cap, focused, focusId: key.id, lit: key.lit, row: key.row, col: key.col, cols: key.cols })
+      return [view(false), view(true)] as const
+    })
+    known = { views, unfocused: views.map(pair => pair[0]), focusedAt: new Map() }
+    VIEWS.set(placed, known)
+  }
+  return known
+}
+
+const VIEWS = new WeakMap<readonly Placed[], KeyViews>()
+
+function keysFocusedAt(views: KeyViews, at: number): readonly KeyView[] {
+  let keys = views.focusedAt.get(at)
+  if (keys === undefined) {
+    keys = views.views.map((pair, i) => pair[i === at ? 1 : 0])
+    views.focusedAt.set(at, keys)
+  }
+  return keys
+}
+
+/** The keys' targets, once per layout, place and `act`. */
+function targetsFor<Act>(placed: readonly Placed[], top: number, act: (press: KeyPress) => Act): readonly Target<Act>[] {
+  let byAct = TARGETS.get(placed)
+  if (byAct === undefined) {
+    byAct = new WeakMap()
+    TARGETS.set(placed, byAct)
+  }
+  let byTop = byAct.get(act)
+  if (byTop === undefined) {
+    byTop = new Map()
+    byAct.set(act, byTop)
+  }
+  let targets = byTop.get(top) as readonly Target<Act>[] | undefined
+  if (targets === undefined) {
+    const box = (key: Placed): Box => ({ x: key.col * 10, y: top + key.row * 10, w: key.cols * 10, h: 8 })
+    targets = placed.map(key => ({ id: key.id, region: "keys", box: box(key), act: act(key.press) }))
+    byTop.set(top, targets)
+  }
+  return targets
+}
+
+const TARGETS = new WeakMap<readonly Placed[], WeakMap<object, Map<number, readonly Target<unknown>[]>>>()
 
 /** The first key, where a keyboard's cursor starts. */
 export const FIRST_KEY = "key:0:0"

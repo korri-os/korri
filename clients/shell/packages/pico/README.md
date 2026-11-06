@@ -106,10 +106,20 @@ Each `update`, `view` and `overlay` call runs under the shell's 50 ms budget
 `clients/shell` (`calls_stay_well_inside_the_budget_on_a_slow_clock`) counts
 the instructions of every call the shell makes over 10,000 games at 640x480
 and holds each under 10 ms on the device, with Zone's measure of the clock
-(`tests/zone_package.rs`). The library's first arrival, once a boot, may take
-15 ms: every cart on the shelf is worked out then. QuickJS walks and builds
-objects slowly and writes JSON by the value, so the logic does as little of
-each as it can:
+(`tests/zone_package.rs`), but for these (`limit_ms`):
+
+- A window of games not seen before (the library's first arrival, the shelf
+  after the hero's `recent` window): about 11-14 ms, as every cart it shows
+  is worked out then.
+- Find, the grid and the hero: their views are bound by their size, not by
+  the logic. QuickJS writes JSON by the value (about 42,000 instructions a
+  cart), and Find sends its keyboard (351 values), the grid the window's 50
+  carts (at 640x480 every row is within reach of the cursor, so none can be
+  left out) and the hero its RESUME list. Find's views are about 13-20 ms,
+  the grid's 17-22 ms, the hero's 25-30 ms.
+
+QuickJS walks and builds objects slowly and writes JSON by the value, so the
+logic does as little of each as it can:
 
 - A publish keeps every part of the model that did not change, and each game
   of the window, as the last model's objects (`src/native/intern.ts`): a game
@@ -119,7 +129,12 @@ each as it can:
   stage are kept per game object, so they last across windows.
 - The shelf sends only the carts the rack can show: those a screen's width
   from the chosen and focused carts (`shelfReach` in `src/native/catalog.ts`),
-  with `firstIndex` and `selectedIndex` counted from the first sent.
+  with `firstIndex` and `selectedIndex` counted from the first sent. Find
+  sends only the results its rack can show around the focused one and the
+  one the cursor comes back to (`resultReach`), with `firstResult` and
+  `resultCount` (PicoLibraryBrowser).
+- Find's keys, their views and targets, the grid's and RESUME's targets and
+  entries are kept per layout or game.
 - A layer not drawn is not sent: MENU's list while it is closed, the hero
   and the launch stage under another body, home's card unless it is the
   body, the split's rectangles on one screen, and the page under the

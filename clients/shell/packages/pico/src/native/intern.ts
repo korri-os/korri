@@ -61,7 +61,13 @@ function catalogInterned(before: KorriModel["catalog"] | undefined, catalog: Kor
     return kept
   })
   lastGames = games
-  return share(before, { ...catalog, window })
+  // The window against the last one by its games' identity: they were
+  // compared above, and walking them again costs as much.
+  const last = before?._tag === "Ready" ? before.window : undefined
+  let sameWindow = last !== undefined && last.length === window.length
+  for (let i = 0; sameWindow && i < window.length; i += 1) if (window[i] !== last?.[i]) sameWindow = false
+  const next = { ...catalog, window: sameWindow && last !== undefined ? last : window }
+  return sameWindow ? share(before, next) : next
 }
 
 /**

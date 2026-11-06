@@ -142,9 +142,9 @@ impl Run {
 /// every update, view and overlay the shell makes as the library arrives,
 /// along the shelf past the window's edge both ways, while Pico idles (the
 /// shell's Tick each second, attract, the clock's minute, a status), on a
-/// game's own screen, MENU and Settings, a resize, and the pause menu. Each
-/// stays under 10 ms on the device, estimated from the instructions it runs
-/// here (or, where the counter is not available, from its CPU time, with
+/// game's own screen, MENU, Find, Settings, the grid and the hero, a resize,
+/// and the pause menu. Each stays under its limit on the device (`limit_ms`),
+/// estimated from the instructions it runs here (or, where the counter is not available, from its CPU time, with
 /// room for a busy machine).
 #[test]
 fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
@@ -253,6 +253,18 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
     press(&mut run, "Pressed down (menu)", "down");
     press(&mut run, "Pressed back (close MENU)", "back");
     at(&run, "/home/menuOpen", json!(false));
+    // Find, over the whole library: along its keys and its results.
+    open_menu(&mut run);
+    press(&mut run, "Pressed confirm (open Find)", "confirm");
+    at(&run, "/page", json!("find"));
+    for _ in 0..4 {
+        press(&mut run, "Pressed down (find)", "down");
+    }
+    for _ in 0..6 {
+        press(&mut run, "Pressed right (find)", "right");
+    }
+    press(&mut run, "Pressed back (find)", "back");
+    at(&run, "/page", json!("home"));
     // Settings.
     open_menu(&mut run);
     press(&mut run, "Pressed down (menu)", "down");
@@ -263,6 +275,23 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
     }
     press(&mut run, "Pressed back (settings)", "back");
     at(&run, "/page", json!("home"));
+    // The grid, the hero and the shelf again: the menu button cycles them.
+    press(&mut run, "Pressed menu (grid)", "menu");
+    at(&run, "/home/mode", json!("grid"));
+    for _ in 0..6 {
+        press(&mut run, "Pressed right (grid)", "right");
+    }
+    for _ in 0..3 {
+        press(&mut run, "Pressed down (grid)", "down");
+    }
+    press(&mut run, "Pressed menu (hero)", "menu");
+    at(&run, "/home/mode", json!("hero"));
+    press(&mut run, "Pressed down (hero)", "down");
+    for _ in 0..6 {
+        press(&mut run, "Pressed right (hero)", "right");
+    }
+    press(&mut run, "Pressed menu (back to the shelf)", "menu");
+    at(&run, "/home/mode", json!("shelf"));
     // A resize and back.
     run.deliver(
         "Resized",
@@ -306,14 +335,7 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
             sorted[sorted.len() / 2],
             device_ms(worst),
         );
-        // Every call under 10 ms on the device, but the library's first
-        // arrival: every cart on the shelf is worked out then, once a boot
-        // (see README.md, Limits).
-        let limit = if what == "update catalog arrives" {
-            15.0
-        } else {
-            10.0
-        };
+        let limit = limit_ms(what);
         let worst_ms = device_ms(worst);
         let worst_ms = if instructions {
             worst_ms
@@ -325,6 +347,27 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
         }
     }
     assert!(over.is_empty(), "{over:#?}");
+}
+
+/// A call's limit on the device, in ms: 10, but where README.md (Limits)
+/// says why not. A window of games not seen before works out every cart it
+/// shows (the library's first arrival, the shelf after the hero's window).
+/// Find, the grid and the hero are bound by the size of their views: QuickJS
+/// writes JSON by the value, and they send the keyboard, the window's 50
+/// carts, and the RESUME list.
+fn limit_ms(what: &str) -> f64 {
+    const BOUND: [(&str, f64); 6] = [
+        ("catalog arrives", 15.0),
+        ("(back to the shelf)", 15.0),
+        ("(open Find)", 20.0),
+        ("(find)", 20.0),
+        ("(grid)", 26.0),
+        ("(hero)", 40.0),
+    ];
+    BOUND
+        .iter()
+        .find(|(part, _)| what.contains(part))
+        .map_or(10.0, |(_, limit)| *limit)
 }
 
 /// `view` applied over what was drawn, as the shell keeps a field it is not sent.

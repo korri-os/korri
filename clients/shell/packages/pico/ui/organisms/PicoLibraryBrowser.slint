@@ -18,7 +18,11 @@ export struct FindView {
     orders: [ButtonView],
     keys: [KeyView],
     key-rows: int,
+    // The results the rack can show: results[0] is the first-result'th of
+    // the result-count games found (logic.js sends no more).
     results: [ResultView],
+    first-result: int,
+    result-count: int,
     focused-result: int,
     empty: bool,
     count: string,
@@ -44,9 +48,9 @@ export component PicoLibraryBrowser inherits VerticalLayout {
     if !find.empty : Rectangle {
         min-height: 54 * Tokens.p;
         clip: true;
-        property <length> scroll: max(0, min(find.results.length * slot-w - self.width, find.focused-result * slot-w - self.width / 2 + slot-w / 2));
+        property <length> scroll: max(0, min(find.result-count * slot-w - self.width, find.focused-result * slot-w - self.width / 2 + slot-w / 2));
         for result[i] in find.results : PicoResultRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
-            x: i * slot-w - parent.scroll;
+            x: (find.first-result + i) * slot-w - parent.scroll;
             y: 0;
             width: slot-w - 4 * Tokens.p;
             height: parent.height;

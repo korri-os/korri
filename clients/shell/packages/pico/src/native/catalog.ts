@@ -5,7 +5,7 @@
  * are theirs.
  */
 import { PICO_FONTS } from "../pico-fonts"
-import type { SurfaceAction } from "../model"
+import type { SurfaceAction, SurfaceGame } from "../model"
 import { picoDetailViewFromGame, picoDownloadLabel, picoStatsFor } from "../pico-detail-view"
 import { picoInvitePlaying, picoInvitesFrom, picoInviteWhere } from "../pico-invite-view"
 import {
@@ -45,6 +45,7 @@ import {
   art,
   mark,
 } from "./kit"
+import { memo } from "./memo"
 import { type Act, type Ctx, local, nav, type Screen } from "./types"
 
 const MENU_LABEL = "MENU"
@@ -277,6 +278,71 @@ function shelfTarget(game: PicoShelfGame, place: number, aiming: boolean): Targe
 
 const SHELF_TARGETS = new WeakMap<object, Map<string, Target<Act>>>()
 
+/** The games that resume, once per window. */
+const resumableOf = memo(2, (games: readonly PicoShelfGame[]) => [games], (games: readonly PicoShelfGame[]) => games.filter(game => game.resumable === true))
+
+/** A RESUME cart's target, once per game and place. */
+function resumeTarget(game: PicoShelfGame, place: number): Target<Act> {
+  let known = RESUME_TARGETS.get(game)
+  if (known === undefined) {
+    known = new Map()
+    RESUME_TARGETS.set(game, known)
+  }
+  let target = known.get(place)
+  if (target === undefined) {
+    target = { id: `resume:${game.id}`, region: "resume", box: { x: place * 10, y: 300, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })], enter: [nav({ _tag: "AimedMenu", label: undefined })] }
+    if (known.size > 8) known.clear()
+    known.set(place, target)
+  }
+  return target
+}
+
+const RESUME_TARGETS = new WeakMap<object, Map<number, Target<Act>>>()
+
+/** A RESUME entry, once per game and focus. */
+function resumeView(game: PicoShelfGame, focused: boolean): HeroView["resume"][number] {
+  let known = RESUME_VIEWS.get(game)
+  if (known === undefined) {
+    known = [undefined, undefined]
+    RESUME_VIEWS.set(game, known)
+  }
+  const at = focused ? 1 : 0
+  let view = known[at]
+  if (view === undefined) {
+    view = { cart: cartView(game, { focused, focusId: `resume:${game.id}`, hero: focused, band: false }), title: game.title, subtitle: game.subtitle ?? "" }
+    known[at] = view
+  }
+  return view
+}
+
+const RESUME_VIEWS = new WeakMap<object, [HeroView["resume"][number] | undefined, HeroView["resume"][number] | undefined]>()
+
+/** A grid cart's target, once per game, place and aim (as `shelfTarget`). */
+function gridTarget(game: PicoShelfGame, x: number, y: number, aiming: boolean): Target<Act> {
+  const key = `${x}|${y}|${aiming}`
+  let known = GRID_TARGETS.get(game)
+  if (known === undefined) {
+    known = new Map()
+    GRID_TARGETS.set(game, known)
+  }
+  const cached = known.get(key)
+  if (cached !== undefined) return cached
+  const target: Target<Act> = {
+    id: `cart:${game.id}`,
+    region: "grid", box: { x, y, w: 30, h: 44 },
+    act: [nav({ _tag: "OpenedGame", gameId: game.id })],
+    enter: [nav({ _tag: "SelectedCart", gameId: game.id }), ...(aiming ? [nav({ _tag: "AimedMenu", label: undefined })] : [])],
+  }
+  if (known.size > 8) known.clear()
+  known.set(key, target)
+  return target
+}
+
+const GRID_TARGETS = new WeakMap<object, Map<string, Target<Act>>>()
+
+/** The grid's sections, once per window. */
+const collectionsOf = memo(2, (games: readonly PicoShelfGame[]) => [games], picoCollectionsFrom)
+
 export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>): Screen {
   const { s, korri, model } = ctx
   const view = shown.view
@@ -383,7 +449,8 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     const title = rowsOfFont * 1.5
     let rowStart = 0
     let top = 0
-    sections = picoCollectionsFrom(games).map((collection) => {
+    const aiming = home.aim !== undefined
+    sections = collectionsOf(games).map((collection) => {
       const rowsTop = top + title + 2
       top = rowsTop + Math.ceil(collection.games.length / columns) * 44 + 2 + 2 + 4
       const section = {
@@ -391,15 +458,9 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
         rowStart,
         carts: collection.games.map((game, i) => {
           const id = `cart:${game.id}`
-          if (!menuOpen) {
-            targets.push({
-              id,
-              region: "grid", box: { x: (i % columns) * 34, y: rowsTop + Math.floor(i / columns) * 44, w: 30, h: 44 },
-              act: [nav({ _tag: "OpenedGame", gameId: game.id })],
-              enter: [nav({ _tag: "SelectedCart", gameId: game.id }), ...(home.aim === undefined ? [] : aimAt(undefined))],
-            })
-          }
-          return cartView(game, { ...mark(id, focused), hero: focused === id, band: false })
+          if (!menuOpen) targets.push(gridTarget(game, (i % columns) * 34, rowsTop + Math.floor(i / columns) * 44, aiming))
+          const on = focused === id
+          return cartView(game, { focused: on, focusId: id, hero: on, band: false })
         }),
       }
       rowStart += Math.ceil(collection.games.length / columns)
@@ -411,25 +472,19 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     // one played last in the whole library (program.ts, HERO_QUERY).
     const answered = catalog._tag === "Ready" && catalog.query.order === "recent" && catalog.query.text === "" && catalog.query.section == null
     const pick = answered ? picoHeroPick(games) : undefined
-    const resumable = games.filter(game => game.resumable === true)
+    const resumable = resumableOf(games)
     if (pick !== undefined && !menuOpen) {
       targets.push({ id: "hero:open", region: "hero", box: { x: 0, y: 100, w: 30, h: 10 }, act: [nav({ _tag: "OpenedGame", gameId: pick.game.id })], enter: aimAt(undefined) })
     }
     // The RESUME list is drawn under the hero only.
-    if (pick !== undefined) resumable.forEach((game, i) => {
-      if (!menuOpen) targets.push({ id: `resume:${game.id}`, region: "resume", box: { x: i * 10, y: 300, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })], enter: aimAt(undefined) })
-    })
+    if (pick !== undefined && !menuOpen) resumable.forEach((game, i) => targets.push(resumeTarget(game, i)))
     hero = pick === undefined ? hero : {
       title: pick.game.title,
       subtitle: pick.game.subtitle ?? "",
       reason: pick.reason ?? "",
       chips: factChips(pick.game),
       open: button("OPEN", { ...mark("hero:open", focused) }),
-      resume: resumable.map(game => ({
-        cart: cartView(game, { ...mark(`resume:${game.id}`, focused), hero: focused === `resume:${game.id}`, band: false }),
-        title: game.title,
-        subtitle: game.subtitle ?? "",
-      })),
+      resume: resumable.map(game => resumeView(game, focused === `resume:${game.id}`)),
     }
   } else if (view._tag === "Loading" || view._tag === "Empty" || view._tag === "Failed") {
     body = "card"
@@ -574,10 +629,7 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
     targets.push({ id, region: "orders", box: { x: i * 10, y: 20, w: 9, h: 8 }, act: [nav({ _tag: "ChoseOrder", order })] })
     return button(PICO_ORDER_LABELS[order], { lit: order === search.order, ...mark(id, focused) })
   })
-  const keys = keyboard("search", { capitals: false, symbols: false }, focused, 30, (press: KeyPress): Act =>
-    press._tag === "Type" ? [nav({ _tag: "TypedCharacter", character: press.character })]
-      : press._tag === "Backspace" ? [nav({ _tag: "PressedBackspace" })]
-      : [nav({ _tag: "ClearedQuery" })])
+  const keys = keyboard("search", { capitals: false, symbols: false }, focused, 30, searchKeyAct)
   targets.push(...keys.targets)
   const catalog = korri.catalog
   // Korri answers the query (MoveCatalog); until it has, the window is the
@@ -585,13 +637,20 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
   const answered = catalog._tag === "Ready" && sameQuery(catalog.query, findQuery(search))
   const games = answered && model.catalog._tag === "Ready" ? model.catalog.games : []
   const firstIndex = catalog._tag === "Ready" ? catalog.firstIndex : 0
-  const results = games.map((game, i) => {
+  const focusedResult = resultIndex(games, focused)
+  // Only the results the rack can show around the focused one are sent, and
+  // are targets, with the one the cursor comes back to (`remembered`).
+  const back = resultIndex(games, s.remembered["results"])
+  const reach = resultReach(ctx.plan.width)
+  const anchor = Math.max(0, focusedResult)
+  const first = Math.max(0, Math.min(anchor, back === -1 ? anchor : back) - reach)
+  const end = Math.min(games.length, Math.max(anchor, back) + reach + 1)
+  const results = games.slice(first, end).map((game, k) => {
     const id = `result:${game.id}`
-    targets.push({ id, region: "results", box: { x: (firstIndex + i) * 10, y: 100, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })] })
+    targets.push(resultTarget(game, firstIndex + first + k))
     // The game as the shelf holds it, once per game: its carts are kept.
-    return { cart: cartView(picoShelfGame(game), { ...mark(id, focused), hero: focused === id, band: false }), title: game.title }
+    return resultView(picoShelfGame(game), focused === id)
   })
-  const focusedResult = results.findIndex(result => focused === `result:${result.cart.id}`)
   return {
     key: "find",
     fallback: "key:0:0",
@@ -599,8 +658,9 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
     active: { sections: `section:${search.section}`, orders: `order:${search.order}` },
     view: {
       page: "find",
-      frame: frame({ label: "FIND", clock: korri.clockLabel ?? "", hints: [A("OPEN"), B("BACK")] }),
-      card: NO_CARD,
+      frame: findFrame(korri.clockLabel ?? ""),
+      // Find draws no card (PicoLibrary).
+      card: HIDDEN_CARD,
       find: {
         query: search.query,
         sections: sectionButtons,
@@ -608,13 +668,94 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
         keys: keys.keys,
         keyRows: keys.rows,
         results,
-        focusedResult: Math.max(0, focusedResult),
-        empty: answered && results.length === 0,
+        firstResult: first,
+        resultCount: games.length,
+        focusedResult: anchor,
+        empty: answered && games.length === 0,
         count: catalog._tag === "Ready" && answered ? `${catalog.total} ${catalog.total === 1 ? "GAME" : "GAMES"}` : "",
       },
     },
   }
 }
+
+/** What Find's keys do. One function, so the keys' targets are kept (keyboard.ts). */
+function searchKeyAct(press: KeyPress): Act {
+  return press._tag === "Type" ? [nav({ _tag: "TypedCharacter", character: press.character })]
+    : press._tag === "Backspace" ? [nav({ _tag: "PressedBackspace" })]
+    : [nav({ _tag: "ClearedQuery" })]
+}
+
+/** Where the result with target `id` is among `games`, or -1. */
+function resultIndex(games: readonly SurfaceGame[], id: string | undefined): number {
+  if (id === undefined || !id.startsWith("result:")) return -1
+  const gameId = id.slice("result:".length)
+  for (let i = 0; i < games.length; i += 1) if (games[i]?.id === gameId) return i
+  return -1
+}
+
+/**
+ * How many results either side of the focused one PicoLibraryBrowser can show
+ * on a screen `width` virtual pixels wide (the plan's): the rack centres the
+ * focused result, held at either end, and a result is 54 virtual pixels apart.
+ */
+function resultReach(width: number): number {
+  return Math.ceil((width + 1) / 54)
+}
+
+/** A result's target, once per game and place. */
+function resultTarget(game: SurfaceGame, place: number): Target<Act> {
+  let known = RESULT_TARGETS.get(game)
+  if (known === undefined) {
+    known = new Map()
+    RESULT_TARGETS.set(game, known)
+  }
+  let target = known.get(place)
+  if (target === undefined) {
+    target = { id: `result:${game.id}`, region: "results", box: { x: place * 10, y: 100, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })] }
+    if (known.size > 8) known.clear()
+    known.set(place, target)
+  }
+  return target
+}
+
+const RESULT_TARGETS = new WeakMap<object, Map<number, Target<Act>>>()
+
+interface ResultView {
+  readonly cart: CartView
+  readonly title: string
+}
+
+/** A result's view, once per game and focus. */
+function resultView(game: PicoShelfGame, focused: boolean): ResultView {
+  let known = RESULT_VIEWS.get(game)
+  if (known === undefined) {
+    known = [undefined, undefined]
+    RESULT_VIEWS.set(game, known)
+  }
+  const at = focused ? 1 : 0
+  let view = known[at]
+  if (view === undefined) {
+    const id = `result:${game.id}`
+    view = { cart: cartView(game, { focused, focusId: id, hero: focused, band: false }), title: game.title }
+    known[at] = view
+  }
+  return view
+}
+
+const RESULT_VIEWS = new WeakMap<object, [ResultView | undefined, ResultView | undefined]>()
+
+/** Find's frame, once per clock. */
+function findFrame(clock: string): FrameView {
+  let built = FIND_FRAMES.get(clock)
+  if (built === undefined) {
+    built = frame({ label: "FIND", clock, hints: [A("OPEN"), B("BACK")] })
+    if (FIND_FRAMES.size > 4) FIND_FRAMES.clear()
+    FIND_FRAMES.set(clock, built)
+  }
+  return built
+}
+
+const FIND_FRAMES = new Map<string, FrameView>()
 
 /** The query Korri should answer for Find (contract 3.4). */
 export function findQuery(search: { readonly query: string; readonly section: string; readonly order: string }) {
