@@ -1,5 +1,14 @@
 # LG B7 native Slint + korrid: input session report (2026-10-30)
 
+## Update 2026-11-06: the early hang is solved
+
+- Cause: the IPK upgrade to the revert (`39dee17a1`) left the bundled SDL from `6dcd436dc` in place at `lib/backports/libSDL2-2.0.so.0` (SHA-256 `f564f7da…`). A webOS IPK upgrade does not remove files the new package drops, so the reverted build kept loading the bundled SDL.
+- Fix: that one file was removed from the app directory. One launch then reached the foreground in 3 s. The process maps the system SDL `/var/palm/jail/org.korri.slint-spike/usr/lib/libSDL2-2.0.so.0.4.0`, runs as UID 6269 with 17 threads, and has 45 MB RSS.
+- The TV had also started in Homebrew Channel failsafe mode: init.d did not run, so SSH was off and unauthenticated root Telnet was open. One reboot through `com.webos.service.sleep/shutdown/machineReboot` restored key-only SSH and closed Telnet.
+- Rule for later packages: never rely on upgrade cleanup. Remove the previous install first, or verify that the installed file list matches the IPK.
+
+The status below is the original 2026-10-30 record.
+
 Status when work paused: the app is installed but does not start. The TV runs, Lightkeeper is in front, and our app is not running. Do not relaunch the app until the open problem below is understood.
 
 ## Current state
