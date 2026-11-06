@@ -54,7 +54,7 @@ pub enum Record {
     FocusLost,
     AppIdInherited,
     AppIdSupplied,
-    /// The compositor cursor request: bound, or why not.
+    /// App-owned SDL cursor handover: available, or why not.
     Cursor(Option<crate::webos_cursor::Unavailable>),
 }
 
@@ -95,11 +95,8 @@ impl Record {
             Record::FocusLost => "event:focus_lost",
             Record::AppIdInherited => "env:appid_inherited",
             Record::AppIdSupplied => "env:appid_supplied",
-            Record::Cursor(None) => "cursor:bound",
-            Record::Cursor(Some(Unavailable::Library)) => "cursor:no_library",
-            Record::Cursor(Some(Unavailable::Method)) => "cursor:no_method",
-            Record::Cursor(Some(Unavailable::Display)) => "cursor:no_display",
-            Record::Cursor(Some(Unavailable::Global)) => "cursor:no_global",
+            Record::Cursor(None) => "cursor:sdl_paired",
+            Record::Cursor(Some(Unavailable::Sdl)) => "cursor:sdl_error",
         }
     }
 }

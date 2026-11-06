@@ -215,7 +215,7 @@ pub struct SdlPlatform {
     /// TV only: the pressed left button was turned into confirm, so its
     /// release must be too, whatever the mode is by then.
     click_confirming: Cell<bool>,
-    /// TV only: the compositor's cursor request, when available.
+    /// TV only: app-owned cursor hiding, paired with motion/484 restoration.
     webos_cursor: Option<webos_cursor::WebosCursor>,
     /// A host's own key handling; when set, keys never reach the view.
     host_keys: Option<HostKeys>,
@@ -303,21 +303,23 @@ impl SdlPlatform {
             host_keys: None,
         };
         if platform.webos_abi {
-            let window = platform.screen.borrow().window;
-            let status = match webos_cursor::WebosCursor::open(wayland_display(
-                &platform.shared.sdl,
-                window,
-            )) {
+            let status = match webos_cursor::WebosCursor::open(platform.sdl().SDL_ShowCursor) {
                 Ok(cursor) => {
-                    // The view opens in D-pad mode, so LG's cursor starts
-                    // hidden; a shake shows it and switches to the pointer.
-                    cursor.set_visible(false);
+                    eprintln!("sdl: webOS cursor active: system SDL_ShowCursor; hide on D-pad, restore on motion/484; no native visibility request on B7");
                     platform.webos_cursor = Some(cursor);
                     probe::Record::Cursor(None)
                 }
-                Err(why) => probe::Record::Cursor(Some(why)),
+                Err(why) => {
+                    eprintln!(
+                        "sdl: webOS cursor unavailable: SDL_ShowCursor query failed: {}",
+                        platform.sdl().error()
+                    );
+                    probe::Record::Cursor(Some(why))
+                }
             };
             platform.probe.borrow_mut().record(status);
+        } else {
+            eprintln!("sdl: webOS cursor unavailable: X11 workstation display");
         }
         platform
             .probe
@@ -474,20 +476,32 @@ impl SdlPlatform {
             ffi::SDL_MOUSEBUTTONDOWN | ffi::SDL_MOUSEBUTTONUP
                 if self.webos_abi && self.click_is_confirm(event, kind) =>
             {
-                let text = char::from(slint::platform::Key::Return).into();
-                self.slint_window
-                    .dispatch_event(if kind == ffi::SDL_MOUSEBUTTONDOWN {
-                        WindowEvent::KeyPressed { text }
-                    } else {
-                        WindowEvent::KeyReleased { text }
-                    });
+                if let Some(host_keys) = &self.host_keys {
+                    host_keys(HostKey::Confirm, kind == ffi::SDL_MOUSEBUTTONDOWN);
+                } else {
+                    let text = char::from(slint::platform::Key::Return).into();
+                    self.slint_window
+                        .dispatch_event(if kind == ffi::SDL_MOUSEBUTTONDOWN {
+                            WindowEvent::KeyPressed { text }
+                        } else {
+                            WindowEvent::KeyReleased { text }
+                        });
+                }
             }
             ffi::SDL_MOUSEMOTION => {
                 let (x, y) = event.motion();
                 let position = self.logical(x, y);
                 self.pointer.set(position);
-                // TV: LG's cursor state decides, not motion. A hidden cursor
-                // neither hovers nor aims; it can still report small motion.
+                // SDL_ShowCursor(0) stays latched off after a shake. Restore
+                // only a hide we own; LG still owns its normal idle policy.
+                if let Some(cursor) = &self.webos_cursor {
+                    match cursor.motion() {
+                        // This handler delivers the new position below.
+                        Ok(true) => self.mode.set(keys::Mode::Pointer),
+                        Ok(false) => {}
+                        Err(_) => eprintln!("sdl: cursor restore failed: {}", self.sdl().error()),
+                    }
+                }
                 if !self.webos_abi || self.mode.get() == keys::Mode::Pointer {
                     self.slint_window
                         .dispatch_event(WindowEvent::PointerMoved { position });
@@ -583,6 +597,21 @@ impl SdlPlatform {
 
     fn key_event(&self, event: &ffi::Event, pressed: bool) {
         let key = event.key(self.webos_abi);
+        let action = keys::translate(key.keycode, key.scancode, key.modifiers);
+        // Cursor control belongs before host delivery: the real shell takes
+        // host keys, while the inspector below sends keys to Slint.
+        if self.webos_abi {
+            if let Some(cursor) = &self.webos_cursor {
+                if cursor.key(key.scancode, pressed).is_err() {
+                    eprintln!("sdl: cursor handover failed: {}", self.sdl().error());
+                }
+            }
+            if pressed {
+                if let Some(mode) = keys::mode_after_key(key.scancode, action) {
+                    self.set_mode(mode);
+                }
+            }
+        }
         if let Some(host_keys) = &self.host_keys {
             if !key.repeat {
                 if let Some(host_key) = keys::host_key(key.keycode, key.scancode) {
@@ -590,30 +619,6 @@ impl SdlPlatform {
                 }
             }
             return;
-        }
-        let action = keys::translate(key.keycode, key.scancode, key.modifiers);
-        if self.webos_abi && pressed {
-            if let Some(mode) = keys::mode_after_key(key.scancode, action) {
-                // Moonlight TV hides LG's cursor on every D-pad press
-                // (`lv_drv_sdl_key.c` `webos_key_input_mode`); LG shows it
-                // again when the remote is shaken and reports that as 484.
-                if let Some(cursor) = &self.webos_cursor {
-                    cursor.set_visible(mode == keys::Mode::Pointer);
-                }
-                match (self.mode.replace(mode), mode) {
-                    // LG hid its cursor: drop the pointer's hover highlight.
-                    (keys::Mode::Pointer, keys::Mode::Keys) => {
-                        self.slint_window.dispatch_event(WindowEvent::PointerExited);
-                    }
-                    // LG showed its cursor again: hover where it is.
-                    (keys::Mode::Keys, keys::Mode::Pointer) => {
-                        self.slint_window.dispatch_event(WindowEvent::PointerMoved {
-                            position: self.pointer.get(),
-                        });
-                    }
-                    _ => {}
-                }
-            }
         }
         if pressed && !key.repeat {
             self.probe.borrow_mut().record(probe::Record::KeyPress {
@@ -658,6 +663,20 @@ impl SdlPlatform {
                 }
             }
             keys::Action::Unmapped => {}
+        }
+    }
+
+    fn set_mode(&self, mode: keys::Mode) {
+        match (self.mode.replace(mode), mode) {
+            (keys::Mode::Pointer, keys::Mode::Keys) => {
+                self.slint_window.dispatch_event(WindowEvent::PointerExited);
+            }
+            (keys::Mode::Keys, keys::Mode::Pointer) => {
+                self.slint_window.dispatch_event(WindowEvent::PointerMoved {
+                    position: self.pointer.get(),
+                });
+            }
+            _ => {}
         }
     }
 
@@ -776,26 +795,6 @@ impl SdlPlatform {
                 }
             }
         }
-    }
-}
-
-/// SDL's `wl_display`, or null when SDL is not on Wayland.
-fn wayland_display(sdl: &Sdl, window: *mut ffi::Window) -> *mut std::ffi::c_void {
-    let mut info = ffi::SysWmInfo {
-        version: ffi::Version {
-            major: 2,
-            minor: 0,
-            patch: 4,
-        },
-        subsystem: 0,
-        info: [std::ptr::null_mut(); 16],
-    };
-    // SAFETY: live window; `info` has the 2.0.4 layout and its version set.
-    let ok = unsafe { (sdl.SDL_GetWindowWMInfo)(window, &mut info) } != 0;
-    if ok && info.subsystem == ffi::SDL_SYSWM_WAYLAND {
-        info.info[0]
-    } else {
-        std::ptr::null_mut()
     }
 }
 

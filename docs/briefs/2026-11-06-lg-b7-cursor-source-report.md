@@ -1,10 +1,14 @@
 # LG B7 cursor source and binary investigation (2026-11-06)
 
-**Blocked: the Moonlight cursor API cannot send its request on the B7.**
-There is no webOS 3.x fallback in the pinned SDL source. The observation that
-Moonlight hides the cursor is not proof that this API succeeds. Do not load
-another SDL, invent an opcode, or enable more power/lifecycle effects to bridge
-this gap. This investigation did not contact the TV or change runtime code.
+**The Moonlight cursor API cannot send its request on the B7.** There is no
+webOS 3.x fallback in the pinned SDL source. The observation that Moonlight
+hides the cursor is not proof that this API succeeds. Do not load another SDL,
+invent an opcode, or enable more power/lifecycle effects to bridge this gap.
+
+After this finding, the parent requested a low-risk candidate using the system
+SDL's already-proven hide, paired with explicit restoration. That candidate is
+implemented below. Its TV behaviour is not yet verified. This child did not
+contact the TV.
 
 ## Sources checked
 
@@ -89,8 +93,12 @@ addresses `0xcc5e-0xcc70` get that hint and parse it with `strtol`:
 This is inverted relative to the modern hint's boolean meaning. Merely setting
 `SDL_WEBOS_REGISTER_APP=true` is not a system-SDL experiment.
 `SDL_GetHint`'s implementation at `0xdb60-0xdb92` reads the environment too.
-The current Korri launcher does not set either registration hint; the actual
-AppManager-supplied value in the running process remains unknown.
+The parent checked the running shell and spike on the TV: this hint is
+**absent** in both. AppManager supplies `SDL_MRCU_TIMER=300000` and
+`SDL_VIDEODRIVER=wayland`. Neither copied SDL contains an `SDL_MRCU_TIMER`
+string, and the pinned modern SDL source does not read that variable.
+The system SDL already takes its registration branch. Registration is not an
+untried cursor mechanism. Drop the proposed registration experiment.
 
 The system SDL also calls `getPowerState` (`0xcabe-0xcac8`); that helper has a
 10 ms sleep/retry loop waiting for completion (`0xcad2-0xcae0`) with no visible
@@ -114,15 +122,10 @@ Modern SDL-webOS's registration bundles these effects in
 | Unregisters three service callbacks | 96-118 | Subscription cleanup on SDL shutdown |
 
 `SDL.c:233-243` initiates modern registration during subsystem initialization.
-Changing registration is not an app-local cursor operation. A parent-run
-experiment must first inspect only the old hint's value. If it is unset or
-zero, the binary already takes the registration branch; forcing zero adds no
-new test. If it is nonzero, overriding **`SDL_HINT_WEBOS_REGISTER_APP=0`** is a
-possible existing-build experiment, not a proven fix. Use one bounded launch,
-with the user ready, preserve the screensaver-allow setting, and close the app
-after the cursor test. The outside watchdog cannot guarantee recovery from a
-compositor/TV hang; the TV may need power removal. Do not run it merely to
-confirm a branch already taken. This child ran no such experiment.
+Changing registration is not an app-local cursor operation. No registration,
+screensaver, power, or lifecycle call was added. An outside watchdog cannot
+guarantee recovery from a compositor/TV hang; the TV may need power removal.
+This child ran no registration experiment.
 
 ## Appinfo comparison
 
@@ -157,16 +160,71 @@ cursor fix on this evidence.
   (`SDL_waylandwebos.c:135-179`). These are concrete differences from the
   system SDL's string set, not a proven explanation for D-pad hiding on 3.9.
   Do not translate them into appinfo fields without an observed producer.
-- Existing Korri `webos_cursor.rs` changes the starfish standby timer. The
-  earlier device report says that had no visible effect. It is not the
-  mechanism of `SDL_webOSCursorVisibility`.
-- Existing `SdlPlatform::key_event` returns through `host_keys` before its
-  cursor and 484/485 logic. The real shell uses that host-key path. Any later
-  cursor implementation must run its input handover before that return.
-- Existing cursor startup uses a blocking `wl_display_roundtrip`. A parent
-  watchdog does not make a synchronous Wayland request inherently safe.
+- The old Korri `webos_cursor.rs` changed the starfish standby timer. The
+  earlier device report says that had no visible effect. It was not the
+  mechanism of `SDL_webOSCursorVisibility`. This candidate removes it and the
+  blocking `wl_display_roundtrip` at startup.
+- The old `SdlPlatform::key_event` returned through `host_keys` before its
+  cursor and 484/485 logic. The real shell uses that path. This candidate
+  performs cursor handover before delivering host keys.
+- Further trace: SDL `SDL_waylandevents.c:1336-1379` forwards keyboard input;
+  `SDL_keyboard.c:816-959` updates key state and queues it, without cursor
+  control. `SDL_waylandvideo.c:861-865` ignores the compositor visibility
+  event. The only starfish timer set is at `SDL_waylandvideo.c:967-970`, on
+  initial binding, not on an arrow. Moonlight's `root.c:234-240` only stores
+  its UI input mode. None supplies an older-OS cursor API fallback.
 
-No runtime change, new unit test, startup diagnostic, ARM build or IPK is
-claimed. The requested source path stops at an interface absent on this TV.
-A new package would not meet the requirement. The parent still needs evidence
-of which other Moonlight/compositor behaviour causes the observed hiding.
+## App-owned candidate implemented at the parent's request
+
+The existing `webos` feature selects `window-sdl`; the cursor adapter runs only
+on its TV path (no X11 display). It loads **only system SDL**.
+
+- Startup queries `SDL_ShowCursor(-1)` but does not change visibility.
+- A D-pad press (79-82) calls `SDL_ShowCursor(0)` once. Release, repeat and LG
+  hidden notification 485 leave it hidden.
+- The next SDL mouse-motion event calls `SDL_ShowCursor(1)` if the adapter
+  owns a D-pad hide, and puts the view in pointer mode. LG shown notification
+  484 also calls `SDL_ShowCursor(1)`.
+- LG idle-hide notification 485 never calls `SDL_ShowCursor(0)`. Its idle
+  policy remains independent of SDL's app-owned flag.
+- OK can still arrive as a left click after an app-local hide. In key mode
+  the shell's host callback now receives Confirm for its press and release;
+  the inspector keeps its existing Slint Return route.
+- Negative SDL returns are logged and do not claim a successful state change.
+- No direct Wayland, cursor timer, Luna, registration, power or screensaver
+  operation is added. The existing screensaver-allow setup stays unchanged.
+
+Startup stderr on the TV:
+
+```text
+sdl: webOS cursor active: system SDL_ShowCursor; hide on D-pad, restore on motion/484; no native visibility request on B7
+```
+
+A query failure instead reports `webOS cursor unavailable` and SDL's error;
+X11 workstation runs report that the TV mechanism is unavailable on X11.
+Tests cover the direction/release/notification policy, and exercise the actual
+host-key route with real workstation SDL using its dummy video driver.
+
+This is **not** a claim that Moonlight uses the same pair. Parent testing must
+establish whether the system SDL delivers motion or 484 while its app-owned
+cursor flag is off. If it delivers neither, restoration remains blocked.
+Small or synthetic motion after a D-pad press can also restore the cursor;
+no ungrounded distance threshold was invented. Ordinary SDL calls still enter
+LG's old backend, so this is lower risk than replacing SDL, not a guarantee
+against a compositor defect. The parent owns a bounded on-TV test.
+
+## Workstation checks
+
+- `shell-check` ran once. Both format checks and desktop/webOS Clippy passed
+  before the implementation change. It passed 81 tests, then failed the
+  desktop-only `zone_previews_are_byte_identical_cached_and_direct` test:
+  cached/direct Retro page PNGs differed at 1280x720, 1920x1080, 480x800 and
+  640x480. No cursor adapter is selected by that desktop test build.
+- After implementation, all **15 window-sdl tests passed**, including the
+  real-SDL host-key, click-confirm, motion and 484/485 path. The workstation
+  SDL was `sdl2-compat` 2.32.64 with its dummy video driver. It reported denied
+  access to workstation input nodes; the test uses constructed SDL events,
+  not hardware input. This does not establish B7 motion delivery.
+- Adapter all-target Clippy and the shell's webOS Clippy both passed with
+  `-D warnings` after implementation. Both format checks and `git diff --check`
+  passed too. Build/package results are recorded with the delivered artifact.

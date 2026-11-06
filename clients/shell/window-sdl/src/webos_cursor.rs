@@ -1,230 +1,258 @@
-//! LG's Magic Remote cursor, through the compositor's own pointer timer.
+//! App-owned Magic Remote cursor handover using the system SDL only.
 //!
-//! The LG menu hides the cursor on a D-pad press and shows it again when the
-//! remote is shaken; LG's SDL reports the changes as scancodes 484 (shown)
-//! and 485 (hidden). Moonlight TV hides it with `SDL_webOSCursorVisibility`,
-//! which sends `wl_webos_input_manager.set_cursor_visibility`. The B7
-//! (webOS 3.9) has no such request: its `libwayland-webos-client.so.1`
-//! interface carries only `get_webos_seat` and the `cursor_visibility` event,
-//! and the TV probe confirmed it (`cursor:no_method`).
-//!
-//! What webOS 3.9 does have is `wl_starfish_pointer.set_mrcu_standby_timer`,
-//! the idle time after which the compositor hides the cursor. LG's SDL sets it
-//! once from `SDL_WEBOS_CURSOR_SLEEP_TIME`; webosbrew SDL-webOS does the same
-//! (`SDL_waylandvideo.c`, default 300000 ms). This module sets it on SDL's own
-//! connection: almost zero on a D-pad press, so the cursor goes as soon as
-//! the remote is still, and back to the default when LG shows the cursor
-//! again, so a pointing hand keeps it.
-//!
-//! Opcodes are looked up by name in the interface LG's library exports, as
-//! webosbrew SDL-webOS does (`SDL_waylandwebos_abifix.c`), so a different
-//! method order cannot send the wrong request. Anything missing leaves the
-//! cursor to LG.
+//! SDL-webOS's visibility request does not exist on the B7. SDL_ShowCursor(0)
+//! does hide this app's cursor there, but SDL keeps it hidden even after a
+//! shake. Pair that proven hide with SDL_ShowCursor(1) on the next motion or
+//! LG's cursor-shown key (484). A compositor-hidden key (485) must not latch
+//! SDL's own visibility off. No Wayland roundtrip, timer, Luna call or power
+//! subscription is needed. See the 2026-11-06 cursor source report.
 
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::cell::Cell;
+use std::ffi::c_int;
 
-type Proxy = c_void;
-
-#[repr(C)]
-struct Message {
-    name: *const c_char,
-    signature: *const c_char,
-    types: *const *const Interface,
-}
-
-#[repr(C)]
-struct Interface {
-    name: *const c_char,
-    version: c_int,
-    method_count: c_int,
-    methods: *const Message,
-    event_count: c_int,
-    events: *const Message,
-}
-
-#[repr(C)]
-struct RegistryListener {
-    global: unsafe extern "C" fn(*mut c_void, *mut Proxy, u32, *const c_char, u32),
-    global_remove: unsafe extern "C" fn(*mut c_void, *mut Proxy, u32),
-}
-
-type Constructor = unsafe extern "C" fn(*mut Proxy, u32, *const Interface, ...) -> *mut Proxy;
-type Marshal = unsafe extern "C" fn(*mut Proxy, u32, ...);
-
-const WL_DISPLAY_GET_REGISTRY: u32 = 1;
-const WL_REGISTRY_BIND: u32 = 0;
-const STARFISH_POINTER: &CStr = c"wl_starfish_pointer";
-/// webosbrew SDL-webOS's default `webos_cursor_sleep_time`, in ms.
-const DEFAULT_STANDBY_MS: u32 = 300_000;
-/// Hide as soon as the remote is still. Not zero, which may mean "never".
-const DPAD_STANDBY_MS: u32 = 1;
-
-/// Why the request is not available, as a fixed label for the probe.
+/// Why SDL's cursor control is unavailable, as a fixed probe label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unavailable {
-    /// A Wayland library or symbol is missing.
-    Library,
-    /// The interface has no `set_mrcu_standby_timer(uint)`.
-    Method,
-    /// SDL gave no Wayland display, or the roundtrip failed.
-    Display,
-    /// The compositor advertises no `wl_starfish_pointer`.
-    Global,
+    /// SDL could not query or change its cursor visibility.
+    Sdl,
+}
+
+#[derive(Clone, Copy)]
+enum Input {
+    Key { scancode: i32, pressed: bool },
+    Motion,
+}
+
+/// Only a D-pad press owns a hide. Compositor idle/hide notifications do not:
+/// keeping SDL enabled lets LG show its pointer again by itself.
+fn visibility_request(hidden_by_keys: bool, input: Input) -> Option<bool> {
+    match input {
+        Input::Key {
+            scancode: 79..=82,
+            pressed: true,
+        } if !hidden_by_keys => Some(false),
+        Input::Key {
+            scancode: 484,
+            pressed: true,
+        } => Some(true),
+        Input::Motion if hidden_by_keys => Some(true),
+        _ => None,
+    }
 }
 
 pub struct WebosCursor {
-    display: *mut Proxy,
-    pointer: *mut Proxy,
-    opcode: u32,
-    marshal: Marshal,
-    flush: unsafe extern "C" fn(*mut Proxy) -> c_int,
-}
-
-/// Filled by the registry listener during the one roundtrip.
-struct Found {
-    name: u32,
-}
-
-unsafe extern "C" fn global(
-    data: *mut c_void,
-    _registry: *mut Proxy,
-    name: u32,
-    interface: *const c_char,
-    _version: u32,
-) {
-    if !interface.is_null() && CStr::from_ptr(interface) == STARFISH_POINTER {
-        *(data as *mut Option<Found>) = Some(Found { name });
-    }
-}
-
-unsafe extern "C" fn global_remove(_: *mut c_void, _: *mut Proxy, _: u32) {}
-
-static LISTENER: RegistryListener = RegistryListener {
-    global,
-    global_remove,
-};
-
-unsafe fn symbol(handle: *mut c_void, name: &CStr) -> Result<*mut c_void, Unavailable> {
-    let pointer = libc::dlsym(handle, name.as_ptr());
-    if pointer.is_null() {
-        Err(Unavailable::Library)
-    } else {
-        Ok(pointer)
-    }
+    show_cursor: unsafe extern "C" fn(c_int) -> c_int,
+    /// SDL visibility that this adapter changed, not LG's compositor state.
+    hidden_by_keys: Cell<bool>,
 }
 
 impl WebosCursor {
-    /// Bind `wl_starfish_pointer` on `display`, SDL's `wl_display`.
-    pub fn open(display: *mut c_void) -> Result<Self, Unavailable> {
-        use Unavailable::*;
-        if display.is_null() {
-            return Err(Display);
+    /// Query only: opening the adapter does not hide the pointer.
+    pub fn open(show_cursor: unsafe extern "C" fn(c_int) -> c_int) -> Result<Self, Unavailable> {
+        // SAFETY: called with SDL's function while video is initialized, on
+        // the SDL event-loop thread. -1 reads state without changing it.
+        if unsafe { show_cursor(-1) } < 0 {
+            return Err(Unavailable::Sdl);
         }
-        // SAFETY: dlopen/dlsym with NUL-terminated names; handles are never
-        // closed; every pointer is checked before use; the transmuted
-        // signatures match wayland-client-core.h and the generated
-        // wl_starfish_pointer client header. `display` is SDL's live
-        // wl_display, used from the thread that runs SDL's event loop.
-        unsafe {
-            let client = libc::dlopen(
-                c"libwayland-client.so.0".as_ptr(),
-                libc::RTLD_NOW | libc::RTLD_LOCAL,
-            );
-            let starfish = libc::dlopen(
-                c"libwayland-starfish-client.so.1".as_ptr(),
-                libc::RTLD_NOW | libc::RTLD_LOCAL,
-            );
-            if client.is_null() || starfish.is_null() {
-                return Err(Library);
-            }
-            let roundtrip: unsafe extern "C" fn(*mut Proxy) -> c_int =
-                std::mem::transmute(symbol(client, c"wl_display_roundtrip")?);
-            let flush: unsafe extern "C" fn(*mut Proxy) -> c_int =
-                std::mem::transmute(symbol(client, c"wl_display_flush")?);
-            let add_listener: unsafe extern "C" fn(
-                *mut Proxy,
-                *const RegistryListener,
-                *mut c_void,
-            ) -> c_int = std::mem::transmute(symbol(client, c"wl_proxy_add_listener")?);
-            let destroy: unsafe extern "C" fn(*mut Proxy) =
-                std::mem::transmute(symbol(client, c"wl_proxy_destroy")?);
-            let construct: Constructor =
-                std::mem::transmute(symbol(client, c"wl_proxy_marshal_constructor")?);
-            let marshal: Marshal = std::mem::transmute(symbol(client, c"wl_proxy_marshal")?);
-            let registry_interface = symbol(client, c"wl_registry_interface")? as *const Interface;
-            let pointer_interface =
-                symbol(starfish, c"wl_starfish_pointer_interface")? as *const Interface;
+        Ok(Self {
+            show_cursor,
+            hidden_by_keys: Cell::new(false),
+        })
+    }
 
-            let interface = &*pointer_interface;
-            let count = usize::try_from(interface.method_count).map_err(|_| Method)?;
-            let methods = std::slice::from_raw_parts(interface.methods, count);
-            let opcode = methods
-                .iter()
-                .position(|method| {
-                    CStr::from_ptr(method.name) == c"set_mrcu_standby_timer"
-                        && CStr::from_ptr(method.signature).to_bytes().ends_with(b"u")
-                })
-                .ok_or(Method)?;
+    pub fn key(&self, scancode: i32, pressed: bool) -> Result<(), Unavailable> {
+        self.update(Input::Key { scancode, pressed }).map(|_| ())
+    }
 
-            let registry = construct(
-                display,
-                WL_DISPLAY_GET_REGISTRY,
-                registry_interface,
-                std::ptr::null_mut::<c_void>(),
+    /// True when this motion successfully restored our D-pad hide.
+    pub fn motion(&self) -> Result<bool, Unavailable> {
+        self.update(Input::Motion)
+    }
+
+    fn update(&self, input: Input) -> Result<bool, Unavailable> {
+        let Some(visible) = visibility_request(self.hidden_by_keys.get(), input) else {
+            return Ok(false);
+        };
+        // SAFETY: SDL video remains live until the event loop ends; no
+        // pointer or window ownership is transferred by this SDL 2.0.4 API.
+        if unsafe { (self.show_cursor)(c_int::from(visible)) } < 0 {
+            return Err(Unavailable::Sdl);
+        }
+        self.hidden_by_keys.set(!visible);
+        Ok(visible)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_pressed_directions_request_a_hide() {
+        for scancode in 79..=82 {
+            assert_eq!(
+                visibility_request(
+                    false,
+                    Input::Key {
+                        scancode,
+                        pressed: true
+                    }
+                ),
+                Some(false)
             );
-            if registry.is_null() {
-                return Err(Display);
-            }
-            let mut found: Option<Found> = None;
-            add_listener(
-                registry,
-                &LISTENER,
-                (&mut found as *mut Option<Found>).cast(),
+            assert_eq!(
+                visibility_request(
+                    false,
+                    Input::Key {
+                        scancode,
+                        pressed: false
+                    }
+                ),
+                None
             );
-            // Also dispatches SDL's pending events; its listeners only queue
-            // SDL events, which the next SDL_PollEvent delivers.
-            let ok = roundtrip(display) >= 0;
-            let Some(found) = found.filter(|_| ok) else {
-                destroy(registry);
-                return Err(if ok { Global } else { Display });
-            };
-            // Version 1, as webosbrew SDL-webOS binds it.
-            let pointer = construct(
-                registry,
-                WL_REGISTRY_BIND,
-                pointer_interface,
-                found.name,
-                interface.name,
-                1u32,
-                std::ptr::null_mut::<c_void>(),
+        }
+        assert_eq!(
+            visibility_request(
+                true,
+                Input::Key {
+                    scancode: 484,
+                    pressed: false
+                }
+            ),
+            None
+        );
+        for scancode in [40, 59, 270, 482, 485, 486] {
+            assert_eq!(
+                visibility_request(
+                    false,
+                    Input::Key {
+                        scancode,
+                        pressed: true
+                    }
+                ),
+                None
             );
-            // No further registry events can reach the listener's `found`.
-            destroy(registry);
-            if pointer.is_null() {
-                return Err(Global);
-            }
-            Ok(Self {
-                display,
-                pointer,
-                opcode: opcode as u32,
-                marshal,
-                flush,
-            })
         }
     }
 
-    /// D-pad: let the cursor sleep as soon as the remote is still.
-    /// Pointer: restore the normal idle time, so a pointing hand keeps it.
-    pub fn set_visible(&self, visible: bool) {
-        let standby = if visible {
-            DEFAULT_STANDBY_MS
-        } else {
-            DPAD_STANDBY_MS
-        };
-        // SAFETY: live proxies from `open`; the request takes one uint.
-        unsafe {
-            (self.marshal)(self.pointer, self.opcode, standby);
-            (self.flush)(self.display);
+    #[test]
+    fn motion_restores_only_an_app_owned_hide() {
+        assert_eq!(visibility_request(false, Input::Motion), None);
+        assert_eq!(visibility_request(true, Input::Motion), Some(true));
+        assert_eq!(
+            visibility_request(
+                true,
+                Input::Key {
+                    scancode: 79,
+                    pressed: true
+                }
+            ),
+            None
+        );
+        for hidden in [false, true] {
+            assert_eq!(
+                visibility_request(
+                    hidden,
+                    Input::Key {
+                        scancode: 484,
+                        pressed: true
+                    }
+                ),
+                Some(true)
+            );
+            assert_eq!(
+                visibility_request(
+                    hidden,
+                    Input::Key {
+                        scancode: 485,
+                        pressed: true
+                    }
+                ),
+                None
+            );
         }
+    }
+
+    /// Runs against real workstation SDL with SDL_VIDEODRIVER=dummy. Never
+    /// load a copied TV library into this test process.
+    #[test]
+    fn system_sdl_hide_is_paired_with_motion_and_shown_key_restore() {
+        use crate::{ffi, HostKey, Placement, SdlPlatform};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let mut platform = SdlPlatform::open(
+            "cursor check",
+            Placement::Windowed {
+                width: 64,
+                height: 64,
+            },
+        )
+        .unwrap();
+        // The workstation can have DISPLAY set. Exercise the LG keyboard
+        // layout and the real shell's host-key route regardless.
+        platform.webos_abi = true;
+        platform.webos_cursor = Some(WebosCursor::open(platform.sdl().SDL_ShowCursor).unwrap());
+        let delivered = Rc::new(RefCell::new(Vec::new()));
+        let keys = delivered.clone();
+        platform.host_keys = Some(Box::new(move |key, pressed| {
+            keys.borrow_mut().push((key, pressed))
+        }));
+        let platform = Box::new(platform);
+        let address = std::ptr::from_ref(platform.as_ref());
+        slint::platform::set_platform(platform).unwrap();
+        // SAFETY: Slint owns the unchanged Box on this test thread until its
+        // thread-local context is dropped, after all accesses below finish.
+        let platform = unsafe { &*address };
+        let show = platform.sdl().SDL_ShowCursor;
+        // Opening the adapter must not hide a pointer before a D-pad press.
+        assert_eq!(unsafe { show(-1) }, 1);
+        let key = |scancode: i32, pressed: bool| {
+            let mut event = ffi::Event::zeroed();
+            event.set_kind(if pressed {
+                ffi::SDL_KEYDOWN
+            } else {
+                ffi::SDL_KEYUP
+            });
+            event.0[20..24].copy_from_slice(&scancode.to_ne_bytes());
+            event.0[24..28].copy_from_slice(&(scancode | (1 << 30)).to_ne_bytes());
+            platform.key_event(&event, pressed);
+        };
+        key(79, true);
+        assert_eq!(unsafe { show(-1) }, 0);
+        key(79, false);
+        key(485, true);
+        assert_eq!(unsafe { show(-1) }, 0);
+        // A locally hidden cursor need not change LG's OK-as-click policy.
+        // In key mode the shell, not the view, must receive that confirm.
+        let mut click = ffi::Event::zeroed();
+        click.0[16] = ffi::SDL_BUTTON_LEFT;
+        for kind in [ffi::SDL_MOUSEBUTTONDOWN, ffi::SDL_MOUSEBUTTONUP] {
+            click.set_kind(kind);
+            platform.handle(&click).unwrap();
+        }
+        assert_eq!(unsafe { show(-1) }, 0);
+        let mut motion = ffi::Event::zeroed();
+        motion.set_kind(ffi::SDL_MOUSEMOTION);
+        platform.handle(&motion).unwrap();
+        assert_eq!(unsafe { show(-1) }, 1);
+        assert_eq!(platform.mode.get(), crate::keys::Mode::Pointer);
+        key(82, true);
+        assert_eq!(unsafe { show(-1) }, 0);
+        key(484, true);
+        assert_eq!(unsafe { show(-1) }, 1);
+        key(485, true);
+        assert_eq!(unsafe { show(-1) }, 1);
+        assert_eq!(
+            *delivered.borrow(),
+            [
+                (HostKey::Right, true),
+                (HostKey::Right, false),
+                (HostKey::Confirm, true),
+                (HostKey::Confirm, false),
+                (HostKey::Up, true)
+            ]
+        );
+        platform.close();
     }
 }

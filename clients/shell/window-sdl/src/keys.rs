@@ -46,9 +46,9 @@ const SDL_SCANCODE_WEBOS_CURSOR_HIDE: i32 = 485;
 /// TV only: which input drives the view. It mirrors LG's own cursor state,
 /// the same rule the LG menu uses: a D-pad press hides the cursor until the
 /// remote is shaken. LG's SDL reports both changes as keys (484 shown, 485
-/// hidden); the host follows them instead of guessing from motion.
-/// - `Keys` (cursor hidden): OK confirms the focused control; pointer motion
-///   neither hovers nor aims.
+/// hidden). After an app-owned D-pad hide, motion also restores SDL's cursor
+/// and the pointer mode; LG's idle-hide event never latches SDL off.
+/// - `Keys` (cursor hidden): OK confirms the focused control.
 /// - `Pointer` (cursor shown): hover and clicks aim, as on a desktop.
 ///
 /// A D-pad, confirm or Back key also enters `Keys`, so a press that LG does
