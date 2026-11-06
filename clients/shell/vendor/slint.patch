@@ -5789,7 +5789,7 @@ diff -ruN a/i-slint-renderer-software/parallel.rs b/i-slint-renderer-software/pa
 diff -ruN a/i-slint-renderer-software/pool.rs b/i-slint-renderer-software/pool.rs
 --- a/i-slint-renderer-software/pool.rs	1969-12-31 17:00:00.000000000 -0700
 +++ b/i-slint-renderer-software/pool.rs	2026-11-05 01:39:57.342932240 -0700
-@@ -0,0 +1,149 @@
+@@ -0,0 +1,165 @@
 +// Copyright © SixtyFPS GmbH <info@slint.dev>
 +// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 +
@@ -5823,6 +5823,7 @@ diff -ruN a/i-slint-renderer-software/pool.rs b/i-slint-renderer-software/pool.r
 +struct State {
 +    jobs: VecDeque<(Arc<Pending>, Job)>,
 +    threads: usize,
++    /// Workers not running a job, including those still starting or waking.
 +    idle: usize,
 +}
 +
@@ -5853,22 +5854,26 @@ diff -ruN a/i-slint-renderer-software/pool.rs b/i-slint-renderer-software/pool.r
 +    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
 +        pending.panicked.store(true, Ordering::Relaxed);
 +    }
-+    pending.end_one();
 +}
 +
-+fn worker() {
++fn worker(started: std::sync::mpsc::SyncSender<()>) {
++    // The thread is now named. Signal before taking the pool lock, held by spawn.
++    started.send(()).unwrap();
++    drop(started);
 +    let pool = pool();
 +    let mut state = pool.state.lock().unwrap();
 +    loop {
 +        if let Some((pending, job)) = state.jobs.pop_front() {
++            state.idle -= 1;
 +            drop(state);
 +            run(&pending, job);
 +            state = pool.state.lock().unwrap();
++            // The next scope must see this worker as available before this one ends.
++            state.idle += 1;
++            pending.end_one();
 +            continue;
 +        }
-+        state.idle += 1;
 +        state = pool.ready.wait(state).unwrap();
-+        state.idle -= 1;
 +    }
 +}
 +
@@ -5891,10 +5896,18 @@ diff -ruN a/i-slint-renderer-software/pool.rs b/i-slint-renderer-software/pool.r
 +        state.jobs.push_back((self.pending.clone(), job));
 +        if state.jobs.len() > state.idle && state.threads < MAX_THREADS {
 +            state.threads += 1;
-+            let started = std::thread::Builder::new().name("slint-band".into()).spawn(worker);
++            state.idle += 1;
++            let (started, ready) = std::sync::mpsc::sync_channel(0);
++            let started = std::thread::Builder::new()
++                .name("slint-band".into())
++                .spawn(move || worker(started));
 +            if started.is_err() {
 +                // The scope's thread runs the job while it waits.
 +                state.threads -= 1;
++                state.idle -= 1;
++            } else {
++                // A scope may finish on the caller; do not leave a worker still starting.
++                ready.recv().unwrap();
 +            }
 +        }
 +        drop(state);
@@ -5916,7 +5929,10 @@ diff -ruN a/i-slint-renderer-software/pool.rs b/i-slint-renderer-software/pool.r
 +                position.and_then(|i| state.jobs.remove(i))
 +            };
 +            match mine {
-+                Some((pending, job)) => run(&pending, job),
++                Some((pending, job)) => {
++                    run(&pending, job);
++                    pending.end_one();
++                },
 +                None => break,
 +            }
 +        }

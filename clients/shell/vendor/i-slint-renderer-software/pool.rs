@@ -31,6 +31,7 @@ struct Pool {
 struct State {
     jobs: VecDeque<(Arc<Pending>, Job)>,
     threads: usize,
+    /// Workers not running a job, including those still starting or waking.
     idle: usize,
 }
 
@@ -61,22 +62,26 @@ fn run(pending: &Pending, job: Job) {
     if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
         pending.panicked.store(true, Ordering::Relaxed);
     }
-    pending.end_one();
 }
 
-fn worker() {
+fn worker(started: std::sync::mpsc::SyncSender<()>) {
+    // The thread is now named. Signal before taking the pool lock, held by spawn.
+    started.send(()).unwrap();
+    drop(started);
     let pool = pool();
     let mut state = pool.state.lock().unwrap();
     loop {
         if let Some((pending, job)) = state.jobs.pop_front() {
+            state.idle -= 1;
             drop(state);
             run(&pending, job);
             state = pool.state.lock().unwrap();
+            // The next scope must see this worker as available before this one ends.
+            state.idle += 1;
+            pending.end_one();
             continue;
         }
-        state.idle += 1;
         state = pool.ready.wait(state).unwrap();
-        state.idle -= 1;
     }
 }
 
@@ -99,10 +104,18 @@ impl<'env> Scope<'env> {
         state.jobs.push_back((self.pending.clone(), job));
         if state.jobs.len() > state.idle && state.threads < MAX_THREADS {
             state.threads += 1;
-            let started = std::thread::Builder::new().name("slint-band".into()).spawn(worker);
+            state.idle += 1;
+            let (started, ready) = std::sync::mpsc::sync_channel(0);
+            let started = std::thread::Builder::new()
+                .name("slint-band".into())
+                .spawn(move || worker(started));
             if started.is_err() {
                 // The scope's thread runs the job while it waits.
                 state.threads -= 1;
+                state.idle -= 1;
+            } else {
+                // A scope may finish on the caller; do not leave a worker still starting.
+                ready.recv().unwrap();
             }
         }
         drop(state);
@@ -124,7 +137,10 @@ impl Drop for Wait<'_> {
                 position.and_then(|i| state.jobs.remove(i))
             };
             match mine {
-                Some((pending, job)) => run(&pending, job),
+                Some((pending, job)) => {
+                    run(&pending, job);
+                    pending.end_one();
+                },
                 None => break,
             }
         }
