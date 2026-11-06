@@ -4925,7 +4925,21 @@ fn brain_app_state(
 }
 
 fn surface_host_router_from_state(state: AppState) -> Router {
-    surface_host_router_with_surfaces(state, None)
+    // Embedded shells watch the same hub over the same authenticated socket
+    // as Linux. Keep the empty input source alive with this router; Android
+    // supplies its touch input at the shell edge, not through native input.
+    let surfaces: surface::SurfaceSlot = Arc::default();
+    let (watch, source) = surface_host_input::router_with_surfaces(
+        state
+            .surface_host_access
+            .clone()
+            .expect("shell token authority"),
+        Arc::clone(&surfaces),
+        surface_host_input::SurfaceHostInputLimits::default(),
+    );
+    surface_host_router_with_surfaces(state, Some(surfaces))
+        .merge(watch)
+        .layer(axum::Extension(Arc::new(source)))
 }
 
 fn surface_host_router_with_surfaces(

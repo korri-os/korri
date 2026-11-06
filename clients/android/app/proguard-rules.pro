@@ -56,8 +56,11 @@
 # Slint's android_main reads this private in-process bootstrap through JNI.
 -keepclassmembers class com.limelight.KorriShellActivity {
     public int shellPort();
+    public java.lang.String shellOrigin();
     public java.lang.String shellCapability();
-    public java.lang.String shellVersion();
-    public void shellStarted();
+    public java.lang.String shellPackagePath();
+    public void shellRendered(int, int);
+    public int shellLibraryCount();
+    public int shellSelectedIndex();
     public boolean isShellReady();
 }

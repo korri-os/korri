@@ -6848,3 +6848,36 @@ diff -ruN a/slint-interpreter/value_model.rs b/slint-interpreter/value_model.rs
                  return Ok(ControlFlow::Break(()));
              }
              _ => (),
+diff --git a/i-slint-backend-android-activity/androidwindowadapter.rs b/i-slint-backend-android-activity/androidwindowadapter.rs
+index bf0c1d087..2ba3890d4 100644
+--- a/i-slint-backend-android-activity/androidwindowadapter.rs
++++ b/i-slint-backend-android-activity/androidwindowadapter.rs
+@@ -51,0 +52 @@ pub struct AndroidWindowAdapter {
++    pub(crate) input_event_filter: RefCell<Option<InputEventFilter>>,
+@@ -196,0 +198 @@ impl AndroidWindowAdapter {
++            input_event_filter: Default::default(),
+@@ -290 +292,5 @@ impl AndroidWindowAdapter {
+-            let read_input = iter.next(|event| match event {
++            let read_input = iter.next(|event| {
++                if self.input_event_filter.borrow().as_ref().is_some_and(|filter| filter(event)) {
++                    return InputStatus::Handled;
++                }
++                match event {
+@@ -494,0 +501 @@ impl AndroidWindowAdapter {
++                }
+diff --git a/i-slint-backend-android-activity/lib.rs b/i-slint-backend-android-activity/lib.rs
+index a19f61b89..4fad12e35 100644
+--- a/i-slint-backend-android-activity/lib.rs
++++ b/i-slint-backend-android-activity/lib.rs
+@@ -48,0 +49,2 @@ pub struct AndroidPlatform {
++pub type InputEventFilter = Box<dyn Fn(&android_activity::input::InputEvent<'_>) -> bool>;
++
+@@ -104,0 +107,8 @@ impl AndroidPlatform {
++impl AndroidPlatform {
++    /// Filter native input before Slint handles it. Return true to consume it.
++    pub fn with_input_event_filter(self, filter: InputEventFilter) -> Self {
++        *self.window.input_event_filter.borrow_mut() = Some(filter);
++        self
++    }
++}
++

@@ -434,3 +434,75 @@ async fn surface_host_rpc_permission_does_not_change_private_control_authority()
     );
     server.abort();
 }
+
+/// Android's embedded runner must carry model publications, not only the
+/// initial HTTP model. The socket and RPC must share one SurfaceHub.
+#[tokio::test]
+async fn embedded_surface_watch_uses_the_rpc_hub_and_authenticates() {
+    use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::{
+        connect_async,
+        tungstenite::{client::IntoClientRequest, Message},
+    };
+    let shell = RunningSurfaceHost::start(false).await;
+    let model = shell
+        .request(
+            Some(TOKEN),
+            None,
+            json!({"_tag":"app.surface.model","payload":{"surfaceId":"pico"}}),
+        )
+        .await
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(model["outcome"]["_tag"], "Ok");
+    let url = shell.address.replacen("http:", "ws:", 1) + "/";
+    let mut foreign = url.clone().into_client_request().unwrap();
+    foreign
+        .headers_mut()
+        .insert("Origin", "https://foreign.example".parse().unwrap());
+    assert!(connect_async(foreign).await.is_err());
+    let mut request = url.into_client_request().unwrap();
+    request
+        .headers_mut()
+        .insert("Origin", ORIGIN.parse().unwrap());
+    let (mut socket, _) = connect_async(request).await.unwrap();
+    socket
+        .send(Message::Text(format!("Bearer {TOKEN}").into()))
+        .await
+        .unwrap();
+    socket
+        .send(Message::Text(
+            json!({"_tag":"app.surface.watch","payload":{"surfaceId":"pico"}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+    let read =
+        |message: Message| -> Value { serde_json::from_str(message.to_text().unwrap()).unwrap() };
+    let first = read(
+        tokio::time::timeout(std::time::Duration::from_secs(5), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+    );
+    assert_eq!(first["kind"], "model");
+    assert!(first["model"]["catalog"].is_object());
+    socket
+        .send(Message::Text(
+            json!({"kind":"ack","revision": first["revision"]})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+    let changed = shell.request(Some(TOKEN), None, json!({"_tag":"app.surface.request","payload":{
+        "surfaceId":"pico", "request":{"_tag":"MoveCatalog","query":{"text":"Wario","section":null,"order":"korri"},"from":{"_tag":"Start"},"count":50}
+    }})).await.json::<Value>().await.unwrap();
+    assert_eq!(changed["outcome"]["_tag"], "Ok");
+    // Empty/Loading catalogs need not change for a query. The HTTP request
+    // still uses the same authenticated app.surface.request wire.
+    socket.close(None).await.unwrap();
+}

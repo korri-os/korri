@@ -6,6 +6,7 @@
 //! to switch.
 //! Both repeat a held direction after 400 ms, then every 100 ms.
 
+pub mod drag;
 pub mod mapper;
 pub mod native;
 

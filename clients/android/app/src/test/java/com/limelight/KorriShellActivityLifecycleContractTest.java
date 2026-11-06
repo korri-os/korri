@@ -30,6 +30,15 @@ public class KorriShellActivityLifecycleContractTest {
         assertTrue(source().contains("getFilesDir().getAbsolutePath()"));
     }
 
+    @Test public void cutout_and_system_bars_use_the_full_window_on_every_resume() throws Exception {
+        String source = source();
+        assertTrue(source.contains("LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS"));
+        assertTrue(source.contains("LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES"));
+        assertTrue(source.contains("WindowCompat.setDecorFitsSystemWindows(getWindow(), false)"));
+        assertTrue(source.contains("insets.hide(WindowInsetsCompat.Type.systemBars())"));
+        assertTrue(source.contains("if (focused) applyFullscreen()"));
+    }
+
     private static String manifest() throws Exception {
         return new String(Files.readAllBytes(Path.of("src/main/AndroidManifest.xml")), java.nio.charset.StandardCharsets.UTF_8);
     }

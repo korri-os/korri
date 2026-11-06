@@ -207,3 +207,11 @@ Not filed. Filing is the owner's decision.
 > at 60 fps. Tests compare cached and direct rendering pixel by pixel through
 > partial redraws, property changes, sub-pixel moves, resize and scale
 > changes, and count the items walked.
+
+### Android input filter (M1)
+
+`AndroidPlatform::with_input_event_filter` lets the shell consume a native
+input event before Slint handles it. M1 uses it only for finger drags, mapped
+to existing directional presses. Pico is unchanged and owns focus and scroll
+position. The filter is scoped to the platform/Activity, not a global hook.
+The M0 EGL-surface suspension on termination/destruction is unchanged.

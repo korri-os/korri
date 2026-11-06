@@ -98,7 +98,7 @@ in
       name = "shell-run";
       description = "Run the native shell from the checkout.";
       script = ''
-        exec cargo run --locked --release --manifest-path "$crate/Cargo.toml" -- "$@"
+        exec cargo run --locked --release --bin korri-shell --manifest-path "$crate/Cargo.toml" -- "$@"
       '';
     };
     shell-proof = makeApp {

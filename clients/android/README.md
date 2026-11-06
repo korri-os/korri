@@ -30,43 +30,43 @@ separately. The Rust library uses 16 KiB load-segment alignment.
 The SDK farm and native libraries are generated files. Do not
 commit them. Builds run on the development machine, never on the phone.
 
-## Native shell (M0, #356)
+## Native shell (M1, #356)
 
-`KorriShellActivity` is an Android `NativeActivity`. It starts the existing
-embedded korrid service before Android starts `clients/shell`'s `android_main`.
-`libkorri_shell.so` uses the new `android` feature, Slint 1.18.1's official
-`backend-android-activity-06`, and its Skia renderer. Desktop and webOS keep
-their existing backends. Artemis's `Game` activity is unchanged.
+`KorriShellActivity` is a `NativeActivity`. It starts the service-owned embedded
+korrid before `clients/shell`'s `android_main`. The `android` feature uses the
+pinned Slint interpreter, QuickJS logic worker and shared `Shell` runtime with
+Slint's Android activity backend and Skia. Artemis's `Game` is unchanged.
 
-The launch screen interprets `clients/shell/src/backend/android-m0.slint` with
-the vendored `slint-interpreter` and evaluates `21 * 2` with rquickjs 0.14.
-Android enables rquickjs's `bindgen` feature, as korrid already does, because
-rquickjs does not ship an `aarch64-linux-android` binding. Startup readiness
-requires the interpreted view and the QuickJS evaluation to succeed. This is an execution probe, not
-yet Pico/Zone loading or the full surface engine. M1 can replace this view
-inside the same library, dependency pins and Android event loop.
+The APK bundles `clients/shell/packages/pico` without Android-specific edits.
+The build runs Linux's surface verifier first. Java unpacks the bundled files
+to app cache on launch; no user or identity record is migrated. The shell loads
+that package with the same `app.surface.declare`, preferences, model, request
+and watch wire as Linux. Embedded korrid's authenticated root WebSocket shares
+its surface hub with HTTP RPC. The streaming-only empty local plugin registry
+and signed peer catalog producer are unchanged.
 
-The screen shows BuildConfig's app version and authenticated `system.health`
-status from the embedded korrid. JNI reads the port and capability directly
-from the activity in-process. Only a boolean health result reaches the UI;
-RPC runs on a worker with the shell's existing timeouts. No capability enters
-an intent, URL, argument, log, asset, or new file. The existing origin/CORS
-policy and korrid JNI start signature are unchanged until M5.
+JNI carries port, capability, the existing allowed origin and the extracted
+package path in-process. No capability enters an intent, URL, log or asset.
+Origin/CORS removal remains M5. No native input socket subscription or surface
+switching is added in M1.
 
-Android owns window resize, pause/resume and native-thread teardown. The
-foreground service owns korrid, so activity recreation and backgrounding do
-not stop it. M0 has no owner-signing or game-launch controls. It does not
-change existing private state or Amber ownership. Native signer integration
-and the real surface packages remain later milestones.
+Minimal touch browsing maps a single-finger drag to momentary directional
+presses, opposite the finger's movement. Each eighth of the dragged window
+axis moves the cursor once. The first direction locks the axis until release;
+multitouch cancels. Pico owns the focus graph and scrolls its cursor into view.
+This is cursor-driven scrolling, not pixel/inertial scrolling or hit-testing.
+Taps, Android Back and full controller mapping remain M2.
 
-The diagnostic uses a quiet navy (`#182b40`) field, white (`#f4f8fc`) status,
-and pale blue (`#c3d4e6`) version text. Android's sans-serif carries a large
-Korri title and two left-aligned readouts. Padding and gaps yield to the
-container; status wraps rather than disappearing. Loading, running and failed
-health use the same layout. There are no lists, counts or user-entered values.
-The version comes from the existing fixed BuildConfig version. Folded,
-unfolded, rotated and background/resumed states need device acceptance; this
-screen does not claim the full surface layout proof.
+The window is immersive and edge to edge in both orientations, with cutout
+mode ALWAYS on API 30+, SHORT_EDGES on API 28–29. It reapplies system-bar handling
+on resume and focus. No surface treaty inset or Pico workaround is added.
+Content under a camera hole must be reported in device screenshots.
+
+Android owns resize, pause/resume and native-thread teardown. Each invocation
+owns its Shell, watch and logic workers, and drops them when the event loop
+ends. The vendored backend still suspends its renderer on native-window
+termination and Activity destruction. The foreground service retains korrid.
+M1 neither changes ownership nor invokes Amber.
 
 ## Identity and discovery
 
@@ -89,7 +89,7 @@ passes that generated input through `BuildConfig` into the embedded brain. It
 neither copies a second relay list into Java nor rewrites existing user data.
 
 The retained owner setup path uses the surface's existing confirmation/actions
-and the existing onboarding-finish RPC. M0 does not expose these controls. This stream-only build does not offer the
+and the existing onboarding-finish RPC. M1 has no touch activation for these controls. This stream-only build does not offer the
 console's automatic person key or local-plugin starter pack. Identity backup and
 identity switching are not available on Android; the public status reports that
 limit instead of exposing controls which cannot work. Device ownership and peer
@@ -114,12 +114,12 @@ runner and identity fields; non-owner callers do not receive owner play stats.
 
 ## Device check
 
-`KorriShellDeviceTest` exercises the shipped NativeActivity, JNI library,
-interpreted Slint view, QuickJS probe and HTTP server. It checks no WebView
-exists in the launch tree, unauthorized health is rejected, authenticated
-health succeeds, and startup succeeds after backgrounding and three consecutive recreations.
-The vendored Android backend releases its EGL surface on native-window
-termination and Activity destruction; see `clients/shell/vendor/README.md`.
+`KorriShellDeviceTest` waits for an actual rendered Pico view with a non-empty
+real library, after launch, background/return, orientation changes and three
+consecutive recreations. It injects real touchscreen drags and checks that
+Pico's cursor moves. It checks Owned identity, no WebView, health authentication,
+cutout mode and hidden system bars. This device acceptance requires an already
+owned phone with a reachable peer library; it is not a fresh-install fixture.
 Build with `nix run .#android-device-test-apk`, then run on an ARM64 phone:
 
 ```sh

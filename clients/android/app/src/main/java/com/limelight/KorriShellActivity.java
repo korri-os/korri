@@ -2,13 +2,26 @@ package com.limelight;
 
 import android.app.NativeActivity;
 import android.os.Bundle;
+import android.os.Build;
+import android.view.WindowManager;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.IOException;
 import com.simonwjackson.korri.korrid.KorriBrainService;
 import com.simonwjackson.korri.korrid.KorridServer;
 
 /** Android lifecycle and in-process bootstrap for clients/shell. No browser. */
 public class KorriShellActivity extends NativeActivity {
     private int port;
+    private String origin;
     private volatile boolean shellReady;
+    private volatile int libraryCount;
+    private volatile int selectedIndex = -1;
+    private String packagePath;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         // NativeActivity starts android_main in super.onCreate. Publish the
@@ -16,20 +29,78 @@ public class KorriShellActivity extends NativeActivity {
         try {
             KorriTrustedPortalWebViewPolicy policy =
                     KorriTrustedPortalWebViewPolicy.forRuntime(BuildConfig.DEBUG, BuildConfig.PORTAL_DEV_URL);
-            port = KorriBrainService.ensureRunning(this, policy.portalOrigin(), getFilesDir().getAbsolutePath());
+            origin = policy.portalOrigin();
+            port = KorriBrainService.ensureRunning(this, origin, getFilesDir().getAbsolutePath());
         } catch (RuntimeException error) {
             // The native screen still opens and reports that korrid is unavailable.
             port = 0;
         }
+        try {
+            File pico = new File(getCacheDir(), "surfaces/pico");
+            copyPackage("surfaces/pico", pico);
+            packagePath = pico.getAbsolutePath();
+        } catch (IOException error) {
+            throw new IllegalStateException("Could not unpack Pico", error);
+        }
         super.onCreate(savedInstanceState);
+        applyFullscreen();
     }
 
     // Called only in-process by Rust, never placed in an intent or URL.
     public int shellPort() { return port; }
+    public String shellOrigin() { return origin; }
     public String shellCapability() { return port == 0 ? "" : KorridServer.capability(); }
-    public String shellVersion() { return BuildConfig.VERSION_NAME; }
-    public void shellStarted() { shellReady = true; }
+    public String shellPackagePath() { return packagePath; }
+    // Readiness comes from a rendered Pico frame, not just native startup.
+    public void shellRendered(int count, int selected) {
+        libraryCount = count;
+        selectedIndex = selected;
+        shellReady = true;
+    }
+    public int shellLibraryCount() { return libraryCount; }
+    public int shellSelectedIndex() { return selectedIndex; }
     public boolean isShellReady() { return shellReady; }
+
+    private void copyPackage(String asset, File target) throws IOException {
+        String[] children = getAssets().list(asset);
+        if (children == null) throw new IOException("Missing surface asset");
+        if (children.length > 0) {
+            if (!target.isDirectory() && !target.mkdirs()) throw new IOException("Surface directory");
+            for (String child : children) copyPackage(asset + "/" + child, new File(target, child));
+        } else {
+            try (InputStream input = getAssets().open(asset);
+                 FileOutputStream output = new FileOutputStream(target)) {
+                byte[] buffer = new byte[16384];
+                int count;
+                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            }
+        }
+    }
+
+    private void applyFullscreen() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowManager.LayoutParams attributes = getWindow().getAttributes();
+            attributes.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= 30
+                    ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(attributes);
+        }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        WindowInsetsControllerCompat insets = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        insets.hide(WindowInsetsCompat.Type.systemBars());
+        insets.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        applyFullscreen();
+    }
+
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        if (focused) applyFullscreen();
+    }
 
     // The foreground service, not an activity, owns korrid. In particular do
     // not stop it on rotation, Back, or while Artemis Game is in front.

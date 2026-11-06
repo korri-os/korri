@@ -46,6 +46,8 @@ pub struct AndroidPlatform {
     context: core::cell::OnceCell<i_slint_core::SlintContextWeak>,
 }
 
+pub type InputEventFilter = Box<dyn Fn(&android_activity::input::InputEvent<'_>) -> bool>;
+
 impl AndroidPlatform {
     /// Instantiate a new Android backend given the [`android_activity::AndroidApp`]
     ///
@@ -99,6 +101,14 @@ impl AndroidPlatform {
         let mut this = Self::new(app);
         this.event_listener = Some(Box::new(listener));
         this
+    }
+}
+
+impl AndroidPlatform {
+    /// Filter native input before Slint handles it. Return true to consume it.
+    pub fn with_input_event_filter(self, filter: InputEventFilter) -> Self {
+        *self.window.input_event_filter.borrow_mut() = Some(filter);
+        self
     }
 }
 

@@ -49,6 +49,7 @@ pub struct AndroidWindowAdapter {
 
     long_press: RefCell<Option<LongPressDetection>>,
     last_pressed_state: Cell<ButtonState>,
+    pub(crate) input_event_filter: RefCell<Option<InputEventFilter>>,
 }
 
 impl WindowAdapter for AndroidWindowAdapter {
@@ -194,6 +195,7 @@ impl AndroidWindowAdapter {
             show_cursor_handles: Cell::new(false),
             long_press: RefCell::default(),
             last_pressed_state: Cell::new(ButtonState(0)),
+            input_event_filter: Default::default(),
         })
     }
 
@@ -287,7 +289,11 @@ impl AndroidWindowAdapter {
             self.app.input_events_iter().map_err(|e| PlatformError::Other(e.to_string()))?;
         loop {
             let mut result = Ok(());
-            let read_input = iter.next(|event| match event {
+            let read_input = iter.next(|event| {
+                if self.input_event_filter.borrow().as_ref().is_some_and(|filter| filter(event)) {
+                    return InputStatus::Handled;
+                }
+                match event {
                 InputEvent::KeyEvent(key_event) => match map_key_event(key_event) {
                     Some(ev) => match self.window.dispatch_event_with_result(ev) {
                         Ok(WindowEventDispatchResult::Accepted) => InputStatus::Handled,
@@ -492,6 +498,7 @@ impl AndroidWindowAdapter {
                     InputStatus::Handled
                 }
                 _ => InputStatus::Unhandled,
+                }
             });
 
             result?;

@@ -147,3 +147,13 @@ dependencies {
     androidTestImplementation 'androidx.test:runner:1.7.0'
     androidTestImplementation 'androidx.test.ext:junit:1.3.0'
 }
+
+// The APK carries the exact Linux Pico package, not an Android variant.
+def picoAssets = tasks.register('picoAssets', Sync) {
+    from('../../shell/packages/pico') {
+        include '**/*.slint', '**/*.js', 'fonts/**', 'art/**'
+    }
+    into(layout.buildDirectory.dir('generated/picoAssets/surfaces/pico'))
+}
+android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/picoAssets'))
+tasks.named('preBuild').configure { dependsOn(picoAssets) }

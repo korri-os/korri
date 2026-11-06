@@ -69,6 +69,7 @@ i-slint-backend-testing = { version = "=1.18.1", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = { version = "0.21", optional = true }
+i-slint-backend-android-activity = { version = "=1.18.1", features = ["aa-06", "native-activity"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -82,7 +83,7 @@ i-slint-backend-winit = { version = "=1.18.1", default-features = false }
 [features]
 default = ["desktop"]
 # Android uses Slint's NativeActivity backend; the same interpreter and engine.
-android = ["slint/backend-android-activity-06", "rquickjs/bindgen", "dep:jni"]
+android = ["slint/backend-android-activity-06", "rquickjs/bindgen", "dep:jni", "dep:i-slint-backend-android-activity"]
 # Workstation and handheld: Slint's winit backend on Wayland and X11.
 desktop = [
   "slint/backend-winit-wayland",
