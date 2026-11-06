@@ -6,6 +6,7 @@ use std::collections::HashSet;
 #[derive(Default)]
 pub struct AndroidInput {
     devices: HashSet<i32>,
+    inactive: bool,
 }
 
 /// Android KeyEvent constants -> Linux input codes. X is BTN_WEST (Options),
@@ -30,8 +31,11 @@ fn key_code(code: u32) -> Option<u16> {
 }
 
 impl AndroidInput {
-    pub fn reset(&mut self) {
-        self.devices.clear();
+    pub fn set_active(&mut self, active: bool) {
+        self.inactive = !active;
+        if !active {
+            self.devices.clear();
+        }
     }
 
     fn attach(&mut self, device: i32, out: &mut Vec<NativeEvent>) {
@@ -60,6 +64,9 @@ impl AndroidInput {
 
     pub fn key(&mut self, device: i32, code: u32, pressed: bool) -> Option<Vec<NativeEvent>> {
         let code = key_code(code)?;
+        if self.inactive {
+            return Some(Vec::new());
+        }
         let mut out = Vec::new();
         self.attach(device, &mut out);
         out.push(input(device, 1, code, i64::from(pressed)));
@@ -77,6 +84,9 @@ impl AndroidInput {
         hat_x: f32,
         hat_y: f32,
     ) -> Vec<NativeEvent> {
+        if self.inactive {
+            return Vec::new();
+        }
         let mut out = Vec::new();
         self.attach(device, &mut out);
         let normalized = |v: f32| {
@@ -197,9 +207,15 @@ mod tests {
         assert!(!router.holding());
         route(&mut router, source.key(7, 19, true).unwrap(), 504.0);
         router.set_active(false, 505.0);
-        source.reset();
+        source.set_active(false);
         assert!(!router.holding());
+        // Android can drain a queued release/motion after LostFocus. It must
+        // not register a source while Router is inactive and then leave it
+        // known only at this edge (unknown to the mapper) on return.
+        assert!(source.key(7, 19, false).unwrap().is_empty());
+        assert!(source.axes(7, 1.0, 0.0, 0.0, 0.0).is_empty());
         router.set_active(true, 506.0);
+        source.set_active(true);
         assert_eq!(
             route(&mut router, source.key(7, 19, true).unwrap(), 507.0),
             vec![Press::Button(Button::Up)]

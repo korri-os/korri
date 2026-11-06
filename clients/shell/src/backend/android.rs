@@ -49,9 +49,12 @@ impl Android {
         let touch_app = app.clone();
         let platform = AndroidPlatform::new_with_event_listener(app, move |event| {
             let host = match event {
-                PollEvent::Main(MainEvent::GainedFocus) => Some(HostEvent::Focus(true)),
+                PollEvent::Main(MainEvent::GainedFocus) => {
+                    focus_input.borrow_mut().set_active(true);
+                    Some(HostEvent::Focus(true))
+                }
                 PollEvent::Main(MainEvent::LostFocus) => {
-                    focus_input.borrow_mut().reset();
+                    focus_input.borrow_mut().set_active(false);
                     focus_drag.borrow_mut().cancel();
                     Some(HostEvent::Focus(false))
                 }
