@@ -27,7 +27,8 @@ cp "$crate/webos/launch.sh" "$work/app/"
 Xvfb -displayfd 3 -screen 0 1920x1080x24 -nolisten tcp 3>"$work/display" >"$out/xvfb.log" 2>&1 &
 pids+=($!)
 for _ in $(seq 100); do [[ -s "$work/display" ]] && break; sleep 0.1; done
-export DISPLAY=":$(cat "$work/display")"
+DISPLAY=":$(cat "$work/display")"
+export DISPLAY
 unset WAYLAND_DISPLAY
 HOME="$work/home" "$work/app/launch.sh" >"$out/shell.log" 2>&1 &
 launcher=$!

@@ -2,6 +2,8 @@
 # M1 only: real native shell, local sample-data korrid, no TV services.
 set -eu
 umask 077
+# webOS uses BusyBox ash, which supports the core-size limit.
+# shellcheck disable=SC3045
 ulimit -c 0
 if [ "$(id -u)" = 0 ]; then
     echo 'korri-shell: launcher refuses root' >&2
@@ -15,6 +17,8 @@ cd "$app"
 work=$(mktemp -d "$HOME/korri-shell.XXXXXXXX")
 fixture_pid=''
 shell_pid=''
+# Called by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() {
     trap - EXIT HUP INT TERM
     [ -z "$shell_pid" ] || kill "$shell_pid" 2>/dev/null || :
