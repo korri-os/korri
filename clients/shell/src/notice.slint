@@ -1,0 +1,88 @@
+// The shell's own notice after it unloaded a surface (contract amendment A5).
+// The failed surface cannot draw, so the shell draws this. One column, sized
+// from the window: the text wraps, the actions stack, nothing is clipped from
+// 320x240 to 1920x1080 (tests/surface_notice.rs).
+
+export component Notice inherits Window {
+    in property <string> heading;
+    in property <string> detail;
+    in property <[string]> actions;
+    in property <int> focused;
+    // Whether the column fits the window at its preferred size: nothing is
+    // squeezed or clipped (tests).
+    out property <bool> fits: column.preferred-height <= column.height + 0.5px && column.min-width <= column.width + 0.5px;
+
+    // One unit scales every size from the window's shorter proportion.
+    property <length> unit: clamp(min(root.width / 24, root.height / 16), 10px, 28px);
+    property <color> ink: #eef2f6;
+    property <color> quiet: #b4c0cc;
+    property <color> mark: #f2b84b;
+    property <color> rule: #6d8094;
+
+    title: "Korri";
+    background: #20303f;
+    // Embedded by the shell (src/notice-fonts): no system font is needed.
+    default-font-family: "Inter";
+
+    column := VerticalLayout {
+        x: (root.width - self.width) / 2;
+        y: 0;
+        width: min(root.width - 2 * root.unit, 32 * root.unit);
+        height: root.height;
+        alignment: center;
+        spacing: root.unit * 0.6;
+
+        Text {
+            min-width: 0px;
+            text: root.heading;
+            font-size: root.unit * 1.5;
+            font-weight: 700;
+            color: root.ink;
+            wrap: word-wrap;
+            accessible-role: text;
+        }
+
+        Text {
+            min-width: 0px;
+            text: root.detail;
+            font-size: root.unit;
+            color: root.quiet;
+            wrap: word-wrap;
+            accessible-role: text;
+        }
+
+        VerticalLayout {
+            padding-top: root.unit * 0.6;
+            spacing: root.unit * 0.5;
+
+            for action[index] in root.actions: Rectangle {
+                accessible-role: button;
+                accessible-label: action;
+                accessible-item-selectable: true;
+                accessible-item-selected: index == root.focused;
+                border-radius: root.unit * 0.4;
+                border-width: max(2px, root.unit * 0.12);
+                border-color: index == root.focused ? root.mark : root.rule;
+                background: index == root.focused ? root.mark : transparent;
+
+                HorizontalLayout {
+                    padding-left: root.unit * 0.8;
+                    padding-right: root.unit * 0.8;
+                    padding-top: root.unit * 0.5;
+                    padding-bottom: root.unit * 0.5;
+
+                    Text {
+                        // A word longer than the button breaks instead of widening it.
+                        min-width: 0px;
+                        text: action;
+                        font-size: root.unit;
+                        font-weight: 600;
+                        color: index == root.focused ? #20303f : root.ink;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

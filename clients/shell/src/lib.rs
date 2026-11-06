@@ -14,6 +14,7 @@ pub mod korrid;
 pub mod logic;
 pub mod memory;
 pub mod messages;
+pub mod notice;
 pub mod package;
 pub mod pico8;
 pub mod shell;

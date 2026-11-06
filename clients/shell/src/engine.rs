@@ -5,9 +5,12 @@
 //! holds `state` and the current `model`. Only strings cross: the model and
 //! messages as JSON in, requests and views as JSON out.
 //!
-//! Limits: the runtime's heap is capped at [`HEAP_LIMIT`] and every call at
-//! [`CALL_BUDGET`]. Breaking either, throwing, or returning the wrong shape is
-//! a [`Violation`]; the shell then unloads the surface.
+//! Limits (contract amendment A5): the runtime's heap is capped at
+//! [`HEAP_LIMIT`], and a call still running after [`STUCK_LIMIT`] is
+//! interrupted. Breaking either, throwing, or returning the wrong shape is a
+//! [`Violation`]; the shell then unloads the surface and asks the person what
+//! to do. A call over [`CALL_BUDGET`] is no violation: the engine records it
+//! (`take_slowest`) and the shell logs it as a performance defect.
 
 use anyhow::{anyhow, Result};
 use rquickjs::{Context, Function, Object, Persistent, Runtime};
@@ -22,18 +25,26 @@ use std::{
 
 /// Contract 3.9: QuickJS heap per surface.
 pub const HEAP_LIMIT: usize = 64 * 1024 * 1024;
-/// Contract 3.9: wall time per `update`, `view` and `overlay` call (and per
-/// `setModel` after the surface loaded).
+/// Contract 3.9 and A5: the performance budget per `update`, `view` and
+/// `overlay` call (and per `setModel` after the surface loaded). A call over it
+/// is a performance defect, logged by the shell; the surface keeps running.
 pub const CALL_BUDGET: Duration = Duration::from_millis(50);
 /// Wall time for one surface load: evaluating `logic.js`, reading its
 /// declarations, the first model and `init`, together. Once per load or switch.
 pub const LOAD_BUDGET: Duration = Duration::from_millis(2_000);
+/// A5: a call after the load still running after this long is stuck. The
+/// engine interrupts it, and the shell unloads the surface. The load budget's
+/// value.
+pub const STUCK_LIMIT: Duration = LOAD_BUDGET;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     pub heap: usize,
-    /// Per `update`, `view` and `overlay` call.
+    /// Per `update`, `view` and `overlay` call: the performance budget. Not
+    /// enforced by the engine.
     pub call: Duration,
+    /// Per call after the load: a call still running after this is interrupted.
+    pub stuck: Duration,
     /// Bundle evaluation through `init`, once.
     pub load: Duration,
 }
@@ -43,6 +54,7 @@ impl Default for Limits {
         Self {
             heap: HEAP_LIMIT,
             call: CALL_BUDGET,
+            stuck: STUCK_LIMIT,
             load: LOAD_BUDGET,
         }
     }
@@ -51,7 +63,8 @@ impl Default for Limits {
 /// Why a surface's logic stopped being trusted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Violation {
-    /// A call ran longer than the budget.
+    /// A call was still running at its limit (the load budget while loading,
+    /// the stuck limit after), and was interrupted.
     Time { call: &'static str, millis: u128 },
     /// The heap limit was reached.
     Memory { call: &'static str },
@@ -75,11 +88,12 @@ impl Violation {
 impl fmt::Display for Violation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Time { call, millis } => write!(
-                f,
-                "{call} ran {millis} ms, over the {} ms budget",
-                CALL_BUDGET.as_millis()
-            ),
+            Self::Time { call, millis } => {
+                write!(
+                    f,
+                    "{call} was still running after {millis} ms and was stopped"
+                )
+            }
             Self::Memory { call } => write!(f, "{call} reached the QuickJS heap limit"),
             Self::Exception { call, message } => write!(f, "{call} threw: {message}"),
             Self::Contract { call, message } => write!(f, "{call}: {message}"),
@@ -195,6 +209,8 @@ pub struct Engine {
     /// See `view_stale`.
     stale: bool,
     max_call: Duration,
+    /// The slowest call since the last `take_slowest`, after the load.
+    slowest: Option<(&'static str, Duration)>,
     /// While loading (until `init` returns): when the load started. Every call
     /// in that phase shares `limits.load`, measured from this instant.
     loading: Option<Instant>,
@@ -251,6 +267,7 @@ impl Engine {
             has_overlay: false,
             stale: true,
             max_call: Duration::ZERO,
+            slowest: None,
             loading: Some(started),
             load_time: Duration::ZERO,
         };
@@ -301,6 +318,12 @@ impl Engine {
     /// The slowest `update`, `view`, `overlay` or later `setModel` call so far.
     pub fn max_call(&self) -> Duration {
         self.max_call
+    }
+
+    /// The slowest call (its name and wall time) since the last time this was
+    /// asked, after the load. The shell compares it with `limits().call`.
+    pub fn take_slowest(&mut self) -> Option<(&'static str, Duration)> {
+        self.slowest.take()
     }
 
     /// Current QuickJS heap use, in bytes.
@@ -419,18 +442,22 @@ impl Engine {
             call(function).map_err(|e| classify(name, e, &ctx))
         });
         if self.loading.is_none() {
-            self.max_call = self.max_call.max(started.elapsed());
+            let took = started.elapsed();
+            self.max_call = self.max_call.max(took);
+            if self.slowest.is_none_or(|(_, slowest)| took > slowest) {
+                self.slowest = Some((name, took));
+            }
         }
         self.over_budget(name, started)?;
         result
     }
 
-    /// The load budget while loading, then the per-call budget.
+    /// The load budget while loading, then the stuck limit per call.
     fn budget(&self) -> Duration {
         if self.loading.is_some() {
             self.limits.load
         } else {
-            self.limits.call
+            self.limits.stuck
         }
     }
 
@@ -470,7 +497,7 @@ fn classify(call: &'static str, error: rquickjs::Error, ctx: &rquickjs::Ctx<'_>)
     } else if message.contains("interrupted") {
         Violation::Time {
             call,
-            millis: CALL_BUDGET.as_millis(),
+            millis: STUCK_LIMIT.as_millis(),
         }
     } else {
         Violation::Exception {
@@ -562,10 +589,34 @@ mod tests {
             engine.max_call() < CALL_BUDGET,
             "load calls are not per-call calls"
         );
-        // After init, every call is back on the 50 ms budget.
+        // After init, every call is measured against the 50 ms budget.
         engine
             .update(&json!({"_tag": "KorriPublished"}))
             .expect("update");
+        assert!(engine
+            .take_slowest()
+            .is_some_and(|(call, _)| call == "update"));
+    }
+
+    #[test]
+    fn a_slow_call_is_recorded_not_refused() {
+        // A5: 80 ms is over the 50 ms budget and far from the stuck limit.
+        let source = format!(
+            "globalThis.surface = {{ init: () => 0, update: (s) => {{ {} return {{ state: s + 1, requests: [] }}; }}, view: (s) => ({{ n: s }}) }};",
+            spin(80)
+        );
+        let mut engine = Engine::load(&source, Limits::default()).expect("load");
+        engine.set_model("{}").expect("model");
+        engine.init(&BTreeMap::new()).expect("init");
+        assert_eq!(engine.take_slowest(), None, "load calls are not recorded");
+        engine
+            .update(&json!({"_tag": "KorriPublished"}))
+            .expect("a slow update returns");
+        assert_eq!(engine.view().expect("view")["n"], 1);
+        let (call, took) = engine.take_slowest().expect("recorded");
+        assert_eq!(call, "update");
+        assert!(took > CALL_BUDGET, "{took:?}");
+        assert_eq!(engine.take_slowest(), None, "taken once");
     }
 
     #[test]
@@ -597,9 +648,13 @@ mod tests {
     }
 
     #[test]
-    fn a_runaway_call_breaks_the_time_budget() {
+    fn a_runaway_call_is_stopped_at_the_stuck_limit() {
         let source = "globalThis.surface = { init: () => 0, update: (s) => { while (true) {} }, view: () => ({}) };";
-        let mut engine = Engine::load(source, Limits::default()).expect("load");
+        let limits = Limits {
+            stuck: Duration::from_millis(200),
+            ..Limits::default()
+        };
+        let mut engine = Engine::load(source, limits).expect("load");
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
         let started = Instant::now();
@@ -607,7 +662,11 @@ mod tests {
             .update(&json!({"_tag": "KorriPublished"}))
             .unwrap_err();
         assert_eq!(error.kind(), "time", "{error}");
-        assert!(started.elapsed() < Duration::from_millis(500));
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(200) && elapsed < Duration::from_millis(700),
+            "{elapsed:?}"
+        );
     }
 
     #[test]
@@ -615,7 +674,7 @@ mod tests {
         let source = "globalThis.surface = { init: () => 0, update: (s) => { const a = []; while (true) a.push(new Uint8Array(1 << 20)); }, view: () => ({}) };";
         let limits = Limits {
             heap: 16 * 1024 * 1024,
-            call: Duration::from_secs(5),
+            stuck: Duration::from_secs(5),
             ..Limits::default()
         };
         let mut engine = Engine::load(source, limits).expect("load");

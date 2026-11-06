@@ -181,6 +181,7 @@ image to the PICO-8 palette first. The algorithm is ported unchanged from
 - **At startup:** read one combined index. Never hash.
 - **At run time:** each logic call gets 64 MiB of QuickJS heap and 50 ms. A
   surface that breaks either limit is unloaded, and the previous one stays.
+  (Replaced by amendment A5, section 11.)
 
 ## 4. Pass marks
 - Zone GAMES idle: at most 50 % of one core on the SP at 60 fps.
@@ -320,3 +321,30 @@ a user would expect and that every design follows intrinsic design values."
 - Grounding: korrid's launch timeline (`services/korrid/src/launch_timeline.rs`)
   names the stages a launch passes through; the steps are those stages, as
   the person sees them.
+
+## 11. Amendment A5 (owner, 2026-11-06): never change a surface without the person knowing
+
+Owner decision: "Never change a surface unexpectedly without the user
+knowing." Before this, one logic call over 50 ms unloaded the surface and
+restored the previous one with no notice. On the RG353M, Pico was replaced by
+Zone after one 54 ms update at a low idle clock. Logic runs on its own thread,
+so a slow call does not stop drawing. This amendment replaces the run-time
+rule of section 3.9.
+
+1. **A slow call never unloads a surface.** A call over 50 ms is a
+   performance defect. The shell logs it, one journal line per surface per
+   message type, rate-limited, and the surface keeps running.
+2. **The shell unloads only a surface that cannot work:** a call still
+   running after 2 s (the load budget), a crash or exception that kills its
+   logic, or a QuickJS heap over 64 MiB.
+3. **When the shell unloads a surface, it never switches silently.** It shows
+   a notice that names the surface and the reason in plain words (for example
+   "Pico stopped responding"), with two actions: try Pico again, or use Zone
+   (the previous surface). It switches only on the person's choice. If no
+   other surface exists, the notice offers "try again" only. The shell draws
+   the notice, because the failed surface cannot. The notice has an
+   intrinsic layout and nothing in it clips at the five probe sizes. Its
+   actions come from semantic buttons: up and down move the focus, confirm
+   takes the focused action, back takes the other surface.
+4. Each surface's timing tests stay the guard against slow code: Zone's in
+   `clients/shell/tests/zone_package.rs`, and Pico's.

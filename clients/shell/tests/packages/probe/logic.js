@@ -6,12 +6,16 @@ globalThis.surface = {
     if (message._tag === "PreferenceStored") return { state: { ...state, stored: message.key === "probe.word" }, requests: [] };
     // A2: the first Resized must come before the first view (views counts them).
     if (message._tag === "Resized") return { state: { ...state, width: message.width, height: message.height, resizes: (state.resizes || 0) + 1, viewsBeforeFirstResize: state.resizes ? state.viewsBeforeFirstResize : (globalThis.views || 0) }, requests: [] };
+    // A model with clockLabel "crash" makes the logic throw (a crash, amendment A5).
+    if (message._tag === "KorriPublished" && model.clockLabel === "crash") throw new Error("planted crash");
     if (message._tag === "Tick") return { state: { ...state, idle: message.idleMs, ticks: state.ticks + 1 }, requests: [] };
     if (message._tag !== "Pressed") return { state, requests: [] };
     switch (message.button) {
       case "right": return { state: { ...state, count: state.count + 1 }, requests: [] };
       case "left": return { state: { ...state, count: state.count - 1 }, requests: [] };
       case "options": return { state: { ...state, word: "second" }, requests: [{ _tag: "RememberPreference", key: "probe.word", value: "second" }] };
+      // Slow, not stuck: 120 ms, over the 50 ms budget (amendment A5).
+      case "up": { const t0 = new Date().getTime(); while (new Date().getTime() - t0 < 120) {} return { state: { ...state, count: state.count + 10 }, requests: [] }; }
       case "down": return { state, requests: [{ _tag: "MoveCatalog", query: { text: "", section: null, order: "korri" }, from: { _tag: "End" }, count: 50 }] };
       case "back": return { state, requests: [{ _tag: "DismissGameplayOverlay" }] };
       case "confirm": while (true) {}

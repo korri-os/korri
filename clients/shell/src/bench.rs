@@ -222,12 +222,9 @@ pub fn run_captured(options: Options, capture: bool) -> Result<(String, Vec<Vec<
     let package = Package::at(&options.packages.join(&options.surface))
         .with_context(|| format!("package {}", options.surface))?;
     let views = package::compile(&package)?;
-    // The bench measures calls; it does not enforce the shell's 50 ms budget (a loaded
-    // machine would otherwise abort a run that only asks what the frames cost).
-    let limits = Limits {
-        call: Duration::from_secs(2),
-        ..Limits::default()
-    };
+    // The bench measures calls. The 50 ms budget is the shell's log line, not a limit;
+    // only a call still running at the stuck limit ends the run.
+    let limits = Limits::default();
     let mut logic = Logic::start(package.logic_source()?, limits, &options.surface)
         .map_err(|v| anyhow!("logic: {v}"))?;
     let (outcomes_tx, outcomes) = std::sync::mpsc::channel::<Outcome>();

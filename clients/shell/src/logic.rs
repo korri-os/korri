@@ -5,9 +5,10 @@
 //! surface. The UI thread sends it [`Call`]s and gets back an [`Outcome`] each:
 //! the requests, and the views when the state or model changed. One call runs
 //! at a time, in the order sent; a `Tick` waiting behind a running call is
-//! replaced by a newer one. The call budget (50 ms) and the load budget (2 s)
-//! are the engine's own, enforced on that thread. Dropping a [`Logic`]
-//! interrupts a running call and joins the thread.
+//! replaced by a newer one. The stuck limit and the load budget (2 s each)
+//! are the engine's own, enforced on that thread; each [`Step`] carries its
+//! slowest engine call, which the shell compares with the 50 ms call budget.
+//! Dropping a [`Logic`] interrupts a running call and joins the thread.
 //!
 //! Loading stays synchronous ([`Logic::now`]): the shell needs the
 //! declaration, the first model's result and the first view before it shows
@@ -61,6 +62,10 @@ pub struct Step {
     pub gameplay_overlay: Option<bool>,
     /// Wall time of the call on the logic thread.
     pub took: Duration,
+    /// The message's `_tag` (`KorriPublished` for a model).
+    pub message: String,
+    /// The slowest engine call in this step (`update`, `view`, `overlay`, `setModel`).
+    pub slowest: Option<(&'static str, Duration)>,
 }
 
 #[derive(Debug)]
@@ -103,6 +108,15 @@ impl Worker {
 
     fn run(&mut self, call: Call) -> Outcome {
         let started = Instant::now();
+        self.engine.take_slowest();
+        let message = match &call {
+            Call::Message(m) => m
+                .get("_tag")
+                .and_then(Value::as_str)
+                .unwrap_or("?")
+                .to_owned(),
+            Call::Model { .. } => "KorriPublished".to_owned(),
+        };
         let (revision, result) = match call {
             Call::Message(message) => (None, self.step(&message, None)),
             Call::Model { model, revision } => {
@@ -120,6 +134,8 @@ impl Worker {
             revision,
             result: result.map(|mut step| {
                 step.took = started.elapsed();
+                step.message = message;
+                step.slowest = self.engine.take_slowest();
                 step
             }),
         }
@@ -150,6 +166,8 @@ impl Worker {
             overlay,
             gameplay_overlay: gameplay,
             took: Duration::ZERO,
+            message: String::new(),
+            slowest: None,
         })
     }
 }

@@ -1,6 +1,6 @@
 //! A surface's logic on its own thread (`src/logic.rs`): calls run one at a
-//! time in the order sent, a waiting `Tick` gives way to a newer one, the call
-//! budget holds there, and dropping the logic stops a running call.
+//! time in the order sent, a waiting `Tick` gives way to a newer one, the stuck
+//! limit holds there, a slow call returns, and dropping the logic stops a running call.
 
 use korri_shell::{
     engine::{Limits, Violation},
@@ -12,7 +12,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Records every message; `{"_tag": "Busy", "ms": n}` spins n ms; `Loop` never returns.
+/// Records every message; `{"_tag": "Busy", "ms": n}` spins about n ms; `Spin` spins at
+/// least `ms` ms by the clock; `Loop` never returns.
 const SOURCE: &str = r#"
 globalThis.surface = {
   preferences: {},
@@ -20,6 +21,7 @@ globalThis.surface = {
   update: (state, message) => {
     if (message._tag === "Busy") { let x = 0; for (let i = 0; i < message.ms * 20000; i++) x += i; }
     if (message._tag === "Loop") { for (;;) {} }
+    if (message._tag === "Spin") { const t0 = new Date().getTime(); while (new Date().getTime() - t0 < message.ms) {} }
     return { state: { seen: [...state.seen, message] }, requests: [] };
   },
   view: (state) => ({ seen: JSON.stringify(state.seen) }),
@@ -77,7 +79,7 @@ fn ticks_waiting_behind_a_running_call_give_way_to_the_newest() {
     // The busy call counts as running until the UI side hears it returned (`next`), however
     // fast it is; a loose budget keeps a loaded machine from breaking it.
     let limits = Limits {
-        call: Duration::from_secs(10),
+        stuck: Duration::from_secs(10),
         ..Limits::default()
     };
     let (mut logic, done, rx) = start(limits);
@@ -125,8 +127,12 @@ fn ticks_waiting_behind_a_running_call_give_way_to_the_newest() {
 }
 
 #[test]
-fn a_runaway_call_breaks_the_budget_on_the_logic_thread() {
-    let (mut logic, done, rx) = start(Limits::default());
+fn a_runaway_call_is_stopped_at_the_stuck_limit_on_the_logic_thread() {
+    let limits = Limits {
+        stuck: Duration::from_millis(300),
+        ..Limits::default()
+    };
+    let (mut logic, done, rx) = start(limits);
     let started = Instant::now();
     logic.submit(Call::Message(json!({"_tag": "Loop"})), &done);
     let outcome = next(&mut logic, &done, &rx);
@@ -135,14 +141,32 @@ fn a_runaway_call_breaks_the_budget_on_the_logic_thread() {
         "{:?}",
         outcome.result
     );
-    assert!(started.elapsed() < Duration::from_secs(1));
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(300) && elapsed < Duration::from_secs(1),
+        "{elapsed:?}"
+    );
+}
+
+/// Amendment A5: a call over the 50 ms budget returns; its step names the message and
+/// the slowest engine call, for the shell's log.
+#[test]
+fn a_slow_call_returns_with_its_slowest_engine_call() {
+    let (mut logic, done, rx) = start(Limits::default());
+    logic.submit(Call::Message(json!({"_tag": "Spin", "ms": 120})), &done);
+    let outcome = next(&mut logic, &done, &rx);
+    let step = outcome.result.expect("a slow call is no violation");
+    assert_eq!(step.message, "Spin");
+    let (call, took) = step.slowest.expect("measured");
+    assert_eq!(call, "update");
+    assert!(took > Duration::from_millis(50), "{took:?}");
 }
 
 #[test]
 fn dropping_the_logic_stops_a_running_call() {
     // A budget far beyond the test: only the stop can end the loop.
     let limits = Limits {
-        call: Duration::from_secs(60),
+        stuck: Duration::from_secs(60),
         ..Limits::default()
     };
     let (mut logic, done, _rx) = start(limits);

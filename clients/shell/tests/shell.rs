@@ -10,6 +10,8 @@ use korri_shell::{
     fonts,
     input::Key,
     korrid::Korrid,
+    messages::Button,
+    notice::{Notice, Reason},
     package::Package,
     shell::{Event, Options, Post, Shell},
     verify,
@@ -162,6 +164,20 @@ impl Rig {
     fn string(&self, name: &str) -> String {
         match self.shell.surface_property(name) {
             Some(SlintValue::String(s)) => s.to_string(),
+            other => panic!("{name}: {other:?}"),
+        }
+    }
+
+    fn notice_string(&self, name: &str) -> String {
+        match self.shell.notice_property(name) {
+            Some(SlintValue::String(s)) => s.to_string(),
+            other => panic!("{name}: {other:?}"),
+        }
+    }
+
+    fn notice_int(&self, name: &str) -> f64 {
+        match self.shell.notice_property(name) {
+            Some(SlintValue::Number(n)) => n,
             other => panic!("{name}: {other:?}"),
         }
     }
@@ -401,25 +417,160 @@ fn switching_replaces_the_surface_after_its_first_frame_and_fonts_do_not_pile_up
     assert_eq!(fonts::registered_faces("Anton"), 1);
 }
 
+/// Amendment A5: a call over the 50 ms budget is a performance defect, logged once per
+/// surface and message type; the surface keeps running.
 #[test]
-fn a_runaway_call_unloads_the_surface_and_restores_the_previous_one() {
+fn a_slow_call_keeps_the_surface_and_is_logged_once() {
+    let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());
+    rig.key(Key::F2);
+    rig.until("probe", |r| {
+        r.shell.current_id() == Some("probe") && r.shell.retiring() == 0
+    });
+    for n in 1..=3 {
+        rig.shell.press(Button::Up); // probe spins 120 ms on up, then counts 10
+        rig.until("slow press applied", |r| {
+            r.int("count") == f64::from(n * 10)
+        });
+    }
+    assert_eq!(rig.shell.current_id(), Some("probe"));
+    assert!(rig.shell.notice().is_none());
+    let log = rig.shell.log();
+    let defects: Vec<&String> = log
+        .iter()
+        .filter(|l| l.starts_with("performance defect: probe update for Pressed"))
+        .collect();
+    assert_eq!(defects.len(), 1, "rate-limited: {log:?}");
+    assert!(defects[0].contains("over the 50 ms call budget"), "{log:?}");
+    assert!(!log.iter().any(|l| l.contains("unloaded")), "{log:?}");
+}
+
+/// Amendment A5: a call still running after 2 s unloads the surface, and the shell shows
+/// its notice instead of switching. Nothing switches until the person chooses.
+#[test]
+fn a_stuck_call_unloads_at_two_seconds_and_shows_the_notice() {
     let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());
     rig.key(Key::F2);
     rig.until("probe", |r| {
         r.shell.current_id() == Some("probe") && r.shell.retiring() == 0
     });
     let started = Instant::now();
-    rig.key(Key::Return); // probe loops forever on confirm
-    assert!(started.elapsed() < Duration::from_secs(2));
-    assert_eq!(rig.shell.current_id(), Some("pico"));
+    rig.shell.press(Button::Confirm); // probe loops forever on confirm
+    rig.until("notice", |r| r.shell.notice().is_some());
+    let elapsed = started.elapsed();
     assert!(
-        rig.shell
-            .log()
-            .iter()
-            .any(|l| l.contains("probe unloaded (time)")),
-        "{:?}",
-        rig.shell.log()
+        elapsed >= Duration::from_secs(2) && elapsed < Duration::from_secs(4),
+        "{elapsed:?}"
     );
+    let notice = rig.shell.notice().unwrap().clone();
+    assert_eq!(notice.reason, Reason::Stuck);
+    assert_eq!(notice.heading(), "Probe stopped responding");
+    assert_eq!(labels(&notice), ["Try Probe again", "Use Pico"]);
+    assert_eq!(rig.notice_string("heading"), "Probe stopped responding");
+    assert!(rig
+        .shell
+        .log()
+        .iter()
+        .any(|l| l.contains("probe unloaded (time)")));
+    // No switch without a choice: time passes, ticks come, L1+R1 is ignored.
+    rig.key(Key::F2);
+    std::thread::sleep(Duration::from_millis(1_200));
+    rig.settle();
+    assert_eq!(rig.shell.current_id(), None);
+    assert!(rig.shell.notice().is_some());
+    assert_eq!(Headless::live_windows(), 1, "the notice alone");
+    // Try again: probe loads afresh.
+    rig.shell.press(Button::Confirm);
+    rig.until("probe again", |r| {
+        r.shell.current_id() == Some("probe") && r.shell.notice().is_none()
+    });
+    rig.settle();
+    assert_eq!(rig.int("count"), 0.0);
+    assert_eq!(
+        Headless::live_windows(),
+        1,
+        "the notice went after the first frame"
+    );
+}
+
+/// Amendment A5: a throw shows the notice; down and confirm use the other surface.
+#[test]
+fn a_crash_shows_the_notice_and_the_choice_switches() {
+    let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());
+    rig.key(Key::F2);
+    rig.until("probe", |r| {
+        r.shell.current_id() == Some("probe") && r.shell.retiring() == 0
+    });
+    rig.fixture
+        .publish(|model| model["clockLabel"] = json!("crash"));
+    rig.until("notice", |r| r.shell.notice().is_some());
+    let notice = rig.shell.notice().unwrap().clone();
+    assert_eq!(notice.reason, Reason::Error);
+    assert_eq!(notice.heading(), "Probe stopped because of an error");
+    assert!(rig
+        .shell
+        .log()
+        .iter()
+        .any(|l| l.contains("probe unloaded (exception)") && l.contains("planted crash")));
+    rig.shell.press(Button::Down);
+    assert_eq!(rig.shell.notice().unwrap().focused, 1);
+    assert_eq!(rig.notice_int("focused"), 1.0);
+    assert_eq!(
+        rig.shell.current_id(),
+        None,
+        "moving the focus chooses nothing"
+    );
+    rig.shell.press(Button::Confirm);
+    rig.until("pico", |r| {
+        r.shell.current_id() == Some("pico") && r.shell.notice().is_none()
+    });
+    rig.settle();
+    assert_eq!(Headless::live_windows(), 1);
+}
+
+#[test]
+fn back_on_the_notice_uses_the_other_surface() {
+    let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());
+    rig.key(Key::F2);
+    rig.until("probe", |r| r.shell.current_id() == Some("probe"));
+    rig.key(Key::M); // probe allocates without end on menu
+    rig.until("notice", |r| r.shell.notice().is_some());
+    assert_eq!(rig.shell.notice().unwrap().reason, Reason::Memory);
+    assert!(rig
+        .shell
+        .log()
+        .iter()
+        .any(|l| l.contains("probe unloaded (memory)")));
+    rig.shell.press(Button::Back);
+    rig.until("pico", |r| r.shell.current_id() == Some("pico"));
+}
+
+/// With no other surface the notice offers "try again" only, and back does nothing.
+#[test]
+fn with_one_surface_the_notice_offers_try_again_only() {
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    rig.shell.press(Button::System); // an unknown request
+    rig.until("notice", |r| r.shell.notice().is_some());
+    let notice = rig.shell.notice().unwrap().clone();
+    assert_eq!(labels(&notice), ["Try Probe again"]);
+    assert!(rig
+        .shell
+        .log()
+        .iter()
+        .any(|l| l.contains("probe unloaded (contract)")));
+    rig.shell.press(Button::Back);
+    rig.shell.press(Button::Down);
+    rig.settle();
+    assert_eq!(rig.shell.current_id(), None);
+    rig.shell.press(Button::Confirm);
+    rig.until("probe again", |r| r.shell.current_id() == Some("probe"));
+}
+
+fn labels(notice: &Notice) -> Vec<String> {
+    notice
+        .actions()
+        .into_iter()
+        .map(|(label, _)| label)
+        .collect()
 }
 
 /// The logic runs on its own thread: a press whose call never returns does not hold up
@@ -433,7 +584,7 @@ fn a_switch_while_the_logic_runs_drops_that_logic() {
         r.shell.current_id() == Some("probe") && r.shell.retiring() == 0
     });
     let started = Instant::now();
-    rig.shell.press(korri_shell::messages::Button::Confirm); // probe loops forever on confirm
+    rig.shell.press(Button::Confirm); // probe loops forever on confirm
     assert!(
         started.elapsed() < Duration::from_millis(20),
         "the press waited on logic"
@@ -450,38 +601,6 @@ fn a_switch_while_the_logic_runs_drops_that_logic() {
         "the retired logic's outcome is ignored: {:?}",
         rig.shell.log()
     );
-}
-
-#[test]
-fn a_heap_blow_up_unloads_the_surface() {
-    let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());
-    rig.key(Key::F2);
-    rig.until("probe", |r| r.shell.current_id() == Some("probe"));
-    rig.key(Key::M); // probe allocates without end on menu
-    assert_eq!(rig.shell.current_id(), Some("pico"));
-    assert!(
-        rig.shell
-            .log()
-            .iter()
-            .any(|l| l.contains("probe unloaded (memory)")),
-        "{:?}",
-        rig.shell.log()
-    );
-}
-
-#[test]
-fn an_unknown_request_is_a_violation() {
-    let mut rig = rig(&["pico", "probe"], 12, Behaviour::default());
-    rig.key(Key::F2);
-    rig.until("probe", |r| r.shell.current_id() == Some("probe"));
-    rig.shell.press(korri_shell::messages::Button::System);
-    rig.settle();
-    assert_eq!(rig.shell.current_id(), Some("pico"));
-    assert!(rig
-        .shell
-        .log()
-        .iter()
-        .any(|l| l.contains("probe unloaded (contract)")));
 }
 
 #[test]
@@ -521,7 +640,7 @@ fn zone_pages_a_10000_game_catalog_and_keeps_its_focus() {
     assert_eq!(rig.int("total"), 10_000.0);
     // A person moves one card at a time; korrid answers between presses.
     for _ in 0..60 {
-        rig.shell.press(korri_shell::messages::Button::Right);
+        rig.shell.press(Button::Right);
         rig.settle();
     }
     assert!(rig.int("first-index") > 0.0, "the window moved");

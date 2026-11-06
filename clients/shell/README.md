@@ -145,7 +145,7 @@ the model watch is a root WebSocket (`Origin`, then `Bearer CAP`, then
 Once a second the shell sends the active surface `{"_tag":"Tick","idleMs":N}`
 (contract amendment A1, section 7.1): `N` is the time since the last `Pressed`
 it delivered to that surface, or since the surface loaded. Each `Tick` is an
-`update` call under the 50 ms budget. The verifier's sweep includes ticks.
+`update` call measured against the 50 ms budget. The verifier's sweep includes ticks.
 
 Right after `init`, before the first `view()`, and on every window size or
 scale-factor change, the shell sends `{"_tag":"Resized","width":W,"height":H}`
@@ -181,17 +181,36 @@ Each surface's logic runs under three limits (`src/engine.rs`):
 |---|---|---|
 | `HEAP_LIMIT` | 64 MiB | the surface's QuickJS heap |
 | `LOAD_BUDGET` | 2,000 ms | one load: evaluating `logic.js`, reading its declarations and first model, and `init`, together; once per load or switch |
-| `CALL_BUDGET` | 50 ms | each `update`, `view` and `overlay` call, and each later model |
+| `CALL_BUDGET` | 50 ms | each `update`, `view` and `overlay` call, and each later model: the performance budget, not a limit |
+| `STUCK_LIMIT` | 2,000 ms | each call after the load: a call still running then is interrupted |
 
-A violation unloads the package and restores the previous one.
+Contract amendment A5 (owner, 2026-11-06) decides what happens at run time:
+
+- A call over `CALL_BUDGET` is a performance defect. The shell logs
+  `performance defect: <id> <call> for <message> took N ms, …` once per
+  surface and message type, then at most one summary line per minute
+  (`SLOW_LOG_INTERVAL`). The surface keeps running. Each surface's timing
+  tests guard the budget (Zone's in `tests/zone_package.rs`).
+- A call still running at `STUCK_LIMIT`, a throw, a broken contract (a wrong
+  shape, a refused request or view), or the heap limit unloads the surface.
+- After an unload the shell never switches on its own. It shows its own
+  notice (`src/notice.rs`, `src/notice.slint`): the surface and the reason in
+  plain words ("Pico stopped responding"), and the actions "Try Pico again"
+  and "Use Zone" (the previous surface, else the first other package). Up and
+  down move the focus, confirm takes the focused action, back takes the other
+  surface; L1+R1 does nothing while the notice waits. With no other package,
+  the notice offers "try again" only. A choice that does not load shows the
+  notice again ("Zone could not start"). `tests/surface_notice.rs` draws the
+  notice at the five sizes and fails if anything is squeezed or clipped.
 
 The logic runs on a thread of its own (`src/logic.rs`). Presses, ticks and
 models go to it as calls, one at a time in order; a `Tick` sent while the last
 waiting call is a `Tick` replaces it. Each outcome (requests, and the views
 when the state or model changed) is applied on the UI thread in the next
 frame, so a slow `update` or `view()` never holds up a frame. The limits above
-are enforced on that thread; unloading or switching interrupts a running call
-and joins the thread. The verifier
+are enforced on that thread, and each outcome carries its slowest engine call
+for the performance-defect log; unloading or switching interrupts a running
+call and joins the thread. The verifier
 records the slowest load as `loadMs` and the slowest call as `maxCallMs` in
 each package's summary. Slint is patched (`vendor/README.md`) to cache
 still layers. Numbers and screenshots: `evidence/`.

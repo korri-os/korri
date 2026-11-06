@@ -64,7 +64,7 @@ impl Run {
         let mut engine = engine::Engine::load(
             &source,
             engine::Limits {
-                call: Duration::from_secs(5),
+                stuck: Duration::from_secs(5),
                 ..engine::Limits::default()
             },
         )

@@ -17,8 +17,12 @@
 //! [`Event::Logic`]; its view is applied then, in the next frame. The UI
 //! thread never waits on logic after a surface loaded.
 //!
-//! A failure in steps 1 to 4 keeps the surface already shown. A logic
-//! violation at run time unloads the surface and restores the previous one.
+//! A failure in steps 1 to 4 keeps the surface already shown. At run time
+//! (contract amendment A5) a call over the 50 ms budget is logged as a
+//! performance defect and the surface keeps running. A call still running at
+//! the stuck limit, a throw, a broken contract or the heap limit unloads the
+//! surface, and the shell shows its own notice (`crate::notice`): it switches
+//! only when the person chooses to try the surface again or use another one.
 
 use crate::{
     backend::{Backend, FrameCounter, HostEvent, Placement},
@@ -28,6 +32,7 @@ use crate::{
     korrid::{Korrid, WatchEvent},
     logic::{Call, Done, Logic, Outcome},
     messages::{self, Button},
+    notice::{self, Choice, Notice, Reason},
     package::{self, Package},
     view::{Binder, Diff},
 };
@@ -37,6 +42,7 @@ use slint::ComponentHandle;
 use slint_interpreter::{ComponentDefinition, ComponentInstance};
 use std::{
     cell::Cell,
+    collections::HashMap,
     rc::Rc,
     sync::{mpsc, Arc},
     thread,
@@ -73,7 +79,7 @@ pub enum Event {
     /// A logic call returned (`crate::logic`).
     Logic {
         generation: u64,
-        outcome: Outcome,
+        outcome: Box<Outcome>,
     },
 }
 
@@ -144,6 +150,24 @@ struct Loaded {
     timing: LoadTiming,
 }
 
+/// The notice on screen (or, once a choice loaded a surface, until that surface's
+/// first frame).
+struct Shown {
+    notice: Notice,
+    component: ComponentInstance,
+    generation: u64,
+}
+
+/// Slow calls of one surface and one message type since its last log line.
+struct SlowCalls {
+    logged: Instant,
+    since: u32,
+    slowest: Duration,
+}
+
+/// At most one performance-defect line per surface and message type in this time.
+pub const SLOW_LOG_INTERVAL: Duration = Duration::from_secs(60);
+
 struct RequestJob {
     generation: u64,
     surface: String,
@@ -164,6 +188,12 @@ pub struct Shell {
     router: Router,
     current: Option<Loaded>,
     retiring: Vec<Loaded>,
+    /// The notice after an unload (A5). It takes the presses while no surface is current.
+    notice: Option<Shown>,
+    /// `notice.slint`, compiled the first time a notice is shown.
+    notice_definition: Option<ComponentDefinition>,
+    /// Slow calls by surface id and message `_tag`, for the rate-limited log.
+    slow: HashMap<(String, String), SlowCalls>,
     previous: Option<String>,
     next_generation: u64,
     jobs: mpsc::Sender<RequestJob>,
@@ -218,6 +248,9 @@ impl Shell {
             router: Router::new(true),
             current: None,
             retiring: Vec::new(),
+            notice: None,
+            notice_definition: None,
+            slow: HashMap::new(),
             previous: None,
             next_generation: 0,
             jobs,
@@ -262,6 +295,19 @@ impl Shell {
     /// Lines the shell logged, for tests.
     pub fn log(&self) -> &[String] {
         &self.log
+    }
+
+    /// The notice the person must answer, while no surface is current.
+    pub fn notice(&self) -> Option<&Notice> {
+        self.notice
+            .as_ref()
+            .filter(|_| self.current.is_none())
+            .map(|shown| &shown.notice)
+    }
+
+    /// A property of the shown notice's component, for tests.
+    pub fn notice_property(&self, name: &str) -> Option<slint_interpreter::Value> {
+        self.notice.as_ref()?.component.get_property(name).ok()
     }
 
     pub fn overlay_shown(&self) -> bool {
@@ -365,7 +411,7 @@ impl Shell {
             Event::Logic {
                 generation,
                 outcome,
-            } => self.logic_done(generation, outcome),
+            } => self.logic_done(generation, *outcome),
         }
     }
 
@@ -461,6 +507,8 @@ impl Shell {
     fn presses(&mut self, presses: Vec<Press>) {
         for press in presses {
             match press {
+                // While the notice waits for a choice, only its actions switch.
+                Press::Switch if self.current.is_none() => {}
                 Press::Switch => self.switch(),
                 Press::Button(button) => self.press(button),
             }
@@ -491,6 +539,10 @@ impl Shell {
     }
 
     pub fn press(&mut self, button: Button) {
+        if self.current.is_none() {
+            self.notice_press(button);
+            return;
+        }
         if let Some(current) = self.current.as_mut() {
             current.last_press = Instant::now();
         }
@@ -561,6 +613,7 @@ impl Shell {
     fn retire_drawn(&mut self) {
         if self.current.as_ref().is_some_and(|c| c.drawn.get()) {
             self.retire_all();
+            self.drop_notice();
             self.place_current();
         }
     }
@@ -590,6 +643,21 @@ impl Shell {
             .declare(&id, &current.declaration, current.logic.displays())
         {
             self.say(format!("{id} declare again failed: {error:#}"));
+        }
+    }
+
+    fn drop_notice(&mut self) {
+        if let Some(shown) = self.notice.take() {
+            self.hide_notice(shown);
+        }
+    }
+
+    fn hide_notice(&mut self, shown: Shown) {
+        if let Some(windows) = &mut self.focused {
+            windows.retain(|(g, _)| *g != shown.generation);
+        }
+        if !self.backend.shared_window() {
+            let _ = shown.component.hide();
         }
     }
 
@@ -720,7 +788,7 @@ impl Shell {
             Arc::new(move |outcome| {
                 post.post(Event::Logic {
                     generation,
-                    outcome,
+                    outcome: Box::new(outcome),
                 })
             })
         };
@@ -908,6 +976,12 @@ impl Shell {
             return;
         };
         let revision = outcome.revision.clone();
+        if let Ok(step) = &outcome.result {
+            if let Some((call, took)) = step.slowest {
+                let id = current.package.id.clone();
+                self.slow_call(&id, &step.message, call, took);
+            }
+        }
         let applied = (|| -> std::result::Result<Vec<Value>, Failure> {
             let step = outcome.result?;
             for request in &step.requests {
@@ -984,7 +1058,56 @@ impl Shell {
         }
     }
 
-    /// Unload a surface that broke a limit and restore the previous one.
+    /// A5: a call over the budget is a performance defect. Log it, at most one line per
+    /// surface and message type each `SLOW_LOG_INTERVAL`; the surface keeps running.
+    fn slow_call(&mut self, id: &str, message: &str, call: &str, took: Duration) {
+        let budget = self.options.limits.call;
+        if took <= budget {
+            return;
+        }
+        let key = (id.to_owned(), message.to_owned());
+        let line = match self.slow.get_mut(&key) {
+            None => {
+                self.slow.insert(
+                    key,
+                    SlowCalls {
+                        logged: Instant::now(),
+                        since: 0,
+                        slowest: Duration::ZERO,
+                    },
+                );
+                format!(
+                    "performance defect: {id} {call} for {message} took {} ms, over the {} ms call budget; {id} keeps running",
+                    took.as_millis(),
+                    budget.as_millis()
+                )
+            }
+            Some(slow) => {
+                slow.since += 1;
+                slow.slowest = slow.slowest.max(took);
+                if slow.logged.elapsed() < SLOW_LOG_INTERVAL {
+                    return;
+                }
+                let line = format!(
+                    "performance defect: {id} had {} more {message} calls over the {} ms call budget in {} s, the slowest {} ms; {id} keeps running",
+                    slow.since,
+                    budget.as_millis(),
+                    slow.logged.elapsed().as_secs(),
+                    slow.slowest.as_millis()
+                );
+                *slow = SlowCalls {
+                    logged: Instant::now(),
+                    since: 0,
+                    slowest: Duration::ZERO,
+                };
+                line
+            }
+        };
+        self.say(line);
+    }
+
+    /// A5: unload a surface that cannot work and show the notice. The shell does not
+    /// switch: the person chooses to try it again or use another surface.
     fn fail(&mut self, failed: Loaded, failure: Failure) {
         let id = failed.package.id.clone();
         let kind = match &failure {
@@ -992,36 +1115,128 @@ impl Shell {
             Failure::Request(_) => "contract",
             Failure::View(_) => "view",
         };
+        let reason = match &failure {
+            Failure::Logic(Violation::Time { .. }) => Reason::Stuck,
+            Failure::Logic(Violation::Memory { .. }) => Reason::Memory,
+            _ => Reason::Error,
+        };
         self.say(format!("{id} unloaded ({kind}): {failure}"));
+        let previous = self.previous.clone();
+        // The notice's window is up before the failed one goes.
+        self.show_notice(&id, reason, previous.as_deref());
         self.unload(failed);
-        let mut candidates: Vec<usize> = Vec::new();
-        if let Some(previous) = self.previous.take() {
-            if let Some(index) = self.packages.iter().position(|p| p.id == previous) {
-                candidates.push(index);
+        // Surfaces still retiring from an earlier switch go too.
+        self.retire_all();
+    }
+
+    /// Show the notice for `surface`, offering `preferred` (or else the first other
+    /// package) as the other surface.
+    fn show_notice(&mut self, surface: &str, reason: Reason, preferred: Option<&str>) {
+        let other = preferred
+            .filter(|p| *p != surface && self.packages.iter().any(|q| q.id == *p))
+            .map(str::to_owned)
+            .or_else(|| {
+                self.packages
+                    .iter()
+                    .find(|p| p.id != surface)
+                    .map(|p| p.id.clone())
+            });
+        let notice = Notice::new(surface, reason, other.as_deref());
+        self.say(format!(
+            "notice: {}; {}",
+            notice.heading(),
+            notice
+                .actions()
+                .iter()
+                .map(|(label, _)| label.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        if let Err(error) = self.draw_notice(notice) {
+            if let Some(quit) = &self.quit {
+                quit(Err(format!(
+                    "{surface} was unloaded and the notice failed: {error:#}"
+                )));
             }
         }
-        candidates.extend((0..self.packages.len()).filter(|&i| self.packages[i].id != id));
-        candidates.dedup();
-        for index in candidates {
-            if self.packages[index].id == id {
-                continue;
+    }
+
+    fn draw_notice(&mut self, notice: Notice) -> Result<()> {
+        let definition = match &self.notice_definition {
+            Some(definition) => definition.clone(),
+            None => {
+                let definition = notice::compile()?;
+                self.notice_definition = Some(definition.clone());
+                definition
             }
-            match self.load(index) {
-                Ok(loaded) => {
-                    let restored = loaded.package.id.clone();
-                    self.current = Some(loaded);
-                    self.say(format!("{restored} restored after {id} was unloaded"));
-                    self.retire_all();
-                    return;
-                }
-                Err(error) => {
-                    let other = self.packages[index].id.clone();
-                    self.say(format!("{other} not loaded: {error:#}"));
-                }
-            }
+        };
+        let component = definition.create()?;
+        notice::bind(&component, &notice)?;
+        self.next_generation += 1;
+        self.attach(component.window(), self.next_generation, 0);
+        self.backend
+            .place(component.window(), self.options.placement);
+        component.show()?;
+        let generation = self.next_generation;
+        let old = self.notice.replace(Shown {
+            notice,
+            component,
+            generation,
+        });
+        if let Some(old) = old {
+            self.hide_notice(old);
         }
-        if let Some(quit) = &self.quit {
-            quit(Err(format!("{id} was unloaded and no other surface loads")));
+        Ok(())
+    }
+
+    /// A press while the notice waits: move its focus, or act on the person's choice.
+    fn notice_press(&mut self, button: Button) {
+        let Some(shown) = self.notice.as_mut() else {
+            return;
+        };
+        let choice = shown.notice.press(button);
+        let _ = notice::bind(&shown.component, &shown.notice);
+        if let Some(choice) = choice {
+            self.choose(choice);
+        }
+    }
+
+    /// Load the surface the person chose. When it does not load, the notice says so.
+    fn choose(&mut self, choice: Choice) {
+        let Some(failed) = self.notice.as_ref().map(|s| s.notice.surface.clone()) else {
+            return;
+        };
+        let (id, other) = match &choice {
+            Choice::Retry(id) => (
+                id.clone(),
+                self.notice.as_ref().and_then(|s| s.notice.other.clone()),
+            ),
+            Choice::Use(id) => (id.clone(), Some(failed.clone())),
+        };
+        self.say(format!(
+            "notice: the person chose {}",
+            match &choice {
+                Choice::Retry(id) => format!("to try {id} again"),
+                Choice::Use(id) => format!("to use {id}"),
+            }
+        ));
+        let Some(index) = self.packages.iter().position(|p| p.id == id) else {
+            return;
+        };
+        match self.load(index) {
+            Ok(loaded) => {
+                self.previous = (id != failed).then_some(failed);
+                self.current = Some(loaded);
+                if self.backend.shared_window() {
+                    self.drop_notice();
+                    self.place_current();
+                }
+                // Otherwise the notice goes after the surface's first frame (`retire_drawn`).
+            }
+            Err(error) => {
+                self.say(format!("{id} not loaded: {error:#}"));
+                self.show_notice(&id, Reason::NotStarted, other.as_deref());
+            }
         }
     }
 }

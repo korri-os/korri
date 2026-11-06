@@ -536,7 +536,7 @@ fn walk(
         let mut engine = Engine::load(
             &source,
             Limits {
-                call: std::time::Duration::from_secs(5),
+                stuck: std::time::Duration::from_secs(5),
                 ..Limits::default()
             },
         )?;
@@ -856,7 +856,7 @@ fn main() -> Result<()> {
             let mut times = Vec::new();
             for _ in 0..20 {
                 let started = std::time::Instant::now();
-                Engine::load(&source, Limits { call: std::time::Duration::from_secs(5), ..Limits::default() })?;
+                Engine::load(&source, Limits { stuck: std::time::Duration::from_secs(5), ..Limits::default() })?;
                 times.push(started.elapsed().as_secs_f64() * 1000.0);
             }
             times.sort_by(f64::total_cmp);

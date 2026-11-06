@@ -201,7 +201,7 @@ fn plan_for(root: &Path, width: u32, height: u32) -> Value {
     let mut engine = engine::Engine::load(
         &source,
         engine::Limits {
-            call: std::time::Duration::from_secs(5),
+            stuck: std::time::Duration::from_secs(5),
             ..engine::Limits::default()
         },
     )
@@ -638,11 +638,11 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
         for (width, height) in SIZES {
             let mut korri = Korri::new(scenario["models"][0].clone());
             // A focus test, not a timing test: a busy machine must not fail it.
-            // The verifier and the shell hold the 50 ms call budget.
+            // Zone's timing tests below guard the 50 ms call budget (amendment A5).
             let mut engine = engine::Engine::load(
                 &source,
                 engine::Limits {
-                    call: std::time::Duration::from_secs(5),
+                    stuck: std::time::Duration::from_secs(5),
                     ..engine::Limits::default()
                 },
             )
@@ -851,7 +851,7 @@ fn logic_loads_well_inside_the_call_budget() {
         let _ = engine::Engine::load(
             &source,
             engine::Limits {
-                call: std::time::Duration::from_secs(5),
+                stuck: std::time::Duration::from_secs(5),
                 ..engine::Limits::default()
             },
         )
@@ -961,7 +961,7 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     let mut engine = engine::Engine::load(
         &source,
         engine::Limits {
-            call: std::time::Duration::from_secs(5),
+            stuck: std::time::Duration::from_secs(5),
             ..engine::Limits::default()
         },
     )

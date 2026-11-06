@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn rejects_throws_loops_and_heap_blow_ups() {
         assert!(reasons("throw new Error('planted')").contains("planted"));
-        assert!(reasons("while (true) {}").contains("budget"));
+        assert!(reasons("while (true) {}").contains("still running"));
         assert!(
             reasons("const a = []; while (true) a.push(new Uint8Array(1 << 20));").contains("heap")
         );
