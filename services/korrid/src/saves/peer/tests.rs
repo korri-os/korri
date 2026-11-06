@@ -36,6 +36,7 @@ struct TransferBehaviour {
     corrupt: bool,
     delay: Duration,
     records_delay: Duration,
+    record_read_barrier: Option<Arc<tokio::sync::Barrier>>,
     rpc_started: Arc<tokio::sync::Notify>,
     rpc_status: Option<StatusCode>,
     records_status: Option<StatusCode>,
@@ -60,6 +61,7 @@ async fn transfer_behaviour(
         let mut tag = String::new();
         if behaviour.measure
             || !behaviour.records_delay.is_zero()
+            || behaviour.record_read_barrier.is_some()
             || behaviour.records_status.is_some()
         {
             // Delay the real signed records request, not heads or in-use.
@@ -77,6 +79,11 @@ async fn transfer_behaviour(
             request = axum::extract::Request::from_parts(parts, Body::from(body));
             tag = envelope["request"]["_tag"].as_str().unwrap().to_owned();
             if tag == "app.saves.records" {
+                if envelope["request"]["payload"]["records"].is_null() {
+                    if let Some(barrier) = &behaviour.record_read_barrier {
+                        barrier.wait().await;
+                    }
+                }
                 if let Some(status) = behaviour.records_status {
                     return status.into_response();
                 }
@@ -1697,23 +1704,24 @@ fn prelaunch_checks_peers_side_by_side_inside_one_budget() {
 #[tokio::test]
 #[ignore = "subprocess helper; keeps the prelaunch budget clear of other tests' storage lock"]
 async fn prelaunch_checks_peers_side_by_side_inside_one_budget_child() {
-    let slow = || TransferBehaviour {
-        delay: Duration::from_millis(200),
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+    let paired = || TransferBehaviour {
+        record_read_barrier: Some(barrier.clone()),
         ..Default::default()
     };
     let local = Node::new(6, 3, TransferBehaviour::default()).await;
-    let first = Node::new(5, 3, slow()).await;
-    let second = Node::new(7, 3, slow()).await;
+    let first = Node::new(5, 3, paired()).await;
+    let second = Node::new(7, 3, paired()).await;
     let head = first.seed(b"progress on the first device", vec![]);
     let other = second.seed(b"progress on the second device", vec![]);
     for peer in [&first, &second] {
         local.remember(peer);
         peer.remember(&local);
     }
-    // Each peer has a new head: about four signed round trips of 200 ms
-    // (heads, its record, its payload, the receipt), 800 ms. One peer after
-    // the other would not fit in the budget.
-    let budget = Duration::from_millis(1400);
+    // Each peer waits for the other's record read before answering its own.
+    // Serial checks cannot finish, regardless of machine speed. The deadline
+    // leaves room for real TCP, signing and storage work under load.
+    let budget = Duration::from_secs(5);
     let started = std::time::Instant::now();
     let checks = local
         .service
