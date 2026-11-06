@@ -75,7 +75,7 @@ in
               pkgs.expat
             ]
           }"
-          exec bash "$KORRI_ROOT/clients/slint-spike/webos-cross.sh" shell-build "$@"
+          exec bash "$crate/../slint-spike/webos-cross.sh" shell-build "$@"
         '';
     shell-webos-package = makeApp "shell-webos-package" [ pkgs.SDL2 pkgs.fontconfig.lib ] ''
       ${desktop}

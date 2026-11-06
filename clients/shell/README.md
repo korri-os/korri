@@ -22,6 +22,9 @@ or log. F2 or L1+R1 switches to the next surface.
 Nix: `nix run .#shell-check` (fmt, clippy, tests), `nix run .#shell-run`,
 `nix run .#shell-proof`, `nix build .#korri-shell`.
 
+The LG B7 sample-data IPK and workstation SDL proof are described in
+[`webos/README.md`](webos/README.md).
+
 ## Device migration: the `korri-shell` user (2026-11)
 
 The shell runs as the system user `korri-shell`, with its state in
