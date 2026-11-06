@@ -11,6 +11,7 @@ import struct
 import subprocess
 import tarfile
 
+
 def run(*args):
     return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT)
 
@@ -102,7 +103,6 @@ def write_ipk(destination, directory):
                 output.write(b'\n')
 
 
-
 def native_headers(filename):
     data = pathlib.Path(filename).read_bytes()
     assert data[:8] == b'!<arch>\n', 'archive magic differs'
@@ -119,5 +119,3 @@ def native_headers(filename):
             assert data[offset:offset + 1] == b'\n', 'odd-size member padding differs'
             offset += 1
     assert offset == len(data), 'unexpected trailing archive content'
-
-

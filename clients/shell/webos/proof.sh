@@ -43,13 +43,17 @@ done
 [[ -n "$id" ]] || { echo 'no SDL window' >&2; exit 1; }
 # Zone compilation and model delivery happen after SDL creates its window.
 sleep 8
-import -window "$id" "$out/zone-1920x1080.png"
+# SDL can replace its X11 window while entering fullscreen. Re-read the
+# final window for input; capture the full output rather than a stale XID.
+id=$(xdotool search --onlyvisible --name '^Korri$' | head -1)
+xdotool getwindowgeometry "$id" >"$out/window.txt"
+import -window root "$out/zone-1920x1080.png"
 xdotool windowfocus --sync "$id" key F2
 sleep 5
-import -window "$id" "$out/pico-1920x1080.png"
+import -window root "$out/pico-1920x1080.png"
 xdotool windowfocus --sync "$id" key F2
 sleep 5
-import -window "$id" "$out/zone-return-1920x1080.png"
+import -window root "$out/zone-return-1920x1080.png"
 for image in zone pico zone-return; do
     test "$(identify -format '%wx%h' "$out/$image-1920x1080.png")" = 1920x1080
 done
