@@ -1,0 +1,21 @@
+    Finished `release` profile [optimized] target(s) in 1.10s
+     Running tests/layer_previews.rs (/tmp/forgerie-scratch/f-dafe0976/layer-before-target/release/deps/layer_previews-5e7420a4862b9526)
+
+running 1 test
+test zone_previews_are_byte_identical_cached_and_direct ... FAILED
+
+failures:
+
+---- zone_previews_are_byte_identical_cached_and_direct stdout ----
+
+thread 'zone_previews_are_byte_identical_cached_and_direct' (3451677) panicked at tests/layer_previews.rs:135:5:
+differ cached and direct: ["ZoneGames.page.Ready.1280x720.png", "ZoneGames.page.Ready.1920x1080.png", "ZoneGames.page.Ready.480x800.png", "ZoneGames.page.Ready.640x480.png"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    zone_previews_are_byte_identical_cached_and_direct
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.87s
+
+error: test failed, to rerun pass `--test layer_previews`

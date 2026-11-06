@@ -1,0 +1,24 @@
+   Compiling korri-shell v0.0.0 (/home/simonwjackson/code/sandbox/korri/.worktrees/c-aff3cdb3dbcc4501b64828ede4e8f147f20efb9a80c23aa64fc49b1a41fec2ba/clients/shell)
+    Finished `release` profile [optimized] target(s) in 8.37s
+     Running tests/window_item_cache.rs (/home/simonwjackson/code/sandbox/korri/.worktrees/c-aff3cdb3dbcc4501b64828ede4e8f147f20efb9a80c23aa64fc49b1a41fec2ba/.cache/shell-target/release/deps/window_item_cache-bbe1bff5db9eb8be)
+
+running 1 test
+test a_new_tree_measures_its_own_font_before_its_first_frame ... FAILED
+
+failures:
+
+---- a_new_tree_measures_its_own_font_before_its_first_frame stdout ----
+
+thread 'a_new_tree_measures_its_own_font_before_its_first_frame' (3495537) panicked at tests/window_item_cache.rs:49:9:
+assertion `left == right` failed: tree 0: measured another tree's font
+  left: 103.0
+ right: 391.0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_new_tree_measures_its_own_font_before_its_first_frame
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test window_item_cache`

@@ -1380,13 +1380,14 @@ impl RenderRectangle for WindowItem {
 
 #[cfg(feature = "std")]
 std::thread_local! {
-    /// Per item tree (by address), its window item, for the frame being drawn.
-    static WINDOW_ITEMS: core::cell::RefCell<std::collections::HashMap<usize, Option<crate::item_tree::ItemWeak>>> =
+    /// Per item tree (by address), its window item. Keep a weak reference to the tree too:
+    /// measurements also run between frames, when a destroyed row's address could otherwise
+    /// be reused. The weak reference reserves that allocation until the cache is cleared.
+    static WINDOW_ITEMS: core::cell::RefCell<std::collections::HashMap<usize, (crate::item_tree::ItemTreeWeak, crate::item_tree::ItemWeak)>> =
         Default::default();
 }
 
-/// Forgets the window items looked up for the last frame. Called before a frame is drawn:
-/// within a frame no item tree is created or destroyed, so an address names one tree.
+/// Forgets the window items looked up since the last frame.
 pub(crate) fn forget_window_items() {
     #[cfg(feature = "std")]
     WINDOW_ITEMS.with(|w| w.borrow_mut().clear());
@@ -1400,12 +1401,21 @@ fn next_window_item(item: &ItemRc) -> Option<ItemRc> {
     {
         let tree = item.item_tree();
         let key = vtable::VRef::as_ptr(ItemTreeRc::borrow(tree)).as_ptr() as usize;
-        if let Some(window) = WINDOW_ITEMS.with(|w| w.borrow().get(&key).cloned()) {
-            return window.and_then(|w| w.upgrade());
+        if let Some(window) = WINDOW_ITEMS.with(|w| {
+            w.borrow()
+                .get(&key)
+                .and_then(|(_, window)| window.upgrade())
+        }) {
+            return Some(window);
         }
-        let window = next_window_item_uncached(item);
-        WINDOW_ITEMS.with(|w| w.borrow_mut().insert(key, window.as_ref().map(|w| w.downgrade())));
-        return window;
+        let window = next_window_item_uncached(item)?;
+        // An unresolved tree may not have its parent yet during instantiation; do not
+        // remember a failed lookup after it is attached.
+        WINDOW_ITEMS.with(|w| {
+            w.borrow_mut()
+                .insert(key, (ItemTreeRc::downgrade(tree), window.downgrade()))
+        });
+        return Some(window);
     }
     #[cfg(not(feature = "std"))]
     next_window_item_uncached(item)
