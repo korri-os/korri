@@ -28,40 +28,71 @@ export function memo<Args extends readonly unknown[], Result>(size: number, keyO
 
 /**
  * `next` with every part equal to `prev`'s replaced by `prev`'s own object,
- * so unchanged parts keep their identity: memos keyed on them hit, and the
- * shell keeps the models of arrays that did not change.
+ * so unchanged parts keep their identity: memos keyed on them hit.
  */
 export function share<T>(prev: unknown, next: T): T {
-  if (prev === next) return next
+  if (prev === next || next === null || typeof next !== "object" || prev === null || typeof prev !== "object") return next
+  // Nothing is copied until a part is kept from neither side: a model equal
+  // to the last one, parsed afresh, allocates nothing here.
   if (Array.isArray(next)) {
-    if (!Array.isArray(prev) || prev.length !== next.length) return next.map((item, i) => share(Array.isArray(prev) ? prev[i] : undefined, item)) as T
-    let same = true
+    if (!Array.isArray(prev)) return next
+    const length = next.length
+    let same = prev.length === length
     let own = true
-    const out = next.map((item, i) => {
+    let out: unknown[] | undefined
+    for (let i = 0; i < length; i += 1) {
+      const item: unknown = next[i]
       const kept = share(prev[i], item)
+      if (out !== undefined) {
+        out.push(kept)
+        continue
+      }
+      const wasSame = same
       if (kept !== prev[i]) same = false
       if (kept !== item) own = false
-      return kept
-    })
-    return (same ? prev : own ? next : out) as T
+      if (!same && !own) {
+        // Every part before this one was kept from one side: copy that side.
+        out = (wasSame ? prev : next).slice(0, i) as unknown[]
+        out.push(kept)
+      }
+    }
+    return (out ?? (same ? prev : next)) as T
   }
-  if (next !== null && typeof next === "object") {
-    if (prev === null || typeof prev !== "object" || Array.isArray(prev)) return next
-    const before = prev as Record<string, unknown>
-    const keys = Object.keys(next)
-    let same = keys.length === Object.keys(before).length
-    let own = true
-    const out: Record<string, unknown> = {}
-    for (const key of keys) {
-      const item = (next as Record<string, unknown>)[key]
-      const kept = share(before[key], item)
-      if (kept !== before[key]) same = false
-      if (kept !== item) own = false
+  if (Array.isArray(prev)) return next
+  const before = prev as Record<string, unknown>
+  const after = next as Record<string, unknown>
+  let same = true
+  let own = true
+  let out: Record<string, unknown> | undefined
+  let keys = 0
+  for (const key in after) {
+    keys += 1
+    const item = after[key]
+    const kept = share(before[key], item)
+    if (out !== undefined) {
+      out[key] = kept
+      continue
+    }
+    const wasSame = same
+    if (kept !== before[key] || (kept === undefined && !(key in before))) same = false
+    if (kept !== item) own = false
+    if (!same && !own) {
+      // Every part before this one was kept from one side: copy that side.
+      const from = wasSame ? before : after
+      out = {}
+      for (const earlier in after) {
+        if (earlier === key) break
+        out[earlier] = from[earlier]
+      }
       out[key] = kept
     }
-    // Wholly equal: the old object. Nothing reused: the new object itself,
-    // so what was built from it stays keyed to it.
-    return (same ? prev : own ? next : out) as T
   }
+  if (out !== undefined) return out as T
+  if (same) {
+    for (const _ in before) keys -= 1
+    if (keys === 0) return prev as T
+  }
+  // Wholly equal: the old object. Nothing reused: the new object itself,
+  // so what was built from it stays keyed to it.
   return next
 }

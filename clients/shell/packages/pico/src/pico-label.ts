@@ -31,6 +31,9 @@ function hash(input: string): number {
 /** Below this luminance, dark ink disappears into the sticker. */
 const INK_FLIP = 140
 
+/** Whether each shell colour needs light ink, worked out once. */
+const LIGHT_INK: readonly boolean[] = PICO_SHELL_COLORS.map(color => picoLuminance(color) < INK_FLIP)
+
 /**
  * The cartridge families Pico draws differently. Each one is a shell colour
  * and a silhouette (the CSS reads `data-system`), so a shelf of mixed systems
@@ -70,12 +73,11 @@ export function picoCartLookFor(gameId: string, subtitle?: string): PicoCartLook
   /* The id's sticker, unless it lands on this system's plastic; then the id's
    * own shell pick, which by construction differs from its sticker. */
   const sticker = label.sticker !== shell ? label.sticker : label.shell
-  const color = PICO_SHELL_COLORS[sticker]
   return {
     system: known?.system ?? "other",
     shell,
     sticker,
-    ink: color !== undefined && picoLuminance(color) < INK_FLIP ? "light" : "dark",
+    ink: LIGHT_INK[sticker] === true ? "light" : "dark",
   }
 }
 
@@ -86,13 +88,9 @@ export function picoLabelFor(gameId: string): PicoLabel {
    * negative offset and an index outside the palette. */
   const offset = 1 + ((h >>> 8) % (PICO_SHELL_COLORS.length - 1))
   const sticker = (shell + offset) % PICO_SHELL_COLORS.length
-  const stickerColor = PICO_SHELL_COLORS[sticker]
   return {
     shell,
     sticker,
-    ink:
-      stickerColor !== undefined && picoLuminance(stickerColor) < INK_FLIP
-        ? "light"
-        : "dark",
+    ink: LIGHT_INK[sticker] === true ? "light" : "dark",
   }
 }

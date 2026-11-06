@@ -33,6 +33,7 @@ import { PICO_ATTRACT_AFTER_MS } from "../pico-attract"
 import { picoLaunchViewFromModel } from "../pico-launch-view"
 import { picoOverlayViewFrom } from "../pico-overlay-view"
 import { PICO_WINDOW_BEFORE_RESIZED, picoLayoutPlan, type PicoDisplayPlan } from "../pico-display-plan"
+import type { PicoShelfGame } from "../pico-shelf-game"
 import type { PicoMessage } from "../state/messages"
 import { initialNavigation, topLayer } from "../state/navigation"
 import { initialOnboarding } from "../state/onboarding"
@@ -42,9 +43,10 @@ import type { PicoRequest } from "../state/requests"
 import { attractShowing, canAttract, inviteNotices, launchOpen, runnerOpen, shownScreen } from "../state/shown"
 import { update as picoUpdate } from "../state/update"
 import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScreen, sameQuery } from "./catalog"
+import { interned } from "./intern"
 import { memo, share } from "./memo"
 import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
-import { cartView } from "./kit"
+import { cartView, type CartView, flatEntry } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
 import { qrPath } from "./qr"
 import { overlayScreen, runnerScreen } from "./sheet"
@@ -63,22 +65,6 @@ export function planFor(s: State, korri: KorriModel): Plan {
 }
 
 const planOf = memo(4, (window: State["window"], displays: KorriModel["displays"]) => [window, displays], picoLayoutPlan)
-
-/**
- * The shell parses Korri's model afresh on every publish. Parts equal to the
- * last model's keep the last model's objects, and a model equal in every
- * part is the last model itself: the screen, the view and every cart built
- * from it are reused, not rebuilt.
- */
-let lastIn: KorriModel | undefined
-let lastOut: KorriModel | undefined
-function interned(korri: KorriModel): KorriModel {
-  if (korri === lastIn || korri === lastOut) return lastOut as KorriModel
-  const out = share(lastOut, korri)
-  lastIn = korri
-  lastOut = out
-  return out
-}
 
 export function init(raw: KorriModel, preferences: Readonly<Record<string, string>>): State {
   const korri = interned(raw)
@@ -536,17 +522,26 @@ const fontFor = (id: State["font"]) => PICO_FONTS.find(font => font.id === id) ?
 
 /** The plan's exits for the regions on this screen: the view's `focusPlan`. */
 function focusPlanOf(s: State, korri: KorriModel, screen: Screen): FocusPlan {
-  return exitsOf(planFor(s, korri).exits, screen.targets)
+  return exitsOf(planFor(s, korri).exits, regionsOf(screen.targets))
 }
 
-const exitsOf = memo(6, (exits: Plan["exits"], targets: Screen["targets"]) => [exits, targets], resolveExits)
+/** The regions a screen's targets are in, as one string: a press makes a new
+ * screen, mostly over the same regions, whose exits are then the same plan. */
+const regionsOf = memo(4, (targets: Screen["targets"]) => [targets], (targets: Screen["targets"]) => {
+  const regions: string[] = []
+  for (const target of targets) if (!regions.includes(target.region)) regions.push(target.region)
+  return regions.join(" ")
+})
+
+const exitsOf = memo(8, (exits: Plan["exits"], regions: string) => [exits, regions], (exits: Plan["exits"], regions: string) =>
+  resolveExits(exits, regions === "" ? [] : regions.split(" ").map(region => ({ region }))))
 
 /** Each region's last focused target, kept for `remembered` exits. */
 function remember(s: State, korri: KorriModel): State {
   const overlaid = overlayView(s, korri)
   const screen = overlaid ?? catalogScreen(s, korri)
   const focus = overlaid === undefined ? s.focus : s.overlayFocus
-  const region = screen.targets.find(target => target.id === focus)?.region
+  const region = focus === undefined ? undefined : targetsOf(screen).get(focus)?.region
   if (region === undefined || focus === undefined || s.remembered[region] === focus) return s
   return { ...s, remembered: { ...s.remembered, [region]: focus } }
 }
@@ -564,59 +559,104 @@ function marked(value: unknown, screen: Screen): unknown {
 /** A screen's targets by id, built once per screen. */
 const targetsOf = memo(8, (screen: Screen) => [screen.targets], (screen: Screen) => new Map(screen.targets.map(target => [target.id, target] as const)))
 
-/** Parts of a view with no focus entry inside: they are marked as they are. */
-const PLAIN = new WeakSet<object>()
+/**
+ * What marking found in a part of a view, by the part: nothing to mark
+ * (`plain`: the part is its own marked form); a marked form that is the same
+ * on every screen, as the part holds only entries that are no target
+ * (`fixed`); or an entry whose children hold no entry, marked by its own
+ * target alone (`id`), as it was for the target's region and whether it was
+ * active. One lookup per part.
+ */
+type Mark =
+  | { readonly kind: "plain" }
+  | { readonly kind: "fixed"; readonly out: unknown }
+  | { readonly kind: "entry"; readonly id: string; readonly region: string; readonly active: boolean; readonly out: unknown }
 
+const MARKS = new WeakMap<object, Mark>()
+const PLAIN: Mark = { kind: "plain" }
+
+/** Whether the part `markIn` last returned is marked the same on every screen. */
+let stable = true
+
+/** `value` marked. A part returned as it is was plain: it holds no entry. */
 function markIn(value: unknown, targets: ReadonlyMap<string, Target<Act>>, active: Readonly<Record<string, string>>): unknown {
-  if (value === null || typeof value !== "object" || PLAIN.has(value)) return value
+  stable = true
+  if (value === null || typeof value !== "object") return value
+  const known = MARKS.get(value)
+  if (known !== undefined) {
+    if (known.kind === "plain") return value
+    if (known.kind === "fixed") return known.out
+    const target = targets.get(known.id)
+    if ((target === undefined ? "" : target.region) === known.region && (target !== undefined && active[target.region] === target.id) === known.active) {
+      stable = false
+      return known.out
+    }
+  }
   if (Array.isArray(value)) {
     let plain = true
-    const out = value.map(item => {
+    let fixed = true
+    const out: unknown[] = []
+    for (let i = 0; i < value.length; i += 1) {
+      const item: unknown = value[i]
+      // A call costs more than the test in QuickJS: values are kept here.
+      if (item === null || typeof item !== "object") {
+        out.push(item)
+        continue
+      }
       const kept = markIn(item, targets, active)
-      if (kept !== item || (item !== null && typeof item === "object" && !PLAIN.has(item))) plain = false
-      return kept
-    })
+      if (!stable) fixed = false
+      if (kept !== item) plain = false
+      out.push(kept)
+    }
+    stable = fixed
     if (plain) {
-      PLAIN.add(value)
+      MARKS.set(value, PLAIN)
       return value
     }
+    if (fixed) MARKS.set(value, { kind: "fixed", out })
     return out
   }
   const entry = value as Record<string, unknown>
   if ("$image" in entry) {
-    PLAIN.add(entry)
+    MARKS.set(entry, PLAIN)
     return entry
   }
   const focusEntry = "focused" in entry
-  if (focusEntry) {
-    // An entry whose children hold no entry is marked by its own target alone.
-    const id = entry["focusId"]
-    const target = typeof id === "string" ? targets.get(id) : undefined
-    const sign = target === undefined ? "" : `${target.region}|${active[target.region] === target.id}`
-    const cached = ENTRIES.get(entry)
-    if (cached !== undefined && cached.sign === sign && cached.plainChildren) return cached.out
-  }
   let plain = !focusEntry && !("focusId" in entry)
   let childrenPlain = true
-  const out: Record<string, unknown> = {}
-  for (const key in entry) {
-    if (key === "focusId") continue
-    const item = entry[key]
-    const kept = markIn(item, targets, active)
-    if (kept !== item || (item !== null && typeof item === "object" && !PLAIN.has(item))) {
-      plain = false
-      childrenPlain = false
+  let fixed = true
+  let out: Record<string, unknown>
+  if (focusEntry && flatEntry(entry)) {
+    // Copied whole, in C: QuickJS walks an object's fields far slower.
+    out = { ...entry }
+    delete out["focusId"]
+  } else {
+    out = {}
+    for (const key in entry) {
+      if (key === "focusId") continue
+      const item = entry[key]
+      if (item === null || typeof item !== "object") {
+        out[key] = item
+        continue
+      }
+      const kept = markIn(item, targets, active)
+      if (!stable) fixed = false
+      if (kept !== item) {
+        plain = false
+        childrenPlain = false
+      }
+      out[key] = kept
     }
-    out[key] = kept
   }
   if (plain) {
-    PLAIN.add(entry)
+    stable = true
+    MARKS.set(entry, PLAIN)
     return entry
   }
-  if ("focused" in entry) {
-    const id = entry["focusId"]
+  const id = entry["focusId"]
+  if (focusEntry) {
     const target = typeof id === "string" ? targets.get(id) : undefined
-    const sign = target === undefined ? "" : `${target.region}|${active[target.region] === target.id}`
+    const isActive = target !== undefined && active[target.region] === target.id
     // `target` tells main.slint whether `focused` is current: an entry that
     // is no target sends no `focused`, and the shell keeps a field it is not
     // sent, so its old value must not show.
@@ -625,15 +665,18 @@ function markIn(value: unknown, targets: ReadonlyMap<string, Target<Act>>, activ
       delete out["focused"]
     } else {
       out["focusRegion"] = target.region
-      if (active[target.region] === target.id) out["focusActive"] = true
+      if (isActive) out["focusActive"] = true
     }
-    ENTRIES.set(entry, { sign, out, plainChildren: childrenPlain })
+    if (typeof id === "string") {
+      // A target on another screen may be none here: marked per screen.
+      fixed = false
+      if (childrenPlain) MARKS.set(entry, { kind: "entry", id, region: target === undefined ? "" : target.region, active: isActive, out })
+    }
   }
+  if (fixed) MARKS.set(entry, { kind: "fixed", out })
+  stable = fixed
   return out
 }
-
-/** An entry's marked form, by the entry and its target's region and state. */
-const ENTRIES = new WeakMap<object, { readonly sign: string; readonly out: unknown; readonly plainChildren: boolean }>()
 
 /**
  * The targets a screen lists that its view does not draw (for tests): a
@@ -655,16 +698,8 @@ export function undrawnTargets(screen: Screen): string[] {
 }
 
 export function view(s: State, raw: KorriModel) {
-  const built = viewOf(s, interned(raw))
-  if (built === lastBuilt) return lastView
-  lastBuilt = built
-  lastView = share(lastView, built)
-  return lastView
+  return viewOf(s, interned(raw))
 }
-
-/** The last view, so rows that did not change keep their arrays. */
-let lastBuilt: unknown
-let lastView: ReturnType<typeof buildView> | undefined
 
 /** The view reads the screen's inputs, the notices' round and the font. */
 const viewOf = memo(
@@ -681,25 +716,35 @@ function buildView(s: State, korri: KorriModel) {
   const shown = shownScreen(s.nav, model)
   const attract = model.onboarding === undefined && attractShowing(s.nav, model) && shown._tag === "Home" && shown.view._tag === "Shelf"
   const plan = splitPlan(planFor(s, korri).split)
+  // On one display the attract covers the whole window: the page under it
+  // is not sent (the shell keeps what it was last sent), and nothing on it
+  // takes the cursor.
+  const covering = attract && plan === undefined
   const drawn = {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
     layer: model.onboarding === undefined ? "catalog" : "setup",
     covered: runnerOpen(model) || launchOpen(model),
-    ...screen.view,
+    ...(covering ? { page: screen.view["page"] } : screen.view),
     notices: notices.map(notice => ({ playing: `${notice.personName} is playing`, game: notice.gameTitle, where: `on ${notice.deviceLabel}` })),
     noticeRound: s.noticeRound,
     attract: {
       shown: attract,
-      carts: attract && shown._tag === "Home" && shown.view._tag === "Shelf"
-        ? shown.view.games.slice(0, 12).map(game => cartView(game))
-        : [],
+      carts: attract && shown._tag === "Home" && shown.view._tag === "Shelf" ? attractCarts(shown.view.games) : NO_CARTS,
       chosen: shown._tag === "Home" && shown.view._tag === "Shelf" ? chosenIndex(shown.view.games, s.nav.home.selectedGameId) : 0,
     },
-    split: plan ?? { on: false, showX: 0, showY: 0, showW: 0, showH: 0, chooseX: 0, chooseY: 0, chooseW: 0, chooseH: 0 },
+    split: plan ?? NO_SPLIT,
   }
-  return { ...(marked(drawn, screen) as typeof drawn), focusPlan: focusPlanOf(s, korri, screen) }
+  return { ...(marked(drawn, screen) as typeof drawn), focusPlan: covering ? {} : focusPlanOf(s, korri, screen) }
 }
+
+const NO_CARTS: readonly CartView[] = []
+
+/** The attract's parade: the window's first twelve games, once per window. */
+const attractCarts = memo(2, (games: readonly PicoShelfGame[]) => [games], (games: readonly PicoShelfGame[]) => games.slice(0, 12).map(game => cartView(game)))
+
+/** One screen: main.slint reads the rectangles only on a split, so they are not sent. */
+const NO_SPLIT = { on: false }
 
 /** Where Pico's display plan (src/pico-display-plan.ts) puts the two screens, for main.slint. */
 function splitPlan(plan: PicoDisplayPlan | undefined) {
@@ -709,15 +754,8 @@ function splitPlan(plan: PicoDisplayPlan | undefined) {
 }
 
 export function overlay(s: State, raw: KorriModel) {
-  const built = overlayOf(s, interned(raw))
-  if (built === lastOverlayBuilt) return lastOverlay
-  lastOverlayBuilt = built
-  lastOverlay = share(lastOverlay, built)
-  return lastOverlay
+  return overlayOf(s, interned(raw))
 }
-
-let lastOverlayBuilt: unknown
-let lastOverlay: ReturnType<typeof buildOverlay> | undefined
 
 const overlayOf = memo(
   2,

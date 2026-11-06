@@ -6,7 +6,7 @@
  */
 import { picoInitials } from "../pico-initials"
 import { picoCartLookFor } from "../pico-label"
-import { picoStatsFor } from "../pico-detail-view"
+import { picoPlayed } from "../pico-detail-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
 
 export interface HintView { readonly key: "a" | "b" | "lr"; readonly label: string }
@@ -152,14 +152,53 @@ function buildCart(
   game: Pick<PicoShelfGame, "id" | "title" | "subtitle" | "artUrl" | "resumable" | "playCount" | "totalPlaytimeSeconds">,
   options: { readonly hero?: boolean; readonly focused?: boolean; readonly focusId?: string; readonly band?: boolean },
 ): CartView {
+  const base = cartBase(game)
+  // The NEW band is the shelf's: other racks (the grid, Find, the store) draw none.
+  const progress = game.resumable === true ? "resume" : base.unplayed && options.band !== false ? "new" : "played"
+  // Set field by field: QuickJS spreads an object several times slower.
+  const cart: { -readonly [K in keyof CartView]: CartView[K] } = {
+    id: base.id,
+    title: base.title,
+    hasArt: base.hasArt,
+    artRatio: base.artRatio,
+    initials: base.initials,
+    system: base.system,
+    shell: base.shell,
+    sticker: base.sticker,
+    stickerInkLight: base.stickerInkLight,
+    progress,
+    hero: options.hero === true,
+    focused: options.focused === true,
+  }
+  if (base.art !== undefined) cart.art = base.art
+  if (options.focusId !== undefined) cart.focusId = options.focusId
+  FLAT_ENTRIES.add(cart)
+  return cart
+}
+
+/** Entries whose fields hold no other entry (a cart: its art is plain).
+ * view() copies one whole rather than field by field (program.ts, `markIn`). */
+const FLAT_ENTRIES = new WeakSet<object>()
+
+export const flatEntry = (entry: object): boolean => FLAT_ENTRIES.has(entry)
+
+/** What a game's carts share whatever their look: worked out once per game
+ * object, as a cart in a new look (lifted, focused, in the attract) is
+ * otherwise worked out again. */
+interface CartBase extends Pick<CartView, "id" | "title" | "art" | "hasArt" | "artRatio" | "initials" | "system" | "shell" | "sticker" | "stickerInkLight"> {
+  /** Korri gave no play figure: a shelf's cart wears the NEW band. */
+  readonly unplayed: boolean
+}
+
+function cartBase(game: Pick<PicoShelfGame, "id" | "title" | "subtitle" | "artUrl" | "playCount" | "totalPlaytimeSeconds">): CartBase {
+  const known = BASES.get(game)
+  if (known !== undefined) return known
   const look = picoCartLookFor(game.id, game.subtitle)
   const cover = art(game.artUrl)
-  // The NEW band is the shelf's: other racks (the grid, Find, the store) draw none.
-  const progress = game.resumable === true ? "resume" : picoStatsFor(game).length === 0 && options.band !== false ? "new" : "played"
-  return {
+  const base: CartBase = {
     id: game.id,
     title: game.title,
-    ...(cover === undefined ? {} : { art: cover }),
+    art: cover,
     hasArt: cover !== undefined,
     artRatio: artRatio(game.artUrl),
     initials: picoInitials(game.title),
@@ -167,12 +206,13 @@ function buildCart(
     shell: look.shell,
     sticker: look.sticker,
     stickerInkLight: look.ink === "light",
-    progress,
-    hero: options.hero === true,
-    focused: options.focused === true,
-    ...(options.focusId === undefined ? {} : { focusId: options.focusId }),
+    unplayed: !picoPlayed(game),
   }
+  BASES.set(game, base)
+  return base
 }
+
+const BASES = new WeakMap<object, CartBase>()
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
@@ -227,11 +267,17 @@ function measuredRatio(url: string): number {
   return Math.max(1, Math.round(64 * Math.sqrt(shape))) / Math.max(1, Math.round(64 / Math.sqrt(shape)))
 }
 
-/** The narrowest art among carts: it makes the tallest cart, and every
- * shelf slot is that tall. */
-export function narrowestArt(carts: readonly CartView[]): number {
-  return carts.reduce((narrowest, cart) => Math.min(narrowest, cart.hasArt ? cart.artRatio : 1), carts.length === 0 ? 1 : Number.POSITIVE_INFINITY)
+/** The narrowest art among games' carts: it makes the tallest cart, and
+ * every shelf slot is that tall. Once per list of games. */
+export function narrowestArt(games: readonly Pick<PicoShelfGame, "artUrl">[]): number {
+  const known = NARROWEST.get(games)
+  if (known !== undefined) return known
+  const narrowest = games.reduce((least, game) => Math.min(least, art(game.artUrl) === undefined ? 1 : artRatio(game.artUrl)), games.length === 0 ? 1 : Number.POSITIVE_INFINITY)
+  NARROWEST.set(games, narrowest)
+  return narrowest
 }
+
+const NARROWEST = new WeakMap<object, number>()
 
 export const A = (label: string): HintView => ({ key: "a", label })
 export const B = (label: string): HintView => ({ key: "b", label })

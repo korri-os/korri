@@ -15,6 +15,7 @@ import {
   picoCollectionsFrom,
   picoHeroPick,
 } from "../pico-library-view"
+import { picoShelfGame } from "../pico-home-view"
 import type { PicoScreenView } from "../pico-screen-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
 import type { PicoHomeMode } from "../pico-types"
@@ -99,6 +100,10 @@ export interface LaunchStageView {
 
 const EMPTY_CART: CartView = cartView({ id: "", title: "" })
 const NO_STAGE: StageView = { shown: false, title: "", subtitle: "", kicker: "", chips: [], index: 0, total: 0, cart: EMPTY_CART }
+/** A card not drawn: the shell keeps the fields it is not sent. */
+const HIDDEN_CARD = { shown: false }
+const NO_HERO: HeroView = { title: "", subtitle: "", reason: "", chips: [], open: button("OPEN"), resume: [] }
+const NO_LAUNCH: LaunchStageView = { kicker: "", detail: "", bar: NO_BAR, steps: NO_STEPS, hasCart: false, cart: EMPTY_CART, phase: "starting", actions: [] }
 
 /** RESUME, the download, then the play facts or NEVER PLAYED (PicoGameFacts). */
 export function factChips(game: PicoShelfGame): readonly ChipView[] {
@@ -158,15 +163,33 @@ function homeHints(
 }
 
 function shelfReadout(games: readonly PicoShelfGame[], total: number): string {
-  const resumable = games.filter(game => game.resumable === true).length
+  const resumable = resumableIn(games)
   const carts = `${total} ${total === 1 ? "CART" : "CARTS"}`
   return resumable === 0 ? carts : `${carts} · ${resumable} RESUMABLE`
 }
 
+/** How many of the games resume, once per list of games. */
+function resumableIn(games: readonly PicoShelfGame[]): number {
+  const known = RESUMABLE.get(games)
+  if (known !== undefined) return known
+  const count = games.filter(game => game.resumable === true).length
+  RESUMABLE.set(games, count)
+  return count
+}
+
+const RESUMABLE = new WeakMap<object, number>()
+
 /** The cart the shelf has chosen: the kept one, else the first. */
 export function chosenIndex(games: readonly PicoShelfGame[], selected: string | undefined): number {
-  const found = games.findIndex(game => game.id === selected)
+  const found = indexOfGame(games, selected)
   return found === -1 ? 0 : found
+}
+
+/** Where the game `id` is in `games`, or -1. A loop: QuickJS calls a
+ * callback for each game far slower. */
+function indexOfGame(games: readonly PicoShelfGame[], id: string | undefined): number {
+  for (let i = 0; i < games.length; i += 1) if (games[i]?.id === id) return i
+  return -1
 }
 
 const statusActions = (actions: readonly SurfaceAction[] | undefined, focused: string | undefined): readonly ButtonView[] =>
@@ -175,6 +198,59 @@ const statusActions = (actions: readonly SurfaceAction[] | undefined, focused: s
     disabled: !action.enabled,
     ...mark(`status:${action.id}`, focused),
   }))
+
+/**
+ * How many carts either side of the chosen one PicoCartShelf can show on a
+ * screen `width` virtual pixels wide (the plan's). The rack scrolls only to
+ * keep the chosen cart in view with a slot to spare on its left and two on
+ * its right, so a cart shows only while it lies less than the width less a
+ * slot away. A slot is at least 29 virtual pixels wide and 32 apart (a short
+ * body's: 20 of art, 6 of shell, 3 of shadow, 3 of gap).
+ */
+function shelfReach(width: number): number {
+  return Math.max(1, Math.floor((width - 29) / 32) + 1)
+}
+
+/** The chosen game on the stage, once per game and place: a view part kept
+ * from the last view is not looked through again (program.ts, `markIn`). */
+function stageView(game: PicoShelfGame, index: number, total: number): StageView {
+  const key = `${index}|${total}`
+  let known = STAGES.get(game)
+  if (known === undefined) {
+    known = new Map()
+    STAGES.set(game, known)
+  }
+  const cached = known.get(key)
+  if (cached !== undefined) return cached
+  const stage: StageView = {
+    shown: true,
+    title: game.title,
+    subtitle: game.subtitle ?? "",
+    kicker: (game.section ?? "").toUpperCase(),
+    chips: factChips(game),
+    index,
+    total,
+    cart: cartView(game, { hero: true }),
+  }
+  if (known.size > 8) known.clear()
+  known.set(key, stage)
+  return stage
+}
+
+const STAGES = new WeakMap<object, Map<string, StageView>>()
+
+/** Home's frame, once per words and lead: as `stageView`. */
+function homeFrame(label: string, clock: string, readout: string, hints: readonly HintView[], hasLead: boolean, leadFocused: boolean, lit: boolean): FrameView {
+  const key = `${label}|${clock}|${readout}|${hints.map(hint => `${hint.key}:${hint.label}`).join(",")}|${hasLead}|${leadFocused}|${lit}`
+  const cached = HOME_FRAMES.get(key)
+  if (cached !== undefined) return cached
+  const built = frame({ label, clock, readout, hints, hasLead, lead: button(MENU_LABEL, { ...mark("menu", leadFocused ? "menu" : undefined), lit }) })
+  if (HOME_FRAMES.size > 16) HOME_FRAMES.clear()
+  HOME_FRAMES.set(key, built)
+  return built
+}
+
+const HOME_FRAMES = new Map<string, FrameView>()
 
 /** A shelf cart's target, once per game, place and aim: a shelf of carts is
  * rebuilt on every press otherwise. */
@@ -217,8 +293,8 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   const chosenGame = games[chosen]
   const chosenId = chosenGame === undefined ? undefined : `cart:${chosenGame.id}`
 
-  // MENU's list: FIND, GET GAMES, SETTINGS, VIEW.
-  const entries: { readonly label: string; readonly detail: string; readonly act: Act }[] = [
+  // MENU's list, while it is open: FIND, GET GAMES, SETTINGS, VIEW.
+  const entries: readonly { readonly label: string; readonly detail: string; readonly act: Act }[] = !menuOpen ? [] : [
     { label: "FIND", detail: "", act: [nav({ _tag: "ChoseMenuFind" })] },
     ...(model.store === undefined ? [] : [{ label: "GET GAMES", detail: "", act: [nav({ _tag: "ChoseMenuStore" })] }]),
     { label: "SETTINGS", detail: "", act: [nav({ _tag: "ChoseMenuSettings" })] },
@@ -235,10 +311,12 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   let body = "none"
   let stage: StageView = NO_STAGE
   let carts: CartView[] = []
+  /** The first game of the window the shelf's carts start at. */
+  let shelfStart = 0
   let sections: GridSectionView[] = []
-  let hero: HeroView = { title: "", subtitle: "", reason: "", chips: [], open: button("OPEN"), resume: [] }
+  let hero: HeroView = NO_HERO
   let shownCard: CardView = NO_CARD
-  let launch: LaunchStageView = { kicker: "", detail: "", bar: NO_BAR, steps: NO_STEPS, hasCart: false, cart: EMPTY_CART, phase: "starting", actions: [] }
+  let launch: LaunchStageView = NO_LAUNCH
   let invites: InviteView[] = []
 
   if (menuOpen) {
@@ -281,23 +359,19 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   if (view._tag === "Shelf" && home.mode === "shelf") {
     body = "shelf"
     const aiming = home.aim !== undefined
-    carts = games.map((game, i) => {
+    // Only the carts the shelf can show around the chosen and focused ones
+    // are sent, and are targets: a view's JSON costs by its values.
+    const at = focused === undefined || !focused.startsWith("cart:") ? chosen : indexOfGame(games, focused.slice("cart:".length))
+    const reach = shelfReach(ctx.plan.width)
+    shelfStart = Math.max(0, Math.min(chosen, at === -1 ? chosen : at) - reach)
+    const end = Math.min(games.length, Math.max(chosen, at) + reach + 1)
+    carts = games.slice(shelfStart, end).map((game, k) => {
+      const i = shelfStart + k
       const id = `cart:${game.id}`
       if (!menuOpen) targets.push(shelfTarget(game, firstIndex + i, aiming))
       return cartView(game, { hero: i === chosen, focused: focused === id, focusId: id })
     })
-    if (chosenGame !== undefined) {
-      stage = {
-        shown: true,
-        title: chosenGame.title,
-        subtitle: chosenGame.subtitle ?? "",
-        kicker: (chosenGame.section ?? "").toUpperCase(),
-        chips: factChips(chosenGame),
-        index: firstIndex + chosen + 1,
-        total,
-        cart: cartView(chosenGame, { hero: true }),
-      }
-    }
+    if (chosenGame !== undefined) stage = stageView(chosenGame, firstIndex + chosen + 1, total)
   } else if (view._tag === "Shelf" && home.mode === "grid") {
     body = "grid"
     const columns = ctx.plan.columns
@@ -433,34 +507,38 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     ...(chosenId === undefined ? {} : { active: { shelf: chosenId } }),
     view: {
       page: "home",
-      frame: frame({
-        label: MODE_LABELS[home.mode],
-        clock: korri.clockLabel ?? "",
-        readout: view._tag === "Shelf" ? shelfReadout(games, total) : "",
-        hints: homeHints(view, menuOffered, menuOpen, home.aim),
-        hasLead: menuOffered,
-        lead: button(MENU_LABEL, { ...mark("menu", focused), lit: menuOpen }),
-      }),
-      card: shownCard,
+      frame: homeFrame(
+        MODE_LABELS[home.mode],
+        korri.clockLabel ?? "",
+        view._tag === "Shelf" ? shelfReadout(games, total) : "",
+        homeHints(view, menuOffered, menuOpen, home.aim),
+        menuOffered,
+        focused === "menu",
+        menuOpen,
+      ),
+      // Home draws its card only as its body (PicoHomeLayout).
+      card: body === "card" ? shownCard : HIDDEN_CARD,
       home: {
         body,
         mode: home.mode,
         carts,
-        selectedIndex: chosen,
-        firstIndex,
+        selectedIndex: chosen - shelfStart,
+        firstIndex: firstIndex + shelfStart,
         total,
         cursorOnShelf: focused !== undefined && focused.startsWith("cart:"),
-        narrowestArt: narrowestArt(carts),
+        narrowestArt: body === "shelf" ? narrowestArt(games) : 1,
         stage,
         invites,
         invitesLabel: `${invites.length} ${invites.length === 1 ? "GAME" : "GAMES"}`,
         menuOpen,
-        menu: entries.map(entry => button(entry.label, { detail: entry.detail, ...mark(`menu:${entry.label}`, focused) })),
         sections,
         columns: ctx.plan.columns,
         focusRow: focusedRow(targets, focused),
-        hero,
-        launch,
+        // A layer not drawn is not sent: the shell keeps a field it is not
+        // sent, and the layer is sent whole whenever it shows.
+        ...(menuOpen ? { menu: entries.map(entry => button(entry.label, { detail: entry.detail, ...mark(`menu:${entry.label}`, focused) })) } : {}),
+        ...(body === "hero" ? { hero } : {}),
+        ...(body === "stage" ? { launch } : {}),
       },
     },
   }
@@ -468,7 +546,13 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
 
 /** The grid row the cursor is on, for main.slint's scroll. */
 function focusedRow(targets: readonly Target<Act>[], focused: string | undefined): number {
-  const target = targets.find(candidate => candidate.id === focused)
+  let target: Target<Act> | undefined
+  for (const candidate of targets) {
+    if (candidate.id === focused) {
+      target = candidate
+      break
+    }
+  }
   return target === undefined || target.box.y >= 900 ? 0 : Math.floor(target.box.y / 30)
 }
 
@@ -501,19 +585,11 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
   const answered = catalog._tag === "Ready" && sameQuery(catalog.query, findQuery(search))
   const games = answered && model.catalog._tag === "Ready" ? model.catalog.games : []
   const firstIndex = catalog._tag === "Ready" ? catalog.firstIndex : 0
-  const results = games.map(game => {
+  const results = games.map((game, i) => {
     const id = `result:${game.id}`
-    targets.push({ id, region: "results", box: { x: (firstIndex + games.indexOf(game)) * 10, y: 100, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })] })
-    const shelf: PicoShelfGame = {
-      id: game.id,
-      title: game.title,
-      ...(game.subtitle === undefined ? {} : { subtitle: game.subtitle }),
-      ...(game.coverArtUrl === undefined ? {} : { artUrl: game.coverArtUrl }),
-      ...(game.resumable === undefined ? {} : { resumable: game.resumable }),
-      ...(game.playCount === undefined ? {} : { playCount: game.playCount }),
-      ...(game.totalPlaytimeSeconds === undefined ? {} : { totalPlaytimeSeconds: game.totalPlaytimeSeconds }),
-    }
-    return { cart: cartView(shelf, { ...mark(id, focused), hero: focused === id, band: false }), title: game.title }
+    targets.push({ id, region: "results", box: { x: (firstIndex + i) * 10, y: 100, w: 9, h: 20 }, act: [nav({ _tag: "OpenedGame", gameId: game.id })] })
+    // The game as the shelf holds it, once per game: its carts are kept.
+    return { cart: cartView(picoShelfGame(game), { ...mark(id, focused), hero: focused === id, band: false }), title: game.title }
   })
   const focusedResult = results.findIndex(result => focused === `result:${result.cart.id}`)
   return {

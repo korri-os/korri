@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import type { CatalogFrom, CatalogQuery, KorriModel, SurfaceGame, SurfaceRequest } from "../src/model"
-import { init, update, view } from "../src/native/program"
+import { catalogScreen, init, update, view } from "../src/native/program"
 import type { State } from "../src/native/types"
 import { fixtureModel } from "./fixtures/fixture-host"
 
@@ -265,11 +265,32 @@ describe("a publish that changes nothing", () => {
     const again = update(state, { _tag: "KorriPublished" }, parsed())
     expect(again.state).toBe(state)
     expect(view(state, parsed())).toBe(before)
-    // A move along the shelf changes the carts, not MENU's list or attract's.
+    // A move along the shelf changes the carts. MENU's list is not sent
+    // while MENU is closed, and attract's carts stay the one empty list.
     const moved = update(state, { _tag: "Pressed", button: "right" }, parsed()).state
     const after = view(moved, parsed()) as typeof before
     expect(after).not.toBe(before)
     expect(after.attract.carts).toBe(before.attract.carts)
-    expect(after.home.menu).toBe(before.home.menu)
+    expect(after.home.menu).toBeUndefined()
+  })
+})
+
+describe("the shelf sends what the rack can show", () => {
+  test("only the carts within a screen's width of the chosen one are sent and are targets, placed where the rack draws them", () => {
+    const games: SurfaceGame[] = Array.from({ length: 120 }, (_, i) => ({ id: `g${i}`, title: `Game ${i}` }))
+    const korri = new Korri(games)
+    const pico = run(korri)
+    pico.deliver({ _tag: "Resized", width: 640, height: 480 })
+    for (let i = 0; i < 70; i += 1) pico.press("right")
+    const home = pico.view()["home"] as { carts: { id: string; hero: boolean }[]; firstIndex: number; selectedIndex: number; total: number }
+    // 320 virtual pixels wide: a cart up to 9 slots away may show, so 10 each side.
+    expect(home.carts.length).toBe(21)
+    expect(home.carts[home.selectedIndex]?.id).toBe("g70")
+    expect(home.carts[home.selectedIndex]?.hero).toBe(true)
+    // The rack places a cart by firstIndex + its row: the game's place in the library.
+    expect(home.carts.map((cart, row) => `${cart.id}@${home.firstIndex + row}`)).toEqual(home.carts.map(cart => `${cart.id}@${cart.id.slice(1)}`))
+    expect(home.total).toBe(120)
+    const shelf = catalogScreen(pico.state(), korri.model()).targets.filter(target => target.region === "shelf").map(target => target.id)
+    expect(shelf).toEqual(home.carts.map(cart => `cart:${cart.id}`))
   })
 })

@@ -40,14 +40,25 @@ const cache = new WeakMap<KorriModel, SurfaceModel>()
 export function picoModelFrom(model: KorriModel): SurfaceModel {
   const cached = cache.get(model)
   if (cached !== undefined) return cached
-  const catalog: SurfaceCatalog = model.catalog._tag === "Ready"
-    ? {
-        _tag: "Ready",
-        games: model.catalog.window,
-        complete: model.catalog.before === undefined && model.catalog.after === undefined,
-      }
-    : model.catalog
+  const catalog = picoCatalogFrom(model.catalog)
   const shaped: SurfaceModel = { ...model, catalog }
   cache.set(model, shaped)
+  return shaped
+}
+
+const catalogs = new WeakMap<KorriCatalog, SurfaceCatalog>()
+
+/** Korri's window as Pico's list, one object per window: a publish that
+ * keeps the catalog keeps every game view and cart built from it. */
+function picoCatalogFrom(catalog: KorriCatalog): SurfaceCatalog {
+  if (catalog._tag !== "Ready") return catalog
+  const cached = catalogs.get(catalog)
+  if (cached !== undefined) return cached
+  const shaped: SurfaceCatalog = {
+    _tag: "Ready",
+    games: catalog.window,
+    complete: catalog.before === undefined && catalog.after === undefined,
+  }
+  catalogs.set(catalog, shaped)
   return shaped
 }

@@ -99,6 +99,35 @@ The last two run the shell's headless probe
 `cargo build --release --features fixture --example surface-probe` in
 `clients/shell`, or point `PICO_PROBE` at it.
 
+## Limits
+
+Each `update`, `view` and `overlay` call runs under the shell's 50 ms budget
+(contract 3), and the RG353M idles at 408 MHz. `tests/pico_package.rs` in
+`clients/shell` (`calls_stay_well_inside_the_budget_on_a_slow_clock`) counts
+the instructions of every call the shell makes over 10,000 games at 640x480
+and holds each under 10 ms on the device, with Zone's measure of the clock
+(`tests/zone_package.rs`). The library's first arrival, once a boot, may take
+15 ms: every cart on the shelf is worked out then. QuickJS walks and builds
+objects slowly and writes JSON by the value, so the logic does as little of
+each as it can:
+
+- A publish keeps every part of the model that did not change, and each game
+  of the window, as the last model's objects (`src/native/intern.ts`): a game
+  is compared field by field, any other part by its JSON text. The screen,
+  the carts and the view built from them are reused.
+- A game's shelf conversion, its cart, its target and the chosen game's
+  stage are kept per game object, so they last across windows.
+- The shelf sends only the carts the rack can show: those a screen's width
+  from the chosen and focused carts (`shelfReach` in `src/native/catalog.ts`),
+  with `firstIndex` and `selectedIndex` counted from the first sent.
+- A layer not drawn is not sent: MENU's list while it is closed, the hero
+  and the launch stage under another body, home's card unless it is the
+  body, the split's rectangles on one screen, and the page under the
+  attract. The shell keeps a field it is not sent, and a layer is sent whole
+  whenever it shows.
+- Marking the focus convention (`markIn` in `src/native/program.ts`) is
+  remembered per part of the view, and a cart is copied whole.
+
 ## Preview
 
 ```sh

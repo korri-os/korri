@@ -73,6 +73,12 @@ export function picoStatsFor(
   return stats
 }
 
+/** Whether Korri gave any play figure: `picoStatsFor` is not empty. Without
+ * building the chips, for every cart. */
+export function picoPlayed(game: Pick<SurfaceGame, "playCount" | "totalPlaytimeSeconds">): boolean {
+  return game.playCount !== undefined || game.totalPlaytimeSeconds !== undefined
+}
+
 /**
  * What a game still has to fetch before it plays, as one chip: "1.5 GB
  * DOWNLOAD", or "DOWNLOAD NEEDED" when Korri knows that but not how much;
