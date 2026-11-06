@@ -303,9 +303,12 @@ impl SdlPlatform {
             host_keys: None,
         };
         if platform.webos_abi {
-            let status = match webos_cursor::WebosCursor::open(platform.sdl().SDL_ShowCursor) {
+            let status = match webos_cursor::WebosCursor::open(
+                platform.sdl().SDL_ShowCursor,
+                platform.sdl().SDL_SetCursor,
+            ) {
                 Ok(cursor) => {
-                    eprintln!("sdl: webOS cursor active: system SDL_ShowCursor; hide on D-pad, restore on motion/484; no native visibility request on B7");
+                    eprintln!("sdl: webOS cursor active: system SDL_ShowCursor with repeated-hide refresh; restore on motion/484; transition trace capped at 200 lines");
                     platform.webos_cursor = Some(cursor);
                     probe::Record::Cursor(None)
                 }
@@ -495,11 +498,11 @@ impl SdlPlatform {
                 // SDL_ShowCursor(0) stays latched off after a shake. Restore
                 // only a hide we own; LG still owns its normal idle policy.
                 if let Some(cursor) = &self.webos_cursor {
-                    match cursor.motion() {
-                        // This handler delivers the new position below.
-                        Ok(true) => self.mode.set(keys::Mode::Pointer),
-                        Ok(false) => {}
-                        Err(_) => eprintln!("sdl: cursor restore failed: {}", self.sdl().error()),
+                    let (xrel, yrel) = event.motion_delta();
+                    // Failures stay in the bounded trace and leave mode
+                    // alone. This handler delivers the new position below.
+                    if let Ok(true) = cursor.motion(xrel, yrel) {
+                        self.mode.set(keys::Mode::Pointer);
                     }
                 }
                 if !self.webos_abi || self.mode.get() == keys::Mode::Pointer {
@@ -602,9 +605,9 @@ impl SdlPlatform {
         // host keys, while the inspector below sends keys to Slint.
         if self.webos_abi {
             if let Some(cursor) = &self.webos_cursor {
-                if cursor.key(key.scancode, pressed).is_err() {
-                    eprintln!("sdl: cursor handover failed: {}", self.sdl().error());
-                }
+                // Errors already carry the flag values in the capped trace;
+                // do not add an unbounded per-key stderr stream here.
+                let _ = cursor.key(key.scancode, pressed, key.repeat);
             }
             if pressed {
                 if let Some(mode) = keys::mode_after_key(key.scancode, action) {

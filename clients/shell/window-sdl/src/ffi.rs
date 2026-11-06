@@ -133,6 +133,10 @@ impl Event {
     pub fn motion(&self) -> (i32, i32) {
         (self.i32_at(20), self.i32_at(24))
     }
+    /// SDL_MouseMotionEvent: xrel @28, yrel @32 (also in SDL 2.0.4).
+    pub fn motion_delta(&self) -> (i32, i32) {
+        (self.i32_at(28), self.i32_at(32))
+    }
     /// SDL_MouseButtonEvent: button @16, x @20, y @24.
     pub fn button(&self) -> (u8, i32, i32) {
         (self.0[16], self.i32_at(20), self.i32_at(24))
@@ -264,6 +268,7 @@ sdl_functions! {
     SDL_WaitEventTimeout(*mut Event, c_int) -> c_int;
     SDL_GetKeyboardFocus() -> *mut Window;
     SDL_ShowCursor(c_int) -> c_int;
+    SDL_SetCursor(*mut c_void);
 }
 
 impl Sdl {
@@ -338,6 +343,18 @@ mod tests {
             (key.scancode, key.keycode, key.repeat),
             (right, sdlk_right, false)
         );
+    }
+
+    #[test]
+    fn mouse_motion_relative_values_use_sdl_2_0_4_offsets() {
+        let mut event = Event::zeroed();
+        event.set_kind(SDL_MOUSEMOTION);
+        event.0[20..24].copy_from_slice(&123_i32.to_ne_bytes());
+        event.0[24..28].copy_from_slice(&456_i32.to_ne_bytes());
+        event.0[28..32].copy_from_slice(&3_i32.to_ne_bytes());
+        event.0[32..36].copy_from_slice(&(-2_i32).to_ne_bytes());
+        assert_eq!(event.motion(), (123, 456));
+        assert_eq!(event.motion_delta(), (3, -2));
     }
 
     #[test]

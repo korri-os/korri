@@ -1,85 +1,220 @@
 //! App-owned Magic Remote cursor handover using the system SDL only.
 //!
-//! SDL-webOS's visibility request does not exist on the B7. SDL_ShowCursor(0)
-//! does hide this app's cursor there, but SDL keeps it hidden even after a
-//! shake. Pair that proven hide with SDL_ShowCursor(1) on the next motion or
-//! LG's cursor-shown key (484). A compositor-hidden key (485) must not latch
-//! SDL's own visibility off. No Wayland roundtrip, timer, Luna call or power
-//! subscription is needed. See the 2026-11-06 cursor source report.
+//! SDL-webOS's visibility request does not exist on the B7. Pair the proven
+//! SDL_ShowCursor(0) hide with SDL_ShowCursor(1) on motion/484. LG SDL 2.0.4
+//! skips its backend when its flag already matches the request; refresh a
+//! repeated hide with SDL_SetCursor(NULL), not a visible toggle. No Wayland
+//! roundtrip, timer, Luna call or power subscription is added.
 
 use std::cell::Cell;
-use std::ffi::c_int;
+use std::ffi::{c_int, c_void};
+use std::io::Write;
+use std::time::Instant;
 
-/// Why SDL's cursor control is unavailable, as a fixed probe label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unavailable {
-    /// SDL could not query or change its cursor visibility.
+    /// SDL could not query or change its cursor visibility flag.
     Sdl,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Input {
-    Key { scancode: i32, pressed: bool },
-    Motion,
+    Dpad { scancode: i32, repeat: bool },
+    Shown484,
+    Hidden485,
+    Motion { xrel: i32, yrel: i32 },
 }
 
-/// Only a D-pad press owns a hide. Compositor idle/hide notifications do not:
-/// keeping SDL enabled lets LG show its pointer again by itself.
+fn key_input(scancode: i32, pressed: bool, repeat: bool) -> Option<Input> {
+    if !pressed {
+        return None;
+    }
+    match scancode {
+        79..=82 => Some(Input::Dpad { scancode, repeat }),
+        484 => Some(Input::Shown484),
+        485 => Some(Input::Hidden485),
+        _ => None,
+    }
+}
+
 fn visibility_request(hidden_by_keys: bool, input: Input) -> Option<bool> {
     match input {
-        Input::Key {
-            scancode: 79..=82,
-            pressed: true,
-        } if !hidden_by_keys => Some(false),
-        Input::Key {
-            scancode: 484,
-            pressed: true,
-        } => Some(true),
-        Input::Motion if hidden_by_keys => Some(true),
+        // Always honor a physical D-pad press, even if our state says hidden.
+        Input::Dpad { .. } => Some(false),
+        Input::Shown484 => Some(true),
+        Input::Motion { .. } if hidden_by_keys => Some(true),
         _ => None,
+    }
+}
+
+const TRACE_LIMIT: u16 = 200;
+
+struct Transition {
+    input: Input,
+    owned_before: bool,
+    owned_after: bool,
+    before: c_int,
+    request: Option<c_int>,
+    returned: Option<c_int>,
+    after: c_int,
+    refreshed: bool,
+    flag_ok: bool,
+}
+
+struct Trace {
+    started: Instant,
+    written: Cell<u16>,
+}
+
+impl Trace {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+            written: Cell::new(0),
+        }
+    }
+
+    fn record(&self, output: &mut impl Write, transition: &Transition) {
+        let written = self.written.get();
+        if written >= TRACE_LIMIT {
+            return;
+        }
+        let sequence = written + 1;
+        self.written.set(sequence);
+        let Transition {
+            input,
+            owned_before,
+            owned_after,
+            before,
+            request,
+            returned,
+            after,
+            refreshed,
+            flag_ok,
+        } = transition;
+        // One write per transition, no keys as text, addresses, or RPC data.
+        // A logging failure never changes input handling.
+        let _ = writeln!(output, "sdl: cursor trace n={sequence} ms={} event={input:?} owned={owned_before}->{owned_after} before={before} request={request:?} returned={returned:?} after={after} refresh={refreshed} flag_ok={flag_ok}", self.started.elapsed().as_millis());
     }
 }
 
 pub struct WebosCursor {
     show_cursor: unsafe extern "C" fn(c_int) -> c_int,
-    /// SDL visibility that this adapter changed, not LG's compositor state.
+    set_cursor: unsafe extern "C" fn(*mut c_void),
+    /// Our hide ownership, not the compositor's visibility state.
     hidden_by_keys: Cell<bool>,
+    /// Diagnostic only: capture motion even if 484 restored the cursor first.
+    trace_motion: Cell<bool>,
+    last_visibility_key: Cell<Option<Input>>,
+    trace: Trace,
 }
 
 impl WebosCursor {
     /// Query only: opening the adapter does not hide the pointer.
-    pub fn open(show_cursor: unsafe extern "C" fn(c_int) -> c_int) -> Result<Self, Unavailable> {
-        // SAFETY: called with SDL's function while video is initialized, on
-        // the SDL event-loop thread. -1 reads state without changing it.
+    pub fn open(
+        show_cursor: unsafe extern "C" fn(c_int) -> c_int,
+        set_cursor: unsafe extern "C" fn(*mut c_void),
+    ) -> Result<Self, Unavailable> {
+        // SAFETY: SDL video is initialized on the event-loop thread.
         if unsafe { show_cursor(-1) } < 0 {
             return Err(Unavailable::Sdl);
         }
         Ok(Self {
             show_cursor,
+            set_cursor,
             hidden_by_keys: Cell::new(false),
+            trace_motion: Cell::new(false),
+            last_visibility_key: Cell::new(None),
+            trace: Trace::new(),
         })
     }
 
-    pub fn key(&self, scancode: i32, pressed: bool) -> Result<(), Unavailable> {
-        self.update(Input::Key { scancode, pressed }).map(|_| ())
+    pub fn key(&self, scancode: i32, pressed: bool, repeat: bool) -> Result<(), Unavailable> {
+        let Some(input) = key_input(scancode, pressed, repeat) else {
+            return Ok(());
+        };
+        self.update(input).map(|_| ())
     }
 
-    /// True when this motion successfully restored our D-pad hide.
-    pub fn motion(&self) -> Result<bool, Unavailable> {
-        self.update(Input::Motion)
+    /// True when motion successfully restored our D-pad hide.
+    pub fn motion(&self, xrel: i32, yrel: i32) -> Result<bool, Unavailable> {
+        self.update(Input::Motion { xrel, yrel })
     }
 
     fn update(&self, input: Input) -> Result<bool, Unavailable> {
-        let Some(visible) = visibility_request(self.hidden_by_keys.get(), input) else {
-            return Ok(false);
+        let owned_before = self.hidden_by_keys.get();
+        let request = visibility_request(owned_before, input);
+        let notification_changed = match input {
+            Input::Dpad { .. } => {
+                self.trace_motion.set(true);
+                self.last_visibility_key.set(None);
+                false
+            }
+            Input::Shown484 | Input::Hidden485 => {
+                self.last_visibility_key.replace(Some(input)) != Some(input)
+            }
+            Input::Motion { .. } => false,
         };
-        // SAFETY: SDL video remains live until the event loop ends; no
-        // pointer or window ownership is transferred by this SDL 2.0.4 API.
-        if unsafe { (self.show_cursor)(c_int::from(visible)) } < 0 {
-            return Err(Unavailable::Sdl);
+        let first_motion =
+            matches!(input, Input::Motion { .. }) && self.trace_motion.replace(false);
+        if request.is_none() && !notification_changed && !first_motion {
+            return Ok(false);
         }
-        self.hidden_by_keys.set(!visible);
-        Ok(visible)
+        // SAFETY: these SDL 2.0.4 calls remain on the live video thread.
+        // ShowCursor returns the PREVIOUS flag, not the requested/current one.
+        let before = unsafe { (self.show_cursor)(-1) };
+        let returned = request
+            .filter(|_| before >= 0)
+            .map(|visible| unsafe { (self.show_cursor)(c_int::from(visible)) });
+        let refreshed = request == Some(false)
+            && before == 0
+            && !matches!(input, Input::Dpad { repeat: true, .. })
+            && returned.is_some_and(|value| value >= 0);
+        if refreshed {
+            // SAFETY: NULL reapplies the current/default cursor. In LG's
+            // SDL_SetCursor at 0x34608, flag 0 calls the backend with NULL
+            // even when SDL_ShowCursor(0) at 0x34db8 skipped it. Never toggle
+            // visible to force a hide, which could flash the cursor.
+            unsafe { (self.set_cursor)(std::ptr::null_mut()) };
+        }
+        let after = unsafe { (self.show_cursor)(-1) };
+        let ok = before >= 0
+            && after >= 0
+            && returned.is_none_or(|value| value >= 0)
+            && request.is_none_or(|visible| after == c_int::from(visible));
+        if ok {
+            if let Some(visible) = request {
+                self.hidden_by_keys.set(!visible);
+            }
+        }
+        let owned_after = self.hidden_by_keys.get();
+        if matches!(
+            input,
+            Input::Dpad { repeat: false, .. } | Input::Motion { .. }
+        ) || notification_changed
+            || before != after
+            || owned_before != owned_after
+        {
+            self.trace.record(
+                &mut std::io::stderr().lock(),
+                &Transition {
+                    input,
+                    owned_before,
+                    owned_after,
+                    before,
+                    request: request.map(c_int::from),
+                    returned,
+                    after,
+                    refreshed,
+                    flag_ok: ok,
+                },
+            );
+        }
+        if ok {
+            Ok(request == Some(true))
+        } else {
+            Err(Unavailable::Sdl)
+        }
     }
 }
 
@@ -87,90 +222,99 @@ impl WebosCursor {
 mod tests {
     use super::*;
 
+    const MOTION: Input = Input::Motion { xrel: 1, yrel: -1 };
+
     #[test]
     fn only_pressed_directions_request_a_hide() {
         for scancode in 79..=82 {
             assert_eq!(
-                visibility_request(
-                    false,
-                    Input::Key {
-                        scancode,
-                        pressed: true
-                    }
-                ),
-                Some(false)
+                key_input(scancode, true, false),
+                Some(Input::Dpad {
+                    scancode,
+                    repeat: false
+                })
             );
+            assert_eq!(key_input(scancode, false, false), None);
             assert_eq!(
-                visibility_request(
-                    false,
-                    Input::Key {
-                        scancode,
-                        pressed: false
-                    }
-                ),
-                None
+                key_input(scancode, true, true),
+                Some(Input::Dpad {
+                    scancode,
+                    repeat: true
+                })
             );
         }
+        for scancode in [40, 59, 270, 482, 486] {
+            assert_eq!(key_input(scancode, true, false), None);
+        }
+        assert_eq!(key_input(484, true, false), Some(Input::Shown484));
+        assert_eq!(key_input(485, true, false), Some(Input::Hidden485));
+        assert_eq!(key_input(484, false, false), None);
+        assert_eq!(key_input(485, false, false), None);
+    }
+
+    #[test]
+    fn dpad_hide_is_not_skipped_after_a_previous_hide() {
         assert_eq!(
             visibility_request(
                 true,
-                Input::Key {
-                    scancode: 484,
-                    pressed: false
+                Input::Dpad {
+                    scancode: 79,
+                    repeat: false
                 }
             ),
-            None
+            Some(false)
         );
-        for scancode in [40, 59, 270, 482, 485, 486] {
-            assert_eq!(
-                visibility_request(
-                    false,
-                    Input::Key {
-                        scancode,
-                        pressed: true
-                    }
-                ),
-                None
-            );
-        }
+        assert_eq!(
+            visibility_request(
+                false,
+                Input::Dpad {
+                    scancode: 79,
+                    repeat: false
+                }
+            ),
+            Some(false)
+        );
     }
 
     #[test]
     fn motion_restores_only_an_app_owned_hide() {
-        assert_eq!(visibility_request(false, Input::Motion), None);
-        assert_eq!(visibility_request(true, Input::Motion), Some(true));
-        assert_eq!(
-            visibility_request(
-                true,
-                Input::Key {
-                    scancode: 79,
-                    pressed: true
-                }
-            ),
-            None
-        );
+        assert_eq!(visibility_request(false, MOTION), None);
+        assert_eq!(visibility_request(true, MOTION), Some(true));
         for hidden in [false, true] {
-            assert_eq!(
-                visibility_request(
-                    hidden,
-                    Input::Key {
-                        scancode: 484,
-                        pressed: true
-                    }
-                ),
-                Some(true)
-            );
-            assert_eq!(
-                visibility_request(
-                    hidden,
-                    Input::Key {
-                        scancode: 485,
-                        pressed: true
-                    }
-                ),
-                None
-            );
+            assert_eq!(visibility_request(hidden, Input::Shown484), Some(true));
+            assert_eq!(visibility_request(hidden, Input::Hidden485), None);
         }
+    }
+
+    #[test]
+    fn transition_trace_is_capped_at_two_hundred_lines() {
+        let trace = Trace::new();
+        let mut output = Vec::new();
+        let record = Transition {
+            input: Input::Dpad {
+                scancode: 79,
+                repeat: false,
+            },
+            owned_before: true,
+            owned_after: true,
+            before: 0,
+            request: Some(0),
+            returned: Some(0),
+            after: 0,
+            refreshed: true,
+            flag_ok: true,
+        };
+        for _ in 0..TRACE_LIMIT + 20 {
+            trace.record(&mut output, &record);
+        }
+        let output = String::from_utf8(output).unwrap();
+        let lines: Vec<_> = output.lines().collect();
+        assert_eq!(lines.len(), usize::from(TRACE_LIMIT));
+        assert!(lines[0].contains("n=1 "));
+        assert!(lines.last().unwrap().contains("n=200 "));
+        assert!(lines.iter().all(|line| line
+            .contains("event=Dpad { scancode: 79, repeat: false }")
+            && line.contains("before=0 request=Some(0) returned=Some(0) after=0 refresh=true")));
     }
 
     /// Runs against real workstation SDL with SDL_VIDEODRIVER=dummy. Never
@@ -192,7 +336,9 @@ mod tests {
         // The workstation can have DISPLAY set. Exercise the LG keyboard
         // layout and the real shell's host-key route regardless.
         platform.webos_abi = true;
-        platform.webos_cursor = Some(WebosCursor::open(platform.sdl().SDL_ShowCursor).unwrap());
+        platform.webos_cursor = Some(
+            WebosCursor::open(platform.sdl().SDL_ShowCursor, platform.sdl().SDL_SetCursor).unwrap(),
+        );
         let delivered = Rc::new(RefCell::new(Vec::new()));
         let keys = delivered.clone();
         platform.host_keys = Some(Box::new(move |key, pressed| {
@@ -253,6 +399,34 @@ mod tests {
                 (HostKey::Up, true)
             ]
         );
+        // SDL/backend state can change without updating our hide ownership.
+        // A real SDL state change must not make the next D-pad press a no-op.
+        key(79, true);
+        key(79, false);
+        assert_eq!(unsafe { show(-1) }, 0);
+        unsafe { show(1) };
+        assert_eq!(unsafe { show(-1) }, 1);
+        key(79, true);
+        key(79, false);
+        assert_eq!(unsafe { show(-1) }, 0);
+        for cycle in 0..20 {
+            key(79, true);
+            key(79, false);
+            assert_eq!(unsafe { show(-1) }, 0);
+            // Even a second physical press while SDL's flag is already off
+            // must reapply the backend cursor, not skip on our hide state.
+            key(79, true);
+            key(79, false);
+            assert_eq!(unsafe { show(-1) }, 0);
+            if cycle % 2 == 0 {
+                platform.handle(&motion).unwrap();
+            } else {
+                key(484, true);
+                // The first motion is still traceable if 484 came first.
+                platform.handle(&motion).unwrap();
+            }
+            assert_eq!(unsafe { show(-1) }, 1);
+        }
         platform.close();
     }
 }

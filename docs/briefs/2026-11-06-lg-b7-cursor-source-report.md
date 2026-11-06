@@ -174,7 +174,7 @@ cursor fix on this evidence.
   initial binding, not on an arrow. Moonlight's `root.c:234-240` only stores
   its UI input mode. None supplies an older-OS cursor API fallback.
 
-## App-owned candidate implemented at the parent's request
+## Initial app-owned candidate (`124ba9985`, IPK `202ab70f…`)
 
 The existing `webos` feature selects `window-sdl`; the cursor adapter runs only
 on its TV path (no X11 display). It loads **only system SDL**.
@@ -205,15 +205,16 @@ X11 workstation runs report that the TV mechanism is unavailable on X11.
 Tests cover the direction/release/notification policy, and exercise the actual
 host-key route with real workstation SDL using its dummy video driver.
 
-This is **not** a claim that Moonlight uses the same pair. Parent testing must
-establish whether the system SDL delivers motion or 484 while its app-owned
-cursor flag is off. If it delivers neither, restoration remains blocked.
+This is **not** a claim that Moonlight uses the same pair. The parent's fresh
+installation and physical Magic Remote test established that the first D-pad
+press hides the pointer and shaking restores it. **Later D-pad presses fail to
+hide it.** The first candidate does not meet the requirement.
 Small or synthetic motion after a D-pad press can also restore the cursor;
 no ungrounded distance threshold was invented. Ordinary SDL calls still enter
 LG's old backend, so this is lower risk than replacing SDL, not a guarantee
 against a compositor defect. The parent owns a bounded on-TV test.
 
-## Workstation checks
+## Workstation checks for the first candidate
 
 - `shell-check` ran once. Both format checks and desktop/webOS Clippy passed
   before the implementation change. It passed 81 tests, then failed the
@@ -228,3 +229,81 @@ against a compositor defect. The parent owns a bounded on-TV test.
 - Adapter all-target Clippy and the shell's webOS Clippy both passed with
   `-D warnings` after implementation. Both format checks and `git diff --check`
   passed too. Build/package results are recorded with the delivered artifact.
+
+## Follow-up: repeated-hide failure and bounded transition trace
+
+The TV sequence above does not establish which event undoes the next hide.
+The first implementation resets `hidden_by_keys` after a successful motion/484
+restore. There is no permanent “shown” latch in that state machine. It does,
+however, skip a D-pad hide if its own flag is still “hidden”. A regression test
+for reapplying that request failed before this follow-up change (`None` instead
+of `Some(false)`). This proves a policy weakness, not the TV failure's cause.
+
+### Actual LG SDL flag and backend path
+
+Read the parent's copied `tv-libSDL2-2.0.so.0.4.0`, without loading it.
+Its SHA-256 is
+`0fbeb44edaa62de9ae9214ac0449250f4e3fb2f6b280db2e68d9a7f7cd6015ce`.
+
+- `SDL_DYNAPI_entry` fills the ShowCursor function-table slot (offset `0x36c`)
+  at Thumb instruction `0x29600` with function pointer `0x34db9`.
+- The real `SDL_ShowCursor` body is at ELF virtual address `0x34db8`.
+  It loads the flag from `SDL_Mouse + 0x68`, changes it for a nonnegative
+  request, and returns the **previous** flag (`0x34dd8`). Query `-1` does not
+  change it. It has no “called once” bit.
+- If the old flag equals the requested flag, `0x34dd0` skips the backend.
+  Therefore repeating `SDL_ShowCursor(0)` cannot repair a visible cursor when
+  SDL's flag already says 0.
+- The real `SDL_SetCursor` at `0x34608` accepts NULL at `0x3465a`. At
+  `0x3462e-0x3463c`, flag 0 invokes the backend ShowCursor callback with NULL,
+  even when the public ShowCursor fast path would skip that call. This is a
+  way to reapply the same hidden cursor without a visible toggle or a new
+  protocol operation. These are static ELF addresses, not runtime addresses
+  after ASLR. No private field is read or written by the application.
+
+### Follow-up changes
+
+Every pressed D-pad key now requests `SDL_ShowCursor(0)`, regardless of the
+adapter's hide ownership. On a non-repeat physical press, if query `-1` already
+returns 0, the adapter also calls `SDL_SetCursor(NULL)` to reapply the backend
+cursor. Key repeats still request 0 but do not force extra backend refreshes.
+Motion/484 restoration remains unchanged. No guessed motion distance or delay
+was added before observing the next TV trace.
+
+Stderr emits at most **200 trace lines per adapter run**. Each line has a
+sequence number, elapsed monotonic milliseconds, input cause, ownership before
+and after, `SDL_ShowCursor(-1)` before and after, the requested toggle, its
+return value, and whether a backend refresh was issued. The trace includes:
+
+- every physical D-pad hide request; auto-repeat only when state changes;
+- 484/485 key-down changes, without duplicate steady-state notifications;
+- the first motion after a hide, including relative X/Y values, even if 484
+  restored the cursor before that motion arrived.
+
+`request=None` means the event did not change SDL's cursor flag. `refresh=true`
+means a refresh call was issued; it is not proof that the compositor hid the
+pointer. `flag_ok=true` means SDL's queried flag matches the request, not that
+the visible pointer agrees. Duplicate motion while the adapter owns no hide is
+not logged. The trace logs no key text, memory address, RPC value or capability.
+Its line cap is independent of whether writes succeed; logging cannot change
+input state. Cursor-call errors use the same capped trace, not an additional
+unbounded per-key error log.
+
+Startup now names repeated-hide refresh and the 200-line trace cap. The next
+physical TV run must distinguish these cases:
+
+- a hide with flag `1 -> 0`, followed immediately by motion/484 and `0 -> 1`;
+- a repeated hide where SDL already reports 0 and a refresh is needed;
+- a missing D-pad event or a flag that fails to change as requested.
+
+The second hide's on-TV cause is still unresolved until that trace is read.
+This follow-up adds only standard SDL cursor calls and local queries; it adds
+no registration, screensaver, power, timer or direct Wayland request.
+
+Follow-up workstation checks: all **18 adapter tests passed**, including 20
+repeated hide/restore cycles through the real host-key route, a real SDL flag
+change while the adapter still owns a hide, the repeated-hide regression,
+relative-motion offsets, and the 200-line trace cap. Adapter all-target Clippy,
+shell webOS Clippy (`-D warnings`), both format checks and `git diff --check`
+passed. The parent owns the full `shell-check` rerun; this follow-up does not
+start a second full suite.
