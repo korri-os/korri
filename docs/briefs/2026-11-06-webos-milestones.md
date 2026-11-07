@@ -8,7 +8,7 @@ UI. Each milestone ends in something the owner can check on the TV.
 | M0 | TV healthy | The old spike app reaches the front; D-pad and OK work | Done 2026-11-06 |
 | M1 | Real shell shows Zone | Zone at 1080p; D-pad, OK and Back work | Done 2026-11-06 |
 | M2 | korrid on the TV, joined to the owner | Zone lists the real games from `haku` | Done 2026-11-06, landed `2d6b2b3b7..649506ea8` |
-| M3 | Survives real life | App restart, reinstall and TV reboot keep identity and library | Restart and reinstall pass; reboot needs the permission fix below |
+| M3 | Survives real life | App restart, reinstall and TV reboot keep identity and library | Done 2026-11-07 (real reboot, new boot ID): boot left 777, korrid re-tightened, 38 games from haku, same identity; landed `8af0d4565` |
 | M4 | First stream | A haku game in Zone plays on the TV; quitting returns to Zone | In progress: an embedded viewer inside `org.korri.shell` (owner decision, 2026-11-07) |
 | M5 | Overlay during play | A button opens Korri's overlay over the stream; Resume and End work | Not started |
 | M6 | Polish and install | One-command install; the pointer hides on D-pad; smooth scrolling | Not started; cursor is #370 |
@@ -47,6 +47,16 @@ UI. Each milestone ends in something the owner can check on the TV.
 - **Discovery.** On a cold start the first catalog read can fail with
   `UpstreamUnreachable` until relay discovery supplies peer endpoints, about
   30 to 60 s. The notice clears by itself. Warm restart: catalog in 7 s.
+- **Gamepad (2026-11-07).** The TV-side korrid reads the XInput pad from
+  `/dev/input/event2` and feeds korrid's native input; the shell holds no
+  input node. The pad drives Zone, but the owner reports a noticeable delay
+  compared with the remote's D-pad. An idle pad sends 0 events, so the delay
+  is not a noise flood. Under investigation.
+- **Media preflight (2026-11-07, read-only).** In the app jail:
+  `libplayerAPIs.so.1`, `libAcbAPI.so.1`, `libpbnjson_c.so.2`, GLib 2.40,
+  GStreamer 1.8, `libpulse.so.0`, `libNDL*.so.1`. libstdc++ goes up to
+  GLIBCXX_3.4.19 only. libcrypto is only 1.0.0, so the viewer must bundle
+  its own. The TV holds its own HDMI pipeline; tests must not disturb it.
 - **Resources (Zone idle).** korrid 12 MB RSS, about 9% CPU; shell 114 to
   130 MB, about 10 to 13% CPU. Zone's title-card loop takes 61 to 140% CPU.
   M6 needs to address this.
