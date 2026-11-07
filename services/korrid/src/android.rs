@@ -115,6 +115,7 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
         }
     };
     let platform = EmbeddedPlatform {
+        native_input: None,
         relays: Some(relays),
         owner_binding: Some(crate::owner_binding::OwnerBindingCoordinator::default()),
         reach: Some(reach),

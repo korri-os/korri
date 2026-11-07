@@ -5383,10 +5383,20 @@ pub fn korrid_version() -> String {
     VERSION.into()
 }
 
+/// One in-process edge producer using the existing native input source.
+pub type EmbeddedNativeInput = Box<
+    dyn FnOnce(Arc<surface_host_input::SurfaceHostInputSource>) -> tokio::task::JoinHandle<()>
+        + Send,
+>;
+
 /// Effects and public product configuration supplied by the embedding host.
 #[derive(Default)]
 pub struct EmbeddedPlatform {
     pub relays: Option<relay::RelayList>,
+    /// Optional edge producer, started on korrid's runtime with its existing
+    /// native source. Startup aborts and joins the returned task on shutdown.
+    /// None retains the empty input baseline (including Android/JNI).
+    pub native_input: Option<EmbeddedNativeInput>,
     pub owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
     pub(crate) reach: Option<federation::reach::Environment>,
     pub(crate) viewer: Option<Arc<dyn linux_viewer::LinuxStreamViewer>>,
@@ -5503,6 +5513,7 @@ fn start_local_server_for_platform(
     let relay_config = moonlight_config_snapshot.clone();
     let product_relays = platform.relays;
     let reach_environment = platform.reach;
+    let native_input = platform.native_input;
     let owner_binding = platform.owner_binding;
     let server_owner_binding = owner_binding.clone();
     let (federation_wake, discovery) = Discovery::new(
@@ -5562,6 +5573,8 @@ fn start_local_server_for_platform(
                     Arc::clone(&surfaces),
                     surface_host_input::SurfaceHostInputLimits::default(),
                 );
+                let input_source = Arc::new(input_source);
+                let input_task = native_input.map(|start| start(Arc::clone(&input_source)));
                 let peer = peer_rpc::PeerRpcServer::with_shared_authority(
                     app_state.clone(),
                     Path::new(&private_state_root),
@@ -5596,8 +5609,11 @@ fn start_local_server_for_platform(
                 let discovery = tokio::spawn(discovery);
                 let watch = watched_upstream.map(stream_play::device::spawn_watch);
                 let result = server.await;
-                // Dropping the source disconnects the bounded socket. Keep its
-                // empty baseline alive until the server has drained.
+                if let Some(task) = input_task {
+                    task.abort();
+                    let _ = task.await;
+                }
+                // Producer cleanup runs before the native source is retired.
                 drop(input_source);
                 if let Some(watch) = watch {
                     watch.abort();

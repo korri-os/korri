@@ -71,6 +71,10 @@ proseql-engine = { path = ".cache/proseql/crates/proseql-engine" }
 proseql-formats = { path = ".cache/proseql/crates/proseql-formats" }
 proseql-storage = { path = ".cache/proseql/crates/proseql-storage" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# TV-side edge only; the shell never links this reader.
+evdev = { version = "0.13.2", features = ["stream-trait"] }
+
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 # iroh's Android TLS verifier uses JNI 0.22. Keep the restored edge on 0.21;

@@ -335,3 +335,154 @@ fn embedded_owner_binding_platform_keeps_its_identity_rpc_and_surface_watch() {
         .expect("embedded stop must close an active surface watch");
     });
 }
+
+#[test]
+fn embedded_input_edge_feeds_native_socket_and_controller_facts_and_is_joined() {
+    use crate::native_input::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let _guard = crate::tests::embedded_server_guard();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        struct Stopped(Arc<AtomicBool>);
+        impl Drop for Stopped {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+        let readable = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let mark = stopped.clone();
+        let (send, mut commands) = tokio::sync::mpsc::channel::<()>(1);
+        let (ready, initialized) = tokio::sync::oneshot::channel();
+        let mut platform = EmbeddedPlatform::default();
+        platform.native_input = Some(Box::new(move |source| {
+            tokio::spawn(async move {
+                let _stopped = Stopped(mark);
+                source
+                    .publish_device(
+                        NativeInputDeviceInfo {
+                            device_id: "physical-pad".into(),
+                            class: NativeInputDeviceClass::Gamepad,
+                            name: "Physical pad".into(),
+                            axes: None,
+                            capabilities: vec![],
+                        },
+                        vec![],
+                    )
+                    .unwrap();
+                ready.send(()).unwrap();
+                while commands.recv().await.is_some() {
+                    source
+                        .publish_frame(
+                            "physical-pad",
+                            vec![NativeInputInput {
+                                kind: NativeInputInputKind::Input,
+                                device_id: "physical-pad".into(),
+                                class: NativeInputDeviceClass::Gamepad,
+                                input_type: 1.0,
+                                code: 304.0,
+                                value: 1.0,
+                                timestamp: 1.0,
+                            }],
+                        )
+                        .unwrap();
+                }
+                std::future::pending::<()>().await;
+            })
+        }));
+        let port = start_local_shell_server(
+            readable.path().to_str().unwrap(),
+            private.path().to_str().unwrap(),
+            platform,
+        )
+        .unwrap();
+        let _stop = Stop;
+        tokio::time::timeout(Duration::from_secs(5), initialized)
+            .await
+            .unwrap()
+            .unwrap();
+        let capability = zeroize::Zeroizing::new(local_server_capability().unwrap());
+        let connect = || async {
+            let mut request = format!("ws://127.0.0.1:{port}/")
+                .into_client_request()
+                .unwrap();
+            request.headers_mut().insert(
+                "Origin",
+                format!("http://127.0.0.1:{port}").parse().unwrap(),
+            );
+            let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+            socket
+                .send(Message::Text(
+                    format!("Bearer {}", capability.as_str()).into(),
+                ))
+                .await
+                .unwrap();
+            socket
+        };
+        let mut native = connect().await;
+        native
+            .send(Message::Text(
+                serde_json::json!({"classes":["gamepad"]})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(receive(&mut native).await["kind"], "device-added");
+        assert_eq!(
+            receive(&mut native).await["kind"],
+            "initialization-complete"
+        );
+        let mut surface = connect().await;
+        surface
+            .send(Message::Text(
+                serde_json::json!({"_tag":"app.surface.watch","payload":{"surfaceId":"zone"}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+        let push = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let push = receive(&mut surface).await;
+                if push["model"]["onboarding"]["controllers"].is_array() {
+                    break push;
+                }
+                ack(&mut surface, &push).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            push["model"]["onboarding"]["controllers"],
+            serde_json::json!([{"id":"physical-pad","name":"Physical pad","heard":false}])
+        );
+        ack(&mut surface, &push).await;
+        send.send(()).await.unwrap();
+        let value = receive(&mut native).await;
+        assert_eq!(value["kind"], "input");
+        assert_eq!(value["code"].as_f64(), Some(304.0));
+        let report = receive(&mut native).await;
+        assert_eq!(report["type"].as_f64(), Some(0.0));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let push = receive(&mut surface).await;
+                let heard = push["model"]["onboarding"]["controllers"][0]["heard"] == true;
+                ack(&mut surface, &push).await;
+                if heard {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        // Both subscriptions and the edge task are live at shutdown.
+        stop_local_server().unwrap();
+        assert!(
+            stopped.load(Ordering::SeqCst),
+            "edge task must be joined before stop returns"
+        );
+    });
+}

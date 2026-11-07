@@ -17,6 +17,9 @@ mod allocation_permissions;
 
 // Explicit M2 allocation chosen after the operator inspected the jail mounts.
 // Never use HOME (the installed, root-owned app) or the disposable jail /tmp.
+#[path = "webos-korrid/evdev.rs"]
+mod evdev_input;
+
 const STATE_ROOT: &str = "/media/developer/org.korri.shell";
 const HELP: &str = "usage: webos-korrid --credentials DIR | identity {status|owner-binding-request|import --stdin|import --file PATH} | setup finish
 Hidden dev/operator tools: identity and setup finish. Run only while the app is stopped.
@@ -176,6 +179,7 @@ fn start(
     private_directory(credentials, false).map_err(|error| error.to_string())?;
     let mut platform = korrid::EmbeddedPlatform::default();
     platform.relays = relays;
+    platform.native_input = Some(Box::new(evdev_input::start));
     let port = korrid::start_local_shell_server(
         state.storage.to_str().ok_or("storage path must be UTF-8")?,
         state.private.to_str().ok_or("private path must be UTF-8")?,

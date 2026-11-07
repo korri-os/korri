@@ -2440,6 +2440,7 @@ dependencies = [
  "axum",
  "chrono",
  "crc32fast",
+ "evdev",
  "futures",
  "hex",
  "hmac 0.12.1",

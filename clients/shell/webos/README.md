@@ -20,8 +20,10 @@ person signer, D-Bus discovery worker, iroh listener, or native stream viewer.
 The startup signature and identity/federation schemas are unchanged. Embedded
 startup now wires the existing bounded authenticated root WebSocket and shared
 SurfaceSlot, as the shell requires for `app.surface.watch` model pushes and
-ACKs. The same existing capability and exact Origin protect it. Its retained
-empty input source reports no devices; no controller or input is fabricated.
+ACKs. The same existing capability and exact Origin protect it. The webOS edge supplies measured physical gamepad baselines and samples through
+the existing native input source. See [NATIVE-INPUT.md](NATIVE-INPUT.md) for the
+producer path, compatibility review, and physical acceptance steps. No controller
+or input is fabricated. The default embedded composition retains empty input.
 This transport composition also applies to the Android/JNI caller of the same
 startup API; no JNI signature or owner-binding effect contract changes.
 
@@ -277,18 +279,13 @@ addressed to its new device key. Allow more than one discovery cycle on a first
 join, then inspect actual peer status instead of assuming an empty library is
 final.
 
-**First-run gap:** Zone's Controllers step requires a heard controller
-(`packages/zone/src/state/onboarding.ts::canGoOn`). Those facts come from
-korrid's native-input producer (`surface/controllers.rs`), which this embedded
-composition does not supply. SDL semantic presses do not establish those facts,
-so the first-run Controllers step cannot advance. For M2, the parent explicitly
-runs the hidden dev/operator `setup finish` command above, with the app stopped.
-Its wording mirrors `korri setup finish`: finish setup while keeping the existing
-identity; no new identity is claimed. It uses the existing marker schema, not a
-new field or a fabricated controller. The real fix is the planned TV-side
-korrid native-input source reading the pad from `/dev/input` (parent's earlier
-decision, 2026-11-06). This milestone does not build that source. The shell must
-not open `/dev/input`.
+**Controllers:** The TV-side korrid edge now reads physical gamepads from
+`/dev/input` and feeds the existing native-input source and controller facts.
+The shell does not open input devices or initialize SDL controllers. Zone's
+Controllers step can receive measured presence and live-sample evidence.
+Physical TV acceptance is still required; see [NATIVE-INPUT.md](NATIVE-INPUT.md).
+The hidden `setup finish` tool remains an explicit operator override, not a
+controller test and not a prerequisite for normal first-run controller input.
 
 WebOS still owns networking. NetworkManager-backed settings can fail on this
 TV; they are not a new webOS configuration surface. No library or sample data is installed into real state.
