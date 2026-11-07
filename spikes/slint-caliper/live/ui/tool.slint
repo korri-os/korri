@@ -122,7 +122,7 @@ export component Tool inherits Window {
             border-color: Bench.rule;
             clip: true;
             Flickable {
-                viewport-height: root.scenarios.length * 36px;
+                content-height: root.scenarios.length * 36px;
                 for s[i] in root.scenarios: Rectangle {
                     y: i * 36px;
                     height: 36px;
@@ -155,7 +155,9 @@ export component Tool inherits Window {
                         Text { text: r.kind; font-weight: 700; color: Bench.ink; horizontal-stretch: 0; }
                         Text { text: r.ms; color: Bench.ink; horizontal-stretch: 1; }
                     }
-                    Text { text: r.detail; color: Bench.soft; font-size: Bench.small; wrap: word-wrap; }
+                    // Two lines at most, so the list never pushes the help off the window;
+                    // the whole line is in the log (LIVE_RELOAD).
+                    Text { text: r.detail; color: Bench.soft; font-size: Bench.small; wrap: word-wrap; overflow: elide; height: 2.6 * Bench.small; }
                 }
             }
         }

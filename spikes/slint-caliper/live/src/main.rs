@@ -381,7 +381,17 @@ fn find_packages() -> Result<PathBuf> {
 /// reads them through `Connection::from_environment`, and nothing logs the capability.
 fn start_fixture(bin: &Path, private: &Path, model: &Path) -> Result<(Fixture, Connection)> {
     let credentials = private.join("credentials");
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    // The fixture serves until killed (clients/shell/src/fixture/process.rs): end it with us,
+    // also when we are killed.
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        command.pre_exec(|| {
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+            Ok(())
+        });
+    }
+    let mut child = command
         .args(["--games", "12", "--credentials"])
         .arg(&credentials)
         .arg("--model")
@@ -1017,6 +1027,7 @@ impl Live {
         match outcome {
             Ok(compiled) => {
                 let focus = focused_paths(&s.last_view);
+                self.supersede();
                 self.pending = Some(Pending {
                     kind: ".slint",
                     saved,
@@ -1245,6 +1256,7 @@ impl Live {
                         .map_or(String::new(), |d| format!(" (first {d})")),
                 );
                 eprintln!("korri-live: logic reload: {detail}");
+                self.supersede();
                 self.pending = Some(Pending {
                     kind,
                     saved,
@@ -1264,6 +1276,13 @@ impl Live {
         self.refresh_tool();
     }
 
+    /// A second reload before the first one's frame: that frame never drew.
+    fn supersede(&mut self) {
+        if let Some(p) = self.pending.take() {
+            eprintln!("LIVE_RELOAD_SUPERSEDED package={} kind={} (another save came before its frame)", PACKAGES[self.package_index], p.kind);
+        }
+    }
+
     fn frame_drawn(&mut self) {
         let Some(p) = self.pending.take() else { return };
         let total = SystemTime::now()
@@ -1276,7 +1295,8 @@ impl Live {
             .collect::<Vec<_>>()
             .join(", ");
         eprintln!(
-            "LIVE_RELOAD kind={} save_to_frame_ms={} parts=[{parts}] kept={} detail={}",
+            "LIVE_RELOAD package={} kind={} save_to_frame_ms={} parts=[{parts}] kept={} detail={}",
+            PACKAGES[self.package_index],
             p.kind,
             total.as_millis(),
             p.kept,
@@ -1293,8 +1313,8 @@ impl Live {
 
     fn add_reload(&mut self, kind: &str, ms: String, detail: String, kept: bool, failed: bool) {
         self.reloads
-            .insert(0, (kind.to_owned(), ms, detail, kept, failed));
-        self.reloads.truncate(4);
+            .insert(0, (format!("{} {kind}", PACKAGES[self.package_index]), ms, detail, kept, failed));
+        self.reloads.truncate(3);
         self.refresh_tool();
     }
 
