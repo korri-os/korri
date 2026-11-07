@@ -9,9 +9,20 @@ UI. Each milestone ends in something the owner can check on the TV.
 | M1 | Real shell shows Zone | Zone at 1080p; D-pad, OK and Back work | Done 2026-11-06 |
 | M2 | korrid on the TV, joined to the owner | Zone lists the real games from `haku` | Done 2026-11-06, landed `2d6b2b3b7..649506ea8` |
 | M3 | Survives real life | App restart, reinstall and TV reboot keep identity and library | Restart and reinstall pass; reboot needs the permission fix below |
-| M4 | First stream | A haku game in Zone plays on the TV; quitting returns to Zone | In progress (installed Moonlight app via AppManager first) |
+| M4 | First stream | A haku game in Zone plays on the TV; quitting returns to Zone | In progress: an embedded viewer inside `org.korri.shell` (owner decision, 2026-11-07) |
 | M5 | Overlay during play | A button opens Korri's overlay over the stream; Resume and End work | Not started |
 | M6 | Polish and install | One-command install; the pointer hides on D-pad; smooth scrolling | Not started; cursor is #370 |
+
+## Owner decisions
+
+- 2026-11-07: "We must embed Moonlight into the app. It is not something that
+  we reach out to." The webOS stream viewer ships inside the Korri app, as on
+  the Linux handhelds and Android. Korri owns its client identity and pairs
+  through korrid's existing certificate provisioning. Korri does not use the
+  installed `com.limelight.webos` app or a PIN. This replaces the installed-app
+  route that `2026-11-07-webos-m4-stream-design.md` researched.
+- 2026-11-06: Back at Zone's top screen stays in Korri. It does not exit to
+  the TV launcher.
 
 ## Facts found on the way
 
