@@ -1,0 +1,42 @@
+[package]
+name = "slint-caliper-live"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "THROWAWAY SPIKE: a surface package live, with fixture data, live reload of .slint and logic.js"
+
+# Standalone, like clients/shell.
+[workspace]
+
+[[bin]]
+name = "korri-live"
+path = "src/main.rs"
+
+[[bin]]
+name = "fixture-korrid"
+path = "src/bin/fixture-korrid.rs"
+
+[dependencies]
+korri-shell = { path = "../../../clients/shell", features = ["fixture"] }
+# The same pins as clients/shell (Cargo.toml there).
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "renderer-software", "backend-winit-wayland", "backend-winit-x11", "unstable-winit-030"] }
+slint-interpreter = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "renderer-software", "internal"] }
+serde_json = "1"
+anyhow = "1"
+pollster = "0.4"
+
+[profile.release]
+opt-level = 3
+codegen-units = 16
+
+[profile.dev.package.rquickjs-sys]
+opt-level = 3
+
+# Same as clients/shell/Cargo.toml: the vendored Slint 1.18.1 patches.
+[patch.crates-io]
+i-slint-core = { path = "../../../clients/shell/vendor/i-slint-core" }
+i-slint-renderer-software = { path = "../../../clients/shell/vendor/i-slint-renderer-software" }
+slint-interpreter = { path = "../../../clients/shell/vendor/slint-interpreter" }
+i-slint-backend-testing = { path = "../../../clients/shell/vendor/i-slint-backend-testing" }
+i-slint-backend-winit = { path = "../../../clients/shell/vendor/i-slint-backend-winit" }
+i-slint-backend-android-activity = { path = "../../../clients/shell/vendor/i-slint-backend-android-activity" }

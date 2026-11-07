@@ -1,0 +1,171 @@
+// THROWAWAY SPIKE: the bench beside a live surface package.
+// One column. The model list takes the height that is left; every other
+// group keeps its natural height. Chips wrap by the window's width.
+
+export struct Scenario { name: string, ref: string, steps: int }
+export struct Reload { kind: string, ms: string, detail: string, kept: bool, failed: bool }
+
+global Bench {
+    out property <color> paper: #e9edf0;
+    out property <color> ink: #18222e;
+    out property <color> soft: #5a6878;
+    out property <color> rule: #c3ccd4;
+    out property <color> chosen: #2b4c7e;
+    out property <color> kept: #1f7a5c;
+    out property <color> lost: #b23a2a;
+    out property <length> gap: 8px;
+    out property <length> body: 13px;
+    out property <length> small: 11px;
+}
+
+component Heading inherits Text {
+    color: Bench.ink;
+    font-size: Bench.body;
+    font-weight: 700;
+}
+
+// Chips laid out in rows that wrap by width.
+component Chips inherits Rectangle {
+    in property <[string]> items;
+    in property <int> chosen-index;
+    in property <length> chip-width: 104px;
+    callback choose(int);
+    property <int> columns: max(1, floor((self.width + Bench.gap) / (self.chip-width + Bench.gap)));
+    property <length> cell: (self.width - (self.columns - 1) * Bench.gap) / self.columns;
+    height: ceil(self.items.length / self.columns) * (28px + Bench.gap) - Bench.gap;
+    for item[i] in root.items: Rectangle {
+        x: mod(i, root.columns) * (root.cell + Bench.gap);
+        y: floor(i / root.columns) * (28px + Bench.gap);
+        width: root.cell;
+        height: 28px;
+        border-radius: 3px;
+        background: i == root.chosen-index ? Bench.chosen : (touch.has-hover ? #dde3e8 : transparent);
+        border-width: 1px;
+        border-color: i == root.chosen-index ? Bench.chosen : Bench.rule;
+        Text {
+            text: item;
+            color: i == root.chosen-index ? white : Bench.ink;
+            font-size: Bench.small;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+            width: parent.width - 8px;
+        }
+        touch := TouchArea { clicked => { root.choose(i); } }
+    }
+}
+
+export component Tool inherits Window {
+    title: "korri-live bench";
+    preferred-width: 360px;
+    preferred-height: 760px;
+    min-width: 240px;
+    min-height: 420px;
+    background: Bench.paper;
+    default-font-size: Bench.body;
+
+    in property <[string]> packages;
+    in property <int> package-index;
+    in property <[string]> devices;
+    in property <int> device-index;
+    in property <[Scenario]> scenarios;
+    in property <int> scenario-index: -1;
+    in property <[string]> modes;
+    in property <int> mode-index;
+    in property <[Reload]> reloads;
+    in property <string> status;
+
+    callback choose-package(int);
+    callback choose-device(int);
+    callback choose-scenario(int);
+    callback choose-mode(int);
+    callback play-steps();
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        Heading { text: "Package"; }
+        Chips { items: root.packages; chosen-index: root.package-index; choose(i) => { root.choose-package(i); } }
+
+        Heading { text: "Device (CSS size of the window)"; }
+        Chips { items: root.devices; chosen-index: root.device-index; chip-width: 150px; choose(i) => { root.choose-device(i); } }
+
+        Heading { text: "When logic.js changes"; }
+        Chips { items: root.modes; chosen-index: root.mode-index; chip-width: 96px; choose(i) => { root.choose-mode(i); } }
+
+        HorizontalLayout {
+            Heading { text: "Fixture model"; vertical-alignment: center; }
+            Rectangle {
+                horizontal-stretch: 0;
+                width: play.preferred-width + 16px;
+                height: 24px;
+                visible: root.scenario-index >= 0 && root.scenarios[root.scenario-index].steps > 0;
+                border-radius: 3px;
+                border-width: 1px;
+                border-color: Bench.chosen;
+                background: play-touch.pressed ? #d0d9e4 : transparent;
+                play := Text {
+                    text: root.scenario-index >= 0 ? "Play its " + root.scenarios[root.scenario-index].steps + " steps" : "";
+                    color: Bench.chosen;
+                    font-size: Bench.small;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+                play-touch := TouchArea { clicked => { root.play-steps(); } }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            min-height: 120px;
+            border-width: 1px;
+            border-color: Bench.rule;
+            clip: true;
+            Flickable {
+                viewport-height: root.scenarios.length * 36px;
+                for s[i] in root.scenarios: Rectangle {
+                    y: i * 36px;
+                    height: 36px;
+                    background: i == root.scenario-index ? Bench.chosen : (row.has-hover ? #dde3e8 : transparent);
+                    VerticalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: center;
+                        Text { text: s.name; color: i == root.scenario-index ? white : Bench.ink; overflow: elide; }
+                        Text { text: s.ref; font-size: Bench.small; color: i == root.scenario-index ? #c9d6ea : Bench.soft; overflow: elide; }
+                    }
+                    row := TouchArea { clicked => { root.choose-scenario(i); } }
+                }
+            }
+        }
+
+        Heading { text: "Reloads, save to new frame"; }
+        VerticalLayout {
+            spacing: 4px;
+            if root.reloads.length == 0: Text { text: "Save a .slint or logic.ts file in the package."; color: Bench.soft; font-size: Bench.small; wrap: word-wrap; }
+            for r in root.reloads: HorizontalLayout {
+                spacing: 8px;
+                Rectangle {
+                    width: 4px;
+                    background: r.failed ? Bench.lost : (r.kept ? Bench.kept : #c08a1e);
+                }
+                VerticalLayout {
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Text { text: r.kind; font-weight: 700; color: Bench.ink; horizontal-stretch: 0; }
+                        Text { text: r.ms; color: Bench.ink; horizontal-stretch: 1; }
+                    }
+                    Text { text: r.detail; color: Bench.soft; font-size: Bench.small; wrap: word-wrap; }
+                }
+            }
+        }
+
+        Text { text: root.status; color: Bench.soft; font-size: Bench.small; wrap: word-wrap; }
+        Text {
+            text: "Keys in the package window: arrows move, Enter confirm, Esc back, M menu, O options, S system, F2 next package.";
+            color: Bench.soft;
+            font-size: Bench.small;
+            wrap: word-wrap;
+        }
+    }
+}
