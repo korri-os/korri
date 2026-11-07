@@ -103,11 +103,12 @@ The last two run the shell's headless probe
 
 Each `update`, `view` and `overlay` call runs under the shell's 50 ms budget
 (contract 3), and the RG353M idles at 408 MHz. `tests/pico_package.rs` in
-`clients/shell` (`calls_stay_well_inside_the_budget_on_a_slow_clock`) counts
-the instructions of every call the shell makes over 10,000 games at 640x480
-and holds each kind of call under 10 ms on the device (the median, as
-Zone's test), with Zone's measure of the clock (`tests/zone_package.rs`), but
-for these (`limit_ms`):
+`clients/shell` (`calls_stay_well_inside_the_budget_on_a_slow_clock`) measures
+the thread CPU time of every call the shell makes over 10,000 games at
+640x480 (#368). It keeps the existing 28× i9-11900H-to-RG353M factor and
+/2 CPU allowance, and holds each kind of call under 10 ms on the device
+(the median, as Zone's test), but for these (`limit_ms`). Instruction counts
+are optional diagnostics, not pass marks:
 
 - A window of games not seen before (the library's first arrival, the shelf
   or the hero after a change of order): about 11-14 ms, as every cart it

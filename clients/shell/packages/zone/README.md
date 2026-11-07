@@ -51,9 +51,9 @@ nix run .#zone-check                   # the bun checks and logic.js freshness
 Each `view()` call runs under the shell's 50 ms budget, and the RG353M at
 408 MHz runs Zone's logic about 28 times slower than an i9-11900H.
 `tests/zone_package.rs` (`view_calls_stay_well_inside_the_budget_on_a_slow_clock`)
-counts the instructions of each call over 10,000 games at 640x480 (the CPU's
-own count, so a busy machine does not change it) and holds them to the
-device's time: the attract's next game about 7 ms there (it patches the last
+measures thread CPU time over 10,000 games at 640x480 (#368), with the
+existing 28× workstation-to-device factor and /2 CPU allowance. Instruction
+counts are optional diagnostics, not pass marks. The device's measured time: the attract's next game about 7 ms there (it patches the last
 view), a move along the band about 12–13 ms. A call's JSON is about half
 of it, and it grows with the number of objects, not bytes: the view sends
 whole cards only for the band's pool and the attract's game (and none past

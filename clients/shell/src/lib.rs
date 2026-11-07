@@ -4,6 +4,7 @@
 
 pub mod backend;
 pub mod bench;
+pub mod budget_clock;
 pub mod catalog;
 pub mod config;
 pub mod engine;

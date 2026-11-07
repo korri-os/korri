@@ -12,16 +12,11 @@
 //! to do. A call over [`CALL_BUDGET`] is no violation: the engine records it
 //! (`take_slowest`) and the shell logs it as a performance defect.
 
+use crate::budget_clock::{BudgetClock, Timer};
 use anyhow::{anyhow, Result};
 use rquickjs::{Context, Function, Object, Persistent, Runtime};
 use serde_json::Value;
-use std::{
-    cell::Cell,
-    collections::BTreeMap,
-    fmt,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, collections::BTreeMap, fmt, rc::Rc, time::Duration};
 
 /// Contract 3.9: QuickJS heap per surface.
 pub const HEAP_LIMIT: usize = 64 * 1024 * 1024;
@@ -29,7 +24,7 @@ pub const HEAP_LIMIT: usize = 64 * 1024 * 1024;
 /// `overlay` call (and per `setModel` after the surface loaded). A call over it
 /// is a performance defect, logged by the shell; the surface keeps running.
 pub const CALL_BUDGET: Duration = Duration::from_millis(50);
-/// Wall time for one surface load: evaluating `logic.js`, reading its
+/// Time for one surface load: evaluating `logic.js`, reading its
 /// declarations, the first model and `init`, together. Once per load or switch.
 pub const LOAD_BUDGET: Duration = Duration::from_millis(2_000);
 /// A5: a call after the load still running after this long is stuck. The
@@ -39,6 +34,8 @@ pub const STUCK_LIMIT: Duration = LOAD_BUDGET;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
+    /// Wall time on devices; explicitly ThreadCpu in verification and tests.
+    pub clock: BudgetClock,
     pub heap: usize,
     /// Per `update`, `view` and `overlay` call: the performance budget. Not
     /// enforced by the engine.
@@ -52,6 +49,7 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
+            clock: BudgetClock::Wall,
             heap: HEAP_LIMIT,
             call: CALL_BUDGET,
             stuck: STUCK_LIMIT,
@@ -201,7 +199,7 @@ pub struct Engine {
     dispatch: Persistent<Object<'static>>,
     context: Context,
     runtime: Runtime,
-    deadline: Rc<Cell<Instant>>,
+    deadline: Rc<Cell<(Timer, Duration)>>,
     limits: Limits,
     declaration: Declaration,
     displays: Option<Displays>,
@@ -213,7 +211,7 @@ pub struct Engine {
     slowest: Option<(&'static str, Duration)>,
     /// While loading (until `init` returns): when the load started. Every call
     /// in that phase shares `limits.load`, measured from this instant.
-    loading: Option<Instant>,
+    loading: Option<Timer>,
     load_time: Duration,
 }
 
@@ -236,17 +234,18 @@ impl Engine {
         })?;
         runtime.set_memory_limit(limits.heap);
         runtime.set_max_stack_size(1024 * 1024);
-        let deadline = Rc::new(Cell::new(Instant::now() + limits.load));
-        let clock = deadline.clone();
+        let deadline = Rc::new(Cell::new((limits.clock.start(), limits.load)));
+        let interrupt_deadline = deadline.clone();
         runtime.set_interrupt_handler(Some(Box::new(move || {
-            stop.load(std::sync::atomic::Ordering::Relaxed) || Instant::now() >= clock.get()
+            let (started, budget) = interrupt_deadline.get();
+            stop.load(std::sync::atomic::Ordering::Relaxed) || started.elapsed() >= budget
         })));
         let context = Context::full(&runtime).map_err(|e| Violation::Exception {
             call: "load",
             message: e.to_string(),
         })?;
-        let started = Instant::now();
-        deadline.set(started + limits.load);
+        let started = limits.clock.start();
+        deadline.set((started, limits.load));
         let dispatch = context.with(|ctx| -> Result<Persistent<Object<'static>>, Violation> {
             let run = || -> rquickjs::Result<Persistent<Object<'static>>> {
                 ctx.eval::<(), _>(SANDBOX)?;
@@ -320,7 +319,7 @@ impl Engine {
         self.max_call
     }
 
-    /// The slowest call (its name and wall time) since the last time this was
+    /// The slowest call (its name and selected-clock time) since the last time this was
     /// asked, after the load. The shell compares it with `limits().call`.
     pub fn take_slowest(&mut self) -> Option<(&'static str, Duration)> {
         self.slowest.take()
@@ -430,9 +429,9 @@ impl Engine {
         name: &'static str,
         call: impl for<'js> FnOnce(Function<'js>) -> rquickjs::Result<T>,
     ) -> Result<T, Violation> {
-        let started = self.loading.unwrap_or_else(Instant::now);
+        let started = self.loading.unwrap_or_else(|| self.limits.clock.start());
         let budget = self.budget();
-        self.deadline.set(started + budget);
+        self.deadline.set((started, budget));
         let dispatch = self.dispatch.clone();
         let result = self.context.with(|ctx| {
             let object = dispatch
@@ -461,7 +460,7 @@ impl Engine {
         }
     }
 
-    fn over_budget(&self, call: &'static str, started: Instant) -> Result<(), Violation> {
+    fn over_budget(&self, call: &'static str, started: Timer) -> Result<(), Violation> {
         let elapsed = started.elapsed();
         if elapsed > self.budget() {
             return Err(Violation::Time {
@@ -520,6 +519,17 @@ pub fn read_source(path: &std::path::Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod support {
+        use crate as korri_shell;
+        include!("../tests/support/mod.rs");
+    }
+
+    fn cpu_limits() -> Limits {
+        Limits {
+            clock: BudgetClock::ThreadCpu,
+            ..Limits::default()
+        }
+    }
     use serde_json::json;
 
     const COUNTER: &str = r#"
@@ -542,7 +552,7 @@ mod tests {
 
     #[test]
     fn keeps_non_json_state_inside_and_returns_requests() -> Result<(), Violation> {
-        let mut engine = Engine::load(COUNTER, Limits::default())?;
+        let mut engine = Engine::load(COUNTER, cpu_limits())?;
         assert_eq!(engine.declaration()["zone.look"].initial, "modern");
         engine.set_model(r#"{"total": 3}"#)?;
         engine.init(&prefs("retro"))?;
@@ -559,11 +569,8 @@ mod tests {
         Ok(())
     }
 
-    /// Busy-waits `ms` milliseconds inside QuickJS (`Date.now` is withdrawn).
-    fn spin(ms: u32) -> String {
-        format!(
-            "{{ const t0 = new Date().getTime(); while (new Date().getTime() - t0 < {ms}) {{}} }}"
-        )
+    fn spin(ms: u64) -> String {
+        support::cpu_spin(ms)
     }
 
     #[test]
@@ -575,7 +582,7 @@ mod tests {
             spin(60),
             spin(60)
         );
-        let mut engine = Engine::load(&source, Limits::default()).expect("a 60 ms load succeeds");
+        let mut engine = Engine::load(&source, cpu_limits()).expect("a 60 ms load succeeds");
         engine.set_model("{}").expect("model");
         engine
             .init(&BTreeMap::new())
@@ -605,7 +612,7 @@ mod tests {
             "globalThis.surface = {{ init: () => 0, update: (s) => {{ {} return {{ state: s + 1, requests: [] }}; }}, view: (s) => ({{ n: s }}) }};",
             spin(80)
         );
-        let mut engine = Engine::load(&source, Limits::default()).expect("load");
+        let mut engine = Engine::load(&source, cpu_limits()).expect("load");
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
         assert_eq!(engine.take_slowest(), None, "load calls are not recorded");
@@ -621,8 +628,8 @@ mod tests {
 
     #[test]
     fn a_load_over_two_seconds_is_refused() {
-        let started = Instant::now();
-        let error = Engine::load("while (true) {}", Limits::default())
+        let started = BudgetClock::ThreadCpu.start();
+        let error = Engine::load("while (true) {}", cpu_limits())
             .err()
             .expect("refused");
         assert_eq!(error.kind(), "time", "{error}");
@@ -636,9 +643,9 @@ mod tests {
             "{}\nglobalThis.surface = {{ init: () => {{ while (true) {{}} }}, update: (s) => ({{ state: s, requests: [] }}), view: () => ({{}}) }};",
             spin(1500)
         );
-        let mut engine = Engine::load(&source, Limits::default()).expect("1.5 s evaluation fits");
+        let mut engine = Engine::load(&source, cpu_limits()).expect("1.5 s evaluation fits");
         engine.set_model("{}").expect("model");
-        let started = Instant::now();
+        let started = BudgetClock::ThreadCpu.start();
         let error = engine.init(&BTreeMap::new()).unwrap_err();
         assert_eq!(error.kind(), "time", "{error}");
         assert!(
@@ -652,12 +659,12 @@ mod tests {
         let source = "globalThis.surface = { init: () => 0, update: (s) => { while (true) {} }, view: () => ({}) };";
         let limits = Limits {
             stuck: Duration::from_millis(200),
-            ..Limits::default()
+            ..cpu_limits()
         };
         let mut engine = Engine::load(source, limits).expect("load");
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
-        let started = Instant::now();
+        let started = BudgetClock::ThreadCpu.start();
         let error = engine
             .update(&json!({"_tag": "KorriPublished"}))
             .unwrap_err();
@@ -675,7 +682,7 @@ mod tests {
         let limits = Limits {
             heap: 16 * 1024 * 1024,
             stuck: Duration::from_secs(5),
-            ..Limits::default()
+            ..cpu_limits()
         };
         let mut engine = Engine::load(source, limits).expect("load");
         engine.set_model("{}").expect("model");
@@ -690,7 +697,7 @@ mod tests {
     fn wrong_shapes_and_throws_are_violations() {
         let old_style =
             "globalThis.surface = { init: () => 0, update: (s) => s, view: () => ({}) };";
-        let mut engine = Engine::load(old_style, Limits::default()).expect("load");
+        let mut engine = Engine::load(old_style, cpu_limits()).expect("load");
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
         assert_eq!(
@@ -701,7 +708,7 @@ mod tests {
             "contract"
         );
         let throws = "globalThis.surface = { init: () => 0, update: (s) => ({state: s, requests: []}), view: () => { throw new Error('planted') } };";
-        let mut engine = Engine::load(throws, Limits::default()).expect("load");
+        let mut engine = Engine::load(throws, cpu_limits()).expect("load");
         engine.set_model("{}").expect("model");
         engine.init(&BTreeMap::new()).expect("init");
         let error = engine.view().unwrap_err();
@@ -709,9 +716,9 @@ mod tests {
             matches!(&error, Violation::Exception { message, .. } if message.contains("planted")),
             "{error}"
         );
-        assert!(Engine::load("globalThis.surface = {}", Limits::default()).is_err());
+        assert!(Engine::load("globalThis.surface = {}", cpu_limits()).is_err());
         let clock = "globalThis.surface = { init: () => Date.now(), update: (s) => ({state: s, requests: []}), view: () => ({}) };";
-        let mut engine = Engine::load(clock, Limits::default()).expect("load");
+        let mut engine = Engine::load(clock, cpu_limits()).expect("load");
         engine.set_model("{}").expect("model");
         assert_eq!(
             engine.init(&BTreeMap::new()).unwrap_err().kind(),
@@ -724,7 +731,7 @@ mod tests {
         let load = |line: &str| {
             Engine::load(
                 &format!("globalThis.surface = {{ {line} init: () => 0, update: (s) => ({{ state: s, requests: [] }}), view: () => ({{}}) }};"),
-                Limits::default(),
+                cpu_limits(),
             )
         };
         assert_eq!(load("").unwrap().displays(), None);

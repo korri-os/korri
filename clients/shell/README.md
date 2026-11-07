@@ -184,6 +184,11 @@ Each surface's logic runs under three limits (`src/engine.rs`):
 | `CALL_BUDGET` | 50 ms | each `update`, `view` and `overlay` call, and each later model: the performance budget, not a limit |
 | `STUCK_LIMIT` | 2,000 ms | each call after the load: a call still running then is interrupted |
 
+Build verification, tests and bench logic budgets use the QuickJS thread's
+CPU time (`Limits.clock`, #368). Device runtime keeps wall time, the default.
+No environment variable selects the budget clock. The limits are unchanged;
+CPU budgets do not catch time spent waiting for locks or I/O.
+
 Contract amendment A5 (owner, 2026-11-06) decides what happens at run time:
 
 - A call over `CALL_BUDGET` is a performance defect. The shell logs

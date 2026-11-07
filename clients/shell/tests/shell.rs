@@ -2,6 +2,8 @@
 //! wire against the fixture korrid, the software renderer in memory.
 #![cfg(feature = "fixture")]
 
+mod support;
+
 use korri_shell::{
     backend::{headless::Headless, Backend, HostEvent, Placement},
     catalog,
@@ -71,6 +73,16 @@ fn rig(ids: &[&str], games: usize, behaviour: Behaviour) -> Rig {
         .map(|id| {
             let dir = root.path().join(id);
             copy(&source(id), &dir);
+            if *id == "probe" {
+                static SPIN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+                let spin = SPIN.get_or_init(|| support::cpu_spin(120));
+                let path = dir.join("logic.js");
+                let source = std::fs::read_to_string(&path).unwrap().replace(
+                    "const t0 = new Date().getTime(); while (new Date().getTime() - t0 < 120) {}",
+                    spin,
+                );
+                std::fs::write(path, source).unwrap();
+            }
             Package::at(&dir).unwrap()
         })
         .collect();
@@ -78,7 +90,10 @@ fn rig(ids: &[&str], games: usize, behaviour: Behaviour) -> Rig {
     let fixture = Fixture::start(model, catalog::games(&examples, games), behaviour).unwrap();
     let queue = Arc::new(Queue::default());
     let options = Options {
-        limits: Limits::default(),
+        limits: Limits {
+            clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
+            ..Limits::default()
+        },
         placement: Placement::Windowed {
             width: 640,
             height: 480,

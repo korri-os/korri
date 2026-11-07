@@ -5,7 +5,7 @@
 //! Pico's own gates, previews and focus walk run with `bun test` in
 //! packages/pico/test (`nix run .#pico-check`).
 
-use korri_shell::{catalog, engine, images::ImageCache, view};
+use korri_shell::{budget_clock::BudgetClock, catalog, engine, images::ImageCache, view};
 use serde_json::{json, Value};
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
 use slint::platform::{Platform, WindowAdapter};
@@ -87,20 +87,24 @@ struct Run {
     korri: Korri,
     counter: Option<Instructions>,
     costs: BTreeMap<String, Vec<u64>>,
+    instructions: BTreeMap<String, Vec<u64>>,
     /// The last view drawn, to tell where the presses led.
     drawn: Value,
 }
 
 impl Run {
-    fn now(&self) -> u64 {
-        self.counter
-            .as_ref()
-            .map_or_else(cpu_nanos, Instructions::read)
-    }
     fn count<T>(&mut self, what: String, call: impl FnOnce(&mut engine::Engine) -> T) -> T {
-        let started = self.now();
+        let instructions = self.counter.as_ref().map(Instructions::read);
+        let started = BudgetClock::ThreadCpu.start();
         let out = call(&mut self.engine);
-        let cost = self.now() - started;
+        let cost = started.elapsed().as_nanos() as u64;
+        if let Some(before) = instructions {
+            let cost = self.counter.as_ref().unwrap().read() - before;
+            self.instructions
+                .entry(what.clone())
+                .or_default()
+                .push(cost);
+        }
         self.costs.entry(what).or_default().push(cost);
         out
     }
@@ -149,8 +153,8 @@ impl Run {
 /// game's own screen, MENU, Find, Settings, the grid and the hero, a resize,
 /// and the pause menu. Each kind of call stays under its limit on the device
 /// (`limit_ms`; the median, as Zone's test; a collection of garbage may add
-/// `GARBAGE_MS` to one), estimated from the instructions it runs here (or, where the counter is not available, from its CPU time, with
-/// room for a busy machine).
+/// `GARBAGE_MS` to one), estimated from thread CPU time with the existing workstation/device
+/// factor and allowance. Instruction counts are diagnostic only (#368).
 #[test]
 fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
     let source = std::fs::read_to_string(
@@ -172,6 +176,7 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
         &source,
         engine::Limits {
             call: std::time::Duration::from_secs(5),
+            clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
             ..engine::Limits::default()
         },
     )
@@ -184,6 +189,7 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
         korri,
         counter: Instructions::open(),
         costs: BTreeMap::new(),
+        instructions: BTreeMap::new(),
         drawn: json!({}),
     };
     // Boot: korrid is still reading the library; the shell sends the window.
@@ -320,15 +326,16 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
     for _ in 0..5 {
         run.count("view again (JSON only)".into(), |e| e.view().unwrap());
     }
-    let instructions = run.counter.is_some();
-    let unit = if instructions { "instructions" } else { "ns" };
-    let device_ms = |n: u64| {
-        if instructions {
-            n as f64 / PICO_INSTRUCTIONS_PER_DEVICE_MS
-        } else {
-            n as f64 * PICO_SLOW_FACTOR / 1_000_000.0
-        }
-    };
+    let device_ms = |n: u64| n as f64 * PICO_SLOW_FACTOR / 1_000_000.0;
+    for (what, list) in &run.instructions {
+        let mut sorted = list.clone();
+        sorted.sort();
+        eprintln!(
+            "{what}: median {} instructions, worst {} (diagnostic only)",
+            sorted[sorted.len() / 2],
+            sorted.last().unwrap()
+        );
+    }
     let mut over = Vec::new();
     for (what, list) in &run.costs {
         let mut sorted = list.clone();
@@ -336,18 +343,12 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
         let median = sorted[sorted.len() / 2];
         let worst = *sorted.last().unwrap();
         eprintln!(
-            "{what}: {} calls, median {median} {unit}, worst {worst} (about {:.1} ms on the device)",
+            "{what}: {} calls, median {median} CPU ns, worst {worst} (about {:.1} ms on the device)",
             sorted.len(),
             device_ms(worst),
         );
-        // CPU time, with room for a busy machine.
-        let ms = |n: u64| {
-            if instructions {
-                device_ms(n)
-            } else {
-                device_ms(n) / 2.0
-            }
-        };
+        // Keep the existing CPU-path factor and allowance unchanged.
+        let ms = |n: u64| device_ms(n) / 2.0;
         let limit = limit_ms(what);
         if ms(median) > limit {
             over.push(format!(
@@ -418,6 +419,7 @@ fn long_lists_keep_the_cursor_in_sight() {
             &source,
             engine::Limits {
                 call: std::time::Duration::from_secs(5),
+                clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
                 ..engine::Limits::default()
             },
         )
@@ -580,21 +582,6 @@ fn merge(drawn: &mut Value, view: Value) {
 /// How much slower the RG353M at 408 MHz runs a surface's logic than this
 /// workstation (an i9-11900H): Zone's measure (tests/zone_package.rs).
 const PICO_SLOW_FACTOR: f64 = 28.0;
-
-/// Workstation instructions per millisecond of the same call on the RG353M
-/// at 408 MHz: Zone's measure (tests/zone_package.rs), 4.38 M instructions
-/// for about 17 ms on the device.
-const PICO_INSTRUCTIONS_PER_DEVICE_MS: f64 = 4_380_000.0 / 17.0;
-
-/// The thread's CPU time in ns.
-fn cpu_nanos() -> u64 {
-    let mut now = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) };
-    now.tv_sec as u64 * 1_000_000_000 + now.tv_nsec as u64
-}
 
 /// The CPU's count of user-space instructions this thread retires
 /// (perf_event_open), when the kernel lets a process count its own.

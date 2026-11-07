@@ -452,6 +452,11 @@ fn drawn_targets(
 
 /// Verify one package. Always returns a summary; `pass` says whether it may load.
 pub fn verify(package: &Package, limits: Limits) -> Summary {
+    // Verification is a build/test gate, not device response time (#368).
+    let limits = Limits {
+        clock: crate::budget_clock::BudgetClock::ThreadCpu,
+        ..limits
+    };
     let mut summary = Summary {
         verifier: VERIFIER.into(),
         slint: SLINT.into(),

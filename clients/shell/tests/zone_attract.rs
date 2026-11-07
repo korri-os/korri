@@ -65,6 +65,7 @@ impl Run {
             &source,
             engine::Limits {
                 stuck: Duration::from_secs(5),
+                clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
                 ..engine::Limits::default()
             },
         )

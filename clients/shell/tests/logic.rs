@@ -2,6 +2,8 @@
 //! time in the order sent, a waiting `Tick` gives way to a newer one, the stuck
 //! limit holds there, a slow call returns, and dropping the logic stops a running call.
 
+mod support;
+
 use korri_shell::{
     engine::{Limits, Violation},
     logic::{Call, Done, Logic, Outcome},
@@ -29,7 +31,11 @@ globalThis.surface = {
 "#;
 
 fn start(limits: Limits) -> (Logic, Done, mpsc::Receiver<Outcome>) {
-    let logic = Logic::start(SOURCE.into(), limits, "test").unwrap();
+    let source = SOURCE.replace(
+        "const t0 = new Date().getTime(); while (new Date().getTime() - t0 < message.ms) {}",
+        &support::cpu_spin(120),
+    );
+    let logic = Logic::start(source, limits, "test").unwrap();
     logic
         .now(|w| {
             let engine = w.engine();
@@ -59,7 +65,10 @@ fn seen(outcome: &Outcome) -> Vec<Value> {
 
 #[test]
 fn calls_run_one_at_a_time_in_the_order_sent() {
-    let (mut logic, done, rx) = start(Limits::default());
+    let (mut logic, done, rx) = start(Limits {
+        clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
+        ..Limits::default()
+    });
     for n in 0..20 {
         logic.submit(Call::Message(json!({"_tag": "Pressed", "n": n})), &done);
     }
@@ -80,6 +89,7 @@ fn ticks_waiting_behind_a_running_call_give_way_to_the_newest() {
     // fast it is; a loose budget keeps a loaded machine from breaking it.
     let limits = Limits {
         stuck: Duration::from_secs(10),
+        clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
         ..Limits::default()
     };
     let (mut logic, done, rx) = start(limits);
@@ -130,10 +140,10 @@ fn ticks_waiting_behind_a_running_call_give_way_to_the_newest() {
 fn a_runaway_call_is_stopped_at_the_stuck_limit_on_the_logic_thread() {
     let limits = Limits {
         stuck: Duration::from_millis(300),
+        clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
         ..Limits::default()
     };
     let (mut logic, done, rx) = start(limits);
-    let started = Instant::now();
     logic.submit(Call::Message(json!({"_tag": "Loop"})), &done);
     let outcome = next(&mut logic, &done, &rx);
     assert!(
@@ -141,7 +151,7 @@ fn a_runaway_call_is_stopped_at_the_stuck_limit_on_the_logic_thread() {
         "{:?}",
         outcome.result
     );
-    let elapsed = started.elapsed();
+    let elapsed = logic.now(|w| w.engine().max_call()).unwrap();
     assert!(
         elapsed >= Duration::from_millis(300) && elapsed < Duration::from_secs(1),
         "{elapsed:?}"
@@ -152,7 +162,10 @@ fn a_runaway_call_is_stopped_at_the_stuck_limit_on_the_logic_thread() {
 /// the slowest engine call, for the shell's log.
 #[test]
 fn a_slow_call_returns_with_its_slowest_engine_call() {
-    let (mut logic, done, rx) = start(Limits::default());
+    let (mut logic, done, rx) = start(Limits {
+        clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
+        ..Limits::default()
+    });
     logic.submit(Call::Message(json!({"_tag": "Spin", "ms": 120})), &done);
     let outcome = next(&mut logic, &done, &rx);
     let step = outcome.result.expect("a slow call is no violation");
@@ -167,6 +180,7 @@ fn dropping_the_logic_stops_a_running_call() {
     // A budget far beyond the test: only the stop can end the loop.
     let limits = Limits {
         stuck: Duration::from_secs(60),
+        clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
         ..Limits::default()
     };
     let (mut logic, done, _rx) = start(limits);

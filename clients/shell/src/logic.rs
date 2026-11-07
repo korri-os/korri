@@ -27,7 +27,7 @@ use std::{
         mpsc, Arc,
     },
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 /// What the UI thread asks of the logic.
@@ -60,7 +60,7 @@ pub struct Step {
     pub overlay: Option<(Value, Diff)>,
     /// Whether the model asks for the gameplay overlay (after a `Model` call).
     pub gameplay_overlay: Option<bool>,
-    /// Wall time of the call on the logic thread.
+    /// Selected-clock time of the call on the logic thread.
     pub took: Duration,
     /// The message's `_tag` (`KorriPublished` for a model).
     pub message: String,
@@ -107,7 +107,7 @@ impl Worker {
     }
 
     fn run(&mut self, call: Call) -> Outcome {
-        let started = Instant::now();
+        let started = self.engine.limits().clock.start();
         self.engine.take_slowest();
         let message = match &call {
             Call::Message(m) => m

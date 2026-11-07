@@ -202,6 +202,7 @@ fn plan_for(root: &Path, width: u32, height: u32) -> Value {
         &source,
         engine::Limits {
             stuck: std::time::Duration::from_secs(5),
+            clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
             ..engine::Limits::default()
         },
     )
@@ -643,6 +644,7 @@ fn every_reachable_focus_target_is_inside_the_window_at_every_size() {
                 &source,
                 engine::Limits {
                     stuck: std::time::Duration::from_secs(5),
+                    clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
                     ..engine::Limits::default()
                 },
             )
@@ -847,11 +849,12 @@ fn logic_loads_well_inside_the_call_budget() {
     let source = std::fs::read_to_string(path).unwrap();
     let mut best = std::time::Duration::MAX;
     for _ in 0..10 {
-        let started = std::time::Instant::now();
+        let started = korri_shell::budget_clock::BudgetClock::ThreadCpu.start();
         let _ = engine::Engine::load(
             &source,
             engine::Limits {
                 stuck: std::time::Duration::from_secs(5),
+                clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
                 ..engine::Limits::default()
             },
         )
@@ -962,6 +965,7 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
         &source,
         engine::Limits {
             stuck: std::time::Duration::from_secs(5),
+            clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
             ..engine::Limits::default()
         },
     )
@@ -986,19 +990,24 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     );
     deliver(&mut engine, &mut korri, json!({"_tag": "KorriPublished"}));
     engine.view().unwrap();
-    // The thread's own CPU time, so other work on a busy machine does not count.
-    // What a call costs: the instructions this thread runs in it (counted by
-    // the CPU, so other work on a busy machine does not count), or, where the
-    // counter is not available, the thread's CPU time.
+    // Thread CPU time is the pass/fail clock; instruction counts are diagnostics.
     let counter = Instructions::open();
     // ZONE_VIEW_SKIP=1 leaves the timed calls out (for counting what they cost).
     let skip = std::env::var_os("ZONE_VIEW_SKIP").is_some();
     let timed = |engine: &mut engine::Engine| {
-        let started = counter.as_ref().map_or_else(cpu_nanos, Instructions::read);
+        let instructions = counter.as_ref().map(Instructions::read);
+        let started = korri_shell::budget_clock::BudgetClock::ThreadCpu.start();
         if !skip {
             engine.view().unwrap();
         }
-        counter.as_ref().map_or_else(cpu_nanos, Instructions::read) - started
+        let elapsed = started.elapsed().as_nanos() as u64;
+        if let Some(before) = instructions {
+            eprintln!(
+                "view: {} instructions (diagnostic only)",
+                counter.as_ref().unwrap().read() - before
+            );
+        }
+        elapsed
     };
     let mut times: BTreeMap<&str, Vec<u64>> = BTreeMap::new();
     // ZONE_VIEW_MOVES: band moves each way (10).
@@ -1059,23 +1068,16 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
         // every other call under 15 ms (band moves estimate about 13 ms; see
         // README.md, Limits).
         let device_ms = if *what == "attract next" { 10.0 } else { 15.0 };
-        let limit = match counter {
-            Some(_) => (device_ms * ZONE_INSTRUCTIONS_PER_DEVICE_MS) as u64,
-            // CPU time, with room for a busy machine.
-            None => (2.0 * device_ms * 1_000_000.0 / ZONE_SLOW_FACTOR) as u64,
-        };
-        let unit = if counter.is_some() {
-            "instructions"
-        } else {
-            "ns"
-        };
+        // Keep the existing CPU-path factor and allowance unchanged.
+        let limit = (2.0 * device_ms * 1_000_000.0 / ZONE_SLOW_FACTOR) as u64;
+        let unit = "CPU ns";
         let mut sorted = list.clone();
         sorted.sort();
         let median = sorted[sorted.len() / 2];
         eprintln!(
             "{what}: median {median} {unit}, worst {} (limit {limit}; about {:.1} ms on the device)",
             sorted.last().unwrap(),
-            if counter.is_some() { median as f64 / ZONE_INSTRUCTIONS_PER_DEVICE_MS } else { median as f64 * ZONE_SLOW_FACTOR / 1_000_000.0 }
+            median as f64 * ZONE_SLOW_FACTOR / 1_000_000.0
         );
         if median > limit {
             over.push(format!("{what}: median {median} {unit} over {limit}"));
@@ -1089,21 +1091,6 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
 /// next game against 2.07 ms here for the same call before Zone made it
 /// incremental (25 to 28 times).
 const ZONE_SLOW_FACTOR: f64 = 28.0;
-
-/// Workstation instructions per millisecond of the same call on the RG353M
-/// at 408 MHz: a band move counted 4.38 M instructions here before 597896ae3
-/// and took about 0.6 ms here, about 17 ms on the device.
-const ZONE_INSTRUCTIONS_PER_DEVICE_MS: f64 = 4_380_000.0 / 17.0;
-
-/// The thread's CPU time in ns.
-fn cpu_nanos() -> u64 {
-    let mut now = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) };
-    now.tv_sec as u64 * 1_000_000_000 + now.tv_nsec as u64
-}
 
 /// The CPU's count of user-space instructions this thread retires
 /// (perf_event_open), when the kernel lets a process count its own.

@@ -178,6 +178,17 @@ image to the PICO-8 palette first. The algorithm is ported unchanged from
   - check every `view()` and `overlay()` against the declared properties
   - write a derived summary into the shell's cache. It is not plugin-host
     schema and is rebuilt when missing.
+- **Build and test budgets ([#368](https://github.com/korri-os/korri/issues/368), owner, 2026-11-06):**
+  count the calling thread's CPU time, including the load and stuck limits,
+  on the thread that runs QuickJS. Keep every limit unchanged. Verification,
+  tests and bench logic budgets do not count time descheduled or waiting
+  (locks or I/O); this is an accepted cost. Device runtime budgets stay wall
+  clock, including amendment A5's slow-call reporting and stuck interrupt.
+  Pico and Zone's slow-clock tests keep their existing CPU factors: 28×,
+  with the existing /2 allowance. These are calibrated on the i9-11900H
+  workstation against the RG353M at 408 MHz, not on arbitrary builders.
+  Retired-instruction counts differ by instruction set and are optional
+  diagnostics only, never build/test pass marks.
 - **At startup:** read one combined index. Never hash.
 - **At run time:** each logic call gets 64 MiB of QuickJS heap and 50 ms. A
   surface that breaks either limit is unloaded, and the previous one stays.

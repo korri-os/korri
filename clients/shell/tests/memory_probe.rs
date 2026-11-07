@@ -102,6 +102,15 @@ fn memory_stays_flat_over_20_rounds_of_both_packages() {
     );
     let source = zone.logic_source().unwrap();
     report("engine load", &mut || {
-        drop(engine::Engine::load(&source, engine::Limits::default()).unwrap());
+        drop(
+            engine::Engine::load(
+                &source,
+                engine::Limits {
+                    clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
+                    ..engine::Limits::default()
+                },
+            )
+            .unwrap(),
+        );
     });
 }
