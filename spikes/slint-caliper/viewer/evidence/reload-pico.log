@@ -1,0 +1,9 @@
+# headless sway 2880x1800 at scale 1.5, release build, PicoMenu on rg353m + odin2portal (4 frames).
+# 1-2: PicoMenu.slint (imported by the preview) background P8.shell-tell -> #ff00ff, then the saved copy back.
+# 3-4: Short state background P8.bg -> P8.no-such-colour in the preview file (Short fails alone), then the copy back.
+155 parts under /home/simonwjackson/code/sandbox/korri/.worktrees/c-95ea390a29a8536df260dd91ea8d1d6a5e77ea8781fc75ccd1de0d44d2a533d2/clients/shell/packages
+monitor HEADLESS-1: 8.471 px/mm (HEADLESS-1: KORRI_VIEWER_MONITOR_MM 340 x 220 mm, 2880 x 1800 px, not calibrated), window scale 1.5
+reload: pico/ui/organisms/PicoMenu.slint changed; PicoMenu recompiled in 81 ms; 4 frames created and drawn in 22 ms; on screen 187 ms after the save (first event to work: 84 ms); 0 states fail
+reload: pico/ui/organisms/PicoMenu.slint changed; PicoMenu recompiled in 18 ms; 4 frames created and drawn in 22 ms; on screen 110 ms after the save (first event to work: 70 ms); 0 states fail
+reload: pico/ui/organisms/PicoMenu.organism.preview.slint changed; PicoMenu recompiled in 48 ms; 2 frames created and drawn in 11 ms; on screen 120 ms after the save (first event to work: 61 ms); 1 states fail
+reload: pico/ui/organisms/PicoMenu.organism.preview.slint changed; PicoMenu recompiled in 21 ms; 4 frames created and drawn in 23 ms; on screen 101 ms after the save (first event to work: 57 ms); 0 states fail
