@@ -61,20 +61,42 @@ is disposable. The parent explicitly chose this allocation:
 | `…/storage/device.yaml` | Existing readable device configuration (`config/snapshot.rs`) |
 | `…/storage/upstreams.json` | Optional existing static peer configuration (`upstreams.rs`) |
 
-The edge creates only the three allocated directories. It rejects symlinks in
-all ancestors and rejects wrong type, owner or mode on those directories. It
-does not repair, migrate, search alternate roots or use HOME. A nonblocking
-exclusive directory `flock` covers the entire server lifetime and each offline
-operator command. There is no lock filename or stale PID format. Run offline
-commands only while the app is stopped, as the same app UID, in the same jail.
-Do not run a second identity writer against this allocation.
+The edge creates only the three allocated directories. A nonblocking exclusive
+directory `flock` covers the entire server lifetime and each offline operator
+command. There is no lock filename or stale PID format. Run offline commands
+only while the app is stopped, as the same app UID, in the same jail. Do not
+run a second identity writer against this allocation.
 
-**Known weakness:** `/media/developer` is root-owned 0777 without the sticky
-bit. Another app can rename this allocation. 0700 protects file contents, not
-the directory's name in its parent. This edge does not claim protection from a
-hostile app replacing a parent during pathname operations. UID 6236 stayed
-stable across the parent's uninstall/reinstall test; future UID changes must
-fail closed, not create a different identity silently.
+**Developer-mode boot policy:** the parent verified that
+`/etc/init/devmode.conf` runs `chmod -R 777 ${TMPDEVDIR} ${MEDIADEVDIR}` on every
+boot while developer mode is enabled (`MEDIADEVDIR=/media/developer`). Before
+server startup or any offline operator operation, the TV edge therefore audits
+its entire allocation, then re-tightens its directories to 0700 and regular
+files to 0600. It logs one stderr line naming `devmode.conf` only when it changes
+modes. It does not change the shared parent, siblings, ownership or file content.
+
+Any symlink, foreign UID, or entry other than a directory or regular file causes
+refusal before any permission repair. Multiply-linked regular files are also
+refused: changing one could affect a file outside the allocation. Traversal
+uses directory-relative, no-follow descriptors, retained through the audit and
+permission changes. Filesystem/resource errors fail closed. Credential directories
+remain strict; this repair applies only to the persistent allocation. No HBC
+hook, identity migration, alternate root or HOME fallback is installed.
+
+**Known weaknesses:**
+
+- Other developer-mode apps can read the device key between the boot-time
+  chmod and the first app launch or offline operation. Re-tightening cannot
+  undo that exposure or revoke a key already copied.
+- Turning developer mode off causes `devmode.conf` to remove
+  `/media/developer` at boot. This wipes the identity, owner binding and other
+  persistent app state. A later fresh allocation has a different device key.
+- `/media/developer` is root-owned 0777 without the sticky bit. Another app can
+  rename the allocation. Private modes protect contents after re-tightening,
+  not its name in the shared parent. This edge does not claim protection from
+  hostile concurrent replacement of that parent. UID 6236 stayed stable across
+  the parent's uninstall/reinstall test; future UID changes fail closed rather
+  than silently taking ownership or creating a different identity.
 
 Parent TV checks, not yet performed by these workstation tasks:
 

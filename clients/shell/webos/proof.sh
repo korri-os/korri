@@ -90,6 +90,10 @@ find "$work/home" -mindepth 1 -print >"$out/home-files.txt"
 # Fontconfig may create its own non-secret cache in HOME. Only this app's
 # launch directory and credential must disappear.
 test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
+if [[ -n "$real_brain" ]]; then
+    # Emulate the TV's devmode.conf boot chmod before the second server start.
+    chmod -R 777 /media/developer/org.korri.shell
+fi
 # The launcher also passes the shell's existing --surfaces ordering through.
 HOME="$work/home" "$work/app/launch.sh" "${launch_args[@]}" --surfaces pico,zone >"$out/pico-start.log" 2>&1 &
 launcher=$!
@@ -103,7 +107,33 @@ test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
 if [[ -n "$real_brain" ]]; then
     "$real_brain" identity status >"$out/identity-after.json"
     cmp "$out/identity-first.json" "$out/identity-after.json"
+    # A real foreign-owned entry, without root or a chown on the workstation:
+    # an inner mount namespace binds a root-owned file into only this test tree.
+    allocation=/media/developer/org.korri.shell
+    touch "$allocation/private/foreign-owner"
+    chmod -R 777 "$allocation"
+    if bwrap --unshare-user --ro-bind / / --dev /dev \
+        --bind "$allocation" "$allocation" \
+        --ro-bind /etc/passwd "$allocation/private/foreign-owner" -- \
+        "$real_brain" identity status >"$out/foreign-owner.stdout" 2>"$out/foreign-owner.stderr"; then
+        echo 'foreign-owned allocation entry was accepted' >&2
+        exit 1
+    fi
+    grep -q 'caller-owned' "$out/foreign-owner.stderr"
+    test "$(stat -c %a "$allocation")" = 777
+    test "$(stat -c %a "$allocation/private/identity/device.key")" = 777
+    rm "$allocation/private/foreign-owner"
+    # Offline identity operations must also repair the boot modes, once only.
+    "$real_brain" identity status >"$out/identity-offline.json" 2>"$out/offline-repair.log"
+    cmp "$out/identity-first.json" "$out/identity-offline.json"
+    test "$(grep -c '/etc/init/devmode.conf' "$out/offline-repair.log")" = 1
+    "$real_brain" identity status >"$out/identity-offline-again.json" 2>"$out/offline-no-repair.log"
+    test ! -s "$out/offline-no-repair.log"
+    test "$(stat -c %a "$allocation")" = 700
+    test "$(stat -c %a "$allocation/private/identity/device.key")" = 600
     cp "$work/tmp/korri-shell-launch.log" "$out/launch.log"
+    test "$(grep -c '/etc/init/devmode.conf' "$out/launch.log")" = 1
+    echo 'DEVMODE_STARTUP_OFFLINE_REPAIR_AND_FOREIGN_OWNER_REFUSAL_PASS'
     echo 'REAL_BRAIN_SDL_ZONE_PICO_ZONE_AND_IDENTITY_PERSISTENCE_PASS'
 fi
 echo 'SDL_1920x1080_ZONE_PICO_ZONE_LAUNCHER_CLEANUP_PASS'

@@ -12,6 +12,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "webos-korrid/allocation_permissions.rs"]
+mod allocation_permissions;
+
 // Explicit M2 allocation chosen after the operator inspected the jail mounts.
 // Never use HOME (the installed, root-owned app) or the disposable jail /tmp.
 const STATE_ROOT: &str = "/media/developer/org.korri.shell";
@@ -67,17 +70,21 @@ fn validate_ancestors(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+fn create_directory(path: &Path) -> io::Result<()> {
+    match DirBuilder::new().mode(0o700).create(path) {
+        Ok(()) => File::open(path.parent().expect("parent checked"))?.sync_all(),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 fn private_directory(path: &Path, create: bool) -> io::Result<()> {
     validate_ancestors(
         path.parent()
             .ok_or_else(|| io::Error::other("missing parent"))?,
     )?;
     if create {
-        match DirBuilder::new().mode(0o700).create(path) {
-            Ok(()) => File::open(path.parent().expect("parent checked"))?.sync_all()?,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
-        }
+        create_directory(path)?;
     }
     let metadata = fs::symlink_metadata(path)?;
     // SAFETY: geteuid has no arguments or preconditions.
@@ -104,10 +111,14 @@ struct State {
 
 impl State {
     fn open(root: &Path) -> io::Result<Self> {
-        private_directory(root, true)?;
+        validate_ancestors(
+            root.parent()
+                .ok_or_else(|| io::Error::other("missing parent"))?,
+        )?;
+        create_directory(root)?;
         let lock = OpenOptions::new()
             .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
             .open(root)?;
         // SAFETY: lock is an open directory fd; flock does not retain pointers.
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
@@ -115,6 +126,9 @@ impl State {
                 "webOS korrid is already using this state; stop the app before offline tools",
             ));
         }
+        // The same path covers server startup and every offline operation.
+        // Validate the entire tree before re-tightening any devmode boot modes.
+        allocation_permissions::tighten(&lock)?;
         let private = root.join("private");
         let storage = root.join("storage");
         private_directory(&private, true)?;
