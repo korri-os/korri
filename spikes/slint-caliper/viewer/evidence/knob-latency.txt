@@ -1,0 +1,58 @@
+# Knob change to the new frame on the screen, end to end (evidence/knob-latency.py).
+# Xvfb 2880x1800, SLINT_SCALE_FACTOR=1.5, zao (x86_64), release build, packages copy in /tmp.
+# Knob: Zone Tokens.ground-games typed into its field; the last key makes the colour valid.
+# The clock stops when a probe pixel inside a frame shows the new colour (XGetImage poll).
+
+## ZoneGames / Ready on RG353M: 1 frame of 640x480 (probe 500,300)
+run 0: #e70000 on screen after 12.0 ms
+run 1: #4ad39c on screen after 39.7 ms
+run 2: #e70000 on screen after 13.3 ms
+run 3: #4ad39c on screen after 8.5 ms
+run 4: #e70000 on screen after 7.1 ms
+run 5: #4ad39c on screen after 8.2 ms
+run 6: #e70000 on screen after 7.4 ms
+run 7: #4ad39c on screen after 13.6 ms
+run 8: #e70000 on screen after 92.3 ms
+run 9: #4ad39c on screen after 10.0 ms
+10 runs: median 12.0 ms, min 7.1, max 92.3
+
+## ZoneGames, all 6 states on RG353M and Odin 2 Portal: 12 frames, 6 of them 1920x1080 (probe 500,300: first RG353M frame)
+run 0: #e70000 on screen after 257.8 ms
+run 1: #4ad39c on screen after 166.3 ms
+run 2: #e70000 on screen after 226.0 ms
+run 3: #4ad39c on screen after 152.1 ms
+run 4: #e70000 on screen after 111.4 ms
+run 5: #4ad39c on screen after 136.1 ms
+run 6: #e70000 on screen after 86.4 ms
+run 7: #4ad39c on screen after 111.5 ms
+run 8: #e70000 on screen after 169.0 ms
+run 9: #4ad39c on screen after 167.4 ms
+10 runs: median 166.3 ms, min 86.4, max 257.8
+
+## Same 12 frames, probe 1000,1500: inside the Odin 2 Portal Ready frame
+run 0: #e70000 on screen after 150.2 ms
+run 1: #4ad39c on screen after 137.8 ms
+run 2: #e70000 on screen after 106.3 ms
+run 3: #4ad39c on screen after 112.3 ms
+run 4: #e70000 on screen after 109.0 ms
+run 5: #4ad39c on screen after 141.4 ms
+6 runs: median 137.8 ms, min 106.3, max 150.2
+
+## In-process (viewer log): the interpreter set, then the software render of every live frame
+knob: P8.bg = blue: set on 8 frames in 1.79 ms, frames drawn 81.26 ms after the change; saved black -> blue in pico/ui/palette.slint
+knob: Tokens.card-aspect = 0.80: set on 1 frames in 5.90 ms, frames drawn 13.14 ms after the change
+knob: Tokens.card-aspect = 0.81: set on 1 frames in 0.85 ms, frames drawn 7.88 ms after the change
+knob: Tokens.card-aspect = 0.83: set on 1 frames in 0.78 ms, frames drawn 7.17 ms after the change
+knob: Tokens.card-aspect = 0.85: set on 1 frames in 0.86 ms, frames drawn 6.34 ms after the change
+knob: Tokens.card-aspect = 0.86: set on 1 frames in 1.14 ms, frames drawn 5.73 ms after the change
+knob: Tokens.card-aspect = 0.88: set on 1 frames in 0.92 ms, frames drawn 6.00 ms after the change
+knob: Tokens.card-aspect = 0.90: set on 1 frames in 0.96 ms, frames drawn 6.00 ms after the change
+knob: Tokens.card-aspect = 0.91: set on 1 frames in 0.97 ms, frames drawn 5.65 ms after the change
+knob: Tokens.card-aspect = 0.93: set on 1 frames in 0.94 ms, frames drawn 5.96 ms after the change
+knob: Tokens.card-aspect = 0.95: set on 1 frames in 0.93 ms, frames drawn 6.50 ms after the change
+knob: Tokens.card-aspect = 0.96: set on 1 frames in 1.02 ms, frames drawn 7.42 ms after the change
+knob: Tokens.card-aspect = 0.98: set on 1 frames in 0.10 ms, frames drawn 3.64 ms after the change; saved 0.78 -> 0.98 in zone/ui/tokens.slint
+knob: Tokens.card-aspect = 0.98: set on 1 frames in 1.01 ms, frames drawn 8.72 ms after the change
+knob: Tokens.ground-games = #e70000: set on 12 frames in 0.06 ms, frames drawn 8.39 ms after the change; saved #4ad39c -> #e70000 in zone/ui/tokens.slint
+knob: Tokens.ground-games = #e70000: set on 12 frames in 0.12 ms, frames drawn 12.65 ms after the change; saved #4ad39c -> #e70000 in zone/ui/tokens.slint
+knob: Tokens.ground-games = #e70000: set on 12 frames in 0.14 ms, frames drawn 138.83 ms after the change

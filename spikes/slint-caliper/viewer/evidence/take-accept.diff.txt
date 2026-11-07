@@ -1,0 +1,58 @@
+$ find .caliper -type f (before Accept)
+.caliper/.gitignore
+.caliper/takes/1.json
+.caliper/takes/1/zone/ui/molecules/ZoneCard.molecule.preview.slint
+.caliper/takes/1/zone/ui/molecules/ZoneCard.slint
+
+$ cat .caliper/takes/1.json
+{
+  "created": 1794024110748,
+  "device": "rg35xxsp",
+  "part": "zone/ui/molecules/ZoneCard.molecule.preview.slint",
+  "state": "Focused"
+}
+
+$ viewer log
+take 1 accepted: wrote zone/ui/molecules/ZoneCard.molecule.preview.slint, zone/ui/molecules/ZoneCard.slint
+reload: .caliper/takes/1/zone/ui/molecules/ZoneCard.molecule.preview.slint, .caliper/takes/1/zone/ui/molecules/ZoneCard.slint, zone/ui/molecules/ZoneCard.molecule.preview.slint, zone/ui/molecules/ZoneCard.slint changed; ZoneCard recompiled in 39 ms; 2 frames created and drawn in 17 ms; on screen 128 ms after the save (first event to work: 71 ms); 0 states fail
+
+$ find .caliper -type f (after Accept)
+.caliper/accepted.json
+.caliper/.gitignore
+
+$ cat .caliper/accepted.json
+[
+  {
+    "at": 1794024184252,
+    "created": 1794024110748,
+    "files": [
+      "zone/ui/molecules/ZoneCard.molecule.preview.slint",
+      "zone/ui/molecules/ZoneCard.slint"
+    ],
+    "part": "zone/ui/molecules/ZoneCard.molecule.preview.slint",
+    "state": "Focused",
+    "take": "1"
+  }
+]
+
+$ diff -ru <checkout>/clients/shell/packages/zone <copy>/zone   (what Accept wrote)
+diff -ru clients/shell/packages/zone/ui/molecules/ZoneCard.slint zone/ui/molecules/ZoneCard.slint
+--- clients/shell/packages/zone/ui/molecules/ZoneCard.slint	2026-11-06 20:09:27.818020869 -0700
++++ zone/ui/molecules/ZoneCard.slint	2026-11-06 21:03:04.252492369 -0700
+@@ -55,14 +55,14 @@
+         y: -2 * root.a;
+         width: root.width + 4 * root.a;
+         height: root.height + 4 * root.a;
+-        background: Tokens.pink;
++        background: Tokens.yellow;
+     }
+     Rectangle {
+         x: 0;
+         y: 0;
+         width: parent.width;
+         height: parent.height;
+-        background: Tokens.black;
++        background: Tokens.banner-blue;
+     }
+     if root.well-h > 0: ZoneCoverWell {
+         x: root.ix;

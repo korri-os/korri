@@ -3948,6 +3948,7 @@ dependencies = [
  "korri-shell",
  "notify",
  "pollster",
+ "serde_json",
  "slint",
  "slint-interpreter",
 ]

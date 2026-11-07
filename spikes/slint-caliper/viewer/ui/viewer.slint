@@ -5,10 +5,10 @@
 // list is a column; below it the list is a drawer the bar opens. Every control stays one
 // tap away at every size.
 
-import { Slider, ListView } from "std-widgets.slint";
+import { Slider, ListView, LineEdit, ComboBox } from "std-widgets.slint";
 
 export struct ListRow {
-    kind: int,        // 0 layer heading, 1 part, 2 state
+    kind: int,        // 0 layer heading, 1 part, 2 state, 3 take
     label: string,
     part: int,
     state: string,
@@ -23,6 +23,25 @@ export struct Frame {
     image: image,
     error: string,
     note: string,
+    take: string,     // "" for the original
+}
+
+// One line of the knobs panel.
+export struct KnobRow {
+    kind: int,        // 0 heading, 1 colour, 2 number, 3 sibling token, 4 not a knob
+    key: int,
+    label: string,
+    doc: string,
+    text: string,
+    color: color,
+    num: float,
+    step: float,
+    ranged: bool,
+    min: float,
+    max: float,
+    options: [string],
+    option: int,
+    changed: bool,
 }
 
 export struct Group {
@@ -110,6 +129,17 @@ component Row inherits Rectangle {
             overflow: elide;
         }
     }
+    if entry.kind == 3: Text {
+        x: 54px;
+        width: parent.width - 58px;
+        height: parent.height;
+        text: entry.label;
+        color: Ink.dim;
+        font-size: 12px;
+        font-italic: true;
+        vertical-alignment: center;
+        overflow: elide;
+    }
     if entry.kind == 2: Text {
         x: 40px;
         width: parent.width - 44px;
@@ -127,6 +157,23 @@ component Row inherits Rectangle {
     }
 }
 
+component TextButton inherits TouchArea {
+    in property <string> text;
+    width: t.preferred-width;
+    mouse-cursor: pointer;
+    t := Text {
+        text: root.text;
+        color: root.has-hover ? Ink.ink : Ink.dim;
+        font-size: 12px;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        y: parent.height - 5px;
+        height: 1px;
+        background: root.has-hover ? Ink.ink : Ink.edge;
+    }
+}
+
 // One state on one device: the device's pixels, scaled to the device's millimetres.
 component FrameView inherits Rectangle {
     in property <Frame> frame;
@@ -134,11 +181,23 @@ component FrameView inherits Rectangle {
     in property <length> fh;
     in property <length> caption;
     callback pick;
+    callback accept;
+    callback discard;
     width: fw;
     height: fh + caption;
+    if frame.take != "": HorizontalLayout {
+        x: parent.width - self.width;
+        y: 0;
+        width: self.preferred-width;
+        height: caption;
+        spacing: 12px;
+        TextButton { text: "Accept"; clicked => { root.accept(); } }
+        TextButton { text: "Discard"; clicked => { root.discard(); } }
+    }
     label := TouchArea {
         x: 0;
         y: 0;
+        width: frame.take != "" ? parent.width - 130px : parent.width;
         height: caption;
         mouse-cursor: pointer;
         clicked => { root.pick(); }
@@ -189,6 +248,8 @@ component GroupView inherits Rectangle {
     in property <float> px-per-mm;
     in property <bool> calibrated;
     callback pick(string);
+    callback accept(string);
+    callback discard(string);
     property <length> gap: 24px;
     property <length> head: 44px;
     property <length> caption: 24px;
@@ -227,6 +288,8 @@ component GroupView inherits Rectangle {
         fh: fh;
         caption: caption;
         pick => { root.pick(f.state); }
+        accept => { root.accept(f.take); }
+        discard => { root.discard(f.take); }
     }
 }
 
@@ -316,6 +379,132 @@ component Calibration inherits Rectangle {
     }
 }
 
+// One knob. A number scrubs: drag its name sideways (Shift: ten steps), or type a value.
+// A colour takes its text. A sibling token is a choice of the file's colours. Every
+// change shows at once in every frame; letting go (Enter, the end of a drag, a choice)
+// writes the file.
+component KnobView inherits Rectangle {
+    in property <KnobRow> k;
+    in property <length> w;
+    callback text(string, bool);
+    callback number(float, bool);
+    property <length> control: 132px;
+    property <string> kt: k.text;
+    changed kt => { if (edit.text != kt) { edit.text = kt; } }
+    width: w;
+    height: k.kind == 0 ? 34px : k.kind == 4 ? 24px : k.ranged ? 62px : 44px;
+    if k.kind == 0: Text {
+        x: 14px;
+        y: parent.height - self.height - 4px;
+        width: parent.width - 28px;
+        text: k.label;
+        color: Ink.faint;
+        font-size: 11px;
+        overflow: elide;
+    }
+    if k.kind == 4: Text {
+        x: 14px;
+        width: parent.width - 28px;
+        text: k.label + "   " + k.doc;
+        color: Ink.faint;
+        font-size: 11px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Rectangle {
+        visible: k.kind >= 1 && k.kind <= 3;
+        // The name: a number's scrub handle.
+        scrub := TouchArea {
+            property <float> from;
+            property <length> at;
+            property <float> times: 1;
+            property <float> now;
+            x: 0;
+            y: 0;
+            width: parent.width - control - 20px;
+            height: 44px;
+            mouse-cursor: k.kind == 2 ? ew-resize : default;
+            pointer-event(e) => {
+                if (k.kind != 2) { return; }
+                if (e.kind == PointerEventKind.down) {
+                    self.from = k.num;
+                    self.now = k.num;
+                    self.at = self.mouse-x;
+                    self.times = e.modifiers.shift ? 10 : 1;
+                }
+                if (e.kind == PointerEventKind.up && self.now != self.from) {
+                    root.number(self.now, true);
+                }
+            }
+            moved => {
+                if (k.kind == 2 && self.pressed) {
+                    self.now = self.from + round((self.mouse-x - self.at) / 6px) * k.step * self.times;
+                    root.number(self.now, false);
+                }
+            }
+            Text {
+                x: 14px;
+                y: 6px;
+                width: parent.width - 14px;
+                text: (k.changed ? "● " : "") + k.label;
+                color: k.changed ? Ink.ink : Ink.dim;
+                font-size: 12px;
+                overflow: elide;
+            }
+            Text {
+                x: 14px;
+                y: 23px;
+                width: parent.width - 14px;
+                text: k.doc;
+                color: Ink.faint;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+        if k.kind == 1 || k.kind == 3: Rectangle {
+            x: parent.width - control - 14px - 26px;
+            y: 12px;
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            border-width: 1px;
+            border-color: Ink.edge;
+            background: k.color;
+        }
+        edit := LineEdit {
+            x: parent.width - control - 14px;
+            y: 6px;
+            width: control;
+            height: 32px;
+            visible: k.kind == 1 || k.kind == 2;
+            text: root.kt;
+            font-size: 12px;
+            edited(t) => { if (k.kind == 1) { root.text(t, false); } }
+            accepted(t) => { root.text(t, true); }
+        }
+        if k.kind == 3: ComboBox {
+            x: parent.width - control - 14px;
+            y: 6px;
+            width: control;
+            height: 32px;
+            model: k.options;
+            current-index: k.option;
+            selected(v) => { root.text(v, true); }
+        }
+        if k.ranged: Slider {
+            x: 14px;
+            y: 40px;
+            width: parent.width - 28px;
+            height: 20px;
+            minimum: k.min;
+            maximum: k.max;
+            value: k.num;
+            changed(v) => { root.number(v, false); }
+            released(v) => { root.number(v, true); }
+        }
+    }
+}
+
 export component Viewer inherits Window {
     title: "Korri parts";
     preferred-width: 1400px;
@@ -336,6 +525,10 @@ export component Viewer inherits Window {
     in property <string> status;
     in-out property <bool> calibrating;
     in-out property <bool> drawer;
+    in property <bool> can-take;
+    in property <[KnobRow]> knob-rows;
+    in property <string> knob-files;
+    in-out property <bool> knobs-open;
 
     callback pick-part(int);
     callback toggle-part(int);
@@ -344,11 +537,19 @@ export component Viewer inherits Window {
     callback toggle-device(string);
     callback set-px-per-mm(float);
     callback reset-calibration;
+    callback knob-text(int, string, bool);
+    callback knob-number(int, float, bool);
+    callback new-take;
+    callback accept-take(string);
+    callback discard-take(string);
 
     property <bool> wide: root.width >= 760px;
     property <length> list-w: wide ? min(280px, root.width * 0.28) : min(320px, root.width * 0.9);
     property <length> bar-h: 44px;
     property <length> foot-h: 34px;
+    // The knobs: a column at the right while the stage keeps 520 px, else a drawer.
+    property <bool> knobs-col: knobs-open && root.width - (wide ? list-w : 0) >= 340px + 520px;
+    property <length> knobs-w: knobs-col ? 340px : min(360px, root.width * 0.92);
 
     // The bar: what is on the stage, the drawer's button when the list is not a column.
     bar := Rectangle {
@@ -364,7 +565,10 @@ export component Viewer inherits Window {
                 y: (bar-h - 26px) / 2;
                 text: "Parts";
                 on: drawer;
-                clicked => { drawer = !drawer; }
+                clicked => {
+                    drawer = !drawer;
+                    if (!knobs-col) { knobs-open = false; }
+                }
             }
             Text {
                 text: heading;
@@ -382,6 +586,20 @@ export component Viewer inherits Window {
                 horizontal-stretch: 1;
                 overflow: elide;
             }
+            if can-take: Pill {
+                y: (bar-h - 26px) / 2;
+                text: "New take";
+                clicked => { root.new-take(); }
+            }
+            Pill {
+                y: (bar-h - 26px) / 2;
+                text: "Knobs";
+                on: knobs-open;
+                clicked => {
+                    knobs-open = !knobs-open;
+                    if (!wide) { drawer = false; }
+                }
+            }
         }
     }
 
@@ -389,7 +607,7 @@ export component Viewer inherits Window {
     stage := Flickable {
         x: bar.x;
         y: bar-h;
-        width: bar.width;
+        width: bar.width - (knobs-col ? knobs-w : 0);
         height: root.height - bar-h - foot-h;
         content-height: stack.preferred-height + 2 * Ink.gutter;
         content-width: self.width;
@@ -405,6 +623,8 @@ export component Viewer inherits Window {
                 px-per-mm: px-per-mm;
                 calibrated: calibrated;
                 pick(state) => { root.pick-frame(state); }
+                accept(t) => { root.accept-take(t); }
+                discard(t) => { root.discard-take(t); }
             }
             if groups.length == 0: Text {
                 text: rows.length == 0 ? "No *.preview.slint files under the packages folder." : "Choose a part in the list. Its states appear here, at each device's size.";
@@ -485,10 +705,44 @@ export component Viewer inherits Window {
                 entry: r;
                 pick => {
                     if (r.kind == 1) { root.pick-part(r.part); }
-                    if (r.kind == 2) { root.pick-state(r.part, r.state); }
+                    if (r.kind == 2 || r.kind == 3) { root.pick-state(r.part, r.state); }
                     if (!wide) { drawer = false; }
                 }
                 toggle => { root.toggle-part(r.part); }
+            }
+        }
+    }
+
+    // The knobs panel: a column at the right, or a drawer over the stage.
+    if knobs-open: Rectangle {
+        x: root.width - knobs-w;
+        y: bar-h;
+        width: knobs-w;
+        height: root.height - bar-h - foot-h;
+        background: Ink.room;
+        drop-shadow-blur: knobs-col ? 0 : 12px;
+        drop-shadow-color: #0008;
+        TouchArea { }
+        Rectangle { x: 0; width: 1px; background: Ink.edge; }
+        Text {
+            x: 14px;
+            y: 8px;
+            width: parent.width - 28px;
+            text: knob-files;
+            color: Ink.dim;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        ListView {
+            x: 1px;
+            y: 40px;
+            width: parent.width - 1px;
+            height: parent.height - self.y;
+            for r in knob-rows: KnobView {
+                k: r;
+                w: knobs-w - 14px;
+                text(t, save) => { root.knob-text(r.key, t, save); }
+                number(v, save) => { root.knob-number(r.key, v, save); }
             }
         }
     }

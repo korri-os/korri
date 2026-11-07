@@ -9,6 +9,7 @@
 mod devices;
 mod monitor;
 mod parts;
+mod tune;
 
 use anyhow::{bail, Context, Result};
 use devices::DEVICES;
@@ -17,20 +18,23 @@ use slint::platform::WindowAdapter;
 use slint::{ComponentHandle, Image, Model, ModelRc, Rgb8Pixel, SharedPixelBuffer, VecModel};
 use slint_interpreter::{ComponentDefinition, ComponentInstance, DiagnosticLevel};
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 slint::slint! {
-    export { Viewer, ListRow, Frame, Group, Chip } from "ui/viewer.slint";
+    #[style = "fluent-dark"]
+    export { Viewer, ListRow, Frame, Group, Chip, KnobRow } from "ui/viewer.slint";
 }
 
 /// One compiled preview file: each state's definition or its diagnostics.
 struct Built {
     states: HashMap<String, Result<ComponentDefinition, String>>,
     deps: BTreeSet<PathBuf>,
+    /// The token files it imports: their globals are re-exported, so knobs reach them.
+    tokens: Vec<PathBuf>,
     ms: u128,
 }
 
@@ -40,6 +44,7 @@ struct Live {
     row: usize,
     window: Rc<MinimalSoftwareWindow>,
     _instance: ComponentInstance,
+    tokens: Vec<PathBuf>,
     size: (u32, u32),
     checked: bool,
 }
@@ -56,16 +61,81 @@ struct App {
     groups: Vec<Rc<VecModel<Frame>>>,
     monitor: Option<String>,
     ui: slint::Weak<Viewer>,
+    // Knobs: the token files, the live values that differ from the files, and which
+    // knob each row of the panel shows.
+    tokens: Vec<tune::TokenFile>,
+    overrides: BTreeMap<(PathBuf, String), String>,
+    knob_keys: Vec<(usize, usize)>,
+    knob_rows: Rc<VecModel<KnobRow>>,
+    // Takes: the records, and each take's compiled part.
+    takes: Vec<tune::Take>,
+    take_cache: HashMap<(String, PathBuf), Rc<Built>>,
 }
 
-fn compile(path: &Path) -> Built {
+/// Compile one preview file. A file loader serves each token file with its knobs declared
+/// `in-out` (tune.rs), and, for a take, the take's copy of any file it has. The preview
+/// re-exports each imported token global under its alias.
+fn compile(path: &Path, root: &Path, take: Option<&str>, token_paths: &BTreeSet<PathBuf>) -> Built {
     let started = Instant::now();
-    let source = std::fs::read_to_string(path).unwrap_or_default();
+    let base = take.map(|t| tune::take_folder(root, t));
+    let overlay = {
+        let root = root.to_path_buf();
+        let base = base.clone();
+        move |p: &Path| -> Option<PathBuf> {
+            let base = base.as_ref()?;
+            let copy = base.join(p.strip_prefix(&root).ok()?);
+            copy.is_file().then_some(copy)
+        }
+    };
+    let read = |p: &Path| {
+        std::fs::read_to_string(overlay(p).unwrap_or(p.to_path_buf())).unwrap_or_default()
+    };
+    let mut deps = parts::imports(path);
+    if let Some(base) = &base {
+        if let Some(t) = take {
+            for rel in tune::list(root)
+                .into_iter()
+                .filter(|x| x.id == t)
+                .flat_map(|x| x.files)
+            {
+                deps.insert(parts::canon(&base.join(rel)));
+            }
+        }
+    }
+    let imported: Vec<tune::TokenFile> = token_paths
+        .iter()
+        .filter(|p| deps.contains(*p))
+        .map(|p| tune::scan(p, &read(p)))
+        .collect();
+    let tail = tune::exports(&imported.iter().collect::<Vec<_>>());
+    let source = read(path);
     let names = parts::states_of(&source);
+    let token_set: Rc<BTreeSet<PathBuf>> =
+        Rc::new(imported.iter().map(|f| f.path.clone()).collect());
     let build = |src: String| {
-        pollster::block_on(
-            slint_interpreter::Compiler::default().build_from_source(src, path.to_path_buf()),
-        )
+        let mut compiler = slint_interpreter::Compiler::default();
+        let overlay = overlay.clone();
+        let token_set = token_set.clone();
+        compiler.set_file_loader(move |p: &Path| {
+            let p = parts::canon(p);
+            let copy = overlay(&p);
+            let is_token = token_set.contains(&p);
+            let text = if copy.is_some() || is_token {
+                std::fs::read_to_string(copy.unwrap_or(p.clone()))
+                    .ok()
+                    .map(|text| {
+                        if is_token {
+                            tune::settable(&tune::scan(&p, &text), &text)
+                        } else {
+                            text
+                        }
+                    })
+            } else {
+                None
+            };
+            Box::pin(async move { text.map(Ok) })
+        });
+        pollster::block_on(compiler.build_from_source(src + &tail, path.to_path_buf()))
     };
     let errors = |r: &slint_interpreter::CompilationResult| -> Vec<String> {
         r.diagnostics()
@@ -108,7 +178,8 @@ fn compile(path: &Path) -> Built {
     }
     Built {
         states,
-        deps: parts::imports(path),
+        deps,
+        tokens: imported.into_iter().map(|f| f.path).collect(),
         ms: started.elapsed().as_millis(),
     }
 }
@@ -131,13 +202,73 @@ impl App {
         self.ui.upgrade().expect("viewer")
     }
 
+    fn token_paths(&self) -> BTreeSet<PathBuf> {
+        self.tokens.iter().map(|f| f.path.clone()).collect()
+    }
+
     fn built(&mut self, path: &Path) -> Rc<Built> {
         if let Some(b) = self.cache.get(path) {
             return b.clone();
         }
-        let b = Rc::new(compile(path));
+        let b = Rc::new(compile(path, &self.root, None, &self.token_paths()));
         self.cache.insert(path.to_path_buf(), b.clone());
         b
+    }
+
+    fn take_built(&mut self, take: &str, path: &Path) -> Rc<Built> {
+        let key = (take.to_string(), path.to_path_buf());
+        if let Some(b) = self.take_cache.get(&key) {
+            return b.clone();
+        }
+        let b = Rc::new(compile(path, &self.root, Some(take), &self.token_paths()));
+        self.take_cache.insert(key, b.clone());
+        b
+    }
+
+    /// The takes of the shown part and state (Caliper shows them for one state).
+    fn shown_takes(&self) -> Vec<String> {
+        let (Some(i), Some(state)) = (self.selected, &self.alone) else {
+            return Vec::new();
+        };
+        let rel = &self.parts[i].rel;
+        self.takes
+            .iter()
+            .filter(|t| &t.part == rel && &t.state == state)
+            .map(|t| t.id.clone())
+            .collect()
+    }
+
+    /// Set every live value that differs from its file on one new state.
+    fn apply_overrides(&self, instance: &ComponentInstance, tokens: &[PathBuf]) {
+        for ((file, name), text) in &self.overrides {
+            if !tokens.contains(file) {
+                continue;
+            }
+            let Some((f, knob)) = self.knob(file, name) else {
+                continue;
+            };
+            if let Some(v) = tune::value(knob, text, &self.colours(f)) {
+                let _ = instance.set_global_property(&tune::alias(file, &knob.global), name, v);
+            }
+        }
+    }
+
+    fn knob(&self, file: &Path, name: &str) -> Option<(usize, &tune::Knob)> {
+        let f = self.tokens.iter().position(|t| t.path == file)?;
+        Some((f, self.tokens[f].knobs.iter().find(|k| k.name == name)?))
+    }
+
+    /// A file's colour literals by name, with their live values: what a Ref knob names.
+    fn colours(&self, f: usize) -> BTreeMap<String, String> {
+        let file = &self.tokens[f];
+        file.knobs
+            .iter()
+            .filter(|k| k.kind == tune::Kind::Color)
+            .map(|k| {
+                let live = self.overrides.get(&(file.path.clone(), k.name.clone()));
+                (k.name.clone(), live.unwrap_or(&k.value).clone())
+            })
+            .collect()
     }
 
     fn list(&self) {
@@ -190,6 +321,20 @@ impl App {
                                 && self.alone.as_deref() == Some(state),
                             ..Default::default()
                         });
+                        // Caliper nests takes under their editing state.
+                        for take in self
+                            .takes
+                            .iter()
+                            .filter(|t| t.part == part.rel && &t.state == state)
+                        {
+                            rows.push(ListRow {
+                                kind: 3,
+                                label: format!("Take {}", take.id).into(),
+                                part: i as i32,
+                                state: state.into(),
+                                ..Default::default()
+                            });
+                        }
                     }
                 }
             }
@@ -219,15 +364,26 @@ impl App {
         let ui = self.ui();
         let Some(index) = self.selected else {
             ui.set_groups(ModelRc::default());
+            ui.set_can_take(false);
+            self.knobs();
             return 0;
         };
         let path = self.parts[index].path.clone();
         let built = self.built(&path);
+        let takes: Vec<(String, Rc<Built>)> = self
+            .shown_takes()
+            .into_iter()
+            .map(|t| {
+                let b = self.take_built(&t, &path);
+                (t, b)
+            })
+            .collect();
         let part = &self.parts[index];
         let states: Vec<String> = match &self.alone {
             Some(s) => vec![s.clone()],
             None => part.states.clone(),
         };
+        ui.set_can_take(self.alone.is_some());
         ui.set_heading(
             match &self.alone {
                 Some(s) => format!("{} / {}", part.name, parts::label(s)),
@@ -235,59 +391,95 @@ impl App {
             }
             .into(),
         );
+        let take_files: Vec<String> = self
+            .takes
+            .iter()
+            .filter(|t| takes.iter().any(|(id, _)| *id == t.id))
+            .map(|t| {
+                format!(
+                    "take {}: .caliper/takes/{}/{}",
+                    t.id,
+                    t.id,
+                    t.files.join(", ")
+                )
+            })
+            .collect();
         ui.set_detail(
             format!(
-                "{}   {} states   compiled in {} ms",
+                "{}   {} states   compiled in {} ms{}",
                 part.rel,
                 part.states.len(),
-                built.ms
+                built.ms,
+                if take_files.is_empty() {
+                    String::new()
+                } else {
+                    format!("   {}", take_files.join("   "))
+                }
             )
             .into(),
         );
+        // One column per version: the original, then each take of the shown state.
+        let mut versions: Vec<(String, Rc<Built>)> = vec![(String::new(), built.clone())];
+        versions.extend(takes);
         let mut groups = Vec::new();
         let mut live = Vec::new();
         for (d, device) in DEVICES.iter().enumerate().filter(|(d, _)| self.on[*d]) {
             let g = groups.len();
             let mut frames = Vec::new();
-            for (row, state) in states.iter().enumerate() {
-                let mut frame = Frame {
-                    label: parts::label(state).into(),
-                    state: state.into(),
-                    ..Default::default()
-                };
-                match built.states.get(state) {
-                    Some(Ok(def)) => {
-                        let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
-                        let size = (device.css_width, device.css_height);
-                        window.set_size(slint::PhysicalSize::new(size.0, size.1));
-                        // As slint-interpreter does for a window it creates: the state's
-                        // `import "font.ttf"` needs the renderer's Slint context.
-                        let adapter: Rc<dyn WindowAdapter> = window.clone();
-                        adapter.renderer().set_window_adapter(&adapter);
-                        match def
-                            .create_with_existing_window(window.window())
-                            .and_then(|i| i.show().map(|_| i))
-                        {
-                            Ok(instance) => {
-                                if let Some((image, _)) = draw(&window, size) {
-                                    frame.image = image;
-                                }
-                                live.push(Live {
-                                    group: g,
-                                    row,
-                                    window,
-                                    _instance: instance,
-                                    size,
-                                    checked: false,
-                                });
+            for state in states.iter() {
+                for (take, built) in &versions {
+                    let row = frames.len();
+                    let mut frame = Frame {
+                        label: if take.is_empty() {
+                            if versions.len() > 1 {
+                                format!("{}, original", parts::label(state))
+                            } else {
+                                parts::label(state)
                             }
-                            Err(e) => frame.error = format!("could not create: {e}").into(),
+                        } else {
+                            format!("Take {take}")
                         }
+                        .into(),
+                        state: state.into(),
+                        take: take.into(),
+                        ..Default::default()
+                    };
+                    match built.states.get(state) {
+                        Some(Ok(def)) => {
+                            let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+                            let size = (device.css_width, device.css_height);
+                            window.set_size(slint::PhysicalSize::new(size.0, size.1));
+                            // As slint-interpreter does for a window it creates: the state's
+                            // `import "font.ttf"` needs the renderer's Slint context.
+                            let adapter: Rc<dyn WindowAdapter> = window.clone();
+                            adapter.renderer().set_window_adapter(&adapter);
+                            match def
+                                .create_with_existing_window(window.window())
+                                .and_then(|i| i.show().map(|_| i))
+                            {
+                                Ok(instance) => {
+                                    self.apply_overrides(&instance, &built.tokens);
+                                    if let Some((image, _)) = draw(&window, size) {
+                                        frame.image = image;
+                                    }
+                                    live.push(Live {
+                                        group: g,
+                                        row,
+                                        window,
+                                        _instance: instance,
+                                        tokens: built.tokens.clone(),
+                                        size,
+                                        checked: false,
+                                    });
+                                }
+                                Err(e) => frame.error = format!("could not create: {e}").into(),
+                            }
+                        }
+                        Some(Err(e)) => frame.error = e.as_str().into(),
+                        None => frame.error = "not compiled".into(),
                     }
-                    Some(Err(e)) => frame.error = e.as_str().into(),
-                    None => frame.error = "not compiled".into(),
+                    frames.push(frame);
                 }
-                frames.push(frame);
             }
             let _ = d;
             let model = Rc::new(VecModel::from(frames));
@@ -306,7 +498,247 @@ impl App {
         }
         self.live = live;
         ui.set_groups(ModelRc::new(VecModel::from(groups)));
+        self.knobs();
         self.live.len()
+    }
+
+    /// The knobs panel: the knobs of each token file the shown part imports, then the
+    /// values that are outputs, with the reason.
+    fn knobs(&mut self) {
+        let ui = self.ui();
+        let imported: Vec<PathBuf> = match self.selected {
+            Some(i) => self
+                .cache
+                .get(&self.parts[i].path)
+                .map(|b| b.tokens.clone())
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        let mut rows = Vec::new();
+        let mut keys = Vec::new();
+        let mut files = Vec::new();
+        for (f, file) in self
+            .tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| imported.contains(&t.path))
+        {
+            let rel = file
+                .path
+                .strip_prefix(&self.root)
+                .unwrap_or(&file.path)
+                .display()
+                .to_string();
+            files.push(rel.clone());
+            rows.push(KnobRow {
+                kind: 0,
+                key: -1,
+                label: format!("{rel}   {}", file.globals.join(", ")).into(),
+                ..Default::default()
+            });
+            let colours = self.colours(f);
+            for (k, knob) in file.knobs.iter().enumerate() {
+                let live = self.overrides.get(&(file.path.clone(), knob.name.clone()));
+                let text = live.unwrap_or(&knob.value).clone();
+                let line = 1 + std::fs::read_to_string(&file.path)
+                    .map(|t| t[..knob.start.min(t.len())].matches('\n').count())
+                    .unwrap_or(0);
+                let mut row = KnobRow {
+                    key: keys.len() as i32,
+                    label: knob.label.clone().unwrap_or(knob.name.clone()).into(),
+                    doc: if knob.doc.is_empty() {
+                        format!("{rel}:{line}")
+                    } else {
+                        knob.doc.clone()
+                    }
+                    .into(),
+                    text: text.clone().into(),
+                    changed: live.is_some(),
+                    ..Default::default()
+                };
+                match &knob.kind {
+                    tune::Kind::Color => {
+                        row.kind = 1;
+                        if let Some(slint_interpreter::Value::Brush(b)) =
+                            tune::value(knob, &text, &colours)
+                        {
+                            row.color = b.color();
+                        }
+                    }
+                    tune::Kind::Number { unit, int } => {
+                        row.kind = 2;
+                        let n: f64 = text.trim_end_matches(unit.as_str()).parse().unwrap_or(0.0);
+                        row.num = n as f32;
+                        let decimals = text
+                            .split_once('.')
+                            .map_or(0, |(_, d)| d.trim_end_matches(unit.as_str()).len());
+                        row.step = knob.step.unwrap_or(if *int {
+                            1.0
+                        } else {
+                            10f64.powi(-(decimals as i32))
+                        }) as f32;
+                        if let (Some(lo), Some(hi)) = (knob.min, knob.max) {
+                            row.ranged = true;
+                            row.min = lo as f32;
+                            row.max = hi as f32;
+                        }
+                    }
+                    tune::Kind::Ref => {
+                        row.kind = 3;
+                        let names: Vec<slint::SharedString> =
+                            colours.keys().map(|n| n.into()).collect();
+                        row.option = names
+                            .iter()
+                            .position(|n| n.as_str() == text)
+                            .map_or(-1, |i| i as i32);
+                        row.options = ModelRc::new(VecModel::from(names));
+                        if let Some(slint_interpreter::Value::Brush(b)) =
+                            tune::value(knob, &text, &colours)
+                        {
+                            row.color = b.color();
+                        }
+                    }
+                }
+                keys.push((f, k));
+                rows.push(row);
+            }
+        }
+        let outputs: Vec<KnobRow> = self
+            .tokens
+            .iter()
+            .filter(|t| imported.contains(&t.path))
+            .flat_map(|t| t.not_knobs.iter())
+            .map(|n| KnobRow {
+                kind: 4,
+                key: -1,
+                label: n.name.as_str().into(),
+                doc: n.reason.as_str().into(),
+                ..Default::default()
+            })
+            .collect();
+        if !outputs.is_empty() {
+            rows.push(KnobRow {
+                kind: 0,
+                key: -1,
+                label: format!("Not knobs   {}", outputs.len()).into(),
+                ..Default::default()
+            });
+            rows.extend(outputs);
+        }
+        self.knob_keys = keys;
+        self.knob_rows.set_vec(rows);
+        ui.set_knob_files(
+            if files.is_empty() {
+                "The part imports no exported global with literal values.".to_string()
+            } else {
+                format!("Edits {}", files.join(", "))
+            }
+            .into(),
+        );
+    }
+
+    /// Set a knob's value on every live frame that imports its file, and draw them.
+    /// `save` also writes the literal into the file (Caliper: when you let go).
+    fn knob_set(&mut self, key: usize, text: String, save: bool) {
+        let Some(&(f, k)) = self.knob_keys.get(key) else {
+            return;
+        };
+        let started = Instant::now();
+        let knob = self.tokens[f].knobs[k].clone();
+        let text = match &knob.kind {
+            // A typed number with no unit takes the knob's unit.
+            tune::Kind::Number { unit, .. } if text.parse::<f64>().is_ok() => {
+                format!("{text}{unit}")
+            }
+            _ => text.trim().to_string(),
+        };
+        let ui = self.ui();
+        let Some(value) = tune::value(&knob, &text, &self.colours(f)) else {
+            ui.set_status(format!("{}: \"{text}\" is not a {}", knob.name, knob.ty).into());
+            return;
+        };
+        let alias = tune::alias(&knob.file, &knob.global);
+        let mut set = 0;
+        for live in &self.live {
+            if live.tokens.contains(&knob.file)
+                && live
+                    ._instance
+                    .set_global_property(&alias, &knob.name, value.clone())
+                    .is_ok()
+            {
+                set += 1;
+            }
+        }
+        let key_ = (knob.file.clone(), knob.name.clone());
+        if text == knob.value {
+            self.overrides.remove(&key_);
+        } else {
+            self.overrides.insert(key_, text.clone());
+        }
+        let set_us = started.elapsed().as_micros();
+        self.tick();
+        let drawn_us = started.elapsed().as_micros();
+        // Update the knob's own row (the whole list when a colour a Ref names changed).
+        if let Some(row) = (0..self.knob_rows.row_count()).find(|r| {
+            self.knob_rows
+                .row_data(*r)
+                .is_some_and(|x| x.key == key as i32 && x.kind != 0 && x.kind != 4)
+        }) {
+            let mut r = self.knob_rows.row_data(row).unwrap();
+            r.text = text.as_str().into();
+            r.changed = self
+                .overrides
+                .contains_key(&(knob.file.clone(), knob.name.clone()));
+            if let slint_interpreter::Value::Brush(b) = &value {
+                r.color = b.color();
+            }
+            if let slint_interpreter::Value::Number(n) = &value {
+                if !text.ends_with('%') && !text.ends_with('s') || text.ends_with("ms") {
+                    r.num = *n as f32;
+                }
+            }
+            self.knob_rows.set_row_data(row, r);
+        }
+        let mut line = format!(
+            "knob: {}.{} = {text}: set on {set} frames in {:.2} ms, frames drawn {:.2} ms after the change",
+            knob.global,
+            knob.name,
+            set_us as f64 / 1000.0,
+            drawn_us as f64 / 1000.0
+        );
+        if save && text != knob.value {
+            let rel = knob
+                .file
+                .strip_prefix(&self.root)
+                .unwrap_or(&knob.file)
+                .display()
+                .to_string();
+            match tune::save(&knob, self.tokens[f].version, &text) {
+                Ok(()) => line.push_str(&format!("; saved {} -> {text} in {rel}", knob.value)),
+                Err(e) => {
+                    // Caliper: the knob shows the file's value again.
+                    line.push_str(&format!("; not saved: {e}"));
+                    self.overrides
+                        .remove(&(knob.file.clone(), knob.name.clone()));
+                    if let Some(v) = tune::value(&knob, &knob.value, &self.colours(f)) {
+                        for live in &self.live {
+                            if live.tokens.contains(&knob.file) {
+                                let _ = live._instance.set_global_property(
+                                    &alias,
+                                    &knob.name,
+                                    v.clone(),
+                                );
+                            }
+                        }
+                    }
+                    self.knobs();
+                }
+            }
+        }
+        if save || std::env::var_os("KORRI_VIEWER_KNOB_LOG").is_some() {
+            eprintln!("{line}");
+        }
+        ui.set_status(line.into());
     }
 
     /// Redraw every state whose window changed (animations, changed callbacks).
@@ -362,6 +794,33 @@ impl App {
 
     /// Files changed on disk: recompile the parts that import them and redraw the shown one.
     fn changed(&mut self, paths: &BTreeSet<PathBuf>, saved_at: Instant) {
+        let all_paths = paths.clone();
+        // Takes: a changed copy evicts its take; a changed real file evicts every take
+        // that reads it.
+        let takes_dir = parts::canon(&tune::takes_dir(&self.root));
+        let take_ids: BTreeSet<String> = paths
+            .iter()
+            .filter_map(|p| p.strip_prefix(&takes_dir).ok())
+            .filter_map(|r| r.iter().next().map(|s| s.to_string_lossy().into_owned()))
+            .collect();
+        self.take_cache
+            .retain(|(t, _), b| !take_ids.contains(t) && b.deps.is_disjoint(paths));
+        let paths: BTreeSet<PathBuf> = paths
+            .iter()
+            .filter(|p| !p.starts_with(&takes_dir))
+            .cloned()
+            .collect();
+        let paths = &paths;
+        // Knobs: read the token files again, and drop live values the files now hold.
+        self.tokens = tune::token_files(&self.root);
+        let tokens = &self.tokens;
+        self.overrides.retain(|(file, name), text| {
+            tokens
+                .iter()
+                .find(|t| &t.path == file)
+                .and_then(|t| t.knobs.iter().find(|k| &k.name == name))
+                .is_some_and(|k| &k.value != text)
+        });
         let previews_moved = paths.iter().any(|p| {
             p.to_string_lossy().ends_with(".preview.slint")
                 && !self.parts.iter().any(|q| parts::canon(&q.path) == *p)
@@ -389,7 +848,11 @@ impl App {
                 self.alone = None;
             }
             let path = self.parts[i].path.clone();
-            if !self.cache.contains_key(&path) {
+            let take_missing = self
+                .shown_takes()
+                .iter()
+                .any(|t| !self.take_cache.contains_key(&(t.clone(), path.clone())));
+            if !self.cache.contains_key(&path) || take_missing {
                 let waited = saved_at.elapsed().as_millis();
                 let started = Instant::now();
                 let n = self.frames();
@@ -400,7 +863,7 @@ impl App {
                 let failed = built
                     .as_ref()
                     .map_or(0, |b| b.states.values().filter(|s| s.is_err()).count());
-                let names: Vec<String> = paths
+                let names: Vec<String> = all_paths
                     .iter()
                     .filter_map(|p| p.strip_prefix(&self.root).ok())
                     .map(|p| p.display().to_string())
@@ -416,6 +879,63 @@ impl App {
             }
         }
         self.list();
+    }
+}
+
+impl App {
+    /// A take of the shown state, made by hand: copies of the part's files.
+    fn new_take(&mut self) {
+        let (Some(i), Some(state)) = (self.selected, self.alone.clone()) else {
+            return;
+        };
+        let device = DEVICES
+            .iter()
+            .zip(&self.on)
+            .find(|(_, on)| **on)
+            .map_or("", |(d, _)| d.id);
+        let line = match tune::create(&self.root, &self.parts[i].rel, &state, device) {
+            Ok(t) => format!(
+                "take {}: edit {}",
+                t.id,
+                t.files
+                    .iter()
+                    .map(|f| tune::take_folder(&self.root, &t.id)
+                        .join(f)
+                        .display()
+                        .to_string())
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            ),
+            Err(e) => format!("no take: {e}"),
+        };
+        eprintln!("{line}");
+        self.takes = tune::list(&self.root);
+        self.frames();
+        self.list();
+        self.ui().set_status(line.into());
+    }
+
+    fn end_take(&mut self, id: &str, accept: bool) {
+        let Some(take) = tune::list(&self.root).into_iter().find(|t| t.id == id) else {
+            return;
+        };
+        let line = if accept {
+            match tune::accept(&self.root, &take) {
+                Ok(files) => format!("take {id} accepted: wrote {}", files.join(", ")),
+                Err(e) => format!("take {id} not accepted: {e}"),
+            }
+        } else {
+            match tune::discard(&self.root, id) {
+                Ok(()) => format!("take {id} discarded"),
+                Err(e) => format!("take {id} not discarded: {e}"),
+            }
+        };
+        eprintln!("{line}");
+        self.take_cache.retain(|(t, _), _| t != id);
+        self.takes = tune::list(&self.root);
+        self.frames();
+        self.list();
+        self.ui().set_status(line.into());
     }
 }
 
@@ -487,7 +1007,14 @@ fn main() -> Result<()> {
         groups: Vec::new(),
         monitor: None,
         ui: ui.as_weak(),
+        tokens: tune::token_files(&root),
+        overrides: BTreeMap::new(),
+        knob_keys: Vec::new(),
+        knob_rows: Rc::new(VecModel::default()),
+        takes: tune::list(&root),
+        take_cache: HashMap::new(),
     }));
+    ui.set_knob_rows(ModelRc::from(app.borrow().knob_rows.clone()));
     if let Some(suffix) = flag("--part") {
         let mut a = app.borrow_mut();
         let i = a
@@ -538,6 +1065,38 @@ fn main() -> Result<()> {
         a.frames();
         a.list();
     });
+    let a = app.clone();
+    ui.on_knob_text(move |key, text, save| {
+        a.borrow_mut()
+            .knob_set(key as usize, text.to_string(), save);
+    });
+    let a = app.clone();
+    ui.on_knob_number(move |key, value, save| {
+        let mut a = a.borrow_mut();
+        let Some(&(f, k)) = a.knob_keys.get(key as usize) else {
+            return;
+        };
+        let text = match &a.tokens[f].knobs[k].kind {
+            tune::Kind::Number { unit, int: true } => format!("{}{unit}", value.round() as i64),
+            tune::Kind::Number { unit, .. } => {
+                let v = a.tokens[f].knobs[k]
+                    .value
+                    .trim_end_matches(unit.as_str())
+                    .to_string();
+                let decimals = v.split_once('.').map_or(0, |(_, d)| d.len()).max(1);
+                let s = format!("{:.*}", decimals, value);
+                format!("{s}{unit}")
+            }
+            _ => return,
+        };
+        a.knob_set(key as usize, text, save);
+    });
+    let a = app.clone();
+    ui.on_new_take(move || a.borrow_mut().new_take());
+    let a = app.clone();
+    ui.on_accept_take(move |id| a.borrow_mut().end_take(id.as_str(), true));
+    let a = app.clone();
+    ui.on_discard_take(move |id| a.borrow_mut().end_take(id.as_str(), false));
     let a = app.clone();
     ui.on_toggle_device(move |id: slint::SharedString| {
         let mut a = a.borrow_mut();
