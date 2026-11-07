@@ -199,6 +199,7 @@
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             # THROWAWAY SPIKE: spikes/slint-caliper/live.
             slint-caliper-live = import ./spikes/slint-caliper/live/package.nix { inherit pkgs; };
+            slint-caliper-render = import ./spikes/slint-caliper/render/package.nix { inherit pkgs; };
             korri-shell = shell.package;
             korri-shell-surfaces = shell.surfaces;
             slint-caliper-viewer = slintCaliperViewer.package;
