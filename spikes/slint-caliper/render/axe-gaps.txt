@@ -1,0 +1,70 @@
+axe-core 4.13.0; Caliper src/render/accessibility.js tags: wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa.
+No rule below runs in this spike. Native role/label checks are not substitutes.
+
+area-alt: Ensure <area> elements of image maps have alternative text
+aria-allowed-attr: Ensure an element's role supports its ARIA attributes
+aria-braille-equivalent: Ensure aria-braillelabel and aria-brailleroledescription have a non-braille equivalent
+aria-command-name: Ensure every ARIA button, link and menuitem has an accessible name
+aria-conditional-attr: Ensure ARIA attributes are used as described in the specification of the element's role
+aria-deprecated-role: Ensure elements do not use deprecated roles
+aria-hidden-body: Ensure aria-hidden="true" is not present on the document body.
+aria-hidden-focus: Ensure aria-hidden elements are not focusable nor contain focusable elements
+aria-input-field-name: Ensure every ARIA input field has an accessible name
+aria-meter-name: Ensure every ARIA meter node has an accessible name
+aria-progressbar-name: Ensure every ARIA progressbar node has an accessible name
+aria-prohibited-attr: Ensure ARIA attributes are not prohibited for an element's role
+aria-required-attr: Ensure elements with ARIA roles have all required ARIA attributes
+aria-required-children: Ensure elements with an ARIA role that require child roles contain them
+aria-required-parent: Ensure elements with an ARIA role that require parent roles are contained by them
+aria-roledescription: Ensure aria-roledescription is only used on elements with an implicit or explicit role
+aria-roles: Ensure all elements with a role attribute use a valid value
+aria-tab-name: Ensure every ARIA tab node has an accessible name
+aria-toggle-field-name: Ensure every ARIA toggle field has an accessible name
+aria-tooltip-name: Ensure every ARIA tooltip node has an accessible name
+aria-valid-attr-value: Ensure all ARIA attributes have valid values
+aria-valid-attr: Ensure attributes that begin with aria- are valid ARIA attributes
+audio-caption: Ensure <audio> elements have captions
+autocomplete-valid: Ensure the autocomplete attribute is correct and suitable for the form field
+avoid-inline-spacing: Ensure that text spacing set through style attributes can be adjusted with custom stylesheets
+blink: Ensure <blink> elements are not used
+button-name: Ensure buttons have discernible text
+bypass: Ensure each page has at least one mechanism for a user to bypass navigation and jump straight to the content
+color-contrast: Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds
+css-orientation-lock: Ensure content is not locked to any specific display orientation, and the content is operable in all display orientations
+definition-list: Ensure <dl> elements are structured correctly
+dlitem: Ensure <dt> and <dd> elements are contained by a <dl>
+duplicate-id-aria: Ensure every id attribute value used in ARIA and in labels is unique
+form-field-multiple-labels: Ensure form field does not have multiple label elements
+frame-focusable-content: Ensure <frame> and <iframe> elements with focusable content do not have tabindex=-1
+frame-title-unique: Ensure <iframe> and <frame> elements contain a unique title attribute
+frame-title: Ensure <iframe> and <frame> elements have an accessible name
+html-xml-lang-mismatch: Ensure that HTML elements with both valid lang and xml:lang attributes agree on the base language of the page
+image-alt: Ensure <img> elements have alternative text or a role of none or presentation
+input-button-name: Ensure input buttons have discernible text
+input-image-alt: Ensure <input type="image"> elements have alternative text
+label-content-name-mismatch: Ensure that elements labelled through their content must have their visible text as part of their accessible name
+label: Ensure every form element has a label
+link-in-text-block: Ensure links are distinguished from surrounding text in a way that does not rely on color
+link-name: Ensure links have discernible text
+list: Ensure that lists are structured correctly
+listitem: Ensure <li> elements are used semantically
+marquee: Ensure <marquee> elements are not used
+meta-refresh: Ensure <meta http-equiv="refresh"> is not used for delayed refresh
+meta-viewport: Ensure <meta name="viewport"> does not disable text scaling and zooming
+nested-interactive: Ensure interactive controls are not nested as they are not always announced by screen readers or can cause focus problems for assistive technologies
+no-autoplay-audio: Ensure <video> or <audio> elements do not autoplay audio for more than 3 seconds without a control mechanism to stop or mute the audio
+object-alt: Ensure <object> elements have alternative text
+p-as-heading: Ensure bold, italic text and font-size is not used to style <p> elements as a heading
+role-img-alt: Ensure [role="img"] and [role="image"] elements have alternative text
+scrollable-region-focusable: Ensure elements that have scrollable content are accessible by keyboard in Safari
+select-name: Ensure select element has an accessible name
+server-side-image-map: Ensure that server-side image maps are not used
+summary-name: Ensure summary elements have discernible text
+svg-img-alt: Ensure <svg> elements with an img, image, graphics-document or graphics-symbol role have accessible text
+table-fake-caption: Ensure that tables with a caption use the <caption> element.
+target-size: Ensure touch targets have sufficient size and space
+td-has-header: Ensure that each non-empty data cell in a <table> larger than 3 by 3  has one or more table headers
+td-headers-attr: Ensure that each cell in a table that uses the headers attribute refers only to other <th> elements in that table
+th-has-data-cells: Ensure that <th> elements and elements with role=columnheader/rowheader have data cells they describe
+valid-lang: Ensure lang attributes have valid values
+video-caption: Ensure <video> elements have captions

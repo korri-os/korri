@@ -194,6 +194,7 @@
             rgds-update-renderer = import ./nix/devices/rgds/update/renderer.nix { inherit pkgs; };
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            slint-caliper-render = import ./spikes/slint-caliper/render/package.nix { inherit pkgs; };
             korri-shell = shell.package;
             korri-shell-surfaces = shell.surfaces;
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };

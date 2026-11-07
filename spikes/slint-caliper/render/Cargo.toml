@@ -1,0 +1,27 @@
+[package]
+name = "slint-caliper-render"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+korri-shell = { path = "../../../clients/shell", default-features = false }
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "renderer-software"] }
+slint-interpreter = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "renderer-software", "internal"] }
+i-slint-backend-testing = { version = "=1.18.1", default-features = false }
+serde_json = "1"
+anyhow = "1"
+pollster = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[patch.crates-io]
+i-slint-core = { path = "../../../clients/shell/vendor/i-slint-core" }
+i-slint-renderer-software = { path = "../../../clients/shell/vendor/i-slint-renderer-software" }
+slint-interpreter = { path = "../../../clients/shell/vendor/slint-interpreter" }
+i-slint-backend-testing = { path = "../../../clients/shell/vendor/i-slint-backend-testing" }
+i-slint-backend-winit = { path = "../../../clients/shell/vendor/i-slint-backend-winit" }
+i-slint-backend-android-activity = { path = "../../../clients/shell/vendor/i-slint-backend-android-activity" }
