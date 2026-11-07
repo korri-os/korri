@@ -3635,6 +3635,7 @@ dependencies = [
  "sha2 0.10.9",
  "socket2",
  "subtle",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
  "tokio-tungstenite 0.27.0",
