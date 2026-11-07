@@ -143,7 +143,7 @@
                 Run isolated korrid and inputd development processes without host mutation.
             nix run .#korri-bundle-select -- COMMAND
                 Select or roll back one immutable Korri bundle without NixOS activation.
-            ${pluginHost.help}${shell.help}${shellWebos.help}${slintSpike.help}${slintSpikePackage.help}${slintSpikeWebos.help}'';
+            ${pluginHost.help}${shell.help}${shellWebos.help}${slintSpike.help}${slintSpikePackage.help}${slintSpikeWebos.help}${webosEmbeddedViewerSpike.help}'';
         };
         # The native shell: surface packages over korrid (clients/shell/README.md).
         shell = import ./clients/shell { inherit pkgs; };
@@ -152,6 +152,7 @@
         slintSpike = import ./clients/slint-spike { inherit pkgs proseql; };
         slintSpikePackage = import ./clients/slint-spike/webos { inherit pkgs; };
         slintSpikeWebos = import ./clients/slint-spike/webos.nix { inherit pkgs proseql; };
+        webosEmbeddedViewerSpike = import ./clients/webos-embedded-viewer-spike { inherit pkgs; };
       in
       {
         apps =
@@ -164,7 +165,7 @@
             // slintSpike.apps
             // slintSpikePackage.apps
             // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 (
-              slintSpikeWebos.apps // shellWebos.apps
+              slintSpikeWebos.apps // shellWebos.apps // webosEmbeddedViewerSpike.apps
             )
           );
         devShells.default = import ./devshell.nix {
