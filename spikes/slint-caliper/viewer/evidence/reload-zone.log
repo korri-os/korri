@@ -1,0 +1,15 @@
+# headless sway 2880x1800 at scale 1.5, release build, ZoneOptions on rg35xxpro + rg353m (4 frames).
+# The edit: label "Device" -> "Device edited live" in zone/pages/ZoneOptions.page.preview.slint,
+# then the saved copy back; then one blank line appended to zone/ui/templates/ZoneShell.slint
+# (a file the preview imports) and the copy back. The workstation was building other spikes.
+reload: zone/pages/ZoneOptions.page.preview.slint changed; ZoneOptions recompiled in 667 ms; 4 frames drawn 1312 ms after the save; 0 states fail
+reload: zone/pages/ZoneOptions.page.preview.slint changed; ZoneOptions recompiled in 349 ms; 4 frames drawn 762 ms after the save; 0 states fail
+reload: zone/ui/templates/ZoneShell.slint changed; ZoneOptions recompiled in 368 ms; 4 frames drawn 771 ms after the save; 0 states fail
+reload: zone/ui/templates/ZoneShell.slint changed; ZoneOptions recompiled in 377 ms; 4 frames drawn 813 ms after the save; 0 states fail
+# second run, with the split timing:
+reload: zone/pages/ZoneOptions.page.preview.slint changed; ZoneOptions recompiled in 318 ms; 4 frames created and drawn in 366 ms; on screen 744 ms after the save (first event to work: 60 ms); 0 states fail
+reload: zone/pages/ZoneOptions.page.preview.slint changed; ZoneOptions recompiled in 287 ms; 4 frames created and drawn in 424 ms; on screen 819 ms after the save (first event to work: 108 ms); 0 states fail
+reload: zone/pages/ZoneOptions.page.preview.slint changed; ZoneOptions recompiled in 588 ms; 4 frames created and drawn in 498 ms; on screen 1173 ms after the save (first event to work: 87 ms); 0 states fail
+reload: zone/pages/ZoneOptions.page.preview.slint changed; ZoneOptions recompiled in 348 ms; 4 frames created and drawn in 528 ms; on screen 930 ms after the save (first event to work: 54 ms); 0 states fail
+reload: zone/pages/ZoneOptions.page.preview.slint changed; ZoneOptions recompiled in 330 ms; 4 frames created and drawn in 352 ms; on screen 764 ms after the save (first event to work: 81 ms); 0 states fail
+reload: zone/pages/ZoneOptions.page.preview.slint changed; ZoneOptions recompiled in 438 ms; 4 frames created and drawn in 428 ms; on screen 1042 ms after the save (first event to work: 176 ms); 0 states fail

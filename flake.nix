@@ -152,6 +152,8 @@
         slintSpike = import ./clients/slint-spike { inherit pkgs proseql; };
         slintSpikePackage = import ./clients/slint-spike/webos { inherit pkgs; };
         slintSpikeWebos = import ./clients/slint-spike/webos.nix { inherit pkgs proseql; };
+        # THROWAWAY SPIKE: Caliper's parts browser for the Slint packages (README there).
+        slintCaliperViewer = import ./spikes/slint-caliper/viewer { inherit pkgs; };
       in
       {
         apps =
@@ -163,6 +165,7 @@
             // shell.apps
             // slintSpike.apps
             // slintSpikePackage.apps
+            // slintCaliperViewer.apps
             // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 (
               slintSpikeWebos.apps // shellWebos.apps
             )
@@ -196,6 +199,7 @@
             h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-shell = shell.package;
             korri-shell-surfaces = shell.surfaces;
+            slint-caliper-viewer = slintCaliperViewer.package;
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
           }
         )
