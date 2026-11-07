@@ -1,0 +1,16 @@
+$ viewer log
+knob: Tokens.ground-games = #e70000: set on 12 frames in 0.06 ms, frames drawn 8.39 ms after the change; saved #4ad39c -> #e70000 in zone/ui/tokens.slint
+reload: zone/ui/tokens.slint changed; ZoneGames recompiled in 418 ms; 12 frames created and drawn in 386 ms; on screen 881 ms after the save (first event to work: 76 ms); 0 states fail
+
+$ diff -u <checkout>/clients/shell/packages/zone/ui/tokens.slint <copy>/zone/ui/tokens.slint   (what Save wrote)
+--- clients/shell/packages/zone/ui/tokens.slint	2026-11-06 20:09:27.822213554 -0700
++++ zone/ui/tokens.slint	2026-11-06 21:05:31.047217396 -0700
+@@ -135,7 +135,7 @@
+     out property <color> veil-see-through: #00000080;
+ 
+     // ---- The grounds, one per screen group ----
+-    out property <color> ground-games: #4ad39c;
++    out property <color> ground-games: #e70000;
+     out property <color> ground-options: #efc300;
+     out property <color> ground-savedata: #31aac6;
+     out property <color> ground-gameopts: #33acc7;

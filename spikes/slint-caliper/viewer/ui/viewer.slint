@@ -1,0 +1,762 @@
+// The viewer's own window. Caliper's Darkroom direction (docs/decisions.md, 34): a dark
+// room where the part is the only colour, no accent hue, selection in ink.
+//
+// Layout is one function of the window's own size (`wide`): at 760 px and more the part
+// list is a column; below it the list is a drawer the bar opens. Every control stays one
+// tap away at every size.
+
+import { Slider, ListView, LineEdit, ComboBox } from "std-widgets.slint";
+
+export struct ListRow {
+    kind: int,        // 0 layer heading, 1 part, 2 state, 3 take
+    label: string,
+    part: int,
+    state: string,
+    selected: bool,
+    expanded: bool,
+    count: int,
+}
+
+export struct Frame {
+    label: string,
+    state: string,
+    image: image,
+    error: string,
+    note: string,
+    take: string,     // "" for the original
+}
+
+// One line of the knobs panel.
+export struct KnobRow {
+    kind: int,        // 0 heading, 1 colour, 2 number, 3 sibling token, 4 not a knob
+    key: int,
+    label: string,
+    doc: string,
+    text: string,
+    color: color,
+    num: float,
+    step: float,
+    ranged: bool,
+    min: float,
+    max: float,
+    options: [string],
+    option: int,
+    changed: bool,
+}
+
+export struct Group {
+    id: string,
+    name: string,
+    px-w: int,
+    px-h: int,
+    width-mm: float,
+    height-mm: float,
+    note: string,
+    unresolved: bool,
+    frames: [Frame],
+}
+
+export struct Chip {
+    id: string,
+    name: string,
+    on: bool,
+}
+
+global Ink {
+    out property <color> room: #202124;
+    out property <color> panel: #2a2b2e;
+    out property <color> edge: #3b3c40;
+    out property <color> ink: #ecebe6;
+    out property <color> dim: #a3a29d;
+    out property <color> faint: #6d6c69;
+    out property <color> warn: #d6a64f;
+    out property <color> fail: #e48a78;
+    out property <length> gutter: 16px;
+}
+
+component Pill inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked;
+    height: 26px;
+    width: label.preferred-width + 20px;
+    border-radius: 13px;
+    border-width: 1px;
+    border-color: root.on ? Ink.ink : Ink.edge;
+    background: touch.has-hover ? Ink.panel : transparent;
+    label := Text {
+        text: root.text;
+        color: root.on ? Ink.ink : Ink.dim;
+        font-size: 12px;
+        vertical-alignment: center;
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+component Row inherits Rectangle {
+    in property <ListRow> entry;
+    callback pick;
+    callback toggle;
+    height: entry.kind == 0 ? 34px : 26px;
+    background: entry.selected ? Ink.panel : touch.has-hover && entry.kind != 0 ? #26272a : transparent;
+    touch := TouchArea { clicked => { if (entry.kind != 0) { root.pick(); } } }
+    if entry.kind == 0: Text {
+        x: 14px;
+        y: parent.height - self.height - 4px;
+        text: entry.label + "  " + entry.count;
+        color: Ink.faint;
+        font-size: 11px;
+    }
+    if entry.kind == 1: Rectangle {
+        // The arrow expands or collapses the states without changing the preview.
+        arrow := TouchArea {
+            x: 4px;
+            width: 22px;
+            clicked => { root.toggle(); }
+            Text {
+                text: entry.expanded ? "▾" : "▸";
+                color: arrow.has-hover ? Ink.ink : Ink.faint;
+                font-size: 11px;
+            }
+        }
+        Text {
+            x: 26px;
+            width: parent.width - 30px;
+            text: entry.label;
+            color: entry.selected ? Ink.ink : Ink.dim;
+            font-size: 13px;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    if entry.kind == 3: Text {
+        x: 54px;
+        width: parent.width - 58px;
+        height: parent.height;
+        text: entry.label;
+        color: Ink.dim;
+        font-size: 12px;
+        font-italic: true;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if entry.kind == 2: Text {
+        x: 40px;
+        width: parent.width - 44px;
+        height: parent.height;
+        text: entry.label;
+        color: entry.selected ? Ink.ink : Ink.faint;
+        font-size: 12px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if entry.selected: Rectangle {
+        x: 0;
+        width: 2px;
+        background: Ink.ink;
+    }
+}
+
+component TextButton inherits TouchArea {
+    in property <string> text;
+    width: t.preferred-width;
+    mouse-cursor: pointer;
+    t := Text {
+        text: root.text;
+        color: root.has-hover ? Ink.ink : Ink.dim;
+        font-size: 12px;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        y: parent.height - 5px;
+        height: 1px;
+        background: root.has-hover ? Ink.ink : Ink.edge;
+    }
+}
+
+// One state on one device: the device's pixels, scaled to the device's millimetres.
+component FrameView inherits Rectangle {
+    in property <Frame> frame;
+    in property <length> fw;
+    in property <length> fh;
+    in property <length> caption;
+    callback pick;
+    callback accept;
+    callback discard;
+    width: fw;
+    height: fh + caption;
+    if frame.take != "": HorizontalLayout {
+        x: parent.width - self.width;
+        y: 0;
+        width: self.preferred-width;
+        height: caption;
+        spacing: 12px;
+        TextButton { text: "Accept"; clicked => { root.accept(); } }
+        TextButton { text: "Discard"; clicked => { root.discard(); } }
+    }
+    label := TouchArea {
+        x: 0;
+        y: 0;
+        width: frame.take != "" ? parent.width - 130px : parent.width;
+        height: caption;
+        mouse-cursor: pointer;
+        clicked => { root.pick(); }
+        Text {
+            x: 0;
+            width: parent.width;
+            text: frame.label + (frame.note != "" ? "   " + frame.note : "");
+            color: frame.error != "" ? Ink.fail : label.has-hover ? Ink.ink : Ink.dim;
+            font-size: 12px;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+    }
+    Rectangle {
+        y: caption;
+        width: fw;
+        height: fh;
+        background: frame.error != "" ? Ink.panel : #000;
+        border-width: frame.error != "" ? 1px : 0;
+        border-color: Ink.fail;
+        if frame.error == "": Image {
+            width: parent.width;
+            height: parent.height;
+            source: frame.image;
+            image-fit: fill;
+            image-rendering: smooth;
+        }
+        if frame.error != "": Text {
+            x: 12px;
+            y: 10px;
+            width: parent.width - 24px;
+            height: parent.height - 20px;
+            text: frame.error;
+            color: Ink.fail;
+            font-size: 12px;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+    }
+}
+
+// Every frame of one device. Caliper's gridGeometry (src/client/device-frame.js): each
+// frame is drawn at the device's physical width when it fits the room's width, else all
+// frames of the device shrink together; frames wrap into as many columns as fit.
+component GroupView inherits Rectangle {
+    in property <Group> group;
+    in property <length> room;
+    in property <float> px-per-mm;
+    in property <bool> calibrated;
+    callback pick(string);
+    callback accept(string);
+    callback discard(string);
+    property <length> gap: 24px;
+    property <length> head: 44px;
+    property <length> caption: 24px;
+    property <length> true-w: group.width-mm * px-per-mm * 1phx;
+    property <float> fit: min(1.0, room / true-w);
+    property <length> fw: true-w * fit;
+    property <length> fh: fw * group.px-h / group.px-w;
+    property <int> cols: max(1, min(group.frames.length, floor((room + gap) / (fw + gap))));
+    property <int> lines: ceil(group.frames.length / cols);
+    height: head + lines * (fh + caption) + (lines - 1) * gap;
+    Text {
+        y: 4px;
+        width: room;
+        text: group.name + "   " + group.px-w + " x " + group.px-h + " px   "
+            + round(group.width-mm * 10) / 10 + " x " + round(group.height-mm * 10) / 10 + " mm   "
+            + (fit < 1.0 ? "Scaled to " + floor(fit * 100) + "%" : calibrated ? "True size" : "True size, not calibrated")
+            + (group.unresolved ? "   millimetres unresolved" : "");
+        color: fit < 1.0 || group.unresolved ? Ink.warn : Ink.dim;
+        font-size: 12px;
+        overflow: elide;
+    }
+    // Where the device's numbers come from (Caliper's viewportNote).
+    Text {
+        y: 22px;
+        width: room;
+        text: group.note;
+        color: Ink.faint;
+        font-size: 11px;
+        overflow: elide;
+    }
+    for f[i] in group.frames: FrameView {
+        x: mod(i, cols) * (fw + gap);
+        y: head + floor(i / cols) * (fh + caption + gap);
+        frame: f;
+        fw: fw;
+        fh: fh;
+        caption: caption;
+        pick => { root.pick(f.state); }
+        accept => { root.accept(f.take); }
+        discard => { root.discard(f.take); }
+    }
+}
+
+// Caliper's Calibrate (src/client/ui/canvas/Calibration.tsx): an ID-1 card outline and a
+// px per mm slider. The 100 mm bar is for a ruler.
+component Calibration inherits Rectangle {
+    in property <float> px-per-mm;
+    in property <bool> calibrated;
+    in property <string> monitor;
+    callback changed(float);
+    callback reset;
+    callback done;
+    background: #202124ee;
+    TouchArea { }
+    VerticalLayout {
+        padding: Ink.gutter * 2;
+        spacing: Ink.gutter;
+        alignment: start;
+        Text {
+            text: "Hold a credit card to the outline, or a ruler to the bar. Move the slider until they match.";
+            color: Ink.ink;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+        Rectangle {
+            height: 53.98 * px-per-mm * 1phx;
+            HorizontalLayout {
+                alignment: start;
+                Rectangle {
+                    width: 85.6 * px-per-mm * 1phx;
+                    border-width: 1px;
+                    border-color: Ink.ink;
+                    border-radius: 3.18 * px-per-mm * 1phx;
+                    Text {
+                        text: "85.6 x 53.98 mm";
+                        color: Ink.dim;
+                        font-size: 12px;
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: 36px;
+            HorizontalLayout {
+                alignment: start;
+                Rectangle {
+                    width: 100 * px-per-mm * 1phx;
+                    Rectangle { y: 0; height: 6px; background: Ink.ink; }
+                    for t in 11: Rectangle {
+                        x: t * 10 * px-per-mm * 1phx - (t == 10 ? 1px : 0);
+                        y: 6px;
+                        width: 1px;
+                        height: mod(t, 5) == 0 ? 14px : 8px;
+                        background: Ink.ink;
+                    }
+                    Text { y: 22px; text: "100 mm"; color: Ink.dim; font-size: 12px; }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: Ink.gutter;
+            Slider {
+                minimum: 2;
+                maximum: 20;
+                value: root.px-per-mm;
+                changed(v) => { root.changed(v); }
+            }
+            Text {
+                text: round(px-per-mm * 100) / 100 + " px per mm, " + round(px-per-mm * 25.4) + " px per inch";
+                color: Ink.ink;
+                font-size: 13px;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            text: monitor;
+            color: calibrated ? Ink.dim : Ink.warn;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Pill { text: "Reset"; clicked => { root.reset(); } }
+            Pill { text: "Done"; on: true; clicked => { root.done(); } }
+        }
+    }
+}
+
+// One knob. A number scrubs: drag its name sideways (Shift: ten steps), or type a value.
+// A colour takes its text. A sibling token is a choice of the file's colours. Every
+// change shows at once in every frame; letting go (Enter, the end of a drag, a choice)
+// writes the file.
+component KnobView inherits Rectangle {
+    in property <KnobRow> k;
+    in property <length> w;
+    callback text(string, bool);
+    callback number(float, bool);
+    property <length> control: 132px;
+    property <string> kt: k.text;
+    changed kt => { if (edit.text != kt) { edit.text = kt; } }
+    width: w;
+    height: k.kind == 0 ? 34px : k.kind == 4 ? 24px : k.ranged ? 62px : 44px;
+    if k.kind == 0: Text {
+        x: 14px;
+        y: parent.height - self.height - 4px;
+        width: parent.width - 28px;
+        text: k.label;
+        color: Ink.faint;
+        font-size: 11px;
+        overflow: elide;
+    }
+    if k.kind == 4: Text {
+        x: 14px;
+        width: parent.width - 28px;
+        text: k.label + "   " + k.doc;
+        color: Ink.faint;
+        font-size: 11px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Rectangle {
+        visible: k.kind >= 1 && k.kind <= 3;
+        // The name: a number's scrub handle.
+        scrub := TouchArea {
+            property <float> from;
+            property <length> at;
+            property <float> times: 1;
+            property <float> now;
+            x: 0;
+            y: 0;
+            width: parent.width - control - 20px;
+            height: 44px;
+            mouse-cursor: k.kind == 2 ? ew-resize : default;
+            pointer-event(e) => {
+                if (k.kind != 2) { return; }
+                if (e.kind == PointerEventKind.down) {
+                    self.from = k.num;
+                    self.now = k.num;
+                    self.at = self.mouse-x;
+                    self.times = e.modifiers.shift ? 10 : 1;
+                }
+                if (e.kind == PointerEventKind.up && self.now != self.from) {
+                    root.number(self.now, true);
+                }
+            }
+            moved => {
+                if (k.kind == 2 && self.pressed) {
+                    self.now = self.from + round((self.mouse-x - self.at) / 6px) * k.step * self.times;
+                    root.number(self.now, false);
+                }
+            }
+            Text {
+                x: 14px;
+                y: 6px;
+                width: parent.width - 14px;
+                text: (k.changed ? "● " : "") + k.label;
+                color: k.changed ? Ink.ink : Ink.dim;
+                font-size: 12px;
+                overflow: elide;
+            }
+            Text {
+                x: 14px;
+                y: 23px;
+                width: parent.width - 14px;
+                text: k.doc;
+                color: Ink.faint;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+        if k.kind == 1 || k.kind == 3: Rectangle {
+            x: parent.width - control - 14px - 26px;
+            y: 12px;
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            border-width: 1px;
+            border-color: Ink.edge;
+            background: k.color;
+        }
+        edit := LineEdit {
+            x: parent.width - control - 14px;
+            y: 6px;
+            width: control;
+            height: 32px;
+            visible: k.kind == 1 || k.kind == 2;
+            text: root.kt;
+            font-size: 12px;
+            edited(t) => { if (k.kind == 1) { root.text(t, false); } }
+            accepted(t) => { root.text(t, true); }
+        }
+        if k.kind == 3: ComboBox {
+            x: parent.width - control - 14px;
+            y: 6px;
+            width: control;
+            height: 32px;
+            model: k.options;
+            current-index: k.option;
+            selected(v) => { root.text(v, true); }
+        }
+        if k.ranged: Slider {
+            x: 14px;
+            y: 40px;
+            width: parent.width - 28px;
+            height: 20px;
+            minimum: k.min;
+            maximum: k.max;
+            value: k.num;
+            changed(v) => { root.number(v, false); }
+            released(v) => { root.number(v, true); }
+        }
+    }
+}
+
+export component Viewer inherits Window {
+    title: "Korri parts";
+    preferred-width: 1400px;
+    preferred-height: 900px;
+    min-width: 320px;
+    min-height: 240px;
+    background: Ink.room;
+    default-font-size: 13px;
+
+    in property <[ListRow]> rows;
+    in property <[Group]> groups;
+    in property <[Chip]> chips;
+    in property <string> heading: "Choose a part";
+    in property <string> detail;
+    in property <float> px-per-mm: 3.78;
+    in property <bool> calibrated;
+    in property <string> monitor;
+    in property <string> status;
+    in-out property <bool> calibrating;
+    in-out property <bool> drawer;
+    in property <bool> can-take;
+    in property <[KnobRow]> knob-rows;
+    in property <string> knob-files;
+    in-out property <bool> knobs-open;
+
+    callback pick-part(int);
+    callback toggle-part(int);
+    callback pick-state(int, string);
+    callback pick-frame(string);
+    callback toggle-device(string);
+    callback set-px-per-mm(float);
+    callback reset-calibration;
+    callback knob-text(int, string, bool);
+    callback knob-number(int, float, bool);
+    callback new-take;
+    callback accept-take(string);
+    callback discard-take(string);
+
+    property <bool> wide: root.width >= 760px;
+    property <length> list-w: wide ? min(280px, root.width * 0.28) : min(320px, root.width * 0.9);
+    property <length> bar-h: 44px;
+    property <length> foot-h: 34px;
+    // The knobs: a column at the right while the stage keeps 520 px, else a drawer.
+    property <bool> knobs-col: knobs-open && root.width - (wide ? list-w : 0) >= 340px + 520px;
+    property <length> knobs-w: knobs-col ? 340px : min(360px, root.width * 0.92);
+
+    // The bar: what is on the stage, the drawer's button when the list is not a column.
+    bar := Rectangle {
+        x: wide ? list-w : 0;
+        y: 0;
+        width: root.width - self.x;
+        height: bar-h;
+        HorizontalLayout {
+            padding-left: Ink.gutter;
+            padding-right: Ink.gutter;
+            spacing: 12px;
+            if !wide: Pill {
+                y: (bar-h - 26px) / 2;
+                text: "Parts";
+                on: drawer;
+                clicked => {
+                    drawer = !drawer;
+                    if (!knobs-col) { knobs-open = false; }
+                }
+            }
+            Text {
+                text: heading;
+                color: Ink.ink;
+                font-size: 15px;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Text {
+                text: detail;
+                color: Ink.faint;
+                font-size: 12px;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            if can-take: Pill {
+                y: (bar-h - 26px) / 2;
+                text: "New take";
+                clicked => { root.new-take(); }
+            }
+            Pill {
+                y: (bar-h - 26px) / 2;
+                text: "Knobs";
+                on: knobs-open;
+                clicked => {
+                    knobs-open = !knobs-open;
+                    if (!wide) { drawer = false; }
+                }
+            }
+        }
+    }
+
+    // The stage.
+    stage := Flickable {
+        x: bar.x;
+        y: bar-h;
+        width: bar.width - (knobs-col ? knobs-w : 0);
+        height: root.height - bar-h - foot-h;
+        content-height: stack.preferred-height + 2 * Ink.gutter;
+        content-width: self.width;
+        stack := VerticalLayout {
+            x: Ink.gutter;
+            y: Ink.gutter;
+            width: stage.width - 2 * Ink.gutter;
+            spacing: 2 * Ink.gutter;
+            alignment: start;
+            for g in groups: GroupView {
+                group: g;
+                room: stage.width - 2 * Ink.gutter;
+                px-per-mm: px-per-mm;
+                calibrated: calibrated;
+                pick(state) => { root.pick-frame(state); }
+                accept(t) => { root.accept-take(t); }
+                discard(t) => { root.discard-take(t); }
+            }
+            if groups.length == 0: Text {
+                text: rows.length == 0 ? "No *.preview.slint files under the packages folder." : "Choose a part in the list. Its states appear here, at each device's size.";
+                color: Ink.dim;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    // The foot: the devices are the switch; the monitor and the measure.
+    foot := Rectangle {
+        x: bar.x;
+        y: root.height - foot-h;
+        width: bar.width;
+        height: foot-h;
+        border-width: 0;
+        Rectangle { y: 0; height: 1px; background: Ink.edge; }
+        Flickable {
+            x: 0;
+            y: 1px;
+            height: parent.height - 1px;
+            content-width: line.preferred-width;
+            line := HorizontalLayout {
+                padding-left: Ink.gutter;
+                padding-right: Ink.gutter;
+                spacing: 6px;
+                alignment: start;
+                for c in chips: Pill {
+                    y: (foot-h - 26px) / 2;
+                    text: c.name;
+                    on: c.on;
+                    clicked => { root.toggle-device(c.id); }
+                }
+                Rectangle { width: 10px; }
+                Pill {
+                    y: (foot-h - 26px) / 2;
+                    text: calibrated ? "Calibrated" : "Calibrate";
+                    on: calibrating;
+                    clicked => { calibrating = !calibrating; }
+                }
+                Text {
+                    text: round(px-per-mm * 100) / 100 + " px/mm   " + status;
+                    color: Ink.faint;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    // The part list: a column, or a drawer over the stage.
+    // As a drawer it opens under the bar, so the Parts button that closes it stays in reach.
+    if wide || drawer: Rectangle {
+        x: 0;
+        y: wide ? 0 : bar-h;
+        width: list-w;
+        height: wide ? root.height : root.height - bar-h - foot-h;
+        background: Ink.room;
+        drop-shadow-blur: wide ? 0 : 12px;
+        drop-shadow-color: #0008;
+        Rectangle { x: parent.width - 1px; width: 1px; background: Ink.edge; }
+        if wide: Text {
+            x: 14px;
+            y: 0;
+            height: bar-h;
+            text: "Korri parts";
+            color: Ink.ink;
+            font-size: 15px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        ListView {
+            x: 0;
+            y: wide ? bar-h : 0;
+            width: parent.width - 1px;
+            height: parent.height - self.y;
+            for r in rows: Row {
+                entry: r;
+                pick => {
+                    if (r.kind == 1) { root.pick-part(r.part); }
+                    if (r.kind == 2 || r.kind == 3) { root.pick-state(r.part, r.state); }
+                    if (!wide) { drawer = false; }
+                }
+                toggle => { root.toggle-part(r.part); }
+            }
+        }
+    }
+
+    // The knobs panel: a column at the right, or a drawer over the stage.
+    if knobs-open: Rectangle {
+        x: root.width - knobs-w;
+        y: bar-h;
+        width: knobs-w;
+        height: root.height - bar-h - foot-h;
+        background: Ink.room;
+        drop-shadow-blur: knobs-col ? 0 : 12px;
+        drop-shadow-color: #0008;
+        TouchArea { }
+        Rectangle { x: 0; width: 1px; background: Ink.edge; }
+        Text {
+            x: 14px;
+            y: 8px;
+            width: parent.width - 28px;
+            text: knob-files;
+            color: Ink.dim;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        ListView {
+            x: 1px;
+            y: 40px;
+            width: parent.width - 1px;
+            height: parent.height - self.y;
+            for r in knob-rows: KnobView {
+                k: r;
+                w: knobs-w - 14px;
+                text(t, save) => { root.knob-text(r.key, t, save); }
+                number(v, save) => { root.knob-number(r.key, v, save); }
+            }
+        }
+    }
+
+    if calibrating: Calibration {
+        x: bar.x;
+        y: 0;
+        width: bar.width;
+        height: root.height;
+        px-per-mm: root.px-per-mm;
+        calibrated: calibrated;
+        monitor: monitor;
+        changed(v) => { root.set-px-per-mm(v); }
+        reset => { root.reset-calibration(); }
+        done => { calibrating = false; }
+    }
+}

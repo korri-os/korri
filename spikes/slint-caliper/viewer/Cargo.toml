@@ -1,0 +1,57 @@
+[package]
+name = "slint-caliper-viewer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "THROWAWAY SPIKE: Caliper's part list, states and true-size device frames for Korri's Slint packages"
+
+# Standalone, like clients/shell: not a member of any workspace.
+[workspace]
+
+[dependencies]
+# The shell, for its Slint versions and features (winit, software renderer).
+korri-shell = { path = "../../../clients/shell" }
+# Same pins and features as clients/shell/Cargo.toml.
+slint = { version = "=1.18.1", default-features = false, features = [
+  "std",
+  "compat-1-2",
+  "renderer-software",
+  "unstable-winit-030",
+  "backend-winit-wayland",
+  "backend-winit-x11",
+] }
+slint-interpreter = { version = "=1.18.1", default-features = false, features = [
+  "std",
+  "compat-1-2",
+  "renderer-software",
+  "internal",
+] }
+# Only to point a MinimalSoftwareWindow's renderer at its adapter before the state is
+# created (as slint-interpreter does for a window it makes itself), so the state's
+# `import "font.ttf"` registers its fonts.
+i-slint-core = { version = "=1.18.1", default-features = false }
+notify = "8"
+anyhow = "1"
+pollster = "0.4"
+# Take records (.caliper/takes/<n>.json, Caliper's layout).
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+codegen-units = 16
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# The shell's patched Slint 1.18.1 (clients/shell/vendor/README.md). Same table as
+# clients/shell/Cargo.toml, so this crate draws with the same renderer.
+[patch.crates-io]
+i-slint-core = { path = "../../../clients/shell/vendor/i-slint-core" }
+i-slint-renderer-software = { path = "../../../clients/shell/vendor/i-slint-renderer-software" }
+slint-interpreter = { path = "../../../clients/shell/vendor/slint-interpreter" }
+i-slint-backend-testing = { path = "../../../clients/shell/vendor/i-slint-backend-testing" }
+i-slint-backend-winit = { path = "../../../clients/shell/vendor/i-slint-backend-winit" }
+i-slint-backend-android-activity = { path = "../../../clients/shell/vendor/i-slint-backend-android-activity" }
