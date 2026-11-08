@@ -1,0 +1,13 @@
+# Injected keys, 2026-11-08 15:14-15:15, Chrome in front, guide service enabled.
+# The saved logcat file was lost when the evidence was pruned; these lines are
+# copied from the session transcript (adb logcat -d output).
+#
+# 1. `adb shell input keyevent KEYCODE_BUTTON_MODE`, `input gamepad keyevent KEYCODE_BUTTON_MODE`,
+#    `input gamepad keyevent KEYCODE_BUTTON_A KEYCODE_DPAD_DOWN`, `input gamepad keyevent KEYCODE_BUTTON_MODE`:
+#    NO KorriGuideSpike "key ..." line at all. onKeyEvent never saw an injected key. No overlay opened.
+#
+# 2. Overlay opened by broadcast (cmd=show), then `adb shell input keyevent KEYCODE_BUTTON_A`.
+#    The key skipped the accessibility filter and went to the focused overlay window:
+11-08 15:15:06.344 20797 20797 I KorriGuideSpike: overlay window focus=true
+11-08 15:15:07.873 20797 20797 I KorriGuideSpike: overlay window got key KEYCODE_BUTTON_A action=DOWN repeat=0 device="Virtual" deviceId=-1 eventSource=0x0 deviceSources=0x301 virtual=true flags=0x0
+11-08 15:15:07.876 20797 20797 I KorriGuideSpike: overlay window got key KEYCODE_BUTTON_A action=UP repeat=0 device="Virtual" deviceId=-1 eventSource=0x0 deviceSources=0x301 virtual=true flags=0x0

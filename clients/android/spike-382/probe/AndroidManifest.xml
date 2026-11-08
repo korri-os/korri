@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spike #382: a stand-in "app behind" that logs every input it receives. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.simonwjackson.korri.guidespike.probe"
+    android:versionCode="1"
+    android:versionName="spike-382">
+    <application android:label="Guide spike probe" android:allowBackup="false">
+        <activity android:name=".ProbeActivity" android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

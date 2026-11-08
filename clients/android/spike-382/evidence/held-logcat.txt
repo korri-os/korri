@@ -1,0 +1,120 @@
+--------- beginning of main
+11-08 15:24:12.268 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_A action=DOWN repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=false fg=com.android.systemui filterLagMs=2
+11-08 15:24:12.275 I/KorriGuideProbe(23792): key KEYCODE_BUTTON_A DOWN dev=Nacon MG-X
+11-08 15:24:12.398 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_A action=UP repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=false fg=com.android.systemui filterLagMs=1
+11-08 15:24:12.400 I/KorriGuideProbe(23792): key KEYCODE_BUTTON_A UP dev=Nacon MG-X
+11-08 15:24:12.774 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_A action=DOWN repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=false fg=com.android.systemui filterLagMs=2
+11-08 15:24:12.777 I/KorriGuideProbe(23792): key KEYCODE_BUTTON_A DOWN dev=Nacon MG-X
+11-08 15:24:12.876 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_A action=UP repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=false fg=com.android.systemui filterLagMs=1
+11-08 15:24:12.878 I/KorriGuideProbe(23792): key KEYCODE_BUTTON_A UP dev=Nacon MG-X
+11-08 15:24:14.027 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_MODE action=DOWN repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=false fg=com.android.systemui filterLagMs=2
+11-08 15:24:14.040 I/KorriGuideSpike(20797): overlay SHOWN by guide type=acc focusable=true over com.android.systemui
+11-08 15:24:14.040 I/KorriGuideSpike(20797): consumed GUIDE DOWN
+11-08 15:24:14.045 I/KorriGuideSpike(20797): overlay first draw 20 ms after the event
+11-08 15:24:14.063 I/KorriGuideSpike(20797): overlay window focus=true
+11-08 15:24:14.063 I/KorriGuideProbe(23792): window focus=false
+11-08 15:24:14.154 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_MODE action=UP repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=true fg=com.android.systemui filterLagMs=2
+11-08 15:24:14.154 I/KorriGuideSpike(20797): consumed GUIDE UP
+11-08 15:24:16.611 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_A action=DOWN repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=true fg=com.android.systemui filterLagMs=3
+11-08 15:24:16.611 I/KorriGuideSpike(20797): HELD from app behind (1): KEYCODE_BUTTON_A
+11-08 15:24:16.709 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_A action=UP repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=true fg=com.android.systemui filterLagMs=1
+11-08 15:24:16.709 I/KorriGuideSpike(20797): HELD from app behind (2): KEYCODE_BUTTON_A
+11-08 15:24:19.672 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=1.5258789E-5 y=1.5258789E-5 hatX=0.0 hatY=1.0
+11-08 15:24:19.789 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=1.5258789E-5 y=1.5258789E-5 hatX=0.0 hatY=0.0
+11-08 15:24:25.048 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.14061189 y=-0.5546807 hatX=0.0 hatY=0.0
+11-08 15:24:25.064 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.15037763 y=-0.68749523 hatX=0.0 hatY=0.0
+11-08 15:24:25.079 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.16453803 y=-0.7363241 hatX=0.0 hatY=0.0
+11-08 15:24:25.094 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.16453803 y=-0.70312047 hatX=0.0 hatY=0.0
+11-08 15:24:25.111 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.16453803 y=-0.49217975 hatX=0.0 hatY=0.0
+11-08 15:24:25.127 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.14039826 y=-0.3515526 hatX=0.0 hatY=0.0
+11-08 15:24:25.144 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.0077973604 y=-0.0077973604 hatX=0.0 hatY=0.0
+11-08 15:24:25.160 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.0038910508 y=-0.0038910508 hatX=0.0 hatY=0.0
+11-08 15:24:25.177 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.07811093 y=-0.0038910508 hatX=0.0 hatY=0.0
+11-08 15:24:25.194 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.17186236 y=-0.0036469102 hatX=0.0 hatY=0.0
+11-08 15:24:25.211 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.38280308 y=0.16408026 hatX=0.0 hatY=0.0
+11-08 15:24:25.227 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.6015564 y=0.72658885 hatX=0.0 hatY=0.0
+11-08 15:24:25.244 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.5468681 y=0.8203403 hatX=0.0 hatY=0.0
+11-08 15:24:25.261 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.5234302 y=0.830106 hatX=0.0 hatY=0.0
+11-08 15:24:25.277 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.5136645 y=0.83865106 hatX=0.0 hatY=0.0
+11-08 15:24:25.294 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.4995041 y=0.83865106 hatX=0.0 hatY=0.0
+11-08 15:24:25.311 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.25780118 y=0.57033646 hatX=0.0 hatY=0.0
+11-08 15:24:25.327 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=1.5258789E-5 y=1.5258789E-5 hatX=0.0 hatY=0.0
+11-08 15:24:25.360 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.023453116 y=1.5258789E-5 hatX=0.0 hatY=0.0
+11-08 15:24:25.378 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.20314336 y=-0.062485695 hatX=0.0 hatY=0.0
+11-08 15:24:25.394 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.47658503 y=-0.2656138 hatX=0.0 hatY=0.0
+11-08 15:24:25.411 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.6719005 y=-0.4296788 hatX=0.0 hatY=0.0
+11-08 15:24:25.427 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.8281529 y=-0.55663383 hatX=0.0 hatY=0.0
+11-08 15:24:25.444 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.81838715 y=-0.5707942 hatX=0.0 hatY=0.0
+11-08 15:24:25.461 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.80422676 y=-0.60936904 hatX=0.0 hatY=0.0
+11-08 15:24:25.477 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.7500267 y=-0.6581979 hatX=0.0 hatY=0.0
+11-08 15:24:25.494 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.68752575 y=-0.7265583 hatX=0.0 hatY=0.0
+11-08 15:24:25.511 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.5468986 y=-0.835935 hatX=0.0 hatY=0.0
+11-08 15:24:25.527 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.18751812 y=-0.8659648 hatX=0.0 hatY=0.0
+11-08 15:24:25.544 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.16404974 y=-0.85125506 hatX=0.0 hatY=0.0
+11-08 15:24:25.561 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.78124666 y=-0.6328069 hatX=0.0 hatY=0.0
+11-08 15:24:25.577 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.90624857 y=-0.4296788 hatX=0.0 hatY=0.0
+11-08 15:24:25.594 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.9531243 y=-0.28905165 hatX=0.0 hatY=0.0
+11-08 15:24:25.611 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.9770504 y=-0.17967498 hatX=0.0 hatY=0.0
+11-08 15:24:25.627 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.99230945 y=-0.054673076 hatX=0.0 hatY=0.0
+11-08 15:24:25.644 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.99230945 y=0.007827878 hatX=0.0 hatY=0.0
+11-08 15:24:25.661 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.99230945 y=0.10939193 hatX=0.0 hatY=0.0
+11-08 15:24:25.677 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.99230945 y=0.1797055 hatX=0.0 hatY=0.0
+11-08 15:24:25.694 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.89062333 y=0.43752193 hatX=0.0 hatY=0.0
+11-08 15:24:25.711 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.65624475 y=0.7500267 hatX=0.0 hatY=0.0
+11-08 15:24:25.727 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.49999237 y=0.867216 hatX=0.0 hatY=0.0
+11-08 15:24:25.744 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.28123903 y=0.9609674 hatX=0.0 hatY=0.0
+11-08 15:24:25.760 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.10154879 y=0.9999695 hatX=0.0 hatY=0.0
+11-08 15:24:25.777 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.062485695 y=0.9999695 hatX=0.0 hatY=0.0
+11-08 15:24:25.794 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.023422599 y=0.9999695 hatX=0.0 hatY=0.0
+11-08 15:24:25.811 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.09376669 y=0.9999695 hatX=0.0 hatY=0.0
+11-08 15:24:25.827 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.16408026 y=0.9844053 hatX=0.0 hatY=0.0
+11-08 15:24:25.844 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.31252003 y=0.96047914 hatX=0.0 hatY=0.0
+11-08 15:24:25.861 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.3828336 y=0.8750286 hatX=0.0 hatY=0.0
+11-08 15:24:25.877 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.49221027 y=0.4609598 hatX=0.0 hatY=0.0
+11-08 15:24:25.894 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.48317695 y=0.17189288 hatX=0.0 hatY=0.0
+11-08 15:24:25.911 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.64065003 y=-0.1874876 hatX=0.0 hatY=0.0
+11-08 15:24:25.928 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.8281529 y=-0.53124285 hatX=0.0 hatY=0.0
+11-08 15:24:25.945 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.80422676 y=-0.58641946 hatX=0.0 hatY=0.0
+11-08 15:24:25.961 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.73440146 y=-0.6796826 hatX=0.0 hatY=0.0
+11-08 15:24:25.977 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.6719005 y=-0.74218357 hatX=0.0 hatY=0.0
+11-08 15:24:25.995 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.5996338 y=-0.7910124 hatX=0.0 hatY=0.0
+11-08 15:24:26.011 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.44533455 y=-0.89843595 hatX=0.0 hatY=0.0
+11-08 15:24:26.028 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.27345693 y=-0.9687495 hatX=0.0 hatY=0.0
+11-08 15:24:26.044 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.10157931 y=-0.99267566 hatX=0.0 hatY=0.0
+11-08 15:24:26.061 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.2734264 y=-0.9687495 hatX=0.0 hatY=0.0
+11-08 15:24:26.077 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.6796826 y=-0.74218357 hatX=0.0 hatY=0.0
+11-08 15:24:26.093 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.8671855 y=-0.49999237 hatX=0.0 hatY=0.0
+11-08 15:24:26.109 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.9863279 y=-0.15623713 hatX=0.0 hatY=0.0
+11-08 15:24:26.126 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.99316394 y=-0.12303352 hatX=0.0 hatY=0.0
+11-08 15:24:26.159 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.99316394 y=-0.10887313 hatX=0.0 hatY=0.0
+11-08 15:24:26.176 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.99316394 y=0.023453116 hatX=0.0 hatY=0.0
+11-08 15:24:26.193 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.99316394 y=0.14845502 hatX=0.0 hatY=0.0
+11-08 15:24:26.209 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.9531243 y=0.3047074 hatX=0.0 hatY=0.0
+11-08 15:24:26.225 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.85156024 y=0.52346075 hatX=0.0 hatY=0.0
+11-08 15:24:26.242 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.68749523 y=0.72658885 hatX=0.0 hatY=0.0
+11-08 15:24:26.259 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.49999237 y=0.867216 hatX=0.0 hatY=0.0
+11-08 15:24:26.275 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.42186618 y=0.89114213 hatX=0.0 hatY=0.0
+11-08 15:24:26.292 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.28123903 y=0.90640116 hatX=0.0 hatY=0.0
+11-08 15:24:26.309 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.12498665 y=0.97073317 hatX=0.0 hatY=0.0
+11-08 15:24:26.325 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=-0.115220904 y=0.9999695 hatX=0.0 hatY=0.0
+11-08 15:24:26.343 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.32033265 y=0.9453422 hatX=0.0 hatY=0.0
+11-08 15:24:26.359 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.6172122 y=0.7812772 hatX=0.0 hatY=0.0
+11-08 15:24:26.375 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.7578393 y=0.64065003 hatX=0.0 hatY=0.0
+11-08 15:24:26.392 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=0.33595788 y=0.09376669 hatX=0.0 hatY=0.0
+11-08 15:24:26.409 I/KorriGuideSpike(20797): overlay window got motion source=0x1000010 device="Nacon MG-X" x=1.5258789E-5 y=1.5258789E-5 hatX=0.0 hatY=0.0
+11-08 15:24:30.236 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_MODE action=DOWN repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=true fg=com.android.systemui filterLagMs=1
+11-08 15:24:30.253 I/KorriGuideSpike(20797): overlay HIDDEN by guide held=2
+11-08 15:24:30.253 I/KorriGuideSpike(20797): consumed GUIDE DOWN
+11-08 15:24:30.267 I/KorriGuideProbe(23792): window focus=true
+11-08 15:24:30.272 I/KorriGuideSpike(20797): foreground pkg=com.simonwjackson.korri.guidespike.probe class=com.simonwjackson.korri.guidespike.probe.ProbeActivity
+11-08 15:24:30.354 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_MODE action=UP repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=false fg=com.simonwjackson.korri.guidespike.probe filterLagMs=1
+11-08 15:24:30.354 I/KorriGuideSpike(20797): consumed GUIDE UP
+11-08 15:24:31.504 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_A action=DOWN repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=false fg=com.simonwjackson.korri.guidespike.probe filterLagMs=1
+11-08 15:24:31.507 I/KorriGuideProbe(23792): key KEYCODE_BUTTON_A DOWN dev=Nacon MG-X
+11-08 15:24:31.587 I/KorriGuideSpike(20797): key KEYCODE_BUTTON_A action=UP repeat=0 device="Nacon MG-X" deviceId=14 eventSource=0x501 deviceSources=0x1000511 virtual=false flags=0x8 gamepad=true overlay=false fg=com.simonwjackson.korri.guidespike.probe filterLagMs=2
+11-08 15:24:31.589 I/KorriGuideProbe(23792): key KEYCODE_BUTTON_A UP dev=Nacon MG-X
+11-08 15:25:01.877 I/KorriGuideProbe(23792): onPause
+11-08 15:25:01.896 I/KorriGuideProbe(23792): window focus=false
+11-08 15:25:02.085 I/KorriGuideSpike(20797): foreground pkg=com.android.systemui class=android.widget.FrameLayout
+11-08 15:25:02.102 I/KorriGuideSpike(20797): foreground pkg=com.android.systemui class=android.widget.FrameLayout
+11-08 15:25:02.134 I/KorriGuideSpike(20797): foreground pkg=com.android.systemui class=android.widget.FrameLayout

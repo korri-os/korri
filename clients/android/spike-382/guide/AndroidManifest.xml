@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Throwaway spike for korri-os/korri#382. Not part of the Korri app. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.simonwjackson.korri.guidespike"
+    android:versionCode="1"
+    android:versionName="spike-382">
+
+    <!-- Only for the TYPE_APPLICATION_OVERLAY fallback; granted with appops. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application android:label="Korri Guide spike" android:allowBackup="false">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".GuideService"
+            android:exported="true"
+            android:label="Korri Guide spike"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/guide_service" />
+        </service>
+    </application>
+</manifest>

@@ -1,0 +1,3 @@
+enabled_accessibility_services=[com.simonwjackson.irori/com.simonwjackson.irori.IroriKeyboardOwnershipService]
+accessibility_enabled=[1]
+packages: 0 guidespike packages left
