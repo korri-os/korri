@@ -176,6 +176,29 @@ mod tests {
     }
 
     #[test]
+    fn overlay_lifetimes_reset_device_edges_and_direction_repeat() {
+        let mut source = AndroidInput::default();
+        let mut router = Router::new(false);
+        for cycle in 0..5 {
+            let now = f64::from(cycle * 1000);
+            source.set_active(true);
+            router.set_active(true, now);
+            assert_eq!(
+                route(&mut router, source.key(7, 20, true).unwrap(), now),
+                vec![Press::Button(Button::Down)]
+            );
+            assert_eq!(router.tick(now + 400.0), vec![Press::Button(Button::Down)]);
+            router.native(NativeEvent::Disconnected, now + 401.0);
+            router.set_active(false, now + 401.0);
+            source.set_active(false);
+            assert!(!router.holding());
+            assert!(router.tick(now + 999.0).is_empty());
+            // A queued release after Resume cannot register a half-known device.
+            assert!(source.key(7, 20, false).unwrap().is_empty());
+        }
+    }
+
+    #[test]
     fn android_shoulders_switch_once_only_on_the_same_device() {
         let mut source = AndroidInput::default();
         let mut router = Router::new(true);

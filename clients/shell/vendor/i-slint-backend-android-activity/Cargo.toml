@@ -112,3 +112,9 @@ package = "ndk"
 
 [target.'cfg(target_os = "android")'.dependencies.raw-window-handle]
 version = "0.6"
+
+# Host-provided translucent Surfaces require an EGL config with alpha.
+[target.'cfg(target_os = "android")'.dependencies.glutin]
+version = "0.32.0"
+features = ["egl"]
+default-features = false

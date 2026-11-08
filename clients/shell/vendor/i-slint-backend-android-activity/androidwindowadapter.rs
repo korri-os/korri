@@ -1012,7 +1012,7 @@ fn map_key_code(code: android_activity::input::Keycode) -> Option<SharedString> 
 
 /// A dummy display handle that's Send + Sync. Required by wgpu, but harmless as
 /// raw_window_handel::AndroidDisplayHandle is an empty struct.
-struct DummyDisplayHandle;
+pub(crate) struct DummyDisplayHandle;
 impl raw_window_handle::HasDisplayHandle for DummyDisplayHandle {
     fn display_handle(
         &self,

@@ -198,7 +198,19 @@ public final class KorriStreamViewer {
         KorriStreamViewer host = host();
         synchronized (host.effects) {
             Session current = host.requireExact(launchId);
-            if (current.state.phase() == Phase.RUNNING) return "Running";
+            if (current.state.phase() == Phase.RUNNING) {
+                java.util.concurrent.CountDownLatch released = new java.util.concurrent.CountDownLatch(1);
+                host.main.post(() -> {
+                    try {
+                        synchronized (current.activities) {
+                            Game activity = current.activities.get(current.state.activityLease());
+                            if (host.session == current && activity != null) activity.hideSurfaceOverlay();
+                        }
+                    } finally { released.countDown(); }
+                });
+                if (!released.await(CONTROL_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) throw failure();
+                return "Running";
+            }
             if (current.state.phase() != Phase.BACKGROUNDED) throw failure();
             Game activity;
             synchronized (current.activities) {
@@ -349,7 +361,7 @@ public final class KorriStreamViewer {
         return lease;
     }
 
-    static void leave(Game game, long lease) {
+    static void leave(Game game, long lease, Runnable failure) {
         KorriStreamViewer host = instance;
         Session current = host == null ? null : host.source(game);
         if (current == null || !current.state.canPresent(lease)
@@ -360,8 +372,7 @@ public final class KorriStreamViewer {
                 if (!KorridServer.leaveViewer(current.state.launchId)) {
                     host.main.post(() -> {
                         if (host.session == current && current.state.canPresent(lease)) {
-                            android.widget.Toast.makeText(game, R.string.korri_stream_leave_failed,
-                                    android.widget.Toast.LENGTH_LONG).show();
+                            failure.run();
                         }
                     });
                 }

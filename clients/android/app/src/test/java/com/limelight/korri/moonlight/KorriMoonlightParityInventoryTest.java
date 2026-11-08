@@ -25,8 +25,8 @@ public class KorriMoonlightParityInventoryTest {
     @Test
     public void nativeViewerExitsUseKorridWhileOrdinaryArtemisRetainsItsQuitPath() throws Exception {
         String game = read("src/main/java/com/limelight/Game.java");
-        assertTrue(game.contains("public void disconnect() {\n        if (korriViewerRequested) KorriStreamViewer.leave(this, korriViewerLease);\n        else finish();\n    }"));
-        assertTrue(game.contains("public void quit() {\n        if (korriViewerRequested) {\n            KorriStreamViewer.leave(this, korriViewerLease);\n            return;\n        }"));
+        assertTrue(game.contains("public void disconnect() {\n        if (korriViewerRequested) showGameMenu();\n        else finish();\n    }"));
+        assertTrue(game.contains("public void quit() {\n        if (korriViewerRequested) {\n            showGameMenu();\n            return;\n        }"));
         assertTrue(game.contains("quitOnStop = true;\n            dialog.dismiss();\n            finish();"));
         assertTrue(game.contains("if (httpConn != null && quitOnStop)"));
         assertTrue(game.contains("httpConn.quitApp();"));

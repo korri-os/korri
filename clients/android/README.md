@@ -35,7 +35,7 @@ commit them. Builds run on the development machine, never on the phone.
 `KorriShellActivity` is a `NativeActivity`. It starts the service-owned embedded
 korrid before `clients/shell`'s `android_main`. The `android` feature uses the
 pinned Slint interpreter, QuickJS logic worker and shared `Shell` runtime with
-Slint's Android activity backend and Skia. Artemis's `Game` is unchanged.
+Slint's Android activity backend and Skia. Artemis's `Game` hosts the stream.
 
 The APK bundles `clients/shell/packages/pico` and `zone` without Android-specific edits.
 The build runs Linux's surface verifier first. Java unpacks the bundled files
@@ -94,6 +94,39 @@ surface decides on Linux. The shell does not inspect focus or guess whether a
 surface is at root. Use Home or Recents to background the app; Back never
 finishes the Activity or stops embedded korrid. The cost is that Back at root
 does not perform Android's usual task-background action.
+
+## Gameplay overlay (#376)
+
+In Korri mode, every Game menu trigger opens the active package's `Overlay`
+inside Game. The decoder and audio keep running. Embedded korrid publishes its
+real `GameplayOverlay` model after checking the exact selected launch. Android
+Leave and Resume do not call the far freezer. Linux retains its freeze under
+ADR 0053. Opaque model controls offer Resume, End, Disconnect and Open Korri;
+packages send the same `InvokeGameplayControl` request for each.
+
+`KorriSurfaceHost` passes any Android `Surface` to the Rust backend. The vendored
+`SurfaceWindow` owns its EGL surface and ANativeWindow, not an Activity or Game.
+It requires an alpha EGL config. A host must wait in `surfaceDestroyed` until
+Rust drops the component, suspends EGL and acknowledges release. There is no
+unsafe timeout that lets Android destroy a Surface still used by Rust. The
+native event-loop teardown also releases it. Renderer failures release first,
+then notify the host so it can remove the overlay and restore input.
+
+Game forwards keys at both Activity dispatch and StreamContainer's pre-IME
+callbacks. It consumes touch and stick motion while its overlay exists.
+`NvConnection.setInputHeld` serializes a hold against every input sender,
+neutralizes held controller/keyboard/mouse/touch state, and blocks the USB driver,
+controller heartbeat and sensor paths too. Controller arrival and battery facts
+remain metadata. USB-only controllers do not navigate the surface overlay yet;
+they cannot send gameplay input while it is open. Resume resets the shell's
+input edges and neutralizes the viewer's producer caches before returning live input to Game. NativeActivity and hosted
+Surface focus are tracked separately, including after Open Korri.
+
+Open Korri backgrounds the exact viewer and releases its decoder, but retains
+its selected launch for Resume. Observation does not reopen it automatically.
+Disconnect stops the exact viewer and releases its selection without ending or
+freezing the far game. End uses the existing exact far-session End operation.
+The legacy non-Korri `overlay.html` path is unchanged.
 
 ## Identity and discovery
 

@@ -328,6 +328,27 @@ impl Shell {
         self.current.as_ref()?.surface.get_property(name).ok()
     }
 
+    /// The native host has lost its overlay Surface. Drop the component before
+    /// releasing the renderer, and reset input edges between host lifetimes.
+    pub fn detach_overlay_window(&mut self) {
+        if let Some(current) = self.current.as_mut() {
+            current.overlay.take();
+            if let Some(windows) = self.focused.as_mut() {
+                windows.remove(&(current.generation, 1));
+            }
+        }
+        self.handle(Event::Native(vec![
+            crate::input::native::NativeEvent::Disconnected,
+        ]));
+        self.follow_focus();
+    }
+
+    pub fn overlay_focus(&mut self, focused: bool) {
+        if let Some(generation) = self.current.as_ref().map(|c| c.generation) {
+            self.host(generation, 1, HostEvent::Focus(focused));
+        }
+    }
+
     /// A property of the current `Overlay`.
     pub fn overlay_property(&self, name: &str) -> Option<slint_interpreter::Value> {
         self.current
@@ -940,6 +961,9 @@ impl Shell {
             }
             return Ok(());
         }
+        if !self.backend.overlay_available() {
+            return Ok(());
+        }
         let Some((view, diff)) = view else {
             // No new overlay view: the one shown stays (the logic sends one with every
             // change, and with the model that asks for the overlay).
@@ -948,7 +972,7 @@ impl Shell {
         let created = loaded.overlay.is_none();
         if created {
             let definition = loaded.overlay_definition.as_ref().expect("checked");
-            let component = definition.create()?;
+            let component = self.backend.create_overlay(definition)?;
             self.attach(component.window(), loaded.generation, 1);
             self.backend
                 .place(component.window(), self.options.placement);

@@ -152,7 +152,8 @@ export component Overlay inherits Window {
     in property <SheetView> sheet;
 
     title: "Pico overlay";
-    background: P8.bg;
+    // The host may composite this window over a live game.
+    background: transparent;
     default-font-family: font-family;
     preferred-width: Tokens.window-width;
     preferred-height: Tokens.window-height;

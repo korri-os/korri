@@ -87,6 +87,14 @@ public class KorriShellActivity extends NativeActivity {
         selectedIndex = selected;
         shellReady = true;
     }
+    // Host-neutral Surface lifecycle. Rust releases its EGL/ANativeWindow before ack.
+    public android.view.Surface shellTakeOverlaySurface() { return KorriSurfaceHost.takeSurface(); }
+    public float shellOverlayDensity() { return KorriSurfaceHost.density(); }
+    public boolean shellOverlayResized() { return KorriSurfaceHost.takeResized(); }
+    public boolean shellOverlayClosing() { return KorriSurfaceHost.closing(); }
+    public void shellOverlayReleased(boolean failed) { KorriSurfaceHost.acknowledgeRelease(failed); }
+    public int[] shellTakeOverlayKeys() { return KorriSurfaceHost.takeKeys(); }
+
     public String shellSurfacePage() { return surfacePage; }
     public String shellSurfaceId() { return surfaceId; }
     public int shellLibraryCount() { return libraryCount; }

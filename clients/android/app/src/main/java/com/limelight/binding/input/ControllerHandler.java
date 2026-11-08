@@ -1225,6 +1225,14 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         }
     }
 
+    /** Reset producer caches when a host diverts input away from the stream. */
+    public void resetInputState() {
+        defaultContext.resetInputState();
+        for (int i = 0; i < inputDeviceContexts.size(); i++) inputDeviceContexts.valueAt(i).resetInputState();
+        for (int i = 0; i < usbDeviceContexts.size(); i++) usbDeviceContexts.valueAt(i).resetInputState();
+        controllerHeartbeat.neutralize();
+    }
+
     private void sendAndRecordControllerState(short controllerNumber, short activeMask,
                                               int inputMap, byte leftTrigger, byte rightTrigger,
                                               short leftStickX, short leftStickY,
@@ -3089,6 +3097,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             }
         };
 
+        public void resetInputState() {
+            inputMap = mouseEmulationLastInputMap = 0;
+            leftTrigger = rightTrigger = 0;
+            leftStickX = leftStickY = rightStickX = rightStickY = 0;
+            mouseEmulationXDown = false;
+        }
+
         public void toggleMouseEmulation() {
             mainThreadHandler.removeCallbacks(mouseEmulationRunnable);
             mouseEmulationActive = !mouseEmulationActive;
@@ -3167,6 +3182,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         public boolean hasPaddles;
         public boolean hasShare;
         public boolean needsClickpadEmulation;
+
+        @Override public void resetInputState() {
+            super.resetInputState();
+            emulatingButtonFlags = 0;
+            backMenuPending = false;
+            startDownTime = startUpTime = 0;
+        }
 
         // Used for OUYA bumper state tracking since they force all buttons
         // up when the OUYA button goes down. We watch the last time we get

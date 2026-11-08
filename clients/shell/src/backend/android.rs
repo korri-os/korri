@@ -13,6 +13,7 @@ use i_slint_backend_android_activity::{
         input::{Axis, InputEvent, KeyAction, MotionAction},
         MainEvent, PollEvent,
     },
+    surface_window::SurfaceWindow,
     AndroidPlatform,
 };
 use jni::{
@@ -36,6 +37,11 @@ struct Android {
     front: Front,
     input: Rc<RefCell<AndroidInput>>,
     notifier_installed: std::cell::Cell<bool>,
+    overlay: RefCell<Option<Rc<SurfaceWindow>>>,
+    overlay_front: Front,
+    attaching_overlay: std::cell::Cell<bool>,
+    native_focus: Rc<std::cell::Cell<bool>>,
+    overlay_focus: Rc<std::cell::Cell<bool>>,
 }
 
 impl Android {
@@ -49,14 +55,20 @@ impl Android {
         let focus_input = input.clone();
         let event_input = input.clone();
         let touch_app = app.clone();
+        let native_focus = Rc::new(std::cell::Cell::new(false));
+        let overlay_focus = Rc::new(std::cell::Cell::new(false));
+        let activity_focus = native_focus.clone();
+        let surface_focus = overlay_focus.clone();
         let platform = AndroidPlatform::new_with_event_listener(app, move |event| {
             let host = match event {
                 PollEvent::Main(MainEvent::GainedFocus) => {
+                    activity_focus.set(true);
                     focus_input.borrow_mut().set_active(true);
                     Some(HostEvent::Focus(true))
                 }
                 PollEvent::Main(MainEvent::LostFocus) => {
-                    focus_input.borrow_mut().set_active(false);
+                    activity_focus.set(false);
+                    focus_input.borrow_mut().set_active(surface_focus.get());
                     focus_drag.borrow_mut().cancel();
                     Some(HostEvent::Focus(false))
                 }
@@ -157,7 +169,25 @@ impl Android {
             front,
             input,
             notifier_installed: Default::default(),
+            overlay: Default::default(),
+            overlay_front: Default::default(),
+            attaching_overlay: Default::default(),
+            native_focus,
+            overlay_focus,
         })
+    }
+    fn release_overlay(&self, shell: &mut Shell) {
+        shell.detach_overlay_window();
+        *self.overlay_front.borrow_mut() = None;
+        if let Some(window) = self.overlay.borrow_mut().take() {
+            // A failed EGL release cannot safely hand the Surface back to Android.
+            if let Err(error) = window.release() {
+                eprintln!("Overlay Surface release failed: {error}");
+                std::process::abort();
+            }
+        }
+        self.overlay_focus.set(false);
+        self.input.borrow_mut().set_active(self.native_focus.get());
     }
 }
 
@@ -166,7 +196,28 @@ impl Backend for Android {
         true
     }
 
+    fn overlay_available(&self) -> bool {
+        self.overlay.borrow().is_some()
+    }
+
+    fn create_overlay(
+        &self,
+        definition: &slint_interpreter::ComponentDefinition,
+    ) -> Result<slint_interpreter::ComponentInstance, slint::PlatformError> {
+        let overlay = self.overlay.borrow();
+        let window = overlay
+            .as_ref()
+            .ok_or_else(|| slint::PlatformError::from("Overlay Surface is unavailable"))?;
+        self.attaching_overlay.set(true);
+        definition.create_with_existing_window(window.window())
+    }
+
     fn attach(&self, window: &slint::Window, sink: Sink, frames: FrameCounter) {
+        if self.attaching_overlay.replace(false) {
+            sink(HostEvent::Focus(true));
+            *self.overlay_front.borrow_mut() = Some((sink, frames, true));
+            return;
+        }
         *self.front.borrow_mut() = Some((sink, frames, true));
         if !self.notifier_installed.replace(true) {
             let front = self.front.clone();
@@ -234,7 +285,7 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
             Package::at(&Path::new(&package).join("zone"))?,
         ],
         brain,
-        backend,
+        backend.clone(),
         Arc::new(Queue(tx)),
         Options {
             placement: Placement::Fullscreen,
@@ -249,12 +300,134 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
     let timer = slint::Timer::default();
     let mut last_frame = 0;
     let mut last_device_poll = Instant::now();
+    let teardown_backend = backend.clone();
+    let teardown_vm = vm.clone();
+    let teardown_activity = activity.clone();
     timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(16),
         move || {
+            if let Ok(mut env) = vm.attach_current_thread() {
+                let result: jni::errors::Result<()> = env.with_local_frame(8, |env| {
+                    if env
+                        .call_method(activity.as_obj(), "shellOverlayClosing", "()Z", &[])?
+                        .z()?
+                    {
+                        backend.release_overlay(&mut shell);
+                        env.call_method(
+                            activity.as_obj(),
+                            "shellOverlayReleased",
+                            "(Z)V",
+                            &[JValue::Bool(0)],
+                        )?;
+                    }
+                    let surface = env
+                        .call_method(
+                            activity.as_obj(),
+                            "shellTakeOverlaySurface",
+                            "()Landroid/view/Surface;",
+                            &[],
+                        )?
+                        .l()?;
+                    if !surface.is_null() {
+                        let density = env
+                            .call_method(activity.as_obj(), "shellOverlayDensity", "()F", &[])?
+                            .f()?;
+                        match unsafe {
+                            SurfaceWindow::from_surface(
+                                env.get_raw().cast(),
+                                surface.as_raw().cast(),
+                                density,
+                            )
+                        } {
+                            Ok(window) => {
+                                *backend.overlay.borrow_mut() = Some(window);
+                                backend.overlay_focus.set(true);
+                                input.borrow_mut().set_active(true);
+                                shell.overlay_focus(true);
+                            }
+                            Err(error) => {
+                                eprintln!("Overlay Surface creation failed: {error}");
+                                backend.release_overlay(&mut shell);
+                                env.call_method(
+                                    activity.as_obj(),
+                                    "shellOverlayReleased",
+                                    "(Z)V",
+                                    &[JValue::Bool(1)],
+                                )?;
+                            }
+                        }
+                    }
+                    if env
+                        .call_method(activity.as_obj(), "shellOverlayResized", "()Z", &[])?
+                        .z()?
+                    {
+                        if let Some(window) = backend.overlay.borrow().as_ref() {
+                            let density = env
+                                .call_method(activity.as_obj(), "shellOverlayDensity", "()F", &[])?
+                                .f()?;
+                            window.resize(density);
+                            if let Some((sink, ..)) = backend.overlay_front.borrow().as_ref() {
+                                sink(HostEvent::Resized);
+                            }
+                        }
+                    }
+                    let keys = env
+                        .call_method(activity.as_obj(), "shellTakeOverlayKeys", "()[I", &[])?
+                        .l()?;
+                    let keys = JIntArray::from(keys);
+                    let mut flat = vec![0; env.get_array_length(&keys)? as usize];
+                    env.get_int_array_region(&keys, 0, &mut flat)?;
+                    for key in flat.chunks_exact(3) {
+                        if !shell.overlay_shown() {
+                            continue;
+                        }
+                        if let Some(events) =
+                            input.borrow_mut().key(key[0], key[1] as u32, key[2] != 0)
+                        {
+                            shell.handle(Event::Native(events));
+                        }
+                    }
+                    Ok(())
+                });
+                if result.is_err() {
+                    // JNI exceptions can contain credentials. Do not format them.
+                    let _ = env.exception_clear();
+                    eprintln!("Overlay Surface bridge failed");
+                }
+            }
             for event in rx.try_iter() {
                 shell.handle(event);
+            }
+            let rendered = backend
+                .overlay
+                .borrow()
+                .as_ref()
+                .map(|window| window.render_if_needed());
+            match rendered {
+                Some(Ok(true)) => {
+                    if let Some((sink, frames, first)) = backend.overlay_front.borrow_mut().as_mut()
+                    {
+                        frames.add();
+                        if std::mem::take(first) {
+                            sink(HostEvent::FirstFrame);
+                            sink(HostEvent::Resized);
+                        }
+                    }
+                }
+                Some(Err(error)) => {
+                    eprintln!("Overlay Surface rendering failed: {error}");
+                    backend.release_overlay(&mut shell);
+                    if let Ok(mut env) = vm.attach_current_thread() {
+                        let _ = env.call_method(
+                            activity.as_obj(),
+                            "shellOverlayReleased",
+                            "(Z)V",
+                            &[JValue::Bool(1)],
+                        );
+                    }
+                }
+                _ => (),
             }
             if last_device_poll.elapsed() >= Duration::from_millis(100) {
                 last_device_poll = Instant::now();
@@ -329,12 +502,23 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
             }
         },
     );
-    slint::run_event_loop_until_quit().map_err(|error| {
+    let result = slint::run_event_loop_until_quit().map_err(|error| {
         eprintln!("Korri Android event loop failed: {error}");
         anyhow::anyhow!("event loop failed")
-    })?;
+    });
     // Timer owns Shell: drop its watch, logic and request workers before the
     // next activity's android_main starts. No process-global shell/Activity.
     drop(timer);
-    Ok(())
+    if let Some(window) = teardown_backend.overlay.borrow_mut().take() {
+        window.release()?;
+    }
+    if let Ok(mut env) = teardown_vm.attach_current_thread() {
+        let _ = env.call_method(
+            teardown_activity.as_obj(),
+            "shellOverlayReleased",
+            "(Z)V",
+            &[JValue::Bool(1)],
+        );
+    }
+    result
 }

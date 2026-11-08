@@ -216,3 +216,14 @@ input event before Slint handles it. M1 uses it only for finger drags, mapped
 to existing directional presses. Pico is unchanged and owns focus and scroll
 position. The filter is scoped to the platform/Activity, not a global hook.
 The M0 EGL-surface suspension on termination/destruction is unchanged.
+
+### Android host-provided Surface (#376)
+
+`i-slint-backend-android-activity/surface_window.rs` draws into an arbitrary
+Android `Surface` on the shell's Slint thread. It owns no Activity and contains
+no Game code. The shell creates only the package's Overlay with this window;
+the catalog keeps its NativeActivity window. It chooses an EGL config with at
+least eight alpha bits and fails explicitly if none exists. Release suspends
+the renderer and drops ANativeWindow before the host destroys the Surface.
+`DummyDisplayHandle` is crate-visible so both adapters use the same Android
+display handle. The Activity adapter's EGL configuration is unchanged.

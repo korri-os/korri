@@ -67,4 +67,10 @@
     public int shellLibraryCount();
     public int shellSelectedIndex();
     public boolean isShellReady();
+    public android.view.Surface shellTakeOverlaySurface();
+    public float shellOverlayDensity();
+    public boolean shellOverlayResized();
+    public boolean shellOverlayClosing();
+    public void shellOverlayReleased(boolean);
+    public int[] shellTakeOverlayKeys();
 }

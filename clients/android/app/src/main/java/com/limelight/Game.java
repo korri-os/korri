@@ -2119,10 +2119,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (korriViewerRequested && event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_MODE) {
-            if (event.getAction() == KeyEvent.ACTION_UP) KorriStreamViewer.leave(this, korriViewerLease);
-            return true;
-        }
+        if (forwardSurfaceOverlayKey(event)) return true;
+        if (handleKorriHomeKey(event)) return true;
         // Guide toggles the overlay closed. This must live at dispatch
         // level: while the overlay is showing its WebView holds focus, and
         // key events route to Chromium's internal focused child — skipping
@@ -2146,6 +2144,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyDown(KeyEvent event) {
+        if (forwardSurfaceOverlayKey(event) || handleKorriHomeKey(event)) return true;
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -2242,6 +2241,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyUp(KeyEvent event) {
+        if (forwardSurfaceOverlayKey(event) || handleKorriHomeKey(event)) return true;
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -2719,6 +2719,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     // Returns true if the event was consumed
     // NB: View is only present if called from a view callback
     public boolean handleMotionEvent(View view, MotionEvent event) {
+        if (surfaceOverlay != null) return true;
         // Pass through mouse/touch/joystick input if we're not grabbing
         if (!grabbedInput) {
             return false;
@@ -3986,7 +3987,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void onBackPressed() {
         if (korriViewerRequested) {
-            KorriStreamViewer.leave(this, korriViewerLease);
+            if (surfaceOverlay != null) {
+                KorriSurfaceHost.forward(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK));
+                KorriSurfaceHost.forward(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK));
+            } else showGameMenu();
             return;
         }
         if(prefConfig.enableBackMenu){
@@ -4209,13 +4213,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     public void disconnect() {
-        if (korriViewerRequested) KorriStreamViewer.leave(this, korriViewerLease);
+        if (korriViewerRequested) showGameMenu();
         else finish();
     }
 
     public void quit() {
         if (korriViewerRequested) {
-            KorriStreamViewer.leave(this, korriViewerLease);
+            showGameMenu();
             return;
         }
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
@@ -4241,11 +4245,96 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void showGameMenu() {
         if (korriViewerRequested) {
-            KorriStreamViewer.leave(this, korriViewerLease);
+            showSurfaceOverlay();
             return;
         }
         if (korriOverlay == null) createLegacyGameOverlay();
         korriOverlay.show();
+    }
+
+    private android.view.SurfaceView surfaceOverlay;
+
+    private void resetStreamInputState() {
+        controllerHandler.resetInputState();
+        modifierFlags = 0;
+        waitingForAllModifiersUp = false;
+        specialKeyCode = KeyEvent.KEYCODE_UNKNOWN;
+        lastButtonState = 0;
+        commitTextHandler.removeCallbacks(flushCommitTextQueue);
+        commitTextQueue.clear();
+        for (TouchContext context : touchContextMap) if (context != null) context.cancelTouch();
+    }
+
+    private void showSurfaceOverlay() {
+        if (surfaceOverlay != null || !KorriStreamViewer.canPresent(this, korriViewerLease)) return;
+        // This gate is below Android and USB input, sensors and controller heartbeats.
+        conn.setInputHeld(true);
+        resetStreamInputState();
+        android.view.SurfaceView view = new android.view.SurfaceView(this);
+        surfaceOverlay = view;
+        view.setZOrderMediaOverlay(true);
+        view.getHolder().setFormat(android.graphics.PixelFormat.TRANSLUCENT);
+        view.setOnTouchListener((v, event) -> true);
+        view.getHolder().addCallback(new SurfaceHolder.Callback() {
+            private KorriSurfaceHost.Attachment attachment;
+            @Override public void surfaceCreated(SurfaceHolder holder) {
+                attachment = KorriSurfaceHost.attach(holder.getSurface(), getResources().getDisplayMetrics().density, () -> {
+                    if (surfaceOverlay != view) return;
+                    hideSurfaceOverlay();
+                    android.widget.Toast.makeText(Game.this, R.string.korri_gameplay_overlay_failed,
+                            android.widget.Toast.LENGTH_LONG).show();
+                });
+                KorriStreamViewer.leave(Game.this, korriViewerLease, () -> {
+                    if (surfaceOverlay != view) return;
+                    hideSurfaceOverlay();
+                    android.widget.Toast.makeText(Game.this, R.string.korri_stream_leave_failed,
+                            android.widget.Toast.LENGTH_LONG).show();
+                });
+            }
+            @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                KorriSurfaceHost.resized(attachment);
+            }
+            @Override public void surfaceDestroyed(SurfaceHolder holder) {
+                KorriSurfaceHost.detach(attachment);
+            }
+        });
+        addContentView(view, new android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private boolean handleKorriHomeKey(KeyEvent event) {
+        if (!korriViewerRequested || (event.getKeyCode() != KeyEvent.KEYCODE_BUTTON_MODE
+                && event.getKeyCode() != KeyEvent.KEYCODE_BACK)) return false;
+        if (event.getAction() == KeyEvent.ACTION_UP) showGameMenu();
+        return true;
+    }
+
+    // StreamView.onKeyPreIme reaches handleKeyDown/Up before Activity dispatch.
+    // Keep both edges blocked, including while the Surface is being created.
+    private boolean forwardSurfaceOverlayKey(KeyEvent event) {
+        if (surfaceOverlay == null) return false;
+        KorriSurfaceHost.forward(event);
+        return true;
+    }
+
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        return surfaceOverlay != null || super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        return surfaceOverlay != null || super.dispatchTouchEvent(event);
+    }
+
+    void hideSurfaceOverlay() {
+        android.view.SurfaceView view = surfaceOverlay;
+        if (view == null) return;
+        if (view.getParent() instanceof android.view.ViewGroup) {
+            ((android.view.ViewGroup) view.getParent()).removeView(view);
+        }
+        // removeView waits for surfaceDestroyed's native-release handshake.
+        surfaceOverlay = null;
+        resetStreamInputState();
+        conn.setInputHeld(false);
     }
 
     public void hideGameMenu() {

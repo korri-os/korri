@@ -84,6 +84,16 @@ final class ControllerHeartbeat implements Runnable {
         scheduler.postDelayed(this, INTERVAL_MS);
     }
 
+    /** Diverted key releases must not leave the last gameplay packet repeating. */
+    synchronized void neutralize() {
+        for (int controller = 0; controller < states.length; controller++) {
+            State state = states[controller];
+            if (state == null) continue;
+            states[controller] = new State(state.controllerNumber, state.activeMask, 0,
+                    (byte)0, (byte)0, (short)0, (short)0, (short)0, (short)0);
+        }
+    }
+
     synchronized void close() {
         if (stopped) return;
         stopped = true;

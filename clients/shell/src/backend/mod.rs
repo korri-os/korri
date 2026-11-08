@@ -111,6 +111,18 @@ pub trait Backend {
     /// replaces the window's content instead of opening another window.
     fn shared_window(&self) -> bool;
 
+    fn overlay_available(&self) -> bool {
+        true
+    }
+
+    /// A host-provided window for the gameplay overlay, independent of the catalog.
+    fn create_overlay(
+        &self,
+        definition: &slint_interpreter::ComponentDefinition,
+    ) -> Result<slint_interpreter::ComponentInstance, slint::PlatformError> {
+        definition.create()
+    }
+
     /// Route the window's host events to `sink`. The sink must not re-enter
     /// the shell synchronously; implementations call it from window
     /// callbacks.

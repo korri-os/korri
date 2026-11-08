@@ -245,7 +245,8 @@ export component Surface inherits Window {
 // PAUSED: the Overlay, driven by overlay().
 export component Overlay inherits Window {
     title: "Zone overlay";
-    background: Tokens.ground-paused;
+    // The host may composite this window over a live game.
+    background: transparent;
     in property <string> look: "blend";
     in property <Screen> screen: Tokens.screen;
     in property <string> heading: "Paused";
