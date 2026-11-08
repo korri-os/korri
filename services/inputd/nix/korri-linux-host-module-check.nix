@@ -115,6 +115,9 @@ assert !serverCfg.services.inputplumber.enable;
 assert !(serverCfg.systemd.services ? korri-inputd);
 assert serverCfg.systemd.services ? korri-input-seat-receiver;
 assert serverCfg.users.groups ? uinput;
+# Plugin units such as Sunshine's require the source guard on every host.
+assert serverCfg.systemd.services ? korri-input-source-guard;
+assert builtins.elem "multi-user.target" serverCfg.systemd.services.korri-input-source-guard.wantedBy;
 assert builtins.elem "uhid" serverCfg.boot.kernelModules;
 assert lib.hasInfix ''OWNER="root", GROUP="uinput", MODE="0660"'' serverCfg.services.udev.extraRules;
 assert !(lib.hasInfix ''GROUP="uinput", MODE="0660"'' (

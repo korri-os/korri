@@ -696,6 +696,20 @@ in
     services.udev.extraRules = lib.mkIf noLocalInput ''
       KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="root", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"
     '';
+    # Plugin units (the Sunshine plugin among them) require the source guard
+    # that korri-input.nix defines with local capture. Keep the same unit, so
+    # the root-only /dev/inputplumber/sources fence exists on every host.
+    systemd.services.korri-input-source-guard = lib.mkIf noLocalInput {
+      description = "Korri hidden input source guard";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "korrid.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${pkgs.coreutils}/bin/install -d -m 0700 -o root -g root /dev/inputplumber /dev/inputplumber/sources";
+        ExecStop = "-${pkgs.coreutils}/bin/rmdir /dev/inputplumber/sources /dev/inputplumber";
+      };
+    };
     services.udev.packages = [
       (import ./input-seat-rules.nix {
         inherit pkgs;
