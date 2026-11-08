@@ -212,12 +212,12 @@ in
       "korriLinuxHost"
       "stun"
     ] constants.stun [ "stun.invalid:3478" ])
-    (setting "host validation enabled" [
+    (setting "host validation disabled" [
       "services"
       "korriLinuxHost"
       "validation"
       "enable"
-    ] true)
+    ] false)
     (setting "product audio enabled" [
       "services"
       "korriLinuxHost"

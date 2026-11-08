@@ -117,7 +117,9 @@ in
       # federation until that separate identity behavior permits it.
       relays = lib.mkForce constants.relays;
       stun = lib.mkForce constants.stun;
-      validation.enable = true;
+      # Validation entries (the input gate and Neverball) are developer tools,
+      # not part of a game device library.
+      validation.enable = false;
       audio.enable = true;
       # Product ownership starts with no guessed or legacy Wayland app id;
       # device modules cannot carry an app-id-specific exclusion.

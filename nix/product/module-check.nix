@@ -859,7 +859,7 @@ assert check.validate alternateRenderDeviceName alternateRenderDevice == [ ];
 assert lib.hasSuffix "-${sameNameOutputName}" (toString sameNameFailingPackage);
 assert sameNameFailingCommand != sameNameCandidate.command;
 assert unitCasePasses sameNameFailingCase;
-assert builtins.elem "host validation enabled" (
+assert builtins.elem "host validation disabled" (
   map (requirement: requirement.name) requirements.settings
 );
 assert builtins.elem "product audio enabled" (

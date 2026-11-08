@@ -66,7 +66,7 @@ assert c.services.korriProduct.installed;
 assert c.services.korriLinuxHost.enable;
 assert c.services.korriLinuxHost.runtimeUser == "korri";
 assert c.services.korriLinuxHost.runtimeUid == 1000;
-assert c.services.korriLinuxHost.validation.enable;
+assert !c.services.korriLinuxHost.validation.enable;
 assert c.services.korriLinuxHost.audio.enable;
 assert c.services.korri.shell.enable;
 assert c.services.korri.shell.startSurface == "pico";
