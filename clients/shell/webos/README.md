@@ -369,7 +369,7 @@ C is the smallest integration: the existing bounded C media CLI links directly
 into the multi-call executable with its `main` renamed. There is no Rust FFI,
 new viewer process, IPC or second executable path. Normal mode never initializes
 NDL. The ss4s shared core loads at process start, but loads the NDL module only
-in media mode. The two library lookup paths are package-relative RUNPATHs:
+in media mode. The two library lookup paths are package-relative RPATHs:
 `$ORIGIN/../lib` on the launcher and `$ORIGIN` on the core. No absolute build
 path or system library override ships. The launcher does not set LD_LIBRARY_PATH
 for its children. The SDK and ss4s pins and close fix come from the NDL spike
