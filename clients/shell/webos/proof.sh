@@ -34,7 +34,7 @@ stage_surfaces(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
 PY
 mkdir "$work/app/bin"
 cp "$release/korri-shell" "$release/fixture-korrid" "$work/app/bin/"
-cp "$crate/webos/launch.sh" "$work/app/"
+cp "$release/korri-webos" "$work/app/bin/"
 if [[ -n "$real_brain" ]]; then
     cp "$real_brain" "$work/app/bin/webos-korrid"
     cp "$product_relays" "$work/app/product-relays.json"
@@ -52,7 +52,7 @@ unset WAYLAND_DISPLAY
 # The launcher keeps its work directory and stderr log under TMPDIR, as on the TV.
 mkdir -p "$work/tmp"
 export TMPDIR="$work/tmp"
-HOME="$work/home" "$work/app/launch.sh" "${launch_args[@]}" >"$out/shell.log" 2>&1 &
+HOME="$work/home" "$work/app/bin/korri-webos" "${launch_args[@]}" >"$out/shell.log" 2>&1 &
 launcher=$!
 pids+=("$launcher")
 id=''
@@ -89,13 +89,13 @@ wait "$launcher" || :
 find "$work/home" -mindepth 1 -print >"$out/home-files.txt"
 # Fontconfig may create its own non-secret cache in HOME. Only this app's
 # launch directory and credential must disappear.
-test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
+test -z "$(find "$work/tmp" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
 if [[ -n "$real_brain" ]]; then
     # Emulate the TV's devmode.conf boot chmod before the second server start.
     chmod -R 777 /media/developer/org.korri.shell
 fi
 # The launcher also passes the shell's existing --surfaces ordering through.
-HOME="$work/home" "$work/app/launch.sh" "${launch_args[@]}" --surfaces pico,zone >"$out/pico-start.log" 2>&1 &
+HOME="$work/home" "$work/app/bin/korri-webos" "${launch_args[@]}" --surfaces pico,zone >"$out/pico-start.log" 2>&1 &
 launcher=$!
 pids+=("$launcher")
 sleep 8
@@ -103,7 +103,7 @@ kill -0 "$launcher"
 import -window root "$out/pico-start-1920x1080.png"
 kill "$launcher"
 wait "$launcher" || :
-test -z "$(find "$work/home" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
+test -z "$(find "$work/tmp" -maxdepth 1 -name 'korri-shell.*' -print -quit)"
 if [[ -n "$real_brain" ]]; then
     "$real_brain" identity status >"$out/identity-after.json"
     cmp "$out/identity-first.json" "$out/identity-after.json"

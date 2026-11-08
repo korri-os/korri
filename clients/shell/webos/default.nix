@@ -2,6 +2,7 @@
 { pkgs, proseql }:
 let
   lib = pkgs.lib;
+  media = import ./media.nix { inherit pkgs; };
   # constants.relays does not force the product's korri argument (#315).
   productRelays = pkgs.writeText "korri-product-relays.json" (
     builtins.toJSON (import ../../../nix/product/requirements.nix { korri = null; }).constants.relays
@@ -45,13 +46,15 @@ let
     };
   desktop = ''
     export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/shell-webos-desktop-target"
-    export CARGO_BUILD_JOBS="''${CARGO_BUILD_JOBS:-4}"
+    export CARGO_BUILD_JOBS="''${CARGO_BUILD_JOBS:-2}"
     export LD_LIBRARY_PATH="${
       lib.makeLibraryPath [
         pkgs.SDL2
         pkgs.fontconfig.lib
       ]
     }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    mkdir -p "$CARGO_TARGET_DIR/release"
+    cc -std=c11 -Wall -Wextra -Werror -O2 "$crate/webos/launcher.c" -o "$CARGO_TARGET_DIR/release/korri-webos"
     cargo build --locked --release --manifest-path "$crate/Cargo.toml" \
       --no-default-features --features webos,fixture --bin korri-shell --bin fixture-korrid
   '';
@@ -81,6 +84,7 @@ in
               pkgs.expat
             ]
           }"
+          export KORRI_WEBOS_MEDIA="${media}"
           exec bash "$crate/../slint-spike/webos-cross.sh" shell-build "$@"
         '';
     shell-webos-package = makeApp "shell-webos-package" [ pkgs.SDL2 pkgs.fontconfig.lib ] ''
@@ -93,7 +97,7 @@ in
         --manifest-path "$crate/../../services/korrid/Cargo.toml" --bin webos-owner-sign >&2
       exec "$KORRI_ROOT/.cache/korrid-target/debug/webos-owner-sign" "$@"
     '';
-    shell-webos-package-check = makeApp "shell-webos-package-check" [ ] ''
+    shell-webos-package-check = makeApp "shell-webos-package-check" [ pkgs.bubblewrap ] ''
       exec python3 "$crate/webos/package_test.py" --product-relays "${productRelays}" "$@"
     '';
     shell-webos-real-proof =

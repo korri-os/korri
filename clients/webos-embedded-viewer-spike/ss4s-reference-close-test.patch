@@ -1,0 +1,56 @@
+diff -ru a/modules/dummy/dummy_module.c b/modules/dummy/dummy_module.c
+--- a/modules/dummy/dummy_module.c	2025-09-03 10:13:17.000000000 -0600
++++ b/modules/dummy/dummy_module.c	2026-11-07 17:01:46.700064678 -0700
+@@ -2,11 +2,12 @@
+ #include "ss4s/modapi.h"
+ #include "dummy_common.h"
+
++const SS4S_LibraryContext *SS4S_Dummy_Context;
+ bool SS4S_Dummy_Initialized = false;
+ SS4S_LoggingFunction *SS4S_Dummy_Log = NULL;
+
+ SS4S_EXPORTED bool SS4S_ModuleOpen_DUMMY(SS4S_Module *module, const SS4S_LibraryContext *context) {
+-    (void) context;
++    SS4S_Dummy_Context = context;
+     SS4S_Dummy_Log = context->Log;
+     assert(SS4S_Dummy_Log != NULL);
+     module->Name = "dummy";
+diff -ru a/modules/dummy/dummy_player.c b/modules/dummy/dummy_player.c
+--- a/modules/dummy/dummy_player.c	2025-09-03 10:13:17.000000000 -0600
++++ b/modules/dummy/dummy_player.c	2026-11-07 17:01:46.700244507 -0700
+@@ -7,7 +7,8 @@
+
+ static pthread_mutex_t globalMutex = PTHREAD_MUTEX_INITIALIZER;
+
+-static SS4S_PlayerContext *CreatePlayerContext();
++SS4S_Player *SS4S_Dummy_Owner;
++static SS4S_PlayerContext *CreatePlayerContext(SS4S_Player *player);
+
+ static void DestroyPlayerContext(SS4S_PlayerContext *context);
+
+@@ -25,7 +26,8 @@
+     return LoadMedia(context);
+ }
+
+-static SS4S_PlayerContext *CreatePlayerContext() {
++static SS4S_PlayerContext *CreatePlayerContext(SS4S_Player *player) {
++    SS4S_Dummy_Owner = player;
+     return calloc(1, sizeof(SS4S_PlayerContext));
+ }
+
+diff -ru a/modules/dummy/dummy_video.c b/modules/dummy/dummy_video.c
+--- a/modules/dummy/dummy_video.c	2025-09-03 10:13:17.000000000 -0600
++++ b/modules/dummy/dummy_video.c	2026-11-07 17:01:46.700392240 -0700
+@@ -51,7 +51,12 @@
+     return true;
+ }
+
++extern const SS4S_LibraryContext *SS4S_Dummy_Context;
++extern SS4S_Player *SS4S_Dummy_Owner;
++
+ static void CloseVideo(SS4S_VideoInstance *instance) {
++    // A decoder may flush its last frame report during Close.
++    SS4S_Dummy_Context->VideoStats.ReportFrame(SS4S_Dummy_Owner, 1000);
+     SS4S_Dummy_Log(SS4S_LogLevelInfo, "Dummy", "%s()", __FUNCTION__);
+     SS4S_PlayerContext *context = (void *) instance;
+     SS4S_Dummy_ReloadMedia(context);

@@ -1,0 +1,36 @@
+diff -ru a/src/video.c b/src/video.c
+--- a/src/video.c	2025-09-03 10:13:17.000000000 -0600
++++ b/src/video.c	2026-11-07 17:02:53.330089673 -0700
+@@ -37,7 +37,9 @@
+     if (info->frameRateNumerator > 0 && info->frameRateDenominator > 0) {
+         statsCapacity = info->frameRateNumerator / info->frameRateDenominator * 2;
+     }
+-    SS4S_StatsCounterInit(&player->stats.video, statsCapacity);
++    if (player->video != NULL) {
++        SS4S_StatsCounterInit(&player->stats.video, statsCapacity);
++    }
+     SS4S_MutexUnlock(player->mutex);
+     return result;
+ }
+@@ -112,12 +114,18 @@
+         SS4S_MutexUnlock(player->mutex);
+         return false;
+     }
+-    SS4S_StatsCounterDeinit(&player->stats.video);
+     const SS4S_VideoDriver *driver = SS4S_GetVideoDriver();
+     assert(driver != NULL);
+     assert(driver->Close != NULL);
+-    driver->Close(player->video);
++    SS4S_VideoInstance *video = player->video;
+     player->video = NULL;
++    // A backend may flush frame reports while closing. Those reports acquire
++    // player->mutex, so do not hold it across the backend call. Keep statistics
++    // alive until the backend has stopped reporting.
++    SS4S_MutexUnlock(player->mutex);
++    driver->Close(video);
++    SS4S_MutexLock(player->mutex);
++    SS4S_StatsCounterDeinit(&player->stats.video);
+     SS4S_MutexUnlock(player->mutex);
+     return true;
+ }
+\ No newline at end of file

@@ -3,7 +3,7 @@
 Workstation tasks never contact the TV. The parent owns all TV operations.
 M2 lists the owner's federated library. It does **not** implement playback,
 remote input, a webOS network-settings adapter, or a product device-join UI.
-`launch.sh --fixture` retains M1's twelve sample games as an explicit fallback.
+`bin/korri-webos --fixture` retains M1's twelve sample games as an explicit fallback.
 There is no automatic fallback to sample data on a real-brain error.
 
 ## Composition
@@ -36,11 +36,11 @@ value, URL, package entry or log. Both programs refuse root; core dumps are off.
 The brain handles TERM/INT/HUP. Launcher exit kills and reaps both children and
 removes only that launch's temporary directory, never the persistent state.
 
-AppManager launches `org.korri.shell` through `launch.sh`. The launcher ignores
+AppManager launches `org.korri.shell` through `bin/korri-webos`. The launcher ignores
 its optional launch JSON. It sets `APPID=org.korri.shell` and the existing
 1080p adapter scale `SLINT_SCALE_FACTOR=1.5`. The shell runs `--installed
 --packages packages --cache cache --surfaces zone,pico --placement fullscreen`.
-`launch.sh [--fixture] --surfaces pico,zone` changes only the surface order.
+`bin/korri-webos [--fixture] --surfaces pico,zone` changes only the surface order.
 F2 or the existing L1+R1 chord switches surfaces; no remote mapping is added.
 Stderr appends to `/tmp/korri-shell-launch.log` in the app jail.
 
@@ -114,8 +114,8 @@ Parent TV checks, not yet performed by these workstation tasks:
 
 Uninstall the app before each IPK installation: webOS upgrades leave removed
 payload files behind. The parent previously found an obsolete bundled SDL
-being loaded from `lib/backports` after an upgrade. This package contains no
-`lib/`, firmware, libc or SDL library. The persistent allocation is deliberately
+being loaded from `lib/backports` after an upgrade. This package bundles only the ss4s core and NDL module in `lib/`. It contains
+no vendor runtime, firmware, libc or SDL library. The persistent allocation is deliberately
 outside `apps/usr/palm/applications/org.korri.shell`, which uninstall removes.
 Never alter `org.korri.slint-spike` as part of this deployment.
 
@@ -247,7 +247,7 @@ The package supplies product relays; the parent must verify reachable peers:
   argument (the webOS composition passes `null`). Nix generates the existing
   JSON-array format into `product-relays.json` in the installed app directory.
   There is no hand-maintained copy of the list or new configuration schema.
-- `launch.sh` reads that generated product file and exports `KORRID_RELAYS`
+- `bin/korri-webos` reads that generated product file and exports `KORRID_RELAYS`
   only in the real `webos-korrid` subprocess. The binary uses the existing
   `RelayList::from_linux_environment` parser. The shell and explicit M1 fixture
   receive no relay environment, including inherited overrides. Missing product
@@ -310,9 +310,10 @@ nix run .#shell-webos-package-check -- --check-ipk \
 
 The ARM cache is `.cache/shell-webos-target`. Build uses at most two jobs,
 hydrates the existing pinned proseQL source, and records source SHA plus all
-three binary hashes. Packaging rejects dirty/mismatched source or changed
+six ELF hashes. Packaging rejects dirty/mismatched source or changed
 binaries. Zone/Pico install verification runs on the workstation; the TV only
-checks installed file stamps. Choose a fresh output directory for each IPK.
+checks installed file stamps. Choose a fresh output directory for each IPK. Set `CARGO_BUILD_JOBS=2` for all
+build/proof/check tasks and run only one expensive command at a time.
 
 `nix run .#shell-webos-real-proof -- OUTPUT` runs the shipped launcher with
 real `webos-korrid` and the real desktop SDL shell. Bubblewrap supplies fresh
@@ -337,7 +338,7 @@ No ARM executable is run by the workstation tasks.
 ## Compatibility and acceptance risks
 
 Target: `armv7-unknown-linux-gnueabi`, EABI5 soft-float, glibc 2.19,
-`/lib/ld-linux.so.3`. The final IPK check inspects all three archived ELFs: no
+`/lib/ld-linux.so.3`. The final IPK check inspects all six archived ELFs: no
 GLIBC requirement above 2.19 and no Nix store dynamic reference. Kernel CSPRNG
 uses getrandom's `linux_raw` backend, not a missing libc wrapper or jailed
 `/dev/random`. QuickJS bindgen uses actual target headers and softfp ABI.
@@ -352,3 +353,96 @@ unmeasured on the TV; the full brain includes QuickJS, OXC and cryptography even
 though no plugins are installed. The shell is a second native process. A
 workstation build or empty-library test is not proof of acceptable TV memory,
 performance, owner-signing interoperability, or real-library acceptance.
+
+
+## M4b: one executable path for AppManager and NDL
+
+`appinfo.json` now names `bin/korri-webos`. No `launch.sh` ships. The native C
+launcher ports the previous script's sequence, including refusing root, umask
+077, core dumps off, private per-launch directories, append-only stderr log,
+explicit fixture selection, product relays only in the real brain, credentials,
+startup polling, shell exit status and TERM/HUP/INT cleanup. It ignores optional
+AppManager JSON. `KORRI_INPUT_TRACE` and `KORRI_SHELL_SEE_THROUGH` still pass by
+inheritance. It never creates or changes a persisted allocation.
+
+C is the smallest integration: the existing bounded C media CLI links directly
+into the multi-call executable with its `main` renamed. There is no Rust FFI,
+new viewer process, IPC or second executable path. Normal mode never initializes
+NDL. The ss4s shared core loads at process start, but loads the NDL module only
+in media mode. The two library lookup paths are package-relative RUNPATHs:
+`$ORIGIN/../lib` on the launcher and `$ORIGIN` on the core. No absolute build
+path or system library override ships. The launcher does not set LD_LIBRARY_PATH
+for its children. The SDK and ss4s pins and close fix come from the NDL spike
+at `9c33d631c`; no common-c, HTTPS client, audio or streaming session is added.
+This is a local decode test, not completed M4 playback.
+
+The launcher and shared objects are prebuilt by Nix (`media.nix`); the SDK's
+ARM output is never run on the workstation. The same multi-call entry point is
+tested against ss4s's native reference sink, including bounded duration, fixture
+validation, pacing, looping, signal cleanup and close-time frame reporting.
+The normal-mode tests compile the same launcher for the desktop. The existing
+`shell-webos-proof` uses it with the real fixture brain and SDL shell.
+
+The IPK checker inspects **all six** ELFs: four executables and two libraries.
+It checks ARM EABI5 soft-float, GLIBC ≤ 2.19, GLIBCXX ≤ 3.4.19 and CXXABI ≤ 1.3.7.
+It audits strong imports and direct NEEDED against the original TV evidence in
+`~/.cache/research/korri-webos-m2/evidence/tvlibs/` and the checked runtime in
+`~/.cache/research/korri-lg-b7-prep-20261029T175543Z/readiness/tv-runtime-glibc-2.19/`.
+Weak UND symbols are optional. GLOBAL/WEAK zero-valued ABS exports fail.
+
+**Pending provider copy:** the parent has no original `libgcc_s.so.1` copy yet.
+One explicit exception admits only its 13 versioned imports extracted from the
+actual M3 IPK at source `0cdccd0a682de7eb2fe357532eed059d01c366ed`. Those
+shell/brain executables ran on this B7 on 2026-11-06/07. New libgcc_s symbols
+still fail. The checker prints this limitation rather than claiming a complete
+provider proof. When the parent obtains the actual library, it takes precedence;
+remove `PENDING_LIBGCC_SYMBOLS` after verifying that copy. No other missing
+provider is allowed.
+
+### SDK preparation in a fresh worktree
+
+```sh
+prep="$HOME/.cache/research/korri-lg-b7-prep-20261029T175543Z/readiness"
+clients/slint-spike/webos-sdk.sh \
+  "$prep/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz" "$PWD/.cache/webos-sdk"
+mkdir -p .cache/webos-target
+clients/slint-spike/webos-runtime-overlay.sh "$PWD/.cache/webos-sdk" \
+  "$prep/tv-runtime-glibc-2.19" \
+  "$prep/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz" "$PWD/.cache/webos-target"
+```
+
+### Parent's TV acceptance (no role edit)
+
+First obtain the owner's approval for any app registration/install operation.
+Do not change the LS2 role, screensaver, power settings or persistent data.
+Use the normal app UID inside its jail, never SSH root. Keep the original
+system SDL. Coordinate readiness before a timed observation.
+
+1. After the approved clean install, launch `org.korri.shell` normally through
+   AppManager. Check unchanged Zone/library, remote and pad navigation, surface
+   switching, then normal close and restart. Check the launcher log and that
+   no launcher/brain/shell child or per-launch directory remains after close.
+   The installed role should naturally name `.../bin/korri-webos`; do not edit it.
+2. Keep that normal shell running. Put the existing spike's 300-frame fixture
+   in the jail's temporary storage (not persistent state). From the installed
+   app directory, as the **same app UID**, with its existing app jail:
+
+   ```sh
+   APPID=org.korri.shell ./bin/korri-webos media-test 10 /tmp/test-1080p30.h264
+   ```
+
+   No role edit and no LD_LIBRARY_PATH override is required. Expect module
+   load, accepted 1920x1080 H.264 open, `frames=300`, `close complete`, exit 0.
+   A child may re-exec the same installed path without changing its identity.
+   On TERM/HUP/INT, expect owning-thread cleanup and exit 128+signal.
+   Verify resource release, unchanged shell PID and healthy drawing afterwards.
+   Accepted frames are not proof of visible video: opaque Zone can hide the
+   hardware plane. The existing see-through diagnostic remains opt-in; this
+   change makes no visual-design or power-policy decision. Stop on resource
+   conflict or uncertain cleanup. Do not disturb an unrelated media pipeline.
+
+The fixture is built by the existing spike producer (`stream` in its Nix file);
+it is not game content and is not installed in the production IPK. This IPK
+includes ss4s's LGPLv3 notice and the close patch. Public distribution still
+needs the source/relinking and license review described in the embedded-viewer
+brief; a local test package is not publication approval.

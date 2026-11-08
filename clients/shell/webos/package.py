@@ -19,11 +19,40 @@ import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'nix/webos'))
-from ipk import add_bytes, run, verify_binary, verify_build_record, write_ipk, write_payload
+from ipk import add_bytes, run, verify_binary, verify_build_record, write_ipk, write_payload  # noqa: E402 - local tooling modules need the explicit source path
 
 APP_ID = 'org.korri.shell'
 APP_BASE = 'usr/palm/applications/' + APP_ID + '/'
 PACKAGE_BASE = 'usr/palm/packages/' + APP_ID + '/'
+
+
+# The audit uses original, read-only TV libraries. Never bundle these providers.
+sys.path.insert(0, str(ROOT / 'clients/webos-embedded-viewer-spike'))
+from symbol_audit import audit  # noqa: E402 - local tooling modules need the explicit source path
+TV_LIBRARIES = pathlib.Path.home() / '.cache/research/korri-webos-m2/evidence/tvlibs'
+TV_RUNTIME = pathlib.Path.home() / '.cache/research/korri-lg-b7-prep-20261029T175543Z/readiness/tv-runtime-glibc-2.19'
+
+
+# ONE temporary provider exception, approved by the parent on 2026-11-08.
+# Extracted from the actual M3 IPK at source 0cdccd0a682de7eb2fe357532eed059d01c366ed,
+# whose shell/brain ran on this B7 on 2026-11-06/07. Not SDK export guesses.
+# Remove this exception when the actual TV libgcc_s.so.1 copy is available.
+PENDING_LIBGCC_SYMBOLS = frozenset({
+    '_Unwind_VRS_Set@GCC_3.5', '__aeabi_unwind_cpp_pr1@GCC_3.5',
+    '__aeabi_unwind_cpp_pr0@GCC_3.5', '_Unwind_Backtrace@GCC_4.3.0',
+    '_Unwind_GetDataRelBase@GCC_3.0', '_Unwind_GetRegionStart@GCC_3.0',
+    '_Unwind_GetTextRelBase@GCC_3.0', '_Unwind_VRS_Get@GCC_3.5',
+    '__gnu_unwind_frame@GCC_3.5', '_Unwind_Resume@GCC_3.0',
+    '_Unwind_DeleteException@GCC_3.0', '_Unwind_RaiseException@GCC_3.0',
+    '_Unwind_GetLanguageSpecificData@GCC_3.0',
+})
+
+
+def audit_payload(stage):
+    if not TV_LIBRARIES.is_dir():
+        raise ValueError('TV symbol evidence is missing: ' + str(TV_LIBRARIES))
+    audit(stage, TV_LIBRARIES, pending_libgcc_symbols=PENDING_LIBGCC_SYMBOLS,
+          additional_evidence=(TV_RUNTIME,))
 
 
 def stage_surfaces(stage, verifier):
@@ -67,14 +96,14 @@ def stage_product_relays(stage, source):
 
 def app_info(version):
     return {'id': APP_ID, 'version': version, 'vendor': 'Korri',
-            'type': 'native', 'main': 'launch.sh', 'title': 'Korri',
+            'type': 'native', 'main': 'bin/korri-webos', 'title': 'Korri',
             'icon': 'icon.png',
             'appDescription': 'Native Korri shell M2 with the real local korrid.'}
 
 
 def payload_files(stage, version):
     files = [(APP_BASE + str(path.relative_to(stage)), path.read_bytes(),
-              0o755 if path.name in {'launch.sh', 'korri-shell', 'fixture-korrid', 'webos-korrid'} else 0o644)
+              0o755 if path.name in {'korri-webos', 'korri-shell', 'fixture-korrid', 'webos-korrid'} else 0o644)
              for path in sorted(stage.rglob('*')) if path.is_file()]
     files += [(APP_BASE + 'appinfo.json', json.dumps(app_info(version)).encode(), 0o644),
               (APP_BASE + 'icon.png', (ROOT / 'brand/icons/icon-192.png').read_bytes(), 0o644),
@@ -97,9 +126,10 @@ def main():
     if run('git', '-C', str(ROOT), 'status', '--porcelain').strip():
         parser.error('source checkout must be clean')
     release = ROOT / '.cache/shell-webos-target/armv7-unknown-linux-gnueabi/release'
-    binaries = [release / 'korri-shell', release / 'fixture-korrid', release / 'webos-korrid']
+    binaries = [release / name for name in ('korri-webos', 'korri-shell', 'fixture-korrid', 'webos-korrid')]
+    libraries = [release / 'lib' / name for name in ('libss4s.so', 'ss4s-ndl-webos4.so')]
     dependencies = ''
-    for binary in binaries:
+    for binary in binaries + libraries:
         verify_build_record(binary, binary.parent, args.source_sha)
         dependencies += binary.name + '\n' + verify_binary(binary) + '\n'
     with (ROOT / 'clients/shell/Cargo.toml').open('rb') as source:
@@ -120,7 +150,11 @@ def main():
         (stage / 'bin').mkdir()
         for binary in binaries:
             shutil.copyfile(binary, stage / 'bin' / binary.name)
-        shutil.copyfile(ROOT / 'clients/shell/webos/launch.sh', stage / 'launch.sh')
+        (stage / 'lib').mkdir()
+        for library in libraries:
+            shutil.copyfile(library, stage / 'lib' / library.name)
+        shutil.copytree(release / 'share/korri-webos', stage / 'share/korri-webos')
+        audit_payload(stage)
         files = payload_files(stage, version)
         (work / 'debian-binary').write_bytes(b'2.0\n')
         write_payload(work / 'data.tar.gz', files)

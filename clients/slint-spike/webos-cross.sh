@@ -104,7 +104,13 @@ case "$action" in
         --bin korri-shell --bin fixture-korrid --no-default-features --features webos,fixture --target armv7-unknown-linux-gnueabi
       cargo build --locked --release --manifest-path "$KORRI_ROOT/services/korrid/Cargo.toml" \
         --bin webos-korrid --target armv7-unknown-linux-gnueabi
-      binaries=("$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/webos-korrid"
+      release="$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release"
+      cp "$KORRI_WEBOS_MEDIA/bin/korri-webos" "$release/korri-webos"
+      mkdir -p "$release/lib" "$release/share"
+      cp "$KORRI_WEBOS_MEDIA/lib/"*.so "$release/lib/"
+      cp -r "$KORRI_WEBOS_MEDIA/share/korri-webos" "$release/share/"
+      binaries=("$release/korri-webos" "$release/lib/libss4s.so" "$release/lib/ss4s-ndl-webos4.so"
+        "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/webos-korrid"
         "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-shell"
         "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/fixture-korrid")
     else

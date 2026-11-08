@@ -1,0 +1,13 @@
+#!/bin/sh
+# Spawn only inside the already-running app's UID/jail. Never registers an app.
+set -eu
+if [ "$#" -gt 1 ]; then
+    echo "usage: $0 [SECONDS(1..25)]" >&2
+    exit 2
+fi
+unset CREDENTIALS_DIRECTORY KORRID_ADDRESS KORRID_SHELL_ORIGIN
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+export APPID=org.korri.shell
+# Only these two bundled ss4s objects; keep vendor libraries on the system path.
+export LD_LIBRARY_PATH="$root/lib"
+exec "$root/bin/media-test" "${1:-10}" "$root/share/korri-webos-viewer-spike/test-1080p30.h264"

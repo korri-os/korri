@@ -6,6 +6,8 @@ import os
 import json
 import pathlib
 import shutil
+import signal
+import time
 import subprocess
 import sys
 import tarfile
@@ -13,8 +15,8 @@ import tempfile
 import unittest
 
 sys.dont_write_bytecode = True
-from package import APP_BASE, APP_ID, ROOT, app_info, payload_files, stage_product_relays
-from ipk import native_headers, verify_binary, verify_build_record, write_ipk, write_payload
+from package import APP_BASE, APP_ID, ROOT, app_info, payload_files, stage_product_relays, audit_payload  # noqa: E402 - local tooling modules need the explicit source path
+from ipk import native_headers, verify_binary, verify_build_record, write_ipk, write_payload  # noqa: E402 - local tooling modules need the explicit source path
 
 
 def check_ipk(path, product_relays):
@@ -22,19 +24,23 @@ def check_ipk(path, product_relays):
     data = subprocess.check_output(['ar', 'p', str(path), 'data.tar.gz'])
     with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
         names = set(archive.getnames())
-        expected = {'product-relays.json', 'launch.sh', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid',
+        assert len(names) == len(archive.getmembers()), "duplicate payload names"
+        assert all(member.isfile() or member.isdir() for member in archive.getmembers())
+        expected = {'product-relays.json', 'bin/korri-webos', 'lib/libss4s.so', 'lib/ss4s-ndl-webos4.so', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid',
                     'cache/index.json', 'cache/surfaces/zone.json', 'cache/surfaces/pico.json',
                     'packages/zone/main.slint', 'packages/pico/main.slint',
                     'packages/zone/logic.js', 'packages/pico/logic.js'}
         assert {APP_BASE + name for name in expected} <= names
         assert APP_BASE + 'bin/webos-owner-sign' not in names
-        assert not any('KORRID_RPC_CAPABILITY' in name or name.endswith('.so') or '.so.' in name for name in names)
+        assert not any('KORRID_RPC_CAPABILITY' in name for name in names)
+        assert APP_BASE + 'launch.sh' not in names
+        assert {name for name in names if name.endswith('.so') or '.so.' in name} == {APP_BASE + 'lib/libss4s.so', APP_BASE + 'lib/ss4s-ndl-webos4.so'}
         assert archive.extractfile(APP_BASE + 'product-relays.json').read() == product_relays.read_bytes()
         assert archive.getmember(APP_BASE + 'product-relays.json').mode == 0o644
         metadata = json.load(archive.extractfile(APP_BASE + 'appinfo.json'))
         assert metadata['id'] == APP_ID and metadata['type'] == 'native'
-        assert metadata['main'] == 'launch.sh'
-        for name in ('launch.sh', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid'):
+        assert metadata['main'] == 'bin/korri-webos'
+        for name in ('bin/korri-webos', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid'):
             assert archive.getmember(APP_BASE + name).mode == 0o755
         index = json.load(archive.extractfile(APP_BASE + 'cache/index.json'))
         assert {entry['id'] for entry in index['entries']} == {'zone', 'pico'}
@@ -46,15 +52,40 @@ def check_ipk(path, product_relays):
             summary = json.load(archive.extractfile(APP_BASE + 'cache/surfaces/' + entry['id'] + '.json'))
             assert summary['pass']
         with tempfile.TemporaryDirectory() as directory:
-            for name in ('korri-shell', 'fixture-korrid', 'webos-korrid'):
-                binary = pathlib.Path(directory) / name
-                binary.write_bytes(archive.extractfile(APP_BASE + 'bin/' + name).read())
-                verify_binary(binary)
+            stage = pathlib.Path(directory)
+            for member in archive.getmembers():
+                if member.isfile() and member.name.startswith(APP_BASE):
+                    relative = pathlib.PurePosixPath(member.name).relative_to(APP_BASE)
+                    if '..' in relative.parts:
+                        raise ValueError('payload path escapes the app directory')
+                    target = stage / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(archive.extractfile(member).read())
+                    if target.read_bytes()[:4] == b'\x7fELF':
+                        verify_binary(target)
+            audit_payload(stage)
     print('M2_IPK_PAYLOAD_ELF_AND_STAMPS_PASS')
 
 
 class PackageTests(unittest.TestCase):
     product_relays = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.native = tempfile.TemporaryDirectory()
+        cls.launcher = pathlib.Path(cls.native.name) / 'korri-webos'
+        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-O2',
+                        str(ROOT / 'clients/shell/webos/launcher.c'), '-o', str(cls.launcher)], check=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.native.cleanup()
+
+    def stage_launcher(self, app):
+        (app / 'bin').mkdir(exist_ok=True)
+        (app / 'tmp').mkdir(exist_ok=True)
+        shutil.copyfile(self.launcher, app / 'bin/korri-webos')
+        (app / 'bin/korri-webos').chmod(0o755)
 
     def test_product_relays_are_shipped_unchanged_outside_user_data(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -87,8 +118,7 @@ class PackageTests(unittest.TestCase):
                 app = pathlib.Path(directory)
                 (app / 'bin').mkdir()
                 (app / 'tmp').mkdir()
-                shutil.copyfile(ROOT / 'clients/shell/webos/launch.sh', app / 'launch.sh')
-                (app / 'launch.sh').chmod(0o755)
+                self.stage_launcher(app)
                 if not fixture:
                     shutil.copyfile(self.product_relays, app / 'product-relays.json')
                 brain = app / 'bin' / ('fixture-korrid' if fixture else 'webos-korrid')
@@ -108,7 +138,7 @@ pathlib.Path('shell-relays.json').write_text(json.dumps(os.environ.get('KORRID_R
                 shell.chmod(0o755)
                 env = dict(os.environ, TMPDIR=str(app / 'tmp'),
                            KORRID_RELAYS='["wss://not-the-product.example"]')
-                result = subprocess.run([str(app / 'launch.sh')] + (['--fixture'] if fixture else []),
+                result = subprocess.run([str(app / 'bin/korri-webos')] + (['--fixture'] if fixture else []),
                                         env=env, cwd=app, capture_output=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 actual = json.loads((app / 'brain-relays.json').read_text())
@@ -125,17 +155,155 @@ pathlib.Path('shell-relays.json').write_text(json.dumps(os.environ.get('KORRID_R
             app = pathlib.Path(directory)
             (app / 'bin').mkdir()
             (app / 'tmp').mkdir()
-            shutil.copyfile(ROOT / 'clients/shell/webos/launch.sh', app / 'launch.sh')
-            (app / 'launch.sh').chmod(0o755)
+            self.stage_launcher(app)
             for name in ('webos-korrid', 'fixture-korrid'):
                 binary = app / 'bin' / name
                 binary.write_text('#!/bin/sh\ntouch brain-started\n')
                 binary.chmod(0o755)
-            result = subprocess.run([str(app / 'launch.sh')], cwd=app,
+            result = subprocess.run([str(app / 'bin/korri-webos')], cwd=app,
                                     env=dict(os.environ, TMPDIR=str(app / 'tmp')),
                                     capture_output=True, timeout=10)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((app / 'brain-started').exists())
+
+    def stage_processes(self, app, shell_exit=0, brain_behavior='ready', shell_behavior='exit'):
+        self.stage_launcher(app)
+        shutil.copyfile(self.product_relays, app / 'product-relays.json')
+        brain = app / 'bin/webos-korrid'
+        brain.write_text("#!/usr/bin/env python3\nimport json, os, pathlib, signal, sys\npathlib.Path('brain.pid').write_text(str(os.getpid()))\nif BEHAVIOR == 'fail':\n    sys.exit(19)\nif BEHAVIOR == 'ready':\n    print('KORRID_ADDRESS=127.0.0.1:1234', flush=True)\n    print('UNTRUSTED=$(touch evaluated)', flush=True)\n    print('KORRID_SHELL_ORIGIN=http://127.0.0.1:1234', flush=True)\nsignal.pause()\n".replace('BEHAVIOR', repr(brain_behavior)))
+        brain.chmod(0o755)
+        shell = app / 'bin/korri-shell'
+        shell.write_text("#!/usr/bin/env python3\nimport json, os, pathlib, resource, signal, stat, sys\ncredentials = pathlib.Path(os.environ['CREDENTIALS_DIRECTORY'])\npathlib.Path('observed.json').write_text(json.dumps({\n    'argv': sys.argv[1:], 'env': dict(os.environ),\n    'credentials_mode': stat.S_IMODE(credentials.stat().st_mode),\n    'work_mode': stat.S_IMODE(credentials.parent.stat().st_mode),\n    'umask': os.umask(0o077), 'core': resource.getrlimit(resource.RLIMIT_CORE),\n    'pid': os.getpid()}))\nif BEHAVIOR == 'wait':\n    signal.pause()\nsys.exit(EXIT_CODE)\n".replace('BEHAVIOR', repr(shell_behavior)).replace('EXIT_CODE', str(shell_exit)))
+        shell.chmod(0o755)
+
+    def launch(self, app, *args):
+        return subprocess.Popen([str(app / 'bin/korri-webos'), *args], cwd='/',
+                                env=dict(os.environ, TMPDIR=str(app / 'tmp'),
+                                         KORRI_INPUT_TRACE='1', KORRI_SHELL_SEE_THROUGH='1'),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def assert_cleaned(self, app):
+        self.assertEqual(list((app / 'tmp').glob('korri-shell.*')), [])
+        for name in ('brain.pid',):
+            if (app / name).exists():
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(int((app / name).read_text()), 0)
+
+    def test_launcher_preserves_arguments_environment_permissions_and_shell_status(self):
+        for args, order in (([], 'zone,pico'), (['{"ignored":"$(touch evaluated)"}'], 'zone,pico'),
+                            (['--surfaces', 'pico,zone'], 'pico,zone')):
+            with self.subTest(args=args), tempfile.TemporaryDirectory() as directory:
+                app = pathlib.Path(directory)
+                self.stage_processes(app, shell_exit=37)
+                sibling = app / 'tmp/keep'
+                sibling.mkdir()
+                (sibling / 'data').write_text('keep')
+                with self.launch(app, *args) as process:
+                    _, stderr = process.communicate(timeout=10)
+                    self.assertEqual(process.returncode, 37, stderr)
+                data = json.loads((app / 'observed.json').read_text())
+                self.assertEqual(data['argv'], ['--packages', 'packages', '--cache', 'cache',
+                                               '--installed', '--surfaces', order, '--placement', 'fullscreen'])
+                self.assertEqual(data['credentials_mode'], 0o700)
+                self.assertEqual(data['work_mode'], 0o700)
+                self.assertEqual(data['umask'], 0o077)
+                self.assertEqual(data['core'], [0, 0])
+                for key, value in (('APPID', APP_ID), ('SLINT_SCALE_FACTOR', '1.5'),
+                                   ('KORRID_ADDRESS', '127.0.0.1:1234'),
+                                   ('KORRID_SHELL_ORIGIN', 'http://127.0.0.1:1234'),
+                                   ('KORRI_INPUT_TRACE', '1'), ('KORRI_SHELL_SEE_THROUGH', '1')):
+                    self.assertEqual(data['env'][key], value)
+                self.assertNotIn('UNTRUSTED', data['env'])
+                self.assertFalse((app / 'evaluated').exists())
+                self.assertEqual((sibling / 'data').read_text(), 'keep')
+                self.assert_cleaned(app)
+                self.assertIn('korri-shell launch', (app / 'tmp/korri-shell-launch.log').read_text())
+
+    def test_signals_kill_and_reap_both_children_and_remove_only_launch_directory(self):
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            with self.subTest(sig=sig), tempfile.TemporaryDirectory() as directory:
+                app = pathlib.Path(directory)
+                self.stage_processes(app, shell_behavior='wait')
+                with self.launch(app) as process:
+                    for _ in range(500):
+                        if (app / 'observed.json').exists():
+                            break
+                        time.sleep(0.01)
+                    else:
+                        process.kill()
+                        self.fail('shell did not start')
+                    # observed.json is complete before the script sleeps.
+                    time.sleep(0.05)
+                    shell_pid = json.loads((app / 'observed.json').read_text())['pid']
+                    process.send_signal(sig)
+                    process.communicate(timeout=10)
+                    self.assertEqual(process.returncode, 143)
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(shell_pid, 0)
+                self.assert_cleaned(app)
+
+    def test_cleanup_does_not_follow_symlinks_and_log_appends_across_launches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = pathlib.Path(directory)
+            self.stage_processes(app)
+            outside = app / 'outside'
+            outside.mkdir()
+            (outside / 'data').write_text('keep')
+            shell = app / 'bin/korri-shell'
+            shell.write_text(shell.read_text().replace("sys.exit(0)",
+                "(credentials.parent / 'outside').symlink_to(pathlib.Path('outside').resolve())\nsys.exit(0)"))
+            for _ in range(2):
+                with self.launch(app) as process:
+                    process.communicate(timeout=5)
+                    self.assertEqual(process.returncode, 0)
+                self.assert_cleaned(app)
+            self.assertEqual((outside / 'data').read_text(), 'keep')
+            self.assertEqual((app / 'tmp/korri-shell-launch.log').read_text().count('korri-shell launch'), 2)
+
+    @unittest.skipUnless(shutil.which('bwrap'), 'bubblewrap is required to test root without host root')
+    def test_root_is_rejected_before_creating_launch_files(self):
+        result = subprocess.run(['bwrap', '--unshare-user', '--uid', '0', '--gid', '0',
+                                 '--ro-bind', '/', '/', '--proc', '/proc', '--dev', '/dev',
+                                 str(self.launcher)], capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('launcher refuses root', result.stderr)
+
+    def test_brain_failure_and_timeout_never_start_shell(self):
+        for behavior in ('fail', 'timeout'):
+            with self.subTest(behavior=behavior), tempfile.TemporaryDirectory() as directory:
+                app = pathlib.Path(directory)
+                self.stage_processes(app, brain_behavior=behavior)
+                with self.launch(app) as process:
+                    process.communicate(timeout=15)
+                    self.assertEqual(process.returncode, 1)
+                self.assertFalse((app / 'observed.json').exists())
+                self.assert_cleaned(app)
+                self.assertIn('korrid exited' if behavior == 'fail' else 'startup timed out',
+                              (app / 'tmp/korri-shell-launch.log').read_text())
+
+    def test_signal_during_brain_startup_reaps_brain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = pathlib.Path(directory)
+            self.stage_processes(app, brain_behavior='timeout')
+            with self.launch(app) as process:
+                for _ in range(500):
+                    if (app / 'brain.pid').exists():
+                        break
+                    time.sleep(0.01)
+                process.terminate()
+                process.communicate(timeout=5)
+                self.assertEqual(process.returncode, 143)
+            self.assert_cleaned(app)
+
+    def test_invalid_surface_order_fails_without_starting_children(self):
+        for args in (['--surfaces'], ['--surfaces', 'zone', 'extra'], ['--surfaces', 'other']):
+            with self.subTest(args=args), tempfile.TemporaryDirectory() as directory:
+                app = pathlib.Path(directory)
+                self.stage_processes(app)
+                with self.launch(app, *args) as process:
+                    process.communicate(timeout=5)
+                    self.assertEqual(process.returncode, 2)
+                self.assertFalse((app / 'brain.pid').exists())
 
     def test_native_headers_and_odd_member_padding(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -153,12 +321,12 @@ pathlib.Path('shell-relays.json').write_text(json.dumps(os.environ.get('KORRID_R
             stage = pathlib.Path(directory) / 'app'
             (stage / 'bin').mkdir(parents=True)
             (stage / 'bin/korri-shell').write_bytes(b'ELF bytes')
-            (stage / 'launch.sh').write_bytes(b'launcher')
+            (stage / 'bin/korri-webos').write_bytes(b'launcher')
             files = payload_files(stage, '0.0.0')
             destination = pathlib.Path(directory) / 'data.tar.gz'
             write_payload(destination, files)
             with tarfile.open(destination) as archive:
-                self.assertEqual(archive.getmember(APP_BASE + 'launch.sh').mode, 0o755)
+                self.assertEqual(archive.getmember(APP_BASE + 'bin/korri-webos').mode, 0o755)
                 self.assertEqual(archive.getmember(APP_BASE + 'bin/korri-shell').mode, 0o755)
                 self.assertTrue(all(member.mtime == 0 for member in archive.getmembers()))
                 self.assertTrue(all(member.uid == member.gid == 0 for member in archive.getmembers()))

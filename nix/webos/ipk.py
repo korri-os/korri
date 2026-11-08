@@ -26,7 +26,7 @@ def verify_binary(binary):
     if machine != 40 or flags >> 24 != 5 or not flags & 0x200 or flags & 0x400:
         raise ValueError('expected ARM EABI5 soft-float calling ABI')
     program = run('readelf', '-lW', str(binary))
-    if '[Requesting program interpreter: /lib/ld-linux.so.3]' not in program:
+    if ('.so' not in binary.name or 'INTERP' in program) and '[Requesting program interpreter: /lib/ld-linux.so.3]' not in program:
         raise ValueError('expected the TV loader /lib/ld-linux.so.3')
     versions = run('readelf', '--version-info', '-W', str(binary))
     for version in set(re.findall(r'Name: (GLIBC_[A-Za-z0-9_.]+)', versions)):
@@ -36,7 +36,15 @@ def verify_binary(binary):
         required = tuple(int(part or 0) for part in match.groups())
         if required > (2, 19, 0):
             raise ValueError('TV glibc 2.19 cannot satisfy ' + version)
+    for family, limit in (('GLIBCXX', (3, 4, 19)), ('CXXABI', (1, 3, 7))):
+        for version in re.findall(r'Name: ' + family + r'_(\d+(?:\.\d+)+)', versions):
+            if tuple(map(int, version.split('.'))) > limit:
+                raise ValueError('unsupported TV ' + family + ' requirement: ' + version)
     dynamic = run('readelf', '-dW', str(binary))
+    paths = re.findall(r'\((?:RPATH|RUNPATH)\).*?\[(.*?)\]', dynamic)
+    allowed = {'korri-webos': '$ORIGIN/../lib', 'libss4s.so': '$ORIGIN'}
+    if any(path != allowed.get(binary.name) for path in paths):
+        raise ValueError('unexpected target library search path')
     if '/nix/store/' in dynamic:
         raise ValueError('target ELF contains a build-host Nix store reference')
     return dynamic
