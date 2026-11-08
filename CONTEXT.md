@@ -76,11 +76,11 @@ A controller's claim to its seat during a live session, including while it is di
 _Avoid_: connected controller
 
 **Leave**:
-Moving away from a live session without ending it. The session is frozen and Korri owns input until the user resumes it.
+Moving away from a live session without ending it. The game keeps running and Korri holds all of its input until the user resumes it.
 _Avoid_: pause, minimise, background
 
 **Resume**:
-Coming back to a live session. Korri thaws it, raises its window, and gives it live input.
+Coming back to a live session. Korri raises its window and gives it live input again.
 _Avoid_: return, unpause
 
 **End**:
@@ -88,15 +88,27 @@ Destroying a live session on purpose. Unsaved progress is lost.
 _Avoid_: quit, kill, close
 
 **Gameplay overlay**:
-The screen Korri shows over a live session. It offers resume, end, the full Korri screen, and the actions the active plugin supports.
+The screen Korri shows over a live session while the game keeps running. It offers resume, end, disconnect, the full Korri screen, the actions the active plugin supports, and the stream controls of the stream viewer. A pause exists only as an action of the plugin.
 _Avoid_: pause menu, system panel
+
+**Disconnect**:
+Stopping a stream while the game keeps running on the device that runs it. The live session continues and can be played again.
+_Avoid_: quit, stop, detach
+
+**Status strip**:
+A line of facts shown with the gameplay overlay: the time, the battery, the stream's health and the game's name. It takes no input.
+_Avoid_: HUD, status bar
+
+**Stream control**:
+A control over how a device shows and drives a stream, such as screen fit or mouse mode. Each stream viewer declares the stream controls it supports.
+_Avoid_: Moonlight setting, viewer option
 
 **Shared play**:
 More than one device playing one game together. Stream play and netplay are its two kinds.
 _Avoid_: co-op, multiplayer, join
 
 **Stream play**:
-Shared play in which one device runs the game and holds the live session, and other devices play on its stream. Their controllers take controller seats in that session in first-press order, as the holder's own controllers do. They can play and watch, but only the device that holds the session can end it or change it.
+Shared play in which one device runs the game and holds the live session, and other devices play on its stream. Their controllers take controller seats in that session in first-press order, as the holder's own controllers do. They can play and watch, but only the device that holds the session, or the device that started the game on it, can end it or change it. After that device disconnects, any device of the federation that can stream the game may end it or change it.
 _Avoid_: remote play, guest stream, player two
 
 **Netplay**:
