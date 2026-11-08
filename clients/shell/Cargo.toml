@@ -29,6 +29,7 @@ required-features = ["fixture"]
 name = "surface-probe"
 
 [dependencies]
+korri-input-trace = { path = "../../packages/input-trace" }
 # Software renderer only. The window system comes from exactly one feature
 # below (`desktop`, the default, or `webos`). `unstable-fontique-011` gives the
 # shared font collection the shell trims when a surface is unloaded.

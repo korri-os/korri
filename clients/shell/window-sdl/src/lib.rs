@@ -423,6 +423,7 @@ impl SdlPlatform {
                 );
                 (self.shared.sdl.SDL_RenderPresent)(screen.renderer);
             }
+            korri_input_trace::presented();
             let presented = Instant::now();
             let mut stats = self.stats.borrow_mut();
             stats.frames += 1;
@@ -583,6 +584,12 @@ impl SdlPlatform {
 
     fn key_event(&self, event: &ffi::Event, pressed: bool) {
         let key = event.key(self.webos_abi);
+        if korri_input_trace::enabled() {
+            // SDL ticks share the SDL event clock, not CLOCK_MONOTONIC's origin.
+            // SAFETY: SDL is initialized and this is its event-loop thread.
+            let ticks = unsafe { (self.sdl().SDL_GetTicks)() };
+            korri_input_trace::record("sdl_key", format_args!("scancode={} keycode={} pressed={pressed} repeat={} event_sdl_ms={} read_sdl_ms={ticks} age_ms={}", key.scancode, key.keycode, key.repeat, event.timestamp(), ticks.wrapping_sub(event.timestamp())));
+        }
         if let Some(host_keys) = &self.host_keys {
             if !key.repeat {
                 if let Some(host_key) = keys::host_key(key.keycode, key.scancode) {

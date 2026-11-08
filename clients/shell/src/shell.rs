@@ -381,8 +381,20 @@ impl Shell {
                 event,
             } => self.host(generation, window, event),
             Event::Native(event) => {
+                if let crate::input::native::NativeEvent::Input {
+                    kind, code, value, ..
+                } = &event
+                {
+                    korri_input_trace::record(
+                        "native_ui",
+                        format_args!("type={kind} code={code} value={value}"),
+                    );
+                }
                 let now = self.now();
                 let presses = self.router.native(event, now);
+                for press in &presses {
+                    korri_input_trace::record("mapper", format_args!("source=pad press={press:?}"));
+                }
                 self.presses(presses);
             }
             Event::Model {
@@ -447,8 +459,12 @@ impl Shell {
                 }
             }
             HostEvent::Key { key, pressed } => {
+                korri_input_trace::record("key_ui", format_args!("key={key:?} pressed={pressed}"));
                 let now = self.now();
                 let presses = self.router.key(key, pressed, now);
+                for press in &presses {
+                    korri_input_trace::record("mapper", format_args!("source=key press={press:?}"));
+                }
                 self.presses(presses);
             }
             HostEvent::Focus(focused) => {
@@ -539,6 +555,8 @@ impl Shell {
     }
 
     pub fn press(&mut self, button: Button) {
+        korri_input_trace::record("ui_apply", format_args!("button={button:?}"));
+        korri_input_trace::expect_frame();
         if self.current.is_none() {
             self.notice_press(button);
             return;
@@ -547,6 +565,7 @@ impl Shell {
             current.last_press = Instant::now();
         }
         self.update(&messages::pressed(button));
+        korri_input_trace::record("ui_applied", format_args!("button={button:?}"));
     }
 
     /// Show the next package in order. A package that does not load leaves

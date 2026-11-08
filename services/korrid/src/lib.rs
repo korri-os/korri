@@ -5594,7 +5594,7 @@ fn start_local_server_for_platform(
                     )
                 });
                 let server = axum::serve(
-                    listener,
+                    surface_host_input::low_latency_listener(listener),
                     surface_host_router_with_surfaces(app_state, Some(surfaces))
                         .merge(surface_socket)
                         .layer(axum::Extension(reach)),

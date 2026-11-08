@@ -89,6 +89,10 @@ in
         cd "$crate"
         cargo fmt --check
         (cd window-sdl && cargo fmt --check)
+        trace="$KORRI_ROOT/packages/input-trace/Cargo.toml"
+        cargo fmt --manifest-path "$trace" --check
+        cargo clippy --manifest-path "$trace" --locked --all-targets -- -D warnings
+        cargo test --manifest-path "$trace" --locked
         cargo clippy --locked --release --all-targets --features fixture -- -D warnings
         cargo clippy --locked --release --no-default-features --features webos -- -D warnings
         cargo test --locked --release --features fixture

@@ -193,6 +193,20 @@ impl Pad {
 
     async fn next(&mut self) -> io::Result<()> {
         let event = self.events.next_event().await?;
+        if korri_input_trace::enabled() {
+            // evdev defaults to CLOCK_REALTIME; do not compare its timestamp
+            // directly to CLOCK_MONOTONIC or silently change the device clock.
+            let event_us = event
+                .timestamp()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_micros());
+            let read_us = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_micros());
+            korri_input_trace::record("evdev_read", format_args!("type={} code={} value={} event_realtime_us={event_us:?} read_realtime_us={read_us:?}", event.event_type().0, event.code(), event.value()));
+        }
         match self.sample.push(event) {
             SampleResult::Pending => {}
             SampleResult::Frame(values) => {

@@ -30,6 +30,44 @@ use tokio::{
 
 use crate::{native_input::*, surface_host_access::SurfaceHostAccess};
 
+/// The embedded native input socket carries small, latency-sensitive messages.
+/// axum's TcpListener implementation does not change the kernel's Nagle default.
+pub(crate) fn low_latency_listener(
+    listener: tokio::net::TcpListener,
+) -> impl axum::serve::Listener<Io = tokio::net::TcpStream, Addr = std::net::SocketAddr> {
+    use axum::serve::ListenerExt;
+    listener.tap_io(|socket| {
+        if let Err(error) = socket.set_nodelay(true) {
+            eprintln!("korrid: native input TCP_NODELAY failed: {error}");
+        }
+    })
+}
+
+#[cfg(test)]
+mod latency_tests {
+    use super::*;
+    use axum::serve::Listener;
+
+    #[tokio::test]
+    async fn accepted_native_socket_disables_nagle() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut listener = listener;
+        let (_client, (accepted, _)) = tokio::join!(
+            tokio::net::TcpStream::connect(address),
+            Listener::accept(&mut listener)
+        );
+        assert!(
+            !accepted.nodelay().unwrap(),
+            "default accepted TCP sockets still use Nagle"
+        );
+        let mut listener = low_latency_listener(listener);
+        let (_client, (accepted, _)) =
+            tokio::join!(tokio::net::TcpStream::connect(address), listener.accept());
+        assert!(accepted.nodelay().unwrap());
+    }
+}
+
 /// Internal resource budgets, not persisted settings or seat count.
 #[derive(Clone, Copy, Debug)]
 pub struct SurfaceHostInputLimits {
@@ -263,6 +301,7 @@ impl SurfaceHostInputSource {
             self.shared.limits.event_bytes,
         )?);
         device.values.extend(updates);
+        korri_input_trace::record("publish", format_args!("fields={}", frames.len() - 1));
         broadcast(&mut state, class, &frames);
         drop(state);
         // A live sample after the baseline is evidence the pad was heard.
@@ -759,11 +798,38 @@ async fn send(
     let Some(remaining) = limits.max_queue_age.checked_sub(frame.created.elapsed()) else {
         return false;
     };
-    tokio::select! {
+    // Decode only under the opt-in gate. Never print arbitrary socket text:
+    // this function also carries baseline/control messages.
+    let input = korri_input_trace::enabled()
+        .then(|| serde_json::from_str::<NativeInputEvent>(&frame.text).ok())
+        .flatten();
+    if let Some(NativeInputEvent::Input(input)) = &input {
+        korri_input_trace::record(
+            "socket_write",
+            format_args!(
+                "type={} code={} value={} queue_us={}",
+                input.input_type,
+                input.code,
+                input.value,
+                frame.created.elapsed().as_micros()
+            ),
+        );
+    }
+    let sent = tokio::select! {
         biased;
         _ = stopped(stop) => false,
         result = timeout(limits.write_timeout.min(remaining), socket.send(Message::Text(frame.text.as_ref().into()))) => matches!(result, Ok(Ok(()))),
+    };
+    if let Some(NativeInputEvent::Input(input)) = &input {
+        korri_input_trace::record(
+            "socket_written",
+            format_args!(
+                "type={} code={} value={} ok={sent}",
+                input.input_type, input.code, input.value
+            ),
+        );
     }
+    sent
 }
 async fn serve(
     mut socket: WebSocket,

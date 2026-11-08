@@ -22,6 +22,8 @@ let
         "clients/cli"
         "services"
         "services/korrid"
+        "packages"
+        "packages/input-trace"
         "contracts"
         "contracts/input"
         "contracts/surface"
@@ -32,7 +34,8 @@ let
       ]
       || (
         (
-          lib.hasPrefix "clients/cli/" relative
+          lib.hasPrefix "packages/input-trace/" relative
+          || lib.hasPrefix "clients/cli/" relative
           || lib.hasPrefix "services/korrid/" relative
           || lib.hasPrefix "contracts/input/" relative
           # korrid's path dependency on the surface treaty crate.

@@ -107,6 +107,10 @@ impl Event {
     pub fn kind(&self) -> u32 {
         self.u32_at(0)
     }
+    /// SDL_CommonEvent timestamp (milliseconds since SDL initialization).
+    pub fn timestamp(&self) -> u32 {
+        self.u32_at(4)
+    }
     pub fn set_kind(&mut self, kind: u32) {
         self.0[0..4].copy_from_slice(&kind.to_ne_bytes());
     }
@@ -273,6 +277,7 @@ sdl_functions! {
     SDL_RenderPresent(*mut Renderer);
     SDL_RegisterEvents(c_int) -> u32;
     SDL_PushEvent(*mut Event) -> c_int;
+    SDL_GetTicks() -> u32;
     SDL_PollEvent(*mut Event) -> c_int;
     SDL_WaitEventTimeout(*mut Event, c_int) -> c_int;
     SDL_GetKeyboardFocus() -> *mut Window;
@@ -320,6 +325,13 @@ mod tests {
             event.0[*offset..*offset + bytes.len()].copy_from_slice(bytes);
         }
         event
+    }
+
+    #[test]
+    fn event_timestamp_keeps_the_common_sdl_layout() {
+        let event = key_event(&[(4, &123_456u32.to_ne_bytes())]);
+        assert_eq!(event.timestamp(), 123_456);
+        assert_eq!(event.kind(), SDL_KEYDOWN);
     }
 
     #[test]

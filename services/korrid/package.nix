@@ -19,6 +19,7 @@ let
         inCrate = lib.hasPrefix "services/korrid/" relative;
         # The controller-lifecycle regression uses inputd's real seat runtime.
         inSeatRuntime = lib.hasPrefix "services/inputd/" relative;
+        inTrace = lib.hasPrefix "packages/input-trace/" relative;
         inTreaty = lib.hasPrefix "contracts/input/" relative || lib.hasPrefix "contracts/surface/" relative;
       in
       toString path == sourceRootString
@@ -26,13 +27,15 @@ let
         "services"
         "services/korrid"
         "services/inputd"
+        "packages"
+        "packages/input-trace"
         "contracts"
         "contracts/input"
         "contracts/surface"
       ]
       # Immutable producer declaration snapshots for consumer tests only.
       || lib.hasPrefix "services/korrid/tests/fixtures/first-party/" relative
-      || ((inCrate || inSeatRuntime || inTreaty) && craneLib.filterCargoSources path type)
+      || ((inCrate || inSeatRuntime || inTreaty || inTrace) && craneLib.filterCargoSources path type)
       # The shared scheduler is host runtime source included by completion.rs.
       || relative == "services/korrid/src/script/completion.js"
       # The code-generation seal is host runtime source included by preparation.rs.

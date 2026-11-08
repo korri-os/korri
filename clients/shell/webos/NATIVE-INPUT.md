@@ -1,6 +1,7 @@
 # LG B7 native gamepad input
 
-This change has no TV-side acceptance result. Do not contact the TV overnight.
+The owner verified pad navigation on the B7. The latency trace and TCP_NODELAY
+change have no TV-side acceptance result. The parent owns TV operations.
 
 ## Design and grounding
 
@@ -51,6 +52,99 @@ This change has no TV-side acceptance result. Do not contact the TV overnight.
   `docs/briefs/2026-10-30-lg-b7-native-input-report.md`, 2026-11-06 update:
   LG SDL joystick init calls `registerScreenSaverRequest(true)` before device
   enumeration. The TV input edge must not enter that power path.
+
+## Latency investigation (workstation findings; TV measurement pending)
+
+- `services/korrid/src/lib.rs` composes the embedded loopback server with
+  `surface_host_input::low_latency_listener`. This now sets TCP_NODELAY on
+  each accepted socket, including native input. Axum 0.8.9 (Cargo.lock),
+  `src/serve/listener.rs::Listener for TcpListener`, only accepts the socket;
+  `src/serve/mod.rs::handle_connection` does not set this option either.
+  The regression test checks the default accepted socket has Nagle enabled
+  and the configured accepted socket has it disabled. Missing NODELAY is a
+  verified code defect for small interactive messages, **not yet a measured
+  explanation** of the owner's delay. Inferred mechanism: Nagle can hold the
+  final SYN message behind an unacknowledged field message, while the mapper
+  must wait for that SYN. Delayed ACK can extend that wait. The change also
+  affects this embedded server's HTTP and model sockets; it can increase
+  small-packet count.
+- `SurfaceHostInputSource::publish_frame` commits changed fields plus SYN_REPORT
+  under one mutex. `broadcast` uses immediate `try_send` into each subscriber's
+  64-event queue. No timer batches input. The writer drains one message at a
+  time, with WebSocket write-buffer size zero and a flushing `send`. Its 250 ms
+  write deadline and maximum queue age are failure bounds, not intentional waits.
+  A full queue retires the connection instead of accumulating input. The
+  evdev reader's one-second scan is discovery only; active reads wait on epoll,
+  not on that interval.
+- `input/native.rs::serve` blocks on socket reads. The socket's 20 ms read
+  timeout is a lifecycle poll bound, **not** a 20 ms input delay: readable data
+  wakes the blocked read. No active-path sleep follows each received message.
+- Both native input **and SDL host keys** use `EventLoopPost::post` /
+  `invoke_from_event_loop`. `Shell::attach` posts SDL's `HostEvent::Key`, so
+  the remote is not mapped inline in SDL's callback. The native reader posts
+  each field and SYN separately from its worker thread. SDL posts one key event
+  on the UI thread. `window-sdl::Proxy` queues closures and wakes SDL;
+  `run_jobs` drains a snapshot before render. A sample whose SYN arrives after
+  that snapshot can wait through a render. The CPU-heavy animation can delay
+  either source; traces must establish the actual queue/render cost.
+- `input/mapper.rs::handle` commits both keys and HAT axes at SYN_REPORT.
+  HAT values use sign/nonzero, with no 0.6 stick threshold and no time window.
+  Stick metadata uses a normalized 0.6 threshold (or 16000 without both axis
+  ranges), including flat dead zones. An isolated direction press emits at its
+  SYN; its release stops it. Action buttons emit on rising keys, not release.
+  Releasing one of several held directions can select the remaining direction.
+  L1+R1 switches when both are held, without a chord timer. Baselines must
+  rearm from neutral; direction repeat is 400 ms then 100 ms.
+  SDL keys use the same repeat schedule, but no SYN barrier.
+
+### Capture protocol
+
+Set **`KORRI_INPUT_TRACE=1` before starting both binaries**. For a manual launch,
+inside the app jail as its normal app UID, with the AppManager instance stopped:
+
+```sh
+KORRI_INPUT_TRACE=1 ./launch.sh
+```
+
+For an AppManager launch, temporarily add `export KORRI_INPUT_TRACE=1` to the
+installed launcher before child startup, then remove it after the capture.
+No package edit is required for manual environment inheritance. The existing
+`exec 2>>"$tmp/korri-shell-launch.log"` precedes both subprocesses; korrid
+redirects stdout only. Thus **both** processes already append stderr to
+`/var/palm/jail/org.korri.shell/tmp/korri-shell-launch.log` from outside the jail
+(`/tmp/korri-shell-launch.log` inside, when TMPDIR is unset).
+
+Each line begins `INPUT_TRACE pid=… mono_us=… stage=…`. The exact value `1`
+enables it; it is off by default. There are at most **300 lines per process**
+(shared by the shell and its SDL adapter). Restart the app to reset the cap.
+No credentials, device names, identity strings, or complete wire messages are
+logged. Logging itself adds small bounded I/O overhead.
+
+Press and release one D-pad direction at a time, with a pause, first on the pad
+and then on the remote. Use several short taps before any held-repeat test.
+Filter with `grep INPUT_TRACE /tmp/korri-shell-launch.log`. Match pad fields by
+`type`, `code`, `value` and order; no new wire IDs/timestamps were introduced.
+
+| Stage | Read it as |
+| --- | --- |
+| `evdev_read` | Kernel `event_realtime_us` versus `read_realtime_us`; their difference is kernel-event-to-reader age. Both are CLOCK_REALTIME, **not** `mono_us`. |
+| `publish fields=N` | Validated sample committed, immediately before subscriber queue insertion; follows kernel SYN. |
+| `socket_write` | About to send one native field/SYN; `queue_us` is its age in the subscriber queue. |
+| `socket_written … ok=true` | Async WebSocket send/flush returned, not a TCP ACK or proof of peer receipt. |
+| `native_receive` | Shell worker decoded the field/SYN, before posting to UI. |
+| `native_ui` | UI thread is applying that native field/SYN to the mapper. |
+| `sdl_key` | Remote key callback: `event_sdl_ms`, `read_sdl_ms`, wrapping `age_ms`, key numbers and press/repeat state. SDL ticks have their own origin. |
+| `key_ui` | UI thread applies the posted SDL host key to the mapper. |
+| `mapper source=pad/key press=Button(Right)` | Initial semantic output from the relevant mapper path. |
+| `ui_apply` / `ui_applied` | Shell starts / finishes synchronous surface update for the semantic button. Repeat ticks also produce these lines. |
+| `frame_presented` | First SDL_RenderPresent return after one or more semantic buttons. It is not measured panel scanout; multiple updates can share one frame. |
+
+All `mono_us` values use the same device CLOCK_MONOTONIC origin across processes.
+Subtract these values to separate producer, writer, socket, UI queue and surface
+update costs. Compare pad `native_receive` → `native_ui` against remote
+`sdl_key` → `key_ui`, then both `ui_applied` → `frame_presented` costs. The
+kernel/SDL event ages require their respective same-clock fields above, not
+subtraction from `mono_us`. This build does not claim a measured TV improvement.
 
 ## Linux 4.4 / glibc 2.19 review
 

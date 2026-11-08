@@ -2296,6 +2296,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "korri-input-trace"
+version = "0.0.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "korri-shell"
 version = "0.0.0"
 dependencies = [
@@ -2310,6 +2317,7 @@ dependencies = [
  "i-slint-renderer-software",
  "image",
  "jni 0.21.1",
+ "korri-input-trace",
  "korri-surface-treaty",
  "korri-window-sdl",
  "libc",
@@ -2337,6 +2345,7 @@ dependencies = [
 name = "korri-window-sdl"
 version = "0.0.0"
 dependencies = [
+ "korri-input-trace",
  "libc",
  "slint",
  "tempfile",

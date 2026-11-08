@@ -401,6 +401,15 @@ fn serve(
         let Some(message) = decode(&text) else {
             return End::Lost;
         };
+        if let Decoded::Event(NativeEvent::Input {
+            kind, code, value, ..
+        }) = &message
+        {
+            korri_input_trace::record(
+                "native_receive",
+                format_args!("type={kind} code={code} value={value}"),
+            );
+        }
         match message {
             Decoded::Suspend {
                 generation,
