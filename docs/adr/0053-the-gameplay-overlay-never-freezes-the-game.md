@@ -47,3 +47,11 @@ mode, had fixed buttons and no data from korrid.
 Until Linux follows, Linux and Android behave differently on Home. Freeze-based
 session code (`session_freezer_resolved`, `SessionLeave` mapping to
 `session_freeze`) must stop running for Leave on Android; it stays for Linux.
+
+Later, Android will launch games as other apps through intents, and the
+gameplay overlay must work over those too (owner, 2026-11-08). A view inside
+the Game activity cannot cover another app. So the Rust side draws the surface
+overlay into any Android `Surface` it is given, and does not depend on Game.
+Today Game hosts that Surface. For intent launches, a Korri-owned window over
+other apps will host it. Only the host of the Surface and the way Home is
+caught differ between the two.
