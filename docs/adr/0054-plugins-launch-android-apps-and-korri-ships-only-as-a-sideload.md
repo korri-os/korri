@@ -58,6 +58,22 @@ so far. It becomes accepted when the interview ends.
   open, Korri reads `UsageStatsManager` foreground events about once a second.
   It notices when the person switches away and when the app closes.
 
+- **Native games use Steam's discovery shape.** The plugin stays legacy
+  `@korri:android-app`, with system `android` and the package name as `ref`.
+  The Android app gives korrid the installed apps. The plugin's
+  `discovery.discover` handler turns them into `provider-ref-release`
+  observations, and the existing reconciliation writes them, as it does for
+  `@korri:steam/installed-apps` (ADR 0011). Apps the person adds are authored
+  locations. The one new input is the installed-app list, with only fields
+  that PackageManager produces: package name, label and the game marking.
+- **The native-games runner has a launch handler.** Its `launch.prepare`
+  returns an Android launch description, as every other runner returns its
+  launch. No default Android launch convention is added to korrid.
+- **A refused permission weakens the session, not the launch.** Without the
+  accessibility service there is no Guide button. Without Usage access, the
+  session ends only when the person comes back to Korri. Korri says what is
+  missing and asks again on the next external launch.
+
 ## Consequences
 
 - korrid on Android does not load plugins today. Plugin installation, its
