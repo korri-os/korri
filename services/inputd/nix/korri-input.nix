@@ -204,6 +204,12 @@ in
   };
 
   config = lib.mkMerge [
+    {
+      # The service bundle carries this device's InputPlumber data even where
+      # the provider does not run (a host without local input, ADR 0051):
+      # the bundle format requires the Korri profile.
+      services.inputplumber.package = providerPackage;
+    }
     (lib.mkIf cfg.provider.enable {
       assertions = [
         {
@@ -220,10 +226,7 @@ in
         "uinput"
         "uhid"
       ];
-      services.inputplumber = {
-        enable = true;
-        package = providerPackage;
-      };
+      services.inputplumber.enable = true;
       systemd.services.inputplumber = {
         requires =
           lib.optional cfg.provider.sourceHiding.enable "korri-input-source-guard.service"

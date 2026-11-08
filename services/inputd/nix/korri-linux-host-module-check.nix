@@ -115,6 +115,10 @@ assert !serverCfg.services.inputplumber.enable;
 assert !(serverCfg.systemd.services ? korri-inputd);
 assert serverCfg.systemd.services ? korri-input-seat-receiver;
 assert serverCfg.users.groups ? uinput;
+# The bundle still carries this device's InputPlumber data, whose Korri
+# profile the bundle format requires, although the provider does not run.
+assert serverCfg.services.korriBundle.carriesDeviceInputPlumber;
+assert toString serverCfg.services.inputplumber.package == toString cfg.services.inputplumber.package;
 # Plugin units such as Sunshine's require the source guard on every host.
 assert serverCfg.systemd.services ? korri-input-source-guard;
 assert builtins.elem "multi-user.target" serverCfg.systemd.services.korri-input-source-guard.wantedBy;
