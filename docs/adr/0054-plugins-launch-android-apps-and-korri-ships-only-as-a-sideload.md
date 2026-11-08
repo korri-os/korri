@@ -44,6 +44,20 @@ so far. It becomes accepted when the interview ends.
   artifact (ADR 0012, ADR 0052). Korri installs and updates it through
   `PackageInstaller`, and Android asks the person to confirm each time.
 
+- **End closes the session, not always the app.** Android 14 and later let an
+  app stop only its own processes, and no standalone emulator takes a quit
+  command from another app. End closes Korri's live session and brings Korri
+  forward. The app may keep running, and the overlay says so. A runner that
+  can stop its app (RetroArch's `QUIT` network command) stops it.
+- **The Guide button through an accessibility service.** A window over
+  another app cannot see gamepad buttons while that app has focus. A Korri
+  accessibility service with `FLAG_REQUEST_FILTER_KEY_EVENTS` catches the
+  Guide button only and opens the gameplay overlay (ADR 0053). Play forbids
+  this use, which the sideload decision allows.
+- **Usage events tell Korri that the person left.** While a live session is
+  open, Korri reads `UsageStatsManager` foreground events about once a second.
+  It notices when the person switches away and when the app closes.
+
 ## Consequences
 
 - korrid on Android does not load plugins today. Plugin installation, its
@@ -59,5 +73,11 @@ so far. It becomes accepted when the interview ends.
 - Where the person's added apps are stored and how the "get the app" link is
   declared are schema questions. Each must be grounded in legacy or an
   existing producer before it is built.
+- The person grants two special permissions in Android settings: Usage
+  access and the accessibility service. Android shows a strong warning for the
+  accessibility service. Only one service on a device can filter key events,
+  and it sees buttons but not sticks.
+- A game that the person ended can still run in the background. Coming back
+  to it later starts a new live session.
 - Korri owns a signing key for each APK it builds. Losing the key breaks
   updates for every install.

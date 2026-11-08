@@ -92,7 +92,7 @@ Coming back to a live session. Korri raises its window and gives it live input a
 _Avoid_: return, unpause
 
 **End**:
-Destroying a live session on purpose. Unsaved progress is lost.
+Destroying a live session on purpose. Unsaved progress is lost. When Korri cannot stop the game's app, End closes the live session and the app may keep running.
 _Avoid_: quit, kill, close
 
 **Gameplay overlay**:
