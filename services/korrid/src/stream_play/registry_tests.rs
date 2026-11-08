@@ -53,6 +53,7 @@ async fn stream_player_lost_device_stops_its_viewer_and_keeps_the_end_cause() {
     let registry = UpstreamRegistry::new(vec![config]).with_linux_viewer(Arc::new(viewer.clone()));
     viewer.start("exact", "far:47989").await.unwrap();
     registry.set_selected(SelectedRemoteSession {
+            viewer_backgrounded: false,
         participation: Participation::StreamPlayer { game_id: Some("game".into()), game_title: Some("Game".into()), device_label: "far".into() },
         route: SelectedRemoteRoute::Native { device_public_key: key },
         launch_id: "exact".into(),

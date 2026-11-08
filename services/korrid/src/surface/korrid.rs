@@ -679,6 +679,24 @@ impl Korrid {
         )
     }
 
+    pub async fn session_viewer(
+        &self,
+        expected_launch_id: String,
+        action: crate::SessionViewerAction,
+    ) -> crate::SessionViewerOutcome {
+        use crate::SessionViewerOutcome;
+        call!(
+            self,
+            Mapping::Unreachable,
+            SessionViewer,
+            crate::SessionViewerRequest {
+                expected_launch_id,
+                action
+            },
+            SessionViewerOutcome
+        )
+    }
+
     pub async fn session_leave(&self, expected_launch_id: String) -> SessionTransitionOutcome {
         call!(
             self,

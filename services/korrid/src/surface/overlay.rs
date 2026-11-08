@@ -31,6 +31,7 @@ use crate::{
 };
 
 pub const OVERLAY_RESUME_CONTROL_ID: &str = "overlay:resume";
+pub const OVERLAY_DISCONNECT_CONTROL_ID: &str = "overlay:disconnect";
 pub const OVERLAY_END_CONTROL_ID: &str = "overlay:end";
 pub const OVERLAY_OPEN_KORRI_CONTROL_ID: &str = "overlay:open-korri";
 const STATUS_TIMEOUT: Duration = Duration::from_millis(2000);
@@ -54,7 +55,11 @@ fn core_control(
 }
 
 fn core_controls() -> Vec<SurfaceGameplayControl> {
-    vec![
+    core_controls_for(cfg!(target_os = "android"))
+}
+
+fn core_controls_for(stream_viewer: bool) -> Vec<SurfaceGameplayControl> {
+    let mut controls = vec![
         core_control(OVERLAY_RESUME_CONTROL_ID, "Resume", None, false),
         core_control(
             OVERLAY_END_CONTROL_ID,
@@ -63,7 +68,14 @@ fn core_controls() -> Vec<SurfaceGameplayControl> {
             true,
         ),
         core_control(OVERLAY_OPEN_KORRI_CONTROL_ID, "Open Korri", None, false),
-    ]
+    ];
+    if stream_viewer {
+        controls.insert(
+            2,
+            core_control(OVERLAY_DISCONNECT_CONTROL_ID, "Disconnect", None, false),
+        );
+    }
+    controls
 }
 
 fn presentation_interaction(
@@ -226,6 +238,8 @@ fn action_failure(reason: SessionControlFailureReason, message: &str) -> String 
 pub enum OverlayExit {
     /// Show the catalog: the session ended.
     SessionEnded,
+    /// The live Android viewer has resumed and released its Surface.
+    Resumed,
     /// Show the catalog while watching the exact launch's return.
     OpenKorri,
 }
@@ -235,6 +249,7 @@ enum Retry {
     Refresh,
     Resume,
     End,
+    Viewer(crate::SessionViewerAction),
     Invoke(String, Option<SurfaceGameplayControlValue>),
 }
 
@@ -412,7 +427,9 @@ impl OverlayController {
             self.stale();
             return;
         }
-        if matches!(active.phase.as_deref(), Some("running" | "focus-failed")) {
+        if active.phase.as_deref() == Some("focus-failed")
+            || (!cfg!(target_os = "android") && active.phase.as_deref() == Some("running"))
+        {
             self.lock().sticky = false;
             self.could_not_resume();
             return;
@@ -422,6 +439,17 @@ impl OverlayController {
             return;
         }
         let controls = match listed {
+            SessionControlsOutcome::Err(failure)
+                if cfg!(target_os = "android")
+                    && failure.reason == SessionControlFailureReason::Unavailable =>
+            {
+                SessionControls {
+                    launch_id: self.launch_id.clone(),
+                    title: active.title.clone(),
+                    groups: Vec::new(),
+                    retroarch_telemetry: None,
+                }
+            }
             SessionControlsOutcome::Err(failure) => {
                 if failure.reason == SessionControlFailureReason::StaleSession {
                     self.stale();
@@ -496,6 +524,9 @@ impl OverlayController {
             return;
         }
         let SessionTransitionOutcome::Err(failure) = outcome else {
+            if cfg!(target_os = "android") {
+                (self.exit)(OverlayExit::Resumed);
+            }
             return;
         };
         if failure.code == "HostFocusFailed" {
@@ -612,6 +643,28 @@ impl OverlayController {
         }
     }
 
+    async fn viewer_action(&self, action: crate::SessionViewerAction) {
+        let epoch = self.begin();
+        let outcome = self
+            .korrid
+            .session_viewer(self.launch_id.clone(), action)
+            .await;
+        if !self.current(epoch) {
+            return;
+        }
+        match outcome {
+            crate::SessionViewerOutcome::Ok => (self.exit)(match action {
+                crate::SessionViewerAction::OpenKorri => OverlayExit::OpenKorri,
+                crate::SessionViewerAction::Disconnect => OverlayExit::SessionEnded,
+            }),
+            crate::SessionViewerOutcome::Err(failure) => self.problem(
+                "Could not leave the stream",
+                failure.message,
+                Some(Retry::Viewer(action)),
+            ),
+        }
+    }
+
     pub async fn invoke(&self, control_id: String, value: Option<SurfaceGameplayControlValue>) {
         if self.lock().destroyed {
             return;
@@ -619,6 +672,14 @@ impl OverlayController {
         match control_id.as_str() {
             OVERLAY_RESUME_CONTROL_ID => self.resume_game().await,
             OVERLAY_END_CONTROL_ID => self.end_session().await,
+            OVERLAY_OPEN_KORRI_CONTROL_ID if cfg!(target_os = "android") => {
+                self.viewer_action(crate::SessionViewerAction::OpenKorri)
+                    .await
+            }
+            OVERLAY_DISCONNECT_CONTROL_ID if cfg!(target_os = "android") => {
+                self.viewer_action(crate::SessionViewerAction::Disconnect)
+                    .await
+            }
             OVERLAY_OPEN_KORRI_CONTROL_ID => (self.exit)(OverlayExit::OpenKorri),
             _ => self.invoke_plugin(control_id, value).await,
         }
@@ -635,6 +696,7 @@ impl OverlayController {
             Some(Retry::Refresh) => self.refresh().await,
             Some(Retry::Resume) => self.resume_game().await,
             Some(Retry::End) => self.end_session().await,
+            Some(Retry::Viewer(action)) => self.viewer_action(action).await,
             Some(Retry::Invoke(control_id, value)) => {
                 Box::pin(self.invoke_plugin(control_id, value)).await
             }
@@ -662,7 +724,10 @@ pub async fn focused_overlay_session(
             SessionStatusOutcome::Ok(status) => {
                 return status.overlay.filter(|active| {
                     expected_launch_id.is_none_or(|expected| active.launch_id == expected)
-                        && ((allow_frozen && active.phase.as_deref() == Some("frozen"))
+                        && ((allow_frozen && matches!(active.phase.as_deref(), Some("frozen"))
+                            || (allow_frozen
+                                && cfg!(target_os = "android")
+                                && active.phase.as_deref() == Some("running")))
                             || active.phase.as_deref() == Some("focus-failed"))
                 });
             }
@@ -674,4 +739,41 @@ pub async fn focused_overlay_session(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod live_overlay_tests {
+    use super::*;
+
+    #[test]
+    fn android_stream_overlay_offers_disconnect_without_platform_instructions() {
+        let controls = core_controls_for(true);
+        assert_eq!(
+            controls
+                .iter()
+                .map(|c| c.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Resume", "End", "Disconnect", "Open Korri"]
+        );
+        let control = &controls[2];
+        assert!(control.enabled && control.dismiss_on_success && !control.destructive);
+        assert_eq!(
+            control.interaction,
+            SurfaceGameplayControlInteraction::Command
+        );
+        // No new surface request or special meaning for packages to infer.
+        let request: korri_surface_treaty::SurfaceRequest =
+            serde_json::from_value(serde_json::json!({
+                "_tag": "InvokeGameplayControl", "controlId": control.id,
+            }))
+            .unwrap();
+        assert_eq!(request.tag(), "InvokeGameplayControl");
+        assert_eq!(
+            core_controls_for(false)
+                .iter()
+                .map(|c| c.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Resume", "End", "Open Korri"]
+        );
+    }
 }

@@ -252,6 +252,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SessionEnd(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionLeave(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionResume(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionViewer(_) => PeerPolicy::LocalSurfaceHostOnly,
         RpcRequest::SourceStatus(_) => PeerPolicy::CatalogOrStreamScope,
         RpcRequest::PeerList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::GameRoutes(_)

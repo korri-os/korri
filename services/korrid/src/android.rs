@@ -476,7 +476,7 @@ fn provision_result(
 }
 
 /// A semantic local Leave action from the exact native viewer. The same
-/// authenticated RPC performs selection checks, far freeze and overlay effects.
+/// authenticated RPC performs selection checks and publishes Home without freezing the far game.
 #[no_mangle]
 pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_leaveViewer(
     mut env: JNIEnv,
@@ -524,7 +524,7 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_leaveVie
             match response.json::<RpcResponse>().await.ok()? {
                 RpcResponse::SessionLeave(crate::SessionTransitionOutcome::Ok(result))
                     if result.launch_id == launch
-                        && result.state == crate::SessionFreezerState::Frozen =>
+                        && result.state == crate::SessionFreezerState::Running =>
                 {
                     Some(())
                 }

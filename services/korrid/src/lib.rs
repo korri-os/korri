@@ -707,6 +707,32 @@ pub struct SessionResumeRequest {
     pub expected_launch_id: Option<String>,
 }
 
+/// Local stream-viewer effects. They never change the far game's execution.
+/// Grounded in LinuxStreamViewer's background and stop effects.
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionViewerAction {
+    OpenKorri,
+    Disconnect,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionViewerRequest {
+    pub expected_launch_id: String,
+    pub action: SessionViewerAction,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum SessionViewerOutcome {
+    Ok,
+    Err(RpcFailure),
+}
+
 #[typeshare]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -1445,6 +1471,8 @@ pub enum RpcRequest {
     SessionLeave(SessionLeaveRequest),
     #[serde(rename = "app.session.resume")]
     SessionResume(SessionResumeRequest),
+    #[serde(rename = "app.session.viewer")]
+    SessionViewer(SessionViewerRequest),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusRequest),
     #[serde(rename = "app.peer.list")]
@@ -1652,6 +1680,8 @@ pub enum RpcResponse {
     SessionLeave(SessionTransitionOutcome),
     #[serde(rename = "app.session.resume")]
     SessionResume(SessionTransitionOutcome),
+    #[serde(rename = "app.session.viewer")]
+    SessionViewer(SessionViewerOutcome),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusOutcome),
     #[serde(rename = "app.peer.list")]
@@ -1894,7 +1924,9 @@ impl AppState {
         outcome: &SessionTransitionOutcome,
     ) {
         match outcome {
-            SessionTransitionOutcome::Ok(_) if self.rpc_surface == RpcSurface::LocalControl => {
+            SessionTransitionOutcome::Ok(_)
+                if self.rpc_surface == RpcSurface::LocalControl || cfg!(target_os = "android") =>
+            {
                 self.record_overlay_intent(outcome);
             }
             SessionTransitionOutcome::Err(failure)
@@ -1925,7 +1957,7 @@ impl AppState {
     }
 
     fn correlate_overlay_status(&self, outcome: SessionStatusOutcome) -> SessionStatusOutcome {
-        correlate_overlay_status(&self.overlay_intent, outcome)
+        correlate_overlay_status_for(&self.overlay_intent, outcome, cfg!(target_os = "android"))
     }
 }
 
@@ -1992,9 +2024,18 @@ fn reconcile_stop_overlay_intent(
     }
 }
 
+#[cfg(test)]
 fn correlate_overlay_status(
     overlay_intent: &overlay_intent::OverlayIntent,
+    outcome: SessionStatusOutcome,
+) -> SessionStatusOutcome {
+    correlate_overlay_status_for(overlay_intent, outcome, false)
+}
+
+fn correlate_overlay_status_for(
+    overlay_intent: &overlay_intent::OverlayIntent,
     mut outcome: SessionStatusOutcome,
+    live_overlay: bool,
 ) -> SessionStatusOutcome {
     let mut intent = overlay_intent
         .lock()
@@ -2009,7 +2050,10 @@ fn correlate_overlay_status(
                             && matches!(
                                 active.phase.as_deref(),
                                 Some("frozen" | "focus-failed")
-                            ) =>
+                            )
+                            || (active.launch_id == expected
+                                && live_overlay
+                                && active.phase.as_deref() == Some("running")) =>
                     {
                         status.overlay = Some(active.clone());
                     }
@@ -3543,7 +3587,43 @@ async fn dispatch(
             );
             RpcResponse::SessionEnd(outcome)
         }
+        RpcRequest::SessionViewer(request) => {
+            let result = match &state.mode {
+                ServerMode::Brain(brain) if cfg!(target_os = "android") => {
+                    brain
+                        .upstream
+                        .session_viewer(&request.expected_launch_id, request.action)
+                        .await
+                }
+                _ => Err(upstreams::UpstreamError::Failure(
+                    "Local viewer control is unavailable".into(),
+                )),
+            };
+            let outcome = match result {
+                Ok(()) => {
+                    state.clear_overlay_intent(Some(&request.expected_launch_id));
+                    SessionViewerOutcome::Ok
+                }
+                Err(error) => SessionViewerOutcome::Err(upstream_failure(error)),
+            };
+            RpcResponse::SessionViewer(outcome)
+        }
         RpcRequest::SessionLeave(request) => {
+            if cfg!(target_os = "android") {
+                if let ServerMode::Brain(brain) = &state.mode {
+                    let outcome = session_freeze_outcome(
+                        brain
+                            .upstream
+                            .session_leave_live(request.expected_launch_id.as_deref())
+                            .await,
+                    );
+                    state.reconcile_freeze_overlay_intent(
+                        request.expected_launch_id.as_deref(),
+                        &outcome,
+                    );
+                    return Ok(RpcResponse::SessionLeave(outcome));
+                }
+            }
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => session_freeze_outcome(
                     brain
@@ -3597,6 +3677,21 @@ async fn dispatch(
             RpcResponse::SessionLeave(outcome)
         }
         RpcRequest::SessionResume(request) => {
+            if cfg!(target_os = "android") {
+                if let ServerMode::Brain(brain) = &state.mode {
+                    let outcome = session_freeze_outcome(
+                        brain
+                            .upstream
+                            .session_resume_live(request.expected_launch_id.as_deref())
+                            .await,
+                    );
+                    state.reconcile_thaw_overlay_intent(
+                        request.expected_launch_id.as_deref(),
+                        &outcome,
+                    );
+                    return Ok(RpcResponse::SessionResume(outcome));
+                }
+            }
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => session_freeze_outcome(
                     brain
@@ -6613,6 +6708,27 @@ mod tests {
                 changed: true,
             },)
         ));
+    }
+
+    #[test]
+    fn android_overlay_intent_keeps_the_exact_running_launch_while_linux_does_not() {
+        for live_overlay in [false, true] {
+            let intent = overlay_intent::OverlayIntent::default();
+            *intent.lock().unwrap() = Some("a".into());
+            let status: SessionStatus = serde_json::from_value(serde_json::json!({
+                "active": {"launchId": "a", "phase": "running"}
+            }))
+            .unwrap();
+            let SessionStatusOutcome::Ok(status) = correlate_overlay_status_for(
+                &intent,
+                SessionStatusOutcome::Ok(status),
+                live_overlay,
+            ) else {
+                panic!("expected status")
+            };
+            assert_eq!(status.overlay.is_some(), live_overlay);
+            assert_eq!(intent.lock().unwrap().is_some(), live_overlay);
+        }
     }
 
     #[test]

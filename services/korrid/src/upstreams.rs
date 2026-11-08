@@ -307,6 +307,8 @@ struct SelectedRemoteSession {
     route: SelectedRemoteRoute,
     launch_id: String,
     viewer: Option<SelectedViewer>,
+    /// Local Open Korri intent; independent of the far execution phase.
+    viewer_backgrounded: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1001,6 +1003,7 @@ impl UpstreamRegistry {
                     launch_id: prepared.session_id,
                 };
                 self.set_selected(SelectedRemoteSession {
+                    viewer_backgrounded: false,
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Legacy {
                         label: host.label.clone(),
@@ -1036,6 +1039,7 @@ impl UpstreamRegistry {
                 );
                 let prepared = client.prepare_stream(game_id, viewer_display).await?;
                 let selected = SelectedRemoteSession {
+                    viewer_backgrounded: false,
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Native {
                         device_public_key: route_key,
@@ -1097,7 +1101,7 @@ impl UpstreamRegistry {
         let Some(viewer) = &selected.viewer else {
             return Ok(());
         };
-        let viewer_backgrounded = far_phase.viewer_backgrounded();
+        let viewer_backgrounded = selected.viewer_backgrounded || far_phase.viewer_backgrounded();
         let mut recovering = selected.clone();
         let result = match self.viewer.status(&selected.launch_id).await {
             Ok(LinuxViewerStatus::Running) if viewer_backgrounded => {
@@ -1330,6 +1334,102 @@ impl UpstreamRegistry {
             unreachable!("native_host_by_route_key returned a legacy client")
         };
         client.source_status(device_public_key).await
+    }
+
+    /// Android Leave holds input in its Surface host, not the far cgroup freezer.
+    /// Validate the exact selected launch using the real peer before publishing Home.
+    pub async fn session_leave_live(
+        &self,
+        expected: Option<&str>,
+    ) -> Result<SessionTransitionResult, UpstreamError> {
+        let registry = self.resolved()?;
+        let _mutation = registry.remote_prepare_mutation.lock().await;
+        let selected = registry.exact_live_selection(expected).await?;
+        Ok(SessionTransitionResult {
+            launch_id: selected.launch_id,
+            state: crate::SessionFreezerState::Running,
+            changed: false,
+        })
+    }
+
+    pub async fn session_resume_live(
+        &self,
+        expected: Option<&str>,
+    ) -> Result<SessionTransitionResult, UpstreamError> {
+        let registry = self.resolved()?;
+        let _mutation = registry.remote_prepare_mutation.lock().await;
+        let selected = registry.exact_live_selection(expected).await?;
+        registry
+            .viewer
+            .resume_and_focus(&selected.launch_id)
+            .await
+            .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
+        let mut resumed = selected.clone();
+        resumed.viewer_backgrounded = false;
+        registry.set_selected(resumed);
+        Ok(SessionTransitionResult {
+            launch_id: selected.launch_id,
+            state: crate::SessionFreezerState::Running,
+            changed: false,
+        })
+    }
+
+    pub async fn session_viewer(
+        &self,
+        expected: &str,
+        action: crate::SessionViewerAction,
+    ) -> Result<(), UpstreamError> {
+        let registry = self.resolved()?;
+        let _mutation = registry.remote_prepare_mutation.lock().await;
+        let selected = registry.exact_live_selection(Some(expected)).await?;
+        match action {
+            crate::SessionViewerAction::OpenKorri => registry.viewer.background(expected).await,
+            crate::SessionViewerAction::Disconnect => registry.viewer.stop(expected).await,
+        }
+        .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
+        if action == crate::SessionViewerAction::OpenKorri {
+            let mut backgrounded = selected.clone();
+            backgrounded.viewer_backgrounded = true;
+            registry.set_selected(backgrounded);
+        }
+        if action == crate::SessionViewerAction::Disconnect {
+            if matches!(selected.participation, Participation::StreamPlayer { .. }) {
+                registry.stop_stream_player(&selected).await?;
+            } else {
+                registry.clear_selected_if(&selected);
+            }
+        }
+        Ok(())
+    }
+
+    async fn exact_live_selection(
+        &self,
+        expected: Option<&str>,
+    ) -> Result<SelectedRemoteSession, UpstreamError> {
+        let expected = expected
+            .filter(|id| !id.is_empty())
+            .ok_or(UpstreamError::ExpectedLaunchIdRequired)?;
+        let selected = self.selected().ok_or(UpstreamError::NoActiveSession)?;
+        if selected.launch_id != expected {
+            return Err(UpstreamError::StaleLaunchIdentity);
+        }
+        match self.selected_status(&selected).await? {
+            UpstreamSessionStatus::SessionStatus {
+                active: Some(active),
+            } if active.launch_id == expected && active.phase.as_deref() == Some("running") => {
+                Ok(selected)
+            }
+            UpstreamSessionStatus::SessionStatus { active: None } => {
+                Err(UpstreamError::NoActiveSession)
+            }
+            UpstreamSessionStatus::SessionStatus {
+                active: Some(active),
+            } if active.launch_id != expected => Err(UpstreamError::SelectedRemoteSessionReplaced),
+            _ => Err(viewer_error(
+                "SessionNotRunning",
+                "The selected game is not running",
+            )),
+        }
     }
 
     pub async fn session_freeze(
@@ -1875,6 +1975,7 @@ mod tests {
             .find(|host| matches!(host.client, RegisteredClient::Native(_)))
             .unwrap();
         registry.set_selected(SelectedRemoteSession {
+            viewer_backgrounded: false,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: host.native_route_key().unwrap(),
@@ -3019,6 +3120,7 @@ command = ["native-game"]
             .find(|host| matches!(host.client, RegisteredClient::Native(_)))
             .unwrap();
         registry.set_selected(SelectedRemoteSession {
+            viewer_backgrounded: false,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: host.native_route_key().unwrap(),
@@ -3276,6 +3378,117 @@ command = ["native-game"]
             Some(state.launch_id.as_str())
         );
         assert!(state.active_phase.lock().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn android_leave_resume_and_disconnect_never_freeze_or_stop_the_far_game() {
+        let (native_url, state) = exact_native_server(false).await;
+        let viewer = TestLinuxStreamViewer::default();
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+            .with_linux_viewer(Arc::new(viewer.clone()));
+        let prepared = registry.prepare_stream("game", None).await.unwrap();
+        let launch = prepared.session.launch_id;
+        state.fail_next_freeze(); // A freeze would fail, not quietly pass this test.
+        for _ in 0..4 {
+            let result = registry.session_leave_live(Some(&launch)).await.unwrap();
+            assert_eq!(result.state, crate::SessionFreezerState::Running);
+            assert!(!result.changed);
+            assert_eq!(
+                state.active_phase.lock().unwrap().as_deref(),
+                Some("running")
+            );
+            registry.session_resume_live(Some(&launch)).await.unwrap();
+        }
+        assert_eq!(*state.freeze_failures.lock().unwrap(), 1);
+        assert!(!viewer.calls().iter().any(|call| matches!(
+            call.action,
+            LinuxViewerAction::Background | LinuxViewerAction::Stop
+        )));
+        registry
+            .session_viewer(&launch, crate::SessionViewerAction::Disconnect)
+            .await
+            .unwrap();
+        assert!(registry.selected().is_none());
+        assert_eq!(
+            state.active_phase.lock().unwrap().as_deref(),
+            Some("running")
+        );
+        assert_eq!(
+            viewer.calls().last().unwrap().action,
+            LinuxViewerAction::Stop
+        );
+    }
+
+    #[tokio::test]
+    async fn android_open_korri_stays_backgrounded_through_observation_until_resume() {
+        let (native_url, state) = exact_native_server(false).await;
+        let viewer = TestLinuxStreamViewer::default();
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+            .with_linux_viewer(Arc::new(viewer.clone()));
+        let launch = registry
+            .prepare_stream("game", None)
+            .await
+            .unwrap()
+            .session
+            .launch_id;
+        registry
+            .session_viewer(&launch, crate::SessionViewerAction::OpenKorri)
+            .await
+            .unwrap();
+        for _ in 0..3 {
+            registry.session_status().await.unwrap();
+        }
+        assert!(!viewer
+            .calls()
+            .iter()
+            .any(|call| call.action == LinuxViewerAction::ResumeAndFocus));
+        registry.session_resume_live(Some(&launch)).await.unwrap();
+        assert_eq!(
+            viewer.calls().last().unwrap().action,
+            LinuxViewerAction::ResumeAndFocus
+        );
+        assert_eq!(
+            state.active_phase.lock().unwrap().as_deref(),
+            Some("running")
+        );
+        registry.session_stop(Some(&launch), false).await.unwrap();
+        assert!(state.active_phase.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn live_viewer_controls_refuse_missing_stale_and_replaced_launches() {
+        let (native_url, _state) = exact_native_server(false).await;
+        let viewer = TestLinuxStreamViewer::default();
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+            .with_linux_viewer(Arc::new(viewer.clone()));
+        registry.prepare_stream("game", None).await.unwrap();
+        assert!(matches!(
+            registry.session_leave_live(None).await,
+            Err(UpstreamError::ExpectedLaunchIdRequired)
+        ));
+        assert!(matches!(
+            registry.session_leave_live(Some("other")).await,
+            Err(UpstreamError::StaleLaunchIdentity)
+        ));
+        assert!(matches!(
+            registry.session_resume_live(Some("other")).await,
+            Err(UpstreamError::StaleLaunchIdentity)
+        ));
+        assert!(matches!(
+            registry
+                .session_viewer("other", crate::SessionViewerAction::Disconnect)
+                .await,
+            Err(UpstreamError::StaleLaunchIdentity)
+        ));
+        assert_eq!(viewer.calls().len(), 1);
+        let mut replacement = registry.selected().unwrap();
+        replacement.launch_id = "replacement".into();
+        registry.set_selected(replacement);
+        assert!(matches!(
+            registry.session_leave_live(Some("replacement")).await,
+            Err(UpstreamError::SelectedRemoteSessionReplaced)
+        ));
+        assert_eq!(viewer.calls().len(), 1);
     }
 
     #[tokio::test]
@@ -4137,6 +4350,7 @@ command = ["native-game"]
             UpstreamHostConfig::native("sobo", reachable),
         ]);
         let selected = SelectedRemoteSession {
+            viewer_backgrounded: false,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: registry.hosts[0].device_public_key.clone().unwrap(),
@@ -4286,6 +4500,7 @@ command = ["native-game"]
             "http://127.0.0.1:9".into(),
         )]);
         let selected = SelectedRemoteSession {
+            viewer_backgrounded: false,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: registry.hosts[0].device_public_key.clone().unwrap(),

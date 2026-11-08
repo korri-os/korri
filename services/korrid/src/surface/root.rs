@@ -805,7 +805,7 @@ impl Root {
             Box::new(move |exit| {
                 let Some(root) = weak.upgrade() else { return };
                 match exit {
-                    OverlayExit::SessionEnded => root.show_catalog(None),
+                    OverlayExit::SessionEnded | OverlayExit::Resumed => root.show_catalog(None),
                     OverlayExit::OpenKorri => root.show_catalog(Some(launch_id.clone())),
                 }
             }),
@@ -831,9 +831,10 @@ impl Root {
             None => focused_overlay_session(&self.korrid, true, None, 4).await,
         };
         let found = found.filter(|active| {
-            // A Home intent for the launch the person left with Open Korri
-            // reopens it only when it is focus-failed.
-            !from_intent
+            // Android's new Home intent can reopen the same running launch.
+            // Linux still reopens an Open Korri launch only on focus failure.
+            cfg!(target_os = "android")
+                || !from_intent
                 || retained.as_ref() != Some(&active.launch_id)
                 || active.phase.as_deref() == Some("focus-failed")
         });

@@ -1845,6 +1845,20 @@ export interface SessionTransitionResult {
 	changed: boolean;
 }
 
+/**
+ * Local stream-viewer effects. They never change the far game's execution.
+ * Grounded in LinuxStreamViewer's background and stop effects.
+ */
+export enum SessionViewerAction {
+	OpenKorri = "openKorri",
+	Disconnect = "disconnect",
+}
+
+export interface SessionViewerRequest {
+	expectedLaunchId: string;
+	action: SessionViewerAction;
+}
+
 export interface SettingsSnapshot {
 	revision: string;
 	deviceName?: string;
@@ -2169,6 +2183,7 @@ export type RpcRequest =
 	| { _tag: "app.session.end", payload: SessionEndRequest }
 	| { _tag: "app.session.leave", payload: SessionLeaveRequest }
 	| { _tag: "app.session.resume", payload: SessionResumeRequest }
+	| { _tag: "app.session.viewer", payload: SessionViewerRequest }
 	| { _tag: "app.source.status", payload: SourceStatusRequest }
 	| { _tag: "app.peer.list", payload: PeerListRequest }
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
@@ -2266,6 +2281,7 @@ export type RpcResponse =
 	| { _tag: "app.session.end", outcome: SessionEndOutcome }
 	| { _tag: "app.session.leave", outcome: SessionTransitionOutcome }
 	| { _tag: "app.session.resume", outcome: SessionTransitionOutcome }
+	| { _tag: "app.session.viewer", outcome: SessionViewerOutcome }
 	| { _tag: "app.source.status", outcome: SourceStatusOutcome }
 	| { _tag: "app.peer.list", outcome: PeerListOutcome }
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }
@@ -2360,6 +2376,10 @@ export type SessionStreamPlayOutcome =
 
 export type SessionTransitionOutcome =
 	| { _tag: "Ok", payload: SessionTransitionResult }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SessionViewerOutcome =
+	| { _tag: "Ok", payload?: undefined }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SettingsSnapshotOutcome =

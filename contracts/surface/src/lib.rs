@@ -732,7 +732,8 @@ pub struct SurfaceGameplayOverlayPresentation {
     pub kind: SurfaceGameplayOverlayKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// Overlay-owned controls such as Resume, always before plugin groups.
+    /// Overlay-owned controls (Resume, End, Disconnect, Open Korri), before plugin
+    /// groups. Hosts publish only the controls this session supports; ids are opaque.
     pub controls: Vec<SurfaceGameplayControl>,
     pub groups: Vec<SurfaceGameplayControlGroup>,
     /// Who plays on this session's stream: person names, or device labels

@@ -117,6 +117,7 @@ impl UpstreamRegistry {
         let address = viewer.moonlight_address.clone();
         let mut active = client.stream_play(launch_id, device_label).await?;
         let selected = SelectedRemoteSession {
+            viewer_backgrounded: false,
             participation: Participation::StreamPlayer {
                 game_id: active.game_id.clone(),
                 game_title: active.title.clone(),

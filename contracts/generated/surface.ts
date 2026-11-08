@@ -419,7 +419,10 @@ export interface SurfaceGameplayControlGroup {
 export interface SurfaceGameplayOverlayPresentation {
 	kind: "gameplay-overlay";
 	title?: string;
-	/** Overlay-owned controls such as Resume, always before plugin groups. */
+	/**
+	 * Overlay-owned controls (Resume, End, Disconnect, Open Korri), before plugin
+	 * groups. Hosts publish only the controls this session supports; ids are opaque.
+	 */
 	controls: SurfaceGameplayControl[];
 	groups: SurfaceGameplayControlGroup[];
 	/**
