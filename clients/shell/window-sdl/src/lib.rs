@@ -21,6 +21,7 @@
 mod ffi;
 pub mod keys;
 mod probe;
+mod see_through;
 mod webos_cursor;
 
 use std::cell::{Cell, RefCell};
@@ -182,6 +183,8 @@ struct Screen {
     buffer: Vec<PremultipliedRgbaColor>,
     /// The texture no longer holds the buffer (new texture, device reset).
     upload_all: bool,
+    /// Explicit plane-composition diagnostic; absent in normal rendering.
+    see_through: Option<see_through::Diagnostic>,
 }
 
 #[derive(Default)]
@@ -413,14 +416,30 @@ impl SdlPlatform {
                 }
                 screen.upload_all = false;
             }
-            // SAFETY: renderer and texture are live; full-target copy.
-            unsafe {
-                (self.shared.sdl.SDL_RenderCopy)(
+            if let Some(diagnostic) = &screen.see_through {
+                if let Err(error) = diagnostic.copy(
+                    &self.shared.sdl,
                     screen.renderer,
                     screen.texture,
-                    std::ptr::null(),
-                    std::ptr::null(),
-                );
+                    screen.width,
+                    screen.height,
+                ) {
+                    failure = Some(error);
+                    return;
+                }
+            } else {
+                // SAFETY: renderer and texture are live; full-target copy.
+                unsafe {
+                    (self.shared.sdl.SDL_RenderCopy)(
+                        screen.renderer,
+                        screen.texture,
+                        std::ptr::null(),
+                        std::ptr::null(),
+                    );
+                }
+            }
+            // SAFETY: live renderer on the event-loop thread.
+            unsafe {
                 (self.shared.sdl.SDL_RenderPresent)(screen.renderer);
             }
             korri_input_trace::presented();
@@ -816,6 +835,10 @@ impl SdlPlatform {
 
 /// SDL's `wl_display`, or null when SDL is not on Wayland.
 fn wayland_display(sdl: &Sdl, window: *mut ffi::Window) -> *mut std::ffi::c_void {
+    wayland_window_info(sdl, window).map_or(std::ptr::null_mut(), |info| info.info[0])
+}
+
+fn wayland_window_info(sdl: &Sdl, window: *mut ffi::Window) -> Option<ffi::SysWmInfo> {
     let mut info = ffi::SysWmInfo {
         version: ffi::Version {
             major: 2,
@@ -828,13 +851,17 @@ fn wayland_display(sdl: &Sdl, window: *mut ffi::Window) -> *mut std::ffi::c_void
     // SAFETY: live window; `info` has the 2.0.4 layout and its version set.
     let ok = unsafe { (sdl.SDL_GetWindowWMInfo)(window, &mut info) } != 0;
     if ok && info.subsystem == ffi::SDL_SYSWM_WAYLAND {
-        info.info[0]
+        Some(info)
     } else {
-        std::ptr::null_mut()
+        None
     }
 }
 
 fn open_screen(sdl: &Sdl, title: &str, placement: Placement) -> Result<Screen, String> {
+    let see_through = see_through::enabled(std::env::var_os("KORRI_SHELL_SEE_THROUGH").as_deref());
+    if see_through {
+        see_through::request_alpha(sdl)?;
+    }
     let title = CString::new(title).unwrap();
     let (width, height, flags) = match placement {
         Placement::Windowed { width, height } => (
@@ -915,6 +942,27 @@ fn open_screen(sdl: &Sdl, title: &str, placement: Placement) -> Result<Screen, S
             formats.contains(&ffi::SDL_PIXELFORMAT_ABGR8888)
         );
     }
+    let diagnostic = if see_through {
+        // The GL attribute query is meaningful only with a GL renderer.
+        // SDL compatibility libraries may return requested attributes even
+        // for a software renderer with no current GL context.
+        let name = unsafe { ffi::text(info.name) };
+        eprintln!("sdl: see-through: renderer {name}");
+        let gl_renderer = matches!(name.as_str(), "opengl" | "opengles" | "opengles2");
+        match see_through::Diagnostic::open(sdl, window, gl_renderer) {
+            Ok(diagnostic) => Some(diagnostic),
+            Err(error) => {
+                // SAFETY: live renderer/window, owned here; no texture yet.
+                unsafe {
+                    (sdl.SDL_DestroyRenderer)(renderer);
+                    (sdl.SDL_DestroyWindow)(window);
+                }
+                return Err(error);
+            }
+        }
+    } else {
+        None
+    };
     let mut screen = Screen {
         window,
         renderer,
@@ -924,6 +972,7 @@ fn open_screen(sdl: &Sdl, title: &str, placement: Placement) -> Result<Screen, S
         pixels_per_point: 1.0,
         buffer: Vec::new(),
         upload_all: true,
+        see_through: diagnostic,
     };
     measure(sdl, &mut screen);
     if let Err(error) = make_texture(sdl, &mut screen) {
@@ -981,7 +1030,9 @@ fn make_texture(sdl: &Sdl, screen: &mut Screen) -> Result<(), String> {
             sdl.error()
         ));
     }
-    // The view paints an opaque background; copy without blending.
+    // Copy RGBA unchanged, including premultiplied alpha. The diagnostic
+    // clears the target and omits the left half, rather than alpha-blending
+    // this already-premultiplied texture with SDL 2.0.4's straight-alpha mode.
     // SAFETY: live texture.
     unsafe { (sdl.SDL_SetTextureBlendMode)(texture, ffi::SDL_BLENDMODE_NONE) };
     screen.texture = texture;
@@ -1026,3 +1077,5 @@ fn upload(sdl: &Sdl, screen: &Screen, (x, y, w, h): (u32, u32, u32, u32)) -> Res
 
 #[cfg(test)]
 mod input_pump_tests;
+#[cfg(test)]
+mod see_through_tests;

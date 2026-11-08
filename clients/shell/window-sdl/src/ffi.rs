@@ -30,6 +30,8 @@ pub const SDL_WINDOWPOS_UNDEFINED: c_int = 0x1FFF_0000;
 // SDL_RendererFlags and SDL_TextureAccess (SDL_render.h).
 pub const SDL_RENDERER_ACCELERATED: u32 = 0x0000_0002;
 pub const SDL_TEXTUREACCESS_STREAMING: c_int = 1;
+/// SDL_GLattr (SDL_video.h, 2.0.4).
+pub const SDL_GL_ALPHA_SIZE: c_int = 3;
 // SDL_BlendMode (SDL_blendmode.h).
 pub const SDL_BLENDMODE_NONE: c_int = 0;
 
@@ -262,9 +264,13 @@ sdl_functions! {
     SDL_IsScreenSaverEnabled() -> c_int;
     SDL_StopTextInput();
     SDL_GetDesktopDisplayMode(c_int, *mut DisplayMode) -> c_int;
+    SDL_GL_SetAttribute(c_int, c_int) -> c_int;
+    SDL_GL_GetAttribute(c_int, *mut c_int) -> c_int;
     SDL_CreateWindow(*const c_char, c_int, c_int, c_int, c_int, u32) -> *mut Window;
     SDL_DestroyWindow(*mut Window);
     SDL_GetWindowSize(*mut Window, *mut c_int, *mut c_int);
+    SDL_GetWindowPixelFormat(*mut Window) -> u32;
+    SDL_GetPixelFormatName(u32) -> *const c_char;
     SDL_CreateRenderer(*mut Window, c_int, u32) -> *mut Renderer;
     SDL_DestroyRenderer(*mut Renderer);
     SDL_GetRendererInfo(*mut Renderer, *mut RendererInfo) -> c_int;
@@ -273,6 +279,8 @@ sdl_functions! {
     SDL_DestroyTexture(*mut Texture);
     SDL_SetTextureBlendMode(*mut Texture, c_int) -> c_int;
     SDL_UpdateTexture(*mut Texture, *const Rect, *const c_void, c_int) -> c_int;
+    SDL_SetRenderDrawColor(*mut Renderer, u8, u8, u8, u8) -> c_int;
+    SDL_RenderClear(*mut Renderer) -> c_int;
     SDL_RenderCopy(*mut Renderer, *mut Texture, *const Rect, *const Rect) -> c_int;
     SDL_RenderPresent(*mut Renderer);
     SDL_RegisterEvents(c_int) -> u32;
