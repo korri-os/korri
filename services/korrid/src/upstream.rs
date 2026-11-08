@@ -16,23 +16,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+/// A legacy peer's base URL. It comes only from configured upstreams
+/// (`KORRID_UPSTREAMS` or `upstreams.json`); korrid has no default peer.
 #[derive(Clone, Debug)]
 pub struct UpstreamConfig {
     pub base_url: String,
-}
-
-impl UpstreamConfig {
-    pub fn from_env() -> Self {
-        Self {
-            // Scaffolding default: aka's LAN control URL. Replaced by
-            // pairing-derived discovery when the shell owns upstream wiring.
-            base_url: std::env::var("KORRID_UPSTREAM_URL")
-                // Every device is on Tailscale, so peers are named rather
-                // than addressed: a LAN IP only works on one network and
-                // breaks the moment a device leaves the house.
-                .unwrap_or_else(|_| "http://aka:3001".into()),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

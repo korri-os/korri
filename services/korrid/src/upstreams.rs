@@ -494,34 +494,29 @@ impl UpstreamRegistry {
         if let Ok(json) = std::env::var("KORRID_UPSTREAMS") {
             return Self::from_json("KORRID_UPSTREAMS", &json);
         }
-        Self::from_file_or_default(
-            path,
-            UpstreamHostConfig::legacy(
-                std::env::var("KORRID_UPSTREAM_LABEL").unwrap_or_else(|_| "aka".into()),
-                UpstreamConfig::from_env().base_url,
-            ),
-        )
+        Self::from_file_or_empty(path, None)
     }
 
     pub fn from_env_or_file(path: &Path, credentials: PeerCredentials) -> Self {
         if let Ok(json) = std::env::var("KORRID_UPSTREAMS") {
             return Self::from_json_secure("KORRID_UPSTREAMS", &json, credentials);
         }
-        Self::from_file_or_empty_secure(path, credentials)
+        Self::from_file_or_empty(path, Some(credentials))
     }
 
-    fn from_file_or_empty_secure(path: &Path, credentials: PeerCredentials) -> Self {
-        match Self::from_file_inner(path, Some(credentials.clone())) {
+    /// No configured file means no upstream peers. There is no default host.
+    fn from_file_or_empty(path: &Path, credentials: Option<PeerCredentials>) -> Self {
+        match Self::from_file_inner(path, credentials.clone()) {
             Ok(registry) => registry,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self {
                 last_stream_play_end: Arc::new(Mutex::new(None)),
                 hosts: vec![],
-                credentials: Some(credentials.clone()),
+                credentials: credentials.clone(),
                 directory: None,
                 configuration_error: None,
                 deferred_file_config: Some(DeferredFileConfig {
                     path: path.to_owned(),
-                    credentials: Some(credentials),
+                    credentials,
                     resolved: Arc::new(OnceLock::new()),
                 }),
                 selected_remote_session: Arc::new(Mutex::new(None)),
@@ -2481,9 +2476,9 @@ mod tests {
             .as_deref()
             .is_some_and(|message| message.contains("moonlightAddress")));
 
-        let missing_file = UpstreamRegistry::from_file_or_empty_secure(
+        let missing_file = UpstreamRegistry::from_file_or_empty(
             &private.path().join("missing-upstreams.json"),
-            credentials,
+            Some(credentials),
         );
         assert!(missing_file.hosts.is_empty());
         assert!(missing_file.configuration_error.is_none());
