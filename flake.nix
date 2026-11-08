@@ -64,6 +64,8 @@
       };
       nixosModules = {
         korri-product = import ./nix/product/nixos-module.nix { korri = self; };
+        # The server part alone, for a device that only serves peers (ADR 0051).
+        korri-server = import ./nix/product/server.nix { korri = self; };
         korri-device-cache = import ./nix/device-cache/nixos-module.nix;
         korri-bundle = import ./services/inputd/nix/korri-bundle-module.nix { korri = self; };
         korri-input = import ./services/inputd/nix/korri-input.nix { korri = self; };

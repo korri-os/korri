@@ -18,11 +18,16 @@ const STORE_ROOT: &str = "/nix/store";
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_POLL: Duration = Duration::from_millis(250);
-const UNITS: [&str; 4] = [
-    "inputplumber.service",
-    "korri-inputd.service",
-    "korri-local-signer.service",
-    "korrid.service",
+const INPUTD_UNIT: &str = "korri-inputd.service";
+/// Every bundle unit in restart order, and whether the device may lack it.
+/// Local controller capture belongs to the client part (ADR 0051), so a
+/// device that runs only the server part has no InputPlumber or inputd.
+const UNITS: [(&str, bool); 5] = [
+    ("inputplumber.service", true),
+    (INPUTD_UNIT, true),
+    ("korri-local-signer.service", false),
+    ("korrid.service", false),
+    (OPTIONAL_INPUT_SEAT_UNIT, true),
 ];
 const OPTIONAL_INPUT_SEAT_UNIT: &str = "korri-input-seat-receiver.service";
 
@@ -258,15 +263,15 @@ async fn restart_and_wait_with(
     health_timeout: Duration,
     health_poll: Duration,
 ) -> Result<(), String> {
-    let mut units = UNITS.to_vec();
-    if run_systemctl(
-        systemctl,
-        ["is-enabled", "--quiet", OPTIONAL_INPUT_SEAT_UNIT],
-    )
-    .await?
-    {
-        units.push(OPTIONAL_INPUT_SEAT_UNIT);
+    let mut units = Vec::with_capacity(UNITS.len());
+    for (unit, optional) in UNITS {
+        if !optional || run_systemctl(systemctl, ["is-enabled", "--quiet", unit]).await? {
+            units.push(unit);
+        }
     }
+    // inputd reports Ready only once it holds a controller. Wait for that
+    // only where inputd runs.
+    let inputd = units.contains(&INPUTD_UNIT);
     run_systemctl(
         systemctl,
         ["--no-block", "restart"]
@@ -288,15 +293,13 @@ async fn restart_and_wait_with(
                 break;
             }
         }
+        if all_active && !inputd {
+            return Ok(());
+        }
         if all_active {
             let status = run_systemctl_output(
                 systemctl,
-                [
-                    "show",
-                    "--property=StatusText",
-                    "--value",
-                    "korri-inputd.service",
-                ],
+                ["show", "--property=StatusText", "--value", INPUTD_UNIT],
             )
             .await?;
             if status.status.success()
@@ -451,16 +454,72 @@ mod tests {
         assert_eq!(fs::canonicalize(state.join("previous")).unwrap(), first);
     }
 
-    fn fake_systemctl(root: &Path, status: &str) -> PathBuf {
-        let script = root.join(format!("systemctl-{status}"));
+    const LOCAL_INPUT: [&str; 2] = ["inputplumber.service", "korri-inputd.service"];
+
+    /// A systemctl whose `is-enabled` accepts only `enabled` units. Every
+    /// restart is logged, so a test can see which units were restarted.
+    fn fake_systemctl_with(root: &Path, status: &str, enabled: &[&str]) -> PathBuf {
+        let script = root.join(format!("systemctl-{status}-{}", enabled.len()));
         let shell = std::env::var("SHELL").unwrap();
+        let log = root.join("restarts");
+        let enabled = enabled.join("|");
+        let enabled = if enabled.is_empty() {
+            "/none/".to_owned()
+        } else {
+            enabled
+        };
         fs::write(
             &script,
-            format!("#!{shell}\n[ \"$1\" != --no-block ] || shift\ncase \"$1\" in\n  restart) exit 0 ;;\n  is-active) exit 0 ;;\n  show) printf '%s\n' '{status}'; exit 0 ;;\nesac\nexit 1\n"),
+            format!("#!{shell}\n[ \"$1\" != --no-block ] || shift\ncase \"$1\" in\n  restart) shift; printf '%s\\n' \"$*\" >> '{}'; exit 0 ;;\n  is-enabled) case \"$3\" in {enabled}) exit 0 ;; esac; exit 1 ;;\n  is-active) exit 0 ;;\n  show) printf '%s\n' '{status}'; exit 0 ;;\nesac\nexit 1\n", log.display()),
         )
         .unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o555)).unwrap();
         script
+    }
+
+    fn fake_systemctl(root: &Path, status: &str) -> PathBuf {
+        fake_systemctl_with(root, status, &LOCAL_INPUT)
+    }
+
+    #[tokio::test]
+    async fn a_device_without_local_input_needs_no_inputd_readiness() {
+        // ADR 0051: the server part alone has no InputPlumber or inputd.
+        let root = tempfile::tempdir().unwrap();
+        let missing = fake_systemctl_with(root.path(), "Missing", &[]);
+        restart_and_wait_with(
+            &missing,
+            Duration::from_millis(15),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        let restarted = fs::read_to_string(root.path().join("restarts")).unwrap();
+        assert_eq!(
+            restarted.trim_end(),
+            "korri-local-signer.service korrid.service"
+        );
+    }
+
+    #[tokio::test]
+    async fn local_input_units_restart_in_their_original_order() {
+        let root = tempfile::tempdir().unwrap();
+        let ready = fake_systemctl_with(
+            root.path(),
+            "Ready",
+            &[
+                "inputplumber.service",
+                "korri-inputd.service",
+                OPTIONAL_INPUT_SEAT_UNIT,
+            ],
+        );
+        restart_and_wait_with(&ready, Duration::from_secs(1), Duration::from_millis(1))
+            .await
+            .unwrap();
+        let restarted = fs::read_to_string(root.path().join("restarts")).unwrap();
+        assert_eq!(
+            restarted.trim_end(),
+            "inputplumber.service korri-inputd.service korri-local-signer.service korrid.service korri-input-seat-receiver.service"
+        );
     }
 
     #[tokio::test]

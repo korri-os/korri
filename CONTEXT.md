@@ -51,6 +51,14 @@ _Avoid_: guest account, default user
 The explicit, consented replacement of a device owner by a different person key. It is the only way device authority moves.
 _Avoid_: login, account transfer, sign in
 
+**Client part**:
+The part of a device's software that people see and touch on that device: the shell, its screen and its local controls. A device without people at it has no client part.
+_Avoid_: client device, frontend, UI mode
+
+**Server part**:
+The part of a device's software that runs content for any peer: korrid, plugins, games and their stream. It names software on a device, never a device role.
+_Avoid_: server device, host, headless device, upstream
+
 **Live session**:
 The one exact game launch a device holds as active. Every session control names it and is refused for any other launch. Its launch modifiers belong to it: they freeze, resume and end with the game.
 _Avoid_: current game, running process

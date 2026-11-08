@@ -9,7 +9,8 @@
 }:
 let
   lib = pkgs.lib;
-  evaluate =
+  # The server part alone (ADR 0051): no local controller capture.
+  evaluateServer =
     extra:
     import "${pkgs.path}/nixos/lib/eval-config.nix" {
       system = pkgs.stdenv.hostPlatform.system;
@@ -54,11 +55,23 @@ let
         extra
       ];
     };
+  # A device people hold also captures its own controllers.
+  evaluate =
+    extra:
+    evaluateServer {
+      imports = [ extra ];
+      services.korriLinuxInput = {
+        provider.enable = true;
+        inputd.enable = true;
+      };
+    };
   allAssertionsPass = system: lib.all (entry: entry.assertion) system.config.assertions;
   hasFailedAssertion =
     needle: system:
     lib.any (entry: !entry.assertion && lib.hasInfix needle entry.message) system.config.assertions;
   valid = evaluate { };
+  serverOnly = evaluateServer { };
+  serverCfg = serverOnly.config;
   withAudio = evaluate { services.korriLinuxHost.audio.enable = true; };
   noValidation = evaluate { services.korriLinuxHost.validation.enable = false; };
   physical = evaluate {
@@ -95,6 +108,18 @@ let
   validationAction = cfg.services.korriLinuxInput.inputd.actions.workspace-next.command;
 in
 assert allAssertionsPass valid;
+# The server part alone: no local capture, but streamed controllers still
+# get their seats and the uinput access the stream plugin needs.
+assert allAssertionsPass serverOnly;
+assert !serverCfg.services.inputplumber.enable;
+assert !(serverCfg.systemd.services ? korri-inputd);
+assert serverCfg.systemd.services ? korri-input-seat-receiver;
+assert serverCfg.users.groups ? uinput;
+assert builtins.elem "uhid" serverCfg.boot.kernelModules;
+assert lib.hasInfix ''OWNER="root", GROUP="uinput", MODE="0660"'' serverCfg.services.udev.extraRules;
+assert !(lib.hasInfix ''GROUP="uinput", MODE="0660"'' (
+  lib.replaceStrings [ ''OWNER="korri-inputd", GROUP="uinput", MODE="0660"'' ] [ "" ] cfg.services.udev.extraRules
+));
 assert cfg.services.korriBundle.enable;
 assert cfg.services.korriLinuxInput.provider.enable;
 assert cfg.services.korriLinuxInput.inputd.enable;

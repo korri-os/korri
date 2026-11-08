@@ -9,6 +9,8 @@
 }:
 let
   cfg = config.services.korriLinuxHost;
+  noLocalInput =
+    !config.services.korriLinuxInput.provider.enable && !config.services.korriLinuxInput.inputd.enable;
   sway = import ./sway-activity.nix { inherit pkgs; };
   runtimeHome = config.users.users.${cfg.runtimeUser}.home or "/home/${cfg.runtimeUser}";
   runtimeDir = "/run/user/${toString cfg.runtimeUid}";
@@ -485,10 +487,10 @@ in
     ];
 
     services.korriBundle.enable = true;
+    # Local controller capture belongs to the client part (ADR 0051), which
+    # enables the provider and inputd. These are its identities when it does.
     services.korriLinuxInput = {
-      provider.enable = true;
       inputd = {
-        enable = true;
         requireProvider = true;
         uid = cfg.serviceIdentities.inputdUid;
         controlGid = cfg.serviceIdentities.controlGid;
@@ -683,6 +685,17 @@ in
     # Persistent seats belong to the core, including physical-only hosts.
     # Extracted from the former Sunshine receiver unit; plugin removal must
     # neither stop these devices nor revoke their event-node permissions.
+    # Without local capture nothing else provides what the seat receiver and
+    # the stream plugin's virtual devices need: the uinput group and node rule,
+    # and uhid for an emulated gamepad (as korri-input.nix sets for the provider).
+    boot.kernelModules = lib.mkIf noLocalInput [
+      "uinput"
+      "uhid"
+    ];
+    users.groups.uinput = lib.mkIf noLocalInput { };
+    services.udev.extraRules = lib.mkIf noLocalInput ''
+      KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="root", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"
+    '';
     services.udev.packages = [
       (import ./input-seat-rules.nix {
         inherit pkgs;
