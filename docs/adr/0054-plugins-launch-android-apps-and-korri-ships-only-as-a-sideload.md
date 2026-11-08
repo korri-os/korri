@@ -69,6 +69,19 @@ so far. It becomes accepted when the interview ends.
 - **The native-games runner has a launch handler.** Its `launch.prepare`
   returns an Android launch description, as every other runner returns its
   launch. No default Android launch convention is added to korrid.
+- **Android launches are separate fields.** An Android runner's
+  `launch.prepare` returns its launch as separate fields, as a Linux runner
+  returns `command` and `args`. It does not return an `intent:` string. The
+  native-games slice adds only the package. Each later field (action, data,
+  extras) is added when a real runner needs it, starting with the first
+  emulator. korrid refuses a launch without an explicit package, and the
+  plugin cannot set permission-grant flags.
+- **Android is `aarch64-android`.** A runner lists the platforms it runs on.
+  Runner platforms, ADR 0052 artifact platforms and catalog releases share one
+  list: `x86_64-linux`, `aarch64-linux` and now `aarch64-android`. The name
+  follows nixpkgs' `lib.systems.examples.aarch64-android`. Nix itself has no
+  Android system string: that example elaborates to `aarch64-linux` (checked
+  2026-11-08).
 - **A refused permission weakens the session, not the launch.** Without the
   accessibility service there is no Guide button. Without Usage access, the
   session ends only when the person comes back to Korri. Korri says what is
@@ -79,8 +92,10 @@ so far. It becomes accepted when the interview ends.
 - korrid on Android does not load plugins today. Plugin installation, its
   signature checks and the plugin host must be ported before any of these
   routes can run.
-- The catalog `platform` field and runner admission must name Android. The
-  spelling is not decided. ADR 0047 left the spelling of "any" open as well.
+- `aarch64-android` is not a real Nix system, so `builtins.currentSystem`
+  never returns it. Korri tooling sets it when it builds Android releases.
+  ADR 0047 still leaves the spelling of "any" open.
+- Each new Intent part that a plugin needs is a contract change.
 - After developer verification starts in 2027, each install needs a verified
   developer account, a 24-hour wait, or ADB (#291).
 - A Korri-built emulator APK is native code that Korri publishes. ADR 0042
