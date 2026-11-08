@@ -30,6 +30,20 @@ so far. It becomes accepted when the interview ends.
   only starts an installed app ships no native files, so it uses ADR 0047's
   "any architecture" release.
 
+- **Native games first.** The first slice launches native Android games. A
+  native game needs no game file: korrid names the package, and the app finds
+  that package's current launcher activity at launch, as legacy
+  `launcher/android_app.rs` did.
+- **Native games in the library.** Apps that Android marks as games (`isGame`,
+  `ApplicationInfo.CATEGORY_GAME`) appear on their own. The person can add any
+  other installed app.
+- **A missing app is shown, not hidden.** When a route needs an app that is
+  not installed, the route is shown as unavailable, with the reason and a
+  link to where to get the app.
+- **Korri installs its own APKs.** A Korri-built APK is a pinned plugin
+  artifact (ADR 0012, ADR 0052). Korri installs and updates it through
+  `PackageInstaller`, and Android asks the person to confirm each time.
+
 ## Consequences
 
 - korrid on Android does not load plugins today. Plugin installation, its
@@ -42,3 +56,8 @@ so far. It becomes accepted when the interview ends.
 - A Korri-built emulator APK is native code that Korri publishes. ADR 0042
   limits `@korri` to content licensed for redistribution, so each such APK
   needs a licence check before Korri ships it.
+- Where the person's added apps are stored and how the "get the app" link is
+  declared are schema questions. Each must be grounded in legacy or an
+  existing producer before it is built.
+- Korri owns a signing key for each APK it builds. Losing the key breaks
+  updates for every install.
