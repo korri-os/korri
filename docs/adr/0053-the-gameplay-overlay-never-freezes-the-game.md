@@ -20,9 +20,11 @@ mode, had fixed buttons and no data from korrid.
   the gameplay overlay shows it as a plugin control.
 - The active surface package (Pico, Zone) draws the gameplay overlay on every
   platform, from korrid's `GameplayOverlay` model. On Android it is drawn
-  see-through over the live stream. If Slint's NativeActivity window cannot do
-  that, the same surface overlay is drawn in a second Slint view inside the
-  Game activity. `overlay.html` is not reworked into a second overlay UI.
+  see-through over the live stream, in a second Slint view inside the Game
+  activity. Spike #375 showed that a see-through shell window on top of Game
+  also works, but it pauses Game, makes the audio burst each time the overlay
+  opens or closes, and takes about 100 ms to resume, against about 20 ms.
+  `overlay.html` is not reworked into a second overlay UI.
 - The overlay offers Resume, End, Disconnect, Open Korri and the plugin
   controls. The device that started a game on another device may End it. After that
   device disconnects, any federation device that can stream the game may End
