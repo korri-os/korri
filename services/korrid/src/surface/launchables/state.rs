@@ -11,11 +11,20 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
+pub struct SessionCatalogEntry {
+    pub entry: Box<Entry>,
+    /// Restore the catalog's order when the session ends between reads.
+    pub position: usize,
+}
+
+#[derive(Clone, Debug)]
 pub enum Entry {
     NowPlaying {
         session: ActiveSession,
         /// Source evidence for this launch only, never a stale entry.
         local_catalog_game: Option<Game>,
+        /// The current catalog card, moved here rather than duplicated.
+        catalog_entry: Option<SessionCatalogEntry>,
     },
     LocalGame {
         game: LocalGame,
@@ -29,6 +38,9 @@ pub enum Entry {
 
 impl Entry {
     pub fn key(&self) -> String {
+        if let Some(entry) = self.catalog_entry() {
+            return entry.key();
+        }
         match self {
             Self::NowPlaying { session, .. } => format!("now-playing:{}", session.launch_id),
             Self::LocalGame { game, .. } => format!("local-game:{}", game.id),
@@ -38,7 +50,19 @@ impl Entry {
             },
         }
     }
+    pub fn catalog_entry(&self) -> Option<&Entry> {
+        match self {
+            Self::NowPlaying {
+                catalog_entry: Some(catalog),
+                ..
+            } => Some(&catalog.entry),
+            _ => None,
+        }
+    }
     pub fn alternatives(&self) -> &[GameCopy] {
+        if let Some(entry) = self.catalog_entry() {
+            return entry.alternatives();
+        }
         match self {
             Self::LocalGame { alternatives, .. } | Self::Game { alternatives, .. } => alternatives,
             Self::NowPlaying { .. } => &[],
@@ -55,7 +79,7 @@ impl Entry {
     }
     /// The catalog `Game` of a `game` entry and every remote alternative.
     pub fn catalog_games(&self) -> impl Iterator<Item = &Game> {
-        let own = match self {
+        let own = match self.catalog_entry().unwrap_or(self) {
             Self::Game { game, .. } => Some(game),
             _ => None,
         };
@@ -98,21 +122,13 @@ fn local_catalog_game_for_session(session: &ActiveSession, entries: &[Entry]) ->
             && (session.host.is_none() || game.host == session.host)
     };
     for entry in entries {
-        if let Entry::Game { game, .. } = entry {
-            if matches(game) {
-                return Some(game.clone());
-            }
-        }
-        for copy in entry.alternatives() {
-            if let GameCopy::Remote(game) = copy {
-                if matches(game) {
-                    return Some(game.clone());
-                }
-            }
+        if let Some(game) = entry.catalog_games().find(|game| matches(game)) {
+            return Some(game.clone());
         }
         if let Entry::NowPlaying {
             session: other,
             local_catalog_game: Some(game),
+            ..
         } = entry
         {
             if other.launch_id == session.launch_id && matches(game) {
@@ -127,7 +143,20 @@ pub fn is_local_catalog_session(session: &ActiveSession, entries: &[Entry]) -> b
     local_catalog_game_for_session(session, entries).is_some()
 }
 
-fn session_entry(session: &ActiveSession, entries: &[Entry], previous: &[Entry]) -> Entry {
+// Stream sessions carry no GameIdentity. A qualified host plus game id
+// identifies a remote copy; hostless native status can only name a local copy.
+fn catalog_matches_session(session: &ActiveSession, entry: &Entry) -> bool {
+    entry.catalog_games().any(|game| {
+        Some(&game.id) == session.game_id.as_ref()
+            && match &session.host {
+                Some(host) => game.host.as_ref() == Some(host),
+                None => game.source.is_local,
+            }
+    }) || matches!(entry, Entry::LocalGame { game, .. }
+        if session.host.is_none() && Some(&game.id) == session.game_id.as_ref())
+}
+
+fn session_entry(session: &ActiveSession, entries: &mut Vec<Entry>, previous: &[Entry]) -> Entry {
     // Old catalog facts establish locality only for the exact observed launch.
     let previous_game = if previous.iter().any(|entry| {
         entry
@@ -139,9 +168,17 @@ fn session_entry(session: &ActiveSession, entries: &[Entry], previous: &[Entry])
     } else {
         None
     };
+    let catalog_entry = entries
+        .iter()
+        .position(|entry| catalog_matches_session(session, entry))
+        .map(|position| SessionCatalogEntry {
+            entry: Box::new(entries.remove(position)),
+            position,
+        });
     Entry::NowPlaying {
         session: session.clone(),
         local_catalog_game: previous_game,
+        catalog_entry,
     }
 }
 
@@ -361,12 +398,22 @@ fn update_stream_play(content: &mut Content, status: &SessionStatus) {
     }
 }
 
-fn without_sessions(entries: &[Entry]) -> Vec<Entry> {
-    entries
+pub(super) fn without_sessions(entries: &[Entry]) -> Vec<Entry> {
+    let mut catalog: Vec<Entry> = entries
         .iter()
         .filter(|entry| !entry.is_now_playing())
         .cloned()
-        .collect()
+        .collect();
+    for entry in entries {
+        if let Entry::NowPlaying {
+            catalog_entry: Some(saved),
+            ..
+        } = entry
+        {
+            catalog.insert(saved.position.min(catalog.len()), (*saved.entry).clone());
+        }
+    }
+    catalog
 }
 
 fn has_local_catalog(entries: &[Entry]) -> bool {
@@ -487,7 +534,7 @@ impl LaunchablesState {
         if let Some(status @ SessionStatusOutcome::Ok(payload)) = session {
             if is_authoritative_session_status(status) {
                 if let Some(active) = &payload.active {
-                    let entry = session_entry(active, &entries, previous_entries);
+                    let entry = session_entry(active, &mut entries, previous_entries);
                     entries.insert(0, entry);
                 }
             }
@@ -536,7 +583,7 @@ impl LaunchablesState {
                 });
                 if let Some(Entry::NowPlaying { session: known, .. }) = known {
                     if !entries.iter().any(Entry::is_now_playing) {
-                        let entry = session_entry(known, &entries, previous_entries);
+                        let entry = session_entry(known, &mut entries, previous_entries);
                         entries.insert(0, entry);
                     }
                     return ready(Content {
@@ -972,12 +1019,12 @@ impl LaunchablesState {
         let entry_id = content
             .entries
             .iter()
-            .any(|entry| {
+            .find(|entry| {
                 entry
                     .session()
                     .is_some_and(|other| other.launch_id == session.launch_id)
             })
-            .then(|| format!("now-playing:{}", session.launch_id));
+            .map(Entry::key);
         LaunchablesState::Loaded(Loaded {
             phase: Phase::Launching {
                 return_launch_id: Some(session.launch_id.clone()),
@@ -1038,22 +1085,27 @@ impl LaunchablesState {
     ) -> LaunchablesState {
         match self {
             LaunchablesState::Loaded(mut loaded) => {
-                let mut entries = vec![Entry::NowPlaying {
-                    session: ActiveSession {
-                        netplay: None,
-                        person_public_key: None,
-                        stream_players: Vec::new(),
-                        initial_handoff: None,
-                        focus_ownership: None,
-                        launch_id: session.launch_id.clone(),
-                        host: game.host.clone(),
-                        game_id: Some(session.game_id.clone()),
-                        title: Some(game.title.clone()),
-                        phase: None,
-                    },
-                    local_catalog_game: Some(game.clone()),
-                }];
-                entries.extend(without_sessions(&loaded.content.entries));
+                let active = ActiveSession {
+                    netplay: None,
+                    person_public_key: None,
+                    stream_players: Vec::new(),
+                    initial_handoff: None,
+                    focus_ownership: None,
+                    launch_id: session.launch_id.clone(),
+                    host: game.host.clone(),
+                    game_id: Some(session.game_id.clone()),
+                    title: Some(game.title.clone()),
+                    phase: None,
+                };
+                let mut entries = without_sessions(&loaded.content.entries);
+                let mut entry = session_entry(&active, &mut entries, &loaded.content.entries);
+                if let Entry::NowPlaying {
+                    local_catalog_game, ..
+                } = &mut entry
+                {
+                    *local_catalog_game = Some(game.clone());
+                }
+                entries.insert(0, entry);
                 loaded.content.entries = entries;
                 LaunchablesState::Loaded(loaded)
             }
@@ -1113,7 +1165,7 @@ impl LaunchablesState {
                 }
                 let mut entries = without_sessions(&loaded.content.entries);
                 if let Some(active) = active {
-                    let entry = session_entry(active, &entries, &loaded.content.entries);
+                    let entry = session_entry(active, &mut entries, &loaded.content.entries);
                     entries.insert(0, entry);
                 }
                 let notice = if loaded.content.unavailable_session_status.is_none() {
@@ -1176,7 +1228,7 @@ impl LaunchablesState {
                 }
                 if let Some(active) = active.filter(|active| active.launch_id == owned) {
                     let mut entries = without_sessions(&loaded.content.entries);
-                    let entry = session_entry(active, &entries, &loaded.content.entries);
+                    let entry = session_entry(active, &mut entries, &loaded.content.entries);
                     entries.insert(0, entry);
                     let returned =
                         matches!(active.phase.as_deref(), Some("frozen" | "focus-failed"));
@@ -1243,7 +1295,7 @@ impl LaunchablesState {
                 if matches!(phase, Phase::Recovery) {
                     let mut entries = without_sessions(&loaded.content.entries);
                     if let Some(active) = active {
-                        let entry = session_entry(active, &entries, &loaded.content.entries);
+                        let entry = session_entry(active, &mut entries, &loaded.content.entries);
                         entries.insert(0, entry);
                     }
                     return Self::recover_startup(
@@ -1285,7 +1337,7 @@ impl LaunchablesState {
                 }
                 let mut entries = without_sessions(&loaded.content.entries);
                 if let Some(active) = active {
-                    let entry = session_entry(active, &entries, &loaded.content.entries);
+                    let entry = session_entry(active, &mut entries, &loaded.content.entries);
                     entries.insert(0, entry);
                 }
                 loaded.content.entries = entries;

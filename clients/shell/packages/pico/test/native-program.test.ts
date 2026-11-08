@@ -111,18 +111,21 @@ describe("the session a game's own screen watches", () => {
     pico.publish()
     pico.publish()
     expect(pico.state().nav.session._tag).toBe("AwaitingSession")
-    // The game runs: a host with no Running status publishes its session as
-    // a card of its own (korrid's model.rs, Entry::NowPlaying), first under
-    // CONTINUE.
-    korri.games = [{ id: "now:spelunky", title: "Spelunky", section: "Continue", resumable: true }, ...korri.games]
+    // The game runs: its existing card moves to Continue, once, with the
+    // same id. A host need not publish Running to establish the session.
+    const before = korri.games
+    const spelunky = before.find(game => game.id === "spelunky")!
+    korri.games = [{ ...spelunky, section: "Continue", resumable: true }, ...before.filter(game => game.id !== "spelunky")]
     pico.publish()
-    expect(pico.state().nav.session).toMatchObject({ _tag: "Watching", sessionId: "now:spelunky" })
+    expect(pico.state().nav.session).toMatchObject({ _tag: "Watching", sessionId: "spelunky" })
     // A push with only the focused game changed keeps watching.
     korri.focused = "spelunky"
     pico.publish()
     expect(pico.state().nav.session._tag).toBe("Watching")
-    // The session ends: its card is gone from a window that holds every game.
-    korri.games = korri.games.filter(game => game.id !== "now:spelunky")
+    expect(korri.games.filter(game => game.id === "spelunky")).toHaveLength(1)
+    expect(pico.state().nav.detail?.gameId).toBe("spelunky")
+    // The session ends: the same card returns to its original position.
+    korri.games = before
     pico.publish()
     expect(pico.state().nav.detail).toBeUndefined()
   })
@@ -141,21 +144,21 @@ describe("a session outside the cursor window", () => {
     pico.press("confirm")
     expect(korri.requests.some(request => request._tag === "LaunchGame" && request.gameId === "g87")).toBe(true)
     expect(pico.state().nav.session._tag).toBe("AwaitingSession")
-    // Korri starts it, then it runs. Its session card lands far outside the
+    // Korri starts it, then it runs. The existing card is outside the
     // window the shelf holds.
     korri.status = { _tag: "Busy", kicker: "Starting Game 087…", gameId: "g87" }
     pico.publish()
     korri.status = { _tag: "Running", kicker: "PLAYING", gameId: "g87" }
-    korri.games = [...korri.games, { id: "now:g87", title: "Game 087", resumable: true }]
+    korri.games = korri.games.map(game => game.id === "g87" ? { ...game, resumable: true } : game)
     pico.publish()
     expect(pico.state().nav.session).toMatchObject({ _tag: "Watching", viewingId: "g87", live: true })
     // Pushes while it plays keep the watch and the screen.
     korri.focused = "g87"
     pico.publish()
     expect(pico.state().nav.detail?.gameId).toBe("g87")
-    // It ends: Korri is browsing again; the card leaves a window that never held it.
+    // It ends: Korri is browsing again; the card is still outside the window.
     korri.status = { _tag: "Browsing" }
-    korri.games = korri.games.filter(game => game.id !== "now:g87")
+    korri.games = korri.games.map(game => game.id === "g87" ? { ...game, resumable: false } : game)
     pico.publish()
     expect(pico.state().nav.detail).toBeUndefined()
     expect(pico.state().nav.session._tag).toBe("Idle")

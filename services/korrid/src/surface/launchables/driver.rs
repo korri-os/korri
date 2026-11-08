@@ -20,8 +20,8 @@ use korri_surface_treaty::{
 };
 
 use super::state::{
-    is_authoritative_session_status, is_local_catalog_session, launch_subject_for_game, Content,
-    Entry, LaunchNotice, LaunchablesState, Loaded, Phase,
+    is_authoritative_session_status, is_local_catalog_session, launch_subject_for_game,
+    without_sessions, Content, Entry, LaunchNotice, LaunchablesState, Loaded, Phase,
 };
 use crate::{
     game_routes::SelectedGameLaunchOutcome,
@@ -1075,15 +1075,15 @@ impl Launchables {
                                 content,
                             }) => {
                                 inner.startup = None;
-                                let entries = content
-                                    .entries
-                                    .into_iter()
-                                    .filter(|entry| {
-                                        entry
-                                            .session()
-                                            .is_none_or(|session| session.launch_id != launch_id)
-                                    })
-                                    .collect();
+                                let entries = if content.entries.iter().any(|entry| {
+                                    entry
+                                        .session()
+                                        .is_some_and(|session| session.launch_id == launch_id)
+                                }) {
+                                    without_sessions(&content.entries)
+                                } else {
+                                    content.entries
+                                };
                                 inner.publish(LaunchablesState::Loaded(Loaded {
                                     phase: Phase::Ready,
                                     content: Content {
@@ -1424,18 +1424,19 @@ impl Launchables {
         }) {
             return;
         }
-        // A catalog-local game that already runs here is resumed, not started.
-        if let Entry::Game { game, .. } = &entry {
-            if game.source.is_local {
-                let single = [entry.clone()];
-                if let Some(active) = content.entries.iter().find(|candidate| {
-                    candidate
-                        .session()
-                        .is_some_and(|session| is_local_catalog_session(session, &single))
-                }) {
-                    self.confirm_entry(active.clone());
-                    return;
-                }
+        // A retained catalog selection must resume its merged exact session,
+        // including when the selected copy is remote or an alternative.
+        if !entry.is_now_playing() {
+            if let Some(active) = content.entries.iter().find(|candidate| {
+                candidate.is_now_playing()
+                    && (candidate.key() == key
+                        || candidate
+                            .alternatives()
+                            .iter()
+                            .any(|copy| Entry::for_copy(copy).key() == key))
+            }) {
+                self.confirm_entry(active.clone());
+                return;
             }
         }
         // Last-known identity permits exact Return/End, never replacement work.
@@ -1661,11 +1662,19 @@ impl Launchables {
                 active: Some(session.clone()),
                 overlay: None,
             }));
+        let entry = observed
+            .entries()
+            .iter()
+            .find(|entry| {
+                entry
+                    .session()
+                    .is_some_and(|active| active.launch_id == session.launch_id)
+            })
+            .cloned();
         self.publish(observed);
-        self.confirm_entry(Entry::NowPlaying {
-            session,
-            local_catalog_game: None,
-        });
+        if let Some(entry) = entry {
+            self.confirm_entry(entry);
+        }
     }
 
     /// Re-read every source.

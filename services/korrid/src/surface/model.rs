@@ -26,7 +26,7 @@ const SECTION_CONTINUE: &str = "Continue";
 const SECTION_THIS_DEVICE: &str = "This device";
 
 fn primary_copy(entry: &Entry) -> Option<GameCopy> {
-    match entry {
+    match entry.catalog_entry().unwrap_or(entry) {
         Entry::LocalGame { game, .. } => Some(GameCopy::Local(game.clone())),
         Entry::Game { game, .. } => Some(GameCopy::Remote(game.clone())),
         Entry::NowPlaying { .. } => None,
@@ -95,6 +95,9 @@ fn distinct_host_copies(entry: &Entry) -> Vec<GameCopy> {
 
 /// Host choices for a folded game. Local is always first when it exists.
 pub fn launch_locations_for_entry(entry: &Entry) -> Vec<SurfaceLaunchLocation> {
+    if entry.is_now_playing() {
+        return Vec::new();
+    }
     let copies = distinct_host_copies(entry);
     if copies.len() < 2 {
         return Vec::new();
@@ -126,9 +129,6 @@ pub fn entry_for_launch_location(entry: &Entry, launch_location_id: &str) -> Opt
 
 /// Play facts for a game entry. Parses the UTC ISO string once here.
 fn play_facts_for_entry(entry: &Entry, game: &mut SurfaceGame) {
-    if entry.is_now_playing() {
-        return;
-    }
     let Some(stats) = merge_play_stats(&ordered_copies_for_entry(entry)) else {
         return;
     };
@@ -180,6 +180,20 @@ fn bare_game(id: String, title: String) -> SurfaceGame {
 pub fn game_from_entry(entry: &Entry, entries: &[Entry]) -> SurfaceGame {
     match entry {
         Entry::NowPlaying { session, .. } => {
+            if let Some(catalog) = entry.catalog_entry() {
+                let mut game = game_from_entry(catalog, entries);
+                game.section = Some(SECTION_CONTINUE.into());
+                game.resumable = Some(true);
+                game.subtitle = Some(if is_local_catalog_session(session, entries) {
+                    SECTION_THIS_DEVICE.into()
+                } else {
+                    session.host.clone().unwrap_or_else(|| "Running now".into())
+                });
+                // Resume names one exact session, not a new launch location.
+                // Keep alternatives on the catalog card for when it ends.
+                game.launch_locations = None;
+                return game;
+            }
             let mut game = bare_game(
                 entry.key(),
                 session

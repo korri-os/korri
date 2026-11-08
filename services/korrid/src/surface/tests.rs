@@ -70,6 +70,7 @@ fn now_playing() -> Entry {
     Entry::NowPlaying {
         session: from(json!({ "launchId": "L1", "title": "Skate 3", "host": "aka" })),
         local_catalog_game: None,
+        catalog_entry: None,
     }
 }
 
@@ -80,6 +81,67 @@ fn games(state: &LaunchablesState) -> Vec<korri_surface_treaty::SurfaceGame> {
 mod surface_model {
     use super::*;
     use crate::surface::launchables::fold::GameCopy;
+
+    #[test]
+    fn remote_session_is_one_catalog_card_through_start_and_end() {
+        let catalog = from(json!({ "_tag": "Ok", "payload": { "games": [
+            { "id": "other", "title": "Other", "host": "aka", "source": source("aka"), "supportsRunnerSelection": false },
+            { "id": "zelda", "title": "Zelda", "host": "aka", "source": source("aka"), "supportsRunnerSelection": false,
+              "playStats": { "lastPlayed": "2026-01-02T00:00:00Z", "playCount": 3, "totalPlaytimeSeconds": 22740 } }
+        ] } }));
+        let idle = LaunchablesState::from_sources(&catalog, None, None, &[], None);
+        let before = games(&idle);
+        let running = from(
+            json!({ "_tag": "Ok", "payload": { "streamPlayLaunchId": "exact-launch", "active": {
+            "launchId": "exact-launch", "gameId": "zelda", "host": "aka", "title": "Zelda", "phase": "running"
+        } } }),
+        );
+        for active in [
+            idle.clone().with_session_status(&running),
+            LaunchablesState::from_sources(&catalog, Some(&running), None, idle.entries(), None),
+        ] {
+            let cards = games(&active);
+            assert_eq!(cards.len(), 2);
+            assert_eq!(cards[0].id, before[1].id);
+            assert_eq!(cards[0].section.as_deref(), Some("Continue"));
+            assert_eq!(cards[0].resumable, Some(true));
+            assert_eq!(cards[0].play_count, Some(3));
+            assert_eq!(cards[0].total_playtime_seconds, Some(22740.0));
+            let ids: std::collections::HashSet<_> = cards.iter().map(|game| &game.id).collect();
+            assert_eq!(ids.len(), cards.len());
+            let entry = entry_for_id(&active, &before[1].id).unwrap();
+            assert_eq!(entry.session().unwrap().launch_id, "exact-launch");
+            let returning = LaunchablesState::begin_return(
+                active.loaded().unwrap().content.clone(),
+                entry.session().unwrap(),
+            );
+            assert!(
+                matches!(status_from(&returning), SurfaceStatus::Busy { game_id: Some(id), .. } if id == before[1].id)
+            );
+            assert_eq!(
+                game_actions_for_entry(Some(entry), None)
+                    .iter()
+                    .map(|action| action.id.as_str())
+                    .collect::<Vec<_>>(),
+                ["resume", "end"]
+            );
+            let ended = active.with_session_status(&from(json!({ "_tag": "Ok", "payload": {} })));
+            assert_eq!(games(&ended), before);
+        }
+    }
+
+    #[test]
+    fn unmatched_remote_session_keeps_its_standalone_card() {
+        let idle = ready(vec![host_game()], None, None);
+        let running =
+            idle.with_session_status(&from(json!({ "_tag": "Ok", "payload": { "active": {
+            "launchId": "unmatched", "gameId": "neverball", "host": "another-peer"
+        } } })));
+        let cards = games(&running);
+        assert_eq!(cards.len(), 2);
+        assert_eq!(cards[0].id, "now-playing:unmatched");
+        assert_eq!(cards[0].resumable, Some(true));
+    }
 
     #[test]
     fn empty_failed_catalogs_keep_their_cause() {
@@ -731,12 +793,12 @@ async fn focus_game_publishes_that_games_actions_only_for_a_game_korri_knows() {
     hub.request(
         "pico",
         SurfaceRequest::FocusGame {
-            game_id: Some("now-playing:L1".into()),
+            game_id: Some("game:g00001".into()),
         },
     )
     .unwrap();
     let focused = hub.model("pico").unwrap().focused_game.unwrap();
-    assert_eq!(focused.game_id, "now-playing:L1");
+    assert_eq!(focused.game_id, "game:g00001");
     assert_eq!(
         focused.actions,
         vec![
@@ -763,6 +825,111 @@ async fn focus_game_publishes_that_games_actions_only_for_a_game_korri_knows() {
     hub.request("pico", SurfaceRequest::FocusGame { game_id: None })
         .unwrap();
     assert!(hub.model("pico").unwrap().focused_game.is_none());
+}
+
+#[tokio::test]
+async fn merged_remote_card_confirm_resume_and_end_name_the_exact_launch() {
+    use super::korrid::Mapping;
+    let mut answers = idle_outcomes(0);
+    answers.insert(
+        "app.catalog.snapshot".into(),
+        json!({ "_tag": "Ok", "payload": { "games": [host_game_json()] } }),
+    );
+    answers.insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "active": {
+        "launchId": "remote-exact", "gameId": "neverball", "host": "zao", "phase": "running"
+    } } }),
+    );
+    answers.insert("app.session.resume".into(), json!({ "_tag": "Ok", "payload": { "launchId": "remote-exact", "state": "running", "changed": false } }));
+    answers.insert(
+        "app.session.end".into(),
+        json!({ "_tag": "Ok", "payload": { "phase": "ended" } }),
+    );
+    let answers = Arc::new(std::sync::Mutex::new(answers));
+    let requests = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let base = in_memory_korrid(Arc::clone(&answers));
+    let korrid = Korrid::new(Arc::new({
+        let requests = Arc::clone(&requests);
+        move |request: RpcRequest| {
+            let base = base.clone();
+            let requests = Arc::clone(&requests);
+            let answers = Arc::clone(&answers);
+            Box::pin(async move {
+                let wire = serde_json::to_value(&request).unwrap();
+                if wire["_tag"] == "app.session.end" {
+                    answers.lock().unwrap().insert(
+                        "app.session.status".into(),
+                        json!({ "_tag": "Ok", "payload": {} }),
+                    );
+                }
+                requests.lock().unwrap().push(wire);
+                base.rpc(Mapping::Unreachable, request)
+                    .await
+                    .map_err(|failure| Refusal::Unreachable(failure.message))
+            })
+        }
+    }));
+    let directory = tempfile::tempdir().unwrap();
+    let intent = crate::overlay_intent::OverlayIntent::default();
+    let hub = SurfaceHub::new(
+        korrid,
+        directory.path().join("private"),
+        intent.subscribe(),
+        Arc::default(),
+    );
+    let model = settled(&hub, "pico").await;
+    assert_eq!(window_ids(&model).2, ["game:zao:neverball"]);
+    for (action, expected_resumes) in [(None, 1), (Some("resume"), 2), (Some("end"), 2)] {
+        let request = match action {
+            None => SurfaceRequest::LaunchGame {
+                game_id: "game:zao:neverball".into(),
+                launch_location_id: None,
+            },
+            Some(action_id) => SurfaceRequest::RunGameAction {
+                game_id: "game:zao:neverball".into(),
+                action_id: action_id.into(),
+            },
+        };
+        hub.request("pico", request).unwrap();
+        for _ in 0..200 {
+            let ready = hub.root().launchables.state().is_ready();
+            let calls = requests.lock().unwrap().clone();
+            let resumes = calls
+                .iter()
+                .filter(|call| call["_tag"] == "app.session.resume")
+                .count();
+            let ends = calls
+                .iter()
+                .filter(|call| call["_tag"] == "app.session.end")
+                .count();
+            if ready && resumes == expected_resumes && (action != Some("end") || ends == 1) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let calls = requests.lock().unwrap();
+        let resumes: Vec<_> = calls
+            .iter()
+            .filter(|call| call["_tag"] == "app.session.resume")
+            .collect();
+        assert_eq!(resumes.len(), expected_resumes);
+        assert!(resumes
+            .iter()
+            .all(|call| call["payload"]["expectedLaunchId"] == "remote-exact"));
+        if action == Some("end") {
+            let ends: Vec<_> = calls
+                .iter()
+                .filter(|call| call["_tag"] == "app.session.end")
+                .collect();
+            assert_eq!(ends.len(), 1);
+            assert_eq!(ends[0]["payload"]["expectedLaunchId"], "remote-exact");
+        }
+        assert!(!calls
+            .iter()
+            .any(|call| call["_tag"] == "app.session.prepare"
+                || call["_tag"] == "app.session.reserve"));
+    }
 }
 
 #[tokio::test]
@@ -943,7 +1110,14 @@ async fn a_launch_request_reserves_and_starts_the_exact_local_game() {
         let model = hub.model("pico").unwrap();
         if model.status == SurfaceStatus::Browsing {
             let (_, _, window) = window_ids(&model);
-            assert_eq!(window[0], "now-playing:exact");
+            assert_eq!(window[0], "game:g00001");
+            assert_eq!(
+                window
+                    .iter()
+                    .filter(|id| id.as_str() == "game:g00001")
+                    .count(),
+                1
+            );
             return;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;

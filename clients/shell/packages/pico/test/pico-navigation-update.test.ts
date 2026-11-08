@@ -212,7 +212,7 @@ describe("a played game's end returns the player to the shelf", () => {
     const before: SurfaceModel = { ...fixtureModel, catalog: { _tag: "Ready", games: [spelunky] } }
     const playing: SurfaceModel = {
       ...fixtureModel,
-      catalog: { _tag: "Ready", games: [spelunky, { id: "session-1", title: "Spelunky", resumable: true }] },
+      catalog: { _tag: "Ready", games: [{ ...spelunky, resumable: true }] },
     }
     const ended: SurfaceModel = { ...fixtureModel, catalog: { _tag: "Ready", games: [spelunky] } }
 

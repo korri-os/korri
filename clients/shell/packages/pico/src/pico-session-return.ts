@@ -30,8 +30,8 @@ export function picoSessionReturnOnPlay(
 /**
  * A session's evidence, first: Korri's status Running or Paused for the game
  * (or the gameplay overlay), then its return to Browsing. Hosts that publish
- * no Running status show a session as a separate resumable card after Play:
- * associate only one newly observed card with that request.
+ * no Running status mark the game's card resumable after Play (or publish a
+ * standalone card when no catalog game matches): watch that new evidence.
  * The treaty has no launch-to-session link or completion reason: multiple new
  * cards, replacements and unavailable catalogs are not proof of completion.
  * A fresh Browsing/Ready with no remaining session is the host's evidence here;
@@ -72,7 +72,7 @@ export function picoSessionReturnFromModel(
   if (state._tag === "Watching") {
     const session = catalog.games.find(game => game.id === state.sessionId)
     if (session === undefined && !complete) return state
-    if (session !== undefined) return state
+    if (session !== undefined) return session.resumable === true ? state : { _tag: "ReturnToLibrary" }
     return resumable.length === 0 ? { _tag: "ReturnToLibrary" } : idle
   }
   if (state._tag === "AwaitingSession") {

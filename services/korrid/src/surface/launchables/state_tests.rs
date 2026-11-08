@@ -89,6 +89,67 @@ fn ready_with(entries: Vec<Entry>) -> LaunchablesState {
     )
 }
 
+mod one_game_one_card {
+    use super::*;
+    use crate::surface::model::{catalog_games, launch_locations_for_entry};
+
+    #[test]
+    fn remote_session_matches_an_alternative_and_preserves_the_whole_folded_card() {
+        let shared = json!({ "kind": "hash", "value": "same-rom" });
+        let catalog = catalog_of(vec![
+            json!({ "id": "other", "title": "Other", "source": source("aka"), "host": "aka", "supportsRunnerSelection": false }),
+            json!({ "id": "aka-id", "title": "Game", "source": source("aka"), "host": "aka", "supportsRunnerSelection": false, "identity": shared }),
+            json!({ "id": "zao-id", "title": "Game", "source": source("zao"), "host": "zao", "supportsRunnerSelection": false, "identity": shared }),
+        ]);
+        let before = LaunchablesState::from_sources(&catalog, None, None, &[], None);
+        let normal_cards = catalog_games(&before).unwrap();
+        let active = status(
+            json!({ "_tag": "Ok", "payload": { "active": { "launchId": "remote-launch", "gameId": "zao-id", "host": "zao" } } }),
+        );
+        let running = before.clone().with_session_status(&active);
+        assert_eq!(running.entries().len(), 2);
+        let card = &running.entries()[0];
+        assert_eq!(card.key(), before.entries()[1].key());
+        assert_eq!(card.session().unwrap().launch_id, "remote-launch");
+        assert_eq!(
+            catalog_games(&running).unwrap()[0].subtitle.as_deref(),
+            Some("zao")
+        );
+        assert_eq!(card.alternatives().len(), 1);
+        assert_eq!(card.catalog_games().count(), 2);
+        // Launch locations cannot replace the one exact resumable session.
+        assert!(launch_locations_for_entry(card).is_empty());
+        let again = running.with_session_status(&active);
+        assert_eq!(again.entries().len(), 2);
+        let ended = again.with_session_status(&status(json!({ "_tag": "Ok", "payload": {} })));
+        assert_eq!(catalog_games(&ended).unwrap(), normal_cards);
+        assert_eq!(launch_locations_for_entry(&ended.entries()[1]).len(), 2);
+    }
+
+    #[test]
+    fn local_session_moves_the_catalog_card_and_stop_restores_its_original_position() {
+        let catalog = catalog_of(vec![
+            json!({ "id": "other", "title": "Other", "source": source("aka"), "host": "aka", "supportsRunnerSelection": false }),
+            json!({ "id": "local", "title": "Local", "source": { "label": "this", "isLocal": true }, "host": "this", "supportsRunnerSelection": false }),
+        ]);
+        let before = LaunchablesState::from_sources(&catalog, None, None, &[], None);
+        let active = status(
+            json!({ "_tag": "Ok", "payload": { "active": { "launchId": "local-launch", "gameId": "local" } } }),
+        );
+        let running = before.clone().with_session_status(&active);
+        assert_eq!(running.entries().len(), 2);
+        assert_eq!(running.entries()[0].key(), before.entries()[1].key());
+        let stopped = running
+            .clone()
+            .begin_stopping(&running.entries()[0])
+            .with_status_after_stop(&status(json!({ "_tag": "Ok", "payload": {} })));
+        assert_eq!(
+            catalog_games(&stopped).unwrap(),
+            catalog_games(&before).unwrap()
+        );
+    }
+}
+
 mod catalog_session_locality {
     use super::*;
 

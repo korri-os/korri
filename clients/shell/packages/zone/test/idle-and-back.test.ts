@@ -134,3 +134,21 @@ describe("Back runs Korri's marked decline", () => {
     expect(step.requests.filter(request => request._tag !== "FocusGame")).toEqual([{ _tag: "RunAction", actionId: "a" }])
   })
 })
+
+test("a running game's single stable card keeps focus when it moves to Continue and back", () => {
+  let { state, korri } = start()
+  state = update(state, press("right"), korri).state
+  if (korri.catalog._tag !== "Ready") throw new Error("fixture catalog must be ready")
+  const before = korri.catalog
+  const index = view(state, korri).focusedCard
+  const game = before.window[index]!
+  const running = { ...game, section: "Continue", resumable: true }
+  korri = { ...korri, catalog: { ...before, window: [running, ...before.window.filter(copy => copy.id !== game.id)] } }
+  state = update(state, { _tag: "KorriPublished" }, korri).state
+  expect(view(state, korri).focusedCard).toBe(0)
+  const resumed = update(state, press("confirm"), korri)
+  expect(resumed.requests).toContainEqual({ _tag: "LaunchGame", gameId: game.id })
+  korri = { ...korri, catalog: before }
+  state = update(state, { _tag: "KorriPublished" }, korri).state
+  expect(view(state, korri).focusedCard).toBe(index)
+})
