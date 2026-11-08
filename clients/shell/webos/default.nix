@@ -157,8 +157,14 @@ in
           DISPLAY=":$(cat "$work/display")"
           export DISPLAY
           unset WAYLAND_DISPLAY
+          cargo clippy --locked --release --manifest-path "$crate/window-sdl/Cargo.toml" \
+            --all-targets -- -D warnings
+          cargo test --locked --release --manifest-path "$crate/window-sdl/Cargo.toml"
           cargo test --locked --release --manifest-path "$crate/window-sdl/Cargo.toml" \
             input_pump_tests::native_frame_and_sdl_key_reach_the_same_presented_frame -- --ignored --nocapture
+          KORRI_SHELL_SEE_THROUGH=1 SDL_RENDER_DRIVER=software \
+            cargo test --locked --release --manifest-path "$crate/window-sdl/Cargo.toml" \
+              see_through_tests::transparent_half_preserves_rgba_and_partial_uploads -- --ignored --nocapture
         '';
     shell-webos-proof =
       makeApp "shell-webos-proof"
@@ -185,7 +191,7 @@ in
     nix run .#shell-webos-real-proof -- OUTPUT
         Prove the real brain, shipped launcher and SDL shell reach Zone in an isolated workstation jail.
     nix run .#shell-webos-input-check
-        Check that native frames and SDL keys reach the same presented frame under Xvfb.
+        Check SDL input delivery and opt-in transparency RGBA readback under Xvfb.
     nix run .#shell-webos-proof -- OUTPUT
         Run the webOS SDL shell at 1920x1080 under Xvfb; capture Zone and Pico.
   '';

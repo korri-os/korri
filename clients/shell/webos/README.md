@@ -334,6 +334,13 @@ owner-binding-coordinator platform composition (used by JNI) is also exercised
 on the workstation. Android itself is not cross-built or run by these tasks.
 No ARM executable is run by the workstation tasks.
 
+## Video-plane transparency diagnostic
+
+[SEE-THROUGH.md](SEE-THROUGH.md) records the SDL/Wayland alpha findings and
+`KORRI_SHELL_SEE_THROUGH=1` TV check. This opt-in back-end diagnostic leaves
+the left half transparent and the right half unchanged. It does not start
+video or change Zone. Actual B7 composition remains a parent hardware check.
+
 ## Compatibility and acceptance risks
 
 Target: `armv7-unknown-linux-gnueabi`, EABI5 soft-float, glibc 2.19,
