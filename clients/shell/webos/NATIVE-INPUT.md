@@ -1,7 +1,8 @@
 # LG B7 native gamepad input
 
-The owner verified pad navigation on the B7. The latency trace and TCP_NODELAY
-change have no TV-side acceptance result. The parent owns TV operations.
+The owner verified pad navigation and latency tracing on the B7. The complete-
+frame batching and SDL-pump change have no TV-side acceptance result. The parent
+owns TV operations.
 
 ## Design and grounding
 
@@ -81,12 +82,17 @@ change have no TV-side acceptance result. The parent owns TV operations.
   wakes the blocked read. No active-path sleep follows each received message.
 - Both native input **and SDL host keys** use `EventLoopPost::post` /
   `invoke_from_event_loop`. `Shell::attach` posts SDL's `HostEvent::Key`, so
-  the remote is not mapped inline in SDL's callback. The native reader posts
-  each field and SYN separately from its worker thread. SDL posts one key event
-  on the UI thread. `window-sdl::Proxy` queues closures and wakes SDL;
-  `run_jobs` drains a snapshot before render. A sample whose SYN arrives after
-  that snapshot can wait through a render. The CPU-heavy animation can delay
-  either source; traces must establish the actual queue/render cost.
+  the remote is not mapped inline in SDL's callback. The native reader now
+  assembles each device's fields through SYN before posting ONE UI job.
+  Baselines travel with their completion controls. Removal, suspend, disconnect
+  and reconnect discard unfinished samples. Frame size and device count retain
+  the existing Linux input bounds.
+  `window-sdl::Proxy` already uses the loaded SDL's thread-safe `SDL_PushEvent`
+  with a registered user event: no new SDL symbol or fallback path is needed.
+  The SDL pump drains jobs immediately after both keys and user events, then
+  checks events/jobs again before the next presentation. Jobs posted while an
+  earlier job runs are drained too, not left in a snapshot for another render.
+  Rendering cost and the 16 ms animation wait are unchanged.
 - `input/mapper.rs::handle` commits both keys and HAT axes at SYN_REPORT.
   HAT values use sign/nonzero, with no 0.6 stick threshold and no time window.
   Stick metadata uses a normalized 0.6 threshold (or 16000 without both axis
@@ -96,6 +102,36 @@ change have no TV-side acceptance result. The parent owns TV operations.
   L1+R1 switches when both are held, without a chord timer. Baselines must
   rearm from neutral; direction repeat is 400 ms then 100 ms.
   SDL keys use the same repeat schedule, but no SYN barrier.
+
+### TV result and explicit acceptance target
+
+The parent's `faeb9c59` capture is in
+`~/.cache/research/korri-webos-m2/evidence/pad-trace.log`; its analysis script is
+`~/.cache/research/korri-webos-m2/trace-analyze.py`. The owner still felt more
+pad delay. For 11 pad presses, median evdev-read → native-receive was 0.7 ms,
+→ native-UI 14.7 ms (range 3–65), and → presentation 40.3 ms (worst 162).
+For 8 remote presses, SDL callback → UI was 0.1 ms and → presentation 27.9 ms
+(worst 89). This locates the observed extra wait in the shell, not korrid or
+the socket. That build posted fields and SYN separately and drained a job
+snapshot before rendering. The new batching/pump change targets that extra wait.
+
+**Acceptance target: the pad must match the remote in the same TV run.**
+Pad press → UI-applied median must be within 2 ms of the remote's. Pad press
+→ presentation median and worst case must be no worse than the remote's.
+A workstation SDL/Xvfb regression queues a complete native frame from a worker
+and an SDL Right key in one loop iteration. It checks that the next presented
+buffer sees both, and that a job arriving during another job is not deferred.
+Run it with `CARGO_BUILD_JOBS=2 nix run .#shell-webos-input-check` (workstation
+only). The socket regression checks that fields never cross the UI boundary
+before SYN and that removal/suspend cannot replay an unfinished sample.
+
+This is a target, not a TV acceptance claim. No UI-thread input can interrupt
+an in-progress synchronous render; reducing rendering cost belongs to M6.
+The existing B7 remote timestamps are created at the SDL pump (`age_ms=0`),
+so callback-based remote timing hides its own wait during rendering. The
+provided analysis script uses that callback as its remote start. Keep that
+measurement asymmetry visible when judging physical press latency; this change
+does not claim the current trace provides a physical remote press timestamp.
 
 ### Capture protocol
 
@@ -132,7 +168,8 @@ Filter with `grep INPUT_TRACE /tmp/korri-shell-launch.log`. Match pad fields by
 | `socket_write` | About to send one native field/SYN; `queue_us` is its age in the subscriber queue. |
 | `socket_written … ok=true` | Async WebSocket send/flush returned, not a TCP ACK or proof of peer receipt. |
 | `native_receive` | Shell worker decoded the field/SYN, before posting to UI. |
-| `native_ui` | UI thread is applying that native field/SYN to the mapper. |
+| `native_post events=N` | Complete native frame is about to be posted as ONE UI job. |
+| `native_ui` | UI thread applies this field/SYN; all fields and SYN from a complete sample run in the same job. |
 | `sdl_key` | Remote key callback: `event_sdl_ms`, `read_sdl_ms`, wrapping `age_ms`, key numbers and press/repeat state. SDL ticks have their own origin. |
 | `key_ui` | UI thread applies the posted SDL host key to the mapper. |
 | `mapper source=pad/key press=Button(Right)` | Initial semantic output from the relevant mapper path. |

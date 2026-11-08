@@ -58,7 +58,7 @@ pub enum Event {
         window: u8,
         event: HostEvent,
     },
-    Native(NativeEvent),
+    Native(Vec<NativeEvent>),
     Model {
         generation: u64,
         revision: Option<String>,
@@ -380,22 +380,27 @@ impl Shell {
                 window,
                 event,
             } => self.host(generation, window, event),
-            Event::Native(event) => {
-                if let crate::input::native::NativeEvent::Input {
-                    kind, code, value, ..
-                } = &event
-                {
-                    korri_input_trace::record(
-                        "native_ui",
-                        format_args!("type={kind} code={code} value={value}"),
-                    );
-                }
+            Event::Native(events) => {
                 let now = self.now();
-                let presses = self.router.native(event, now);
-                for press in &presses {
-                    korri_input_trace::record("mapper", format_args!("source=pad press={press:?}"));
+                for event in events {
+                    if let crate::input::native::NativeEvent::Input {
+                        kind, code, value, ..
+                    } = &event
+                    {
+                        korri_input_trace::record(
+                            "native_ui",
+                            format_args!("type={kind} code={code} value={value}"),
+                        );
+                    }
+                    let presses = self.router.native(event, now);
+                    for press in &presses {
+                        korri_input_trace::record(
+                            "mapper",
+                            format_args!("source=pad press={press:?}"),
+                        );
+                    }
+                    self.presses(presses);
                 }
-                self.presses(presses);
             }
             Event::Model {
                 generation,

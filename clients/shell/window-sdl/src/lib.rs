@@ -674,8 +674,11 @@ impl SdlPlatform {
     }
 
     fn run_jobs(&self) {
-        let jobs: Vec<_> = self.shared.jobs.lock().unwrap().drain(..).collect();
-        for job in jobs {
+        // A native frame can arrive while an earlier model/logic job runs.
+        // Do not leave it in a drained snapshot until after another render.
+        loop {
+            let job = self.shared.jobs.lock().unwrap().pop_front();
+            let Some(job) = job else { break };
             job();
         }
     }
@@ -756,15 +759,43 @@ impl SdlPlatform {
         self.probe.borrow_mut().focus(focus);
     }
 
-    fn event_loop(&self) -> Result<(), PlatformError> {
-        loop {
-            self.sample_keyboard_focus();
-            slint::platform::update_timers_and_animations();
+    fn pump_events(&self, first: Option<ffi::Event>) -> Result<(), PlatformError> {
+        if let Some(event) = first {
+            self.handle(&event)?;
             self.run_jobs();
-            if self.shared.quit.load(Ordering::SeqCst) {
-                return Ok(());
-            }
-            self.render()?;
+        }
+        let mut event = ffi::Event::zeroed();
+        // SAFETY: initialized SDL, valid event storage, UI thread.
+        while unsafe { (self.sdl().SDL_PollEvent)(&mut event) } == 1 {
+            self.handle(&event)?;
+            // SDL keys and the thread-safe SDL_PushEvent wake use this SAME
+            // checkpoint. Both apply host work in this pump iteration, before
+            // its next presentation, rather than scheduling another render.
+            self.run_jobs();
+        }
+        Ok(())
+    }
+
+    /// Consume both event sources before this iteration's presentation. The
+    /// nonblocking pump also catches work queued while timers or jobs ran.
+    fn frame_iteration(&self, first: Option<ffi::Event>) -> Result<bool, PlatformError> {
+        self.sample_keyboard_focus();
+        if first.is_some() {
+            self.pump_events(first)?;
+        }
+        slint::platform::update_timers_and_animations();
+        self.pump_events(None)?;
+        self.run_jobs();
+        if self.shared.quit.load(Ordering::SeqCst) {
+            return Ok(false);
+        }
+        self.render()?;
+        Ok(true)
+    }
+
+    fn event_loop(&self) -> Result<(), PlatformError> {
+        let mut first = None;
+        while self.frame_iteration(first.take())? {
             let wait = if self.slint_window.has_active_animations() {
                 Duration::from_millis(16)
             } else {
@@ -776,13 +807,10 @@ impl SdlPlatform {
             let got =
                 unsafe { (self.sdl().SDL_WaitEventTimeout)(&mut event, wait.as_millis() as c_int) };
             if got == 1 {
-                self.handle(&event)?;
-                // SAFETY: as above.
-                while unsafe { (self.sdl().SDL_PollEvent)(&mut event) } == 1 {
-                    self.handle(&event)?;
-                }
+                first = Some(event);
             }
         }
+        Ok(())
     }
 }
 
@@ -995,3 +1023,6 @@ fn upload(sdl: &Sdl, screen: &Screen, (x, y, w, h): (u32, u32, u32, u32)) -> Res
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod input_pump_tests;

@@ -75,9 +75,7 @@ impl Android {
         .with_input_event_filter(Box::new(move |event| {
             let input = &event_input;
             let send = |events: Vec<NativeEvent>| {
-                for event in events {
-                    let _ = post.send(Event::Native(event));
-                }
+                let _ = post.send(Event::Native(events));
             };
             if let InputEvent::KeyEvent(key) = event {
                 let code: u32 = key.key_code().into();
@@ -277,7 +275,7 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
                     });
                     if let Ok(ids) = removed {
                         for id in ids {
-                            shell.handle(Event::Native(input.borrow_mut().removed(id)));
+                            shell.handle(Event::Native(vec![input.borrow_mut().removed(id)]));
                         }
                     }
                 }

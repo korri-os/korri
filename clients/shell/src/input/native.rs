@@ -230,7 +230,9 @@ enum Command {
     Active(bool),
 }
 
-/// The running subscription. Dropping it closes the socket.
+/// The running subscription. Each complete live sample (fields + SYN) is
+/// one callback; baseline fields travel with their completion control. Dropping
+/// it closes the socket and discards any incomplete sample.
 pub struct NativeInput {
     commands: mpsc::Sender<Command>,
     stop: Arc<AtomicBool>,
@@ -241,7 +243,7 @@ impl NativeInput {
     pub fn start(
         connection: Connection,
         active: bool,
-        events: Box<dyn Fn(NativeEvent) + Send>,
+        events: Box<dyn Fn(Vec<NativeEvent>) + Send>,
     ) -> Self {
         let (commands, receiver) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -290,7 +292,7 @@ enum End {
 fn run(
     connection: &Connection,
     mut active: bool,
-    events: &dyn Fn(NativeEvent),
+    events: &dyn Fn(Vec<NativeEvent>),
     commands: &mpsc::Receiver<Command>,
     stop: &AtomicBool,
 ) {
@@ -330,7 +332,7 @@ fn run(
             Err(_) => End::Lost,
         };
         if connected {
-            events(NativeEvent::Disconnected);
+            events(vec![NativeEvent::Disconnected]);
         }
         if let End::Lost = end {
             let mut waited = Duration::ZERO;
@@ -348,11 +350,12 @@ fn serve(
     active: &mut bool,
     connected: &mut bool,
     delay: &mut Duration,
-    events: &dyn Fn(NativeEvent),
+    events: &dyn Fn(Vec<NativeEvent>),
     commands: &mpsc::Receiver<Command>,
     stop: &AtomicBool,
 ) -> End {
     let mut attachment = Attachment::default();
+    let mut frames = super::frames::Frames::default();
     let send = |socket: &mut crate::korrid::Socket, value: Value| {
         socket.send(Message::Text(value.to_string().into())).is_ok()
     };
@@ -369,7 +372,8 @@ fn serve(
             // Retire locally first, then ask korrid to release this generation.
             attachment.retired = true;
             if std::mem::take(connected) {
-                events(NativeEvent::Disconnected);
+                events(vec![NativeEvent::Disconnected]);
+                frames = super::frames::Frames::default();
             }
         }
         if attachment.retired && !attachment.release_requested && attachment.request.is_none() {
@@ -410,7 +414,7 @@ fn serve(
                 format_args!("type={kind} code={code} value={value}"),
             );
         }
-        match message {
+        let event = match message {
             Decoded::Suspend {
                 generation,
                 request,
@@ -427,7 +431,8 @@ fn serve(
                 attachment.request = Some(request.clone());
                 attachment.retired = true;
                 if std::mem::take(connected) {
-                    events(NativeEvent::Disconnected);
+                    events(vec![NativeEvent::Disconnected]);
+                    frames = super::frames::Frames::default();
                 }
                 if !send(
                     socket,
@@ -435,6 +440,7 @@ fn serve(
                 ) {
                     return End::Lost;
                 }
+                continue;
             }
             Decoded::Retired { generation } => {
                 if !attachment.retired
@@ -467,19 +473,38 @@ fn serve(
                 }
                 *delay = RECONNECT_INITIAL;
                 *connected = true;
-                events(NativeEvent::Initialized);
+                NativeEvent::Initialized
             }
-            _ if attachment.retired => {}
+            _ if attachment.retired => continue,
             Decoded::DeviceStateComplete { device } => {
                 *delay = RECONNECT_INITIAL;
-                events(NativeEvent::DeviceInitialized(device));
+                NativeEvent::DeviceInitialized(device)
             }
             Decoded::Event(event) => {
                 *delay = RECONNECT_INITIAL;
                 *connected = true;
-                events(event);
+                event
             }
-            Decoded::Action => {}
+            Decoded::Action => continue,
+        };
+        let Ok(batch) = frames.push(event) else {
+            return End::Lost;
+        };
+        if let Some(batch) = batch {
+            if batch.iter().any(|event| {
+                matches!(
+                    event,
+                    NativeEvent::Input {
+                        kind: 0,
+                        code: 0,
+                        value: 0,
+                        ..
+                    }
+                )
+            }) {
+                korri_input_trace::record("native_post", format_args!("events={}", batch.len()));
+            }
+            events(batch);
         }
     }
     End::Lost

@@ -123,6 +123,43 @@ in
             bash "$crate/webos/proof.sh" "$CARGO_TARGET_DIR/release" "$out" \
               "$KORRI_ROOT/.cache/korrid-target/debug/webos-korrid" "${productRelays}"
         '';
+    shell-webos-input-check =
+      makeApp "shell-webos-input-check" [ pkgs.SDL2 pkgs.xorg-server pkgs.pkg-config ]
+        ''
+          export CARGO_BUILD_JOBS="''${CARGO_BUILD_JOBS:-2}"
+          export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/shell-webos-desktop-target"
+          export LD_LIBRARY_PATH="${
+            lib.makeLibraryPath [
+              pkgs.SDL2
+              pkgs.fontconfig.lib
+            ]
+          }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export PKG_CONFIG_PATH="${
+            lib.makeSearchPath "lib/pkgconfig" [
+              pkgs.fontconfig.dev
+              pkgs.freetype.dev
+              pkgs.expat.dev
+              pkgs.zlib.dev
+              pkgs.bzip2.dev
+              pkgs.libpng.dev
+              pkgs.brotli.dev
+            ]
+          }"
+          work=$(mktemp -d)
+          Xvfb -displayfd 3 -screen 0 640x480x24 -nolisten tcp 3>"$work/display" >"$work/xvfb.log" 2>&1 &
+          xvfb=$!
+          trap 'kill "$xvfb" 2>/dev/null || true; wait "$xvfb" 2>/dev/null || true; rm -rf "$work"' EXIT
+          for _ in $(seq 100); do
+            test ! -s "$work/display" || break
+            sleep 0.1
+          done
+          test -s "$work/display"
+          DISPLAY=":$(cat "$work/display")"
+          export DISPLAY
+          unset WAYLAND_DISPLAY
+          cargo test --locked --release --manifest-path "$crate/window-sdl/Cargo.toml" \
+            input_pump_tests::native_frame_and_sdl_key_reach_the_same_presented_frame -- --ignored --nocapture
+        '';
     shell-webos-proof =
       makeApp "shell-webos-proof"
         [
@@ -147,6 +184,8 @@ in
         Test packaging or inspect the assembled M2 IPK.
     nix run .#shell-webos-real-proof -- OUTPUT
         Prove the real brain, shipped launcher and SDL shell reach Zone in an isolated workstation jail.
+    nix run .#shell-webos-input-check
+        Check that native frames and SDL keys reach the same presented frame under Xvfb.
     nix run .#shell-webos-proof -- OUTPUT
         Run the webOS SDL shell at 1920x1080 under Xvfb; capture Zone and Pico.
   '';
