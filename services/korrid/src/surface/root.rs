@@ -43,18 +43,40 @@ use super::{
     Notify,
 };
 
+/// A running game's card wraps its catalog entry; read the catalog facts
+/// through it so the one card keeps its download, save and profile badges.
+fn catalog_view(entry: &Entry) -> &Entry {
+    entry.catalog_entry().unwrap_or(entry)
+}
+
 /// korrid ids of every game this device can launch itself, sorted.
 fn local_game_ids_of(state: &LaunchablesState) -> Vec<String> {
     let mut ids: Vec<String> = state
         .entries()
         .iter()
-        .filter_map(|entry| match entry {
+        .filter_map(|entry| match catalog_view(entry) {
             Entry::Game { game, .. } if game.source.is_local => Some(game.id.clone()),
             _ => None,
         })
         .collect();
     ids.sort();
     ids
+}
+
+/// Surface id -> korrid id for the badges: the local games, plus a running
+/// local game whose card wraps its catalog entry. Actions keep using
+/// `local_game_ids_by_surface_id`; a running card offers only its session's.
+fn decorated_game_ids_by_surface_id(state: &LaunchablesState) -> BTreeMap<String, String> {
+    state
+        .entries()
+        .iter()
+        .filter_map(|entry| match catalog_view(entry) {
+            Entry::Game { game, .. } if game.source.is_local => {
+                Some((entry.key(), game.id.clone()))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Surface id -> korrid id, for the games the download side can speak about.
@@ -1070,7 +1092,7 @@ impl Root {
         if facts.is_empty() && marks.is_empty() && profiles.is_empty() {
             return games;
         }
-        let ids = local_game_ids_by_surface_id(state);
+        let ids = decorated_game_ids_by_surface_id(state);
         games
             .into_iter()
             .map(|mut game| {
@@ -1708,5 +1730,39 @@ impl Root {
             | SurfaceRequest::RememberPreference { .. }
             | SurfaceRequest::MoveCatalog { .. } => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod badge_ids_tests {
+    use serde_json::json;
+
+    use super::{decorated_game_ids_by_surface_id, local_game_ids_by_surface_id};
+    use crate::{
+        surface::launchables::state::LaunchablesState, CatalogSnapshotOutcome, SessionStatusOutcome,
+    };
+
+    #[test]
+    fn a_running_local_game_keeps_its_badges_but_not_its_catalog_actions() {
+        let catalog: CatalogSnapshotOutcome = serde_json::from_value(json!({ "_tag": "Ok", "payload": { "games": [
+            { "id": "local", "title": "Local", "source": { "label": "this", "isLocal": true }, "host": "this", "supportsRunnerSelection": false },
+        ] } }))
+        .unwrap();
+        let before = LaunchablesState::from_sources(&catalog, None, None, &[], None);
+        let key = before.entries()[0].key();
+        let active: SessionStatusOutcome = serde_json::from_value(
+            json!({ "_tag": "Ok", "payload": { "active": { "launchId": "l1", "gameId": "local" } } }),
+        )
+        .unwrap();
+        let running = before.with_session_status(&active);
+        assert!(running.entries()[0].is_now_playing());
+        assert_eq!(
+            decorated_game_ids_by_surface_id(&running)
+                .get(&key)
+                .map(String::as_str),
+            Some("local")
+        );
+        // Catalog actions (launch settings, save history) stay off the running card.
+        assert!(local_game_ids_by_surface_id(&running).get(&key).is_none());
     }
 }
