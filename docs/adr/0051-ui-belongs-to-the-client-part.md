@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # UI belongs to the client part; a device may run only the server part
