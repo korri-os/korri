@@ -360,9 +360,34 @@ safe non-hidden path segment. SHA-256 values require `sha256:` and 64 hex digits
 admission lowercases the digits and rejects duplicates. `unpack` is a bare key
 in that plugin's own installed `files`. Unknown fields and explicit nulls fail.
 
+An artifact whose download differs by architecture (ADR 0052) replaces
+`version` and `files` with `platforms`, a non-empty map from a Nix system
+(`x86_64-linux` or `aarch64-linux`, the catalog's `platform` values) to
+`{version, files}`:
+
+```ts
+export const artifacts = {
+  cachyos: {
+    id: "@korri:proton/cachyos",
+    platforms: {
+      "aarch64-linux": { version: "11.0-20260601-slr-arm64", files: [/* … */] },
+      "x86_64-linux": { version: "11.0-20260601-slr-x86_64", files: [/* … */] },
+    },
+    unpack: "cachyos-unpack",
+  },
+}
+```
+
+A record has either both `version` and `files` or `platforms`, never both.
+Every platform's build passes the same checks on every device. korrid resolves
+the record to its own platform's build. A record with no entry for that platform
+is skipped: korrid does not acquire it, it is not in acquisition status, and
+runners that list it start without it.
+
 `RunnerRecord.artifacts` lists the full artifact IDs the runner needs, including
-artifacts from other enabled plugins. Every ID must resolve. Omission means an
-empty list. A runner does not acquire all artifacts of its package dependencies.
+artifacts from other enabled plugins. Every ID must resolve, or be skipped on
+this platform. Omission means an empty list. A runner does not acquire all
+artifacts of its package dependencies.
 
 `PluginLaunchInput.artifacts` maps ready artifact IDs to paths. The runner's own
 artifacts use bare keys; foreign artifacts use `<pluginId>/<key>`, as `files`

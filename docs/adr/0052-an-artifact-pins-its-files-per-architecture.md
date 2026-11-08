@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # An artifact pins its files per architecture
@@ -21,10 +21,17 @@ Grounding: the architecture names are the Nix system strings that the plugin
 catalog already uses for a release's `platform`
 (`services/korrid/plugin-host/src/catalog.rs`). ADR 0047 already gives each
 native plugin one release per architecture. This ADR extends the same split to
-the artifacts in ADR 0012. The `plugin.ts` spelling of the per-architecture
-file sets, the per-architecture cache path, and how the launch input marks a
-skipped artifact are not decided. The implementation slice settles them from
-the Proton and FEX declarations.
+the artifacts in ADR 0012.
+
+Shape (owner delegated the choice, 2026-11-08: "best long term approach"): an
+artifact record keeps `id`, `unpack` and `title`, and has either `version` and
+`files` (the same on every architecture) or `platforms`, a map from Nix system
+to `{version, files}`. Each architecture carries its own version, because
+upstream builds for different CPUs are separate releases that can drift apart.
+The cache path stays `cache/<plugin>/<key>/<version>/`, and the Mini's Proton
+version and tool name stay unchanged. A skipped artifact is absent from
+`PluginLaunchInput.artifacts`, exactly like a runner that never listed it.
+`services/korrid/SCRIPTING.md` holds the full rules.
 
 ## Considered options
 

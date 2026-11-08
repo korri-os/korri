@@ -225,6 +225,47 @@ pub struct ArtifactRecord {
     pub title: Option<String>,
 }
 
+/// An artifact as `plugin.ts` declares it (ADR 0052): one `version` and
+/// `files` for every architecture, or one pair per Nix system under
+/// `platforms`. Normalization resolves it to this device's `ArtifactRecord`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct ArtifactDeclaration {
+    id: String,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    version: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    files: Option<Vec<ArtifactFile>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    platforms: Option<BTreeMap<String, ArtifactBuild>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    unpack: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    title: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct ArtifactBuild {
+    version: String,
+    files: Vec<ArtifactFile>,
+}
+
+/// The Nix systems the plugin catalog publishes (`platform` in
+/// plugin-host/src/catalog.rs).
+const ARTIFACT_PLATFORMS: [&str; 2] = ["x86_64-linux", "aarch64-linux"];
+
+/// This device's Nix system. Other targets match no `platforms` entry.
+pub(crate) fn host_platform() -> &'static str {
+    if cfg!(target_arch = "x86_64") {
+        "x86_64-linux"
+    } else if cfg!(target_arch = "aarch64") {
+        "aarch64-linux"
+    } else {
+        "unsupported"
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactFile {
@@ -414,6 +455,8 @@ pub struct Plugin {
     families: BTreeMap<String, FamilyRecord>,
     runners: BTreeMap<String, RunnerRecord>,
     artifacts: BTreeMap<String, ArtifactRecord>,
+    /// Declared artifact ids with no files for this device's platform.
+    skipped_artifacts: BTreeSet<String>,
     modifiers: BTreeMap<String, ModifierRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
@@ -457,6 +500,7 @@ pub struct PluginRegistry {
     families: BTreeMap<String, FamilyRecord>,
     runners: BTreeMap<String, RunnerRecord>,
     artifacts: BTreeMap<String, ArtifactRecord>,
+    skipped_artifacts: BTreeSet<String>,
     modifiers: BTreeMap<String, ModifierRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
@@ -493,6 +537,7 @@ impl PluginRegistry {
         let mut families = BTreeMap::new();
         let mut runners = BTreeMap::new();
         let mut artifacts = BTreeMap::new();
+        let mut skipped_artifacts = BTreeSet::new();
         let mut modifiers = BTreeMap::new();
         let mut transports = BTreeMap::new();
         let mut session_controls = BTreeMap::new();
@@ -548,6 +593,7 @@ impl PluginRegistry {
             for record in plugin.artifacts.values() {
                 insert_unique(&mut artifacts, record.id.clone(), record.clone())?;
             }
+            skipped_artifacts.extend(plugin.skipped_artifacts.iter().cloned());
             for record in plugin.modifiers.values() {
                 insert_unique(&mut modifiers, record.id.clone(), record.clone())?;
             }
@@ -565,7 +611,7 @@ impl PluginRegistry {
 
         for runner in runners.values() {
             for id in &runner.artifacts {
-                if !artifacts.contains_key(id) {
+                if !artifacts.contains_key(id) && !skipped_artifacts.contains(id) {
                     return Err(invalid_contribution(
                         "runner",
                         &runner.id,
@@ -664,6 +710,7 @@ impl PluginRegistry {
             families,
             runners,
             artifacts,
+            skipped_artifacts,
             modifiers,
             transports,
             session_controls,
@@ -789,9 +836,12 @@ impl PluginRegistry {
             .runners
             .get(id)
             .ok_or_else(|| invalid_contribution("runner", id, "runner is unavailable"))?;
+        // An artifact with no files for this platform is not this device's
+        // to acquire, and its runner starts without it (ADR 0052).
         runner
             .artifacts
             .iter()
+            .filter(|id| !self.skipped_artifacts.contains(*id))
             .map(|id| self.artifact(id))
             .collect()
     }
@@ -1060,7 +1110,7 @@ struct PluginDeclaration {
     #[serde(default)]
     runners: BTreeMap<String, RunnerRecord>,
     #[serde(default)]
-    artifacts: BTreeMap<String, ArtifactRecord>,
+    artifacts: BTreeMap<String, ArtifactDeclaration>,
     #[serde(default)]
     modifiers: BTreeMap<String, ModifierRecord>,
     #[serde(default)]
@@ -1095,14 +1145,26 @@ pub fn decode_plugin_declaration(
     namespace: &str,
     declaration_json: &str,
 ) -> Result<Plugin, PluginError> {
+    decode_plugin_declaration_on(namespace, declaration_json, host_platform())
+}
+
+/// Decodes as a device of `platform` would; artifacts resolve to its files.
+pub(crate) fn decode_plugin_declaration_on(
+    namespace: &str,
+    declaration_json: &str,
+    platform: &str,
+) -> Result<Plugin, PluginError> {
     let value: serde_json::Value = serde_json::from_str(declaration_json)?;
     script::reject_derived_ids(&value).map_err(PluginError::Evaluation)?;
     let mut declaration: PluginDeclaration = serde_json::from_value(value)?;
     declaration.namespace = namespace.to_owned();
-    normalize_plugin(declaration)
+    normalize_plugin(declaration, platform)
 }
 
-fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, PluginError> {
+fn normalize_plugin(
+    mut declaration: PluginDeclaration,
+    platform: &str,
+) -> Result<Plugin, PluginError> {
     let id = format!("{}:{}", declaration.namespace, declaration.name);
     if !is_provider_id(&id) {
         return Err(PluginError::InvalidPluginId(id));
@@ -1251,19 +1313,12 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (key, artifact) in &mut declaration.artifacts {
-        let invalid = |reason| invalid_contribution("artifact", key, reason);
-        if !is_provider_segment(key) || artifact.id != plugin_record_id(&id, key) {
+    let mut artifacts = BTreeMap::new();
+    let mut skipped_artifacts = BTreeSet::new();
+    for (key, artifact) in std::mem::take(&mut declaration.artifacts) {
+        let invalid = |reason| invalid_contribution("artifact", &key, reason);
+        if !is_provider_segment(&key) || artifact.id != plugin_record_id(&id, &key) {
             return Err(invalid("artifact id must match its owner and local key"));
-        }
-        if artifact.version.is_empty()
-            || artifact.version.starts_with('.')
-            || artifact.version.contains('/')
-            || artifact.version.chars().any(char::is_control)
-        {
-            return Err(invalid(
-                "artifact version must be one safe non-hidden path segment",
-            ));
         }
         if artifact
             .unpack
@@ -1272,23 +1327,78 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         {
             return Err(invalid("unpack must be a bare file key"));
         }
-        if artifact.files.is_empty() {
-            return Err(invalid("artifact files must not be empty"));
-        }
-        let mut hashes = BTreeSet::new();
-        for file in &mut artifact.files {
-            if !file
-                .sha256
-                .strip_prefix("sha256:")
-                .is_some_and(|hex| hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+        let mut builds = match (artifact.version, artifact.files, artifact.platforms) {
+            (Some(version), Some(files), None) => {
+                BTreeMap::from([(None, ArtifactBuild { version, files })])
+            }
+            (None, None, Some(platforms)) if !platforms.is_empty() => {
+                if platforms
+                    .keys()
+                    .any(|p| !ARTIFACT_PLATFORMS.contains(&p.as_str()))
+                {
+                    return Err(invalid(
+                        "artifact platforms must be x86_64-linux or aarch64-linux",
+                    ));
+                }
+                platforms
+                    .into_iter()
+                    .map(|(p, build)| (Some(p), build))
+                    .collect()
+            }
+            _ => {
+                return Err(invalid(
+                    "artifact needs version and files, or a non-empty platforms map",
+                ))
+            }
+        };
+        // Every build is checked, not only this device's, so a declaration
+        // fails the same way on every architecture.
+        for build in builds.values_mut() {
+            if build.version.is_empty()
+                || build.version.starts_with('.')
+                || build.version.contains('/')
+                || build.version.chars().any(char::is_control)
             {
                 return Err(invalid(
-                    "artifact hash must be sha256 followed by 64 hex digits",
+                    "artifact version must be one safe non-hidden path segment",
                 ));
             }
-            file.sha256.make_ascii_lowercase();
-            if !hashes.insert(&file.sha256) {
-                return Err(invalid("artifact hashes must not repeat"));
+            if build.files.is_empty() {
+                return Err(invalid("artifact files must not be empty"));
+            }
+            let mut hashes = BTreeSet::new();
+            for file in &mut build.files {
+                if !file.sha256.strip_prefix("sha256:").is_some_and(|hex| {
+                    hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+                }) {
+                    return Err(invalid(
+                        "artifact hash must be sha256 followed by 64 hex digits",
+                    ));
+                }
+                file.sha256.make_ascii_lowercase();
+                if !hashes.insert(file.sha256.clone()) {
+                    return Err(invalid("artifact hashes must not repeat"));
+                }
+            }
+        }
+        let build = builds
+            .remove(&None)
+            .or_else(|| builds.remove(&Some(platform.to_owned())));
+        match build {
+            Some(ArtifactBuild { version, files }) => {
+                artifacts.insert(
+                    key,
+                    ArtifactRecord {
+                        id: artifact.id,
+                        version,
+                        files,
+                        unpack: artifact.unpack,
+                        title: artifact.title,
+                    },
+                );
+            }
+            None => {
+                skipped_artifacts.insert(artifact.id);
             }
         }
     }
@@ -1568,7 +1678,8 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         systems: declaration.systems,
         families: declaration.families,
         runners: declaration.runners,
-        artifacts: declaration.artifacts,
+        artifacts,
+        skipped_artifacts,
         modifiers: declaration.modifiers,
         transports: declaration.transports,
         session_controls: declaration.session_controls,
@@ -2387,6 +2498,80 @@ mod artifact_tests {
         let file = value["artifacts"]["rootfs"]["files"][0].clone();
         value["artifacts"]["rootfs"]["files"] = json!([file, file]);
         assert!(decode(value).is_err());
+    }
+    fn per_platform() -> serde_json::Value {
+        let file = |name: &str, digit: &str| json!({"url":format!("https://example.com/{name}.tar"), "sha256":format!("sha256:{}", digit.repeat(64))});
+        json!({"name":"runtime", "artifacts":{"rootfs":{
+            "id":"@test:runtime/rootfs", "unpack":"unpack", "platforms":{
+                "aarch64-linux":{"version":"1-arm64", "files":[file("arm", "a")]},
+                "x86_64-linux":{"version":"1-x86_64", "files":[file("x86", "b")]}
+            }
+        }}})
+    }
+    #[test]
+    fn a_per_platform_artifact_resolves_to_this_devices_files() {
+        for (platform, version, url) in [
+            ("aarch64-linux", "1-arm64", "https://example.com/arm.tar"),
+            ("x86_64-linux", "1-x86_64", "https://example.com/x86.tar"),
+        ] {
+            let plugin =
+                decode_plugin_declaration_on("@test", &per_platform().to_string(), platform)
+                    .unwrap();
+            let record = &plugin.artifacts["rootfs"];
+            assert_eq!(
+                (record.version.as_str(), record.files[0].url.as_str()),
+                (version, url)
+            );
+            assert_eq!(record.unpack.as_deref(), Some("unpack"));
+        }
+    }
+    #[test]
+    fn per_platform_artifacts_reject_unknown_platforms_and_mixed_forms() {
+        let mut unknown = per_platform();
+        unknown["artifacts"]["rootfs"]["platforms"]["riscv64-linux"] =
+            unknown["artifacts"]["rootfs"]["platforms"]["x86_64-linux"].clone();
+        let mut mixed = per_platform();
+        mixed["artifacts"]["rootfs"]["version"] = json!("1");
+        let mut empty = per_platform();
+        empty["artifacts"]["rootfs"]["platforms"] = json!({});
+        // Another platform's bad build fails here too.
+        let mut foreign = per_platform();
+        foreign["artifacts"]["rootfs"]["platforms"]["aarch64-linux"]["version"] = json!("..");
+        for value in [unknown, mixed, empty, foreign] {
+            assert!(
+                decode_plugin_declaration_on("@test", &value.to_string(), "x86_64-linux").is_err()
+            );
+        }
+    }
+    #[test]
+    fn a_runner_skips_an_artifact_with_no_files_for_this_platform() {
+        let mut arm_only = per_platform();
+        arm_only["artifacts"]["rootfs"]["platforms"]
+            .as_object_mut()
+            .unwrap()
+            .remove("x86_64-linux");
+        let on = |platform| {
+            let runtime =
+                decode_plugin_declaration_on("@test", &arm_only.to_string(), platform).unwrap();
+            let runner = load_plugin_source("@test", "export const name='player'; export const runners={play:{command:'play', artifacts:['@test:runtime/rootfs']}};").unwrap();
+            PluginRegistry::new(
+                vec![runner, runtime],
+                ["@test:player".into(), "@test:runtime".into()],
+            )
+            .unwrap()
+        };
+        assert!(on("x86_64-linux")
+            .artifacts_for_runner("@test:player/play")
+            .unwrap()
+            .is_empty());
+        assert!(on("x86_64-linux").artifact("@test:runtime/rootfs").is_err());
+        assert_eq!(
+            on("aarch64-linux")
+                .artifacts_for_runner("@test:player/play")
+                .unwrap()[0]
+                .version,
+            "1-arm64"
+        );
     }
     #[test]
     fn runners_resolve_only_enabled_artifacts() {
