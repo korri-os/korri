@@ -105,10 +105,12 @@ case "$action" in
       cargo build --locked --release --manifest-path "$KORRI_ROOT/services/korrid/Cargo.toml" \
         --bin webos-korrid --target armv7-unknown-linux-gnueabi
       release="$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release"
-      cp "$KORRI_WEBOS_MEDIA/bin/korri-webos" "$release/korri-webos"
+      install -m0755 "$KORRI_WEBOS_MEDIA/bin/korri-webos" "$release/korri-webos"
       mkdir -p "$release/lib" "$release/share"
-      cp "$KORRI_WEBOS_MEDIA/lib/"*.so "$release/lib/"
-      cp -r "$KORRI_WEBOS_MEDIA/share/korri-webos" "$release/share/"
+      install -m0644 "$KORRI_WEBOS_MEDIA/lib/"*.so "$release/lib/"
+      install -d -m0755 "$release/share/korri-webos" "$release/share/korri-webos/licenses"
+      install -m0644 "$KORRI_WEBOS_MEDIA/share/korri-webos/ss4s-media-test.patch" "$release/share/korri-webos/"
+      install -m0644 "$KORRI_WEBOS_MEDIA/share/korri-webos/licenses/ss4s.txt" "$release/share/korri-webos/licenses/"
       binaries=("$release/korri-webos" "$release/lib/libss4s.so" "$release/lib/ss4s-ndl-webos4.so"
         "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/webos-korrid"
         "$CARGO_TARGET_DIR/armv7-unknown-linux-gnueabi/release/korri-shell"

@@ -281,6 +281,22 @@ pathlib.Path('shell-relays.json').write_text(json.dumps(os.environ.get('KORRID_R
                 self.assertIn('korrid exited' if behavior == 'fail' else 'startup timed out',
                               (app / 'tmp/korri-shell-launch.log').read_text())
 
+    def test_signal_received_between_fork_and_exec_does_not_start_a_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = pathlib.Path(directory)
+            self.stage_processes(app)
+            source = app / 'signal-before-exec.c'
+            source.write_text('#define _GNU_SOURCE\n#include <dlfcn.h>\n#include <signal.h>\n#include <unistd.h>\npid_t fork(void) {\n    pid_t (*real_fork)(void) = dlsym(RTLD_NEXT, "fork");\n    pid_t pid = real_fork();\n    if (pid == 0)\n        raise(SIGTERM);\n    return pid;\n}\n')
+            library = app / 'signal-before-exec.so'
+            subprocess.run(['cc', '-shared', '-fPIC', '-Wall', '-Wextra', '-Werror',
+                            str(source), '-ldl', '-o', str(library)], check=True)
+            result = subprocess.run([str(app / 'bin/korri-webos')], cwd='/',
+                                    env=dict(os.environ, TMPDIR=str(app / 'tmp'),
+                                             LD_PRELOAD=str(library)), capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse((app / 'brain.pid').exists())
+            self.assert_cleaned(app)
+
     def test_signal_during_brain_startup_reaps_brain(self):
         with tempfile.TemporaryDirectory() as directory:
             app = pathlib.Path(directory)

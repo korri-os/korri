@@ -106,6 +106,10 @@ static pid_t spawn(char *const argv[], const char *connection,
     signal(SIGTERM, SIG_DFL);
     signal(SIGINT, SIG_DFL);
     signal(SIGHUP, SIG_DFL);
+    // A cleanup signal may have hit the inherited handler before these resets.
+    // Do not exec a child that already consumed its termination request.
+    if (interrupted)
+      _exit(143);
     if (connection) {
       int input = open("/dev/null", O_RDONLY);
       int output = open(connection, O_WRONLY | O_CREAT | O_TRUNC, 0600);
