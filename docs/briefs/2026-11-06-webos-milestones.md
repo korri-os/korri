@@ -57,6 +57,22 @@ UI. Each milestone ends in something the owner can check on the TV.
   GStreamer 1.8, `libpulse.so.0`, `libNDL*.so.1`. libstdc++ goes up to
   GLIBCXX_3.4.19 only. libcrypto is only 1.0.0, so the viewer must bundle
   its own. The TV holds its own HDMI pipeline; tests must not disturb it.
+- **Media (2026-11-08).** ss4s `smp-webos3` cannot load on the B7: the TV's
+  pbnjson 2.11 and libplayerAPIs lack four of its imports. `ndl-webos4` (the
+  module Moonlight ranks first for webOS 3.5 to 5) resolves completely.
+  Its M3 KADP patch is a no-op on this `m16p` SoC. NDL video open fails
+  unless the calling process has the app's Luna (LS2) identity. The LS2 role
+  binds `exeName` to the appinfo `main` (today `launch.sh`), so no Korri
+  binary has it. With the role pointed at the test binary (a temporary
+  edit, since restored), NDL opened 1920x1080 H.264, took all 300 frames
+  and closed cleanly, twice. The video was not seen on screen, because Zone
+  paints an opaque background over the video plane. Design consequence: the
+  process that calls NDL must be the appinfo `main` executable. Options are
+  a multi-call `main` binary, so the launcher, brain, shell and viewer share
+  one exe path, or a viewer inside the main process. The shell window also
+  needs see-through regions to show video.
+- **Gamepad latency** is tracked in #373, the cursor in #370, and the gradient
+  noise in Zone's no-art covers in #386 (backlog).
 - **Resources (Zone idle).** korrid 12 MB RSS, about 9% CPU; shell 114 to
   130 MB, about 10 to 13% CPU. Zone's title-card loop takes 61 to 140% CPU.
   M6 needs to address this.
