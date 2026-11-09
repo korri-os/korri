@@ -78,9 +78,11 @@ public final class KorridServer {
             android.content.Context context, String allowedOrigin, String localStorageRoot, String privateStateRoot) {
         com.limelight.KorriStreamViewer.initialize(context);
         KorriAppLauncher.initialize(context);
+        // Before start, so korrid's first library scan already sees the
+        // installed games (ADR 0054). Package changes need a later rescan.
+        KorriAppLauncher.reportInstalledApps(context);
         int port = start(context.getApplicationContext(), allowedOrigin, localStorageRoot, privateStateRoot, BuildConfig.PRODUCT_RELAYS);
         Log.i("KorridServer", "brain started");
-        KorriAppLauncher.reportInstalledApps(context);
         return port;
     }
 }
