@@ -5901,6 +5901,7 @@ pub mod launcher;
 pub mod plugin;
 pub mod plugin_discovery;
 pub mod plugin_installation;
+pub mod nixfree_install;
 pub mod plugin_policy;
 mod plugin_references;
 #[cfg(test)]
