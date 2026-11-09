@@ -16,9 +16,9 @@
 // focus (the shelf, RESUME, Find's and the store's results) sends
 // `dragged(region, by)` each time the finger crosses a whole cart:
 // `Dragged` moves the cursor `by` carts in that region. `touching` hides the
-// focus highlight after a tap or a drag, and a finger's scroll of a list or
-// a rail hides it here in the view (`scrolled-by-finger`) until the cursor
-// next moves (`focus-key`) or a button follows a tap.
+// focus highlight while touch is in use (logic sets it on `Touched`, which the
+// shell sends as any finger goes down) until the next button press, which
+// also brings the focused control back into sight (PicoReveal).
 //
 // The window's size goes to the tokens (ui/tokens.slint), and every size
 // follows from it: the layout is a function of width and height alone.
@@ -81,25 +81,6 @@ export component Surface inherits Window {
     callback dragged(region: string, by: int);
     // A tap or a drag came last, not a button: the focus highlight hides.
     in property <bool> touching;
-    // Where logic's cursor is: a move ends a finger's scroll.
-    in property <string> focus-key;
-    // A finger scrolled a list or a rail (ADR 0055): the highlight hides too.
-    // View-local: no message, no logic per frame.
-    property <bool> scrolled-by-finger;
-    function finger-scrolled() {
-        if (!scrolled-by-finger) {
-            scrolled-by-finger = true;
-            Tokens.touching = true;
-        }
-    }
-    // What ends a finger's scroll, in one place: for now the cursor moving,
-    // or a button after a tap (logic's `touching` falling). The highlight
-    // returns, and the focused control is revealed (PicoReveal).
-    function finger-done() {
-        scrolled-by-finger = false;
-        Tokens.touching = touching;
-    }
-    changed focus-key => { finger-done(); }
     in property <string> font-family: "Pico Tiny5";
     in property <int> font-rows: 7;
     in property <string> layer: "catalog";
@@ -141,7 +122,7 @@ export component Surface inherits Window {
     changed height => { Tokens.fit(self.width, self.height); }
     changed font-rows => { Tokens.rows = font-rows; }
     changed font-family => { Tokens.family = font-family; }
-    changed touching => { if (touching) { Tokens.touching = true; } else { finger-done(); } }
+    changed touching => { Tokens.touching = touching; }
 
 
     displays := PicoDisplays {
@@ -152,14 +133,14 @@ export component Surface inherits Window {
             width: displays.choose-w;
             height: displays.choose-h;
             clip: true;
-            if page == "home" : PicoHome { scrolled => { root.finger-scrolled(); }  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; home: home; card: card; }
-            if page == "find" : PicoLibrary { scrolled => { root.finger-scrolled(); }  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; find: find; }
-            if page == "detail" : PicoGameDetail { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; detail: detail; card: card; question: question; }
-            if page == "settings" : PicoSettings { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
-            if page == "launch" : PicoLaunchSettings { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
-            if page == "store" : PicoStore { scrolled => { root.finger-scrolled(); }  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; store: store; card: card; editor: editor; mode: mode; }
-            if page == "setup" : PicoOnboarding { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; setup: setup; editor: editor; identity: identity; mode: mode; }
-            if page == "runner" : PicoRunnerPicker { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  sheet: sheet; }
+            if page == "home" : PicoHome {  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; home: home; card: card; }
+            if page == "find" : PicoLibrary {  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; find: find; }
+            if page == "detail" : PicoGameDetail {  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; detail: detail; card: card; question: question; }
+            if page == "settings" : PicoSettings {  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
+            if page == "launch" : PicoLaunchSettings {  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
+            if page == "store" : PicoStore {  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; store: store; card: card; editor: editor; mode: mode; }
+            if page == "setup" : PicoOnboarding {  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; setup: setup; editor: editor; identity: identity; mode: mode; }
+            if page == "runner" : PicoRunnerPicker {  activated(target, at, released) => { root.activated(target, at, released); }  sheet: sheet; }
             if attract.shown : PicoAttract { activated(target, at, released) => { root.activated(target, at, released); }  attract: attract; }
             if !split.on && notices.length > 0 : PicoInviteNotices { notices: notices; round: notice-round; }
         }
@@ -177,7 +158,7 @@ export component Surface inherits Window {
     // MENU's list at the window's top level, with no clipping ancestor: it
     // stands over the floor's MENU key in the choosing screen's rectangle
     // (the whole window, or its part of a split), in window coordinates.
-    if page == "home" && home.menu-open : PicoMenu { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
+    if page == "home" && home.menu-open : PicoMenu {  activated(target, at, released) => { root.activated(target, at, released); } 
         x: displays.x + displays.choose-x + 2 * Tokens.u;
         y: displays.y + displays.choose-y + max(Tokens.u, displays.choose-h - Tokens.floor-band - self.height);
         room-width: displays.choose-w - 4 * Tokens.u;
@@ -193,25 +174,6 @@ export component Overlay inherits Window {
     callback dragged(region: string, by: int);
     // A tap or a drag came last, not a button: the focus highlight hides.
     in property <bool> touching;
-    // Where logic's cursor is: a move ends a finger's scroll.
-    in property <string> focus-key;
-    // A finger scrolled a list or a rail (ADR 0055): the highlight hides too.
-    // View-local: no message, no logic per frame.
-    property <bool> scrolled-by-finger;
-    function finger-scrolled() {
-        if (!scrolled-by-finger) {
-            scrolled-by-finger = true;
-            Tokens.touching = true;
-        }
-    }
-    // What ends a finger's scroll, in one place: for now the cursor moving,
-    // or a button after a tap (logic's `touching` falling). The highlight
-    // returns, and the focused control is revealed (PicoReveal).
-    function finger-done() {
-        scrolled-by-finger = false;
-        Tokens.touching = touching;
-    }
-    changed focus-key => { finger-done(); }
     in property <string> font-family: "Pico Tiny5";
     in property <int> font-rows: 7;
     in property <CardView> card;
@@ -235,7 +197,7 @@ export component Overlay inherits Window {
     changed width => { Tokens.fit(self.width, self.height); }
     changed height => { Tokens.fit(self.width, self.height); }
     changed font-rows => { Tokens.rows = font-rows; }
-    changed touching => { if (touching) { Tokens.touching = true; } else { finger-done(); } }
+    changed touching => { Tokens.touching = touching; }
 
-    PicoOverlay { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  sheet: sheet; card: card; strip: strip; }
+    PicoOverlay {  activated(target, at, released) => { root.activated(target, at, released); }  sheet: sheet; card: card; strip: strip; }
 }

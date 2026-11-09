@@ -8,7 +8,6 @@ import { PicoScroll } from "../atoms/PicoScroll.slint";
 // the window allows; a window too short for every entry scrolls the list to
 // the cursor's entry.
 export component PicoMenu inherits Rectangle {
-    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     in property <[ButtonView]> entries;
     // The room the window leaves it.
@@ -27,7 +26,7 @@ export component PicoMenu inherits Rectangle {
         height: root.height;
         padding: pad;
         padding-right: 7 * Tokens.p;
-        scroll := PicoScroll { scrolled => { root.scrolled(); } 
+        scroll := PicoScroll { 
             margin: Tokens.p;
             rows := VerticalLayout {
                 spacing: 3 * Tokens.p;

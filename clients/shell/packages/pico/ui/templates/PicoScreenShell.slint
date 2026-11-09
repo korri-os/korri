@@ -25,7 +25,6 @@ export struct FrameView {
 // the body (which scrolls to keep the cursor's control in sight), and the
 // floor row. The frame never moves; only the body differs.
 export component PicoScreenShell inherits Rectangle {
-    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     out property <length> body-y: bar.y + bar.height + (frame.track.length > 0 ? 6 * Tokens.p : 0) + Tokens.u;
@@ -44,7 +43,7 @@ export component PicoScreenShell inherits Rectangle {
         clock: frame.clock;
     }
     if frame.track.length > 0 : PicoStepTrack { x: 2 * Tokens.u; y: bar.y + bar.height + 3 * Tokens.p; width: root.width - 4 * Tokens.u; steps: frame.track; }
-    body := PicoScroll { scrolled => { root.scrolled(); } 
+    body := PicoScroll { 
         x: 2 * Tokens.u;
         y: body-y;
         width: root.width - 4 * Tokens.u;

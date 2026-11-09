@@ -47,11 +47,14 @@ imports.
   disabled control) does nothing; on attract the first tap only wakes. The
   hints (`hint:a`, `hint:b`, `hint:lr`) are targets in their own `hints`
   region that the cursor never walks onto: A runs Confirm, B runs Back, and
-  ◀▶ ADJUST steps the focused range by which half is tapped. A range in the
+  ◀▶ ADJUST is two targets (`hint:left`, `hint:right`), one per half. A hint
+  not drawn now is stale. A range in the
   pause menu takes the finger's place on its cells (`at`), snapped to Korri's
-  step and sent when that value changes. A tap or a drag hides the focus
-  highlight (`touching`, read as `Tokens.ring`) until the next `Pressed`;
-  `focused` stays on the real focus. PicoScroll and PicoRail are Flickables:
+  step and sent when that value changes. `Touched` (the shell sends it as any
+  finger goes down) hides the focus highlight (`touching`, read as
+  `Tokens.ring`) until the next `Pressed`, which also brings the focused
+  control back into sight; `focused` stays on the real focus, and `Touched`
+  wakes nothing by itself. A native cancel completes no gesture. PicoScroll and PicoRail are Flickables:
   a drag scrolls them and moves no focus. The shelf, RESUME and both results
   racks follow a sideways drag or fling item by item (`ui/atoms/PicoSlide.slint`)
   and send `dragged(region, by)`; `Dragged` walks the cursor `by` targets in

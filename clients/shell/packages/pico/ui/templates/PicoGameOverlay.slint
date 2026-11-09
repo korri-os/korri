@@ -28,7 +28,6 @@ export struct SheetView { kicker: string, title: string, items: [SheetItem], foc
 // width the strip goes to the foot, beside the hints when both fit, else on
 // its own line above them, and the card gives up that height.
 export component PicoGameOverlay inherits Rectangle {
-    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     in property <string> kicker;
     in property <string> title;
@@ -64,7 +63,7 @@ export component PicoGameOverlay inherits Rectangle {
         outline: root.over-game;
         if kicker != "" : PicoLine { text: kicker; color: P8.shell-tell-kicker; }
         if title != "" : PicoPara { text: title; font-size: Tokens.short ? Tokens.md : Tokens.lg; color: P8.shell-tell-ink; }
-        list := PicoScroll { scrolled => { root.scrolled(); }  vertical-stretch: 1; preferred-height: self.natural; marks: root.over-game; track-ink: P8.cast-near; mark-ink: P8.ink-dark; @children }
+        list := PicoScroll {  vertical-stretch: 1; preferred-height: self.natural; marks: root.over-game; track-ink: P8.cast-near; mark-ink: P8.ink-dark; @children }
     }
     Rectangle {
         x: hint-row.x - Tokens.u;

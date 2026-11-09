@@ -34,7 +34,6 @@ export struct FindView {
 // Korri found, in a rack that keeps the cursor's game in view. Chips that do
 // not fit a row scroll with the cursor.
 export component PicoLibraryBrowser inherits VerticalLayout {
-    callback scrolled();
     callback dragged(region: string, by: int);
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
@@ -43,8 +42,8 @@ export component PicoLibraryBrowser inherits VerticalLayout {
     property <length> slot-w: 54 * Tokens.p;
     spacing: 3 * Tokens.p;
     PicoQueryField { query: find.query; }
-    sections := PicoRail { scrolled => { root.scrolled(); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  for b in find.sections : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { sections.show(left, top, wide, tall); }  button: b; } }
-    orders := PicoRail { scrolled => { root.scrolled(); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  for b in find.orders : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { orders.show(left, top, wide, tall); }  button: b; } }
+    sections := PicoRail {  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  for b in find.sections : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { sections.show(left, top, wide, tall); }  button: b; } }
+    orders := PicoRail {  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  for b in find.orders : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { orders.show(left, top, wide, tall); }  button: b; } }
     PicoKeyboard { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  keys: find.keys; rows: find.key-rows; }
     if find.empty : VerticalLayout {
         PicoLine { text: "NOTHING MATCHES"; color: P8.go; }

@@ -32,7 +32,8 @@
  *                  button; on the attract or the tally, only the one press
  *     Dragged      a finger dragged the band or the save band `by` cards: that
  *                  many d-pad presses along it (src/press.ts dragOn)
- *     Activated and Dragged hide the focus highlight until the next Pressed
+ *     Touched      a finger went down: touch is in use, nothing else
+ *     Touched, Activated and Dragged hide the focus highlight until the next Pressed
  *
  *   Zone's requests → SurfaceRequests
  *     RememberLook   RememberPreference { key: "zone.look" }
@@ -284,6 +285,12 @@ export function update(state: State, message: Message, model: Model): { state: S
       touched = true
       break
     }
+    case "Touched":
+      // A finger went down (ADR 0055): touch is in use, so the highlight
+      // hides until the next button. It wakes nothing by itself.
+      if (touched) return { state, requests: [] }
+      touched = true
+      break
     case "Dragged": {
       const screen = screenOf(state)
       if (!Number.isInteger(message.by) || message.by === 0) return { state, requests: [] }

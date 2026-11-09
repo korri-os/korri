@@ -851,8 +851,6 @@ export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel, screen
     rows: rows.map((entry, index) => ("focused" in entry ? { ...entry, focusRegion: region(index) } : entry)),
     screen: planned.screen,
     focusPlan,
-    // Where the cursor is: the question's button, else the focused control.
-    focusKey: planned.focusKey !== "" ? planned.focusKey : (rows.find(entry => entry.focused === true)?.focusId as string | undefined) ?? "",
   }
 }
 

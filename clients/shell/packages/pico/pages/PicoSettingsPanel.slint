@@ -20,13 +20,12 @@ export struct PanelView {
 // One group of settings in its spine's card: a launch layer's runner tabs
 // and notes, Korri's word on a failed save, and the rows.
 export component PicoSettingsPanel inherits Rectangle {
-    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <PanelView> panel;
     min-height: screen.min-height;
     preferred-height: screen.preferred-height;
-    screen := PicoPanelScreen { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+    screen := PicoPanelScreen {  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -34,7 +33,7 @@ export component PicoSettingsPanel inherits Rectangle {
         spines: panel.spines;
         beside: panel.beside;
         spine-tone: panel.spine-tone;
-        if panel.scopes.length > 0 : PicoScopeTabs { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  scopes: panel.scopes; tone: P8.spine(panel.spine-tone); }
+        if panel.scopes.length > 0 : PicoScopeTabs {  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  scopes: panel.scopes; tone: P8.spine(panel.spine-tone); }
         if panel.message != "" : PicoPara { text: panel.message; font-size: Tokens.sm; color: P8.shell-warn; }
         for note in panel.notes : PicoPara { text: note; font-size: Tokens.sm; color: P8.ink-dark; }
         for item in panel.rows : PicoSettingRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  item: item; }

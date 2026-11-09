@@ -10,7 +10,6 @@ import { Row } from "../types.slint";
 // head (GAME OPTS. caps-2 on black, the game on blue), Korri's actions as
 // rows with RUN, red when destructive.
 export component ZoneGameOpts {
-    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     // A focus trap: the walk keeps a press inside the layer that holds the focus.
     accessible-role: groupbox;
@@ -66,7 +65,7 @@ export component ZoneGameOpts {
             ink: "hud";
         }
     }
-    ZoneRowList { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
+    ZoneRowList {  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 12 * root.a;
         y: 52 * root.a;
         width: root.width - 24 * root.a;

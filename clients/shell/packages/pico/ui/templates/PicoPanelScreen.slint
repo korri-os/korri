@@ -8,7 +8,6 @@ import { PicoCard } from "../molecules/PicoCard.slint";
 // it when the screen is wide, and the card in the chosen spine's colour
 // holding the chosen group.
 export component PicoPanelScreen inherits Rectangle {
-    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <[ButtonView]> spines;
@@ -20,7 +19,7 @@ export component PicoPanelScreen inherits Rectangle {
     property <length> tabs-h: beside || spines.length == 0 ? 0 : Tokens.md + 4 * Tokens.p;
     preferred-height: tabs-h + 3 * Tokens.p + card.preferred-height + 5 * Tokens.p;
     min-height: self.preferred-height;
-    PicoTabs { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+    PicoTabs {  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: 0;
         y: 0;
         width: beside ? spines-w - 4 * Tokens.p : root.width;

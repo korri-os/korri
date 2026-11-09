@@ -19,9 +19,6 @@ export component ZoneRowList inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     in property <[Row]> rows;
     in property <float> label-share: 0.55;
-    // A finger moved it (ADR 0055): passed up to the root, which hides the
-    // focus highlight until the next button press. Nothing reaches logic.js.
-    callback scrolled();
     property <length> a: Tokens.a;
     in-out property <length> focus-y;
     in-out property <length> focus-h;
@@ -47,7 +44,6 @@ export component ZoneRowList inherits Rectangle {
     }
     clip: true;
     flick := Flickable {
-        flicked => { root.scrolled(); }
         x: 0;
         y: 0;
         width: root.width;

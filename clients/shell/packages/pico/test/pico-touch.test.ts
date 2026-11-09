@@ -292,40 +292,58 @@ describe("scrolling", () => {
       // The region is a Flickable, and the offset `show` moves is the Flickable's.
       expect(text).toMatch(/flick\s*:=\s*Flickable\s*\{/)
       expect(text).toMatch(/flick\.content-[xy]\s*=/)
-      // It reports nothing to logic.js: no `activated`, no `dragged`; a finger's
-      // move only tells the view (`scrolled`, up to the root).
-      expect(text).not.toMatch(/activated|dragged/)
-      expect(text).toMatch(/flicked\s*=>\s*\{\s*root\.scrolled\(\);\s*\}/)
+      // It reports nothing: no callback reaches logic.js from a scroll (the
+      // shell's Touched, as the finger goes down, is what hides the highlight).
+      expect(text).not.toMatch(/activated|dragged|flicked\s*=>/)
     }
   })
 
-  test("a finger's scroll hides the highlight in the view, until the cursor moves or a button follows a tap", () => {
-    // The view: each root keeps `scrolled-by-finger`, set by a finger's
-    // scroll; the highlight hides while it or logic's `touching` is set. What
-    // ends it sits in one function, `finger-done`: the cursor moving
-    // (`focus-key`), or `touching` falling (a button after a tap).
-    const main = code(read(join(ROOT, "main.slint")))
-    for (const root of ["Surface", "Overlay"]) {
-      const body = main.slice(main.indexOf(`export component ${root}`))
-      expect(body).toMatch(/in property <string> focus-key;/)
-      expect(body).toMatch(/function finger-scrolled\(\)\s*\{\s*if \(!scrolled-by-finger\)\s*\{\s*scrolled-by-finger = true;\s*Tokens\.touching = true;/)
-      expect(body).toMatch(/function finger-done\(\)\s*\{\s*scrolled-by-finger = false;\s*Tokens\.touching = touching;/)
-      expect(body).toMatch(/changed focus-key => \{ finger-done\(\); \}/)
-      expect(body).toMatch(/changed touching => \{ if \(touching\) \{ Tokens\.touching = true; \} else \{ finger-done\(\); \} \}/)
-      expect(body).toMatch(/scrolled => \{ root\.finger-scrolled\(\); \}/)
-    }
-    // Logic: `focusKey` is where the cursor is, a function of the state alone
-    // (the focus walks deduplicate views), so a move changes it and nothing else does.
+  test("Touched (any finger down) hides the highlight; the next press shows it and reveals the focus, with no move", () => {
     const pico = shell()
-    expect(pico.view()["focusKey"]).toBe("cart:celeste")
+    const focus = pico.state().focus
+    const before = pico.view()
+    pico.send({ _tag: "Touched" })
+    expect(pico.view()["touching"]).toBe(true)
+    expect(pico.state().focus).toBe(focus)
+    // Only the highlight changed: the cursor and the rest of the view stand.
+    expect({ ...pico.view(), touching: false }).toEqual(before)
+    // Touched again changes nothing (the same state).
+    const touched = pico.state()
+    expect(pico.send({ _tag: "Touched" }).state).toBe(touched)
+    // A press with nowhere to go: the highlight returns, the cursor stays.
+    // main.slint's Tokens.ring rises with it, and PicoReveal brings the
+    // focused control back into sight then, moved or not.
     pico.press("up")
-    pico.send({ _tag: "Tick", idleMs: 1_000 })
-    pico.send({ _tag: "KorriPublished" })
-    expect(pico.view()["focusKey"]).toBe("cart:celeste")
-    pico.press("right")
-    expect(pico.view()["focusKey"]).toBe("cart:hollow")
+    expect(pico.state().focus).toBe(focus)
+    expect(pico.view()["touching"]).toBe(false)
+    const reveal = code(read(join(ROOT, "ui/atoms/PicoReveal.slint")))
+    expect(reveal).toMatch(/changed ring => \{ pending = focused && ring; \}/)
+    const main = code(read(join(ROOT, "main.slint")))
+    expect(main.match(/changed touching => \{ Tokens\.touching = touching; \}/g)?.length).toBe(2)
+    // The overlay too.
     const paused = shell(overlayModel())
-    expect(paused.overlay()["focusKey"]).toBe(paused.state().overlayFocus)
+    paused.send({ _tag: "Touched" })
+    expect(paused.overlay()["touching"]).toBe(true)
+    paused.press("left")
+    expect(paused.overlay()["touching"]).toBe(false)
+  })
+
+  test("Touched does not wake attract: the gesture's own tap or drag does", () => {
+    const pico = shell()
+    pico.send({ _tag: "Tick", idleMs: 45_000 })
+    pico.send({ _tag: "Touched" })
+    expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(true)
+    pico.tap("attract")
+    expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(false)
+  })
+
+  test("the walks are unaffected: no view field grows with presses", () => {
+    const pico = shell()
+    pico.press("up")
+    const view = JSON.stringify(pico.view())
+    pico.press("up")
+    expect(JSON.stringify(pico.view())).toBe(view)
+    expect(view).not.toMatch(/"presses"|"focusKey"/)
   })
 
   test("the cursor stays where it is across everything but a button or a tap", () => {

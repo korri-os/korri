@@ -33,9 +33,6 @@ export component ZonePaused {
     in property <Busy> busy;
     in property <Hints> hints;
     in property <Strip> strip;
-    // A finger moved it (ADR 0055): passed up to the root, which hides the
-    // focus highlight until the next button press. Nothing reaches logic.js.
-    callback scrolled();
     property <length> a: Tokens.a;
     property <length> c1: Tokens.c1;
     // Caps-3 while the title fits the band (about 16 art px a letter at caps-3), else caps-2.
@@ -153,8 +150,7 @@ export component ZonePaused {
         height: root.shown-h + 4 * root.a;
         clip: true;
         rows-flick := Flickable {
-            flicked => { root.scrolled(); }
-            x: 0;
+                x: 0;
             y: 0;
             width: parent.width;
             height: parent.height;

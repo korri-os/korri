@@ -38,9 +38,10 @@ fixtures' words and look are Zone's.
   target drawn now, sends the fact the d-pad's arrival would report
   (`focusOn` in src/press.ts), then Confirm. On the attract or the tally a
   tap is one press. The Back and Confirm hints run their button. PAUSED's
-  range takes the finger's place (`at`), sent once per snapped step. A tap
-  or a drag hides the highlight (`touching`, `Tokens.ring`) until the next
-  `Pressed`. ZoneRowList and PAUSED's rows are Flickables; the band and the
+  range takes the finger's place (`at`), sent once per snapped step.
+  `Touched` (any finger down) hides the highlight (`touching`,
+  `Tokens.ring`) until the next `Pressed`, which brings the focused row back
+  into sight; it wakes nothing by itself. ZoneRowList and PAUSED's rows are Flickables; the band and the
   save band follow a sideways drag or fling card by card (`ZoneSlide`) and
   send `dragged(region, by)`, which walks the cursor as d-pad presses do.
 - `Overlay` draws PAUSED from `overlay()`, see-through over the running game

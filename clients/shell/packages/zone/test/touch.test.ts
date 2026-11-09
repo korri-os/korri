@@ -270,40 +270,51 @@ describe("scrolling", () => {
       const text = stripComments(read(file))
       expect(text).toMatch(/:=\s*Flickable\s*\{/)
       expect(text).toMatch(/\.content-y\s*=/)
-      // A finger's move tells only the view (`scrolled`, up to the root): no message to logic.js.
-      expect(text).toMatch(/flicked\s*=>\s*\{\s*root\.scrolled\(\);\s*\}/)
-      expect(text.match(/flicked\s*=>\s*\{[^}]*\}/)?.[0]).not.toMatch(/activated|dragged/)
+      // A scroll reports nothing (the shell's Touched, as the finger goes down, hides the highlight).
+      expect(text).not.toMatch(/flicked\s*=>/)
     }
   })
 
-  test("a finger's scroll hides the highlight in the view, until the cursor moves or a button follows a tap", () => {
-    const main = stripComments(read("main.slint"))
-    for (const root of ["Surface", "Overlay"]) {
-      const body = main.slice(main.indexOf(`export component ${root}`))
-      expect(body).toMatch(/in property <string> focus-key;/)
-      expect(body).toMatch(/function finger-scrolled\(\)\s*\{\s*if \(!self\.scrolled-by-finger\)\s*\{\s*self\.scrolled-by-finger = true;\s*Tokens\.touching = true;/)
-      expect(body).toMatch(/function finger-done\(\)\s*\{\s*self\.scrolled-by-finger = false;\s*Tokens\.touching = self\.touching;/)
-      expect(body).toMatch(/changed focus-key => \{\s*self\.finger-done\(\);/)
-      expect(body).toMatch(/changed touching => \{\s*if \(self\.touching\) \{\s*Tokens\.touching = true;\s*\} else \{\s*self\.finger-done\(\);/)
-    }
-    expect(main).toMatch(/scrolled => \{ root\.finger-scrolled\(\); \}/)
-    // Logic: `focusKey` is the focused target's id, from the state alone, so a
-    // move changes it and a Tick, a publish or a press with nowhere to go do not.
+  test("Touched (any finger down) hides the highlight; the next press shows it and reveals the focus, with no move", () => {
     const touch = zone()
-    expect(touch.view()["focusKey"]).toBe("card:0")
+    const before = touch.view()
+    touch.send({ _tag: "Touched" })
+    expect(touch.view()["touching"]).toBe(true)
+    expect(touch.view()["focusedCard"]).toBe(0)
+    expect({ ...touch.view(), touching: false }).toEqual({ ...before, touching: false })
+    expect(touch.send({ _tag: "Touched" }).state).toBe(touch.state())
+    // Left at the band's first card goes nowhere: the highlight returns, the
+    // cursor stays, and the lists bring the focused row back as Tokens.ring rises.
     touch.press("left")
-    touch.send({ _tag: "Tick", idleMs: 1_000 })
-    touch.send({ _tag: "KorriPublished" })
-    expect(touch.view()["focusKey"]).toBe("card:0")
-    touch.press("right")
-    expect(touch.view()["focusKey"]).toBe("card:1")
-    touch.press("up")
-    expect(touch.view()["focusKey"]).toBe("tab:games")
+    expect(touch.view()["focusedCard"]).toBe(0)
+    expect(touch.view()["touching"]).toBe(false)
+    for (const file of ["ui/organisms/ZoneRowList.slint", "pages/ZonePaused.slint"]) {
+      expect(stripComments(read(file))).toMatch(/changed ring => \{\s*if \(root\.ring\) \{/)
+    }
+    const main = stripComments(read("main.slint"))
+    expect(main.match(/changed touching => \{\s*Tokens\.touching = self\.touching;\s*\}/g)?.length).toBe(2)
+  })
+
+  test("Touched does not wake the attract: the gesture's own tap or drag does", () => {
+    const touch = zone()
+    touch.send({ _tag: "Tick", idleMs: 30_000 })
+    touch.send({ _tag: "Touched" })
+    expect(touch.view()["attract"]).toBe(true)
+    touch.tap("attract")
+    expect(touch.view()["attract"]).toBe(false)
+  })
+
+  test("the walks are unaffected: no view field grows with presses", () => {
+    const touch = zone()
+    touch.press("left")
+    const view = JSON.stringify(touch.view())
+    touch.press("left")
+    expect(JSON.stringify(touch.view())).toBe(view)
+    expect(view).not.toMatch(/"presses"|"focusKey"/)
   })
 
   test("PAUSED draws only B BACK: its CONFIRM hint is no target there, and a tap naming it does nothing", () => {
     const touch = zone({ ...games(), presentation: scenario("paused-groups").presentation, status: { _tag: "Running", kicker: "Playing" } } as SurfaceModel)
-    expect(touch.overlay()["focusKey"]).toBe("control:resume")
     const before = touch.state()
     expect(touch.tap("hint:confirm").state).toBe(before)
     expect(touch.tap("hint:back").requests).toEqual([{ _tag: "DismissGameplayOverlay" }])

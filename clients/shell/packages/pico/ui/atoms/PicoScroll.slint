@@ -19,9 +19,6 @@ export component PicoScroll inherits Rectangle {
     in property <bool> marks;
     in property <color> mark-ink: P8.ink-dark;
     in property <color> track-ink: P8.cast-near;
-    // A finger moved it (ADR 0055): passed up to the root, which hides the
-    // focus highlight until the next button press. Nothing reaches logic.js.
-    callback scrolled();
     // The height of what it holds: a region that hugs its list asks for this.
     out property <length> natural: content.min-height;
     // How far it is scrolled: by `show`, or by a finger.
@@ -71,7 +68,6 @@ export component PicoScroll inherits Rectangle {
     property <length> bar: marks ? 4 * Tokens.p : 0;
     property <bool> scrolls: marks && content.min-height > root.height;
     flick := Flickable {
-        flicked => { root.scrolled(); }
         x: 0;
         y: 0;
         width: root.width;

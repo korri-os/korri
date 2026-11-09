@@ -625,6 +625,11 @@ function updated(state: State, message: SurfaceMessage, korri: KorriModel): { st
       if (step.state.touched) step = { ...step, state: { ...step.state, touched: false } }
       step = pressed(step, message.button, korri)
       break
+    case "Touched":
+      // A finger went down (ADR 0055): touch is in use, so the highlight
+      // hides until the next button. Nothing else: it wakes nothing.
+      if (!step.state.touched) step = { ...step, state: { ...step.state, touched: true } }
+      break
     case "Dragged":
       // A drag hides the focus highlight until the next button, as a tap does.
       {
@@ -875,8 +880,6 @@ function buildView(s: State, korri: KorriModel) {
     },
     split: plan ?? NO_SPLIT,
     touching: s.touched,
-    // Where the cursor is: main.slint ends a finger's scroll when it moves.
-    focusKey: covering ? "" : s.focus ?? "",
   }
   return { ...(marked(drawn, screen) as typeof drawn), focusPlan: covering ? {} : focusPlanOf(s, korri, screen) }
 }
@@ -913,8 +916,6 @@ function buildOverlay(s: State, korri: KorriModel) {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
     touching: s.touched,
-    // Where the cursor is: main.slint ends a finger's scroll when it moves.
-    focusKey: s.overlayFocus ?? "",
     ...(shown?.view ?? {}),
   }
   return shown === undefined ? drawn : { ...(marked(drawn, shown) as typeof drawn), focusPlan: focusPlanOf(s, korri, shown) }
