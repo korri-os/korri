@@ -720,33 +720,25 @@ mod tests {
             assert!(size.width <= 4096 && size.height <= 4096);
             assert_eq!((size.width % 8, size.height % 8), (0, 0));
         }
-        assert!(client_shape(
-            &PluginDisplay {
-                width: 0,
-                height: 1080
-            },
-        )
+        assert!(client_shape(&PluginDisplay {
+            width: 0,
+            height: 1080
+        },)
         .is_err());
-        assert!(client_shape(
-            &PluginDisplay {
-                width: 1,
-                height: 1080
-            },
-        )
+        assert!(client_shape(&PluginDisplay {
+            width: 1,
+            height: 1080
+        },)
         .is_err());
-        assert!(client_shape(
-            &PluginDisplay {
-                width: 7,
-                height: 1080
-            },
-        )
+        assert!(client_shape(&PluginDisplay {
+            width: 7,
+            height: 1080
+        },)
         .is_err());
-        assert!(client_shape(
-            &PluginDisplay {
-                width: u32::MAX,
-                height: 8
-            },
-        )
+        assert!(client_shape(&PluginDisplay {
+            width: u32::MAX,
+            height: 8
+        },)
         .is_err());
     }
 
