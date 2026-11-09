@@ -95,10 +95,12 @@ fn the_real_android_app_plugin_discovers_and_launches_on_android() {
     )
     .unwrap();
     let json = crate::script::eval_plugin_snapshot(&source).unwrap();
-    let plugin = crate::plugin::decode_plugin_declaration_on("@korri", &json, "aarch64-android").unwrap();
-    assert!(plugin.runners.contains_key("android-app"));
-    let linux = crate::plugin::decode_plugin_declaration_on("@korri", &json, "aarch64-linux").unwrap();
-    assert!(linux.runners.is_empty(), "no Android runner on Linux");
+    let registry = |platform| {
+        let plugin = crate::plugin::decode_plugin_declaration_on("@korri", &json, platform).unwrap();
+        crate::plugin::PluginRegistry::new(vec![plugin], ["@korri:android-app".to_owned()]).unwrap()
+    };
+    assert!(registry("aarch64-android").runners().contains_key("@korri:android-app/android-app"));
+    assert!(registry("aarch64-linux").runners().is_empty(), "no Android runner on Linux");
 
     let input = serde_json::json!({"apps": [
         {"packageName": "com.example.game", "label": "Game", "isGame": true, "added": false},
