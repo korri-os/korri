@@ -323,8 +323,13 @@ a user would expect and that every design follows intrinsic design values."
 - `labels` are the launch's steps in order, in plain user-facing words. They
   list only the steps that really run on this launch.
 - `current` is the zero-based index of the step running now.
-- The list is fixed for the whole launch. Korri never adds or removes a step
-  during a launch. A step that turns out to be unneeded completes at once.
+- Korri fixes the list when the launch begins, with one exception: for a
+  launch on a peer whose runner steps were unknown at plan time, those steps
+  replace the single "Starting the game" step exactly once when the launch
+  reaches Start. No other growth is allowed. A step that turns out to be
+  unneeded completes at once. Grounding:
+  [korri#387](https://github.com/korri-os/korri/issues/387),
+  "Plan approved by the owner, 2026-11-08".
 - A surface renders it under Busy's kicker, in its own visual language: a
   segmented bar with one segment per step (done, current and pending can be
   told apart), and "Step i of n · <current label>". The bar shrinks with its

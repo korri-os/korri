@@ -4649,7 +4649,7 @@ fn surface_hub_for(
         })
     });
     let base = surface_host.clone();
-    let steps: surface::korrid::LaunchSteps = Arc::new(move |game_id, runner_id| {
+    let steps: surface::korrid::LaunchStepsResolver = Arc::new(move |game_id, runner_id| {
         let state = base.clone();
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {

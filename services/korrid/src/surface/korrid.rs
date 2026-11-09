@@ -35,7 +35,7 @@ pub enum Refusal {
 /// with configured outcomes.
 pub type Send_ = Arc<dyn Fn(RpcRequest) -> Reply + Send + Sync>;
 
-pub(crate) type LaunchSteps = Arc<
+pub(crate) type LaunchStepsResolver = Arc<
     dyn Fn(
             String,
             Option<String>,
@@ -47,7 +47,7 @@ pub(crate) type LaunchSteps = Arc<
 #[derive(Clone)]
 pub struct Korrid {
     send: Send_,
-    launch_steps: Option<LaunchSteps>,
+    launch_steps: Option<LaunchStepsResolver>,
 }
 
 /// How a refusal reads for one method, as the portal client mapped it.
@@ -128,7 +128,7 @@ impl Korrid {
         }
     }
 
-    pub(crate) fn with_launch_steps(mut self, resolve: LaunchSteps) -> Self {
+    pub(crate) fn with_launch_steps(mut self, resolve: LaunchStepsResolver) -> Self {
         self.launch_steps = Some(resolve);
         self
     }

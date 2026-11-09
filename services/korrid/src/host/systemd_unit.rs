@@ -2405,9 +2405,10 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
             Err(error)
                 if error.kind == LaunchUnitErrorKind::UnitFailed
                     && diagnostics_available
-                    && values
-                        .get("StatusText")
-                        .is_none_or(|value| value.trim().is_empty()) =>
+                    && values.get("StatusText").is_none_or(|value| {
+                        // Progress is not a refusal and must not hide stderr.
+                        value.trim().is_empty() || value.starts_with("korri-step:")
+                    }) =>
             {
                 Err(self.failure_with_stderr(launch_id, error))
             }
@@ -3202,23 +3203,26 @@ mod startup_diagnostic_tests {
             "old message\ncontext\nstartup refused --no-such-reviewed-flag private-env-value\n",
         )
         .unwrap();
+        for status in ["", "korri-step: game"] {
+            fs::write(&reply, format!("LoadState=loaded\nActiveState=failed\nExecMainCode=1\nExecMainStatus=1\nStatusText={status}\nEnvironment=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}/diagnostics\n")).unwrap();
+            let error = backend.state(id).unwrap_err();
+            assert_eq!(error.kind, LaunchUnitErrorKind::UnitFailed);
+            assert!(
+                error
+                    .message
+                    .contains("startup refused [redacted] [redacted]"),
+                "status {status:?}: {}",
+                error.message
+            );
+            assert!(!error.message.contains("private-env-value"));
+            assert!(!error.message.contains("--no-such-reviewed-flag"));
+        }
+        fs::write(&reply, format!("LoadState=loaded\nActiveState=failed\nExecMainCode=1\nExecMainStatus=1\nStatusText=plugin-launch: specific compose refusal\nEnvironment=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}/diagnostics\n")).unwrap();
         let error = backend.state(id).unwrap_err();
-        assert_eq!(error.kind, LaunchUnitErrorKind::UnitFailed);
-        assert!(
-            error
-                .message
-                .contains("startup refused [redacted] [redacted]"),
-            "{}",
-            error.message
-        );
-        assert!(!error.message.contains("private-env-value"));
-        assert!(!error.message.contains("--no-such-reviewed-flag"));
-        fs::write(&reply, "LoadState=loaded\nActiveState=failed\nExecMainCode=1\nExecMainStatus=1\nStatusText=plugin-launch: specific compose refusal\n").unwrap();
-        assert!(!backend
-            .state(id)
-            .unwrap_err()
+        assert!(error
             .message
-            .contains("startup refused"));
+            .contains("plugin-launch: specific compose refusal"));
+        assert!(!error.message.contains("startup refused"));
         fs::write(&reply, "LoadState=loaded\nActiveState=inactive\n").unwrap();
         assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Completed);
         assert!(!directory.exists());
