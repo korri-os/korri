@@ -112,6 +112,7 @@ fn active(failure: Option<RpcFailure>) -> RpcResponse {
             game_id: Some("game".into()),
             title: None,
             phase: None,
+            steps: None,
             initial_handoff: None,
             focus_ownership: None,
             netplay: None,

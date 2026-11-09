@@ -100,8 +100,11 @@ pub struct SurfaceProgress {
 /// A launch's steps, named, in order. `labels` lists only the steps that run
 /// on this launch, in plain user-facing words. `current` is the zero-based
 /// index of the step running now. Korri fixes the list when the launch
-/// begins and never adds or removes a step: a step that turns out to be
-/// unneeded completes at once. A surface draws one segment per step.
+/// begins. The only amendment is at Start: when a peer's runner steps were
+/// unknown at plan time, they replace the single "Starting the game" step
+/// exactly once. No other growth is allowed. A step that turns out to be
+/// unneeded completes at once. The current index never moves back. A surface
+/// draws one segment per step.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

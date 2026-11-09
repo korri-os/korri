@@ -333,6 +333,22 @@ runners still require `settings.render`.
 Each native runner names `program` and optional `core` as file keys in its own
 installed manifest. Auxiliary files arrive through `PluginLaunchInput.files`.
 
+A runner may declare `steps`, an ordered list of `{ key, label }` records for
+its launch. At most 8 steps are allowed. Keys are unique bare segments
+(`[a-z0-9][a-z0-9._-]*`). Labels are non-empty plain text, at most 48 characters,
+without control characters. Unknown fields and explicit nulls fail admission.
+Omission or an empty list keeps Korri's single "Starting the game" step.
+
+During launch, the runner sends `STATUS=korri-step: <key>` through the game
+unit's notify socket (for example `systemd-notify --status="korri-step: game"`).
+The game unit uses `NotifyAccess=all` so a session child can report progress.
+Only keys in that exact launch's declaration count. Progress never moves back;
+unneeded steps complete at once. Steps end when the initial screen handoff is
+observed or the session ends. `STATUS=plugin-launch: <reason>` remains the
+launch refusal channel. Steps reach launching peers through native session
+status. Known local runner steps enter the surface plan at plan time; otherwise
+they may replace its single Start step exactly once when Start is reached.
+
 ### Declared artifacts
 
 ADR 0012 supersedes plugin-owned downloads. An effect-free `artifacts` export

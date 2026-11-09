@@ -2,7 +2,8 @@
 //! portal's `clients/portal/src/korrid/client.ts` sent over loopback, handed
 //! to korrid's own dispatcher in process. Each method converts a refusal into
 //! the outcome the portal client produced for it, so the ported logic sees
-//! exactly what the portal saw.
+//! exactly what the portal saw. Plan-time runner labels are an internal host
+//! fact reader; they do not add an RPC or give a surface package registry access.
 
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
@@ -34,9 +35,19 @@ pub enum Refusal {
 /// with configured outcomes.
 pub type Send_ = Arc<dyn Fn(RpcRequest) -> Reply + Send + Sync>;
 
+pub(crate) type LaunchSteps = Arc<
+    dyn Fn(
+            String,
+            Option<String>,
+        ) -> Pin<Box<dyn Future<Output = Option<Vec<crate::plugin::RunnerStep>>> + Send>>
+        + Send
+        + Sync,
+>;
+
 #[derive(Clone)]
 pub struct Korrid {
     send: Send_,
+    launch_steps: Option<LaunchSteps>,
 }
 
 /// How a refusal reads for one method, as the portal client mapped it.
@@ -111,7 +122,26 @@ pub(crate) use ask;
 
 impl Korrid {
     pub fn new(send: Send_) -> Self {
-        Self { send }
+        Self {
+            send,
+            launch_steps: None,
+        }
+    }
+
+    pub(crate) fn with_launch_steps(mut self, resolve: LaunchSteps) -> Self {
+        self.launch_steps = Some(resolve);
+        self
+    }
+
+    pub(crate) async fn launch_steps(
+        &self,
+        game_id: String,
+        runner_id: Option<String>,
+    ) -> Option<Vec<crate::plugin::RunnerStep>> {
+        match &self.launch_steps {
+            Some(resolve) => resolve(game_id, runner_id).await,
+            None => None,
+        }
     }
 
     /// Any request, its refusal read the way `mapping` says.

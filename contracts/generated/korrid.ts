@@ -202,6 +202,7 @@ export enum FocusOwnership {
 }
 
 export interface ActiveSession {
+	steps?: import("./surface").SurfaceSteps;
 	netplay?: NetplaySession;
 	personPublicKey?: string;
 	streamPlayers?: StreamPlayer[];

@@ -223,6 +223,7 @@ fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) 
 }
 
 struct HostLaunchCommand {
+    steps: Option<Vec<crate::plugin::RunnerStep>>,
     hooks: Option<hooks::LaunchHooks>,
     limits: Option<crate::launch_settings::session::SessionLimits>,
     command: Vec<String>,
@@ -742,6 +743,7 @@ impl HostRuntime {
                 ));
             }
             return Ok(HostLaunchCommand {
+                steps: None,
                 hooks: None,
                 command: launcher.command(game_id)?.to_vec(),
                 runner_id: None,
@@ -751,6 +753,7 @@ impl HostRuntime {
         }
         if self.dynamic.is_none() {
             return launcher.command(game_id).map(|command| HostLaunchCommand {
+                steps: None,
                 hooks: None,
                 command: command.to_vec(),
                 runner_id: None,
@@ -843,6 +846,11 @@ impl HostRuntime {
             })
         };
         Ok(HostLaunchCommand {
+            steps: registry
+                .native_runner(&route.runner_id)
+                .map_err(|error| dynamic_failure(error.to_string()))?
+                .steps
+                .clone(),
             hooks,
             limits: Some(limits),
             command: launch.command,
@@ -881,6 +889,10 @@ impl HostRuntime {
                         .as_ref()
                         .ok()
                         .and_then(|launch| launch.hooks.as_ref()),
+                    launch
+                        .as_ref()
+                        .ok()
+                        .and_then(|launch| launch.steps.as_deref()),
                 )
             })
         })
@@ -1383,6 +1395,10 @@ impl HostRuntime {
                         .as_ref()
                         .ok()
                         .and_then(|launch| launch.hooks.as_ref()),
+                    launch
+                        .as_ref()
+                        .ok()
+                        .and_then(|launch| launch.steps.as_deref()),
                 )
             })?;
         let session = prepared.session;
@@ -1457,6 +1473,10 @@ impl HostRuntime {
                                 .as_ref()
                                 .ok()
                                 .and_then(|launch| launch.hooks.as_ref()),
+                            launch
+                                .as_ref()
+                                .ok()
+                                .and_then(|launch| launch.steps.as_deref()),
                         )
                     },
                 )?;

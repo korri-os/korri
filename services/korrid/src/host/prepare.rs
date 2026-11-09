@@ -160,6 +160,7 @@ impl HostLauncher {
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         warnings: Vec<crate::launcher::typed_settings::LaunchWarning>,
         hooks: Option<&super::hooks::LaunchHooks>,
+        steps: Option<&[crate::plugin::RunnerStep]>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         self.control.prepare_with_limits(
             game_id,
@@ -169,6 +170,7 @@ impl HostLauncher {
             limits,
             warnings,
             hooks,
+            steps,
         )
     }
 
@@ -180,6 +182,7 @@ impl HostLauncher {
         configured_command: Result<&[String], RpcFailure>,
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         hooks: Option<&super::hooks::LaunchHooks>,
+        steps: Option<&[crate::plugin::RunnerStep]>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         self.control.prepare_fresh_route(
             game_id,
@@ -189,6 +192,7 @@ impl HostLauncher {
             &self.environment,
             limits,
             hooks,
+            steps,
         )
     }
 
@@ -199,6 +203,7 @@ impl HostLauncher {
         configured_command: Result<&[String], RpcFailure>,
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         hooks: Option<&super::hooks::LaunchHooks>,
+        steps: Option<&[crate::plugin::RunnerStep]>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         self.control.prepare_reserved(
             reservation,
@@ -207,6 +212,7 @@ impl HostLauncher {
             &self.environment,
             limits,
             hooks,
+            steps,
         )
     }
 

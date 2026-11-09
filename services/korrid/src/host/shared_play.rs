@@ -34,6 +34,7 @@ impl HostRuntime {
         active: &mut crate::ActiveSession,
     ) -> Result<(), RpcFailure> {
         self.control()?.describe_stream_players(active)?;
+        self.control()?.describe_runner_steps(active);
         active.netplay = self
             .describe_netplay(&active.launch_id)
             .ok()

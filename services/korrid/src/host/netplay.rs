@@ -263,6 +263,7 @@ impl HostRuntime {
             launch.limits.as_ref(),
             launch.warnings,
             None,
+            launch.steps.as_deref(),
         )
     }
 }

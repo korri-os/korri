@@ -68,6 +68,7 @@ impl HostSessionControl {
             }
             active.focus_ownership = ownership;
             active.initial_handoff = handoff;
+            self.describe_runner_steps(&mut active);
             self.describe_stream_players(&mut active)?;
             Ok(active)
         })

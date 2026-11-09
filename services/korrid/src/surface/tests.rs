@@ -1129,6 +1129,15 @@ async fn a_launch_request_reserves_and_starts_the_exact_local_game() {
 /// Busy moves through them; the plan ends when the game takes over.
 #[tokio::test]
 async fn a_launch_names_its_fixed_steps_and_moves_through_them() {
+    launch_runner_steps_flow(false).await;
+}
+
+#[tokio::test]
+async fn runner_steps_are_in_the_surface_plan_from_the_start_when_known() {
+    launch_runner_steps_flow(true).await;
+}
+
+async fn launch_runner_steps_flow(known: bool) {
     let mut outcomes = idle_outcomes(2);
     outcomes.insert(
         "app.peer.list".into(),
@@ -1148,7 +1157,31 @@ async fn a_launch_names_its_fixed_steps_and_moves_through_them() {
         "app.session.start".into(),
         json!({ "_tag": "Ok", "payload": { "session": { "gameId": "g00001", "launchId": "exact" }, "warnings": [] } }),
     );
-    let (hub, outcomes, _directory) = hub_with(outcomes);
+    let outcomes = Arc::new(std::sync::Mutex::new(outcomes));
+    let directory = tempfile::tempdir().unwrap();
+    let korrid = in_memory_korrid(outcomes.clone()).with_launch_steps(Arc::new(move |_, _| {
+        Box::pin(async move {
+            known.then(|| {
+                vec![
+                    crate::plugin::RunnerStep {
+                        key: "start".into(),
+                        label: "Starting runner".into(),
+                    },
+                    crate::plugin::RunnerStep {
+                        key: "game".into(),
+                        label: "Starting the game".into(),
+                    },
+                ]
+            })
+        })
+    }));
+    let intent = crate::overlay_intent::OverlayIntent::default();
+    let hub = SurfaceHub::new(
+        korrid,
+        directory.path().join("private"),
+        intent.subscribe(),
+        Arc::default(),
+    );
     settled(&hub, "pico").await;
     outcomes.lock().unwrap().insert(
         "app.session.status".into(),
@@ -1172,11 +1205,20 @@ async fn a_launch_names_its_fixed_steps_and_moves_through_them() {
         {
             assert_eq!(
                 steps.labels,
-                [
-                    "Checking saves",
-                    "Getting the game ready",
-                    "Starting the game"
-                ]
+                if known {
+                    vec![
+                        "Checking saves",
+                        "Getting the game ready",
+                        "Starting runner",
+                        "Starting the game",
+                    ]
+                } else {
+                    vec![
+                        "Checking saves",
+                        "Getting the game ready",
+                        "Starting the game",
+                    ]
+                }
             );
             if seen.last() != Some(&steps.current) {
                 seen.push(steps.current);
@@ -1193,6 +1235,34 @@ async fn a_launch_names_its_fixed_steps_and_moves_through_them() {
         "the launch reached its last step: {seen:?}"
     );
     assert!(seen.windows(2).all(|pair| pair[0] < pair[1]), "{seen:?}");
+    // For an unknown runner this is the one allowed Start amendment. For
+    // a known runner it moves within the list already shown during planning.
+    for (labels, current, expected) in [
+        (vec!["Starting runner", "Starting the game"], 1, 3),
+        (vec!["Starting runner", "Starting the game"], 0, 3),
+        (vec!["Changed", "Unexpected growth", "No"], 2, 3),
+    ] {
+        outcomes.lock().unwrap().insert("app.session.status".into(), json!({"_tag":"Ok","payload":{"active":{"launchId":"exact","gameId":"g00001","phase":"running","initialHandoff":"waiting","steps":{"labels":labels,"current":current}}}}));
+        // Refresh the real driver so equal phase/handoff observations must still
+        // carry changed runner progress into the root.
+        hub.root().launchables.refresh().await;
+        let SurfaceStatus::Busy {
+            steps: Some(steps), ..
+        } = hub.model("pico").unwrap().status
+        else {
+            panic!("launch must stay busy")
+        };
+        assert_eq!(
+            steps.labels,
+            [
+                "Checking saves",
+                "Getting the game ready",
+                "Starting runner",
+                "Starting the game"
+            ]
+        );
+        assert_eq!(steps.current, expected);
+    }
     outcomes.lock().unwrap().insert(
         "app.session.status".into(),
         json!({ "_tag": "Ok", "payload": { "active": { "launchId": "exact", "gameId": "g00001", "phase": "running", "initialHandoff": "observed" } } }),
@@ -1205,6 +1275,83 @@ async fn a_launch_names_its_fixed_steps_and_moves_through_them() {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     panic!("the handoff never resolved the launch");
+}
+
+#[tokio::test]
+async fn runner_steps_on_a_peer_amend_start_once_and_end_at_handoff() {
+    let mut outcomes = idle_outcomes(1);
+    outcomes.insert("app.catalog.snapshot".into(), json!({"_tag":"Ok","payload":{"games":[{"id":"remote","title":"Remote game","host":"peer","supportsRunnerSelection":false,"source":{"label":"Peer","isLocal":false}}]}}));
+    outcomes.insert("app.session.prepare".into(), json!({"_tag":"Ok","payload":{"session":{"gameId":"remote","launchId":"peer-launch"},"warnings":[]}}));
+    let (hub, outcomes, _directory) = hub_with(outcomes);
+    settled(&hub, "pico").await;
+    hub.request(
+        "pico",
+        SurfaceRequest::LaunchGame {
+            game_id: "game:peer:remote".into(),
+            launch_location_id: None,
+        },
+    )
+    .unwrap();
+    for _ in 0..200 {
+        if hub
+            .root()
+            .launchables
+            .state()
+            .entries()
+            .iter()
+            .filter_map(super::launchables::state::Entry::session)
+            .any(|active| active.launch_id == "peer-launch")
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(
+        hub.root()
+            .launchables
+            .state()
+            .entries()
+            .iter()
+            .filter_map(Entry::session)
+            .any(|active| active.launch_id == "peer-launch"),
+        "peer preparation did not acknowledge a launch"
+    );
+    for (labels, current, expected) in [
+        (
+            vec!["Starting Steam", "Signing in", "Starting the game"],
+            0,
+            1,
+        ),
+        (
+            vec!["Starting Steam", "Signing in", "Starting the game"],
+            2,
+            3,
+        ),
+        (vec!["Not a second amendment"], 0, 3),
+    ] {
+        outcomes.lock().unwrap().insert("app.session.status".into(), json!({"_tag":"Ok","payload":{"active":{"launchId":"peer-launch","gameId":"remote","host":"peer","phase":"running","initialHandoff":"waiting","steps":{"labels":labels,"current":current}}}}));
+        hub.root().launchables.refresh().await;
+        let SurfaceStatus::Busy {
+            steps: Some(steps), ..
+        } = hub.model("pico").unwrap().status
+        else {
+            panic!("peer launch must stay busy")
+        };
+        assert_eq!(
+            steps.labels,
+            [
+                "Getting the game ready",
+                "Starting Steam",
+                "Signing in",
+                "Starting the game"
+            ]
+        );
+        assert_eq!(steps.current, expected);
+    }
+    outcomes.lock().unwrap().insert("app.session.status".into(), json!({"_tag":"Ok","payload":{"active":{"launchId":"peer-launch","gameId":"remote","host":"peer","phase":"running","initialHandoff":"observed"}}}));
+    hub.root().launchables.refresh().await;
+    assert_eq!(hub.model("pico").unwrap().status, SurfaceStatus::Browsing);
+    assert!(hub.root().launch_plan_for_tests().is_none());
 }
 
 /// A1 7.2: the starting launch's Busy marks `cancel-launch`, the portal's

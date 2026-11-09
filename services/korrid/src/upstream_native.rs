@@ -376,6 +376,8 @@ impl NativeClient {
             RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) => {
                 Ok(UpstreamSessionStatus::SessionStatus {
                     active: status.active.map(|active| UpstreamActiveSession {
+                        steps: active.steps,
+                        initial_handoff: active.initial_handoff,
                         netplay: active.netplay,
                         person_public_key: active.person_public_key,
                         stream_players: active.stream_players,

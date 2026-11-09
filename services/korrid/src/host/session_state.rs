@@ -37,6 +37,31 @@ use super::systemd_unit::{
     RUNNER_ID_ENV,
 };
 
+/// The exact launch's immutable declaration and monotonic runner position.
+#[derive(Clone, Debug)]
+struct RunnerProgress {
+    steps: Vec<crate::plugin::RunnerStep>,
+    current: usize,
+}
+
+impl RunnerProgress {
+    fn advance(&mut self, status: &str) {
+        if let Some(index) = status
+            .strip_prefix("korri-step: ")
+            .and_then(|key| self.steps.iter().position(|step| step.key == key))
+        {
+            self.current = self.current.max(index);
+        }
+    }
+
+    fn surface_steps(&self) -> korri_surface_treaty::SurfaceSteps {
+        korri_surface_treaty::SurfaceSteps {
+            labels: self.steps.iter().map(|step| step.label.clone()).collect(),
+            current: self.current as u32,
+        }
+    }
+}
+
 /// Wall-clock seam. Production reads the system clock; tests supply
 /// deterministic instants so recorded durations are exact.
 pub(crate) trait WallClock: Send + Sync {
@@ -330,6 +355,7 @@ pub struct HostSessionControl {
     /// One process-local focus observation for the accepted exact launch.
     /// The journal deliberately contains no historical screen ownership.
     initial_handoff: Arc<Mutex<Option<(String, InitialHandoff)>>>,
+    runner_steps: Arc<Mutex<Option<(String, RunnerProgress)>>>,
     /// When the exact launch's unit started, until its window is observed.
     /// Feeds the LaunchHandoff journal line.
     handoff_since: Arc<Mutex<Option<(String, std::time::Instant)>>>,
@@ -403,6 +429,7 @@ impl HostSessionControl {
             seat_lease: Arc::new(Mutex::new(None)),
             recovered_overlay_intent: Arc::new(Mutex::new(None)),
             initial_handoff: Arc::new(Mutex::new(None)),
+            runner_steps: Arc::new(Mutex::new(None)),
             handoff_since: Arc::new(Mutex::new(None)),
             compositor: None,
             placement_applied: Arc::new(Mutex::new(None)),
@@ -841,6 +868,19 @@ impl HostSessionControl {
         Ok(ownership)
     }
 
+    pub(super) fn describe_runner_steps(&self, active: &mut crate::ActiveSession) {
+        active.steps = if active.initial_handoff == Some(InitialHandoff::Waiting) {
+            self.runner_steps
+                .lock()
+                .expect("runner steps poisoned")
+                .as_ref()
+                .filter(|(exact, _)| exact == &active.launch_id)
+                .map(|(_, progress)| progress.surface_steps())
+        } else {
+            None
+        };
+    }
+
     fn record_initial_handoff(&self, launch_id: &str) {
         let mut handoff = self
             .initial_handoff
@@ -879,6 +919,12 @@ impl HostSessionControl {
             }
             _ => {}
         }
+        // An unavailable observation is not proof of handoff or completion.
+        self.runner_steps.lock().expect("runner steps poisoned").take_if(|(exact, _)| {
+            matches!(state, ActiveState::NoActive)
+                || matches!(state, ActiveState::Completed { launch_id } | ActiveState::Failed { launch_id, .. } if launch_id == exact)
+                || handoff.as_ref().is_some_and(|(id, phase)| id == exact && *phase == InitialHandoff::Observed)
+        });
     }
 
     fn initial_handoff_for(&self, state: &ActiveState) -> Option<InitialHandoff> {
@@ -1897,6 +1943,7 @@ impl HostSessionControl {
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         initial_warnings: Vec<crate::launcher::typed_settings::LaunchWarning>,
         hooks: Option<&super::hooks::LaunchHooks>,
+        steps: Option<&[crate::plugin::RunnerStep]>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let mut warnings = initial_warnings;
         let session = self.prepare_inner(
@@ -1910,6 +1957,7 @@ impl HostSessionControl {
             limits,
             &mut warnings,
             hooks,
+            steps,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -1933,6 +1981,7 @@ impl HostSessionControl {
             None,
             &mut Vec::new(),
             None,
+            None,
         )
     }
 
@@ -1948,6 +1997,7 @@ impl HostSessionControl {
         environment: &BTreeMap<String, String>,
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         hooks: Option<&super::hooks::LaunchHooks>,
+        steps: Option<&[crate::plugin::RunnerStep]>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let mut warnings = Vec::new();
         let session = self.prepare_inner(
@@ -1961,6 +2011,7 @@ impl HostSessionControl {
             limits,
             &mut warnings,
             hooks,
+            steps,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -1973,6 +2024,7 @@ impl HostSessionControl {
         environment: &BTreeMap<String, String>,
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         hooks: Option<&super::hooks::LaunchHooks>,
+        steps: Option<&[crate::plugin::RunnerStep]>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let mut warnings = Vec::new();
         let session = self.prepare_inner(
@@ -1986,6 +2038,7 @@ impl HostSessionControl {
             limits,
             &mut warnings,
             hooks,
+            steps,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -2002,6 +2055,7 @@ impl HostSessionControl {
         limits: Option<&crate::launch_settings::session::SessionLimits>,
         warnings: &mut Vec<crate::launcher::typed_settings::LaunchWarning>,
         hooks: Option<&super::hooks::LaunchHooks>,
+        steps: Option<&[crate::plugin::RunnerStep]>,
     ) -> Result<SessionPrepared, RpcFailure> {
         if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(failure("HostStopping", "korrid is stopping"));
@@ -2444,6 +2498,16 @@ impl HostSessionControl {
                 warnings.push(warning);
             }
         }
+        *self.runner_steps.lock().expect("runner steps poisoned") =
+            steps.filter(|steps| !steps.is_empty()).map(|steps| {
+                (
+                    launch_id.clone(),
+                    RunnerProgress {
+                        steps: steps.to_vec(),
+                        current: 0,
+                    },
+                )
+            });
         match self.backend.state(&launch_id) {
             Ok(
                 observed @ (LaunchUnitState::Running
@@ -2587,7 +2651,27 @@ impl HostSessionControl {
             | ActiveState::RecoveryBlocked => None,
         };
         if let Some(launch_id) = tracked {
-            match self.backend.state(&launch_id) {
+            let observed = self
+                .backend
+                .state_with_status(&launch_id)
+                .map(|(unit_state, text)| {
+                    if self.initial_handoff_for(&state) == Some(InitialHandoff::Waiting) {
+                        if let Some((exact, progress)) = self
+                            .runner_steps
+                            .lock()
+                            .expect("runner steps poisoned")
+                            .as_mut()
+                        {
+                            if exact == &launch_id {
+                                if let Some(text) = text {
+                                    progress.advance(&text);
+                                }
+                            }
+                        }
+                    }
+                    unit_state
+                });
+            match observed {
                 Ok(
                     observed @ (LaunchUnitState::Running
                     | LaunchUnitState::Frozen
@@ -9182,6 +9266,7 @@ mod launch_settings_lifecycle_tests {
                     None,
                     Vec::new(),
                     None,
+                    None,
                 )
                 .unwrap();
             assert_eq!(*events.lock().unwrap(), ["service", "game"]);
@@ -9201,6 +9286,7 @@ mod launch_settings_lifecycle_tests {
                     &BTreeMap::new(),
                     None,
                     Vec::new(),
+                    None,
                     None,
                 )
                 .unwrap();
@@ -9235,6 +9321,7 @@ mod launch_settings_lifecycle_tests {
                 Some(&limits()),
                 Vec::new(),
                 None,
+                None,
             )
             .unwrap();
         assert!(first.warnings.is_empty());
@@ -9250,6 +9337,7 @@ mod launch_settings_lifecycle_tests {
                 &BTreeMap::new(),
                 Some(&limits()),
                 Vec::new(),
+                None,
                 None,
             )
             .unwrap();
@@ -9307,6 +9395,7 @@ mod launch_settings_lifecycle_tests {
                     &BTreeMap::new(),
                     Some(&limits()),
                     Vec::new(),
+                    None,
                     None,
                 )
                 .unwrap();
@@ -9377,6 +9466,7 @@ mod launch_settings_completion_tests {
                 Some(&limits),
                 Vec::new(),
                 None,
+                None,
             )
             .unwrap();
         assert!(launch.warnings.is_empty());
@@ -9388,5 +9478,41 @@ mod launch_settings_completion_tests {
         let requests = server.join().unwrap();
         assert_eq!(requests[0]["_tag"], "ApplySession");
         assert_eq!(requests[1]["_tag"], "EndSession");
+    }
+}
+
+#[cfg(test)]
+mod runner_steps_tests {
+    use super::*;
+
+    #[test]
+    fn runner_status_accepts_only_declared_keys_and_never_moves_back() {
+        let mut progress = RunnerProgress {
+            steps: ["start", "sign-in", "game"]
+                .into_iter()
+                .map(|key| crate::plugin::RunnerStep {
+                    key: key.into(),
+                    label: key.into(),
+                })
+                .collect(),
+            current: 0,
+        };
+        for text in [
+            "game",
+            "korri-step: unknown",
+            "korri-step: sign-in ",
+            "plugin-launch: refusal",
+            "korri-step: ",
+        ] {
+            progress.advance(text);
+            assert_eq!(progress.surface_steps().current, 0, "accepted {text}");
+        }
+        progress.advance("korri-step: sign-in");
+        assert_eq!(progress.surface_steps().current, 1);
+        progress.advance("korri-step: start");
+        assert_eq!(progress.surface_steps().current, 1);
+        progress.advance("korri-step: game");
+        progress.advance("korri-step: sign-in");
+        assert_eq!(progress.surface_steps().current, 2);
     }
 }

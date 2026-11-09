@@ -161,6 +161,7 @@ fn prepare(
         None,
         vec![],
         Some(hooks),
+        None,
     )
 }
 
@@ -207,6 +208,7 @@ fn hooks_before_in_order_after_reversed_and_after_end_session() {
             Some(&limits),
             vec![],
             Some(&steps),
+            None,
         )
         .unwrap();
     assert!(matches!(
@@ -577,6 +579,7 @@ fn layer_changes_and_unsets_do_not_change_the_game_sandbox_for_hooks_or_restart(
                 None,
                 vec![],
                 Some(&steps),
+                None,
             )
             .unwrap()
             .session;

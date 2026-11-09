@@ -175,6 +175,14 @@ pub trait LaunchUnitBackend: Send + Sync {
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError>;
+    /// State and runner status from one native property observation.
+    fn state_with_status(
+        &self,
+        launch_id: &str,
+    ) -> Result<(LaunchUnitState, Option<String>), LaunchUnitError> {
+        self.state(launch_id).map(|state| (state, None))
+    }
+
     /// Stops the unit from any live state. A backend must thaw a frozen
     /// unit itself before stopping it; callers never issue a thaw before
     /// a stop.
@@ -613,6 +621,7 @@ type LaunchServiceProbe = Arc<dyn Fn() -> Result<(), LaunchUnitError> + Send + S
 #[derive(Default)]
 pub(crate) struct InMemoryLaunchUnitBackend {
     units: Mutex<BTreeMap<String, LaunchUnitState>>,
+    status_text: Mutex<BTreeMap<String, String>>,
     failed_units: Mutex<BTreeMap<String, i32>>,
     runners: Mutex<BTreeMap<String, String>>,
     placements: Mutex<BTreeMap<String, super::display_placement::Placement>>,
@@ -629,6 +638,13 @@ pub(crate) struct InMemoryLaunchUnitBackend {
 
 #[cfg(test)]
 impl InMemoryLaunchUnitBackend {
+    pub(crate) fn set_status_text(&self, launch_id: &str, text: &str) {
+        self.status_text
+            .lock()
+            .unwrap()
+            .insert(launch_id.into(), text.into());
+    }
+
     pub(crate) fn set_service_probe(&self, probe: LaunchServiceProbe) {
         *self.service_probe.lock().unwrap() = Some(probe);
     }
@@ -882,6 +898,18 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
         launch_id: &str,
     ) -> Result<Option<super::display_placement::Placement>, LaunchUnitError> {
         Ok(self.placements.lock().unwrap().get(launch_id).cloned())
+    }
+
+    fn state_with_status(
+        &self,
+        launch_id: &str,
+    ) -> Result<(LaunchUnitState, Option<String>), LaunchUnitError> {
+        self.state(launch_id).map(|state| {
+            (
+                state,
+                self.status_text.lock().unwrap().get(launch_id).cloned(),
+            )
+        })
     }
 
     fn runner_id(&self, launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
@@ -1476,8 +1504,8 @@ impl SystemdLaunchUnitBackend {
             format!("--uid={}", self.runtime_uid),
             format!("--gid={}", self.runtime_gid),
             "--property=KillMode=control-group".into(),
-            // STATUS= retains a plugin-launch refusal in the existing unit failure path.
-            "--property=NotifyAccess=main".into(),
+            // Session children report runner steps; STATUS= also retains plugin-launch refusals.
+            "--property=NotifyAccess=all".into(),
             "--property=NoNewPrivileges=yes".into(),
             "--property=CapabilityBoundingSet=".into(),
             "--property=AmbientCapabilities=".into(),
@@ -2321,6 +2349,13 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
+        self.state_with_status(launch_id).map(|(state, _)| state)
+    }
+
+    fn state_with_status(
+        &self,
+        launch_id: &str,
+    ) -> Result<(LaunchUnitState, Option<String>), LaunchUnitError> {
         let arguments = Self::state_arguments(launch_id)?;
         let directory = self.diagnostics_root.join(launch_id);
         let output = self.run(&self.systemctl, &arguments)?;
@@ -2366,7 +2401,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         } else {
             Self::parse_unit_state(&values)
         };
-        match state {
+        let observed = match state {
             Err(error)
                 if error.kind == LaunchUnitErrorKind::UnitFailed
                     && diagnostics_available
@@ -2386,7 +2421,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
                 {
                     // Preserve the bounded result until after the host's durable
                     // completion record contains it, including across a restart.
-                    return Ok(LaunchUnitState::Completed);
+                    return Ok((LaunchUnitState::Completed, None));
                 }
                 super::launch_diagnostics::cleanup(&directory).map_err(|error| {
                     LaunchUnitError::new(
@@ -2397,7 +2432,11 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
                 Ok(LaunchUnitState::Completed)
             }
             other => other,
-        }
+        }?;
+        Ok((
+            observed,
+            values.get("StatusText").map(|text| (*text).to_owned()),
+        ))
     }
 
     fn runner_id(&self, launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
@@ -3101,6 +3140,34 @@ mod startup_diagnostic_tests {
     }
 
     #[test]
+    fn runner_steps_read_the_live_units_status_text_and_allow_child_notifications() {
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemctl");
+        fs::write(&helper, "#!/bin/sh\nprintf 'LoadState=loaded\\nActiveState=active\\nFreezerState=running\\nStatusText=korri-step: game\\n'\n").unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = SystemdLaunchUnitBackend::new(
+            helper.clone(),
+            helper,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+        )
+        .unwrap();
+        let (state, status) = backend
+            .state_with_status("0123456789abcdef0123456789abcdef")
+            .unwrap();
+        assert_eq!(state, LaunchUnitState::Running);
+        assert_eq!(status.as_deref(), Some("korri-step: game"));
+        let args = backend
+            .launch_arguments(
+                "0123456789abcdef0123456789abcdef",
+                &["game".into()],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+        assert!(args.iter().any(|arg| arg == "--property=NotifyAccess=all"));
+    }
+
+    #[test]
     fn failed_unit_uses_only_its_own_bounded_redacted_stderr_and_cleans_normal_completion() {
         let root = tempfile::tempdir().unwrap();
         let helper = root.path().join("systemctl");
@@ -3685,6 +3752,7 @@ KORRID_TEST_PLUGIN_EXIT_WRITER=1 KORRID_TEST_PLUGIN_EXIT_STATUS="$status" KORRID
                 None,
                 vec![],
                 Some(&hooks),
+                None,
             )
             .unwrap();
         fs::remove_file(marker).unwrap(); // systemd collected the cleanly exited unit

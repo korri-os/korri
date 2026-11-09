@@ -614,6 +614,8 @@ pub struct PendingLaunch {
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<korri_surface_treaty::SurfaceSteps>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[typeshare(serialized_as = "Option<NetplaySession>")]
     pub netplay: Option<Box<netplay::NetplaySession>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2075,7 +2077,7 @@ fn upstream_failure(error: upstreams::UpstreamError) -> RpcFailure {
     }
 }
 
-/// Pure mapping from the legacy status union to the korrid-shaped outcome.
+/// Maps peer session observations without dropping launch progress or handoff.
 fn session_status_outcome(
     result: Result<upstream::UpstreamSessionStatus, upstreams::UpstreamError>,
 ) -> SessionStatusOutcome {
@@ -2089,7 +2091,8 @@ fn session_status_outcome(
                     netplay: active.netplay,
                     person_public_key: active.person_public_key,
                     stream_players: active.stream_players,
-                    initial_handoff: None,
+                    steps: active.steps,
+                    initial_handoff: active.initial_handoff,
                     focus_ownership: None,
                     launch_id: active.launch_id,
                     host: active.host,
@@ -2179,6 +2182,7 @@ fn host_session_status_outcome(
                     game_id,
                     title: None,
                     phase: Some("running".into()),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                 }),
@@ -2201,6 +2205,7 @@ fn host_session_status_outcome(
                     game_id,
                     title: None,
                     phase: Some("frozen".into()),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                 }),
@@ -2223,6 +2228,7 @@ fn host_session_status_outcome(
                     game_id,
                     title: None,
                     phase: Some("focus-failed".into()),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                 }),
@@ -2245,6 +2251,7 @@ fn host_session_status_outcome(
                     game_id,
                     title: None,
                     phase: Some("stopping".into()),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                 }),
@@ -4641,8 +4648,37 @@ fn surface_hub_for(
                 .map_err(|_| surface::korrid::Refusal::Denied)
         })
     });
+    let base = surface_host.clone();
+    let steps: surface::korrid::LaunchSteps = Arc::new(move |game_id, runner_id| {
+        let state = base.clone();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let (root, registry) = state.acquisition_context().ok()?;
+                let (snapshot, _) = config::settings::runner_choice_snapshot(root).ok()?;
+                let route = config::resolver::resolve_linux_route(
+                    root,
+                    &snapshot,
+                    &registry,
+                    &game_id,
+                    runner_id.as_deref(),
+                )
+                .ok()?;
+                Some(
+                    registry
+                        .native_runner(&route.runner_id)
+                        .ok()?
+                        .steps
+                        .clone()
+                        .unwrap_or_default(),
+                )
+            })
+            .await
+            .ok()
+            .flatten()
+        })
+    });
     surface::SurfaceHub::new(
-        surface::korrid::Korrid::new(send),
+        surface::korrid::Korrid::new(send).with_launch_steps(steps),
         surface_host.private_state_root().to_path_buf(),
         surface_host.overlay_intent.subscribe(),
         controllers,
@@ -6267,6 +6303,8 @@ mod tests {
     fn status_with_active_session_maps_to_ok_with_details() {
         let outcome = session_status_outcome(Ok(upstream::UpstreamSessionStatus::SessionStatus {
             active: Some(upstream::UpstreamActiveSession {
+                steps: None,
+                initial_handoff: None,
                 netplay: None,
                 person_public_key: None,
                 stream_players: Vec::new(),
@@ -6321,6 +6359,7 @@ mod tests {
                     game_id: Some("one".into()),
                     title: None,
                     phase: Some("focus-failed".into()),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                 }),
@@ -6346,6 +6385,7 @@ mod tests {
             netplay: None,
             person_public_key: None,
             stream_players: Vec::new(),
+            steps: None,
             initial_handoff: None,
             focus_ownership: None,
             launch_id: launch_id.into(),
@@ -6476,6 +6516,7 @@ mod tests {
                     game_id: Some("one".into()),
                     title: None,
                     phase: Some("stopping".into()),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                 }),
@@ -6505,6 +6546,7 @@ mod tests {
                     game_id: Some("one".into()),
                     title: None,
                     phase: Some("frozen".into()),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                 }),
@@ -6560,6 +6602,7 @@ mod tests {
                 netplay: None,
                 person_public_key: None,
                 stream_players: Vec::new(),
+                steps: None,
                 initial_handoff: None,
                 focus_ownership: None,
                 launch_id: "a".into(),
@@ -6604,6 +6647,7 @@ mod tests {
                     launch_id: "launch-a".into(),
                     host: Some("peer".into()),
                     game_id: Some("wario".into()),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                     title: Some("Wario Land 4".into()),
@@ -6692,6 +6736,7 @@ mod tests {
                 netplay: None,
                 person_public_key: None,
                 stream_players: Vec::new(),
+                steps: None,
                 initial_handoff: None,
                 focus_ownership: None,
                 launch_id: "l1".into(),

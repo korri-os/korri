@@ -1089,6 +1089,7 @@ impl LaunchablesState {
                     netplay: None,
                     person_public_key: None,
                     stream_players: Vec::new(),
+                    steps: None,
                     initial_handoff: None,
                     focus_ownership: None,
                     launch_id: session.launch_id.clone(),
@@ -1327,6 +1328,7 @@ impl LaunchablesState {
                         && active.phase == previous.phase
                         && active.focus_ownership == previous.focus_ownership
                         && active.initial_handoff == previous.initial_handoff
+                        && active.steps == previous.steps
                         && active.stream_players == previous.stream_players
                         && !pending_launches
                             .iter()

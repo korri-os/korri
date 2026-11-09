@@ -2002,6 +2002,7 @@ mod tests {
     struct ExactNativeState {
         launch_id: String,
         active_phase: Arc<std::sync::Mutex<Option<String>>>,
+        steps: Arc<std::sync::Mutex<Option<korri_surface_treaty::SurfaceSteps>>>,
         stop_pending: bool,
         freeze_failures: Arc<std::sync::Mutex<usize>>,
         thaw_failures: Arc<std::sync::Mutex<usize>>,
@@ -2067,6 +2068,7 @@ mod tests {
             }
             crate::RpcRequest::SessionStatus(_) => {
                 let phase = state.active_phase.lock().unwrap().clone();
+                let steps = state.steps.lock().unwrap().clone();
                 RpcResponse::SessionStatus(SessionStatusOutcome::Ok(SessionStatus {
                     netplay: None,
                     stream_play_launch_id: None,
@@ -2075,7 +2077,8 @@ mod tests {
                         netplay: None,
                         person_public_key: None,
                         stream_players: Vec::new(),
-                        initial_handoff: None,
+                        steps: steps.clone(),
+                        initial_handoff: steps.as_ref().map(|_| crate::InitialHandoff::Waiting),
                         focus_ownership: None,
                         launch_id: state.launch_id.clone(),
                         host: None,
@@ -2170,6 +2173,7 @@ mod tests {
         let state = ExactNativeState {
             launch_id: "11111111111111111111111111111111".into(),
             active_phase: Default::default(),
+            steps: Default::default(),
             stop_pending,
             freeze_failures: Default::default(),
             thaw_failures: Default::default(),
@@ -3383,6 +3387,40 @@ command = ["native-game"]
             registry.selected().unwrap().launch_id,
             prepared.session.launch_id
         );
+    }
+
+    #[tokio::test]
+    async fn runner_steps_cross_native_rpc_registry_and_session_status_outcome() {
+        let (url, state) = exact_native_server(false).await;
+        let steps = korri_surface_treaty::SurfaceSteps {
+            labels: vec!["Starting Steam".into(), "Starting the game".into()],
+            current: 1,
+        };
+        *state.steps.lock().unwrap() = Some(steps.clone());
+        NativeClient::new(url.clone())
+            .prepare_stream("game")
+            .await
+            .unwrap();
+        let registry = selected_viewer_registry(
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("peer", url)])
+                .with_linux_viewer(Arc::new(TestLinuxStreamViewer::default())),
+            &state.launch_id,
+        )
+        .await;
+        let outcome = crate::session_status_outcome(registry.session_status().await);
+        let crate::SessionStatusOutcome::Ok(status) = outcome else {
+            panic!("status failed")
+        };
+        let active = status.active.unwrap();
+        assert_eq!(active.host.as_deref(), Some("peer"));
+        assert_eq!(active.steps, Some(steps));
+        assert_eq!(active.initial_handoff, Some(crate::InitialHandoff::Waiting));
+        state.steps.lock().unwrap().take();
+        let outcome = crate::session_status_outcome(registry.session_status().await);
+        let crate::SessionStatusOutcome::Ok(status) = outcome else {
+            panic!("status failed")
+        };
+        assert!(status.active.unwrap().steps.is_none());
     }
 
     #[tokio::test]

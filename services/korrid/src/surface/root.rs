@@ -1041,7 +1041,7 @@ impl Root {
         {
             status = problem;
         }
-        let status = self.with_launch_steps(status);
+        let status = self.with_launch_steps(status, &state);
         let onboarding = (onboarding_needed == Some(true) && owner.is_unsupported()).then(|| {
             SurfaceOnboarding {
                 controllers: self.controllers.snapshot(),
@@ -1205,6 +1205,8 @@ impl Root {
             return;
         };
         if !game.source.is_local {
+            *self.launch_plan.lock().expect("launch plan poisoned") =
+                Some(LaunchPlan::new(&game.id, false, false));
             self.launchables.confirm_entry(chosen);
             return;
         }
@@ -1322,7 +1324,16 @@ impl Root {
         // spends at most its reach budget on it.
         let peer_in_reach = matches!(&peers, crate::PeerListOutcome::Ok(list)
             if list.peers.iter().any(|peer| !matches!(peer.state, crate::PeerListState::Failed)));
-        LaunchPlan::new(&game.id, peer_in_reach, needs_download)
+        let runner_steps = self
+            .korrid
+            .launch_steps(game.id.clone(), game.runner_id.clone())
+            .await;
+        LaunchPlan::with_runner_steps(
+            &game.id,
+            peer_in_reach,
+            needs_download,
+            runner_steps.as_deref(),
+        )
     }
 
     #[cfg(test)]
@@ -1351,7 +1362,7 @@ impl Root {
     }
 
     /// A Busy of the launch under way names its steps.
-    fn with_launch_steps(&self, status: SurfaceStatus) -> SurfaceStatus {
+    fn with_launch_steps(&self, status: SurfaceStatus, state: &LaunchablesState) -> SurfaceStatus {
         let mut plan = self.launch_plan.lock().expect("launch plan poisoned");
         let SurfaceStatus::Busy {
             kicker,
@@ -1364,14 +1375,44 @@ impl Root {
         } = status
         else {
             // The game has taken over, or the start failed: the launch is over.
-            if plan
-                .as_ref()
-                .is_some_and(|plan| plan.current() == LaunchStep::Start)
-            {
+            if plan.as_ref().is_some_and(|plan| {
+                plan.current() == LaunchStep::Start
+                    || state
+                        .entries()
+                        .iter()
+                        .filter_map(Entry::session)
+                        .any(|session| {
+                            session.game_id.as_deref() == Some(plan.game_id())
+                                && matches!(
+                                    session.initial_handoff,
+                                    Some(
+                                        crate::InitialHandoff::Observed
+                                            | crate::InitialHandoff::Recovered
+                                    )
+                                )
+                        })
+            }) {
                 *plan = None;
             }
             return status;
         };
+        if let Some(plan) = plan.as_mut() {
+            if let Some(active) = state
+                .entries()
+                .iter()
+                .filter_map(Entry::session)
+                .find(|session| session.game_id.as_deref() == Some(plan.game_id()))
+            {
+                if active.steps.is_some()
+                    || active.initial_handoff == Some(crate::InitialHandoff::Waiting)
+                {
+                    plan.reach(LaunchStep::Start);
+                    if let Some(steps) = &active.steps {
+                        plan.follow_runner(steps);
+                    }
+                }
+            }
+        }
         SurfaceStatus::Busy {
             kicker,
             detail,

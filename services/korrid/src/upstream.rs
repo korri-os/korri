@@ -69,6 +69,10 @@ pub struct UpstreamPrepared {
 #[serde(rename_all = "camelCase")]
 pub struct UpstreamActiveSession {
     #[serde(default)]
+    pub steps: Option<korri_surface_treaty::SurfaceSteps>,
+    #[serde(default)]
+    pub initial_handoff: Option<crate::InitialHandoff>,
+    #[serde(default)]
     pub netplay: Option<Box<crate::netplay::NetplaySession>>,
     #[serde(default)]
     pub person_public_key: Option<String>,

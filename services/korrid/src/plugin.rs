@@ -279,6 +279,8 @@ pub struct ArtifactFile {
 #[serde(deny_unknown_fields)]
 pub struct RunnerRecord {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub steps: Option<Vec<RunnerStep>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub netplay: Option<crate::netplay::RunnerNetplay>,
     #[serde(skip)]
     pub id: String,
@@ -299,6 +301,14 @@ pub struct RunnerRecord {
     pub core: Option<String>,
     #[serde(default)]
     pub layouts: BTreeMap<String, RunnerLayout>,
+}
+
+/// One ordered, runner-owned launch step.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RunnerStep {
+    pub key: String,
+    pub label: String,
 }
 
 /// ADR 0039: fractions of the runner's window, supplied by its declaration.
@@ -1408,6 +1418,24 @@ fn normalize_plugin(
             return Err(PluginError::EmptyContributionId { kind: "runner" });
         }
         runner.id = plugin_record_id(&id, local_id);
+        if let Some(steps) = &runner.steps {
+            let mut keys = BTreeSet::new();
+            if steps.len() > 8
+                || steps.iter().any(|step| {
+                    !is_provider_segment(&step.key)
+                        || !keys.insert(&step.key)
+                        || step.label.trim().is_empty()
+                        || step.label.chars().count() > 48
+                        || step.label.chars().any(char::is_control)
+                })
+            {
+                return Err(invalid_contribution(
+                    "runner", local_id,
+                    "steps need at most 8 unique bare keys and non-empty labels of at most 48 characters without controls",
+                ));
+            }
+        }
+
         if runner.netplay.as_ref().is_some_and(|facts| {
             [&facts.library, &facts.version].iter().any(|value| {
                 value.trim().is_empty() || value.len() > 512 || value.chars().any(char::is_control)
@@ -2790,5 +2818,51 @@ mod release_artifact_tests {
             .cloned()
             .collect();
         assert_eq!(keys, ["2", "10", "v2"]);
+    }
+}
+
+#[cfg(test)]
+mod runner_steps_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn decode(steps: serde_json::Value) -> Result<Plugin, PluginError> {
+        decode_plugin_declaration(
+            "@test",
+            &json!({"name":"runner", "runners":{"main":{"program":"game", "steps":steps}}})
+                .to_string(),
+        )
+    }
+
+    #[test]
+    fn runner_steps_accept_an_ordered_list() {
+        assert!(decode(json!([{"key":"start-steam","label":"Starting Steam"},{"key":"game","label":"Starting the game"}])).is_ok());
+        assert!(decode(json!([])).is_ok());
+        assert!(decode(json!((0..8)
+            .map(|i| json!({"key":format!("step-{i}"),"label":"Step"}))
+            .collect::<Vec<_>>()))
+        .is_ok());
+        assert!(decode(json!([{"key":"game","label":"é".repeat(48)}])).is_ok());
+    }
+
+    #[test]
+    fn runner_steps_reject_invalid_declarations() {
+        for steps in [
+            json!([{"key":"game","label":"Game"},{"key":"game","label":"Again"}]),
+            json!([{"key":"bad/key","label":"Game"}]),
+            json!([{"key":"game","label":""}]),
+            json!([{"key":"game","label":" "}]),
+            json!([{"key":"game","label":"x".repeat(49)}]),
+            json!([{"key":"game","label":"Bad\nlabel"}]),
+            json!((0..9)
+                .map(|i| json!({"key":format!("step-{i}"),"label":"Step"}))
+                .collect::<Vec<_>>()),
+            json!(null),
+            json!([{"key":"game","label":"Game","unknown":true}]),
+            json!([{"key":null,"label":"Game"}]),
+            json!([{"key":"game","label":null}]),
+        ] {
+            assert!(decode(steps.clone()).is_err(), "accepted {steps}");
+        }
     }
 }
