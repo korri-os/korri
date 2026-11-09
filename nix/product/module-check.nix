@@ -890,7 +890,7 @@ assert
   builtins.fromJSON productConfig.environment.etc."korri-plugin-host/publishers.json".text
   == requirements.constants.publishers;
 assert builtins.elem productPluginPublicKey productConfig.nix.settings.trusted-public-keys;
-assert productPluginHost.officialCatalogUrl == null;
+assert productPluginHost.officialCatalogUrl == (import ./published-plugins.nix).catalogUrl;
 assert productConfig.nix.buildMachines == [ ];
 assert builtins.elem "nix-command" productConfig.nix.settings.experimental-features;
 assert !(productConfig.systemd.services ? sshd);

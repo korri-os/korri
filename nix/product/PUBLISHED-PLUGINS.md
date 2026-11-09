@@ -51,8 +51,8 @@ The other product targets are `rg353m`, `rgds`, `r36tmax`, `odin2portal`,
 5. `seed-catalog` uses the existing graph approval and receipt producers, with
    `Provenance::Repository` taken from each selected catalog record. The
    Starter pack stays Disabled; its FAKE-08, Solarus and ZQuest Classic
-   dependencies stay independently selected. Image `officialCatalogUrl`
-   names the pinned catalog. Gamescope's initial modifier remains unchanged.
+   dependencies stay independently selected. The product's `officialCatalogUrl`
+   names the pinned catalog on every device, not only images. Gamescope's initial modifier remains unchanged.
 6. Before `restore-all`, the offline proof unit compares each archive proof
    with Nix's registered bytes and requires the full bound key. Nix copies
    those signatures and rehashes the complete closure without a substituter

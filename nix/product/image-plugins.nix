@@ -36,7 +36,6 @@ in
       {
         "@korri:gamescope/gamescope".enabled = true;
       };
-  services.korri.pluginHost.officialCatalogUrl = catalog.catalogUrl;
   sdImage.storePaths = seeded.storePaths;
   sdImage.populateRootCommands = lib.mkAfter seeded.populateRootCommands;
   # This image-owned prerequisite leaves the shared product host unit intact.

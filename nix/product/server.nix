@@ -141,6 +141,9 @@ in
     services.korri.pluginHost = {
       enable = true;
       publishers = constants.publishers;
+      # Every device, not only SD images, installs @korri plugins from the
+      # pinned catalog (owner decision 2026-11-08).
+      officialCatalogUrl = (import ./published-plugins.nix).catalogUrl;
     };
   };
 }
