@@ -366,6 +366,11 @@ in
               x = lib.mkOption { type = lib.types.int; };
               y = lib.mkOption { type = lib.types.int; };
               touch = lib.mkOption { type = lib.types.nullOr lib.types.str; };
+              unwatched = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Hardware fact: no person looks at this display, such as a dummy plug that exists only so the device's picture can be streamed. Korri never powers it off for idleness.";
+              };
             };
           }
         );

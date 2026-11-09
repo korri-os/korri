@@ -23,11 +23,18 @@ let
       --data '{"_tag":"app.displays.wake","payload":{}}' http://localhost/rpc \
       | ${pkgs.jq}/bin/jq --exit-status '.outcome._tag == "Ok"' >/dev/null
   '';
+  # An unwatched display is never powered off for idleness (CONTEXT.md). The
+  # names arrive as unit environment, a device fact, so the script itself is
+  # the same on every device.
+  watchedDisplays = map (display: display.name) (
+    builtins.filter (display: !display.unwatched) host.compositor.displays
+  );
+  powerOffWatched = "for output in $KORRI_WATCHED_DISPLAYS; do ${pkgs.sway}/bin/swaymsg output \"$output\" power off; done";
   displayIdle = pkgs.writeShellScript "korri-display-idle" ''
     exec ${pkgs.swayidle}/bin/swayidle -w \
-      timeout 300 '${pkgs.sway}/bin/swaymsg output "*" power off' \
+      timeout 300 '${powerOffWatched}' \
       resume '${displayWake}' \
-      before-sleep '${pkgs.sway}/bin/swaymsg output "*" power off'
+      before-sleep '${powerOffWatched}'
   '';
   volume = step: {
     command = [
@@ -137,6 +144,7 @@ in
       XDG_RUNTIME_DIR = runtimeDir;
       WAYLAND_DISPLAY = "korri-wayland";
       SWAYSOCK = "/run/korri-compositor/sway-ipc.sock";
+      KORRI_WATCHED_DISPLAYS = lib.concatStringsSep " " watchedDisplays;
     };
     serviceConfig = {
       User = host.runtimeUser;

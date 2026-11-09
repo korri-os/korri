@@ -448,6 +448,23 @@ let
     publicKey = "review-owner-1:4SchQgTMNU3syZ2ZzN/cJXPMigc/PIt+EaqHAStgJs8=";
     cacheUrl = "file:///var/lib/review-owner/cache";
   };
+  # Unwatched displays are a hardware fact: display idle never powers them off.
+  withUnwatchedDisplay = standalone.extendModules {
+    modules = [
+      {
+        services.korriLinuxHost.compositor.displays = lib.mkForce [
+          {
+            name = "HEADLESS-1";
+            mode = "1920x1080@60Hz";
+            x = 0;
+            y = 0;
+            touch = null;
+            unwatched = true;
+          }
+        ];
+      }
+    ];
+  };
   withOwnerPublisher = standalone.extendModules {
     modules = [ { services.korri.pluginHost.publishers."@review-owner" = ownerPublisher; } ];
   };
@@ -890,6 +907,8 @@ assert
   builtins.fromJSON productConfig.environment.etc."korri-plugin-host/publishers.json".text
   == requirements.constants.publishers;
 assert builtins.elem productPluginPublicKey productConfig.nix.settings.trusted-public-keys;
+assert productConfig.systemd.services.korri-display-idle.environment.KORRI_WATCHED_DISPLAYS == "HEADLESS-1";
+assert withUnwatchedDisplay.config.systemd.services.korri-display-idle.environment.KORRI_WATCHED_DISPLAYS == "";
 assert productPluginHost.officialCatalogUrl == (import ./published-plugins.nix).catalogUrl;
 assert productConfig.nix.buildMachines == [ ];
 assert builtins.elem "nix-command" productConfig.nix.settings.experimental-features;
@@ -922,6 +941,7 @@ assert
 assert builtins.elem productPluginHost.package productConfig.environment.systemPackages;
 assert
   productPluginNames (builtins.attrNames productConfig.environment.etc) == [
+    "korri-plugin-host/official-catalog-url"
     "korri-plugin-host/publishers.json"
   ];
 assert
