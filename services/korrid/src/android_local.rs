@@ -35,6 +35,10 @@ pub trait AppLauncher: Send + Sync {
     fn resume(&self, package: &str) -> Result<(), String>;
     /// Bring Korri's own screen forward.
     fn show_korri(&self) -> Result<(), String>;
+    /// End: if the app carries the Korri save bridge, ask it to quit and copy
+    /// its save folders back into Korri's (ADR 0054, case 2). Otherwise only
+    /// bring Korri forward; the app may keep running.
+    fn end_session(&self, session: &LocalSession) -> Result<(), String>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,6 +54,9 @@ pub struct LocalSession {
     pub title: Option<String>,
     pub package: String,
     pub phase: Phase,
+    /// The plan's save folders, keyed as the runner declared them. The save
+    /// bridge copies them in before start and out after End.
+    pub save_locations: Vec<crate::saves::types::SaveLocation>,
 }
 
 pub struct AndroidLocalSessions {
@@ -92,8 +99,9 @@ impl AndroidLocalSessions {
             launch_id: new_launch_id(),
             game_id: route.playable_id.clone(),
             title: route.title.clone(),
-            package: plan.android.package,
+            package: plan.android.package.clone(),
             phase: Phase::Playing,
+            save_locations: plan.save_locations.clone(),
         };
         *active = Some(session.clone());
         Ok(session)
@@ -125,7 +133,9 @@ impl AndroidLocalSessions {
     pub fn end(&self, expected: Option<&str>) -> Result<LocalSession, RpcFailure> {
         let session = self.exact(expected)?;
         *self.active.lock().expect("android session lock") = None;
-        let _ = self.launcher.show_korri();
+        if let Err(message) = self.launcher.end_session(&session) {
+            eprintln!("korrid android: end of {} incomplete: {message}", session.package);
+        }
         Ok(session)
     }
 

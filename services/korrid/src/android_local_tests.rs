@@ -20,6 +20,10 @@ impl AppLauncher for Fake {
         self.calls.lock().unwrap().push("korri".into());
         Ok(())
     }
+    fn end_session(&self, session: &LocalSession) -> Result<(), String> {
+        self.calls.lock().unwrap().push(format!("end {}", session.package));
+        Ok(())
+    }
 }
 
 fn live(fake: Arc<Fake>) -> AndroidLocalSessions {
@@ -30,6 +34,7 @@ fn live(fake: Arc<Fake>) -> AndroidLocalSessions {
         title: Some("TMNT".into()),
         package: "com.example.game".into(),
         phase: Phase::Playing,
+        save_locations: Vec::new(),
     });
     sessions
 }
@@ -48,7 +53,7 @@ fn leave_resume_and_end_follow_the_live_session() {
     assert!(sessions.active().is_none());
     assert_eq!(
         *fake.calls.lock().unwrap(),
-        vec!["korri", "korri", "resume com.example.game", "korri"]
+        vec!["korri", "korri", "resume com.example.game", "end com.example.game"]
     );
 }
 

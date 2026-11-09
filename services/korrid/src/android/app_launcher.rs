@@ -55,12 +55,17 @@ impl AppLauncher for JniAppLauncher {
     }
     fn start(&self, plan: &AndroidLaunchOutput, content_path: Option<&str>) -> Result<(), String> {
         let json = serde_json::to_string(&plan.android).map_err(|e| e.to_string())?;
-        self.ok("start", &[&json, content_path.unwrap_or("")])
+        let saves = serde_json::to_string(&plan.save_locations).map_err(|e| e.to_string())?;
+        self.ok("start", &[&json, content_path.unwrap_or(""), &saves])
     }
     fn resume(&self, package: &str) -> Result<(), String> {
         self.ok("resume", &[package])
     }
     fn show_korri(&self) -> Result<(), String> {
         self.ok("showKorri", &[])
+    }
+    fn end_session(&self, session: &crate::android_local::LocalSession) -> Result<(), String> {
+        let saves = serde_json::to_string(&session.save_locations).map_err(|e| e.to_string())?;
+        self.ok("endSession", &[&session.package, &saves])
     }
 }

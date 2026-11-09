@@ -51,10 +51,14 @@ public final class KorriAppLauncher {
     }
 
     /** Start a validated plan: package, optional activity, action and content grant. */
-    public static String start(String planJson, String contentPath) {
+    public static String start(String planJson, String contentPath, String savesJson) {
         try {
             JSONObject plan = new JSONObject(planJson);
             String pkg = plan.getString("package");
+            String copied = copySaves(pkg, savesJson, true);
+            if (copied != null) {
+                return copied;
+            }
             Intent intent;
             if (plan.has("activity")) {
                 intent = new Intent();
@@ -99,6 +103,55 @@ public final class KorriAppLauncher {
         context.startActivity(intent);
         watch(packageName);
         return "ok";
+    }
+
+    /** End: a Korri-built app quits and its saves come back; any other app keeps running. */
+    public static String endSession(String packageName, String savesJson) {
+        watched = null;
+        dev.korri.savebridge.KorriSaveBridgeClient bridge =
+                dev.korri.savebridge.KorriSaveBridgeClient.forPackage(context, packageName);
+        String result = "ok";
+        if (bridge != null) {
+            try {
+                bridge.quit();
+                // The engine flushes on its normal shutdown path.
+                Thread.sleep(2000);
+            } catch (Exception e) {
+                Log.w(TAG, "quit failed", e);
+            }
+            String copied = copySaves(packageName, savesJson, false);
+            if (copied != null) {
+                result = copied;
+            }
+        }
+        showKorri();
+        return result;
+    }
+
+    /** Copy every declared save folder in (before start) or out (after End). Null on success. */
+    private static String copySaves(String packageName, String savesJson, boolean in) {
+        dev.korri.savebridge.KorriSaveBridgeClient bridge =
+                dev.korri.savebridge.KorriSaveBridgeClient.forPackage(context, packageName);
+        if (bridge == null) {
+            return null; // Case 4: saves stay with the app.
+        }
+        try {
+            JSONArray saves = new JSONArray(savesJson);
+            for (int i = 0; i < saves.length(); i++) {
+                JSONObject save = saves.getJSONObject(i);
+                File folder = new File(save.getString("path"));
+                if (in) {
+                    folder.mkdirs();
+                    bridge.copyIn(save.getString("key"), folder);
+                } else {
+                    bridge.copyOut(save.getString("key"), folder);
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            Log.w(TAG, "save bridge copy failed", e);
+            return in ? "Korri could not hand the saves to the game" : "Korri could not take the saves back";
+        }
     }
 
     public static String showKorri() {

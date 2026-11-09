@@ -157,4 +157,7 @@ def surfaceAssets = tasks.register('surfaceAssets', Sync) {
     into(layout.buildDirectory.dir('generated/surfaceAssets/surfaces'))
 }
 android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/surfaceAssets'))
+// ADR 0054: Korri's side of the save bridge that Korri-built game APKs carry.
+android.sourceSets.main.java.srcDir('../../android-save-bridge/src/main/java')
+android.sourceSets.test.java.srcDir('../../android-save-bridge/src/test/java')
 tasks.named('preBuild').configure { dependsOn(surfaceAssets) }
