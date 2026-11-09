@@ -1,19 +1,17 @@
 //! A Slint window backed by any host-provided Android Surface.
 //! The host must wait for `release()` before destroying that Surface.
 
+use crate::component_window::ComponentWindow;
 use crate::ndk::native_window::NativeWindow;
 use i_slint_core::api::{PhysicalSize, Window};
-use i_slint_core::platform::{WindowAdapter, WindowEvent};
+use i_slint_core::platform::WindowAdapter;
 use i_slint_renderer_skia::{SkiaRenderer, SkiaSharedContext};
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
 pub struct SurfaceWindow {
-    window: Window,
-    renderer: SkiaRenderer,
-    size: Cell<PhysicalSize>,
-    pending_redraw: Cell<bool>,
+    adapter: Rc<ComponentWindow<SkiaRenderer>>,
     native: RefCell<Option<NativeWindow>>,
 }
 
@@ -37,15 +35,12 @@ impl SurfaceWindow {
             width: native.width() as u32,
             height: native.height() as u32,
         };
-        let adapter = Rc::<Self>::new_cyclic(|w| Self {
-            window: Window::new(w.clone() as std::rc::Weak<dyn WindowAdapter>),
-            renderer: SkiaRenderer::default_opengl(&SkiaSharedContext::default()),
-            size: Cell::new(size),
-            pending_redraw: Cell::new(true),
-            native: RefCell::new(Some(native.clone())),
-        });
+        let adapter = ComponentWindow::new(
+            SkiaRenderer::default_opengl(&SkiaSharedContext::default()),
+            size,
+        );
         let surface = i_slint_renderer_skia::opengl_surface::OpenGLSurface::new_with_config(
-            Arc::new(native),
+            Arc::new(native.clone()),
             Arc::new(crate::androidwindowadapter::DummyDisplayHandle),
             size,
             None,
@@ -56,14 +51,12 @@ impl SurfaceWindow {
             }),
         )
         .map_err(|e| format!("host EGL surface: {e}"))?;
-        adapter.renderer.set_surface(Box::new(surface));
-        adapter
-            .window
-            .dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor });
-        adapter.window.dispatch_event(WindowEvent::Resized {
-            size: size.to_logical(scale_factor),
-        });
-        Ok(adapter)
+        adapter.renderer().set_surface(Box::new(surface));
+        adapter.resize(size, scale_factor);
+        Ok(Rc::new(Self {
+            adapter,
+            native: RefCell::new(Some(native)),
+        }))
     }
 
     /// Draw when Slint asked for a frame or an animation runs. True when drawn.
@@ -71,17 +64,16 @@ impl SurfaceWindow {
         if self.native.borrow().is_none() {
             return Ok(false);
         }
-        let animating = self.window.has_active_animations();
-        if !self.pending_redraw.replace(false) && !animating {
-            return Ok(false);
-        }
-        let _ = self.renderer.render()?;
-        Ok(true)
+        self.adapter
+            .render_if_needed(|renderer| renderer.render().map(|_| ()))
     }
 
     /// Release the EGL surface and the ANativeWindow before Java destroys the Surface.
     pub fn release(&self) -> Result<(), i_slint_core::platform::PlatformError> {
-        self.renderer.suspend()?;
+        // Drop Slint's shown-component reference before releasing its Surface.
+        // This window is independent of the host's video/game window.
+        self.adapter.window().hide()?;
+        self.adapter.renderer().suspend()?;
         self.native.borrow_mut().take();
         Ok(())
     }
@@ -100,31 +92,10 @@ impl SurfaceWindow {
             width: native.width() as u32,
             height: native.height() as u32,
         };
-        self.size.set(size);
-        self.window
-            .dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor });
-        self.window.dispatch_event(WindowEvent::Resized {
-            size: size.to_logical(scale_factor),
-        });
-        self.pending_redraw.set(true);
+        self.adapter.resize(size, scale_factor);
     }
 
     pub fn window(&self) -> &Window {
-        &self.window
-    }
-}
-
-impl WindowAdapter for SurfaceWindow {
-    fn window(&self) -> &Window {
-        &self.window
-    }
-    fn size(&self) -> PhysicalSize {
-        self.size.get()
-    }
-    fn renderer(&self) -> &dyn i_slint_core::platform::Renderer {
-        &self.renderer
-    }
-    fn request_redraw(&self) {
-        self.pending_redraw.set(true);
+        self.adapter.window()
     }
 }

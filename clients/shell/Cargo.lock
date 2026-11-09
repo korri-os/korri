@@ -2315,6 +2315,7 @@ dependencies = [
  "i-slint-backend-testing",
  "i-slint-backend-winit",
  "i-slint-compiler",
+ "i-slint-core",
  "i-slint-renderer-software",
  "image",
  "jni 0.21.1",

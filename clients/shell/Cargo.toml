@@ -73,6 +73,8 @@ jni = { version = "0.21", optional = true }
 i-slint-backend-android-activity = { version = "=1.18.1", features = ["aa-06", "native-activity"], optional = true }
 
 [dev-dependencies]
+# Exercise the hosted Android window adapter without an Android/EGL context.
+i-slint-core = { version = "=1.18.1", default-features = false }
 tempfile = "3"
 # The Zone walk reads what is drawn: each focus target's place and its selected flag.
 i-slint-backend-testing = { version = "=1.18.1", default-features = false }

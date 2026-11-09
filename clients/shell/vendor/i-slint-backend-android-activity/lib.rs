@@ -10,6 +10,7 @@
 #![cfg_attr(slint_nightly_test, warn(non_exhaustive_omitted_patterns))]
 
 mod androidwindowadapter;
+mod component_window;
 pub mod surface_window;
 mod javahelper;
 mod vsync;

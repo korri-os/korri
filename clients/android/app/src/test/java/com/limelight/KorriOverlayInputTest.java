@@ -52,6 +52,51 @@ public class KorriOverlayInputTest {
         }
     }
 
+    @Test
+    @Config(shadows = com.limelight.shadows.ShadowMoonBridge.class)
+    public void rendererFailureRemovesOnlyTheOverlayAndKeepsTheGameAndStreamSurface() {
+        Game game = Robolectric.buildActivity(Game.class).get();
+        com.limelight.nvstream.NvConnection connection = new com.limelight.nvstream.NvConnection(
+                game, new com.limelight.nvstream.http.ComputerDetails.AddressTuple("127.0.0.1", 47989),
+                47984, "test", null, null, null, com.limelight.nvstream.NvConnection.AppLaunchPolicy.EXACT);
+        // This phone has no NVIDIA accessory service; model the same absence.
+        org.robolectric.Shadows.shadowOf(game.getApplication()).declareComponentUnbindable(
+                new android.content.ComponentName("com.nvidia.blakepairing", "com.nvidia.blakepairing.AccessoryService"));
+        com.limelight.binding.input.ControllerHandler controllers = new com.limelight.binding.input.ControllerHandler(
+                game, connection, game, new com.limelight.preferences.PreferenceConfiguration());
+        ReflectionHelpers.setField(game, "conn", connection);
+        ReflectionHelpers.setField(game, "controllerHandler", controllers);
+        // Leave the decoder absent: accidental stream teardown must fail this test.
+        android.widget.FrameLayout root = new android.widget.FrameLayout(game);
+        SurfaceView stream = new SurfaceView(game);
+        SurfaceView overlay = new SurfaceView(game);
+        root.addView(stream);
+        root.addView(overlay);
+        Surface streamSurface = stream.getHolder().getSurface();
+        Surface surface = new Surface(new SurfaceTexture(0));
+        KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 1, game::hideSurfaceOverlay);
+        ReflectionHelpers.setField(game, "surfaceOverlay", overlay);
+        ReflectionHelpers.setField(game, "surfaceOverlayAttachment", attachment);
+        connection.setInputHeld(true);
+        try {
+            KorriSurfaceHost.takeSurface();
+            KorriSurfaceHost.acknowledgeRelease(true);
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            assertEquals(0, attachment.released.getCount());
+            assertNull(overlay.getParent());
+            assertSame(root, stream.getParent());
+            assertSame(streamSurface, stream.getHolder().getSurface());
+            assertEquals(1, root.getChildCount());
+            assertFalse(game.isFinishing());
+            assertFalse(ReflectionHelpers.<Boolean>getField(connection, "inputHeld"));
+            assertNull(ReflectionHelpers.getField(game, "surfaceOverlay"));
+        } finally {
+            KorriSurfaceHost.detach(attachment);
+            controllers.destroy();
+            surface.release();
+        }
+    }
+
     @Test public void nativeReleasePrecedesViewRemovalAndGameplayInput() throws Exception {
         String game = new String(Files.readAllBytes(Path.of("src/main/java/com/limelight/Game.java")),
                 java.nio.charset.StandardCharsets.UTF_8);
