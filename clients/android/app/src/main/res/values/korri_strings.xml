@@ -2,4 +2,7 @@
 <resources>
     <string name="korri_overlay_service_label">Korri gameplay overlay</string>
     <string name="korri_overlay_service_description">Lets Guide open Korri controls only during a game launched by Korri.</string>
+    <!-- ADR 0054 -->
+    <string name="korri_guide_service_label">Korri Guide button</string>
+    <string name="korri_guide_service_description">Lets the controller\'s Guide button open Korri while a game from Korri is on screen. Korri reads only that button. Every other key goes to the game unchanged.</string>
 </resources>

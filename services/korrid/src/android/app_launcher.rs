@@ -33,7 +33,8 @@ impl JniAppLauncher {
             let values: Vec<JValue> = strings.iter().map(|s| JValue::Object(s.as_ref())).collect();
             let value = env.call_static_method(class, method, &signature, &values)?.l()?;
             let value = jni::objects::JString::from(value);
-            Ok(String::from(env.get_string(&value)?))
+            let text = String::from(env.get_string(&value)?);
+            Ok(text)
         });
         if result.is_err() && env.exception_check().unwrap_or(false) {
             let _ = env.exception_clear();

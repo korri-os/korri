@@ -42,6 +42,10 @@ public final class KorridServer {
     public static native String takeOwnerBindingRequest(long generation);
     public static native void detachOwnerSigner(long generation);
     public static native void stop();
+    /** ADR 0054: launchable apps for @korri:android-app discovery, as JSON. */
+    public static native int reportInstalledApps(String appsJson);
+    /** ADR 0054: usage events say the game's app left the foreground, or closed. */
+    public static native void appLeft(String packageName, boolean closed);
     /** Semantic Leave from the native viewer; Rust applies the existing exact RPC. */
     public static native boolean leaveViewer(String expectedLaunchId);
 
@@ -73,8 +77,10 @@ public final class KorridServer {
     public static int startAndLog(
             android.content.Context context, String allowedOrigin, String localStorageRoot, String privateStateRoot) {
         com.limelight.KorriStreamViewer.initialize(context);
+        KorriAppLauncher.initialize(context);
         int port = start(context.getApplicationContext(), allowedOrigin, localStorageRoot, privateStateRoot, BuildConfig.PRODUCT_RELAYS);
         Log.i("KorridServer", "brain started");
+        KorriAppLauncher.reportInstalledApps(context);
         return port;
     }
 }
