@@ -39,6 +39,24 @@ imports.
   where the geometry alone would jump (MENU back to the chosen cart). Confirm
   presses the focused target. A question traps the cursor, as
   `data-block-exit` did.
+- **Touch (ADR 0055).** A tap or click on a focus target reports its
+  `focusId` through the root's one `activated(target, at, released)` callback
+  (`ui/atoms/PicoTap.slint`, threaded up every layer); the shell sends
+  `Activated`, and `update` moves the cursor there as a d-pad move would, then
+  does what Confirm does. An id the screen shown does not list (stale, or a
+  disabled control) does nothing; on attract the first tap only wakes. The
+  hints (`hint:a`, `hint:b`, `hint:lr`) are targets in their own `hints`
+  region that the cursor never walks onto: A runs Confirm, B runs Back, and
+  ◀▶ ADJUST steps the focused range by which half is tapped. A range in the
+  pause menu takes the finger's place on its cells (`at`), snapped to Korri's
+  step and sent when that value changes. A tap or a drag hides the focus
+  highlight (`touching`, read as `Tokens.ring`) until the next `Pressed`;
+  `focused` stays on the real focus. PicoScroll and PicoRail are Flickables:
+  a drag scrolls them and moves no focus. The shelf, RESUME and both results
+  racks follow a sideways drag or fling item by item (`ui/atoms/PicoSlide.slint`)
+  and send `dragged(region, by)`; `Dragged` walks the cursor `by` targets in
+  that region with the d-pad's move path, so `enter` and catalog paging run as
+  a walk does.
 - **Catalog.** Find's query, collection and order go to Korri as
   `MoveCatalog` (`korri | title | mostPlayed | recent`); the window follows
   the cursor with `Around(gameId)` near either edge; a game's screen keeps its
@@ -101,6 +119,7 @@ Ported from the web Pico's gates and run with `bun test`:
 | `previews` | Every preview state renders at 320x240, 640x480, 480x800, 1280x720 and 1920x1080. |
 | `layout-plan` | The plan from the window alone at the five sizes; the grid's rows and the spines' arrangement drawn as the plan says and moved through by it; a resize keeps the cursor. |
 | `focus-convention` | On the logic alone, at 320x240 and 1280x720: every entry with `focused` names its region, one active target per region at most, every exit leads to a region the view has, and every press that leaves a region goes where `focusPlan` says. |
+| `pico-touch` | Activated moves focus and confirms; stale ids and attract; the highlight hides and shows; hints; ranges at the finger; Dragged walks and pages as the d-pad does. |
 | `focus-visible` | Every focus target the logic reaches (breadth-first over every button, on 17 models and one with a 1920x1080 display, with `Resized` at each size) is drawn inside the window at those five sizes. `test/walk-plan.ts` runs the same walk on the logic alone first: each model walks, at each size, only as far as its last target no earlier model reached, and the probes run side by side (`PICO_WALK_JOBS`, `PICO_FOCUS_STATES`). |
 
 The last two run the shell's headless probe

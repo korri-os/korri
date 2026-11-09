@@ -31,6 +31,18 @@ fixtures' words and look are Zone's.
   near either end of the window, a window around the focused game. The band
   travels in absolute places (`firstIndex` plus the card), so a new window
   does not move it.
+- Touch (ADR 0055): every drawn target carries a `focusId` (`card:3`,
+  `tab:options`, `row:<id>`, `key:<id>`, `dialog:1`, `control:<id>`,
+  `hint:back`…) and a `ZoneTap`; a tap reports it through the root's one
+  `activated(target, at, released)` callback. logic.ts checks the id names a
+  target drawn now, sends the fact the d-pad's arrival would report
+  (`focusOn` in src/press.ts), then Confirm. On the attract or the tally a
+  tap is one press. The Back and Confirm hints run their button. PAUSED's
+  range takes the finger's place (`at`), sent once per snapped step. A tap
+  or a drag hides the highlight (`touching`, `Tokens.ring`) until the next
+  `Pressed`. ZoneRowList and PAUSED's rows are Flickables; the band and the
+  save band follow a sideways drag or fling card by card (`ZoneSlide`) and
+  send `dragged(region, by)`, which walks the cursor as d-pad presses do.
 - `Overlay` draws PAUSED from `overlay()`, see-through over the running game
   (ADR 0053): no ground and no veil, so the game shows unmuted between the
   band and the wedge. A note that reaches past the wedge stands on a slab of
