@@ -52,6 +52,14 @@ public final class KorriAppLauncher {
 
     /** Start a validated plan: package, optional activity, action and content grant. */
     public static String start(String planJson, String contentPath, String savesJson) {
+        // Android blocks activity starts from a background app without an
+        // error, so refuse here instead of recording a game that never opened.
+        android.app.ActivityManager.RunningAppProcessInfo self =
+                new android.app.ActivityManager.RunningAppProcessInfo();
+        android.app.ActivityManager.getMyMemoryState(self);
+        if (self.importance > android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) {
+            return "Open Korri on this device to start a game here";
+        }
         try {
             JSONObject plan = new JSONObject(planJson);
             String pkg = plan.getString("package");
