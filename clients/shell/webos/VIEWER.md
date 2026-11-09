@@ -25,6 +25,14 @@ before implementation. They add no peer RPC field or surface treaty variant.
 All network fixtures use loopback. No power, screensaver or app registration
 behavior changes. Existing system SDL remains unbundled.
 
+## Audio investigation
+
+The owner has verified full-screen video, automatic provisioning and physical pad
+input. Sound still needs the TV check. See [bounded audio diagnostics and the
+private Pulse monitor test](../../../docs/briefs/2026-11-09-webos-audio-diagnostics.md).
+This build reports audio initialization and up to 30 one-second counter/PCM-peak
+summaries. It does not log packet contents or session material.
+
 ## First-TV failure follow-up
 
 See [the evidence, test-first reproductions and retest order](../../../docs/briefs/2026-11-09-webos-first-stream-failure.md).

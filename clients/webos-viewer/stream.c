@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #define _POSIX_C_SOURCE 200809L
+#include "audio.h"
 #include "internal.h"
 #include <errno.h>
-#include <opus_multistream.h>
 #include <pthread.h>
 #include <ss4s.h>
 #include <stdio.h>
@@ -18,8 +18,7 @@
 static pthread_mutex_t singleton = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t status_lock = PTHREAD_MUTEX_INITIALIZER;
 static SS4S_Player *player;
-static OpusMSDecoder *audio;
-static int ended, fatal, connected, first_frame, frame_samples;
+static int ended, fatal, connected, first_frame;
 static int channel = -1;
 void kv_stream_channel(int descriptor) { channel = descriptor; }
 static unsigned char *video_buffer;
@@ -88,47 +87,6 @@ static int submit(PDECODE_UNIT unit) {
     pthread_mutex_unlock(&status_lock);
     return DR_OK;
 }
-static int audio_init(int configuration, const POPUS_MULTISTREAM_CONFIGURATION cfg, void *ctx,
-                      int flags) {
-    (void)ctx;
-    (void)flags;
-    if (configuration != AUDIO_CONFIGURATION_STEREO || cfg->channelCount != 2 ||
-        cfg->sampleRate != 48000 || cfg->samplesPerFrame <= 0 || cfg->samplesPerFrame > 5760)
-        return -1;
-    int error;
-    audio = opus_multistream_decoder_create(cfg->sampleRate, cfg->channelCount, cfg->streams,
-                                            cfg->coupledStreams, cfg->mapping, &error);
-    if (!audio || error != OPUS_OK)
-        return -1;
-    frame_samples = cfg->samplesPerFrame;
-    SS4S_AudioInfo info = {.codec = SS4S_AUDIO_PCM_S16LE,
-                           .sampleRate = cfg->sampleRate,
-                           .numOfChannels = 2,
-                           .samplesPerFrame = frame_samples,
-                           .appName = "Korri",
-                           .streamName = "GameStream"};
-    if (SS4S_PlayerAudioOpen(player, &info) != SS4S_AUDIO_OPEN_OK) {
-        opus_multistream_decoder_destroy(audio);
-        audio = NULL;
-        return -1;
-    }
-    return 0;
-}
-static void audio_cleanup(void) {
-    if (!SS4S_PlayerAudioClose(player))
-        fail_stream();
-    if (audio)
-        opus_multistream_decoder_destroy(audio);
-    audio = NULL;
-}
-static void decode(char *data, int length) {
-    opus_int16 pcm[5760 * 2];
-    int samples =
-        opus_multistream_decode(audio, (unsigned char *)data, length, pcm, frame_samples, 0);
-    if (samples < 0 || SS4S_PlayerAudioFeed(player, (unsigned char *)pcm, (size_t)samples * 4) ==
-                           SS4S_AUDIO_FEED_ERROR)
-        fail_stream();
-}
 static unsigned long long seconds_now(void) {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -136,7 +94,7 @@ static unsigned long long seconds_now(void) {
 }
 /* Deliberately suppress upstream diagnostics: RTSP/HTTP debug text can contain
  * session secrets. Adapter events/readiness must be reviewed at integration. */
-static void quiet(const char *format, ...) { (void)format; }
+static void quiet(const char *format, ...) { kv_audio_common_log(format); }
 static void quiet_media(SS4S_LogLevel level, const char *tag, const char *format, ...) {
     (void)level;
     (void)tag;
@@ -148,7 +106,6 @@ int kv_stream(const char *host, const kv_serverinfo *server, const char *rtsp,
     if (!stop || pthread_mutex_trylock(&singleton))
         return kv_fail("only one viewer connection is allowed");
     ended = fatal = connected = first_frame = 0;
-    audio = NULL;
     player = NULL;
     video_buffer = malloc(FRAME_LIMIT);
     int result = -1, initialized = 0;
@@ -203,10 +160,7 @@ int kv_stream(const char *host, const kv_serverinfo *server, const char *rtsp,
     video.submitDecodeUnit = submit;
     video.capabilities = CAPABILITY_DIRECT_SUBMIT;
     AUDIO_RENDERER_CALLBACKS sound;
-    LiInitializeAudioCallbacks(&sound);
-    sound.init = audio_init;
-    sound.cleanup = audio_cleanup;
-    sound.decodeAndPlaySample = decode;
+    kv_audio_callbacks(player, &sound, fail_stream);
     CONNECTION_LISTENER_CALLBACKS listener;
     LiInitializeConnectionCallbacks(&listener);
     listener.connectionStarted = started;
@@ -221,6 +175,7 @@ int kv_stream(const char *host, const kv_serverinfo *server, const char *rtsp,
     char input[16385];
     size_t input_used = 0;
     for (;;) {
+        kv_audio_report(seconds_now() - start);
         pthread_mutex_lock(&status_lock);
         int finished = ended || fatal, ready = connected && first_frame;
         pthread_mutex_unlock(&status_lock);

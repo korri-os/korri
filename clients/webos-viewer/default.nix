@@ -25,6 +25,7 @@ let
       ++ pkgs.lib.optionals host [
         pkgs.stdenv.cc
         pkgs.openssl
+        pkgs.pulseaudio
       ];
       dontUseCmakeConfigure = true;
       dontFixup = true;
@@ -47,7 +48,7 @@ let
           -DEXPAT_SOURCE="$PWD/expat-source" -DOPUS_SOURCE="$PWD/opus-source" \
           ${
             if host then
-              "-DKV_HOST_TEST=ON"
+              "-DKV_HOST_TEST=ON -DKV_HOST_PULSE=ON -DPULSE_INCLUDE=${pkgs.libpulseaudio.dev}/include -DPULSE_SIMPLE=${pkgs.libpulseaudio}/lib/libpulse-simple.so -DPULSE=${pkgs.libpulseaudio}/lib/libpulse.so"
             else
               ''
                 -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=armv7 \
@@ -77,10 +78,12 @@ let
         cp opus-source/COPYING "$out/share/korri-webos-viewer/licenses/opus.txt"
         cp expat-source/COPYING "$out/share/korri-webos-viewer/licenses/expat.txt"
         ${pkgs.lib.optionalString host ''
-          export LD_LIBRARY_PATH="$out/lib"
+          export LD_LIBRARY_PATH="$out/lib:${pkgs.lib.makeLibraryPath [ pkgs.libpulseaudio ]}"
           export VIEWER_BINARY="$out/bin/webos-viewer-test"
           python3 tests.py
           timeout 15 ./build/viewer-protocol-test
+          export AUDIO_TEST_BINARY="$PWD/build/viewer-audio-test"
+          python3 audio_tests.py
         ''}
       '';
     };

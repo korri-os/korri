@@ -30,8 +30,8 @@ impl Diagnostics {
                         if byte == b'\n' {
                             if !oversized {
                                 if let Ok(text) = std::str::from_utf8(&line) {
-                                    // mode.c emits only stages, numbers and kv_error's
-                                    // literal messages. common-c/ss4s remain muted.
+                                    // mode.c/audio.c emit only stages, numbers and
+                                    // literal errors. Arbitrary upstream text stays muted.
                                     if text.starts_with("korri-webos viewer ")
                                         && !text.chars().any(char::is_control)
                                     {
