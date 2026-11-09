@@ -1,15 +1,19 @@
 import { P8 } from "../palette.slint";
 import { Tokens } from "../tokens.slint";
+import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoCart, CartView } from "PicoCart.slint";
 
 // One game in a rack with its title under it, lit under the cursor: Find's
 // results and the store's.
 export component PicoResultRow {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CartView> cart;
     in property <string> title;
     in property <string> subtitle;
     in property <length> cart-h: 30 * Tokens.p;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: cart.target && cart.focused && Tokens.ring;
     accessible-role: AccessibleRole.list-item;
     accessible-label: title;
     accessible-item-selectable: true;
@@ -22,14 +26,15 @@ export component PicoResultRow {
         box-w: 20 * Tokens.p;
         box-h: max(12 * Tokens.p, cart-h - 16 * Tokens.p);
     }
-    Rectangle { x: 0; y: cart-h + Tokens.p; width: root.width; height: 2 * Tokens.p; background: (cart.target && cart.focused) ? P8.go : P8.floor; }
+    Rectangle { x: 0; y: cart-h + Tokens.p; width: root.width; height: 2 * Tokens.p; background: ring ? P8.go : P8.floor; }
     Rectangle {
         x: 0;
         y: cart-h + 4 * Tokens.p;
         width: root.width;
         height: t.height;
-        background: (cart.target && cart.focused) ? P8.go : transparent;
-        t := Text { x: 0; y: 0; width: parent.width; height: min(self.preferred-height, 2.4 * Tokens.sm); text: title; font-size: Tokens.sm; color: (cart.target && cart.focused) ? P8.ink-dark : P8.ink; wrap: word-wrap; overflow: elide; }
+        background: ring ? P8.go : transparent;
+        t := Text { x: 0; y: 0; width: parent.width; height: min(self.preferred-height, 2.4 * Tokens.sm); text: title; font-size: Tokens.sm; color: ring ? P8.ink-dark : P8.ink; wrap: word-wrap; overflow: elide; }
     }
     Text { x: 0; y: cart-h + 4 * Tokens.p + t.height; width: root.width; text: subtitle; font-size: Tokens.sm; color: P8.ink-quiet; overflow: elide; }
+    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: cart.target ? cart.focus-id : ""; }
 }

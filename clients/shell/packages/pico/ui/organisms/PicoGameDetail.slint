@@ -28,6 +28,7 @@ export struct DetailView {
 // narrow box) its title, facts, the download, PLAY and its actions. The
 // store's entry draws the same, with the provider's words and its card.
 export component PicoGameDetail {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <DetailView> detail;
     in property <string> description;
@@ -64,8 +65,8 @@ export component PicoGameDetail {
         PicoStatRun { chips: detail.chips; }
         if detail.bar.shown : PicoDownloadBar { bar: detail.bar; }
         if description != "" : PicoPara { text: description; color: P8.ink-dim; }
-        if has-primary : HorizontalLayout { alignment: start; PicoButton { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: detail.primary; mark: root.mark; } }
-        PicoGameActions { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  actions: detail.actions; }
-        if inline.shown : PicoNotice { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  card: inline; }
+        if has-primary : HorizontalLayout { alignment: start; PicoButton { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: detail.primary; mark: root.mark; } }
+        PicoGameActions { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  actions: detail.actions; }
+        if inline.shown : PicoNotice { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  card: inline; }
     }
 }

@@ -7,9 +7,12 @@ export component PicoSlider inherits HorizontalLayout {
     in property <string> value;
     in property <color> ink: P8.ink-quiet;
     in property <color> value-ink: P8.ink-quiet;
+    // Where its ten cells stand in it: the track a finger moves along.
+    out property <length> track-x: cells-row.x;
+    out property <length> track-w: cells-row.width;
     spacing: 2 * Tokens.p;
     Text { text: "◀"; font-size: Tokens.md; color: ink; vertical-alignment: center; }
-    HorizontalLayout {
+    cells-row := HorizontalLayout {
         spacing: Tokens.p;
         for c in 10 : Rectangle {
             width: Tokens.p;

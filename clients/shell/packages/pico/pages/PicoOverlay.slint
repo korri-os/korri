@@ -10,17 +10,18 @@ import { PicoStatusStrip, StripView } from "../ui/molecules/PicoStatusStrip.slin
 // control, each with the status strip (#378). The game keeps running under
 // both (ADR 0053) and stays in sight: nothing here paints the whole box.
 export component PicoOverlay inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SheetView> sheet;
     in property <CardView> card;
     in property <StripView> strip;
-    if !card.shown : overlay := PicoGameOverlay {
+    if !card.shown : overlay := PicoGameOverlay { activated(target, at, released) => { root.activated(target, at, released); } 
         kicker: sheet.kicker;
         title: sheet.title;
         hints: sheet.hints;
         over-game: true;
         strip: root.strip;
-        PicoPauseMenu { reveal(left, top, wide, tall) => { overlay.show(left, top, wide, tall); }  items: sheet.items; }
+        PicoPauseMenu { activated(target, at, released) => { root.activated(target, at, released); }  holding(on) => { overlay.hold(on); }  reveal(left, top, wide, tall) => { overlay.show(left, top, wide, tall); }  items: sheet.items; }
     }
     // Over a question or a problem the strip stays top right, under the card.
     if card.shown && strip.shown : PicoStatusStrip {
@@ -29,5 +30,5 @@ export component PicoOverlay inherits Rectangle {
         x: root.width - Tokens.u - self.width;
         y: Tokens.u;
     }
-    if card.shown : PicoModal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  card: card; over-game: true; }
+    if card.shown : PicoModal { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  card: card; over-game: true; }
 }

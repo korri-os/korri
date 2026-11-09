@@ -1,11 +1,13 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 import { PicoBadge } from "../atoms/PicoBadge.slint";
 import { PicoNetworkMarks } from "PicoNetworkMarks.slint";
 
 // One network from Korri's scan, to join.
 export component PicoNetworkRow {
+    callback activated(target: string, at: float, released: bool);
     // A focus target, for screen readers and the shell's probe: the
     // cursor's control is the selected item.
     accessible-role: AccessibleRole.list-item;
@@ -18,11 +20,15 @@ export component PicoNetworkRow {
     in property <bool> locked;
     in property <bool> connected;
     in property <bool> focused;
+    // The focus target's id, empty when it is none (disabled): what a tap reports.
+    in property <string> focus-id;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: focused && Tokens.ring;
     height: Tokens.md + 6 * Tokens.p;
     // Always present, shown by the row's data: a row updates in place.
-    Rectangle { visible: focused; x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
-    Rectangle { background: focused ? P8.pick : P8.ink-dark; }
-    Text { x: 3 * Tokens.p; y: 3 * Tokens.p; width: root.width - 30 * Tokens.p; text: ssid; font-size: Tokens.md; color: focused ? P8.pick-ink : P8.ink; overflow: elide; }
+    Rectangle { visible: ring; x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
+    Rectangle { background: ring ? P8.pick : P8.ink-dark; }
+    Text { x: 3 * Tokens.p; y: 3 * Tokens.p; width: root.width - 30 * Tokens.p; text: ssid; font-size: Tokens.md; color: ring ? P8.pick-ink : P8.ink; overflow: elide; }
     HorizontalLayout {
         x: root.width - 3 * Tokens.p - self.width;
         y: 3 * Tokens.p;
@@ -30,7 +36,8 @@ export component PicoNetworkRow {
         height: Tokens.md;
         spacing: 2 * Tokens.p;
         if connected : PicoBadge { y: (Tokens.md - self.height) / 2; chip: { text: "CONNECTED", kind: "ok" }; }
-        PicoNetworkMarks { width: 13 * Tokens.p; locked: locked; bars: bars; ink: focused ? P8.ink-dark : P8.ink; }
+        PicoNetworkMarks { width: 13 * Tokens.p; locked: locked; bars: bars; ink: ring ? P8.ink-dark : P8.ink; }
     }
     PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: focused; }
+    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: focus-id; }
 }

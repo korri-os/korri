@@ -23,6 +23,9 @@ export global Tokens {
     // The face shown and its glyph pixels in one em (Tiny5: 7).
     in-out property <string> family: "Pico Tiny5";
     in-out property <int> rows: 7;
+    // A tap came last, not a button (ADR 0055): the focus highlight hides
+    // until the next button press. Written by the bindings, from the view.
+    in-out property <bool> touching;
 
     // How many virtual pixels the short side holds, and the smallest pixel
     // Pico draws with: below 2 device pixels a face stops being legible.
@@ -42,6 +45,13 @@ export global Tokens {
     out property <length> drop: 3 * p;
     out property <length> drop-lg: 4 * p;
     out property <length> edge: p;
+    // Whether a focus target draws its highlight: not while touch is in use.
+    // The target stays focused (and selected, for screen readers and the
+    // probe); only the highlight hides.
+    out property <bool> ring: !touching;
+    // How far a press may move, in logical pixels, before it is a drag and
+    // no longer a tap (ADR 0055; Slint's Flickable starts at the same 8).
+    out property <length> drag-start: 8px;
     // The window's size before a host places it.
     out property <length> window-width: 640px;
     out property <length> window-height: 480px;

@@ -5,11 +5,12 @@ import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
 
 // One choice in a list to pick from, with a note under it when Korri gives one.
 export component PicoChoiceRow inherits VerticalLayout {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <ButtonView> choice;
     in property <string> note;
     in property <color> note-ink: P8.ink-dark;
     spacing: Tokens.p;
-    PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: choice; kind: "card"; }
+    PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: choice; kind: "card"; }
     if note != "" : PicoLine { text: note; color: note-ink; }
 }

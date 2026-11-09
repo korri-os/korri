@@ -3,13 +3,17 @@ import { Tokens } from "../tokens.slint";
 
 // A region that scrolls what it holds to keep the cursor's control in sight
 // (the web build had the host's scrollIntoView). What it holds reports its
-// focused control to `show`. What it holds is laid out
-// at its natural height, never less than the region's; a control outside
-// what the region holds never scrolls it.
+// focused control to `show`. What it holds is laid out at its natural
+// height, never less than the region's; a control outside what the region
+// holds never scrolls it.
 //
 // With `marks`, a region that holds more than it shows draws a bar down its
 // right edge: the track in `track-ink`, the part in sight in `mark-ink`, so
 // the list says that more stands above or below the cursor and where.
+//
+// A finger scrolls it too (ADR 0055): it is a Flickable, so a vertical drag
+// moves the same offset `show` moves, and the content follows the finger.
+// Scrolling moves no focus; the cursor's next move reveals its control again.
 export component PicoScroll inherits Rectangle {
     in property <length> margin: Tokens.u;
     in property <bool> marks;
@@ -17,8 +21,15 @@ export component PicoScroll inherits Rectangle {
     in property <color> track-ink: P8.cast-near;
     // The height of what it holds: a region that hugs its list asks for this.
     out property <length> natural: content.min-height;
-    property <length> scroll: 0;
+    // How far it is scrolled: by `show`, or by a finger.
+    property <length> scroll: -flick.content-y;
     property <length> limit: max(0, content.height - root.height);
+    // What it holds grew shorter: it scrolls no further than its end.
+    changed limit => {
+        if (scroll > limit) {
+            flick.content-y = -limit;
+        }
+    }
     // Where the control to reveal stands, in window coordinates, until the
     // region moves a moment later: a row inside (PicoRail) slides first.
     property <length> want-top;
@@ -29,6 +40,10 @@ export component PicoScroll inherits Rectangle {
         want-top = top;
         want-tall = tall;
         pending = true;
+    }
+    // A range under the finger is being dragged sideways: hold still.
+    public function hold(on: bool) {
+        flick.interactive = !on;
     }
     Timer {
         interval: 1ms;
@@ -41,9 +56,9 @@ export component PicoScroll inherits Rectangle {
                 return;
             }
             if (top < min(scroll, limit) + margin) {
-                scroll = max(0, top - margin);
+                flick.content-y = -max(0, top - margin);
             } else if (top + want-tall > min(scroll, limit) + root.height - margin) {
-                scroll = min(limit, top + want-tall - root.height + margin);
+                flick.content-y = -min(limit, top + want-tall - root.height + margin);
             }
         }
     }
@@ -52,12 +67,20 @@ export component PicoScroll inherits Rectangle {
     // whether its list scrolls or not.
     property <length> bar: marks ? 4 * Tokens.p : 0;
     property <bool> scrolls: marks && content.min-height > root.height;
-    content := VerticalLayout {
+    flick := Flickable {
         x: 0;
-        y: -min(scroll, limit);
-        width: root.width - root.bar;
-        height: max(root.height, self.min-height);
-        @children
+        y: 0;
+        width: root.width;
+        height: root.height;
+        content-width: root.width;
+        content-height: content.height;
+        content := VerticalLayout {
+            x: 0;
+            y: 0;
+            width: root.width - root.bar;
+            height: max(root.height, self.min-height);
+            @children
+        }
     }
     // The track a hair wide, the part in sight twice that, so the two read
     // apart by their width as well as their ink.

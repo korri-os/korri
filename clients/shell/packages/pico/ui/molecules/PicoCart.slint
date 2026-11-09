@@ -27,6 +27,8 @@ export struct CartView {
     focused: bool,
     // A focus target in this view: only then is `focused` current.
     target: bool,
+    // The focus target's id (src/native/focus.ts): what a tap on it reports (ADR 0055).
+    focus-id: string,
 }
 
 export component PicoCart {

@@ -26,6 +26,7 @@ export struct EditorView {
 // Pico's text editor: the prompt, the field, what is saved now and how much
 // is typed, the keyboard, and the caller's answers.
 export component PicoTextEditor inherits VerticalLayout {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <EditorView> editor;
@@ -39,10 +40,10 @@ export component PicoTextEditor inherits VerticalLayout {
     }
     if editor.note != "" : PicoPara { text: editor.note; font-size: Tokens.sm; color: P8.ink-dim; }
     if editor.problem != "" : PicoPara { text: editor.problem; font-size: Tokens.sm; color: P8.warn; }
-    PicoKeyboard { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  keys: editor.keys; rows: editor.key-rows; }
+    PicoKeyboard { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  keys: editor.keys; rows: editor.key-rows; }
     HorizontalLayout {
         spacing: 3 * Tokens.p;
-        for action in editor.actions : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: action; }
+        for action in editor.actions : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: action; }
     }
-    if editor.has-alone : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: editor.alone; }
+    if editor.has-alone : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: editor.alone; }
 }

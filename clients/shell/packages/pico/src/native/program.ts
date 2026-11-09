@@ -46,7 +46,7 @@ import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScree
 import { interned } from "./intern"
 import { memo, share } from "./memo"
 import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
-import { cartView, type CartView, flatEntry } from "./kit"
+import { cartView, type CartView, flatEntry, HINT_A, HINT_B, HINT_LR } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
 import { qrPath } from "./qr"
 import { overlayScreen, runnerScreen } from "./sheet"
@@ -83,6 +83,7 @@ export function init(raw: KorriModel, preferences: Readonly<Record<string, strin
     noticeRound: 0,
     window: PICO_WINDOW_BEFORE_RESIZED,
     remembered: {},
+    touched: false,
   }
 }
 
@@ -459,6 +460,60 @@ function leftRange(id: string, korri: KorriModel): Act {
   return control === undefined ? [] : [{ to: "overlay", message: { _tag: "LeftRange", control } }]
 }
 
+/**
+ * A tap on a focus target (ADR 0055): the cursor moves there, as a d-pad
+ * move would, then it does what Confirm does there. An id that names no
+ * target on the screen shown (stale, or a disabled control) does nothing.
+ * While attract shows, the tap only wakes the screen. A hint runs its
+ * button's own handler and leaves the cursor where it is. A range takes the
+ * finger's place along its track (`at`) through the same hold and wait a
+ * step uses.
+ */
+function activated(step: Step, message: Extract<SurfaceMessage, { _tag: "Activated" }>, korri: KorriModel): Step | undefined {
+  const id = message.target
+  if (id === HINT_A) return pressed(step, "confirm", korri)
+  if (id === HINT_B) return pressed(step, "back", korri)
+  if (id === HINT_LR) return pressed(step, (message.at ?? 1) < 0.5 ? "left" : "right", korri)
+  const s = step.state
+  if (korri.presentation.kind === "gameplay-overlay") {
+    const screen = overlayView(s, korri)
+    const target = screen?.targets.find(candidate => candidate.id === id)
+    if (screen === undefined || target === undefined) return undefined
+    let next = step
+    if (id !== s.overlayFocus) {
+      const current = screen.targets.find(candidate => candidate.id === s.overlayFocus)
+      const leaving: Act = current?.horizontal === undefined ? [] : leftRange(current.id, korri)
+      next = run({ ...step, state: { ...s, overlayFocus: id } }, leaving, korri)
+    }
+    const control = target.horizontal === undefined || message.at === undefined ? undefined : rangeControl(id, korri)
+    if (control !== undefined) {
+      return run(next, [{ to: "overlay", message: { _tag: "SetRange", control, at: message.at!, released: message.released === true } }], korri)
+    }
+    return pressed(next, "confirm", korri)
+  }
+  const model = picoModelFrom(korri)
+  // The first tap on attract only wakes the screen, as a press does.
+  if (model.onboarding === undefined && attractShowing(s.nav, model)) return run(step, [{ to: "nav", message: { _tag: "PressedScreen" } }], korri)
+  const screen = catalogScreen(s, korri)
+  const target = screen.targets.find(candidate => candidate.id === id)
+  if (target === undefined) return undefined
+  let next = step
+  if (id !== s.focus) {
+    // The move a d-pad press makes: activity, the cursor, what arriving does;
+    // then the screen settles as it does between two presses.
+    const moved: Act = model.onboarding === undefined ? [{ to: "nav", message: { _tag: "MovedFocus" } }] : []
+    next = settle(run({ ...step, state: { ...s, focus: id } }, [...moved, ...(target.enter ?? [])], korri), korri)
+  }
+  return pressed(next, "confirm", korri)
+}
+
+/** The pause menu's range a target stands for. */
+function rangeControl(id: string, korri: KorriModel) {
+  if (korri.presentation.kind !== "gameplay-overlay") return undefined
+  const view = picoOverlayViewFrom(korri.presentation, korri.status)
+  return [...view.controls, ...view.groups.flatMap(group => group.controls)].find(candidate => `control:${candidate.id}` === id && candidate.range !== undefined)
+}
+
 export function update(state: State, message: SurfaceMessage, raw: KorriModel): { state: State; requests: SurfaceRequest[] } {
   const korri = interned(raw)
   const result = updated(state, message, korri)
@@ -502,7 +557,17 @@ function updated(state: State, message: SurfaceMessage, korri: KorriModel): { st
       }
       break
     case "Pressed":
+      // A button brings the focus highlight back (ADR 0055).
+      if (step.state.touched) step = { ...step, state: { ...step.state, touched: false } }
       step = pressed(step, message.button, korri)
+      break
+    case "Activated":
+      // A tap hides the focus highlight until the next button.
+      {
+        const tapped = activated(step, message, korri)
+        if (tapped === undefined) return { state, requests: [] }
+        step = tapped.state.touched ? tapped : { ...tapped, state: { ...tapped.state, touched: true } }
+      }
       break
   }
   // A new notice restarts main.slint's 8 s (PICO_INVITE_NOTICE_MS).
@@ -556,8 +621,11 @@ function marked(value: unknown, screen: Screen): unknown {
   return markIn(value, targetsOf(screen), screen.active ?? {})
 }
 
-/** A screen's targets by id, built once per screen. */
-const targetsOf = memo(8, (screen: Screen) => [screen.targets], (screen: Screen) => new Map(screen.targets.map(target => [target.id, target] as const)))
+/** A screen's targets by id, built once per screen, and the hints: a finger
+ * presses them, the cursor never walks onto them (ADR 0055). */
+const targetsOf = memo(8, (screen: Screen) => [screen.targets], (screen: Screen) => new Map([...screen.targets, ...HINT_TARGETS].map(target => [target.id, target] as const)))
+
+const HINT_TARGETS: readonly Target<Act>[] = [HINT_A, HINT_B, HINT_LR].map((id, i) => ({ id, region: "hints", box: { x: i * 10, y: 2000, w: 8, h: 8 } }))
 
 /**
  * What marking found in a part of a view, by the part: nothing to mark
@@ -622,18 +690,17 @@ function markIn(value: unknown, targets: ReadonlyMap<string, Target<Act>>, activ
     return entry
   }
   const focusEntry = "focused" in entry
-  let plain = !focusEntry && !("focusId" in entry)
+  let plain = !focusEntry
   let childrenPlain = true
   let fixed = true
   let out: Record<string, unknown>
   if (focusEntry && flatEntry(entry)) {
-    // Copied whole, in C: QuickJS walks an object's fields far slower.
+    // Copied whole, in C: QuickJS walks an object's fields far slower. Its
+    // `focusId` stays: it is what a tap on it reports (ADR 0055).
     out = { ...entry }
-    delete out["focusId"]
   } else {
     out = {}
     for (const key in entry) {
-      if (key === "focusId") continue
       const item = entry[key]
       if (item === null || typeof item !== "object") {
         out[key] = item
@@ -704,7 +771,7 @@ export function view(s: State, raw: KorriModel) {
 /** The view reads the screen's inputs, the notices' round and the font. */
 const viewOf = memo(
   2,
-  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.noticeRound, ...korriParts(s, korri)],
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.noticeRound, s.touched, ...korriParts(s, korri)],
   (s: State, korri: KorriModel) => buildView(s, korri),
 )
 
@@ -734,6 +801,7 @@ function buildView(s: State, korri: KorriModel) {
       chosen: shown._tag === "Home" && shown.view._tag === "Shelf" ? chosenIndex(shown.view.games, s.nav.home.selectedGameId) : 0,
     },
     split: plan ?? NO_SPLIT,
+    touching: s.touched,
   }
   return { ...(marked(drawn, screen) as typeof drawn), focusPlan: covering ? {} : focusPlanOf(s, korri, screen) }
 }
@@ -759,7 +827,7 @@ export function overlay(s: State, raw: KorriModel) {
 
 const overlayOf = memo(
   2,
-  (s: State, korri: KorriModel) => [s.overlay, s.overlayFocus, s.font, s.window, korri],
+  (s: State, korri: KorriModel) => [s.overlay, s.overlayFocus, s.font, s.window, s.touched, korri],
   (s: State, korri: KorriModel) => buildOverlay(s, korri),
 )
 
@@ -769,6 +837,7 @@ function buildOverlay(s: State, korri: KorriModel) {
   const drawn = {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
+    touching: s.touched,
     ...(shown?.view ?? {}),
   }
   return shown === undefined ? drawn : { ...(marked(drawn, shown) as typeof drawn), focusPlan: focusPlanOf(s, korri, shown) }

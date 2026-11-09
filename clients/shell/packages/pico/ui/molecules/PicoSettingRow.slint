@@ -1,5 +1,6 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoBadge, ChipView } from "../atoms/PicoBadge.slint";
@@ -18,6 +19,8 @@ export struct RowView {
     focused: bool,
     // A focus target in this view: only then is `focused` current.
     target: bool,
+    // The focus target's id (src/native/focus.ts): what a tap on it reports (ADR 0055).
+    focus-id: string,
     warn: bool,
     state: string,
     state-text: string,
@@ -33,6 +36,7 @@ export struct RowView {
 // one between arrows, a network's marks), then where the value comes from,
 // what it does, and Korri's word on the last change.
 export component PicoSettingRow {
+    callback activated(target: string, at: float, released: bool);
     // A focus target, for screen readers and the shell's probe: the
     // cursor's control is the selected item.
     accessible-role: AccessibleRole.list-item;
@@ -44,6 +48,8 @@ export component PicoSettingRow {
     in property <color> ink: P8.ink-dark;
     in property <length> plate-h: Tokens.md + 8 * Tokens.p;
     in property <length> line-h: Tokens.sm * 1.5;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: item.target && item.focused && Tokens.ring;
     property <bool> under: item.source != "" || item.device-only;
     property <length> top: item.section != "" ? line-h : 0;
     height: top + plate-h + (under ? line-h : 0) + (item.description != "" ? line-h : 0) + (item.state-text != "" && item.state != "saving" ? line-h : 0);
@@ -54,9 +60,9 @@ export component PicoSettingRow {
         width: root.width;
         height: plate-h - 2 * Tokens.p;
         // Always present, shown by the row's data: a row updates in place.
-        Rectangle { visible: (item.target && item.focused); x: Tokens.drop-sm; y: Tokens.drop-sm; width: parent.width; height: parent.height; background: Cycle.now; }
-        Rectangle { background: (item.target && item.focused) ? P8.pick : P8.ink-dark; }
-        property <color> value-ink: (item.target && item.focused) ? P8.pick-mark : P8.ink-quiet;
+        Rectangle { visible: root.ring; x: Tokens.drop-sm; y: Tokens.drop-sm; width: parent.width; height: parent.height; background: Cycle.now; }
+        Rectangle { background: root.ring ? P8.pick : P8.ink-dark; }
+        property <color> value-ink: root.ring ? P8.pick-mark : P8.ink-quiet;
         Text {
             x: 3 * Tokens.p;
             y: (parent.height - Tokens.md) / 2;
@@ -64,7 +70,7 @@ export component PicoSettingRow {
             height: Tokens.md;
             text: item.label;
             font-size: Tokens.md;
-            color: (item.target && item.focused) ? P8.pick-ink : item.warn ? P8.warn : item.kind == "fact" ? P8.ink-dim : P8.ink;
+            color: root.ring ? P8.pick-ink : item.warn ? P8.warn : item.kind == "fact" ? P8.ink-dim : P8.ink;
             overflow: elide;
         }
         value := HorizontalLayout {
@@ -78,7 +84,7 @@ export component PicoSettingRow {
             if item.value == "CONNECTED" : PicoBadge { y: (Tokens.md - self.height) / 2; chip: { text: "CONNECTED", kind: "ok" }; }
             if item.segments.length > 0 : PicoSegments { segments: item.segments; ink: plate.value-ink; }
             if item.kind == "step" || item.kind == "pick" || item.kind == "text" || item.kind == "action" : Text { text: "▶"; font-size: Tokens.md; color: plate.value-ink; }
-            if item.kind == "network" : PicoNetworkMarks { width: 13 * Tokens.p; locked: item.locked; bars: item.bars; ink: (item.target && item.focused) ? P8.ink-dark : P8.ink; }
+            if item.kind == "network" : PicoNetworkMarks { width: 13 * Tokens.p; locked: item.locked; bars: item.bars; ink: root.ring ? P8.ink-dark : P8.ink; }
             if item.state == "saving" : PicoBadge { y: (Tokens.md - self.height) / 2; chip: { text: "SAVING", kind: "info" }; }
         }
     }
@@ -98,4 +104,5 @@ export component PicoSettingRow {
         if item.state-text != "" && item.state != "saving" : PicoLine { line-height: line-h; text: item.state-text; color: item.state == "problem" ? P8.warn : P8.pick-mark; }
     }
     PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: plate.x; y: plate.y; width: plate.width; height: plate.height; focused: (item.target && item.focused); }
+    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: item.target ? item.focus-id : ""; }
 }

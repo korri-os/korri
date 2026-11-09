@@ -6,11 +6,12 @@ import { PicoCard } from "PicoCard.slint";
 
 // The Starter pack's offer and where its install stands.
 export component PicoStarterPack inherits PicoCard {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <string> title;
     in property <string> message;
     in property <[ButtonView]> answers;
     PicoPara { text: title; color: P8.shell-ink(root.tone); }
     PicoPara { text: message; font-size: Tokens.sm; color: P8.note(root.tone); }
-    for answer in answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: answer; kind: "card"; }
+    for answer in answers : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: answer; kind: "card"; }
 }

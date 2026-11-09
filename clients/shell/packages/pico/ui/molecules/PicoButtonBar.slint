@@ -8,13 +8,14 @@ import { ButtonView } from "../atoms/PicoRow.slint";
 // The floor row: the lead control (MENU, RELOAD), a readout, and the face
 // buttons with what they do. The readout yields to the hints.
 export component PicoButtonBar {
+    callback activated(target: string, at: float, released: bool);
     in property <[HintView]> hints;
     in property <string> readout;
     in property <bool> has-lead;
     in property <bool> lead-menu: true;
     in property <ButtonView> lead;
     height: Tokens.snap(Tokens.sm * 1.5) + Tokens.u;
-    key := PicoMenuKey {
+    key := PicoMenuKey { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: Tokens.snap((root.height - 12 * Tokens.p) / 2);
         visible: has-lead;
@@ -27,7 +28,7 @@ export component PicoButtonBar {
         width: self.preferred-width;
         height: root.height;
         spacing: Tokens.snap(Tokens.u * 1.5);
-        for hint in hints : PicoHint { hint: hint; }
+        for hint in hints : PicoHint { activated(target, at, released) => { root.activated(target, at, released); }  hint: hint; }
     }
     PicoLine {
         x: has-lead ? key.width + 2 * Tokens.p + 2 * Tokens.u : 0;

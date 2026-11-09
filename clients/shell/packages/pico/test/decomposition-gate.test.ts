@@ -12,11 +12,12 @@
  *   main.slint;
  * - shapes read no state: only ui/tokens.slint and ui/palette.slint declare
  *   globals; the only writable globals are the window's inputs to Tokens
- *   (its width, height and face); only the bindings (main.slint, and the
- *   previews that stand in for it) write a global or read those inputs;
- *   everything else reads derived values only, and a control's place
- *   reaches a scroll region through properties and callbacks, never a
- *   global; and only main.slint and previews make windows.
+ *   (its width, height and face, and whether a tap came last); only the
+ *   bindings (main.slint, and the previews that stand in for it) write a
+ *   global or read those inputs; everything else reads derived values
+ *   only, and a control's place, and a tap on it, reach a scroll region
+ *   and the root through properties and callbacks, never a global; and
+ *   only main.slint and previews make windows.
  */
 import { describe, expect, test } from "bun:test"
 import { basename, dirname, join } from "node:path"
@@ -110,8 +111,9 @@ describe("shapes read no state", () => {
     expect(globals.map(rel)).toEqual([])
   })
 
-  /** The window's inputs: the only writable global state, set by the bindings. */
-  const INPUTS = ["Tokens.width", "Tokens.height", "Tokens.rows", "Tokens.family"]
+  /** The window's inputs: the only writable global state, set by the bindings.
+   * `touching` is the view's: a tap came last, so the focus highlight hides (ADR 0055). */
+  const INPUTS = ["Tokens.width", "Tokens.height", "Tokens.rows", "Tokens.family", "Tokens.touching"]
   const isBinding = (path: string) => rel(path) === "main.slint" || isPreview(path) || FOUNDATION.includes(rel(path))
   const writable = FOUNDATION.flatMap(file => {
     const text = code(read(join(ROOT, file)))

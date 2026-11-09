@@ -1,12 +1,13 @@
 import { P8 } from "../palette.slint";
 import { Tokens } from "../tokens.slint";
+import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoPara } from "../atoms/PicoPara.slint";
 import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
 import { PicoCard } from "PicoCard.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 
-export struct LineView { text: string, focused: bool, target: bool }
+export struct LineView { text: string, focused: bool, target: bool, focus-id: string }
 
 // A question or a notice: kicker, title, Korri's words, a report to read
 // line by line, and the answers, stacked or side by side.
@@ -22,6 +23,7 @@ export struct CardView {
 }
 
 export component PicoNotice inherits PicoCard {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CardView> card;
     in property <length> title-size: Tokens.short ? Tokens.md : Tokens.lg;
@@ -36,16 +38,17 @@ export component PicoNotice inherits PicoCard {
         accessible-item-selectable: true;
         accessible-item-selected: (line.target && line.focused);
         // Always present, shown by the row's data: a row updates in place.
-        Rectangle { visible: (line.target && line.focused); x: -Tokens.p; y: 0; width: parent.width + 2 * Tokens.p; height: parent.height; background: P8.pick; }
-        l := PicoPara { x: 0; y: 0; width: parent.width; text: line.text; font-size: Tokens.sm; color: (line.target && line.focused) ? P8.pick-ink : P8.note(card.tone); }
+        Rectangle { visible: (line.target && line.focused) && Tokens.ring; x: -Tokens.p; y: 0; width: parent.width + 2 * Tokens.p; height: parent.height; background: P8.pick; }
+        l := PicoPara { x: 0; y: 0; width: parent.width; text: line.text; font-size: Tokens.sm; color: (line.target && line.focused) && Tokens.ring ? P8.pick-ink : P8.note(card.tone); }
         PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: parent.width; height: parent.height; focused: (line.target && line.focused); }
+        PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: parent.width; height: parent.height; target: line.target ? line.focus-id : ""; }
     }
     if !card.inline : VerticalLayout {
         spacing: 2 * Tokens.p;
-        for action in card.actions : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: action; kind: "card"; }
+        for action in card.actions : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: action; kind: "card"; }
     }
     if card.inline : HorizontalLayout {
         spacing: 2 * Tokens.p;
-        for action in card.actions : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: action; kind: "card"; }
+        for action in card.actions : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: action; kind: "card"; }
     }
 }

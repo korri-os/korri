@@ -9,6 +9,7 @@ import { PicoNetworkRow } from "../molecules/PicoNetworkRow.slint";
 // Setup's Wi-Fi step: the networks Korri found, or where joining stands, in
 // setup's words, and what to do next.
 export component PicoWifiSetup {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SetupView> setup;
     preferred-height: card.preferred-height + 5 * Tokens.p;
@@ -21,14 +22,15 @@ export component PicoWifiSetup {
         tone: setup.tone;
         PicoSetupHeading { title: setup.title; message: setup.message; ink: P8.shell-ink(setup.tone); }
         if setup.busy != "" : PicoBusyMeter { label: setup.busy; ink: P8.note(setup.tone); }
-        for network in setup.rows : PicoNetworkRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+        for network in setup.rows : PicoNetworkRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
             ssid: network.label;
             bars: network.bars;
             locked: network.locked;
             connected: network.value == "CONNECTED";
             focused: (network.target && network.focused);
+            focus-id: network.target ? network.focus-id : "";
         }
-        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
-        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
+        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
+        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
     }
 }

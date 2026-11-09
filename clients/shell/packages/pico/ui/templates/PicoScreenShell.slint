@@ -25,6 +25,7 @@ export struct FrameView {
 // the body (which scrolls to keep the cursor's control in sight), and the
 // floor row. The frame never moves; only the body differs.
 export component PicoScreenShell inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     out property <length> body-y: bar.y + bar.height + (frame.track.length > 0 ? 6 * Tokens.p : 0) + Tokens.u;
     out property <length> body-h: floor.y - Tokens.u - body-y;
@@ -49,7 +50,7 @@ export component PicoScreenShell inherits Rectangle {
         height: body-h;
         @children
     }
-    floor := PicoButtonBar {
+    floor := PicoButtonBar { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 2 * Tokens.u;
         y: root.height - self.height - Tokens.snap(Tokens.u * 1.5) + Tokens.u;
         width: root.width - 4 * Tokens.u;

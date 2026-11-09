@@ -67,4 +67,5 @@ export const ADDED: Readonly<Record<string, { readonly layer: Layer; readonly wh
   PicoScroll: { layer: "atoms", why: "A region that keeps the cursor's control in sight: the host's scrollIntoView did this for the DOM." },
   PicoStatusStrip: { layer: "molecules", why: "The gameplay overlay's status strip (#378): the web Pico had no overlay facts to show." },
   PicoBattery: { layer: "atoms", why: "The device's battery in the status strip (#378): the web Pico showed no battery." },
+  PicoTap: { layer: "atoms", why: "Where a finger presses a focus target (ADR 0055): the DOM's click and pointer events did this." },
 }

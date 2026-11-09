@@ -9,19 +9,20 @@ import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slin
 // A game's own screen, and its two questions: where to play, and whether a
 // destructive action should go ahead.
 export component PicoGameDetail inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     in property <DetailView> detail;
     in property <CardView> card;
     // "location", "modal", or "" for none.
     in property <string> question;
-    shell := PicoScreenShell {
+    shell := PicoScreenShell { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
         if question == "" : GameDetail { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; detail: detail; }
-        if question == "location" : PicoLocationPicker { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; places: card; }
-        if question == "modal" : PicoModal { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
+        if question == "location" : PicoLocationPicker { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; places: card; }
+        if question == "modal" : PicoModal { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
     }
 }

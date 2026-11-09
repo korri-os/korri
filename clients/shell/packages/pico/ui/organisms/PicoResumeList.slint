@@ -1,5 +1,6 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 
@@ -14,6 +15,7 @@ export struct ResumeView { cart: CartView, title: string, subtitle: string }
 // of the design's two lines, and draws a title in at most two lines, so
 // neither depends on which carts are sent.
 export component PicoResumeList inherits VerticalLayout {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <[ResumeView]> games;
@@ -62,9 +64,10 @@ export component PicoResumeList inherits VerticalLayout {
                             accessible-item-selectable: true;
                             accessible-item-selected: root.games[i].cart.target && root.games[i].cart.focused;
                             // Always present, shown by the row's data: a row updates in place.
-                            Rectangle { visible: root.games[i].cart.target && root.games[i].cart.focused; x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
+                            Rectangle { visible: root.games[i].cart.target && root.games[i].cart.focused && Tokens.ring; x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
                             shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: parent.height - self.shell-h - 2 * Tokens.p; cart: root.games[i].cart; box-w: 20 * Tokens.p; box-h: 28 * Tokens.p; }
                             Rectangle { x: 0; y: parent.height - 2 * Tokens.p; width: parent.width; height: 2 * Tokens.p; background: P8.floor; }
+                            PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: parent.width; height: parent.height; target: root.games[i].cart.target ? root.games[i].cart.focus-id : ""; }
                         }
                         Text { text: game.title; font-size: Tokens.sm; color: P8.ink; wrap: word-wrap; overflow: elide; height: min(self.preferred-height, lines.height); }
                         PicoLine { text: game.subtitle; color: P8.ink-quiet; }

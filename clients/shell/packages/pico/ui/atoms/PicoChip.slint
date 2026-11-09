@@ -1,11 +1,13 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoTap } from "PicoTap.slint";
 import { PicoReveal } from "PicoReveal.slint";
 import { ButtonView } from "PicoRow.slint";
 
 // A filter or a tab: a plate in its colour, lit when chosen, white with a
 // cycling drop under the cursor.
 export component PicoChip {
+    callback activated(target: string, at: float, released: bool);
     // A focus target, for screen readers and the shell's probe: the
     // cursor's control is the selected item.
     accessible-role: AccessibleRole.button;
@@ -19,12 +21,14 @@ export component PicoChip {
     in property <color> ground: P8.plate;
     in property <color> ink: P8.plate-ink;
     in property <length> font-size: Tokens.sm;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: button.target && button.focused && Tokens.ring;
     preferred-width: label.preferred-width + 6 * Tokens.p;
     min-width: self.preferred-width;
     height: font-size + 4 * Tokens.p;
     // Always present, shown by the row's data: a row updates in place.
-    Rectangle { visible: (button.target && button.focused); x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
-    Rectangle { background: (button.target && button.focused) ? P8.pick : button.lit ? lit-ground : ground; }
+    Rectangle { visible: ring; x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: root.height; background: Cycle.now; }
+    Rectangle { background: ring ? P8.pick : button.lit ? lit-ground : ground; }
     label := Text {
         x: 3 * Tokens.p;
         y: 2 * Tokens.p;
@@ -32,7 +36,8 @@ export component PicoChip {
         text: button.label;
         font-size: root.font-size;
         overflow: elide;
-        color: (button.target && button.focused) || button.lit ? lit-ink : button.disabled ? P8.ink-quiet : ink;
+        color: ring || button.lit ? lit-ink : button.disabled ? P8.ink-quiet : ink;
     }
     PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: (button.target && button.focused); }
+    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: button.target ? button.focus-id : ""; }
 }

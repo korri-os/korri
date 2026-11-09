@@ -45,6 +45,9 @@ export interface State {
   readonly window: PicoWindow
   /** Each region's last focused target, for an exit that enters by `remembered`. */
   readonly remembered: Readonly<Record<string, string>>
+  /** A tap came last, not a button (ADR 0055): the focus highlight hides
+   * until the next `Pressed`. The cursor stays where it is. */
+  readonly touched: boolean
 }
 
 export type Dispatch =

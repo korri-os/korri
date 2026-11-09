@@ -5,6 +5,7 @@ import { PicoKey, KeyView } from "../atoms/PicoKey.slint";
 // Ten columns of keys; logic.js places each key on its row and columns. The
 // keys are as tall as the box allows, between a small and a full key.
 export component PicoKeyboard {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <[KeyView]> keys;
     in property <int> rows;
@@ -12,7 +13,7 @@ export component PicoKeyboard {
     property <length> cell: (root.width - 9 * gap) / 10;
     property <length> key-h: Tokens.short ? Tokens.sm + 3 * Tokens.p : Tokens.md + 5 * Tokens.p;
     height: rows * (key-h + gap) - gap;
-    for key in keys : PicoKey { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+    for key in keys : PicoKey { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: Tokens.snap(key.col * (cell + gap));
         y: key.row * (key-h + gap);
         width: Tokens.snap(key.cols * cell + (key.cols - 1) * gap);

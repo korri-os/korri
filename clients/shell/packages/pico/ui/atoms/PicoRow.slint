@@ -1,5 +1,6 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoTap } from "PicoTap.slint";
 import { PicoReveal } from "PicoReveal.slint";
 import { PicoLine } from "PicoLine.slint";
 
@@ -10,6 +11,8 @@ export struct ButtonView {
     focused: bool,
     // A focus target in this view: only then is `focused` current.
     target: bool,
+    // The focus target's id (src/native/focus.ts): what a tap on it reports (ADR 0055).
+    focus-id: string,
     disabled: bool,
     // Korri marked it destructive: red ink.
     warn: bool,
@@ -21,6 +24,7 @@ export struct ButtonView {
 // is black with white ink, inside a coloured card. The cursor turns it white
 // with black ink and a cycling hard shadow. A detail stands at its end.
 export component PicoRow {
+    callback activated(target: string, at: float, released: bool);
     // A focus target, for screen readers and the shell's probe: the
     // cursor's control is the selected item.
     accessible-role: AccessibleRole.button;
@@ -32,18 +36,20 @@ export component PicoRow {
     in property <string> kind: "plate";
     in property <length> font-size: Tokens.md;
     in property <bool> wrap;
-    property <color> ground: (button.target && button.focused) ? P8.pick : kind == "card" ? P8.ink-dark : P8.plate;
-    property <color> ink: button.disabled ? P8.ink-quiet : button.warn ? P8.warn : (button.target && button.focused) ? P8.pick-ink : kind == "card" ? P8.ink : P8.plate-ink;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: button.target && button.focused && Tokens.ring;
+    property <color> ground: ring ? P8.pick : kind == "card" ? P8.ink-dark : P8.plate;
+    property <color> ink: button.disabled ? P8.ink-quiet : button.warn ? P8.warn : ring ? P8.pick-ink : kind == "card" ? P8.ink : P8.plate-ink;
     min-height: font-size + 6 * Tokens.p;
     preferred-height: max(font-size + 6 * Tokens.p, label.preferred-height + 6 * Tokens.p);
     max-height: self.preferred-height;
     // Always present, shown by the row's data: a row updates in place.
-    Rectangle { visible: kind == "plate" || (button.target && button.focused);
+    Rectangle { visible: kind == "plate" || ring;
         x: Tokens.drop-sm;
         y: Tokens.drop-sm;
         width: root.width;
         height: root.height;
-        background: (button.target && button.focused) ? Cycle.now : P8.plate-shadow;
+        background: ring ? Cycle.now : P8.plate-shadow;
     }
     Rectangle { background: ground; }
     label := Text {
@@ -66,7 +72,8 @@ export component PicoRow {
         visible: button.detail != "";
         text: button.detail;
         font-size: root.font-size;
-        color: (button.target && button.focused) ? P8.pick-mark : P8.ink-quiet;
+        color: ring ? P8.pick-mark : P8.ink-quiet;
     }
     PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: (button.target && button.focused); }
+    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: button.target ? button.focus-id : ""; }
 }

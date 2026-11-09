@@ -1,5 +1,6 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoSlider } from "../atoms/PicoSlider.slint";
@@ -8,6 +9,7 @@ import { PicoSlider } from "../atoms/PicoSlider.slint";
 // range as cells, and, under it, why it is off or what it does, in the
 // note colour of the card it stands on.
 export component PicoControlRow {
+    callback activated(target: string, at: float, released: bool);
     // A focus target, for screen readers and the shell's probe: the
     // cursor's control is the selected item.
     accessible-role: AccessibleRole.list-item;
@@ -18,6 +20,12 @@ export component PicoControlRow {
     in property <string> label;
     in property <string> value;
     in property <bool> focused;
+    // The focus target's id, empty when it is none (disabled): what a tap reports.
+    in property <string> focus-id;
+    // A range is dragged sideways: its scroll region holds still (PicoTap).
+    callback holding(on: bool);
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: focused && Tokens.ring;
     in property <bool> disabled;
     in property <bool> warn;
     in property <bool> range;
@@ -28,9 +36,12 @@ export component PicoControlRow {
     in property <length> row-h: Tokens.md + 6 * Tokens.p;
     height: row-h + (note != "" ? Tokens.sm * 1.5 : 0);
     // Always present, shown by the row's data: a row updates in place.
-    Rectangle { visible: focused; x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: row-h; background: Cycle.now; }
-    Rectangle { x: 0; y: 0; width: root.width; height: row-h; background: focused ? P8.pick : P8.ink-dark; }
-    property <color> ink: disabled ? P8.ink-quiet : warn ? P8.warn : focused ? P8.pick-ink : P8.ink;
+    Rectangle { visible: ring; x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: row-h; background: Cycle.now; }
+    Rectangle { x: 0; y: 0; width: root.width; height: row-h; background: ring ? P8.pick : P8.ink-dark; }
+    // The range's track in the row: the slider's ten cells.
+    property <length> track-start: slider.x + slider.track-x;
+    property <length> track-end: slider.x + slider.track-x + slider.track-w;
+    property <color> ink: disabled ? P8.ink-quiet : warn ? P8.warn : ring ? P8.pick-ink : P8.ink;
     // The label shares the row with a value; alone it takes the whole row.
     // A value never takes more than its share: past half the row (or what the
     // label leaves, when that is more) it ends in an ellipsis, so a long
@@ -50,7 +61,7 @@ export component PicoControlRow {
         height: Tokens.md;
         cells: cells;
         value: value;
-        value-ink: focused ? P8.pick-mark : P8.ink-quiet;
+        value-ink: ring ? P8.pick-mark : P8.ink-quiet;
     }
     side := HorizontalLayout {
         visible: !range;
@@ -60,9 +71,22 @@ export component PicoControlRow {
         height: Tokens.md;
         spacing: 2 * Tokens.p;
         if arrows : Text { text: "◀"; font-size: Tokens.md; color: P8.ink-quiet; horizontal-stretch: 0; min-width: self.preferred-width; }
-        if value != "" : Text { text: value; font-size: Tokens.md; color: focused ? P8.pick-mark : P8.ink-quiet; overflow: elide; horizontal-stretch: 1; horizontal-alignment: right; min-width: 0; }
+        if value != "" : Text { text: value; font-size: Tokens.md; color: ring ? P8.pick-mark : P8.ink-quiet; overflow: elide; horizontal-stretch: 1; horizontal-alignment: right; min-width: 0; }
         if arrows : Text { text: "▶"; font-size: Tokens.md; color: P8.ink-quiet; horizontal-stretch: 0; min-width: self.preferred-width; }
     }
     if note != "" : PicoLine { x: 0; y: row-h; width: root.width; text: note; color: P8.note(tone); }
     PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: focused; }
+    // A range takes the finger along its track, the slider's cells.
+    PicoTap {
+        activated(target, at, released) => { root.activated(target, at, released); }
+        holding(on) => { root.holding(on); }
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.row-h;
+        target: focus-id;
+        range: root.range;
+        track-start: root.track-start;
+        track-end: root.track-end;
+    }
 }

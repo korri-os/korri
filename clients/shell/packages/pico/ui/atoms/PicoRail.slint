@@ -4,11 +4,21 @@ import { Tokens } from "../tokens.slint";
 // A row that keeps its items at their own width and slides sideways to keep
 // the cursor's item in sight: tabs and filters that do not fit their row.
 // Its items report their focused control to `show`.
+//
+// A finger slides it too (ADR 0055): it is a Flickable, so a sideways drag
+// moves the same offset `show` moves. Sliding moves no focus.
 export component PicoRail inherits Rectangle {
     in property <length> spacing: 3 * Tokens.p;
     in property <length> margin: Tokens.u;
-    property <length> scroll: 0;
+    // How far it is slid: by `show`, or by a finger.
+    property <length> scroll: -flick.content-x;
     property <length> limit: max(0, row.width - root.width);
+    // What it holds grew narrower: it slides no further than its end.
+    changed limit => {
+        if (scroll > limit) {
+            flick.content-x = -limit;
+        }
+    }
     // The control's place is passed on to whatever holds the row.
     callback reveal(left: length, top: length, wide: length, tall: length);
     // Slide to bring an item of this row into sight, then pass it on.
@@ -17,22 +27,30 @@ export component PicoRail inherits Rectangle {
         let down = top - root.absolute-position.y;
         if (down >= 0 && down < root.height && at >= 0 && at <= row.width) {
             if (at < min(scroll, limit) + margin) {
-                scroll = max(0, at - margin);
+                flick.content-x = -max(0, at - margin);
             } else if (at + wide > min(scroll, limit) + root.width - margin) {
-                scroll = min(limit, at + wide - root.width + margin);
+                flick.content-x = -min(limit, at + wide - root.width + margin);
             }
         }
         root.reveal(left, top, wide, tall);
     }
     clip: true;
     height: row.preferred-height;
-    row := HorizontalLayout {
-        x: -min(scroll, limit);
+    flick := Flickable {
+        x: 0;
         y: 0;
-        width: max(root.width, self.preferred-width);
+        width: root.width;
         height: root.height;
-        alignment: start;
-        spacing: root.spacing;
-        @children
+        content-width: row.width;
+        content-height: root.height;
+        row := HorizontalLayout {
+            x: 0;
+            y: 0;
+            width: max(root.width, self.preferred-width);
+            height: root.height;
+            alignment: start;
+            spacing: root.spacing;
+            @children
+        }
     }
 }

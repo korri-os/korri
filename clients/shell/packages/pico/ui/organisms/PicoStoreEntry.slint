@@ -25,11 +25,12 @@ export struct StoreEntryView {
 // One game a provider has, on a game's own stage, with the provider's words
 // and where getting it stands; a download takes the launch stage.
 export component PicoStoreEntry {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <StoreEntryView> entry;
     preferred-height: entry.working ? 80 * Tokens.p : detail.preferred-height;
     min-height: self.preferred-height;
-    detail := PicoGameDetail { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+    detail := PicoGameDetail { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         visible: !entry.working;
         x: 0;
         y: 0;
@@ -50,5 +51,5 @@ export component PicoStoreEntry {
         mark: false;
         inline: entry.inline;
     }
-    if entry.working : PicoLaunchStage { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; launch: entry.launch; }
+    if entry.working : PicoLaunchStage { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; launch: entry.launch; }
 }

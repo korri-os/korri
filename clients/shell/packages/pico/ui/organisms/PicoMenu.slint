@@ -8,6 +8,7 @@ import { PicoScroll } from "../atoms/PicoScroll.slint";
 // the window allows; a window too short for every entry scrolls the list to
 // the cursor's entry.
 export component PicoMenu inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     in property <[ButtonView]> entries;
     // The room the window leaves it.
     in property <length> room-width;
@@ -30,7 +31,7 @@ export component PicoMenu inherits Rectangle {
             rows := VerticalLayout {
                 spacing: 3 * Tokens.p;
                 padding-bottom: Tokens.drop-sm;
-                for entry in entries : PicoRow { reveal(left, top, wide, tall) => { scroll.show(left, top, wide, tall); } button: entry; kind: "card"; }
+                for entry in entries : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { scroll.show(left, top, wide, tall); } button: entry; kind: "card"; }
             }
         }
     }

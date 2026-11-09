@@ -9,7 +9,7 @@ import { picoRangeLabel, picoStatusStrip } from "../pico-overlay-view"
 import type { PicoOverlayState } from "../state/overlay"
 import { rangeValue } from "../state/overlay"
 import type { Target } from "./focus"
-import { A, B, type HintView, card, type CardView, button, NO_CARD } from "./kit"
+import { A, B, LR, type HintView, card, type CardView, button, NO_CARD } from "./kit"
 import { cardTargets } from "./catalog"
 import { type Act, nav, type Screen } from "./types"
 
@@ -152,7 +152,7 @@ export function overlayScreen(view: PicoOverlayView, state: PicoOverlayState, fo
         kicker: "PAUSED",
         title: view.title,
         ...done,
-        hints: [...(ranging ? [{ key: "lr" as const, label: "ADJUST" }] : []), A("SELECT"), B("RESUME")],
+        hints: [...(ranging ? [LR("ADJUST")] : []), A("SELECT"), B("RESUME")],
       },
       strip,
     },

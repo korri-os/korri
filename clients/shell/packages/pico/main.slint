@@ -4,8 +4,15 @@
 // The binding: the one file that knows the view. `Surface` draws the catalog
 // and first-boot setup from logic.js `view()`; `Overlay` draws the pause menu
 // over a running game from `overlay()`. Every component below it takes plain
-// properties (ui/atoms … ui/templates, pages/). No callbacks and no keys:
-// the shell delivers input to logic.js, which moves Pico's cursor.
+// properties (ui/atoms … ui/templates, pages/). One generic activation
+// callback and no per-control callbacks, and no keys: the shell delivers
+// buttons to logic.js, which moves Pico's cursor. A tap or a click on a focus
+// target reports that target's id through `activated` (ADR 0055): every layer
+// passes it up to the root, and the shell carries it to logic.js as
+// `Activated { target, at, released }`. `at` is the finger's place along a
+// range's track, 0 to 1, and `at < 0` means absent; `released` is true on
+// the message sent as the finger lifts off a range, and false means absent. `touching` hides the focus highlight
+// after a tap, until the next button press.
 //
 // The window's size goes to the tokens (ui/tokens.slint), and every size
 // follows from it: the layout is a function of width and height alone.
@@ -62,6 +69,10 @@ export {
 }
 
 export component Surface inherits Window {
+    // A focus target was tapped or clicked (ADR 0055): one callback for every target.
+    callback activated(target: string, at: float, released: bool);
+    // A tap came last, not a button: the focus highlight hides.
+    in property <bool> touching;
     in property <string> font-family: "Pico Tiny5";
     in property <int> font-rows: 7;
     in property <string> layer: "catalog";
@@ -97,11 +108,13 @@ export component Surface inherits Window {
         Tokens.fit(self.width, self.height);
         Tokens.rows = font-rows;
         Tokens.family = font-family;
+        Tokens.touching = touching;
     }
     changed width => { Tokens.fit(self.width, self.height); }
     changed height => { Tokens.fit(self.width, self.height); }
     changed font-rows => { Tokens.rows = font-rows; }
     changed font-family => { Tokens.family = font-family; }
+    changed touching => { Tokens.touching = touching; }
 
 
     displays := PicoDisplays {
@@ -112,15 +125,15 @@ export component Surface inherits Window {
             width: displays.choose-w;
             height: displays.choose-h;
             clip: true;
-            if page == "home" : PicoHome { frame: frame; home: home; card: card; }
-            if page == "find" : PicoLibrary { frame: frame; find: find; }
-            if page == "detail" : PicoGameDetail { frame: frame; detail: detail; card: card; question: question; }
-            if page == "settings" : PicoSettings { frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
-            if page == "launch" : PicoLaunchSettings { frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
-            if page == "store" : PicoStore { frame: frame; store: store; card: card; editor: editor; mode: mode; }
-            if page == "setup" : PicoOnboarding { frame: frame; setup: setup; editor: editor; identity: identity; mode: mode; }
-            if page == "runner" : PicoRunnerPicker { sheet: sheet; }
-            if attract.shown : PicoAttract { attract: attract; }
+            if page == "home" : PicoHome { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; home: home; card: card; }
+            if page == "find" : PicoLibrary { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; find: find; }
+            if page == "detail" : PicoGameDetail { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; detail: detail; card: card; question: question; }
+            if page == "settings" : PicoSettings { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
+            if page == "launch" : PicoLaunchSettings { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
+            if page == "store" : PicoStore { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; store: store; card: card; editor: editor; mode: mode; }
+            if page == "setup" : PicoOnboarding { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; setup: setup; editor: editor; identity: identity; mode: mode; }
+            if page == "runner" : PicoRunnerPicker { activated(target, at, released) => { root.activated(target, at, released); }  sheet: sheet; }
+            if attract.shown : PicoAttract { activated(target, at, released) => { root.activated(target, at, released); }  attract: attract; }
             if !split.on && notices.length > 0 : PicoInviteNotices { notices: notices; round: notice-round; }
         }
         if split.on : Rectangle {
@@ -129,15 +142,15 @@ export component Surface inherits Window {
             width: displays.show-w;
             height: displays.show-h;
             clip: true;
-            PicoShowcase { home: home; }
-            if attract.shown : PicoAttract { attract: attract; }
+            PicoShowcase { activated(target, at, released) => { root.activated(target, at, released); }  home: home; }
+            if attract.shown : PicoAttract { activated(target, at, released) => { root.activated(target, at, released); }  attract: attract; }
             if notices.length > 0 : PicoInviteNotices { notices: notices; round: notice-round; }
         }
     }
     // MENU's list at the window's top level, with no clipping ancestor: it
     // stands over the floor's MENU key in the choosing screen's rectangle
     // (the whole window, or its part of a split), in window coordinates.
-    if page == "home" && home.menu-open : PicoMenu {
+    if page == "home" && home.menu-open : PicoMenu { activated(target, at, released) => { root.activated(target, at, released); } 
         x: displays.x + displays.choose-x + 2 * Tokens.u;
         y: displays.y + displays.choose-y + max(Tokens.u, displays.choose-h - Tokens.floor-band - self.height);
         room-width: displays.choose-w - 4 * Tokens.u;
@@ -147,6 +160,10 @@ export component Surface inherits Window {
 }
 
 export component Overlay inherits Window {
+    // A focus target was tapped or clicked (ADR 0055): one callback for every target.
+    callback activated(target: string, at: float, released: bool);
+    // A tap came last, not a button: the focus highlight hides.
+    in property <bool> touching;
     in property <string> font-family: "Pico Tiny5";
     in property <int> font-rows: 7;
     in property <CardView> card;
@@ -165,10 +182,12 @@ export component Overlay inherits Window {
         Tokens.fit(self.width, self.height);
         Tokens.rows = font-rows;
         Tokens.family = font-family;
+        Tokens.touching = touching;
     }
     changed width => { Tokens.fit(self.width, self.height); }
     changed height => { Tokens.fit(self.width, self.height); }
     changed font-rows => { Tokens.rows = font-rows; }
+    changed touching => { Tokens.touching = touching; }
 
-    PicoOverlay { sheet: sheet; card: card; strip: strip; }
+    PicoOverlay { activated(target, at, released) => { root.activated(target, at, released); }  sheet: sheet; card: card; strip: strip; }
 }

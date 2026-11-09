@@ -7,6 +7,7 @@ import { PicoNotice, CardView } from "../molecules/PicoNotice.slint";
 // Over a live game (`over-game`) the game stays in sight round the card,
 // which wears its outline.
 export component PicoModal inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <CardView> card;
     in property <bool> over-game;
@@ -14,7 +15,7 @@ export component PicoModal inherits Rectangle {
     property <length> w: min(root.width - 5 * Tokens.p, max(200 * Tokens.p, root.width * 70%));
     preferred-height: notice.preferred-height + 5 * Tokens.p;
     min-height: self.preferred-height;
-    notice := PicoNotice { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+    notice := PicoNotice { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: Tokens.snap((root.width - w) / 2);
         y: Tokens.snap(max(0, (root.height - self.preferred-height) / 2));
         width: w;

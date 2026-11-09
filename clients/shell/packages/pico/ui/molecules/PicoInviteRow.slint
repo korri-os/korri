@@ -7,6 +7,7 @@ import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
 export struct InviteView { title: string, who: string, art: image, has-art: bool, actions: [ButtonView] }
 
 export component PicoInviteRow {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <InviteView> invite;
     height: Tokens.md * 1.5 + Tokens.sm * 1.5 + 2 * Tokens.p;
@@ -34,7 +35,7 @@ export component PicoInviteRow {
             min-width: 30 * Tokens.p;
             preferred-width: max(30 * Tokens.p, natural.preferred-width + 8 * Tokens.p);
             natural := Text { visible: false; text: action.label; font-size: Tokens.md; }
-            PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }
+            PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }
                 x: 0;
                 y: (parent.height - self.height) / 2;
                 width: parent.width;

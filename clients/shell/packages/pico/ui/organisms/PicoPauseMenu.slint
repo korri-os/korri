@@ -12,6 +12,8 @@ export struct SheetItem {
     focused: bool,
     // A focus target in this view: only then is `focused` current.
     target: bool,
+    // The focus target's id (src/native/focus.ts): what a tap on it reports (ADR 0055).
+    focus-id: string,
     disabled: bool,
     warn: bool,
     range: bool,
@@ -26,15 +28,19 @@ export struct SheetItem {
 // under its caption, each control with its note. The runner picker lists its
 // routes and their facts the same way.
 export component PicoPauseMenu inherits VerticalLayout {
+    callback activated(target: string, at: float, released: bool);
+    // A range under the finger holds the list still (PicoControlRow).
+    callback holding(on: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <[SheetItem]> items;
     spacing: 2 * Tokens.p;
     for item in items : VerticalLayout {
-        if item.kind == "row" : PicoControlRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+        if item.kind == "row" : PicoControlRow { activated(target, at, released) => { root.activated(target, at, released); }  holding(on) => { root.holding(on); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
             label: item.label;
             value: item.value;
             focused: (item.target && item.focused);
+            focus-id: item.target ? item.focus-id : "";
             disabled: item.disabled;
             warn: item.warn;
             range: item.range;

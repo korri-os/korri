@@ -7,6 +7,7 @@ import { ButtonView } from "../atoms/PicoRow.slint";
 
 // The game played last, named large, and OPEN.
 export component PicoGameHero inherits VerticalLayout {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <string> title;
@@ -15,5 +16,5 @@ export component PicoGameHero inherits VerticalLayout {
     spacing: Tokens.u;
     PicoTitle { text: title; large: false; }
     if subtitle != "" : PicoSub { text: subtitle; }
-    HorizontalLayout { alignment: start; PicoButton { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: open; mark: false; } }
+    HorizontalLayout { alignment: start; PicoButton { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: open; mark: false; } }
 }

@@ -2,21 +2,43 @@ import { P8 } from "../palette.slint";
 import { Tokens } from "../tokens.slint";
 import { PicoPixelDisc } from "PicoPixelDisc.slint";
 import { PicoLine } from "PicoLine.slint";
+import { PicoTap } from "PicoTap.slint";
 
-// A face button and what it does: "a", "b", or "lr" for left and right.
-export struct HintView { key: string, label: string }
+// A face button and what it does: "a", "b", or "lr" for left and right. A
+// hint is a focus target a finger can press (ADR 0055): it runs that
+// button's own handler, and the cursor never walks onto it, so `focused`
+// stays false.
+export struct HintView { key: string, label: string, focused: bool, target: bool, focus-id: string }
 
-export component PicoHint inherits HorizontalLayout {
+export component PicoHint {
+    callback activated(target: string, at: float, released: bool);
+    // A focus target for the shell's probe; the cursor is never on it.
+    accessible-role: AccessibleRole.button;
+    accessible-label: hint.label;
+    accessible-item-selectable: hint.target;
+    accessible-item-selected: hint.target && hint.focused;
     in property <HintView> hint;
-    spacing: 2 * Tokens.p;
-    Rectangle {
-        width: 8 * Tokens.p;
-        PicoPixelDisc {
-            x: 0;
-            y: Tokens.snap((parent.height - self.height) / 2);
-            disc: hint.key == "a" ? P8.key-a : hint.key == "b" ? P8.key-b : P8.key-lr;
-            glyph: hint.key == "a" ? "A" : hint.key == "b" ? "B" : "◀▶";
+    min-width: row.min-width;
+    preferred-width: row.preferred-width;
+    min-height: row.min-height;
+    preferred-height: row.preferred-height;
+    row := HorizontalLayout {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        spacing: 2 * Tokens.p;
+        Rectangle {
+            width: 8 * Tokens.p;
+            PicoPixelDisc {
+                x: 0;
+                y: Tokens.snap((parent.height - self.height) / 2);
+                disc: hint.key == "a" ? P8.key-a : hint.key == "b" ? P8.key-b : P8.key-lr;
+                glyph: hint.key == "a" ? "A" : hint.key == "b" ? "B" : "◀▶";
+            }
         }
+        PicoLine { text: hint.label; color: P8.ink-dim; overflow: clip; }
     }
-    PicoLine { text: hint.label; color: P8.ink-dim; overflow: clip; }
+    // ◀▶ ADJUST: its left half steps left, its right half right.
+    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: hint.target ? hint.focus-id : ""; halves: hint.key == "lr"; }
 }

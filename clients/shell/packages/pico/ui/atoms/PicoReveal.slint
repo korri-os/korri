@@ -5,11 +5,16 @@ import { Tokens } from "../tokens.slint";
 // `reveal` (window coordinates), so whatever holds it (a PicoRail, a
 // PicoScroll) can bring it into sight. Placed over the control, the size of
 // it; it draws nothing and keeps no state but the wait for layout.
+//
+// A finger may have scrolled the control away (ADR 0055): when the first
+// button press after a tap brings the highlight back, it says so again.
 export component PicoReveal {
     in property <bool> focused;
     callback reveal(left: length, top: length, wide: length, tall: length);
     property <bool> pending: focused;
+    property <bool> ring: Tokens.ring;
     changed focused => { pending = focused; }
+    changed ring => { pending = focused && ring; }
     Timer {
         interval: 16ms;
         running: pending;

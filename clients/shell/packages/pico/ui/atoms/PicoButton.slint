@@ -1,5 +1,6 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoTap } from "PicoTap.slint";
 import { PicoReveal } from "PicoReveal.slint";
 import { PicoLine } from "PicoLine.slint";
 import { ButtonView } from "PicoRow.slint";
@@ -7,6 +8,7 @@ import { ButtonView } from "PicoRow.slint";
 // The one thing the screen wants pressed: yellow, a play mark, a brown hard
 // shadow that cycles under the cursor.
 export component PicoButton {
+    callback activated(target: string, at: float, released: bool);
     // A focus target, for screen readers and the shell's probe: the
     // cursor's control is the selected item.
     accessible-role: AccessibleRole.button;
@@ -17,6 +19,8 @@ export component PicoButton {
     in property <ButtonView> button;
     in property <length> font-size: Tokens.lg;
     in property <bool> mark: true;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: button.target && button.focused && Tokens.ring;
     width: row.preferred-width;
     height: font-size + 8 * Tokens.p;
     Rectangle {
@@ -24,7 +28,7 @@ export component PicoButton {
         y: Tokens.drop;
         width: root.width;
         height: root.height;
-        background: (button.target && button.focused) ? Cycle.now : P8.go-shadow;
+        background: ring ? Cycle.now : P8.go-shadow;
     }
     Rectangle { background: button.disabled ? P8.slate : P8.go; }
     row := HorizontalLayout {
@@ -44,4 +48,5 @@ export component PicoButton {
         PicoLine { line-height: root.height; text: button.label; font-size: root.font-size; color: P8.go-ink; overflow: clip; }
     }
     PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: (button.target && button.focused); }
+    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: button.target ? button.focus-id : ""; }
 }

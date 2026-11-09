@@ -7,11 +7,12 @@ import { SetupView } from "../molecules/PicoSetupHeading.slint";
 
 // Setup's HELLO: what is about to happen, and START.
 export component PicoSetupWelcome inherits VerticalLayout {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SetupView> setup;
     alignment: center;
     spacing: Tokens.u;
     PicoTitle { text: setup.title; }
     if setup.message != "" : PicoPara { text: setup.message; color: P8.ink-dim; }
-    HorizontalLayout { alignment: start; padding-top: Tokens.u; PicoButton { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: setup.go; } }
+    HorizontalLayout { alignment: start; padding-top: Tokens.u; PicoButton { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: setup.go; } }
 }

@@ -5,6 +5,7 @@ import { PicoRow, ButtonView } from "../atoms/PicoRow.slint";
 
 // Where to look for a game: Korri's providers, one row each.
 export component PicoStoreProviders inherits VerticalLayout {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <string> message;
     in property <[ButtonView]> providers;
@@ -13,6 +14,6 @@ export component PicoStoreProviders inherits VerticalLayout {
     if message != "" : PicoLine { text: message; font-size: Tokens.md; color: P8.ink-dim; }
     for provider in providers : HorizontalLayout {
         alignment: start;
-        PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  width: min(280 * Tokens.p, root.width); button: provider; kind: "card"; }
+        PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  width: min(280 * Tokens.p, root.width); button: provider; kind: "card"; }
     }
 }

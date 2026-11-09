@@ -80,6 +80,17 @@ export interface PicoRanging {
   readonly onLeave: (control: PicoOverlayControlView) => void
 }
 
+/**
+ * The value at a finger's place along a range's track (ADR 0055): `at`, 0 to
+ * 1, from min to max, snapped to Korri's step and held inside min and max.
+ */
+export function picoRangeAt(range: Omit<PicoOverlayRange, "value">, at: number): number {
+  const share = Math.min(1, Math.max(0, at))
+  const steps = range.step > 0 ? Math.round((share * (range.max - range.min)) / range.step) : 0
+  const next = Number((range.min + steps * range.step).toFixed(placesOf(range)))
+  return Math.min(range.max, Math.max(range.min, next))
+}
+
 export function picoRangeStep(range: PicoOverlayRange, way: -1 | 1): number {
   const next = Number((range.value + way * range.step).toFixed(placesOf(range)))
   return Math.min(range.max, Math.max(range.min, next))

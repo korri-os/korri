@@ -8,6 +8,7 @@ import { PicoControllerRow } from "../molecules/PicoControllerRow.slint";
 
 // Setup's PADS step: every controller Korri sees, lit once heard.
 export component PicoControllerCheck {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SetupView> setup;
     preferred-height: card.preferred-height + 5 * Tokens.p;
@@ -21,7 +22,7 @@ export component PicoControllerCheck {
         PicoSetupHeading { title: setup.title; message: setup.message; ink: P8.shell-ink(setup.tone); }
         if setup.busy != "" : PicoBusyMeter { label: setup.busy; ink: P8.note(setup.tone); }
         for pad in setup.rows : PicoControllerRow { name: pad.label; heard: pad.value == "READY"; ink: P8.shell-ink(setup.tone); }
-        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
-        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
+        if setup.inline : HorizontalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
+        if !setup.inline : VerticalLayout { spacing: 2 * Tokens.p; for a in setup.answers : PicoRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: a; kind: "card"; } }
     }
 }

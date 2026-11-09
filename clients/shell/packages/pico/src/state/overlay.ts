@@ -11,6 +11,11 @@
  * many times a second, and asking Korri on every repeat would queue a stale
  * value behind each fresh one. A value Korri
  * republishes replaces the local one and drops any step not yet sent.
+ *
+ * A finger sets a range at its place on the track (`SetRange`, ADR 0055): the
+ * value snaps to Korri's step and goes the way a step goes, so Korri hears it
+ * only when the snapped value changes; the finger's lift sends a value still
+ * held at once.
  */
 import {
   type PicoOverlayControlView,
@@ -18,6 +23,7 @@ import {
   type PicoOverlayView,
   type PicoRangeRelease,
   type PicoRangeStepRequest,
+  picoRangeAt,
   picoRangeStep,
 } from "../pico-overlay-view"
 import type { PicoHostButton } from "./messages"
@@ -55,6 +61,9 @@ export type PicoOverlayMessage =
   | { readonly _tag: "InvokedControl"; readonly control: PicoOverlayControlView }
   | { readonly _tag: "SteppedRange"; readonly control: PicoOverlayControlView; readonly request: PicoRangeStepRequest }
   | { readonly _tag: "ReleasedRange"; readonly control: PicoOverlayControlView; readonly ended: PicoRangeRelease }
+  /** A finger set a range (ADR 0055): `at` along its track, 0 to 1. It goes
+   * the way a step goes; `released` (the finger lifted) sends it at once. */
+  | { readonly _tag: "SetRange"; readonly control: PicoOverlayControlView; readonly at: number; readonly released: boolean }
   /** The cursor left a range. A step it holds is sent now. */
   | { readonly _tag: "LeftRange"; readonly control: PicoOverlayControlView }
   | { readonly _tag: "PressedRetry" }
@@ -116,6 +125,25 @@ function step(state: PicoOverlayState, message: PicoOverlayMessage): PicoStep<Pi
         },
         { _tag: "Wait", ms: request.releaseExpected ? RANGE_RELEASE_FALLBACK_MS : RANGE_COMMIT_DELAY_MS, token },
       )
+    }
+    case "SetRange": {
+      // The value at the finger, sent the way a step is: when it changes,
+      // through the same hold and wait; a release sends what is held at once.
+      const { control } = message
+      const range = control.range
+      if (!control.enabled || range === undefined) return stay(state)
+      const edit = state.ranges[control.id]
+      const current = edit?.value ?? range.value
+      const next = picoRangeAt(range, message.at)
+      if (next === current) return message.released ? flush(state, [control.id]) : stay(state)
+      const token = state.nextToken
+      const request: PicoRangeStepRequest = { way: next > current ? 1 : -1, releaseExpected: false, source: "touch" }
+      const held: PicoOverlayState = {
+        ...state,
+        nextToken: token + 1,
+        ranges: { ...state.ranges, [control.id]: { value: next, base: range, enabled: control.enabled, pending: { request, token } } },
+      }
+      return message.released ? flush(held, [control.id]) : ask(held, { _tag: "Wait", ms: RANGE_COMMIT_DELAY_MS, token })
     }
     case "ReleasedRange": {
       const pending = state.ranges[message.control.id]?.pending?.request

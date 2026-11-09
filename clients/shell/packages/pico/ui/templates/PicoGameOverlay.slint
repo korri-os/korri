@@ -28,6 +28,7 @@ export struct SheetView { kicker: string, title: string, items: [SheetItem], foc
 // width the strip goes to the foot, beside the hints when both fit, else on
 // its own line above them, and the card gives up that height.
 export component PicoGameOverlay inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     in property <string> kicker;
     in property <string> title;
     in property <[HintView]> hints;
@@ -48,6 +49,10 @@ export component PicoGameOverlay inherits Rectangle {
     // What the list holds reports its focused control here.
     public function show(left: length, top: length, wide: length, tall: length) {
         list.show(left, top, wide, tall);
+    }
+    // A range under the finger holds the list still, so its drag stays sideways.
+    public function hold(on: bool) {
+        list.hold(on);
     }
     card := PicoCard {
         x: 2 * Tokens.u;
@@ -83,6 +88,6 @@ export component PicoGameOverlay inherits Rectangle {
         width: self.preferred-width;
         height: Tokens.snap(Tokens.sm * 1.5);
         spacing: Tokens.snap(Tokens.u * 1.5);
-        for hint in hints : PicoHint { hint: hint; }
+        for hint in hints : PicoHint { activated(target, at, released) => { root.activated(target, at, released); }  hint: hint; }
     }
 }

@@ -5,6 +5,7 @@ import { PicoInviteRow, InviteView } from "../molecules/PicoInviteRow.slint";
 
 // PLAYING NOW: every invite Korri publishes, counted, each with its actions.
 export component PicoPlayingNow inherits VerticalLayout {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
     in property <[InviteView]> invites;
@@ -17,5 +18,5 @@ export component PicoPlayingNow inherits VerticalLayout {
         PicoLine { text: "PLAYING NOW"; color: P8.go; overflow: clip; }
         PicoLine { text: count; color: P8.ink-quiet; overflow: clip; }
     }
-    for invite in invites : PicoInviteRow { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  invite: invite; }
+    for invite in invites : PicoInviteRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  invite: invite; }
 }

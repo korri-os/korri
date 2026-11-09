@@ -1,5 +1,6 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 
 // Every game a small cartridge on one floor. Every slot is as tall as the
@@ -7,6 +8,7 @@ import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 // shadow that cycles under the cursor. The rack scrolls only as far as it
 // must to keep the chosen cart in view, with one cart of margin each side.
 export component PicoCartShelf inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <[CartView]> carts;
     in property <int> first-index;
@@ -42,7 +44,7 @@ export component PicoCartShelf inherits Rectangle {
             width: shell.shell-w;
             height: shell.shell-h;
             // Always present, shown by the row's data: a row updates in place.
-            Rectangle { visible: cart.hero || (cart.target && cart.focused); x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: (cart.target && cart.focused) ? Cycle.now : P8.ink; }
+            Rectangle { visible: cart.hero || ((cart.target && cart.focused) && Tokens.ring); x: 3 * Tokens.p; y: 3 * Tokens.p; width: parent.width; height: parent.height; background: (cart.target && cart.focused) && Tokens.ring ? Cycle.now : P8.ink; }
             // The slot, level across the shelf: the focus target.
             Rectangle {
                 x: 0;
@@ -54,6 +56,8 @@ export component PicoCartShelf inherits Rectangle {
                 accessible-item-selectable: true;
                 accessible-item-selected: (cart.target && cart.focused);
             }
+            // Over the cart and its slot: a tap on either is a tap on the cart.
+            PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: min(0, 8 * Tokens.p - parent.y); width: parent.width; height: max(parent.height, 8 * Tokens.p - parent.y + slot-h) - self.y; target: cart.target ? cart.focus-id : ""; }
             shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; cart: cart; box-w: art-w; box-h: art-h; }
         }
     }

@@ -14,24 +14,25 @@ import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slin
 // First-boot setup: HELLO, WI-FI, NAME, YOU, PADS, GAMES, PLAY on the step
 // track; Pico's keyboard for a name or a password; the backup dialog.
 export component PicoOnboarding inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     in property <SetupView> setup;
     in property <EditorView> editor;
     in property <IdentityView> identity;
     in property <string> mode: "setup";
-    shell := PicoScreenShell {
+    shell := PicoScreenShell { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
-        if mode == "editor" : PicoTextEditor { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }
-        if mode == "identity" : PicoIdentityDialog { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  identity: identity; }
-        if mode == "setup" && setup.step == "hello" : PicoSetupWelcome { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  setup: setup; }
-        if mode == "setup" && setup.step == "wifi" : PicoWifiSetup { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
-        if mode == "setup" && setup.step == "you" : PicoIdentitySetup { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
-        if mode == "setup" && setup.step == "pads" : PicoControllerCheck { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
-        if mode == "setup" && setup.step == "games" : PicoGamesFound { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
-        if mode == "setup" && setup.step == "play" : PicoSetupDone { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  setup: setup; }
+        if mode == "editor" : PicoTextEditor { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }
+        if mode == "identity" : PicoIdentityDialog { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  identity: identity; }
+        if mode == "setup" && setup.step == "hello" : PicoSetupWelcome { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  setup: setup; }
+        if mode == "setup" && setup.step == "wifi" : PicoWifiSetup { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "you" : PicoIdentitySetup { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "pads" : PicoControllerCheck { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "games" : PicoGamesFound { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: 60 * Tokens.p; setup: setup; }
+        if mode == "setup" && setup.step == "play" : PicoSetupDone { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  setup: setup; }
     }
 }
