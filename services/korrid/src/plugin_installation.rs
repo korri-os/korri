@@ -38,7 +38,24 @@ pub fn encode(selections: &[EnabledPackage]) -> Result<Vec<u8>, String> {
 }
 
 pub fn read() -> Result<Vec<EnabledPackage>, String> {
+    // ADR 0054: the Android app has no root plugin host. korrid installs
+    // releases itself into app storage and keeps the enabled list there.
+    if let Some(store) = ANDROID_STORE.get() {
+        return store.read();
+    }
     read_owned(Path::new(REGISTRY_PATH), 0, Path::new("/"))
+}
+
+static ANDROID_STORE: std::sync::OnceLock<crate::nixfree_install::AndroidPluginStore> =
+    std::sync::OnceLock::new();
+
+/// Called once by the Android edge with the app's private state root.
+pub fn use_android_store(private_root: &Path) {
+    let _ = ANDROID_STORE.set(crate::nixfree_install::AndroidPluginStore::new(private_root));
+}
+
+pub fn android_store() -> Option<&'static crate::nixfree_install::AndroidPluginStore> {
+    ANDROID_STORE.get()
 }
 
 fn read_owned(path: &Path, owner: u32, anchor: &Path) -> Result<Vec<EnabledPackage>, String> {
