@@ -1068,3 +1068,27 @@ mod manual_pending_launch_choices {
         }
     }
 }
+
+#[test]
+fn terminal_resume_returns_to_library_without_continue_or_error() {
+    for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
+        let running = ready().with_session_status(&status(json!({"_tag":"Ok", "payload": {
+            "active": {"launchId":"exact", "gameId":"skate3", "phase":"running"}
+        }})));
+        let session = running.entries()[0].session().unwrap();
+        let resuming = LaunchablesState::begin_return(content(&running).clone(), session);
+        let ended = resuming.with_resume_outcome(Some(&crate::RpcFailure {
+            code: code.into(),
+            message: "far launch ended".into(),
+        }));
+        assert_eq!(tag(&ended), "Ready");
+        assert!(
+            ended
+                .entries()
+                .iter()
+                .all(|entry| entry.session().is_none()),
+            "{code}"
+        );
+        assert!(notice(&ended).is_none(), "{code}");
+    }
+}

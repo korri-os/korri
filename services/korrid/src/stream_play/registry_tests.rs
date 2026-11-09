@@ -103,3 +103,51 @@ async fn stream_play_prepare_rejects_unknown_device_labels_and_invalid_peer_orig
     assert!(matches!(registry.prepare_stream("game", Some("far")).await, Err(UpstreamError::Wire(_))));
     assert!(viewer.calls().is_empty());
 }
+
+#[tokio::test]
+async fn stream_player_terminal_failure_is_session_ended_not_device_unreachable() {
+    let (url, far) = exact_native_server(false).await;
+    let config = UpstreamHostConfig::native("far", url);
+    let key = config.device_public_key.clone().unwrap();
+    let viewer = TestLinuxStreamViewer::default();
+    let registry = UpstreamRegistry::new(vec![config]).with_linux_viewer(Arc::new(viewer.clone()));
+    far.set_phase("running");
+    registry.stream_play(&key, &far.launch_id, "Phone").await.unwrap();
+    viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
+    far.end_with("HostLaunchFailed");
+    registry.session_status().await.unwrap();
+    assert!(!registry.has_selected_session());
+    assert!(matches!(registry.stream_play_ended().unwrap().cause,
+        crate::stream_play::StreamPlayEndCause::SessionEnded));
+}
+
+#[tokio::test]
+async fn far_session_watch_retires_disconnected_starter_and_stream_player() {
+    for stream_player in [false, true] {
+        for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
+            let (url, far) = exact_native_server(false).await;
+            let config = UpstreamHostConfig::native("far", url);
+            let key = config.device_public_key.clone().unwrap();
+            let viewer = TestLinuxStreamViewer::default();
+            let registry = UpstreamRegistry::new(vec![config]).with_linux_viewer(Arc::new(viewer.clone()));
+            if stream_player {
+                far.set_phase("running");
+                registry.stream_play(&key, &far.launch_id, "Phone").await.unwrap();
+            } else {
+                registry.prepare_stream("game", None).await.unwrap();
+            }
+            viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
+            far.end_with(code);
+            let watch = crate::stream_play::device::spawn_watch(registry.clone());
+            let retired = tokio::time::timeout(Duration::from_secs(3), async {
+                while registry.has_selected_session() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }).await;
+            watch.abort();
+            retired.expect(code);
+            assert!(matches!(registry.session_status().await.unwrap(), UpstreamSessionStatus::SessionStatus { active: None }));
+            assert_eq!(viewer.calls().iter().filter(|call| call.action == LinuxViewerAction::Start).count(), 1);
+        }
+    }
+}

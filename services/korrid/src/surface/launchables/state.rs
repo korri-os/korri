@@ -1045,6 +1045,17 @@ impl LaunchablesState {
             LaunchablesState::Loaded(loaded) if matches!(loaded.phase, Phase::Launching { .. }) => {
                 match failure {
                     None => LaunchablesState::Loaded(loaded),
+                    Some(failure)
+                        if matches!(
+                            failure.code.as_str(),
+                            "SessionCompleted" | "NoActiveSession" | "HostLaunchFailed"
+                        ) =>
+                    {
+                        ready(Content::with_entries(
+                            without_sessions(&loaded.content.entries),
+                            None,
+                        ))
+                    }
                     Some(failure) => {
                         ready_from(loaded, format!("{}: {}", failure.code, failure.message))
                     }

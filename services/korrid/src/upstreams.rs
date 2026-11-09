@@ -1173,27 +1173,7 @@ impl UpstreamRegistry {
                         }
                     }
                     UpstreamSessionStatus::SessionStatus { active: None } => {
-                        if selected.viewer.is_some() {
-                            match self.viewer.status(&selected.launch_id).await {
-                                Ok(LinuxViewerStatus::Stopped) => {
-                                    self.clear_selected_if(&selected);
-                                }
-                                Ok(_) => {
-                                    return Err(viewer_error(
-                                        "NativeViewerRecoveryIncomplete",
-                                        "the prior exact viewer remains live",
-                                    ))
-                                }
-                                Err(error) => {
-                                    return Err(viewer_error(
-                                        "NativeViewerRecoveryIncomplete",
-                                        error.to_string(),
-                                    ))
-                                }
-                            }
-                        } else {
-                            self.clear_selected_if(&selected);
-                        }
+                        self.retire_ended_selection(&selected).await?;
                     }
                     UpstreamSessionStatus::SessiondNotConfigured {} => {
                         return Err(UpstreamError::Failure(
@@ -1224,6 +1204,32 @@ impl UpstreamRegistry {
         }
     }
 
+    /// Far terminal status is authoritative, but the exact local viewer must
+    /// also be stopped before another launch can replace this selection.
+    async fn retire_ended_selection(
+        &self,
+        selected: &SelectedRemoteSession,
+    ) -> Result<(), UpstreamError> {
+        if selected.viewer.is_some() {
+            let cleanup = async {
+                if self.viewer.status(&selected.launch_id).await? != LinuxViewerStatus::Stopped {
+                    self.viewer.stop(&selected.launch_id).await?;
+                }
+                Ok::<_, crate::linux_viewer::LinuxViewerError>(())
+            }
+            .await;
+            if let Err(error) = cleanup {
+                self.set_viewer_confirmed(selected, false);
+                return Err(viewer_error(
+                    "NativeViewerRecoveryIncomplete",
+                    error.to_string(),
+                ));
+            }
+        }
+        self.clear_selected_if(selected);
+        Ok(())
+    }
+
     pub async fn session_status(&self) -> Result<UpstreamSessionStatus, UpstreamError> {
         let registry = self.resolved()?;
         registry.session_status_resolved().await
@@ -1251,36 +1257,7 @@ impl UpstreamRegistry {
                     return Ok(status);
                 }
                 UpstreamSessionStatus::SessionStatus { active: None } => {
-                    if selected.viewer.is_some() {
-                        match self.viewer.status(&selected.launch_id).await {
-                            Ok(LinuxViewerStatus::Stopped) => {
-                                self.clear_selected_if(&selected);
-                            }
-                            Ok(_) => {
-                                // The holder reports that the exact launch ended, for
-                                // example after the player quit the game. This device's
-                                // own viewer has nothing left to show, so stop it, as
-                                // stream play does when its holder ends the session.
-                                if let Err(error) = self.viewer.stop(&selected.launch_id).await {
-                                    self.set_viewer_confirmed(&selected, false);
-                                    return Err(viewer_error(
-                                        "NativeViewerRecoveryIncomplete",
-                                        error.to_string(),
-                                    ));
-                                }
-                                self.clear_selected_if(&selected);
-                            }
-                            Err(error) => {
-                                self.set_viewer_confirmed(&selected, false);
-                                return Err(viewer_error(
-                                    "NativeViewerRecoveryIncomplete",
-                                    error.to_string(),
-                                ));
-                            }
-                        }
-                    } else {
-                        self.clear_selected_if(&selected);
-                    }
+                    self.retire_ended_selection(&selected).await?;
                 }
                 UpstreamSessionStatus::SessiondNotConfigured {}
                 | UpstreamSessionStatus::HostUnavailable {} => return Ok(status),
@@ -1484,8 +1461,13 @@ impl UpstreamRegistry {
                     }
                 }
             }
-            Err(UpstreamError::Tagged { code, .. }) if code == "NoActiveSession" => {
-                self.set_viewer_confirmed(&selected, false);
+            Err(UpstreamError::Tagged { code, .. })
+                if matches!(
+                    code.as_str(),
+                    "SessionCompleted" | "NoActiveSession" | "HostLaunchFailed"
+                ) =>
+            {
+                self.retire_ended_selection(&selected).await?;
                 Err(UpstreamError::NoActiveSession)
             }
             Err(UpstreamError::Tagged { code, .. })
@@ -2014,6 +1996,7 @@ mod tests {
             Arc<std::sync::Mutex<Option<crate::launcher::plugin_launch::PluginDisplay>>>,
         steps: Arc<std::sync::Mutex<Option<korri_surface_treaty::SurfaceSteps>>>,
         stop_pending: bool,
+        terminal_error: Arc<std::sync::Mutex<Option<String>>>,
         freeze_failures: Arc<std::sync::Mutex<usize>>,
         thaw_failures: Arc<std::sync::Mutex<usize>>,
     }
@@ -2025,6 +2008,11 @@ mod tests {
 
         fn fail_next_thaw(&self) {
             *self.thaw_failures.lock().unwrap() += 1;
+        }
+
+        fn end_with(&self, code: &str) {
+            *self.terminal_error.lock().unwrap() = Some(code.into());
+            *self.active_phase.lock().unwrap() = None;
         }
 
         fn set_phase(&self, phase: &str) {
@@ -2052,6 +2040,25 @@ mod tests {
             SessionPrepared, SessionStatus, SessionStatusOutcome, SessionTransitionOutcome,
             SessionTransitionResult,
         };
+        if let Some(code) = state.terminal_error.lock().unwrap().clone() {
+            let failure = RpcFailure {
+                code,
+                message: "far launch ended".into(),
+            };
+            match &request {
+                crate::RpcRequest::SessionStatus(_) => {
+                    return Json(RpcResponse::SessionStatus(SessionStatusOutcome::Err(
+                        failure,
+                    )))
+                }
+                crate::RpcRequest::SessionResume(_) => {
+                    return Json(RpcResponse::SessionResume(SessionTransitionOutcome::Err(
+                        failure,
+                    )))
+                }
+                _ => {}
+            }
+        }
         let response = match request {
             crate::RpcRequest::SessionStreamPlay(request) => {
                 let phase = state.active_phase.lock().unwrap().clone();
@@ -2102,6 +2109,7 @@ mod tests {
                 }))
             }
             crate::RpcRequest::SessionPrepare(request) => {
+                *state.terminal_error.lock().unwrap() = None;
                 *state.viewer_display.lock().unwrap() = request.viewer_display;
                 *state.active_phase.lock().unwrap() = Some("running".into());
                 RpcResponse::SessionPrepare(SelectedGameLaunchOutcome::Ok(
@@ -2187,6 +2195,7 @@ mod tests {
             viewer_display: Default::default(),
             steps: Default::default(),
             stop_pending,
+            terminal_error: Default::default(),
             freeze_failures: Default::default(),
             thaw_failures: Default::default(),
         };
@@ -3079,6 +3088,125 @@ command = ["native-game"]
     }
 
     #[tokio::test]
+    async fn terminal_far_status_retires_starter_after_viewer_disconnect() {
+        for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
+            let (url, far) = exact_native_server(false).await;
+            let viewer = TestLinuxStreamViewer::default();
+            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+                .with_linux_viewer(Arc::new(viewer.clone()));
+            registry.prepare_stream("game", None).await.unwrap();
+            viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
+            // The disconnect wins the first poll, while the holder still says running.
+            viewer.fail_next(LinuxViewerAction::Start, "disconnected");
+            assert!(registry.session_status().await.is_err());
+            far.end_with(code);
+            assert!(
+                matches!(
+                    registry.session_status().await.unwrap(),
+                    UpstreamSessionStatus::SessionStatus { active: None }
+                ),
+                "{code}"
+            );
+            assert!(!registry.has_selected_session(), "{code}");
+        }
+    }
+
+    #[tokio::test]
+    async fn terminal_far_resume_retires_selection_instead_of_recovering_viewer() {
+        for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
+            let (url, far) = exact_native_server(false).await;
+            let viewer = TestLinuxStreamViewer::default();
+            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+                .with_linux_viewer(Arc::new(viewer.clone()));
+            registry.prepare_stream("game", None).await.unwrap();
+            viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
+            far.end_with(code);
+            assert!(
+                matches!(
+                    registry.session_thaw(Some(&far.launch_id)).await,
+                    Err(UpstreamError::NoActiveSession)
+                ),
+                "{code}"
+            );
+            assert!(!registry.has_selected_session(), "{code}");
+            assert_eq!(
+                viewer
+                    .calls()
+                    .iter()
+                    .filter(|c| c.action == LinuxViewerAction::Start)
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn terminal_far_launch_admits_new_prepare_after_viewer_cleanup() {
+        for code in ["HostLaunchFailed", "SessionCompleted", "NoActiveSession"] {
+            for status in [LinuxViewerStatus::Stopped, LinuxViewerStatus::Running] {
+                let (url, far) = exact_native_server(false).await;
+                let viewer = TestLinuxStreamViewer::default();
+                let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+                    .with_linux_viewer(Arc::new(viewer.clone()));
+                registry.prepare_stream("game", None).await.unwrap();
+                viewer.seed(&far.launch_id, status);
+                far.end_with(code);
+                registry.prepare_stream("game", None).await.expect(code);
+                assert_eq!(far.active_phase.lock().unwrap().as_deref(), Some("running"));
+                let actions: Vec<_> = viewer.calls().into_iter().map(|c| c.action).collect();
+                assert_eq!(
+                    actions
+                        .iter()
+                        .filter(|a| **a == LinuxViewerAction::Start)
+                        .count(),
+                    2
+                );
+                if status == LinuxViewerStatus::Running {
+                    assert!(
+                        actions
+                            .iter()
+                            .position(|a| *a == LinuxViewerAction::Stop)
+                            .unwrap()
+                            < actions
+                                .iter()
+                                .rposition(|a| *a == LinuxViewerAction::Start)
+                                .unwrap()
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn terminal_prepare_keeps_selection_until_viewer_cleanup_is_confirmed() {
+        for action in [LinuxViewerAction::Status, LinuxViewerAction::Stop] {
+            let (url, far) = exact_native_server(false).await;
+            let viewer = TestLinuxStreamViewer::default();
+            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+                .with_linux_viewer(Arc::new(viewer.clone()));
+            registry.prepare_stream("game", None).await.unwrap();
+            far.end_with("HostLaunchFailed");
+            viewer.fail_next(action, "viewer unavailable");
+            assert!(matches!(registry.prepare_stream("game", None).await,
+                Err(UpstreamError::Tagged { code, .. }) if code == "NativeViewerRecoveryIncomplete"));
+            assert!(registry.has_selected_session());
+            assert_eq!(
+                far.terminal_error.lock().unwrap().as_deref(),
+                Some("HostLaunchFailed")
+            );
+            assert_eq!(
+                viewer
+                    .calls()
+                    .iter()
+                    .filter(|call| call.action == LinuxViewerAction::Start)
+                    .count(),
+                1
+            );
+            registry.prepare_stream("game", None).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn native_prepare_starts_one_exact_viewer_with_the_selected_peer_address() {
         let (native_url, state) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
@@ -3726,13 +3854,7 @@ command = ["native-game"]
                 .await,
             Err(UpstreamError::NoActiveSession)
         ));
-        assert_eq!(
-            recovered
-                .selected()
-                .as_ref()
-                .map(|selected| selected.launch_id.as_str()),
-            Some(prepared.session.launch_id.as_str())
-        );
+        assert!(recovered.selected().is_none());
         assert!(matches!(
             recovered
                 .session_stop(Some(&prepared.session.launch_id), false)

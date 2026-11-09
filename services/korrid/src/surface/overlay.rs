@@ -500,10 +500,13 @@ impl OverlayController {
         };
         if failure.code == "HostFocusFailed" {
             self.could_not_resume();
-        } else if is_stale_session_code(&failure.code)
-            || failure.code == "NoActiveSession"
-            || failure.code == "SessionCompleted"
-        {
+        } else if matches!(
+            failure.code.as_str(),
+            "SessionCompleted" | "NoActiveSession" | "HostLaunchFailed"
+        ) {
+            self.lock().sticky = false;
+            (self.exit)(OverlayExit::SessionEnded);
+        } else if is_stale_session_code(&failure.code) {
             self.stale();
         } else {
             self.problem("Could not resume", failure.message, Some(Retry::Resume));

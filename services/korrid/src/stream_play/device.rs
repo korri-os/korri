@@ -516,6 +516,7 @@ mod tests {
         state: AppState,
         far: host::HostRuntime,
         viewer: TestLinuxStreamViewer,
+        units: Arc<InMemoryLaunchUnitBackend>,
         launch: String,
         server: tokio::task::JoinHandle<()>,
         _roots: Vec<tempfile::TempDir>,
@@ -575,6 +576,7 @@ mod tests {
                 state,
                 far,
                 viewer,
+                units,
                 launch,
                 server,
                 _roots: vec![far_root, local_root],
@@ -598,6 +600,42 @@ mod tests {
             .unwrap();
             serde_json::to_value(response).unwrap()
         }
+    }
+
+    #[tokio::test]
+    async fn completed_holder_resume_clears_selection_through_native_rpc() {
+        let f = SelectedSessionFixture::new().await;
+        f.viewer
+            .seed(&f.launch, crate::linux_viewer::LinuxViewerStatus::Stopped);
+        f.units.complete_live();
+        // Exercise the real holder's terminal status encoding, not the peer fixture.
+        assert!(
+            matches!(crate::host_session_status_outcome(f.far.session_status().await),
+            SessionStatusOutcome::Err(RpcFailure { code, .. }) if code == "SessionCompleted")
+        );
+        let response = f
+            .call(
+                &AuthorizationContext::LocalSurfaceHost,
+                "app.session.resume",
+                Some(&f.launch),
+            )
+            .await;
+        assert_eq!(
+            response["outcome"]["payload"]["code"], "NoActiveSession",
+            "{response}"
+        );
+        assert!(!f.state.remote.as_ref().unwrap().has_selected_session());
+        let response = f
+            .call(
+                &AuthorizationContext::LocalSurfaceHost,
+                "app.session.status",
+                None,
+            )
+            .await;
+        assert!(
+            response["outcome"]["payload"]["active"].is_null(),
+            "{response}"
+        );
     }
 
     #[tokio::test]

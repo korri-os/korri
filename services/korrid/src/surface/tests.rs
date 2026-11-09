@@ -1747,6 +1747,38 @@ mod overlay {
     }
 
     #[tokio::test]
+    async fn terminal_resume_exits_the_overlay_without_a_problem() {
+        use crate::surface::overlay::{OverlayController, OverlayExit};
+        for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
+            let (korrid, script) = super::acquisition_gate::scripted();
+            super::acquisition_gate::push(
+                &script,
+                "app.session.resume",
+                json!({"_tag":"Err", "payload":{"code":code,"message":"far launch ended"}}),
+            );
+            let exits = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let observed = exits.clone();
+            let overlay = OverlayController::new(
+                "L1".into(),
+                None,
+                korrid,
+                Arc::new(|| {}),
+                Box::new(move |exit| observed.lock().unwrap().push(exit)),
+            );
+            overlay.resume_game().await;
+            assert_eq!(
+                *exits.lock().unwrap(),
+                vec![OverlayExit::SessionEnded],
+                "{code}"
+            );
+            assert!(
+                !matches!(overlay.model().status, SurfaceStatus::Problem { .. }),
+                "{code}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn a_different_live_launch_still_reports_session_changed() {
         use crate::surface::overlay::OverlayController;
         let (korrid, script) = super::acquisition_gate::scripted();
