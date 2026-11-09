@@ -133,13 +133,15 @@ fn installs_from_a_real_https_catalog_when_given() {
     let dir = tempfile::tempdir().unwrap();
     let store: &'static AndroidPluginStore = Box::leak(Box::new(AndroidPluginStore::new(dir.path())));
     let admin = AndroidPluginAdmin::new(dir.path(), store, Some(url.clone()), Box::new(https_fetch));
-    admin
-        .handle(PluginAdminRequest::TrustPublisher(PluginTrustPublisherRequest {
-            namespace: "@korri".into(),
-            public_key: key,
-        }))
-        .unwrap();
-    for id in ["@korri:android-app", "@korri:homebrewhub"] {
+    for namespace in ["@korri", "@simonwjackson"] {
+        admin
+            .handle(PluginAdminRequest::TrustPublisher(PluginTrustPublisherRequest {
+                namespace: namespace.into(),
+                public_key: key.clone(),
+            }))
+            .unwrap();
+    }
+    for id in ["@korri:android-app", "@korri:homebrewhub", "@simonwjackson:savagewind"] {
         let PluginAdminResponse::Inspection(inspection) = admin
             .handle(PluginAdminRequest::Inspect(PluginInspectRequest {
                 url: url.clone(),
@@ -160,7 +162,7 @@ fn installs_from_a_real_https_catalog_when_given() {
             .unwrap();
     }
     let enabled = store.read().unwrap();
-    assert_eq!(enabled.len(), 2);
+    assert_eq!(enabled.len(), 3);
     // The installed packages load as a registry on an Android device.
     for package in &enabled {
         let source = crate::script::source::SourceSnapshot::package_plugin(
@@ -170,6 +172,7 @@ fn installs_from_a_real_https_catalog_when_given() {
         )
         .unwrap();
         let json = crate::script::eval_plugin_snapshot(&source).unwrap();
-        crate::plugin::decode_plugin_declaration_on("@korri", &json, "aarch64-android").unwrap();
+        let namespace = package.id.split_once(':').unwrap().0;
+        crate::plugin::decode_plugin_declaration_on(namespace, &json, "aarch64-android").unwrap();
     }
 }

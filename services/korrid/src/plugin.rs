@@ -1768,7 +1768,12 @@ impl RunnerRecord {
 }
 
 fn runner_runs_on(runner: &RunnerRecord, platform: &str) -> bool {
-    match &runner.platforms {
+    platforms_include(runner.platforms.as_deref(), platform)
+}
+
+/// ADR 0054: a runner's `platforms`, where omitted means every Linux platform.
+pub(crate) fn platforms_include(platforms: Option<&[String]>, platform: &str) -> bool {
+    match platforms {
         Some(platforms) => platforms.iter().any(|p| p == platform),
         None => LINUX_PLATFORMS.contains(&platform),
     }

@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 struct RunnerReference {
     program: Option<String>,
     core: Option<String>,
+    #[serde(default)]
+    platforms: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +42,13 @@ pub fn validate_files(
         }
     }
     for (key, runner) in &references.runners {
+        // ADR 0054: an Android release carries no Linux runner's files.
+        if !crate::plugin::platforms_include(
+            runner.platforms.as_deref(),
+            crate::plugin::host_platform(),
+        ) {
+            continue;
+        }
         for file in [runner.program.as_ref(), runner.core.as_ref()]
             .into_iter()
             .flatten()
