@@ -4253,6 +4253,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private android.view.SurfaceView surfaceOverlay;
+    private KorriSurfaceHost.Attachment surfaceOverlayAttachment;
 
     private void resetStreamInputState() {
         controllerHandler.resetInputState();
@@ -4284,6 +4285,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     android.widget.Toast.makeText(Game.this, R.string.korri_gameplay_overlay_failed,
                             android.widget.Toast.LENGTH_LONG).show();
                 });
+                surfaceOverlayAttachment = attachment;
                 KorriStreamViewer.leave(Game.this, korriViewerLease, () -> {
                     if (surfaceOverlay != view) return;
                     hideSurfaceOverlay();
@@ -4296,6 +4298,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             }
             @Override public void surfaceDestroyed(SurfaceHolder holder) {
                 KorriSurfaceHost.detach(attachment);
+                if (surfaceOverlayAttachment == attachment) surfaceOverlayAttachment = null;
             }
         });
         addContentView(view, new android.view.ViewGroup.LayoutParams(
@@ -4328,10 +4331,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     void hideSurfaceOverlay() {
         android.view.SurfaceView view = surfaceOverlay;
         if (view == null) return;
+        // Release explicitly before removing the View. Do not depend on Android
+        // delivering surfaceDestroyed synchronously from removeView.
+        KorriSurfaceHost.Attachment attachment = surfaceOverlayAttachment;
+        if (attachment != null) KorriSurfaceHost.detach(attachment);
+        if (surfaceOverlayAttachment == attachment) surfaceOverlayAttachment = null;
         if (view.getParent() instanceof android.view.ViewGroup) {
             ((android.view.ViewGroup) view.getParent()).removeView(view);
         }
-        // removeView waits for surfaceDestroyed's native-release handshake.
         surfaceOverlay = null;
         resetStreamInputState();
         conn.setInputHeld(false);

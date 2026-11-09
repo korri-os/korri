@@ -52,6 +52,15 @@ public class KorriOverlayInputTest {
         }
     }
 
+    @Test public void nativeReleasePrecedesViewRemovalAndGameplayInput() throws Exception {
+        String game = new String(Files.readAllBytes(Path.of("src/main/java/com/limelight/Game.java")),
+                java.nio.charset.StandardCharsets.UTF_8);
+        String close = game.substring(game.indexOf("void hideSurfaceOverlay()"), game.indexOf("public void hideGameMenu()"));
+        assertTrue(close.indexOf("KorriSurfaceHost.detach(attachment)") < close.indexOf("removeView(view)"));
+        assertTrue(close.indexOf("removeView(view)") < close.indexOf("conn.setInputHeld(false)"));
+        assertTrue(close.indexOf("resetStreamInputState()") < close.indexOf("conn.setInputHeld(false)"));
+    }
+
     @Test public void usbHeartbeatAndSensorProducersShareTheConnectionHoldGate() throws Exception {
         String connection = new String(Files.readAllBytes(Path.of("src/main/java/com/limelight/nvstream/NvConnection.java")), java.nio.charset.StandardCharsets.UTF_8);
         String sends = connection.substring(connection.indexOf("public synchronized void sendMouseMove("));

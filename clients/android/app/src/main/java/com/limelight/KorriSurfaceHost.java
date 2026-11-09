@@ -33,6 +33,7 @@ public final class KorriSurfaceHost {
 
     /** Called inside surfaceDestroyed. Never return while Rust holds the Surface. */
     public static void detach(Attachment attachment) {
+        if (attachment == null) return;
         synchronized (KorriSurfaceHost.class) {
             if (active != attachment) return;
             attachment.closing = true;
@@ -48,7 +49,7 @@ public final class KorriSurfaceHost {
     }
 
     public static synchronized void resized(Attachment attachment) {
-        if (active == attachment) attachment.resized = true;
+        if (attachment != null && active == attachment) attachment.resized = true;
     }
 
     public static synchronized boolean forward(KeyEvent event) {
