@@ -559,3 +559,33 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_stop(
         let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
     }
 }
+
+/// ADR 0054: the app's launchable apps for `@korri:android-app` discovery,
+/// as a JSON list of `InstalledApp`. The next library rescan uses it.
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_reportInstalledApps(
+    mut env: JNIEnv,
+    _class: JClass,
+    apps: JString,
+) -> jint {
+    let parsed = env
+        .get_string(&apps)
+        .map(String::from)
+        .ok()
+        .and_then(|json| {
+            serde_json::from_str::<Vec<crate::discovery::provider::InstalledApp>>(&json).ok()
+        });
+    match parsed {
+        Some(apps) => {
+            crate::discovery::provider::report_installed_apps(apps);
+            0
+        }
+        None => {
+            let _ = env.throw_new(
+                "java/lang/IllegalArgumentException",
+                "installed app report is invalid",
+            );
+            -1
+        }
+    }
+}

@@ -118,6 +118,7 @@ mod tests {
             files: HashMap::new(),
             artifacts: Default::default(),
             overrides: None,
+            android_package: None,
         }
     }
 

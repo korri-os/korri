@@ -375,6 +375,7 @@ fn inspect_route(
             settings,
             config: folded.config.clone(),
         }),
+        android_package: None,
     };
     // Ask the runner whether it can start this target. A runner whose runtime is
     // its own package declares no runtime and proceeds. One that needs

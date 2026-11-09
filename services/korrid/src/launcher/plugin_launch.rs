@@ -64,6 +64,96 @@ pub struct PluginLaunchInput {
     pub artifacts: std::collections::BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<PluginLaunchOverrides>,
+    /// ADR 0054: on Android, the installed one of the runner's
+    /// `androidPackages`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub android_package: Option<String>,
+}
+
+/// ADR 0054: how an Android runner starts its app. Separate fields, never an
+/// `intent:` string. korrid adds the content grant and launch flags itself;
+/// a plugin cannot name either.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AndroidLaunch {
+    pub package: String,
+    /// Omitted: the package's current launcher activity, looked up at launch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    /// Only `content`: a read-only grant for exactly this launch's game file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<AndroidLaunchData>,
+}
+
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AndroidLaunchData {
+    Content,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AndroidLaunchOutput {
+    pub android: AndroidLaunch,
+    #[serde(default, rename = "saveLocations", skip_serializing_if = "Vec::is_empty")]
+    pub save_locations: Vec<crate::saves::types::SaveLocation>,
+}
+
+/// Run an Android runner's `launch.prepare` and check its plan against the
+/// runner's declared packages. Android runners always have a handler.
+pub fn evaluate_android(
+    source: &crate::script::source::SourceSnapshot,
+    input: &PluginLaunchInput,
+    allowed_packages: &[String],
+) -> Result<AndroidLaunchOutput, String> {
+    if !crate::script::has_plugin_operation_snapshot(source, crate::script::LAUNCH_PREPARE)? {
+        return Err(format!("Android runner {} has no launch.prepare handler", input.runner_id));
+    }
+    let encoded = serde_json::to_string(input).map_err(|e| e.to_string())?;
+    let result = crate::script::call_plugin_operation_snapshot(
+        source,
+        crate::script::LAUNCH_PREPARE,
+        &encoded,
+    )
+    .map_err(|failure| failure.to_string())?;
+    let plan: AndroidLaunchOutput =
+        serde_json::from_str(&result).map_err(|e| format!("invalid Android launch result: {e}"))?;
+    validate_android_plan(&plan, input, allowed_packages)?;
+    Ok(plan)
+}
+
+pub(crate) fn validate_android_plan(
+    plan: &AndroidLaunchOutput,
+    input: &PluginLaunchInput,
+    allowed_packages: &[String],
+) -> Result<(), String> {
+    let launch = &plan.android;
+    if !allowed_packages.contains(&launch.package) {
+        return Err(format!("{} is not one of the runner's androidPackages", launch.package));
+    }
+    let java_name = |name: &str| {
+        !name.is_empty()
+            && name.len() <= 255
+            && name.split('.').all(|part| {
+                part.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+            })
+    };
+    if launch.activity.as_deref().is_some_and(|a| !java_name(a)) {
+        return Err("activity must be a class name".into());
+    }
+    if launch.action.as_deref().is_some_and(|a| !java_name(a)) {
+        return Err("action must be an intent action name".into());
+    }
+    if launch.data.is_some() && input.content_path.is_none() {
+        return Err("data: content needs a launch with a game file".into());
+    }
+    validate_save_locations(&input.save_root, &plan.save_locations)
 }
 
 /// Legacy launch plan plus the existing provisioned files/directories.

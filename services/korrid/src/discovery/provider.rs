@@ -35,6 +35,104 @@ pub struct ReleaseDiscoveryInput {
     pub files: Vec<ReleaseDiscoveryFile>,
 }
 
+/// ADR 0054: the installed-app form of discovery input. Only fields that
+/// Android's PackageManager produces.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InstalledApp {
+    pub package_name: String,
+    pub label: String,
+    /// `ApplicationInfo.category == CATEGORY_GAME` or the legacy `isGame` flag.
+    pub is_game: bool,
+    /// The person added this app to the library themselves.
+    pub added: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstalledAppsDiscoveryInput {
+    pub apps: Vec<InstalledApp>,
+}
+
+const MAX_INSTALLED_APPS: usize = 4096;
+
+static INSTALLED_APPS: std::sync::RwLock<Option<Vec<InstalledApp>>> = std::sync::RwLock::new(None);
+
+/// The Android edge reports the device's launchable apps before a rescan.
+/// `None` until it does, so a scan never reads "no report" as "uninstalled".
+pub fn report_installed_apps(apps: Vec<InstalledApp>) {
+    *INSTALLED_APPS.write().expect("installed apps lock") = Some(apps);
+}
+
+/// ADR 0054: run `@korri:android-app`'s `discovery.discover` over the
+/// reported apps. Returns nothing (keep prior locations) on any failure.
+pub fn scan_installed_apps(
+    registry: &PluginRegistry,
+    diagnostics: &mut Vec<DiscoveryDiagnostic>,
+) -> Option<ProviderScan> {
+    use crate::plugin_discovery::ANDROID_INSTALLED_APPS;
+    let mut result = ProviderScan { id: ANDROID_INSTALLED_APPS.into(), ..Default::default() };
+    if !registry.discovery_providers().any(|p| p.id == ANDROID_INSTALLED_APPS) {
+        return Some(result);
+    }
+    let apps = INSTALLED_APPS.read().expect("installed apps lock").clone()?;
+    let fail = |diagnostics: &mut Vec<DiscoveryDiagnostic>, message: &str| {
+        eprintln!("korrid discovery: {message}");
+        diagnostics.push(DiscoveryDiagnostic {
+            code: DiscoveryDiagnosticCode::EntryUnavailable,
+            storage_id: Some(ANDROID_INSTALLED_APPS.into()),
+            path: None,
+            message: message.into(),
+        });
+    };
+    if apps.len() > MAX_INSTALLED_APPS
+        || apps.iter().any(|a| !crate::plugin::is_android_package(&a.package_name))
+    {
+        fail(diagnostics, "the installed-app report is invalid");
+        return None;
+    }
+    let output = registry
+        .installed_package(ANDROID_INSTALLED_APPS)
+        .map_err(|e| e.to_string())
+        .and_then(|package| {
+            SourceSnapshot::package_plugin(&package.package, &package.entry, &package.sources)
+        })
+        .and_then(|source| {
+            let input = serde_json::to_string(&InstalledAppsDiscoveryInput { apps: apps.clone() })
+                .map_err(|e| e.to_string())?;
+            script::call_plugin_operation_snapshot(&source, "discovery.discover", &input)
+                .map_err(|e| e.to_string())
+        });
+    let observations: Vec<ProviderRefReleaseObservation> = match output
+        .and_then(|output| serde_json::from_str(&output).map_err(|e| format!("invalid provider observations: {e}")))
+    {
+        Ok(observations) => observations,
+        Err(error) => {
+            fail(diagnostics, &error);
+            return None;
+        }
+    };
+    let reported: BTreeSet<&str> = apps.iter().map(|a| a.package_name.as_str()).collect();
+    let mut seen = BTreeSet::new();
+    if observations.iter().any(|o| {
+        o.target.provider != "@korri:android-app"
+            || !reported.contains(o.target.provider_ref.as_str())
+            || !seen.insert(o.target.provider_ref.clone())
+            || o.release.title.trim().is_empty()
+            || o.release.id != "android"
+            || o.release.system != "android"
+            || o.launch.runner != "@korri:android-app/android-app"
+            || o.source.relative_path != format!("installed-apps/{}", o.target.provider_ref)
+    }) {
+        fail(diagnostics, "@korri:android-app returned an observation outside its contract");
+        return None;
+    }
+    result.observations = observations;
+    Some(result)
+}
+
 #[typeshare]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

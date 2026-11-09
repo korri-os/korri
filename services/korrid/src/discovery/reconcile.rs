@@ -352,6 +352,12 @@ impl DiscoveryCoordinator {
         );
         scan.providers =
             crate::discovery::provider::scan(&accounts, &registry, &mut scan.diagnostics);
+        // ADR 0054: apps on the Android device. A failed scan adds nothing,
+        // which keeps prior locations as a failed Steam scan does.
+        scan.providers.extend(crate::discovery::provider::scan_installed_apps(
+            &registry,
+            &mut scan.diagnostics,
+        ));
         scan.accounts = accounts;
         scan.declared_games = registry.declared_games().clone();
         scan.created_storages = private.ownership.created_storages.clone();

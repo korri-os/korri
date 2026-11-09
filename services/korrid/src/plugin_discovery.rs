@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const STEAM_INSTALLED_APPS: &str = "@korri:steam/installed-apps";
+/// ADR 0054: apps installed on the Android device. The input is the app list
+/// PackageManager produces, not files, so it has no location glob.
+pub const ANDROID_INSTALLED_APPS: &str = "@korri:android-app/installed-apps";
 
 /// Provider ID -> glob relative to the existing account root (ADR 0011).
 /// This is not plugin configuration or a general filesystem permission.
@@ -20,8 +23,10 @@ pub struct ReleaseDiscoveryProvider {
 pub fn validate(owner: &str, providers: &[ReleaseDiscoveryProvider]) -> Result<(), String> {
     let mut seen = BTreeSet::new();
     for provider in providers {
-        if owner != "@korri:steam"
-            || !LOCATIONS.iter().any(|(id, _)| *id == provider.id)
+        let known = (owner == "@korri:steam"
+            && LOCATIONS.iter().any(|(id, _)| *id == provider.id))
+            || (owner == "@korri:android-app" && provider.id == ANDROID_INSTALLED_APPS);
+        if !known
             || provider.title.trim().is_empty()
             || !seen.insert(&provider.id)
         {
