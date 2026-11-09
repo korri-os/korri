@@ -231,8 +231,23 @@ fn inspect_route(
             placement,
             viewer_display.as_ref(),
         ) {
-            Ok(size) => size,
+            Ok(size) => {
+                // One line per launch: what the viewer asked for and what the
+                // display became. No addresses or identities.
+                eprintln!(
+                    "korrid: viewer display: requested={} shaped={}",
+                    viewer_display
+                        .as_ref()
+                        .map(|d| format!("{}x{}", d.width, d.height))
+                        .unwrap_or_else(|| "none".into()),
+                    size.as_ref()
+                        .map(|d| format!("{}x{}", d.width, d.height))
+                        .unwrap_or_else(|| "unchanged".into()),
+                );
+                size
+            }
             Err(message) => {
+                eprintln!("korrid: viewer display: shaping refused: {message}");
                 warnings.push(super::typed_settings::LaunchWarning {
                     setting: "viewerDisplay".into(),
                     runner_id: route.runner_id.clone(),

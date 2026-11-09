@@ -1026,9 +1026,15 @@ impl UpstreamRegistry {
                 .await?;
                 let moonlight_address = viewer.moonlight_address.clone();
                 let reach = viewer.reach.clone();
-                let prepared = client
-                    .prepare_stream(game_id, self.viewer.display())
-                    .await?;
+                let viewer_display = self.viewer.display();
+                eprintln!(
+                    "korrid: viewer display sent with prepare: {}",
+                    viewer_display
+                        .as_ref()
+                        .map(|d| format!("{}x{}", d.width, d.height))
+                        .unwrap_or_else(|| "none".into())
+                );
+                let prepared = client.prepare_stream(game_id, viewer_display).await?;
                 let selected = SelectedRemoteSession {
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Native {
