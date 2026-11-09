@@ -1448,9 +1448,10 @@ pub enum SurfaceMessage {
     /// A `RememberPreference` completed.
     PreferenceStored { key: String },
     /// The shell sends it to the active surface once a second. `idle_ms` is
-    /// the time since the last `Pressed` it delivered to that surface, or
-    /// since the surface loaded if none came after; any `Pressed` resets it
-    /// to 0. Each surface owns its own idle threshold.
+    /// the time since the person last pressed a button or touched the
+    /// surface (any `Pressed`, and any pointer activity: tap, drag, release),
+    /// or since the surface loaded if neither came after; each resets it to 0.
+    /// Each surface owns its own idle threshold.
     Tick { idle_ms: u32 },
     /// The surface window's size in logical pixels. Sent once after init,
     /// before the first view, and on every size or scale change.
