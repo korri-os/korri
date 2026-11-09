@@ -22,12 +22,23 @@ public class KorriShellActivityLifecycleContractTest {
         assertTrue(manifest.contains("orientation|screenSize|smallestScreenSize"));
     }
 
-    @Test public void stream_client_does_not_require_external_storage_or_accessibility() throws Exception {
+    @Test public void stream_client_does_not_require_external_storage() throws Exception {
         String manifest = manifest();
         assertFalse(manifest.contains("MANAGE_EXTERNAL_STORAGE"));
-        assertFalse(manifest.contains("BIND_ACCESSIBILITY_SERVICE"));
         assertFalse(manifest.contains("com.korri.retroarch"));
         assertTrue(source().contains("getFilesDir().getAbsolutePath()"));
+    }
+
+    /** ADR 0054: one accessibility service, for the Guide button only, that
+     *  reads no window content. */
+    @Test public void the_only_accessibility_service_reads_keys_not_windows() throws Exception {
+        String manifest = manifest();
+        assertTrue(manifest.split("BIND_ACCESSIBILITY_SERVICE", -1).length == 2);
+        assertTrue(manifest.contains("KorriGuideService"));
+        String config = new String(java.nio.file.Files.readAllBytes(
+                java.nio.file.Paths.get("src/main/res/xml/korri_guide_service.xml")));
+        assertTrue(config.contains("android:canRetrieveWindowContent=\"false\""));
+        assertTrue(config.contains("flagRequestFilterKeyEvents"));
     }
 
     @Test public void cutout_and_system_bars_use_the_full_window_on_every_resume() throws Exception {
