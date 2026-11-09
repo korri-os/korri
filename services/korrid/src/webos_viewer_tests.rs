@@ -390,3 +390,27 @@ async fn dropping_viewer_reaps_child_without_a_parent_thread_reference_cycle() {
     );
     assert_eq!(*presentations.lock().unwrap(), [true, false]);
 }
+
+#[tokio::test]
+async fn idle_child_exit_clears_presentation_without_waiting_for_far_status() {
+    let fixture = Fixture::new("channel.sendall(b'R'); time.sleep(0.2); sys.exit(1)");
+    fixture
+        .viewer
+        .start("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "127.0.0.1")
+        .await
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fixture.presentations.lock().unwrap().last() != Some(&false) {
+        assert!(
+            Instant::now() < deadline,
+            "child EOF must clear presentation without a status RPC"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    fixture
+        .viewer
+        .stop("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        .await
+        .unwrap();
+    assert_eq!(*fixture.presentations.lock().unwrap(), [true, false]);
+}

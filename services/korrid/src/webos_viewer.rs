@@ -323,10 +323,17 @@ impl WebosViewer {
         }
         let child = command.spawn().map_err(error)?;
         drop(child_channel);
+        let callback = self.presenting.clone();
+        let visible = std::sync::atomic::AtomicBool::new(false);
+        let presenting: Arc<dyn Fn(bool) + Send + Sync> = Arc::new(move |now| {
+            if visible.swap(now, std::sync::atomic::Ordering::AcqRel) != now {
+                callback(now);
+            }
+        });
         let mut owned = OwnedChild {
             child,
             _channel: parent.try_clone().map_err(error)?,
-            presenting: self.presenting.clone(),
+            presenting: presenting.clone(),
             input: None,
             _parent_thread: None,
         };
@@ -346,16 +353,22 @@ impl WebosViewer {
         }
         // Host-only presentation fact; never a surface treaty field. The
         // embedded composition supplies the one setter owned by the shell edge.
-        (self.presenting)(true);
-        if let Some(source) = (self.input)() {
-            let (baseline, mut receiver) = source.subscribe_local_gamepads();
+        presenting(true);
+        {
+            let (baseline, mut receiver) = match (self.input)() {
+                Some(source) => {
+                    let (baseline, receiver) = source.subscribe_local_gamepads();
+                    (baseline, Some(receiver))
+                }
+                None => (Vec::new(), None),
+            };
             let mut socket = parent;
             socket
                 .set_write_timeout(Some(Duration::from_millis(100)))
                 .map_err(error)?;
             let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let stopped = stop.clone();
-            let presenting = self.presenting.clone();
+            let peer_fd = socket.as_raw_fd();
             let thread = std::thread::Builder::new()
                 .name("webos-viewer-input".into())
                 .spawn(move || {
@@ -378,7 +391,32 @@ impl WebosViewer {
                     };
                     let mut failed = baseline.iter().any(|text| send(text).is_err());
                     while !failed && !stopped.load(std::sync::atomic::Ordering::Acquire) {
-                        match receiver.try_recv() {
+                        // Observe idle child exit independently of far RPC status.
+                        // The shared recovery policy still owns every retry.
+                        let mut byte = 0u8;
+                        // SAFETY: peer_fd is held by socket; byte is valid output.
+                        let observed = unsafe {
+                            libc::recv(
+                                peer_fd,
+                                (&mut byte as *mut u8).cast(),
+                                1,
+                                libc::MSG_PEEK | libc::MSG_DONTWAIT,
+                            )
+                        };
+                        if observed >= 0 {
+                            break;
+                        } // EOF or unapproved child payload
+                        let error = std::io::Error::last_os_error();
+                        if error.kind() != std::io::ErrorKind::WouldBlock
+                            && error.kind() != std::io::ErrorKind::Interrupted
+                        {
+                            break;
+                        }
+                        match receiver
+                            .as_mut()
+                            .map(|queue| queue.try_recv())
+                            .unwrap_or(Err(tokio::sync::mpsc::error::TryRecvError::Empty))
+                        {
                             Ok(text) => failed = send(&text).is_err(),
                             Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
                                 std::thread::sleep(Duration::from_millis(2))
