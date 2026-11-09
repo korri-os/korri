@@ -715,7 +715,7 @@ pub struct SurfaceGameplayControl {
     pub interaction: SurfaceGameplayControlInteraction,
 }
 
-/// A plugin-owned run of controls. Korri omits empty groups.
+/// A plugin- or local-viewer-owned run of controls. Korri omits empty groups.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -725,10 +725,30 @@ pub struct SurfaceGameplayControlGroup {
     pub controls: Vec<SurfaceGameplayControl>,
 }
 
+/// Current local viewer measurements. Missing readings are not zero.
+/// Extracted from legacy StreamHealthSample; drops count one sample interval.
+#[typeshare]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceStreamHealth {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rtt_ms: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_bitrate_kbps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frames_dropped: Option<f64>,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SurfaceGameplayOverlayPresentation {
+    /// Phone/device capacity, projected from the local battery producer (0–100).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battery_percent: Option<f64>,
+    /// Current valid measurements of this device's exact stream viewer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_health: Option<SurfaceStreamHealth>,
     pub kind: SurfaceGameplayOverlayKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,

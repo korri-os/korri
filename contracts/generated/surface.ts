@@ -409,14 +409,28 @@ export interface SurfaceGameplayControl {
 	interaction: SurfaceGameplayControlInteraction;
 }
 
-/** A plugin-owned run of controls. Korri omits empty groups. */
+/** A plugin- or local-viewer-owned run of controls. Korri omits empty groups. */
 export interface SurfaceGameplayControlGroup {
 	id: string;
 	label: string;
 	controls: SurfaceGameplayControl[];
 }
 
+/**
+ * Current local viewer measurements. Missing readings are not zero.
+ * Extracted from legacy StreamHealthSample; drops count one sample interval.
+ */
+export interface SurfaceStreamHealth {
+	rttMs?: number;
+	deliveredBitrateKbps?: number;
+	framesDropped?: number;
+}
+
 export interface SurfaceGameplayOverlayPresentation {
+	/** Phone/device capacity, projected from the local battery producer (0–100). */
+	batteryPercent?: number;
+	/** Current valid measurements of this device's exact stream viewer. */
+	streamHealth?: SurfaceStreamHealth;
 	kind: "gameplay-overlay";
 	title?: string;
 	/**
