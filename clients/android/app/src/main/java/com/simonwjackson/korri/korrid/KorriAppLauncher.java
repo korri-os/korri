@@ -224,15 +224,11 @@ public final class KorriAppLauncher {
                     if (!pkg.equals(event.getPackageName())) {
                         continue;
                     }
-                    int type = event.getEventType();
-                    if (type == UsageEvents.Event.ACTIVITY_PAUSED) {
+                    // Android shows apps no public "closed" event: a pause
+                    // means the person left. End or Korri's own screen ends
+                    // the live session.
+                    if (event.getEventType() == UsageEvents.Event.ACTIVITY_PAUSED) {
                         KorridServer.appLeft(pkg, false);
-                    } else if (android.os.Build.VERSION.SDK_INT >= 29
-                            && type == UsageEvents.Event.ACTIVITY_DESTROYED) {
-                        // The game's activity is gone: the app closed.
-                        KorridServer.appLeft(pkg, true);
-                        watched = null;
-                        return;
                     }
                 }
             }
