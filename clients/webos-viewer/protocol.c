@@ -2,6 +2,7 @@
 #include "internal.h"
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <errno.h>
 #include <expat.h>
 #include <limits.h>
 #include <mbedtls/platform_util.h>
@@ -131,15 +132,22 @@ int kv_serverinfo_parse(const char *xml, size_t length, kv_serverinfo *out) {
         copy_field(out->gfe_version, sizeof(out->gfe_version), d.values[GFE], 0) ||
         copy_field(out->state, sizeof(out->state), d.values[STATE], 1))
         return kv_fail("missing or invalid serverinfo fields");
-    /* common-c's version parser accepts four decimal components. */
+    /* common-c src/Misc.c::extractVersionQuadFromString uses signed strtol;
+     * Limelight-internal.h::IS_SUNSHINE tests the fourth component < 0.
+     * Preserve that signed build verbatim, while requiring four bounded
+     * components and exact separators instead of accepting common-c's junk. */
     const char *part = out->app_version;
     for (int i = 0; i < 4; i++) {
-        if (*part < '0' || *part > '9')
+        const char *digits = part;
+        if (i == 3 && (*digits == '-' || *digits == '+'))
+            digits++;
+        if (*digits < '0' || *digits > '9')
             return kv_fail("invalid GameStream appversion");
         char *tail;
-        unsigned long component = strtoul(part, &tail, 10);
-        if (component > INT_MAX || (i == 0 && component < 7) ||
-            (i == 3 ? *tail != 0 : *tail != '.'))
+        errno = 0;
+        long component = strtol(part, &tail, 10);
+        if (errno == ERANGE || component < INT_MIN || component > INT_MAX ||
+            (i == 0 && component < 7) || (i == 3 ? *tail != 0 : *tail != '.'))
             return kv_fail("unsupported GameStream appversion");
         part = tail + (i == 3 ? 0 : 1);
     }

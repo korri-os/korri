@@ -46,6 +46,40 @@ after dismissal. That is retained as a regression, not claimed as reproduction
 of the owner's stall. The pre-READY presentation/input-gate hypothesis is not
 supported by this test: only an actual READY can set presenting=true.
 
+## Sunshine appversion root cause confirmed by the next owner run
+
+On the diagnostics build, exact launch `3badbfb6…` reached public_serverinfo,
+failed with `invalid GameStream appversion`, and compensation stopped that exact
+far launch. aka advertises `7.1.431.-1`, not an unsigned fourth component.
+This confirms the viewer-failure/compensation mechanism; it does not diagnose
+the separate renderer stall.
+
+The linked [common-c parser](../../clients/android/app/src/main/jni/moonlight-core/moonlight-common-c/src/Misc.c)
+(`extractVersionQuadFromString`, line 87) uses **signed `strtol`**, not `sscanf`.
+[Connection.c](../../clients/android/app/src/main/jni/moonlight-core/moonlight-common-c/src/Connection.c)
+passes the original serverinfo string into it. Crucially,
+[Limelight-internal.h](../../clients/android/app/src/main/jni/moonlight-core/moonlight-common-c/src/Limelight-internal.h)
+defines `IS_SUNSHINE()` as `AppVersionQuad[3] < 0`. The viewer must preserve `-1`,
+not normalize it to zero. Moonlight Embedded's pinned
+[serverinfo reader](https://github.com/moonlight-stream/moonlight-embedded/blob/775444287305849ebdf4736c75298ad0713e2d5d/libgamestream/client.c)
+keeps the full version and uses `atoi` only for its separate major-version gate;
+its [stream entry point](https://github.com/moonlight-stream/moonlight-embedded/blob/775444287305849ebdf4736c75298ad0713e2d5d/src/main.c)
+hands that server information to common-c.
+
+`protocol.c` now accepts a signed fourth decimal component with `strtol`, while
+retaining the major ≥ 7 gate, nonnegative first three components, int bounds,
+exact dot separators and complete consumption. It rejects missing digits,
+whitespace, overflow and trailing garbage. The exact owner-supplied XML fields
+(uniqueid/mac redacted) first failed the new C regression, then passed after the
+fix. Tests also call the actual linked common-c parser and verify the -1 build.
+
+The fixture checks GfeVersion `3.23.0.74`, FREE state, PairStatus 0,
+HttpsPort 47984, currentgame 0 and ServerCodecModeSupport 197377. The authenticated
+TLS fixtures now carry the same version and codec bits. Production `mode.c`
+still sets `supportedVideoFormats = VIDEO_FORMAT_H264`; `kv_launch` and the NDL
+video callback reject other formats. Host HEVC/AV1 capability bits remain facts
+about the host, not permission to choose them on this TV.
+
 ## Diagnostics in the next build
 
 No logger initialization is needed. Like LaunchTimeline, bounded stage records

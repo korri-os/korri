@@ -202,13 +202,55 @@ class ViewerTests(unittest.TestCase):
         return result, requests
 
     @staticmethod
-    def serverinfo(game=0):
+    def serverinfo(game=0, paired=1):
         return (
-            b'<root status_code="200"><uniqueid>test-uuid</uniqueid>'
-            b"<appversion>7.1.431.0</appversion><PairStatus>1</PairStatus>"
+            b'<root status_code="200"><uniqueid>REDACTED</uniqueid><mac>REDACTED</mac>'
+            b"<appversion>7.1.431.-1</appversion><GfeVersion>3.23.0.74</GfeVersion>"
+            b"<PairStatus>" + str(paired).encode() + b"</PairStatus>"
             b"<currentgame>" + str(game).encode() + b"</currentgame>"
-            b"<state>SUNSHINE_SERVER_FREE</state></root>"
+            b"<state>SUNSHINE_SERVER_FREE</state><HttpsPort>47984</HttpsPort>"
+            b"<ServerCodecModeSupport>197377</ServerCodecModeSupport></root>"
         )
+
+    def test_public_sunshine_serverinfo_accepts_signed_build_before_provisioning(self):
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        listener.settimeout(10)
+        port = listener.getsockname()[1]
+        response = self.response(self.serverinfo(paired=0))
+
+        def serve():
+            with listener:
+                connection, _ = listener.accept()
+                with connection:
+                    request = b""
+                    while b"\r\n\r\n" not in request:
+                        block = connection.recv(8192)
+                        if not block:
+                            return
+                        request += block
+                    connection.sendall(response)
+
+        thread = threading.Thread(target=serve)
+        thread.start()
+        result = subprocess.run(
+            [
+                str(Path(BINARY).with_name("korri-webos")),
+                "viewer",
+                "discover",
+                "127.0.0.1",
+                str(port),
+            ],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+        thread.join(15)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, b"REDACTED\n47984\n")
+        self.assertIn(b"stage=public_serverinfo outcome=ok", result.stderr)
 
     def test_multicall_logs_authenticated_stages_without_pin_or_session_material(self):
         apps = b'<root status_code="200"><App><ID>321</ID><AppTitle>Korri Stream</AppTitle></App></root>'
