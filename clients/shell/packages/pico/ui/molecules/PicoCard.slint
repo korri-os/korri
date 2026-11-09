@@ -3,13 +3,17 @@ import { Tokens } from "../tokens.slint";
 
 // A card in a coloured shell: a notch cut in its top edge, a navy hard
 // shadow, and whatever it holds, inset. Yellow asks, red warns, blue tells;
-// a panel's card takes its spine's colour.
+// a panel's card takes its spine's colour. Over a live game it wears a
+// black outline round the card and its shadow, so it reads over any frame.
 export component PicoCard inherits Rectangle {
     in property <string> tone: "ask";
     in property <color> shell: P8.shell(tone);
     in property <length> inset: 6 * Tokens.p;
+    in property <bool> outline;
     preferred-height: body.preferred-height;
     min-height: body.min-height;
+    if outline : Rectangle { x: -Tokens.edge; y: -Tokens.edge; width: root.width + 2 * Tokens.edge; height: root.height + 2 * Tokens.edge; background: P8.outline; }
+    if outline : Rectangle { x: 5 * Tokens.p - Tokens.edge; y: 5 * Tokens.p - Tokens.edge; width: root.width + 2 * Tokens.edge; height: root.height + 2 * Tokens.edge; background: P8.outline; }
     Rectangle { x: 5 * Tokens.p; y: 5 * Tokens.p; width: root.width; height: root.height; background: P8.cast-near; }
     Rectangle { x: 0; y: 0; width: root.width; height: root.height; background: shell; }
     Rectangle { x: Tokens.snap(root.width * 28%); y: 0; width: Tokens.snap(root.width * 32%); height: 2 * Tokens.p; background: P8.bg; }

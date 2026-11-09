@@ -6,7 +6,8 @@ import { PicoModal } from "../ui/organisms/PicoModal.slint";
 import { PicoGameOverlay, SheetView } from "../ui/templates/PicoGameOverlay.slint";
 
 // The pause menu over a running game, and its question before a destructive
-// control.
+// control. The game keeps running under both (ADR 0053) and stays in sight:
+// nothing here paints the whole box.
 export component PicoOverlay inherits Rectangle {
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SheetView> sheet;
@@ -15,7 +16,8 @@ export component PicoOverlay inherits Rectangle {
         kicker: sheet.kicker;
         title: sheet.title;
         hints: sheet.hints;
+        over-game: true;
         PicoPauseMenu { reveal(left, top, wide, tall) => { overlay.show(left, top, wide, tall); }  items: sheet.items; }
     }
-    if card.shown : PicoModal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  card: card; }
+    if card.shown : PicoModal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  card: card; over-game: true; }
 }

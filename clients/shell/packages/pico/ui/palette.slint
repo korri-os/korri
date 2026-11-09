@@ -1,5 +1,6 @@
 // PICO-8's sixteen and Pico's roles (surfaces/pico/src/pico-tokens.css).
 // Nothing else is ever painted: no blend, no fractional opacity, no gradient.
+// The one exception is no paint at all: `see-through`, where the game shows.
 // Components name a role, never a colour, so a decision such as "what colour
 // is a note on a warning card" is made once, here.
 
@@ -24,6 +25,12 @@ export global P8 {
 
     // Roles.
     out property <color> bg: black;
+    // The gameplay overlay's empty pixels: the running game shows through, as
+    // PICO-8 draws colour 0 of a sprite transparent. Painted, never blended.
+    out property <color> see-through: transparent;
+    // The ring around a card over a live game, as PICO-8 outlines a sprite in
+    // black so it reads over any background.
+    out property <color> outline: black;
     out property <color> accent: pink;
     out property <color> ink: white;
     out property <color> ink-dim: silver;

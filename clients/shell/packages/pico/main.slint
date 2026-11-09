@@ -152,8 +152,9 @@ export component Overlay inherits Window {
     in property <SheetView> sheet;
 
     title: "Pico overlay";
-    // The host may composite this window over a live game.
-    background: transparent;
+    // See-through: the running game shows round the card (ADR 0053). A
+    // window without alpha (the shell on Linux) shows black there instead.
+    background: P8.see-through;
     default-font-family: font-family;
     preferred-width: Tokens.window-width;
     preferred-height: Tokens.window-height;

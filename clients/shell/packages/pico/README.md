@@ -17,7 +17,7 @@ imports.
 
 | Path | What |
 |---|---|
-| `main.slint` | The binding: the one file that knows the view. `Surface` (catalog and setup) and `Overlay` (pause menu). |
+| `main.slint` | The binding: the one file that knows the view. `Surface` (catalog and setup) and `Overlay` (pause menu, see-through over the running game: ADR 0053). |
 | `ui/palette.slint`, `ui/tokens.slint` | The only globals: PICO-8's sixteen and Pico's roles; the scale (`Tokens`, from the window's width and height) and the focus cycle. The ten faces are imported here. |
 | `ui/atoms`, `ui/molecules`, `ui/organisms`, `ui/templates`, `pages/` | One component per file, one per React component of the web Pico at the same layer (`test/inventory.ts`), each with `<Name>.<layer>.preview.slint` beside it. |
 | `logic.ts` → `logic.js` | `globalThis.surface`. Rebuild with `./build.sh` (bun). |

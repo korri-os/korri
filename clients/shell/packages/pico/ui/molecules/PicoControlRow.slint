@@ -31,7 +31,8 @@ export component PicoControlRow {
     Rectangle { visible: focused; x: Tokens.drop-sm; y: Tokens.drop-sm; width: root.width; height: row-h; background: Cycle.now; }
     Rectangle { x: 0; y: 0; width: root.width; height: row-h; background: focused ? P8.pick : P8.ink-dark; }
     property <color> ink: disabled ? P8.ink-quiet : warn ? P8.warn : focused ? P8.pick-ink : P8.ink;
-    Text { x: 3 * Tokens.p; y: (row-h - Tokens.md) / 2; width: root.width / 2; text: label; font-size: Tokens.md; color: ink; overflow: elide; }
+    // The label shares the row with a value; alone it takes the whole row.
+    Text { x: 3 * Tokens.p; y: (row-h - Tokens.md) / 2; width: range || arrows || value != "" ? root.width / 2 : root.width - 6 * Tokens.p; text: label; font-size: Tokens.md; color: ink; overflow: elide; }
     if range : PicoSlider {
         x: root.width - 3 * Tokens.p - self.width;
         y: (row-h - Tokens.md) / 2;

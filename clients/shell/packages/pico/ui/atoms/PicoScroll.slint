@@ -8,6 +8,8 @@ import { Tokens } from "../tokens.slint";
 // what the region holds never scrolls it.
 export component PicoScroll inherits Rectangle {
     in property <length> margin: Tokens.u;
+    // The height of what it holds: a region that hugs its list asks for this.
+    out property <length> natural: content.min-height;
     property <length> scroll: 0;
     property <length> limit: max(0, content.height - root.height);
     // Where the control to reveal stands, in window coordinates, until the
