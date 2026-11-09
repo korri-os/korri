@@ -1469,6 +1469,11 @@ pub enum SurfaceMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         released: Option<bool>,
     },
+    /// A finger dragged or flung a row that draws only the items near focus
+    /// (ADR 0055). `region` is the surface's own focus-region name; `by` is the
+    /// signed number of whole items moved since the last `Dragged`. The
+    /// surface moves focus by `by` within the region, clamped at its ends.
+    Dragged { region: String, by: i32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -1787,6 +1792,14 @@ mod tests {
             })
             .unwrap(),
             json!({"_tag": "Activated", "target": "row:play"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceMessage::Dragged {
+                region: "shelf".into(),
+                by: -2
+            })
+            .unwrap(),
+            json!({"_tag": "Dragged", "region": "shelf", "by": -2})
         );
         let slid: SurfaceMessage = serde_json::from_value(
             json!({"_tag": "Activated", "target": "control:volume", "at": 0.5, "released": true}),

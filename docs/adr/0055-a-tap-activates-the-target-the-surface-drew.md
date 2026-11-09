@@ -37,9 +37,19 @@ targets carry an `act`, which is what Confirm runs. Zone's Confirm handler
   the Slint window and no longer turns drags into cursor steps. Scrolling adds
   nothing to the treaty.
 - Scrolling does not move focus. The next button press scrolls the focused
-  target back into sight. Catalog paging is still driven by focus, so a long
-  fling stops at the end of the loaded catalog window until a follow-up teaches
-  paging about scrolling.
+  target back into sight.
+- Exception, owner decision during the build (2026-11-09): rows that draw
+  only the items near focus (Pico's shelf, RESUME, Find's and the store's
+  results; Zone's card band and save band) cannot follow the finger with focus
+  standing still, because nothing is drawn past the near items. On these rows a
+  sideways drag or fling moves focus: the row slides under the finger, and
+  focus follows it. The treaty gains a second variant, `Dragged { region, by }`.
+  `region` is the package's own focus-region name (contract section 8.4), and
+  `by` is the signed number of whole items moved since the last `Dragged`. The
+  view keeps the row under the finger between whole items and runs a fling's
+  momentum itself. Logic moves focus by `by` within the region, clamped at its
+  ends, keeps the highlight hidden, and loads more games through the existing
+  focus-driven paging.
 - While the person uses touch, the package hides its focus highlight. The
   highlight comes back on the next button press. Logic can tell `Activated`
   from `Pressed`, so this adds nothing to the treaty.
@@ -95,5 +105,6 @@ time as touch. Whichever starts second rebases onto the first.
 
 ## Follow-ups
 
-- Catalog paging learns about scrolling, so a long fling loads more games.
+- Catalog paging learns about scrolling in the lists that keep focus still
+  (the library rows above already page through focus).
 - Linux touch handhelds get touch through korrid's input path.
