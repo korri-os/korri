@@ -130,7 +130,9 @@ impl Android {
             }
             // Let Slint deliver native touch (including cancel) to TouchArea and
             // Flickable. No cursor steps or synthetic Pressed messages.
-            false
+            // Slint 1.18's Android wheel handler is unimplemented; keep those
+            // events consumed rather than reaching its todo!().
+            motion.action() == MotionAction::Scroll
         }));
         slint::platform::set_platform(Box::new(platform))?;
         Ok(Self {

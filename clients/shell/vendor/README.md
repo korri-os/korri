@@ -44,6 +44,20 @@ recreates it three times in the same process and checks authenticated health.
 The pre-fix build fails the recreation; the teardown patch passes it. No Java
 activity retention, process restart, or window-system workaround is used.
 
+## Native touch cancellation (#394)
+
+In `GestureRecognitionState::Idle`, `TouchState::process_ended` emitted
+`Released` at the finger before `Exit`, even for a native cancel. That made
+`TouchArea.clicked` activate a control when Android cancelled its gesture.
+Cancellation now emits only `Exit`; a normal finger-up still emits `Released`
+and clicks. The public API is unchanged. This is not Korri-specific. Remove
+this patch when upstream has an equivalent.
+
+`tests/hosted_overlay.rs` exercises native scrolling and cancellation through
+the hosted window adapter, then checks that a fresh tap still activates.
+`tests/shell.rs` checks cancellation and outside-panel taps through the full
+shell and logic path.
+
 ## Changes, by function
 
 | File | Function or item | Change |
@@ -212,9 +226,9 @@ Not filed. Filing is the owner's decision.
 ### Android input filter (M1)
 
 `AndroidPlatform::with_input_event_filter` lets the shell consume a native
-input event before Slint handles it. M1 uses it only for finger drags, mapped
-to existing directional presses. Pico is unchanged and owns focus and scroll
-position. The filter is scoped to the platform/Activity, not a global hook.
+input event before Slint handles it. The shell consumes controller keys and
+joystick motion there, while native pointer events pass through to Slint
+(#394). The filter is scoped to the platform/Activity, not a global hook.
 The M0 EGL-surface suspension on termination/destruction is unchanged.
 
 ### Android host-provided Surface (#376)

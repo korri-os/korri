@@ -6891,3 +6891,28 @@ index a19f61b89..4fad12e35 100644
 +    }
 +}
 +
+--- a/i-slint-core/input.rs
++++ b/i-slint-core/input.rs
+@@ -2387,8 +2387,11 @@
+                     self.primary_touch_id = None;
+-                    events.push(MouseEvent::Released {
+-                        position,
+-                        button: PointerEventButton::Left,
+-                        click_count: 0,
+-                        touch_finger_id: id + 1,
+-                    });
++                    // Cancellation clears the grab without completing a click.
++                    if !is_cancelled {
++                        events.push(MouseEvent::Released {
++                            position,
++                            button: PointerEventButton::Left,
++                            click_count: 0,
++                            touch_finger_id: id + 1,
++                        });
++                    }
+                     events.push(MouseEvent::Exit);
+@@ -2630,3 +2633,3 @@
+         let evs = state.process(1, pt(100.0, 200.0), TouchPhase::Cancelled);
+-        assert_eq!(classify(&evs), vec![Ev::Released(100.0, 200.0), Ev::Exit]);
++        assert_eq!(classify(&evs), vec![Ev::Exit]);
+     }

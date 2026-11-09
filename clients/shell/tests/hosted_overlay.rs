@@ -128,5 +128,12 @@ fn hosted_overlay_touch_scrolls_natively_and_cancel_never_activates() {
         activations.borrow().is_empty(),
         "cancellation must not activate"
     );
+    touch(40.0, TouchPhase::Started);
+    touch(40.0, TouchPhase::Ended);
+    assert_eq!(
+        *activations.borrow(),
+        vec![serde_json::json!({"_tag": "Activated", "target": "row"})],
+        "a normal finger-up after cancellation must still activate"
+    );
     component.hide().unwrap();
 }

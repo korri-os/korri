@@ -2385,12 +2385,15 @@ impl TouchState {
             GestureRecognitionState::Idle => {
                 if self.primary_touch_id == Some(id) {
                     self.primary_touch_id = None;
-                    events.push(MouseEvent::Released {
-                        position,
-                        button: PointerEventButton::Left,
-                        click_count: 0,
-                        touch_finger_id: id + 1,
-                    });
+                    // Cancellation clears the grab without completing a click.
+                    if !is_cancelled {
+                        events.push(MouseEvent::Released {
+                            position,
+                            button: PointerEventButton::Left,
+                            click_count: 0,
+                            touch_finger_id: id + 1,
+                        });
+                    }
                     events.push(MouseEvent::Exit);
                 }
             }
@@ -2628,7 +2631,7 @@ mod touch_tests {
         state.process(1, pt(100.0, 200.0), TouchPhase::Started);
 
         let evs = state.process(1, pt(100.0, 200.0), TouchPhase::Cancelled);
-        assert_eq!(classify(&evs), vec![Ev::Released(100.0, 200.0), Ev::Exit]);
+        assert_eq!(classify(&evs), vec![Ev::Exit]);
     }
 
     #[test]
