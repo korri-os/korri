@@ -147,6 +147,8 @@ public final class KorriStreamViewer {
                 if (!current.state.await(Phase.RUNNING, START_TIMEOUT_MS)) throw failure();
                 return "Running";
             } catch (Exception error) {
+                LimeLog.warning("Exact Android viewer start failed: phase=" + current.state.phase()
+                        + " error=" + error.getClass().getSimpleName());
                 // A failed start must release its own viewer before Rust performs
                 // compensation on the far exact launch. Never target another ID.
                 // Service teardown can run on the main thread while it joins
@@ -292,43 +294,60 @@ public final class KorriStreamViewer {
     }
 
     private Intent prepare(Session current, String address) throws Exception {
-        ComputerDetails.AddressTuple tuple = KorriMoonlightAddressParser.parse(address);
-        if (tuple == null) throw failure();
-        String uniqueId = new IdentityManager(context).getUniqueId();
-        NvHTTP discovery = new NvHTTP(tuple, 0, uniqueId, null, PlatformBinding.getCryptoProvider(context));
-        ComputerDetails computer = discovery.getComputerDetails(true);
-        String clientPem = new String(PlatformBinding.getCryptoProvider(context)
-                .getPemEncodedClientCertificate(), StandardCharsets.US_ASCII);
-        JSONObject provision = new JSONObject(KorridServer.provisionMoonlightCertificate(computer.uuid, clientPem));
-        if (!"Provisioned".equals(provision.optString("_tag"))) throw failure();
-        X509Certificate certificate = KorriMoonlightProvisioning.parseSingleCertificate(
-                provision.getString("serverCertificate"));
-        NvHTTP trusted = new NvHTTP(tuple, computer.httpsPort, uniqueId, certificate,
-                PlatformBinding.getCryptoProvider(context));
-        if (trusted.getPairState() != HostCertificateState.ACCEPTED) throw failure();
-        NvApp selected = streamApp(trusted.getAppList());
-        // These extras are the retained ServerHelper/Game decoder contract.
-        Intent intent = new Intent(context, Game.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(Game.EXTRA_HOST, tuple.address)
-                .putExtra(Game.EXTRA_PORT, tuple.port)
-                .putExtra(Game.EXTRA_HTTPS_PORT, computer.httpsPort)
-                .putExtra(Game.EXTRA_APP_NAME, selected.getAppName())
-                .putExtra(Game.EXTRA_APP_UUID, selected.getAppUUID())
-                .putExtra(Game.EXTRA_APP_ID, selected.getAppId())
-                .putExtra(Game.EXTRA_APP_HDR, selected.isHdrSupported())
-                .putExtra(Game.EXTRA_UNIQUEID, uniqueId)
-                .putExtra(Game.EXTRA_PC_UUID, computer.uuid)
-                .putExtra(Game.EXTRA_PC_NAME, computer.name)
-                .putExtra(Game.EXTRA_SERVER_CERT, certificate.getEncoded())
-                .putExtra(Game.EXTRA_KORRI_LAUNCH_ID, current.state.launchId)
-                .putExtra(EXTRA_GENERATION, current.state.generation);
-        // Ask for the same screen size that viewerDisplay() sent to the far
-        // korrid, so the far display's shape and the stream's shape agree.
-        int[] size = screenStreamSize(context);
-        if (size != null) {
-            intent.putExtra(Game.EXTRA_WIDTH, size[0]).putExtra(Game.EXTRA_HEIGHT, size[1]);
+        // Log only fixed stage names and exception classes. Exception messages,
+        // addresses, IDs and certificate material must not enter diagnostics.
+        String stage = "address";
+        try {
+            ComputerDetails.AddressTuple tuple = KorriMoonlightAddressParser.parse(address);
+            if (tuple == null) throw failure();
+            String uniqueId = new IdentityManager(context).getUniqueId();
+            NvHTTP discovery = new NvHTTP(tuple, 0, uniqueId, null, PlatformBinding.getCryptoProvider(context));
+            stage = "http-serverinfo";
+            ComputerDetails computer = discovery.getComputerDetails(true);
+            String clientPem = new String(PlatformBinding.getCryptoProvider(context)
+                    .getPemEncodedClientCertificate(), StandardCharsets.US_ASCII);
+            stage = "certificate-provision";
+            JSONObject provision = new JSONObject(KorridServer.provisionMoonlightCertificate(computer.uuid, clientPem));
+            if (!"Provisioned".equals(provision.optString("_tag"))) throw failure();
+            stage = "certificate-parse";
+            X509Certificate certificate = KorriMoonlightProvisioning.parseSingleCertificate(
+                    provision.getString("serverCertificate"));
+            NvHTTP trusted = new NvHTTP(tuple, computer.httpsPort, uniqueId, certificate,
+                    PlatformBinding.getCryptoProvider(context));
+            stage = "https-serverinfo-pair-state";
+            if (trusted.getPairState() != HostCertificateState.ACCEPTED) throw failure();
+            stage = "https-applist";
+            List<NvApp> apps = trusted.getAppList();
+            stage = "select-korri-stream";
+            NvApp selected = streamApp(apps);
+            stage = "game-intent";
+            // These extras are the retained ServerHelper/Game decoder contract.
+            Intent intent = new Intent(context, Game.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra(Game.EXTRA_HOST, tuple.address)
+                    .putExtra(Game.EXTRA_PORT, tuple.port)
+                    .putExtra(Game.EXTRA_HTTPS_PORT, computer.httpsPort)
+                    .putExtra(Game.EXTRA_APP_NAME, selected.getAppName())
+                    .putExtra(Game.EXTRA_APP_UUID, selected.getAppUUID())
+                    .putExtra(Game.EXTRA_APP_ID, selected.getAppId())
+                    .putExtra(Game.EXTRA_APP_HDR, selected.isHdrSupported())
+                    .putExtra(Game.EXTRA_UNIQUEID, uniqueId)
+                    .putExtra(Game.EXTRA_PC_UUID, computer.uuid)
+                    .putExtra(Game.EXTRA_PC_NAME, computer.name)
+                    .putExtra(Game.EXTRA_SERVER_CERT, certificate.getEncoded())
+                    .putExtra(Game.EXTRA_KORRI_LAUNCH_ID, current.state.launchId)
+                    .putExtra(EXTRA_GENERATION, current.state.generation);
+            // Ask for the same screen size that viewerDisplay() sent to the far
+            // korrid, so the far display's shape and the stream's shape agree.
+            int[] size = screenStreamSize(context);
+            if (size != null) {
+                intent.putExtra(Game.EXTRA_WIDTH, size[0]).putExtra(Game.EXTRA_HEIGHT, size[1]);
+            }
+            return intent;
+        } catch (Exception error) {
+            LimeLog.warning("Exact Android viewer prepare failed: stage=" + stage
+                    + " error=" + error.getClass().getSimpleName());
+            throw error;
         }
-        return intent;
     }
 
     static NvApp streamApp(List<NvApp> apps) {
