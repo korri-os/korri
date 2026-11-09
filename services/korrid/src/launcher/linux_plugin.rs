@@ -232,18 +232,19 @@ fn inspect_route(
             viewer_display.as_ref(),
         ) {
             Ok(size) => {
-                // One line per launch: what the viewer asked for and what the
-                // display became. No addresses or identities.
-                eprintln!(
-                    "korrid: viewer display: requested={} shaped={}",
-                    viewer_display
-                        .as_ref()
-                        .map(|d| format!("{}x{}", d.width, d.height))
-                        .unwrap_or_else(|| "none".into()),
-                    size.as_ref()
-                        .map(|d| format!("{}x{}", d.width, d.height))
-                        .unwrap_or_else(|| "unchanged".into()),
-                );
+                // One line per viewer launch: what the viewer asked for and
+                // what the display became. Declaration reads (saves, netplay,
+                // settings) carry no viewer and stay silent.
+                if let Some(requested) = viewer_display.as_ref() {
+                    eprintln!(
+                        "korrid: viewer display: requested={}x{} shaped={}",
+                        requested.width,
+                        requested.height,
+                        size.as_ref()
+                            .map(|d| format!("{}x{}", d.width, d.height))
+                            .unwrap_or_else(|| "unchanged".into()),
+                    );
+                }
                 size
             }
             Err(message) => {
