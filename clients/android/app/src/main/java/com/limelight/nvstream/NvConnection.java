@@ -495,6 +495,7 @@ public class NvConnection {
     private final java.util.Set<Short> pressedKeys = new java.util.HashSet<>();
     private final java.util.Set<Byte> pressedMouseButtons = new java.util.HashSet<>();
     private final java.util.Map<Short, Short> controllers = new java.util.HashMap<>();
+    private final java.util.Set<Byte> gyroControllers = new java.util.HashSet<>();
     private boolean touchActive;
     private boolean penActive;
 
@@ -508,6 +509,12 @@ public class NvConnection {
             MoonBridge.sendControllerTouchEvent(controller.getKey().byteValue(),
                     MoonBridge.LI_TOUCH_EVENT_CANCEL_ALL, 0, 0, 0, 0);
         }
+        // A stopped gyro stream must reliably clear its last angular rate.
+        // Acceleration is deliberately unchanged to preserve controller attitude.
+        for (byte controller : gyroControllers) {
+            MoonBridge.sendControllerMotionEvent(controller, MoonBridge.LI_MOTION_TYPE_GYRO, 0.f, 0.f, 0.f);
+        }
+        gyroControllers.clear();
         for (short key : pressedKeys) MoonBridge.sendKeyboardInput(key, KeyboardPacket.KEY_UP, (byte)0, (byte)0);
         for (byte button : pressedMouseButtons) MoonBridge.sendMouseButton(MouseButtonPacket.RELEASE_EVENT, button);
         if (touchActive) MoonBridge.sendTouchEvent(MoonBridge.LI_TOUCH_EVENT_CANCEL_ALL, 0, 0, 0, 0, 0, 0, (short)0);
@@ -644,6 +651,7 @@ public class NvConnection {
     public synchronized int sendControllerMotionEvent(byte controllerNumber, byte motionType,
                                          float x, float y, float z) {
         if (!isMonkey && !inputHeld) {
+            if (motionType == MoonBridge.LI_MOTION_TYPE_GYRO) gyroControllers.add(controllerNumber);
             return MoonBridge.sendControllerMotionEvent(controllerNumber, motionType, x, y, z);
         }
         else {
