@@ -1520,15 +1520,6 @@ fn normalize_plugin(
             });
         }
     }
-    // ADR 0054: a device keeps only the runners for its own platform. Session
-    // controls of a runner this device drops are dropped with it.
-    let mut dropped_runner_ids: BTreeSet<String> = declaration
-        .runners
-        .values()
-        .filter(|runner| !runner_runs_on(runner, platform))
-        .map(|runner| runner.id.clone())
-        .collect();
-    declaration.runners.retain(|_, runner| runner_runs_on(runner, platform));
 
     for (local_id, transport) in &declaration.transports {
         if local_id.is_empty() {
@@ -1549,7 +1540,6 @@ fn normalize_plugin(
         .values()
         .map(|record| record.id.clone())
         .collect();
-    let dropped_runners = std::mem::take(&mut dropped_runner_ids);
     let owned_transports: BTreeSet<String> = declaration
         .transports
         .values()
@@ -1571,10 +1561,7 @@ fn normalize_plugin(
             });
         }
         let owns_context = match control.owner.kind {
-            SessionControlOwnerKind::Runner => {
-                owned_runners.contains(&control.owner.id)
-                    || dropped_runners.contains(&control.owner.id)
-            }
+            SessionControlOwnerKind::Runner => owned_runners.contains(&control.owner.id),
             SessionControlOwnerKind::Transport => owned_transports.contains(&control.owner.id),
         };
         if !owns_context {
@@ -1735,6 +1722,15 @@ fn normalize_plugin(
 
     crate::plugin_discovery::validate(&id, &declaration.discovery)
         .map_err(|reason| invalid_contribution("discovery", &id, &reason))?;
+    // ADR 0054: every runner is validated, then a device keeps only the
+    // runners for its own platform. Controls of a dropped runner go with it.
+    let dropped_runners: BTreeSet<String> = declaration
+        .runners
+        .values()
+        .filter(|runner| !runner_runs_on(runner, platform))
+        .map(|runner| runner.id.clone())
+        .collect();
+    declaration.runners.retain(|_, runner| runner_runs_on(runner, platform));
     declaration.session_controls.retain(|_, control| {
         !(control.owner.kind == SessionControlOwnerKind::Runner
             && dropped_runners.contains(&control.owner.id))
@@ -3013,7 +3009,7 @@ mod runner_platform_tests {
 
     #[test]
     fn controls_of_a_dropped_runner_are_dropped_with_it() {
-        let json = r#"{"name":"m","runners":{"linux":{"command":"x"}},
+        let json = r#"{"name":"m","runners":{"linux":{"command":"x","family":"@korri:retroarch"}},
             "controls":{"menu":{"order":0,"id":"@test:m/menu","owner":{"kind":"runner","id":"@test:m/linux"},
             "label":"Menu","interaction":{"kind":"command"},"effect":"@korri:retroarch/open-menu"}}}"#;
         let android = decode_plugin_declaration_on("@test", json, "aarch64-android");
