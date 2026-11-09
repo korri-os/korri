@@ -83,8 +83,9 @@ show that each target can be tapped at each swept size.
 Because a Slint `TouchArea` also takes mouse clicks, the desktop shell gains
 mouse activation through the same path.
 
-Code waits for the overlay contract work (#377, #378, #379) to land, because
-both changes touch `contracts/surface/` and the overlay views.
+Touch depends on no other open work. #378 and #379 also change
+`contracts/surface/` and the overlay views, so they must not run at the same
+time as touch. Whichever starts second rebases onto the first.
 
 ## Follow-ups
 
