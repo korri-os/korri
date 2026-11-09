@@ -1489,8 +1489,8 @@ fn normalize_plugin(
                 record_id: local_id.clone(),
                 reason: reason.to_owned(),
             };
-            if !native {
-                return Err(invalid("releases require a native runner"));
+            if !native && !runner.is_android() {
+                return Err(invalid("releases require a native or Android runner"));
             }
             if runner.systems.is_some() {
                 return Err(invalid("runner cannot declare both systems and releases"));
@@ -2999,6 +2999,13 @@ mod runner_platform_tests {
         assert_eq!(runners("aarch64-linux", BOTH).unwrap(), vec!["linux"]);
         assert_eq!(runners("x86_64-linux", BOTH).unwrap(), vec!["linux"]);
         assert_eq!(runners("aarch64-android", BOTH).unwrap(), vec!["android"]);
+    }
+
+    #[test]
+    fn an_android_runner_may_name_releases() {
+        let json = r#"{"name":"sw","runners":{"a":{"platforms":["aarch64-android"],"androidPackages":["dev.korri.savagewind"],
+            "releases":["sha256:f6f0b20bb1f2b67d164c24871cd473147eef1d285f12e7bd492e3126c6022e27"]}}}"#;
+        assert_eq!(runners("aarch64-android", json).unwrap(), vec!["a"]);
     }
 
     #[test]
