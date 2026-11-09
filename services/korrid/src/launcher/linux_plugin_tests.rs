@@ -78,6 +78,7 @@ impl DiscoveredGame {
             &self.route,
             None,
             None,
+            None,
             "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
         )
     }
@@ -192,6 +193,7 @@ fn launch_preparation_takes_the_display_fact_as_plain_input() {
         &game.route,
         None,
         Some(display.clone()),
+        None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
@@ -316,6 +318,7 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
         &game.route,
         None,
         None,
+        None,
         person,
     )
     .unwrap();
@@ -400,6 +403,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         &array_config,
         &game.registry,
         &game.route,
+        None,
         None,
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
@@ -523,6 +527,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         &config,
         &game.registry,
         &game.route,
+        None,
         None,
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
@@ -801,4 +806,88 @@ fn default_launch_refuses_authored_settings_before_validation_can_discard_them()
         ),
         "{error}"
     );
+}
+
+#[test]
+fn viewer_shape_reaches_launch_composition_or_becomes_a_launch_warning() {
+    const CHILD: &str = "KORRI_CLIENT_SHAPE_LAUNCH_TEST";
+    if let Ok(behavior) = std::env::var(CHILD) {
+        let game = DiscoveredGame::new();
+        let launch = launch_route(
+            game.root.path(),
+            &game.snapshot,
+            &game.registry,
+            &game.route,
+            None,
+            Some(PluginDisplay {
+                width: 1920,
+                height: 1080,
+            }),
+            Some(PluginDisplay {
+                width: 2176,
+                height: 1812,
+            }),
+            "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        )
+        .unwrap();
+        let composition: LaunchComposition = serde_json::from_str(&launch.command[4]).unwrap();
+        let expected = if behavior == "accept" {
+            (1578, 1314)
+        } else {
+            (1920, 1080)
+        };
+        let size = composition.display.unwrap();
+        let placement = composition.placement.unwrap();
+        assert_eq!((size.width, size.height), expected);
+        assert_eq!((placement.width, placement.height), expected);
+        assert_eq!(
+            launch.warnings.iter().any(|w| w.setting == "viewerDisplay"),
+            behavior != "accept"
+        );
+        return;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    for behavior in ["accept", "refuse", "mismatch"] {
+        let directory = tempfile::tempdir().unwrap();
+        let program = directory.path().join("swaymsg");
+        std::fs::write(
+            &program,
+            r#"#!/bin/sh
+for argument do command="$argument"; done
+printf '%s\n' "$command" >> "$KORRI_CLIENT_SHAPE_EVENTS"
+case "$command" in
+ get_outputs)
+  if test "$KORRI_CLIENT_SHAPE_LAUNCH_TEST" = accept; then
+   printf '[{"name":"HDMI-A-1","current_mode":{"width":1578,"height":1314,"refresh":60000}}]'
+  else
+   printf '[{"name":"HDMI-A-1","current_mode":{"width":1920,"height":1080,"refresh":60000}}]'
+  fi;;
+ *--custom*)
+  if test "$KORRI_CLIENT_SHAPE_LAUNCH_TEST" = refuse; then
+   printf '[{"success":false,"error":"mode refused"}]'
+  else printf '[{"success":true}]'; fi;;
+ *) printf '[{"success":true}]';;
+esac
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "launcher::linux_plugin::tests::viewer_shape_reaches_launch_composition_or_becomes_a_launch_warning", "--nocapture"])
+            .env(CHILD, behavior)
+            .env("KORRI_CLIENT_SHAPE_EVENTS", directory.path().join("events"))
+            .env("KORRID_SWAYMSG", &program)
+            .env("KORRID_COMPOSITOR_CONTROL_SOCKET", directory.path().join("socket"))
+            .env("KORRID_DISPLAYS", r#"[{"name":"HDMI-A-1","main":true,"unwatched":true,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null}]"#)
+            .output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(std::fs::read_to_string(directory.path().join("events"))
+            .unwrap()
+            .starts_with("output HDMI-A-1 mode --custom 1578x1314@60Hz\n"));
+    }
 }

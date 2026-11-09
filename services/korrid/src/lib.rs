@@ -171,6 +171,8 @@ pub struct CatalogSnapshot {
 pub struct SessionPrepareRequest {
     pub game_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
 }
 
@@ -3320,6 +3322,7 @@ async fn dispatch(
                     .prepare(
                         &request.game_id,
                         authorization.person_public_key(host.owner_public_key().as_deref()),
+                        request.viewer_display,
                     )
                     .await
                     .map(game_routes::SelectedGameLaunchOutcome::Ok)
@@ -8837,7 +8840,7 @@ command = ["game-two"]
             "33".repeat(32),
             "44".repeat(32),
         )
-        .prepare_stream("neverball")
+        .prepare_stream("neverball", None)
         .await;
         assert!(launch.is_ok());
         assert_eq!(

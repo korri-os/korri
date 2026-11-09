@@ -145,6 +145,7 @@ async fn public_fantasy_source_search_acquire_route_and_native_launch() {
         &route,
         None,
         None,
+        None,
         PERSON,
     )
     .unwrap();

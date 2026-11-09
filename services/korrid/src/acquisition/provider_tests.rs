@@ -562,6 +562,7 @@ async fn the_route_reaches_the_download_by_hash_and_passes_it_as_content_path() 
         &route,
         None,
         None,
+        None,
         PERSON,
     )
     .unwrap();

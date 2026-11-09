@@ -8,6 +8,7 @@ use jni::{
 use std::sync::Arc;
 
 const CONTROL: &str = "(Ljava/lang/String;)Ljava/lang/String;";
+const DISPLAY: &str = "()Ljava/lang/String;";
 const START: &str = "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;";
 
 struct AndroidViewer {
@@ -89,6 +90,27 @@ impl Adapter {
 }
 
 impl LinuxStreamViewer for Adapter {
+    fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+        let mut env = self.0.vm.attach_current_thread().ok()?;
+        let result = env.with_local_frame(4, |env| -> Result<String, jni::errors::Error> {
+            let class: &JClass<'_> = self.0.class.as_obj().into();
+            let value = env
+                .call_static_method(class, "viewerDisplay", DISPLAY, &[])?
+                .l()?;
+            let value = jni::objects::JString::from(value);
+            let value = String::from(env.get_string(&value)?);
+            Ok(value)
+        });
+        if result.is_err() && env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
+        let value = result.ok()?;
+        let (width, height) = value.split_once('x')?;
+        let width = width.parse::<u32>().ok().filter(|v| *v > 0)?;
+        let height = height.parse::<u32>().ok().filter(|v| *v > 0)?;
+        Some(crate::launcher::plugin_launch::PluginDisplay { width, height })
+    }
+
     fn start<'a>(
         &'a self,
         launch: &'a str,
@@ -130,6 +152,7 @@ pub(super) fn adapter(
     env: &mut JNIEnv<'_>,
     class: &JClass<'_>,
 ) -> Result<Arc<dyn LinuxStreamViewer>, jni::errors::Error> {
+    env.get_static_method_id(class, "viewerDisplay", DISPLAY)?;
     env.get_static_method_id(class, "viewerStart", START)?;
     for method in [
         "viewerStatus",

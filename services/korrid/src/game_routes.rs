@@ -183,8 +183,10 @@ fn prepare_launch(
     let route = resolver::resolve_linux_route(root, &snapshot, registry, game_id, runner_id)
         .map_err(|error| crate::route_diagnostic_failure(&error))?;
     crate::acquisition::require_ready(root, registry, &route)?;
-    linux_plugin::launch_route(root, &snapshot, registry, &route, launch, display, person)
-        .map_err(|error| unavailable(error.to_string()))
+    linux_plugin::launch_route(
+        root, &snapshot, registry, &route, launch, display, None, person,
+    )
+    .map_err(|error| unavailable(error.to_string()))
 }
 
 pub(crate) fn settings_failure(error: settings::SettingsError) -> RpcFailure {

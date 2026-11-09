@@ -391,7 +391,7 @@ pub fn snapshot_for_person(
                 let person =
                     person.ok_or("a device owner is required for person-specific launch facts")?;
                 let spec = crate::launcher::linux_plugin::launch_route(
-                    root, &config, registry, candidate, None, None, person,
+                    root, &config, registry, candidate, None, None, None, person,
                 )
                 .map_err(|v| v.to_string())?;
                 let plan = crate::launcher::plugin_launch::runner_prepare_plan(&spec.command)?;

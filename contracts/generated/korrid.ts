@@ -1775,6 +1775,7 @@ export interface SessionNetplayRequest {
 
 export interface SessionPrepareRequest {
 	gameId: string;
+	viewerDisplay?: PluginDisplay;
 	host?: string;
 }
 

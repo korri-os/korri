@@ -553,6 +553,14 @@ impl ProductionLinuxStreamViewer {
 }
 
 impl LinuxStreamViewer for ProductionLinuxStreamViewer {
+    fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+        let (width, height) = self.dimensions().ok()?;
+        Some(crate::launcher::plugin_launch::PluginDisplay {
+            width: width as u32,
+            height: height as u32,
+        })
+    }
+
     fn start<'a>(
         &'a self,
         launch: &'a str,

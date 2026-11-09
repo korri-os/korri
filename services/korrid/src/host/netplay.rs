@@ -105,6 +105,7 @@ impl HostRuntime {
             &route,
             None,
             None,
+            None,
             &self.launch_person()?,
         )
         .map_err(|error| dynamic_failure(error.to_string()))?;
@@ -219,7 +220,7 @@ impl HostRuntime {
         input: PluginLaunchNetplay,
         source: PathBuf,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
-        let mut launch = self.prepare_launch_command(game, Some(runner), None)?;
+        let mut launch = self.prepare_launch_command(game, Some(runner), None, None)?;
         if launch.command.get(5).map(String::as_str) != Some(release) {
             let root = self.route_root()?;
             let registry = self.route_registry()?;
@@ -247,6 +248,7 @@ impl HostRuntime {
                 &snapshot,
                 &registry,
                 route,
+                None,
                 None,
                 None,
                 &self.launch_person()?,
@@ -460,7 +462,7 @@ mod tests {
         host.input_coordinator = Some(coordinator.clone());
         host.claim_save_owner();
         let live = host
-            .prepare("turtles", host.owner_public_key().as_deref())
+            .prepare("turtles", host.owner_public_key().as_deref(), None)
             .await
             .unwrap()
             .session;
@@ -560,7 +562,7 @@ mod tests {
         )
         .unwrap();
         let multipart_live = host
-            .prepare("turtles", host.owner_public_key().as_deref())
+            .prepare("turtles", host.owner_public_key().as_deref(), None)
             .await
             .unwrap()
             .session;

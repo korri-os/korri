@@ -575,6 +575,8 @@ in
             x
             y
             touch
+            unwatched
+            mode
             ;
           main = display.name == cfg.compositor.mainDisplay;
           width = lib.toInt (builtins.elemAt mode 0);

@@ -203,7 +203,7 @@ async fn peer_catalog_case(has_local_game: bool) {
         "88".repeat(32),
     );
     assert!(matches!(
-        prepare_client.prepare_stream("wl4").await,
+        prepare_client.prepare_stream("wl4", None).await,
         Err(upstreams::UpstreamError::Tagged { code, .. }) if code == "OperationUnsupported"
     ));
     assert_eq!(

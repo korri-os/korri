@@ -91,13 +91,13 @@ impl Fixture {
         );
         let receiver = device(roots[1].path(), backend.clone());
         let held = holder
-            .prepare("game", holder.owner_public_key().as_deref())
+            .prepare("game", holder.owner_public_key().as_deref(), None)
             .await
             .unwrap()
             .session
             .launch_id;
         let launch = receiver
-            .prepare("game", receiver.owner_public_key().as_deref())
+            .prepare("game", receiver.owner_public_key().as_deref(), None)
             .await
             .unwrap()
             .session

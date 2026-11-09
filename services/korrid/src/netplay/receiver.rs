@@ -1020,8 +1020,8 @@ mod tests {
         let receiver_root = tempfile::tempdir().unwrap();
         let holder = device(holder_root.path());
         let receiver = device(receiver_root.path());
-        let held = holder.prepare("game", None).await.unwrap().session;
-        let copy = receiver.prepare("game", None).await.unwrap().session;
+        let held = holder.prepare("game", None, None).await.unwrap().session;
+        let copy = receiver.prepare("game", None, None).await.unwrap().session;
         let (state, _) = app_states(receiver.clone());
         let status = NetplayStatus {
             launch_id: "receiving-run".into(),

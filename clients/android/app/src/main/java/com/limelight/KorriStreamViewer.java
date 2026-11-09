@@ -3,6 +3,9 @@ package com.limelight;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
+
+import com.limelight.preferences.PreferenceConfiguration;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -85,6 +88,19 @@ public final class KorriStreamViewer {
 
     private static void requireWorker() {
         if (Looper.myLooper() == Looper.getMainLooper()) throw failure();
+    }
+
+    /** The same preference and portrait inversion used by Game's stream request. */
+    public static String viewerDisplay() {
+        KorriStreamViewer host = instance;
+        if (host == null) return "";
+        PreferenceConfiguration config = PreferenceConfiguration.readPreferences(host.context);
+        boolean invert = config.autoOrientation && config.autoInvertVideoResolution
+                && host.context.getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_PORTRAIT;
+        int width = invert ? config.height : config.width;
+        int height = invert ? config.width : config.height;
+        return width > 0 && height > 0 ? width + "x" + height : "";
     }
 
     public static String start(String launchId, String address) throws Exception {

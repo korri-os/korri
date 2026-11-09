@@ -274,6 +274,7 @@ async fn an_artifact_game_shows_before_download_downloads_launches_and_removes()
         &route,
         None,
         None,
+        None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .expect("listing preflight must not require downloaded artifacts");
@@ -311,6 +312,7 @@ async fn an_artifact_game_shows_before_download_downloads_launches_and_removes()
         &snapshot,
         &fixture.registry,
         &route,
+        None,
         None,
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
@@ -623,6 +625,7 @@ async fn package_games_resolve_content_path_offline_and_become_unavailable_when_
         &snapshot,
         &registry,
         &route,
+        None,
         None,
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",

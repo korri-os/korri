@@ -120,7 +120,7 @@ mod tests {
                 let session = runtime
                     .clone()
                     .for_starting_device(starter.map(str::to_owned))
-                    .prepare("game", None)
+                    .prepare("game", None, None)
                     .await
                     .unwrap()
                     .session;

@@ -74,6 +74,18 @@ let
   serverCfg = serverOnly.config;
   withAudio = evaluate { services.korriLinuxHost.audio.enable = true; };
   noValidation = evaluate { services.korriLinuxHost.validation.enable = false; };
+  unwatched = evaluate {
+    services.korriLinuxHost.compositor.displays = lib.mkForce [
+      {
+        name = "HEADLESS-1";
+        mode = "1920x1080@120Hz";
+        unwatched = true;
+        x = 0;
+        y = 0;
+        touch = null;
+      }
+    ];
+  };
   physical = evaluate {
     services.korriLinuxHost.compositor = {
       backend = "drm";
@@ -194,6 +206,21 @@ assert !(builtins.elem "sunshine.service" compositor.wants);
 assert builtins.elem "korri-compositor.service" korrid.bindsTo;
 assert builtins.elem "korri-compositor.service" korrid.requires;
 assert builtins.elem "korri-compositor.service" korrid.after;
+assert (builtins.head (builtins.fromJSON korrid.environment.KORRID_DISPLAYS)).unwatched == false;
+assert (builtins.head (builtins.fromJSON korrid.environment.KORRID_DISPLAYS)).mode == "1920x1080@60Hz";
+assert (builtins.fromJSON unwatched.config.systemd.services.korrid.environment.KORRID_DISPLAYS) == [
+  {
+    name = "HEADLESS-1";
+    main = true;
+    unwatched = true;
+    mode = "1920x1080@120Hz";
+    x = 0;
+    y = 0;
+    width = 1920;
+    height = 1080;
+    touch = null;
+  }
+];
 assert cfg.services.korridLinuxDevice.compositorControlDirectory == "/run/korri-compositor";
 assert korrid.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
 assert korrid.environment.KORRID_COMPOSITOR_WAYLAND_SOCKET == "/run/user/1000/korri-wayland";

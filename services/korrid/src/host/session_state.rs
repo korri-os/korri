@@ -1259,6 +1259,15 @@ impl HostSessionControl {
         if displays.len() <= 1 {
             if let (Some(display), Some(control)) = (displays.first_mut(), self.compositor.as_ref())
             {
+                if !request.overlay {
+                    super::display_placement::place_surface(
+                        control.as_ref(),
+                        std::slice::from_ref(display),
+                        None,
+                        &Default::default(),
+                        &Default::default(),
+                    )?;
+                }
                 let logical = super::compositor_focus::display_from_outputs(&control.outputs()?)
                     .ok_or("main display geometry unavailable")?;
                 display.width = logical.width;
@@ -4005,7 +4014,7 @@ mod tests {
             let result = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "host::session_state::tests::leave_focuses_the_shell_unit_places_overlay_on_free_display_and_return_focuses_game", "--nocapture"])
                 .env(CHILD, "1")
-                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
                 .output().unwrap();
             assert!(
                 result.status.success(),
@@ -4464,7 +4473,7 @@ printf '[{{"success":true}}]'
             let result = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "host::session_state::tests::delayed_game_window_is_pending_until_mapping_then_takes_focus", "--nocapture"])
                 .env(CHILD, "1")
-                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
                 .output().unwrap();
             let stderr = String::from_utf8_lossy(&result.stderr);
             assert!(
@@ -4540,7 +4549,7 @@ printf '[{{"success":true}}]'
             let result = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "host::session_state::tests::both_requested_scopes_place_only_main_by_shell_unit_identity", "--nocapture"])
                 .env(CHILD, "1")
-                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .env("KORRID_DISPLAYS", r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
                 .output().unwrap();
             assert!(
                 result.status.success(),
@@ -4686,7 +4695,7 @@ printf '[{{"success":true}}]'
             let result=std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact","host::session_state::tests::idle_resume_restores_only_the_single_pane_game_display","--nocapture"])
                 .env(CHILD,"1")
-                .env("KORRID_DISPLAYS",r#"[{"name":"DSI-2","main":true,"x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
+                .env("KORRID_DISPLAYS",r#"[{"name":"DSI-2","main":true,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":0,"width":640,"height":480,"touch":null},{"name":"DSI-1","main":false,"unwatched":false,"mode":"640x480@60Hz","x":0,"y":480,"width":640,"height":480,"touch":null}]"#)
                 .output().unwrap();
             assert!(
                 result.status.success(),

@@ -272,6 +272,7 @@ impl HostRuntime {
             &route,
             None,
             None,
+            None,
             &self.launch_person()?,
         )
         .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
@@ -2122,7 +2123,7 @@ mod tests {
         for device in [&a, &b] {
             let error = device
                 .host
-                .prepare("wario-land-4", Some(PERSON))
+                .prepare("wario-land-4", Some(PERSON), None)
                 .await
                 .unwrap_err();
             assert_eq!(
@@ -2371,7 +2372,7 @@ mod tests {
                 .len(),
             5
         );
-        host.prepare("one", Some(PERSON)).await.unwrap();
+        host.prepare("one", Some(PERSON), None).await.unwrap();
         let refused = rpc(
             &router,
             "app.saves.restore",

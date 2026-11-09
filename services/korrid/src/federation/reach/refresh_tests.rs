@@ -233,7 +233,7 @@ async fn reach_stream_player_owns_a_forward_without_controlling_the_holder() {
         devices.ca.clone(),
     )
     .with_directory(devices.da.clone());
-    let prepared = client.prepare_stream("game").await.unwrap();
+    let prepared = client.prepare_stream("game", None).await.unwrap();
     let viewer = Arc::new(TestLinuxStreamViewer::default());
     let registry = crate::upstreams::UpstreamRegistry::new_secure(Vec::new(), devices.ca.clone())
         .with_federation(devices.da.clone())

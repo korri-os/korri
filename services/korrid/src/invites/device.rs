@@ -260,7 +260,7 @@ mod tests {
                 "session":{"launchId":"next", "phase":"running"}
             }))
             .unwrap()]);
-        host.prepare("game", None).await.unwrap();
+        host.prepare("game", None, None).await.unwrap();
         let InvitesListOutcome::Ok(list) = list_for_test(&state).await else {
             panic!("list failed")
         };

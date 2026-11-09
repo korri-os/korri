@@ -18,6 +18,7 @@ mod netplay;
 mod occupied_seats;
 pub(crate) mod play_log;
 mod prepare;
+pub(crate) use prepare::configured_compositor;
 mod private_input;
 pub(crate) mod retroarch_control;
 #[cfg(test)]
@@ -650,12 +651,14 @@ impl HostRuntime {
         &self,
         game_id: &str,
         person_public_key: Option<&str>,
+        viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let runtime = self.clone();
         let game_id = game_id.to_owned();
         let person_public_key = person_public_key.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
-            let outcome = runtime.prepare_blocking(&game_id, person_public_key.as_deref());
+            let outcome =
+                runtime.prepare_blocking(&game_id, person_public_key.as_deref(), viewer_display);
             #[cfg(test)]
             runtime.session_rpc_probe("app.session.prepare");
             outcome
@@ -723,6 +726,7 @@ impl HostRuntime {
         game_id: &str,
         runner_id: Option<&str>,
         launch_override: Option<crate::launch_settings::LaunchOverride>,
+        viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<HostLaunchCommand, RpcFailure> {
         use crate::launch_timeline::{measure, LaunchStage};
         let catalog_started = std::time::Instant::now();
@@ -797,6 +801,7 @@ impl HostRuntime {
                 &route,
                 launch_override,
                 compositor_focus::launch_display(),
+                viewer_display,
                 &owner,
             )
             .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
@@ -863,6 +868,7 @@ impl HostRuntime {
         &self,
         game_id: &str,
         person_public_key: Option<&str>,
+        viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         timed_start(game_id, || {
             launch_timeline::measure(game_id, launch_timeline::LaunchStage::Catalog, || {
@@ -871,7 +877,17 @@ impl HostRuntime {
             let launcher = self.launcher.as_ref().ok_or_else(|| {
                 config_failure(self.config.as_ref().expect_err("invalid host config"))
             })?;
-            let launch = self.prepare_launch_command(game_id, None, None);
+            // Repeating prepare resumes the exact existing launch. Its picture
+            // size is already fixed; only a fresh launch may change the mode.
+            let viewer_display = viewer_display.filter(|_| {
+                matches!(
+                    launcher.control().control_status(),
+                    HostSessionStatus::NoActive
+                        | HostSessionStatus::Completed { .. }
+                        | HostSessionStatus::Failed { .. }
+                )
+            });
+            let launch = self.prepare_launch_command(game_id, None, None, viewer_display);
             launch_timeline::measure(game_id, launch_timeline::LaunchStage::UnitStart, || {
                 launcher.prepare_command_with_limits(
                     game_id,
@@ -1371,6 +1387,7 @@ impl HostRuntime {
             game_id,
             request.runner_id.as_deref(),
             request.launch.clone(),
+            None,
         );
         let runner_id = launch
             .as_ref()
@@ -1452,6 +1469,7 @@ impl HostRuntime {
                     game_id,
                     Some(&request.runner_id),
                     request.launch.clone(),
+                    None,
                 );
                 let launcher = runtime.launcher.as_ref().ok_or_else(|| {
                     config_failure(runtime.config.as_ref().expect_err("invalid host config"))
@@ -2290,7 +2308,7 @@ esac
     #[tokio::test]
     async fn invites_watcher_limits_game_unit_queries_to_refresh_cadence() {
         let fixture = GameUnitFixture::new();
-        fixture.runtime.prepare("one", None).await.unwrap();
+        fixture.runtime.prepare("one", None, None).await.unwrap();
         let queries = fixture.root.path().join("unit-queries");
         fs::write(&queries, "").unwrap();
         let (state, _) = crate::app_states(fixture.runtime.clone());
@@ -2537,7 +2555,7 @@ esac
             runtime.settings_snapshot().await.unwrap().revision,
             after.revision
         );
-        let prepared = runtime.prepare("one", None).await.unwrap();
+        let prepared = runtime.prepare("one", None, None).await.unwrap();
         assert_eq!(
             pool.session.lock().unwrap().as_deref(),
             Some(prepared.session.launch_id.as_str())
@@ -2569,7 +2587,7 @@ esac
             assert_eq!(fs::read(root.path().join("device.yaml")).unwrap(), original);
             assert_eq!(pool.fenced.load(Ordering::SeqCst), compensation_fails);
             assert_eq!(
-                runtime.prepare("one", None).await.is_err(),
+                runtime.prepare("one", None, None).await.is_err(),
                 compensation_fails
             );
         }
@@ -2598,7 +2616,7 @@ esac
         assert_eq!(error.code, "SettingsConflict");
         assert_eq!(fs::read(root.path().join("device.yaml")).unwrap(), external);
         assert!(pool.fenced.load(Ordering::SeqCst));
-        assert!(runtime.prepare("one", None).await.is_err());
+        assert!(runtime.prepare("one", None, None).await.is_err());
     }
 
     #[tokio::test]
@@ -2953,7 +2971,7 @@ esac
             pool.clone(),
         ));
         runtime.claim_save_owner();
-        runtime.prepare("one", None).await.unwrap();
+        runtime.prepare("one", None, None).await.unwrap();
         assert!(pool.session.lock().unwrap().is_some());
         let watcher = tokio::spawn(runtime.shell_watch(Duration::from_millis(10)).unwrap());
         backend.complete_live();
@@ -3278,7 +3296,7 @@ esac
             "HostLibraryInvalid"
         );
         assert_eq!(
-            host.prepare_blocking(crate::config::test_fixtures::OTHER_ID, None)
+            host.prepare_blocking(crate::config::test_fixtures::OTHER_ID, None, None)
                 .unwrap_err()
                 .code,
             "HostLibraryInvalid"

@@ -476,7 +476,7 @@ mod tests {
         // Merely observing the directory is not selecting a session.
         let far_root = tempfile::tempdir().unwrap();
         let far = holder(far_root.path(), "far");
-        let prepared = far.prepare("far-game", None).await.unwrap();
+        let prepared = far.prepare("far-game", None, None).await.unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let far_router = crate::plain_host_routers_for_tests(far).0;
@@ -557,6 +557,7 @@ mod tests {
                 &state,
                 &AuthorizationContext::LocalSurfaceHost,
                 RpcRequest::SessionPrepare(SessionPrepareRequest {
+                    viewer_display: None,
                     game_id: "far-game".into(),
                     host: Some("far".into()),
                 }),

@@ -35,6 +35,10 @@ impl LinuxViewerError {
 /// "most recent" state when an exact launch ID is supplied. Every successful
 /// mutation must return only after the requested runtime state is confirmed.
 pub trait LinuxStreamViewer: Send + Sync {
+    fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+        None
+    }
+
     fn start<'a>(
         &'a self,
         launch_id: &'a str,
@@ -147,6 +151,7 @@ pub(crate) mod test_backend {
 
     #[derive(Default)]
     struct TestViewerState {
+        display: Option<crate::launcher::plugin_launch::PluginDisplay>,
         statuses: BTreeMap<String, LinuxViewerStatus>,
         calls: Vec<LinuxViewerCall>,
         failures: VecDeque<(LinuxViewerAction, String)>,
@@ -154,6 +159,10 @@ pub(crate) mod test_backend {
     }
 
     impl TestLinuxStreamViewer {
+        pub fn set_display(&self, display: crate::launcher::plugin_launch::PluginDisplay) {
+            self.inner.lock().expect("test viewer poisoned").display = Some(display);
+        }
+
         pub fn calls(&self) -> Vec<LinuxViewerCall> {
             self.inner
                 .lock()
@@ -210,6 +219,14 @@ pub(crate) mod test_backend {
     }
 
     impl LinuxStreamViewer for TestLinuxStreamViewer {
+        fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+            self.inner
+                .lock()
+                .expect("test viewer poisoned")
+                .display
+                .clone()
+        }
+
         fn start<'a>(
             &'a self,
             launch_id: &'a str,

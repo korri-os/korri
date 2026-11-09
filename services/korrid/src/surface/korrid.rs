@@ -437,7 +437,11 @@ impl Korrid {
             self,
             Mapping::Unreachable,
             SessionPrepare,
-            crate::SessionPrepareRequest { game_id, host },
+            crate::SessionPrepareRequest {
+                game_id,
+                host,
+                viewer_display: None
+            },
             SelectedGameLaunchOutcome
         )
     }

@@ -301,9 +301,11 @@ impl NativeClient {
     pub async fn prepare_stream(
         &self,
         game_id: &str,
+        viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, UpstreamError> {
         match self
             .call(RpcRequest::SessionPrepare(SessionPrepareRequest {
+                viewer_display,
                 game_id: game_id.into(),
                 host: None,
             }))
@@ -1084,6 +1086,34 @@ impl NativeClient {
 mod tests {
     use super::*;
 
+    #[test]
+    fn prepare_request_omits_absent_viewer_and_preserves_present_size() {
+        let mut request = SessionPrepareRequest {
+            game_id: "game".into(),
+            host: None,
+            viewer_display: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&request).unwrap(),
+            serde_json::json!({"gameId":"game"})
+        );
+        request.viewer_display = Some(crate::launcher::plugin_launch::PluginDisplay {
+            width: 2176,
+            height: 1812,
+        });
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            json["viewerDisplay"],
+            serde_json::json!({"width":2176,"height":1812})
+        );
+        assert_eq!(
+            serde_json::from_value::<SessionPrepareRequest>(json)
+                .unwrap()
+                .viewer_display,
+            request.viewer_display
+        );
+    }
+
     async fn serve(app: axum::Router) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         serve_listener(listener, app).await
@@ -1165,7 +1195,7 @@ command = ["neverball"]
         assert_eq!(catalog.games[0].id, "neverball");
         assert_eq!(catalog.games[0].host.as_deref(), Some("zao"));
 
-        let prepared = client.prepare_stream("neverball").await.unwrap();
+        let prepared = client.prepare_stream("neverball", None).await.unwrap();
         assert_eq!(prepared.session.game_id, "neverball");
         let UpstreamSessionStatus::SessionStatus {
             active: Some(active),
@@ -1195,7 +1225,7 @@ command = ["neverball"]
         .unwrap();
         let base_url = serve(crate::host_router_with_in_memory_units(&config)).await;
         let client = NativeClient::new(base_url);
-        let prepared = client.prepare_stream("neverball").await.unwrap();
+        let prepared = client.prepare_stream("neverball", None).await.unwrap();
 
         let frozen = client
             .session_freeze(&prepared.session.launch_id)

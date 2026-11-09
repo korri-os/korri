@@ -178,7 +178,7 @@ async fn command_waits_for_cold_route_beyond_catalog_budget_while_catalog_stays_
             let result = timeout(Duration::from_secs(6), client.catalog_snapshot()).await;
             (result, started.elapsed())
         },
-        timeout(Duration::from_secs(10), client.prepare_stream("game")),
+        timeout(Duration::from_secs(10), client.prepare_stream("game", None)),
     );
     installing.await.unwrap();
     serving.abort();

@@ -1,6 +1,9 @@
 package com.limelight;
 
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.preference.PreferenceManager;
+
 
 import com.limelight.nvstream.http.NvApp;
 
@@ -21,6 +24,32 @@ import static org.junit.Assert.*;
 @Config(sdk = 28)
 public class KorriStreamViewerBoundaryTest {
     private static final String LAUNCH = "0123456789abcdef0123456789abcdef";
+
+    @Test
+    @Config(shadows = com.limelight.shadows.ShadowMoonBridge.class)
+    public void viewerDisplayUsesStreamPreferencesAndGamePortraitInversion() {
+        android.app.Application app = RuntimeEnvironment.getApplication();
+        KorriStreamViewer.initialize(app);
+        PreferenceManager.getDefaultSharedPreferences(app).edit()
+                .putString("list_resolution", "2176x1812")
+                .putBoolean("checkbox_auto_orientation", true)
+                .putBoolean("checkbox_auto_invert_video_resolution", true)
+                .apply();
+        Configuration configuration = new Configuration(app.getResources().getConfiguration());
+        configuration.orientation = Configuration.ORIENTATION_LANDSCAPE;
+        app.getResources().updateConfiguration(configuration, app.getResources().getDisplayMetrics());
+        assertEquals("2176x1812", KorriStreamViewer.viewerDisplay());
+        configuration.orientation = Configuration.ORIENTATION_PORTRAIT;
+        app.getResources().updateConfiguration(configuration, app.getResources().getDisplayMetrics());
+        assertEquals("1812x2176", KorriStreamViewer.viewerDisplay());
+        PreferenceManager.getDefaultSharedPreferences(app).edit()
+                .putBoolean("checkbox_auto_orientation", false).apply();
+        assertEquals("2176x1812", KorriStreamViewer.viewerDisplay());
+        PreferenceManager.getDefaultSharedPreferences(app).edit()
+                .putBoolean("checkbox_auto_orientation", true)
+                .putBoolean("checkbox_auto_invert_video_resolution", false).apply();
+        assertEquals("2176x1812", KorriStreamViewer.viewerDisplay());
+    }
 
     @Test
     public void processRecreationCannotStartAnUnownedGameOrCrashItsTeardown() {

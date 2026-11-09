@@ -286,6 +286,13 @@ esac
         operation: Arc::new(tokio::sync::Mutex::new(())),
     };
     let launch = "0123456789abcdef0123456789abcdef";
+    assert_eq!(
+        viewer.display(),
+        Some(crate::launcher::plugin_launch::PluginDisplay {
+            width: 1280,
+            height: 720
+        })
+    );
     viewer.start(launch, &address).await.unwrap();
     assert_eq!(
         &*provisioned.lock().unwrap(),

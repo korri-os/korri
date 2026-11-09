@@ -479,7 +479,7 @@ async fn candidate_read_failover_but_mutations_do_not_repeat_ambiguous_delivery(
     let client = NativeClient::new_secure(lost.clone(), f.key(), f.credentials.clone())
         .with_candidates(vec![lost, good.clone()])
         .unwrap();
-    assert!(client.prepare_stream("game").await.is_err());
+    assert!(client.prepare_stream("game", None).await.is_err());
     assert_eq!(received.load(Ordering::SeqCst), 1);
     let status = NativeClient::new_secure(good, f.key(), f.credentials.clone())
         .session_status()
@@ -495,7 +495,7 @@ async fn candidate_read_failover_but_mutations_do_not_repeat_ambiguous_delivery(
         f.key(),
         f.credentials.clone(),
     );
-    assert!(pre_send.prepare_stream("game").await.is_ok());
+    assert!(pre_send.prepare_stream("game", None).await.is_ok());
 }
 
 #[tokio::test]
@@ -566,7 +566,7 @@ async fn wrong_key_reads_fail_over_with_fresh_signed_requests_but_mutations_stop
     for operation in 0..7 {
         let before = requests.lock().unwrap().len();
         let result = match operation {
-            0 => client.prepare_stream("game").await.map(|_| ()),
+            0 => client.prepare_stream("game", None).await.map(|_| ()),
             1 => client.session_stop("launch", false).await.map(|_| ()),
             2 => client.session_freeze("launch").await.map(|_| ()),
             3 => client.session_thaw("launch").await.map(|_| ()),
@@ -1180,7 +1180,7 @@ async fn stalled_connect_candidate_leaves_time_for_reads_and_mutations() {
     // Connect failure is known to precede sending, so mutation retry is safe.
     tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        client.prepare_stream("game"),
+        client.prepare_stream("game", None),
     )
     .await
     .unwrap()
@@ -1211,7 +1211,7 @@ async fn connect_racing_sends_a_mutation_to_only_one_candidate() {
         );
     }
     let client = NativeClient::new_secure_candidates(candidates, f.key(), f.credentials.clone());
-    assert!(client.prepare_stream("game").await.is_err());
+    assert!(client.prepare_stream("game", None).await.is_err());
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert_eq!(received.load(Ordering::SeqCst), 1);
 }

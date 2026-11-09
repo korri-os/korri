@@ -99,6 +99,7 @@ fn selected_runner_owns_frontend_core_callback_and_named_files() {
         &resolved,
         None,
         None,
+        None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
@@ -146,6 +147,7 @@ fn runner_callback_preserves_raw_native_override_semantics() {
         &snapshot,
         &registry,
         &route,
+        None,
         None,
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",

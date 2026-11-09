@@ -79,3 +79,11 @@ dummy plug, that a Moonlight session then logs `Resolution: 1576x1314`, and
 that `swaymsg output HDMI-A-1 mode 1920x1080@60Hz` restores it. If custom modes
 fail, use the listed mode with the nearest aspect (the plug lists 4:3, 5:4 and
 16:10 modes) instead, and record that change here.
+
+## Implementation clarification
+
+The configured refresh was not present in `KORRID_DISPLAYS`. The supervisor
+resolved this on 2026-11-09: carry the existing Nix `display.mode` string as
+`mode` alongside its derived width and height. Restore that native mode
+verbatim. Custom modes use its `@...` refresh, rather than assuming every
+device is configured at 60 Hz. No second authored mode is introduced.

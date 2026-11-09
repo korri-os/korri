@@ -1183,7 +1183,10 @@ mod tests {
             token(3),
             token(4),
         );
-        let prepared = prepare_client.prepare_stream("neverball").await.unwrap();
+        let prepared = prepare_client
+            .prepare_stream("neverball", None)
+            .await
+            .unwrap();
         let status_client = crate::upstream_native::NativeClient::new_secure_at(
             base.clone(),
             host_key.clone(),

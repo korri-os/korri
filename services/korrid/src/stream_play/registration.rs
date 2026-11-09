@@ -127,7 +127,7 @@ mod tests {
         assert!(
             matches!(response, RpcResponse::SessionStreamPlay(SessionStreamPlayOutcome::Err(RpcFailure { code, .. })) if code == "NoActiveSession")
         );
-        let session = runtime.prepare("game", None).await.unwrap().session;
+        let session = runtime.prepare("game", None, None).await.unwrap().session;
         let response = crate::dispatch(&state, &caller, request("wrong"))
             .await
             .unwrap();

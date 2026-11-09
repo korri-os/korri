@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct Display {
     pub name: String,
     pub main: bool,
+    pub unwatched: bool,
+    pub mode: String,
     pub x: i32,
     pub y: i32,
     pub width: u32,
@@ -35,6 +37,7 @@ pub fn configured_displays() -> Result<Vec<Display>, String> {
         || displays.iter().any(|d| {
             d.width == 0
                 || d.height == 0
+                || configured_refresh(d).is_err()
                 || d.name.is_empty()
                 || !d
                     .name
@@ -45,6 +48,26 @@ pub fn configured_displays() -> Result<Vec<Display>, String> {
         return Err("invalid display geometry or main display".into());
     }
     Ok(displays)
+}
+
+// Mode is the native Sway value authored in the Nix display option. Validate
+// it before inserting it in an IPC command, without maintaining another mode.
+fn configured_refresh(display: &Display) -> Result<&str, String> {
+    let prefix = format!("{}x{}@", display.width, display.height);
+    let refresh = display
+        .mode
+        .strip_prefix(&prefix)
+        .ok_or("configured mode disagrees with display geometry")?;
+    let number = refresh.strip_suffix("Hz").unwrap_or(refresh);
+    if number.is_empty()
+        || !number.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        || !number
+            .parse::<f64>()
+            .is_ok_and(|n| n.is_finite() && n > 0.0)
+    {
+        return Err("invalid configured display refresh".into());
+    }
+    Ok(refresh)
 }
 
 pub fn choose(
@@ -116,6 +139,128 @@ pub fn choose(
         }
     }
     Ok(plan)
+}
+
+/// Bound encoder cost without changing the viewer's aspect ratio.
+pub(crate) fn client_shape(
+    viewer: &crate::launcher::plugin_launch::PluginDisplay,
+    configured: &Display,
+) -> Result<crate::launcher::plugin_launch::PluginDisplay, String> {
+    use crate::launcher::plugin_launch::PluginDisplay;
+    if viewer.width < 2 || viewer.height < 2 {
+        return Err("viewer display must have at least two pixels per side".into());
+    }
+    let width = f64::from(viewer.width);
+    let height = f64::from(viewer.height);
+    let area = f64::from(configured.width) * f64::from(configured.height);
+    let scale = (area / (width * height))
+        .sqrt()
+        .min(1.0)
+        .min(4096.0 / width)
+        .min(4096.0 / height);
+    let width = (width * scale) as u32 & !1;
+    let height = (height * scale) as u32 & !1;
+    if width == 0 || height == 0 {
+        return Err("viewer aspect ratio cannot fit an even output mode".into());
+    }
+    Ok(PluginDisplay { width, height })
+}
+
+fn output_size(
+    control: &dyn super::compositor_focus::CompositorControl,
+    name: &str,
+) -> Result<crate::launcher::plugin_launch::PluginDisplay, String> {
+    use crate::launcher::plugin_launch::PluginDisplay;
+    // current_mode has refresh and other Sway fields, unlike the launch treaty.
+    #[derive(Deserialize)]
+    struct Mode {
+        width: u32,
+        height: u32,
+    }
+    #[derive(Deserialize)]
+    struct SwayOutput {
+        name: String,
+        current_mode: Option<Mode>,
+    }
+    let outputs: Vec<SwayOutput> = serde_json::from_str(&control.outputs()?)
+        .map_err(|e| format!("invalid Sway outputs: {e}"))?;
+    outputs
+        .into_iter()
+        .find(|o| o.name == name)
+        .and_then(|o| o.current_mode)
+        .map(|m| PluginDisplay {
+            width: m.width,
+            height: m.height,
+        })
+        .ok_or_else(|| format!("output {name} has no current mode"))
+}
+
+/// None means this placement is outside client shaping. Errors are launch warnings.
+pub(crate) fn apply_client_shape(
+    control: Option<&dyn super::compositor_focus::CompositorControl>,
+    displays: &[Display],
+    placement: &mut Placement,
+    viewer: Option<&crate::launcher::plugin_launch::PluginDisplay>,
+) -> Result<Option<crate::launcher::plugin_launch::PluginDisplay>, String> {
+    let Some(viewer) = viewer else {
+        return Ok(None);
+    };
+    let main = displays.iter().find(|d| d.main).ok_or("no main display")?;
+    if !main.unwatched
+        || placement.layout.is_some()
+        || placement.global
+        || placement.outputs != [main.name.clone()]
+    {
+        return Ok(None);
+    }
+    let size = client_shape(viewer, main)?;
+    let refresh = configured_refresh(main)?;
+    let control = control.ok_or("compositor unavailable for viewer display")?;
+    let result = (|| {
+        control.command(&format!(
+            "output {} mode --custom {}x{}@{}",
+            main.name, size.width, size.height, refresh
+        ))?;
+        if output_size(control, &main.name)? != size {
+            return Err("compositor did not confirm viewer display size".into());
+        }
+        Ok(())
+    })();
+    if let Err(reason) = result {
+        // A refused/mismatched custom mode may have changed the output. Restore
+        // the configured mode before composing the configured-size launch.
+        return match control.command(&configured_mode_command(main)) {
+            Ok(()) => Err(reason),
+            Err(restore) => Err(format!(
+                "{reason}; configured mode restore failed: {restore}"
+            )),
+        };
+    }
+    placement.width = size.width;
+    placement.height = size.height;
+    Ok(Some(size))
+}
+
+fn configured_mode_command(display: &Display) -> String {
+    format!("output {} mode {}", display.name, display.mode)
+}
+
+fn restore_commands(
+    control: &dyn super::compositor_focus::CompositorControl,
+    displays: &[Display],
+    game: Option<&Placement>,
+) -> Result<Vec<String>, String> {
+    let mut commands = Vec::new();
+    if game.is_none() {
+        for display in displays.iter().filter(|d| d.main && d.unwatched) {
+            let current = output_size(control, &display.name)?;
+            if (current.width, current.height) != (display.width, display.height) {
+                configured_refresh(display)?;
+                commands.push(configured_mode_command(display));
+            }
+        }
+    }
+    Ok(commands)
 }
 
 pub fn overlay_display<'a>(displays: &'a [Display], placement: &Placement) -> Option<&'a Display> {
@@ -346,7 +491,11 @@ pub(crate) fn place_surface_timed(
 ) -> Result<Vec<SurfaceDisplay>, String> {
     use super::compositor_focus::{select_focus_target, FocusTarget};
     let rectangles = surface_rectangles(displays, game);
+    let restore = restore_commands(control, displays, game)?;
     if displays.len() <= 1 {
+        if !restore.is_empty() {
+            control.command(&restore.join("; "))?;
+        }
         return Ok(rectangles);
     }
     let start = std::time::Instant::now();
@@ -356,7 +505,7 @@ pub(crate) fn place_surface_timed(
     let shell = super::compositor_focus::shell_node(&tree, shell_pids)?;
     let mut occupied = game.map(|p| p.outputs.clone()).unwrap_or_default();
     occupied.extend(rectangles.iter().map(|d| d.id.clone()));
-    let mut commands = Vec::new();
+    let mut commands = restore;
     if let Some(game) = game.filter(|p| p.global) {
         let candidate = match select_focus_target(&tree, pids, shell_pids) {
             FocusTarget::Window(c) => c,
@@ -450,6 +599,8 @@ mod tests {
             Display {
                 name: "DSI-2".into(),
                 main: true,
+                unwatched: false,
+                mode: "640x480@60Hz".into(),
                 x: 0,
                 y: 0,
                 width: 640,
@@ -459,6 +610,8 @@ mod tests {
             Display {
                 name: "DSI-1".into(),
                 main: false,
+                unwatched: false,
+                mode: "640x480@60Hz".into(),
                 x: 0,
                 y: 480,
                 width: 640,
@@ -529,6 +682,225 @@ mod tests {
         assert_eq!(overlay[0].y, 0);
     }
 
+    #[test]
+    fn configured_mode_is_native_and_safe_for_sway_commands() {
+        let mut display = unwatched_main().remove(0);
+        display.mode = "1920x1080@59.94Hz".into();
+        assert_eq!(configured_refresh(&display).unwrap(), "59.94Hz");
+        assert_eq!(
+            configured_mode_command(&display),
+            "output DSI-2 mode 1920x1080@59.94Hz"
+        );
+        for mode in [
+            "1920x1080@0Hz",
+            "1920x1080@NaNHz",
+            "1920x1080@60Hz; exec bad",
+            "640x480@60Hz",
+        ] {
+            display.mode = mode.into();
+            assert!(configured_refresh(&display).is_err(), "{mode}");
+        }
+    }
+
+    #[test]
+    fn client_shape_preserves_aspect_within_area_and_even_side_limits() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        let mut configured = displays().remove(0);
+        configured.width = 1920;
+        configured.height = 1080;
+        for (width, height, expected) in [
+            (2176, 1812, (1578, 1314)),
+            (1280, 720, (1280, 720)),
+            (641, 481, (640, 480)),
+            (1920, 1080, (1920, 1080)),
+            (10000, 100, (4096, 40)),
+            (100, 10000, (40, 4096)),
+            (u32::MAX, u32::MAX, (1440, 1440)),
+        ] {
+            let size = client_shape(&PluginDisplay { width, height }, &configured).unwrap();
+            assert_eq!((size.width, size.height), expected);
+            assert!(u64::from(size.width) * u64::from(size.height) <= 1920 * 1080);
+            assert!(size.width <= 4096 && size.height <= 4096);
+            assert_eq!((size.width % 2, size.height % 2), (0, 0));
+        }
+        assert!(client_shape(
+            &PluginDisplay {
+                width: 0,
+                height: 1080
+            },
+            &configured
+        )
+        .is_err());
+        assert!(client_shape(
+            &PluginDisplay {
+                width: 1,
+                height: 1080
+            },
+            &configured
+        )
+        .is_err());
+        assert!(client_shape(
+            &PluginDisplay {
+                width: u32::MAX,
+                height: 2
+            },
+            &configured
+        )
+        .is_err());
+    }
+
+    fn unwatched_main() -> Vec<Display> {
+        let mut ds = displays();
+        ds.truncate(1);
+        ds[0].unwatched = true;
+        ds[0].mode = "1920x1080@60Hz".into();
+        ds[0].width = 1920;
+        ds[0].height = 1080;
+        ds
+    }
+
+    #[test]
+    fn custom_mode_is_confirmed_before_changing_placement() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        let dir = tempfile::tempdir().unwrap();
+        let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+        std::fs::write(
+            dir.path().join("outputs"),
+            r#"[{"name":"DSI-2","current_mode":{"width":1578,"height":1314,"refresh":60000}}]"#,
+        )
+        .unwrap();
+        let mut ds = unwatched_main();
+        ds[0].mode = "1920x1080@120Hz".into();
+        let mut p = choose(None, &runner(), &ds).unwrap();
+        let size = apply_client_shape(
+            Some(&control),
+            &ds,
+            &mut p,
+            Some(&PluginDisplay {
+                width: 2176,
+                height: 1812,
+            }),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!((size.width, size.height), (1578, 1314));
+        assert_eq!((p.width, p.height), (1578, 1314));
+        let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
+        assert_eq!(
+            events,
+            "output DSI-2 mode --custom 1578x1314@120Hz\nget_outputs\n"
+        );
+    }
+
+    #[test]
+    fn watched_dual_pane_and_absent_viewer_never_request_a_mode() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        let ds = unwatched_main();
+        let viewer = PluginDisplay {
+            width: 2176,
+            height: 1812,
+        };
+        let mut p = choose(None, &runner(), &ds).unwrap();
+        assert_eq!(apply_client_shape(None, &ds, &mut p, None).unwrap(), None);
+        let mut watched = ds.clone();
+        watched[0].unwatched = false;
+        assert_eq!(
+            apply_client_shape(None, &watched, &mut p, Some(&viewer)).unwrap(),
+            None
+        );
+        let mut dual = choose(Some(&system()), &runner(), &ds).unwrap();
+        assert_eq!(
+            apply_client_shape(None, &ds, &mut dual, Some(&viewer)).unwrap(),
+            None
+        );
+        assert_eq!((p.width, p.height), (1920, 1080));
+    }
+
+    #[test]
+    fn refused_or_unconfirmed_custom_mode_keeps_configured_placement_with_a_diagnostic() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        for refusal in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+            if refusal {
+                std::fs::write(dir.path().join("reject"), "--custom").unwrap();
+            }
+            std::fs::write(
+                dir.path().join("outputs"),
+                r#"[{"name":"DSI-2","current_mode":{"width":1920,"height":1080}}]"#,
+            )
+            .unwrap();
+            let ds = unwatched_main();
+            let mut p = choose(None, &runner(), &ds).unwrap();
+            let warning = apply_client_shape(
+                Some(&control),
+                &ds,
+                &mut p,
+                Some(&PluginDisplay {
+                    width: 2176,
+                    height: 1812,
+                }),
+            )
+            .unwrap_err();
+            assert!(warning.contains(if refusal {
+                "refused"
+            } else {
+                "did not confirm"
+            }));
+            assert_eq!((p.width, p.height), (1920, 1080));
+            let batches = std::fs::read_to_string(dir.path().join("batches")).unwrap();
+            assert!(batches.ends_with("output DSI-2 mode 1920x1080@60Hz\n"));
+        }
+    }
+
+    #[test]
+    fn shell_restores_only_unwatched_main_without_a_game_and_only_if_different() {
+        for count in [1, 2] {
+            for (unwatched, game, width, restores) in [
+                (true, false, 1578, true),
+                (true, false, 1920, false),
+                (false, false, 1578, false),
+                (true, true, 1578, false),
+            ] {
+                let dir = tempfile::tempdir().unwrap();
+                let control = sway_program(dir.path(), r#"[{"success":true}]"#);
+                let mut ds = unwatched_main();
+                ds[0].unwatched = unwatched;
+                if count == 2 {
+                    ds.push(displays().remove(1));
+                }
+                std::fs::write(
+                    dir.path().join("outputs"),
+                    format!(
+                        r#"[{{"name":"DSI-2","current_mode":{{"width":{width},"height":1080}}}}]"#
+                    ),
+                )
+                .unwrap();
+                let p = choose(None, &runner(), &ds).unwrap();
+                place_surface(
+                    &control,
+                    &ds,
+                    game.then_some(&p),
+                    &Default::default(),
+                    &[100].into_iter().collect(),
+                )
+                .unwrap();
+                let batches =
+                    std::fs::read_to_string(dir.path().join("batches")).unwrap_or_default();
+                assert_eq!(
+                    batches.contains("output DSI-2 mode 1920x1080@60Hz"),
+                    restores,
+                    "{batches}"
+                );
+                if count == 2 && restores {
+                    assert!(batches.lines().nth(1).unwrap().starts_with(
+                        "output DSI-2 mode 1920x1080@60Hz; [con_id=10] fullscreen disable"
+                    ));
+                }
+            }
+        }
+    }
+
     fn sway_program(
         directory: &std::path::Path,
         reply: &str,
@@ -543,7 +915,11 @@ mod tests {
                 r#"#!/bin/sh
 cd '{}' || exit 1
 for argument do command="$argument"; done
-case "$command" in get_tree)
+case "$command" in get_outputs)
+ printf 'get_outputs\n' >> events
+ cat outputs
+ exit;;
+get_tree)
  printf 'get_tree\n' >> events
  cat tree
  exit;;
@@ -622,6 +998,8 @@ fi
         ds.push(Display {
             name: "SIDE".into(),
             main: false,
+            unwatched: false,
+            mode: "1920x1080@60Hz".into(),
             x: 1280,
             y: 300,
             width: 1920,

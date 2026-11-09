@@ -188,6 +188,7 @@ async fn public_bitsy_attachment_search_acquire_route_and_native_launch() {
         &route,
         None,
         None,
+        None,
         PERSON,
     )
     .unwrap();

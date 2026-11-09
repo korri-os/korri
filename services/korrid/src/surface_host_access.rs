@@ -366,6 +366,7 @@ mod tests {
             (Some(oversized_label.as_str()), false),
         ] {
             let request = RpcRequest::SessionPrepare(crate::SessionPrepareRequest {
+                viewer_display: None,
                 game_id: "neverball".into(),
                 host: host.map(str::to_owned),
             });
@@ -509,6 +510,7 @@ mod tests {
     fn local_sessions_reject_duplicate_authorization_and_origin_headers() {
         let access = SurfaceHostAccess::new(TOKEN, ORIGIN, SurfaceHostPermission::LocalSessions);
         let request = RpcRequest::SessionPrepare(crate::SessionPrepareRequest {
+            viewer_display: None,
             game_id: "neverball".into(),
             host: None,
         });

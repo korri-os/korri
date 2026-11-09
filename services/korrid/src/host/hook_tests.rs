@@ -451,6 +451,7 @@ async fn prepared_hook_environment_uses_only_the_games_explicit_baseline_and_pla
         .prepare(
             crate::plugin_test_fixtures::GBA_ID,
             runtime.owner_public_key().as_deref(),
+            None,
         )
         .await
         .unwrap();

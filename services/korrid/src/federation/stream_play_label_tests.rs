@@ -25,7 +25,7 @@ async fn stream_play_prefers_a_verified_directory_label_and_otherwise_keeps_the_
     );
     runtime.claim_save_owner();
     let launch = runtime
-        .prepare("game", None)
+        .prepare("game", None, None)
         .await
         .unwrap()
         .session

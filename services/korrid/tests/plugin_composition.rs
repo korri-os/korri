@@ -119,6 +119,7 @@ fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchCo
         &route,
         None,
         None,
+        None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
@@ -437,6 +438,7 @@ export const handlers = {'launch.compose': input => {
         &route,
         None,
         None,
+        None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
@@ -589,6 +591,7 @@ fn enabled_modifiers_require_their_exact_installed_contribution() {
             &route,
             None,
             None,
+            None,
             "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
         );
         assert_eq!(result.is_ok(), success, "{id}: {result:?}");
@@ -635,6 +638,7 @@ fn multiple_modifiers_compose_the_previous_plan_in_device_key_order() {
         &snapshot,
         &registry,
         &route,
+        None,
         None,
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
@@ -1064,6 +1068,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
         &config,
         &registry,
         &route,
+        None,
         None,
         None,
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",

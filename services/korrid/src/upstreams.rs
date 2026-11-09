@@ -1026,7 +1026,9 @@ impl UpstreamRegistry {
                 .await?;
                 let moonlight_address = viewer.moonlight_address.clone();
                 let reach = viewer.reach.clone();
-                let prepared = client.prepare_stream(game_id).await?;
+                let prepared = client
+                    .prepare_stream(game_id, self.viewer.display())
+                    .await?;
                 let selected = SelectedRemoteSession {
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Native {
@@ -2002,6 +2004,8 @@ mod tests {
     struct ExactNativeState {
         launch_id: String,
         active_phase: Arc<std::sync::Mutex<Option<String>>>,
+        viewer_display:
+            Arc<std::sync::Mutex<Option<crate::launcher::plugin_launch::PluginDisplay>>>,
         steps: Arc<std::sync::Mutex<Option<korri_surface_treaty::SurfaceSteps>>>,
         stop_pending: bool,
         freeze_failures: Arc<std::sync::Mutex<usize>>,
@@ -2091,7 +2095,8 @@ mod tests {
                     overlay: None,
                 }))
             }
-            crate::RpcRequest::SessionPrepare(_) => {
+            crate::RpcRequest::SessionPrepare(request) => {
+                *state.viewer_display.lock().unwrap() = request.viewer_display;
                 *state.active_phase.lock().unwrap() = Some("running".into());
                 RpcResponse::SessionPrepare(SelectedGameLaunchOutcome::Ok(
                     crate::game_routes::SelectedGameLaunch {
@@ -2173,6 +2178,7 @@ mod tests {
         let state = ExactNativeState {
             launch_id: "11111111111111111111111111111111".into(),
             active_phase: Default::default(),
+            viewer_display: Default::default(),
             steps: Default::default(),
             stop_pending,
             freeze_failures: Default::default(),
@@ -3070,11 +3076,17 @@ command = ["native-game"]
     async fn native_prepare_starts_one_exact_viewer_with_the_selected_peer_address() {
         let (native_url, state) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
+        let display = crate::launcher::plugin_launch::PluginDisplay {
+            width: 2176,
+            height: 1812,
+        };
+        viewer.set_display(display.clone());
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
             .with_linux_viewer(Arc::new(viewer.clone()));
 
         let prepared = registry.prepare_stream("game", None).await.unwrap();
 
+        assert_eq!(*state.viewer_display.lock().unwrap(), Some(display));
         assert_eq!(prepared.session.launch_id, state.launch_id);
         assert_eq!(
             viewer.calls(),
@@ -3194,7 +3206,7 @@ command = ["native-game"]
     async fn stale_selected_route_requests_have_zero_viewer_effects() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
-            .prepare_stream("game")
+            .prepare_stream("game", None)
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
@@ -3226,7 +3238,7 @@ command = ["native-game"]
     async fn native_freeze_and_thaw_require_nonempty_exact_ids_on_the_selected_route() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
-            .prepare_stream("game")
+            .prepare_stream("game", None)
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
@@ -3398,7 +3410,7 @@ command = ["native-game"]
         };
         *state.steps.lock().unwrap() = Some(steps.clone());
         NativeClient::new(url.clone())
-            .prepare_stream("game")
+            .prepare_stream("game", None)
             .await
             .unwrap();
         let registry = selected_viewer_registry(
@@ -3427,7 +3439,7 @@ command = ["native-game"]
     async fn recovery_restores_only_the_explicitly_selected_far_launch_viewer() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
-            .prepare_stream("game")
+            .prepare_stream("game", None)
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
@@ -3462,7 +3474,7 @@ command = ["native-game"]
     async fn recovery_correlates_far_freeze_with_the_exact_running_viewer() {
         let (native_url, state) = exact_native_server(false).await;
         let client = NativeClient::new(native_url.clone());
-        client.prepare_stream("game").await.unwrap();
+        client.prepare_stream("game", None).await.unwrap();
         client.session_freeze(&state.launch_id).await.unwrap();
         let viewer = TestLinuxStreamViewer::default();
         viewer.seed(state.launch_id.clone(), LinuxViewerStatus::Running);
@@ -3489,7 +3501,7 @@ command = ["native-game"]
     async fn stopping_recovery_has_zero_viewer_effects() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
-            .prepare_stream("game")
+            .prepare_stream("game", None)
             .await
             .unwrap();
         state.set_phase("stopping");
@@ -3515,7 +3527,7 @@ command = ["native-game"]
     async fn status_recovery_and_stop_share_one_lifecycle_mutation_gate() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
-            .prepare_stream("game")
+            .prepare_stream("game", None)
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
@@ -3567,7 +3579,7 @@ command = ["native-game"]
     async fn recovery_reports_explicit_incomplete_state_without_guessing_a_viewer() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
-            .prepare_stream("game")
+            .prepare_stream("game", None)
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
@@ -4072,7 +4084,7 @@ command = ["native-game"]
     async fn far_launch_end_stops_the_exact_live_viewer_and_clears_the_route() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
-            .prepare_stream("game")
+            .prepare_stream("game", None)
             .await
             .unwrap();
         let viewer = TestLinuxStreamViewer::default();
@@ -4117,7 +4129,10 @@ command = ["native-game"]
             .session_stop(&first.session.launch_id, false)
             .await
             .unwrap();
-        let second = NativeClient::new(sobo).prepare_stream("two").await.unwrap();
+        let second = NativeClient::new(sobo)
+            .prepare_stream("two", None)
+            .await
+            .unwrap();
 
         // The selected holder reports that the exact launch ended: recovery
         // stops this device's viewer itself instead of waiting for an exact
@@ -4171,11 +4186,11 @@ command = ["native-game"]
         let zao = native_server("zao", "one").await;
         let sobo = native_server("sobo", "two").await;
         NativeClient::new(zao.clone())
-            .prepare_stream("one")
+            .prepare_stream("one", None)
             .await
             .unwrap();
         NativeClient::new(sobo.clone())
-            .prepare_stream("two")
+            .prepare_stream("two", None)
             .await
             .unwrap();
         let registry = UpstreamRegistry::new(vec![

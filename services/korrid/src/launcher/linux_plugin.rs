@@ -35,14 +35,15 @@ pub fn preflight_route(
     route: &ResolvedRoute,
     person: Option<&str>,
 ) -> Result<Vec<super::typed_settings::LaunchWarning>, LaunchError> {
-    match inspect_route(root, snapshot, registry, route, None, None, person)? {
+    match inspect_route(root, snapshot, registry, route, None, None, None, person)? {
         RouteInspection::Unowned(warnings) => Ok(warnings),
         RouteInspection::Owned(launch) => Ok(launch.warnings),
     }
 }
 
-/// Build argv only. The runner callback returns the native launch plan; Korri
-/// owns materialization and process/session lifecycle.
+/// Prepare native launch argv. Confirm an eligible viewer output mode before
+/// composing the plan; Korri owns materialization and process/session lifecycle.
+#[allow(clippy::too_many_arguments)]
 pub fn launch_route(
     root: &Path,
     snapshot: &ConfigSnapshot,
@@ -50,6 +51,7 @@ pub fn launch_route(
     route: &ResolvedRoute,
     launch: Option<crate::launch_settings::LaunchOverride>,
     display: Option<PluginDisplay>,
+    viewer_display: Option<PluginDisplay>,
     person: &str,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
     match inspect_route(
@@ -59,6 +61,7 @@ pub fn launch_route(
         route,
         launch,
         display,
+        viewer_display,
         Some(person),
     )? {
         RouteInspection::Owned(launch) => Ok(launch),
@@ -66,6 +69,7 @@ pub fn launch_route(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn inspect_route(
     root: &Path,
     snapshot: &ConfigSnapshot,
@@ -73,6 +77,7 @@ fn inspect_route(
     route: &ResolvedRoute,
     launch: Option<crate::launch_settings::LaunchOverride>,
     display: Option<PluginDisplay>,
+    viewer_display: Option<PluginDisplay>,
     person: Option<&str>,
 ) -> Result<RouteInspection, LaunchError> {
     let error = |message| LaunchError::RouteUnavailable(message);
@@ -200,7 +205,7 @@ fn inspect_route(
         _ => None,
     }));
     let displays = crate::host::display_placement::configured_displays().map_err(error)?;
-    let placement = if displays.is_empty() {
+    let mut placement = if displays.is_empty() {
         None
     } else {
         Some(
@@ -218,14 +223,43 @@ fn inspect_route(
             .map_err(error)?,
         )
     };
-    let display = placement
-        .as_ref()
-        .filter(|_| displays.len() > 1)
-        .map(|p| PluginDisplay {
-            width: p.width,
-            height: p.height,
-        })
-        .or(display);
+    let shaped = if let Some(placement) = placement.as_mut() {
+        let control = crate::host::configured_compositor();
+        match crate::host::display_placement::apply_client_shape(
+            control.as_deref(),
+            &displays,
+            placement,
+            viewer_display.as_ref(),
+        ) {
+            Ok(size) => size,
+            Err(message) => {
+                warnings.push(super::typed_settings::LaunchWarning {
+                    setting: "viewerDisplay".into(),
+                    runner_id: route.runner_id.clone(),
+                    build: build.clone(),
+                    message,
+                });
+                // A custom mode was not confirmed. Use configured geometry,
+                // never an unconfirmed live output from before preparation.
+                Some(PluginDisplay {
+                    width: placement.width,
+                    height: placement.height,
+                })
+            }
+        }
+    } else {
+        None
+    };
+    let display = shaped.or_else(|| {
+        placement
+            .as_ref()
+            .filter(|_| displays.len() > 1)
+            .map(|p| PluginDisplay {
+                width: p.width,
+                height: p.height,
+            })
+            .or(display)
+    });
     let mut composition = LaunchComposition {
         placement: placement.clone(),
         display,
