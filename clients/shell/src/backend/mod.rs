@@ -40,6 +40,9 @@ pub enum HostEvent {
     },
     /// A native pointer event, including moves and cancellation. It is not a button.
     PointerActivity,
+    /// The first finger went down. Queue before dispatching that down to Slint,
+    /// so Touched precedes even a control that activates on the down edge.
+    TouchStarted,
     Focus(bool),
     Close,
     /// The window finished drawing a frame. Sent once per window, and once more each

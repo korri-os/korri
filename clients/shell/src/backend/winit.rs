@@ -5,7 +5,10 @@
 use super::{Backend, FrameCounter, HostEvent, Placement};
 use crate::input::Key;
 use slint::winit_030::{winit, EventResult, WinitWindowAccessor};
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 pub struct Winit;
 
@@ -44,8 +47,9 @@ impl Backend for Winit {
     }
 
     fn attach(&self, window: &slint::Window, sink: Rc<dyn Fn(HostEvent)>, frames: FrameCounter) {
-        use winit::event::{ElementState, WindowEvent};
+        use winit::event::{ElementState, TouchPhase, WindowEvent};
         let first = Cell::new(true);
+        let touches = RefCell::new(std::collections::HashSet::new());
         window.on_winit_window_event(move |_, event| {
             match event {
                 WindowEvent::RedrawRequested => {
@@ -73,15 +77,36 @@ impl Backend for Winit {
                     }
                     return EventResult::PreventDefault;
                 }
-                WindowEvent::Touch(_)
-                | WindowEvent::MouseInput { .. }
+                WindowEvent::Touch(touch) => {
+                    sink(HostEvent::PointerActivity);
+                    let mut touches = touches.borrow_mut();
+                    match touch.phase {
+                        TouchPhase::Started => {
+                            let first = touches.is_empty();
+                            touches.insert(touch.id);
+                            if first {
+                                sink(HostEvent::TouchStarted);
+                            }
+                        }
+                        TouchPhase::Ended | TouchPhase::Cancelled => {
+                            touches.remove(&touch.id);
+                        }
+                        TouchPhase::Moved => (),
+                    }
+                }
+                WindowEvent::MouseInput { .. }
                 | WindowEvent::CursorMoved { .. }
                 | WindowEvent::CursorEntered { .. }
                 | WindowEvent::CursorLeft { .. }
                 | WindowEvent::MouseWheel { .. } => {
                     sink(HostEvent::PointerActivity);
                 }
-                WindowEvent::Focused(focused) => sink(HostEvent::Focus(*focused)),
+                WindowEvent::Focused(focused) => {
+                    if !focused {
+                        touches.borrow_mut().clear();
+                    }
+                    sink(HostEvent::Focus(*focused));
+                }
                 WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                     sink(HostEvent::Resized)
                 }

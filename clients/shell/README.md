@@ -156,6 +156,12 @@ model.
 Each tappable entry keeps its existing `focusId` in the view and binds it to
 Slint. The view alone decides which target the finger hit.
 
+On the first finger-down of a gesture, the shell queues `Touched` before
+Slint receives that down. It has no target and does not itself wake an idle
+surface. Extra fingers, movement, lift and cancellation send no additional
+`Touched`; cancellation does not undo the down. Probe taps dispatch directly
+to their Slint window, so the probe and walks never send `Touched`.
+
 Android passes native touch down, move, up and cancel to Slint. The hosted
 gameplay overlay receives coordinates relative to its SurfaceView, converted
 from pixels to logical units by its density. Controller samples stay on the

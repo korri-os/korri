@@ -37,6 +37,10 @@ pub fn activated(target: &str, at: f32, released: bool) -> Value {
     })
 }
 
+pub fn touched() -> Value {
+    json(SurfaceMessage::Touched)
+}
+
 pub fn dragged(region: &str, by: i32) -> Value {
     json(SurfaceMessage::Dragged {
         region: region.to_owned(),
@@ -117,6 +121,7 @@ mod tests {
             pressed(Button::Left).to_string(),
             r#"{"_tag":"Pressed","button":"left"}"#
         );
+        assert_eq!(touched().to_string(), r#"{"_tag":"Touched"}"#);
         assert_eq!(
             korri_published().to_string(),
             r#"{"_tag":"KorriPublished"}"#

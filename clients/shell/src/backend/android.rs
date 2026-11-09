@@ -127,6 +127,9 @@ impl Android {
             }
             if let Some((sink, ..)) = touch.borrow().as_ref() {
                 sink(HostEvent::PointerActivity);
+                if motion.action() == MotionAction::Down {
+                    sink(HostEvent::TouchStarted);
+                }
             }
             // Let Slint deliver native touch (including cancel) to TouchArea and
             // Flickable. No cursor steps or synthetic Pressed messages.
@@ -394,14 +397,17 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
                                 platform::{InternalEvent, WindowEvent},
                             };
                             let phase = match sample[0] as i32 {
-                                0 => TouchPhase::Started,
-                                1 => TouchPhase::Ended,
+                                0 | 5 => TouchPhase::Started,
+                                1 | 6 => TouchPhase::Ended,
                                 2 => TouchPhase::Moved,
                                 3 => TouchPhase::Cancelled,
                                 _ => continue,
                             };
                             if let Some((sink, ..)) = backend.overlay_front.borrow().as_ref() {
                                 sink(HostEvent::PointerActivity);
+                                if sample[0] == 0.0 {
+                                    sink(HostEvent::TouchStarted);
+                                }
                             }
                             let scale = window.window().scale_factor();
                             window.window().dispatch_event(WindowEvent::internal(

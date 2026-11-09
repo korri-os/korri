@@ -108,17 +108,17 @@ public final class KorriSurfaceHost {
         int action = event.getActionMasked();
         int phase;
         switch (action) {
-            case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_POINTER_DOWN: phase = 0; break;
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_POINTER_UP: phase = 1; break;
+            case MotionEvent.ACTION_DOWN: phase = 0; break;
+            case MotionEvent.ACTION_POINTER_DOWN: phase = 5; break;
+            case MotionEvent.ACTION_UP: phase = 1; break;
+            case MotionEvent.ACTION_POINTER_UP: phase = 6; break;
             case MotionEvent.ACTION_MOVE: phase = 2; break;
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_OUTSIDE: phase = 3; break;
             default: return true;
         }
         for (int i = 0; i < event.getPointerCount(); i++) {
-            if (phase < 2 && i != event.getActionIndex()) continue;
+            if ((phase < 2 || phase == 5 || phase == 6) && i != event.getActionIndex()) continue;
             float x = event.getX(i), y = event.getY(i);
             if (!Float.isFinite(x) || !Float.isFinite(y)) continue;
             active.pointers.add((float) phase);
@@ -129,7 +129,9 @@ public final class KorriSurfaceHost {
         return true;
     }
 
-    // Four floats per touch sample: phase (down/up/move/cancel = 0/1/2/3), id, X, Y.
+    // Four floats per touch sample: Android action, id, X, Y. Only DOWN (0)
+    // starts a gesture; POINTER_DOWN (5) adds a finger. UP/POINTER_UP are 1/6,
+    // MOVE is 2 and CANCEL/OUTSIDE are 3. This preserves gesture-start ordering.
     // Rust divides pixels by the hosted Slint window's density, just as NativeActivity does.
     public static synchronized float[] takePointers() {
         if (active == null) return new float[0];

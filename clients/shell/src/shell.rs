@@ -415,16 +415,7 @@ impl Shell {
                 generation,
                 window,
                 message,
-            } => {
-                if self.current.as_ref().is_some_and(|c| {
-                    c.generation == generation
-                        && ((window == 0 && c.surface_shown)
-                            || (window == 1 && c.overlay.is_some()))
-                }) {
-                    self.activity();
-                    self.update(&message);
-                }
-            }
+            } => self.surface_input(generation, window, message),
             Event::Native(events) => {
                 let now = self.now();
                 for event in events {
@@ -477,6 +468,16 @@ impl Shell {
         }
     }
 
+    fn surface_input(&mut self, generation: u64, window: u8, message: Value) {
+        if self.current.as_ref().is_some_and(|c| {
+            c.generation == generation
+                && ((window == 0 && c.surface_shown) || (window == 1 && c.overlay.is_some()))
+        }) {
+            self.activity();
+            self.update(&message);
+        }
+    }
+
     fn host(&mut self, generation: u64, window: u8, event: HostEvent) {
         match event {
             HostEvent::FirstFrame => {
@@ -517,6 +518,7 @@ impl Shell {
                 }
                 self.presses(presses);
             }
+            HostEvent::TouchStarted => self.surface_input(generation, window, messages::touched()),
             HostEvent::PointerActivity => {
                 if self
                     .current

@@ -14,12 +14,13 @@ use std::{
     rc::{Rc, Weak},
 };
 
-/// A window, its host sink, its frame counter, and whether its first frame is still due.
+/// A window, its host sink, frame counter, first-frame flag and active finger ids.
 type Sink = (
     Weak<MinimalSoftwareWindow>,
     Rc<dyn Fn(HostEvent)>,
     FrameCounter,
     bool,
+    std::collections::HashSet<i32>,
 );
 
 thread_local! {
@@ -117,13 +118,31 @@ impl Headless {
             return;
         };
         let sink = SINKS.with(|s| {
-            s.borrow()
-                .iter()
+            s.borrow_mut()
+                .iter_mut()
                 .find(|(w, ..)| w.upgrade().is_some_and(|w| Rc::ptr_eq(&w, &window)))
-                .map(|(_, sink, ..)| sink.clone())
+                .map(|(_, sink, _, _, touches)| {
+                    use i_slint_core::input::TouchPhase;
+                    let started = match phase {
+                        TouchPhase::Started => {
+                            let first = touches.is_empty();
+                            touches.insert(id);
+                            first
+                        }
+                        TouchPhase::Ended | TouchPhase::Cancelled => {
+                            touches.remove(&id);
+                            false
+                        }
+                        TouchPhase::Moved => false,
+                    };
+                    (sink.clone(), started)
+                })
         });
-        if let Some(sink) = sink {
+        if let Some((sink, started)) = sink {
             sink(HostEvent::PointerActivity);
+            if started {
+                sink(HostEvent::TouchStarted);
+            }
         }
         window
             .window()
@@ -170,7 +189,7 @@ impl Headless {
                 sinks
                     .iter_mut()
                     .find(|(w, ..)| w.upgrade().is_some_and(|w2| Rc::ptr_eq(&w2, &window)))
-                    .map(|(_, sink, frames, first)| {
+                    .map(|(_, sink, frames, first, _)| {
                         frames.add();
                         let was_first = std::mem::replace(first, false);
                         (sink.clone(), was_first)
@@ -220,7 +239,13 @@ impl Backend for Headless {
             SINKS.with(|s| {
                 let mut sinks = s.borrow_mut();
                 sinks.retain(|(w, ..)| !w.upgrade().is_some_and(|w| Rc::ptr_eq(&w, &window)));
-                sinks.push((Rc::downgrade(&window), sink, frames, true))
+                sinks.push((
+                    Rc::downgrade(&window),
+                    sink,
+                    frames,
+                    true,
+                    Default::default(),
+                ))
             });
         }
     }

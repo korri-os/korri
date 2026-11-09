@@ -3,6 +3,8 @@ globalThis.surface = {
   preferences: { "probe.word": { mark: "device", initial: "first" } },
   init: (model, preferences) => ({ word: preferences["probe.word"], count: 0, stored: false, idle: -1, ticks: 0 }),
   update: (state, message, model) => {
+    if (["Touched", "Activated", "Dragged"].includes(message._tag)) state = { ...state, touchEvents: [...(state.touchEvents || []), message] };
+    if (message._tag === "Touched") return { state, requests: [] };
     if (message._tag === "Dragged") return { state: { ...state, drag: JSON.stringify(message) }, requests: [] };
     if (message._tag === "Activated") return { state: { ...state, activation: JSON.stringify(message) }, requests: [] };
     if (message._tag === "PreferenceStored") return { state: { ...state, stored: message.key === "probe.word" }, requests: [] };
@@ -29,6 +31,7 @@ globalThis.surface = {
   },
   view: (state, model) => (globalThis.views = (globalThis.views || 0) + 1, {
     activation: state.activation || "",
+    touchEvents: JSON.stringify(state.touchEvents || []),
     drag: state.drag || "",
     widthSeen: state.width || 0,
     heightSeen: state.height || 0,
@@ -45,6 +48,7 @@ globalThis.surface = {
   }),
   overlay: (state, model) => ({
     activation: state.activation || "",
+    touchEvents: JSON.stringify(state.touchEvents || []),
     drag: state.drag || "",
     heading: model.presentation.kind === "gameplay-overlay" ? (model.presentation.title || "") : "",
     controls: model.presentation.kind === "gameplay-overlay" ? model.presentation.controls.length : 0,

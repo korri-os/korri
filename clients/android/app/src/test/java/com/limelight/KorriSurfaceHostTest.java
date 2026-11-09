@@ -108,6 +108,34 @@ public class KorriSurfaceHostTest {
         }
     }
 
+    @Test public void additionalFingersPreservePointerActionsInsteadOfStartingAnotherGesture() {
+        Surface surface = new Surface(new SurfaceTexture(0));
+        KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 2, () -> fail("Unexpected failure"));
+        android.view.MotionEvent.PointerProperties[] properties = new android.view.MotionEvent.PointerProperties[2];
+        android.view.MotionEvent.PointerCoords[] positions = new android.view.MotionEvent.PointerCoords[2];
+        for (int i = 0; i < 2; i++) {
+            properties[i] = new android.view.MotionEvent.PointerProperties();
+            properties[i].id = i;
+            positions[i] = new android.view.MotionEvent.PointerCoords();
+            positions[i].x = 100 + i * 20;
+            positions[i].y = 40;
+        }
+        android.view.MotionEvent event = android.view.MotionEvent.obtain(0, 0,
+                android.view.MotionEvent.ACTION_POINTER_DOWN | (1 << android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                2, properties, positions, 0, 0, 1, 1, 7, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0);
+        try {
+            KorriSurfaceHost.forwardTouch(event);
+            assertArrayEquals(new float[] { 5, 1, 120, 40 }, KorriSurfaceHost.takePointers(), 0);
+            event.setAction(android.view.MotionEvent.ACTION_POINTER_UP | (1 << android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT));
+            KorriSurfaceHost.forwardTouch(event);
+            assertArrayEquals(new float[] { 6, 1, 120, 40 }, KorriSurfaceHost.takePointers(), 0);
+        } finally {
+            event.recycle();
+            KorriSurfaceHost.detach(attachment);
+            surface.release();
+        }
+    }
+
     @Test public void guideBecomesMenuOnlyWhileTheSurfaceOwnsInput() {
         Surface surface = new Surface(new SurfaceTexture(0));
         KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 1, () -> fail("Unexpected renderer failure"));

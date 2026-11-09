@@ -939,3 +939,118 @@ fn package_row_drags_on_both_roots_reach_logic_without_pressed() {
     assert_eq!(rig.int("presses"), 0.0);
     assert_eq!(rig.int("count"), 0.0);
 }
+
+#[test]
+fn touched_is_once_per_gesture_not_per_finger_and_survives_cancel() {
+    use i_slint_core::input::TouchPhase;
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    let at = slint::LogicalPosition::new(500.0, 400.0);
+    for (id, phase) in [
+        (0, TouchPhase::Started),
+        (1, TouchPhase::Started),
+        (0, TouchPhase::Moved),
+        (1, TouchPhase::Moved),
+        (0, TouchPhase::Ended),
+        (1, TouchPhase::Cancelled),
+        (0, TouchPhase::Moved),
+        (0, TouchPhase::Ended),
+        (0, TouchPhase::Started),
+        (0, TouchPhase::Cancelled),
+    ] {
+        Headless::touch(id, at, phase);
+    }
+    rig.settle();
+    assert_eq!(
+        serde_json::from_str::<Value>(&rig.string("touch-events")).unwrap(),
+        json!([{"_tag": "Touched"}, {"_tag": "Touched"}])
+    );
+}
+
+#[test]
+fn touched_precedes_down_release_and_drag_callbacks_on_both_roots() {
+    use i_slint_core::input::TouchPhase;
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    let mut expected = Vec::new();
+    for overlay in [false, true] {
+        if overlay {
+            rig.fixture.set_overlay(true);
+            rig.until("overlay", |r| r.shell.overlay_shown());
+        }
+        // This control activates on the down edge, before touch() returns.
+        Headless::touch(
+            0,
+            slint::LogicalPosition::new(340.0, 60.0),
+            TouchPhase::Started,
+        );
+        rig.settle();
+        expected.extend([
+            json!({"_tag": "Touched"}),
+            json!({"_tag": "Activated", "target": "probe:down"}),
+        ]);
+        assert_eq!(
+            serde_json::from_str::<Value>(&rig.string("touch-events")).unwrap(),
+            json!(expected)
+        );
+        Headless::touch(
+            0,
+            slint::LogicalPosition::new(340.0, 60.0),
+            TouchPhase::Cancelled,
+        );
+        for phase in [TouchPhase::Started, TouchPhase::Moved, TouchPhase::Ended] {
+            Headless::touch(0, slint::LogicalPosition::new(80.0, 60.0), phase);
+        }
+        expected.extend([json!({"_tag": "Touched"}), json!({"_tag": "Activated", "target": if overlay { "probe:overlay" } else { "probe:tap" }})]);
+        Headless::touch(
+            0,
+            slint::LogicalPosition::new(240.0, 60.0),
+            TouchPhase::Started,
+        );
+        Headless::touch(
+            0,
+            slint::LogicalPosition::new(220.0, 60.0),
+            TouchPhase::Moved,
+        );
+        Headless::touch(
+            0,
+            slint::LogicalPosition::new(220.0, 60.0),
+            TouchPhase::Ended,
+        );
+        expected.extend([json!({"_tag": "Touched"}), json!({"_tag": "Dragged", "region": if overlay { "overlay-shelf" } else { "surface-shelf" }, "by": -2})]);
+        rig.settle();
+        assert_eq!(
+            serde_json::from_str::<Value>(&rig.string("touch-events")).unwrap(),
+            json!(expected)
+        );
+        if overlay {
+            assert!(
+                matches!(rig.shell.overlay_property("touch-events"), Some(SlintValue::String(s))
+                if serde_json::from_str::<Value>(&s).unwrap() == json!(expected))
+            );
+        }
+    }
+}
+
+#[test]
+fn touched_from_a_missing_or_hidden_overlay_is_not_delivered() {
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    // The first loaded package has generation 1. Neither an absent Overlay
+    // nor an old generation may deliver touch messages to the current logic.
+    for (generation, window) in [(1, 1), (999, 0)] {
+        rig.shell.handle(Event::Host {
+            generation,
+            window,
+            event: HostEvent::TouchStarted,
+        });
+    }
+    rig.settle();
+    assert_eq!(rig.string("touch-events"), "[]");
+    rig.fixture.set_overlay(true);
+    rig.until("overlay", |r| r.shell.overlay_shown());
+    rig.shell.handle(Event::Host {
+        generation: 1,
+        window: 0,
+        event: HostEvent::TouchStarted,
+    });
+    rig.settle();
+    assert_eq!(rig.string("touch-events"), "[]");
+}
