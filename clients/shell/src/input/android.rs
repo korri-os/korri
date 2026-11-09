@@ -38,6 +38,15 @@ impl AndroidInput {
         }
     }
 
+    /// Begin a fresh mapper lifetime after a hosted Surface is released.
+    pub fn reset(&mut self, active: bool) {
+        // Shell::detach_overlay_window resets the mapper even when the main
+        // window regained focus first. Its next sample needs a fresh device
+        // declaration and neutral initialization, not just another delta.
+        self.devices.clear();
+        self.set_active(active);
+    }
+
     pub fn removed(&mut self, device: i32) -> NativeEvent {
         self.devices.remove(&device);
         NativeEvent::DeviceRemoved(device.to_string())
@@ -228,6 +237,32 @@ mod tests {
         );
         route(&mut router, source.key(7, 20, false).unwrap(), 1005.0);
         assert!(!router.holding());
+    }
+
+    #[test]
+    fn overlay_release_reinitializes_known_devices_even_when_catalog_already_has_focus() {
+        let mut source = AndroidInput::default();
+        let mut router = Router::new(true);
+        for cycle in 0..3 {
+            let now = f64::from(cycle * 1000);
+            assert_eq!(
+                route(&mut router, source.key(7, 22, true).unwrap(), now),
+                vec![Press::Button(Button::Right)]
+            );
+            route(&mut router, source.key(7, 22, false).unwrap(), now + 1.0);
+            // Disconnect, End and Open Korri all release the hosted Surface.
+            // Main can regain focus before that release reaches this thread.
+            source.set_active(true);
+            router.set_active(true, now + 2.0);
+            router.native(NativeEvent::Disconnected, now + 3.0);
+            source.reset(true);
+            assert_eq!(
+                route(&mut router, source.key(7, 20, true).unwrap(), now + 4.0),
+                vec![Press::Button(Button::Down)]
+            );
+            route(&mut router, source.key(7, 20, false).unwrap(), now + 5.0);
+            assert!(!router.holding());
+        }
     }
 
     #[test]

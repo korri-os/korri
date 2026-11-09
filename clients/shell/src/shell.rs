@@ -332,7 +332,11 @@ impl Shell {
     /// releasing the renderer, and reset input edges between host lifetimes.
     pub fn detach_overlay_window(&mut self) {
         if let Some(current) = self.current.as_mut() {
-            current.overlay.take();
+            if let Some((overlay, _)) = current.overlay.take() {
+                // A shown Slint window retains its component until hide().
+                // Retire it before the host releases the renderer/Surface.
+                let _ = overlay.hide();
+            }
             if let Some(windows) = self.focused.as_mut() {
                 windows.remove(&(current.generation, 1));
             }

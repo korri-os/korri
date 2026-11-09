@@ -380,6 +380,82 @@ fn declare_carries_the_declared_displays_and_only_all_gets_model_displays() {
     assert!(rig.fixture.model("probe").get("displays").is_none());
 }
 
+// All three viewer exits close the hosted Surface and publish catalog. Check
+// both Android callback orders with the same controller ID across the boundary.
+fn catalog_receives_android_pressed_after_overlay_exit(focus_first: bool, model_first: bool) {
+    use korri_shell::input::android::AndroidInput;
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    let mut source = AndroidInput::default();
+    rig.fixture.set_overlay(true);
+    rig.until("hosted overlay", |r| r.shell.overlay_shown());
+    rig.shell.overlay_focus(true);
+    for pressed in [true, false] {
+        rig.shell
+            .handle(Event::Native(source.key(7, 22, pressed).unwrap()));
+    }
+    rig.until("overlay receives Pressed right", |r| r.int("count") == 1.0);
+
+    let main_focus = |rig: &mut Rig| {
+        rig.shell.handle(Event::Host {
+            generation: 0,
+            window: 0,
+            event: HostEvent::Focus(true),
+        })
+    };
+    if focus_first {
+        main_focus(&mut rig);
+        source.set_active(true);
+    }
+    if model_first {
+        rig.fixture.set_overlay(false);
+        rig.until("exit publishes catalog", |r| !r.shell.overlay_shown());
+    }
+    rig.shell.detach_overlay_window();
+    // The same handoff used by the Android Surface-release callback.
+    source.reset(focus_first);
+    if !model_first {
+        rig.fixture.set_overlay(false);
+    }
+    if !focus_first {
+        main_focus(&mut rig);
+        source.set_active(true);
+    }
+    rig.settle();
+    assert!(!rig.shell.overlay_shown());
+    assert_eq!(Headless::live_windows(), 1);
+    for pressed in [true, false] {
+        rig.shell
+            .handle(Event::Native(source.key(7, 22, pressed).unwrap()));
+    }
+    rig.until("catalog receives Pressed right after viewer exit", |r| {
+        r.int("count") == 2.0
+    });
+    // Stick samples from that same device work too, not only digital keys.
+    rig.shell
+        .handle(Event::Native(source.axes(7, -0.8, 0.0, 0.0, 0.0)));
+    rig.shell
+        .handle(Event::Native(source.axes(7, 0.0, 0.0, 0.0, 0.0)));
+    rig.until("catalog receives Pressed left after viewer exit", |r| {
+        r.int("count") == 1.0
+    });
+    assert!(!rig.shell.overlay_shown());
+}
+
+#[test]
+fn disconnect_hands_controller_pressed_back_to_the_catalog() {
+    catalog_receives_android_pressed_after_overlay_exit(true, true);
+}
+
+#[test]
+fn end_hands_controller_pressed_back_to_the_catalog() {
+    catalog_receives_android_pressed_after_overlay_exit(false, true);
+}
+
+#[test]
+fn open_korri_hands_controller_pressed_back_to_the_catalog() {
+    catalog_receives_android_pressed_after_overlay_exit(true, false);
+}
+
 #[test]
 fn the_overlay_follows_the_presentation() {
     let mut rig = rig(&["probe"], 12, Behaviour::default());

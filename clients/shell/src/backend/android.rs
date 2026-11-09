@@ -187,7 +187,9 @@ impl Android {
             }
         }
         self.overlay_focus.set(false);
-        self.input.borrow_mut().set_active(self.native_focus.get());
+        // Detach reset the mapper. Reset its Android device cache too, even
+        // when GainedFocus arrived before the hosted Surface was destroyed.
+        self.input.borrow_mut().reset(self.native_focus.get());
     }
 }
 
