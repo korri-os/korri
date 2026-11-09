@@ -253,11 +253,18 @@ struct ArtifactBuild {
 
 /// The Nix systems the plugin catalog publishes (`platform` in
 /// plugin-host/src/catalog.rs).
-const ARTIFACT_PLATFORMS: [&str; 2] = ["x86_64-linux", "aarch64-linux"];
+/// ADR 0054 adds `aarch64-android`: not a real Nix system (nixpkgs'
+/// `aarch64-android` example elaborates to `aarch64-linux`), set by Korri's
+/// tooling for Android releases.
+const ARTIFACT_PLATFORMS: [&str; 3] = ["x86_64-linux", "aarch64-linux", "aarch64-android"];
+/// A runner without `platforms` runs on these, as before ADR 0054.
+const LINUX_PLATFORMS: [&str; 2] = ["x86_64-linux", "aarch64-linux"];
 
-/// This device's Nix system. Other targets match no `platforms` entry.
+/// This device's platform. Other targets match no `platforms` entry.
 pub(crate) fn host_platform() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
+    if cfg!(target_os = "android") {
+        "aarch64-android"
+    } else if cfg!(target_arch = "x86_64") {
         "x86_64-linux"
     } else if cfg!(target_arch = "aarch64") {
         "aarch64-linux"
@@ -278,6 +285,17 @@ pub struct ArtifactFile {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RunnerRecord {
+    /// ADR 0054: where this runner runs. Omitted means every Linux platform.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub platforms: Option<Vec<String>>,
+    /// ADR 0054: the Android packages an Android runner starts, in preference
+    /// order. korrid passes the installed one as `androidPackage`.
+    #[serde(
+        default,
+        rename = "androidPackages",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub android_packages: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub steps: Option<Vec<RunnerStep>>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -1347,7 +1365,7 @@ fn normalize_plugin(
                     .any(|p| !ARTIFACT_PLATFORMS.contains(&p.as_str()))
                 {
                     return Err(invalid(
-                        "artifact platforms must be x86_64-linux or aarch64-linux",
+                        "artifact platforms must be x86_64-linux, aarch64-linux or aarch64-android",
                     ));
                 }
                 platforms
@@ -1485,7 +1503,16 @@ fn normalize_plugin(
                 return Err(invalid("releases must not contain duplicate hashes"));
             }
         }
-        if native == runner.command.is_some() {
+        let android = validate_runner_platforms(local_id, runner)?;
+        if android {
+            if runner.program.is_some() || runner.command.is_some() || runner.core.is_some() {
+                return Err(invalid_contribution(
+                    "runner",
+                    local_id,
+                    "an Android runner starts an Android package, not a program, command or core",
+                ));
+            }
+        } else if native == runner.command.is_some() {
             return Err(PluginError::InvalidContribution {
                 kind: "runner",
                 record_id: local_id.clone(),
@@ -1493,6 +1520,15 @@ fn normalize_plugin(
             });
         }
     }
+    // ADR 0054: a device keeps only the runners for its own platform. Session
+    // controls of a runner this device drops are dropped with it.
+    let mut dropped_runner_ids: BTreeSet<String> = declaration
+        .runners
+        .values()
+        .filter(|runner| !runner_runs_on(runner, platform))
+        .map(|runner| runner.id.clone())
+        .collect();
+    declaration.runners.retain(|_, runner| runner_runs_on(runner, platform));
 
     for (local_id, transport) in &declaration.transports {
         if local_id.is_empty() {
@@ -1513,6 +1549,7 @@ fn normalize_plugin(
         .values()
         .map(|record| record.id.clone())
         .collect();
+    let dropped_runners = std::mem::take(&mut dropped_runner_ids);
     let owned_transports: BTreeSet<String> = declaration
         .transports
         .values()
@@ -1534,7 +1571,10 @@ fn normalize_plugin(
             });
         }
         let owns_context = match control.owner.kind {
-            SessionControlOwnerKind::Runner => owned_runners.contains(&control.owner.id),
+            SessionControlOwnerKind::Runner => {
+                owned_runners.contains(&control.owner.id)
+                    || dropped_runners.contains(&control.owner.id)
+            }
             SessionControlOwnerKind::Transport => owned_transports.contains(&control.owner.id),
         };
         if !owns_context {
@@ -1695,6 +1735,10 @@ fn normalize_plugin(
 
     crate::plugin_discovery::validate(&id, &declaration.discovery)
         .map_err(|reason| invalid_contribution("discovery", &id, &reason))?;
+    declaration.session_controls.retain(|_, control| {
+        !(control.owner.kind == SessionControlOwnerKind::Runner
+            && dropped_runners.contains(&control.owner.id))
+    });
     Ok(Plugin {
         discovery: declaration.discovery,
         acquisition_providers,
@@ -1714,6 +1758,69 @@ fn normalize_plugin(
         groups: declaration.groups,
         declared_games,
     })
+}
+
+fn runner_runs_on(runner: &RunnerRecord, platform: &str) -> bool {
+    match &runner.platforms {
+        Some(platforms) => platforms.iter().any(|p| p == platform),
+        None => LINUX_PLATFORMS.contains(&platform),
+    }
+}
+
+/// Validates `platforms` and `androidPackages`; true for an Android runner.
+fn validate_runner_platforms(local_id: &str, runner: &RunnerRecord) -> Result<bool, PluginError> {
+    let invalid = |reason: &str| invalid_contribution("runner", local_id, reason);
+    let android = match &runner.platforms {
+        None => false,
+        Some(platforms) => {
+            let mut seen = BTreeSet::new();
+            if platforms.is_empty()
+                || platforms
+                    .iter()
+                    .any(|p| !ARTIFACT_PLATFORMS.contains(&p.as_str()) || !seen.insert(p))
+            {
+                return Err(invalid(
+                    "platforms must be distinct values of x86_64-linux, aarch64-linux and aarch64-android",
+                ));
+            }
+            let android = seen.contains(&"aarch64-android".to_owned());
+            if android && platforms.len() > 1 {
+                return Err(invalid("an Android runner names only aarch64-android"));
+            }
+            android
+        }
+    };
+    match (&runner.android_packages, android) {
+        (None, false) => Ok(false),
+        (Some(_), false) => Err(invalid("androidPackages require platforms [aarch64-android]")),
+        (None, true) => Err(invalid("an Android runner needs androidPackages")),
+        (Some(packages), true) => {
+            let mut seen = BTreeSet::new();
+            if packages.is_empty()
+                || packages
+                    .iter()
+                    .any(|p| !is_android_package(p) || !seen.insert(p))
+            {
+                return Err(invalid("androidPackages must be distinct Android package names"));
+            }
+            Ok(true)
+        }
+    }
+}
+
+/// An Android application ID: at least two dot-separated segments, each a
+/// letter followed by letters, digits or underscores.
+pub(crate) fn is_android_package(name: &str) -> bool {
+    let segments: Vec<_> = name.split('.').collect();
+    name.len() <= 255
+        && segments.len() >= 2
+        && segments.iter().all(|segment| {
+            segment
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic())
+                && segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
 }
 
 fn union<T: PartialEq + Clone>(target: &mut Vec<T>, values: &[T]) {
@@ -2864,5 +2971,53 @@ mod runner_steps_tests {
         ] {
             assert!(decode(steps.clone()).is_err(), "accepted {steps}");
         }
+    }
+}
+
+#[cfg(test)]
+mod runner_platform_tests {
+    use super::*;
+
+    const BOTH: &str = r#"{"name":"fallout2-ce","runners":{
+        "linux":{"program":"fallout2-ce","releases":["sha256:bf349305c3749ce6501c1e3618689d3ccbecd732569d486183786a227fc79703"]},
+        "android":{"platforms":["aarch64-android"],"androidPackages":["com.alexbatalov.fallout2ce"]}}}"#;
+
+    fn runners(platform: &str, json: &str) -> Result<Vec<String>, PluginError> {
+        decode_plugin_declaration_on("@test", json, platform)
+            .map(|plugin| plugin.runners.keys().cloned().collect())
+    }
+
+    #[test]
+    fn each_platform_keeps_only_its_own_runners() {
+        assert_eq!(runners("aarch64-linux", BOTH).unwrap(), vec!["linux"]);
+        assert_eq!(runners("x86_64-linux", BOTH).unwrap(), vec!["linux"]);
+        assert_eq!(runners("aarch64-android", BOTH).unwrap(), vec!["android"]);
+    }
+
+    #[test]
+    fn android_runner_rules_are_strict() {
+        for json in [
+            r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android"]}}}"#,
+            r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android"],"androidPackages":["bad"]}}}"#,
+            r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android"],"androidPackages":["a.b"],"program":"x"}}}"#,
+            r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android","aarch64-linux"],"androidPackages":["a.b"]}}}"#,
+            r#"{"name":"a","runners":{"r":{"command":"x","androidPackages":["a.b"]}}}"#,
+            r#"{"name":"a","runners":{"r":{"command":"x","platforms":["riscv64-linux"]}}}"#,
+            r#"{"name":"a","runners":{"r":{"command":"x","platforms":[]}}}"#,
+        ] {
+            assert!(runners("aarch64-android", json).is_err(), "accepted {json}");
+        }
+        assert!(is_android_package("dev.eden.eden_emulator"));
+        assert!(!is_android_package("dev..eden") && !is_android_package("1a.b"));
+    }
+
+    #[test]
+    fn controls_of_a_dropped_runner_are_dropped_with_it() {
+        let json = r#"{"name":"m","runners":{"linux":{"command":"x"}},
+            "controls":{"menu":{"order":0,"id":"@test:m/menu","owner":{"kind":"runner","id":"@test:m/linux"},
+            "label":"Menu","interaction":{"kind":"command"},"effect":"@korri:retroarch/open-menu"}}}"#;
+        let android = decode_plugin_declaration_on("@test", json, "aarch64-android");
+        let plugin = android.expect("a Linux-only plugin still loads on Android");
+        assert!(plugin.runners.is_empty() && plugin.session_controls.is_empty());
     }
 }
