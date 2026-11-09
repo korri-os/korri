@@ -105,6 +105,19 @@ pub fn scan_installed_apps(
         fail(diagnostics, "the installed-app report is invalid");
         return None;
     }
+    // A package that another plugin's runner starts belongs to that plugin's
+    // game (for example Korri's own Savage Wind APK); the generic Android
+    // plugin does not list it a second time (ADR 0054).
+    let claimed: BTreeSet<&str> = registry
+        .runners()
+        .values()
+        .flat_map(|runner| runner.android_packages.iter().flatten())
+        .map(String::as_str)
+        .collect();
+    let apps: Vec<InstalledApp> = apps
+        .into_iter()
+        .filter(|app| !claimed.contains(app.package_name.as_str()))
+        .collect();
     let output = registry
         .installed_package(ANDROID_INSTALLED_APPS)
         .map_err(|e| e.to_string())
