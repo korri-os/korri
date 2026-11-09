@@ -14,7 +14,9 @@
 //! Watch: a WebSocket to `ws://127.0.0.1:PORT/` with `Origin: <shell origin>`.
 //! First frame `Bearer CAP`, second `{"_tag":"app.surface.watch","payload":
 //! {"surfaceId":…}}`. korrid pushes `{"kind":"model","revision":"N","model":…}`
-//! and sends nothing more until the shell replies `{"kind":"ack","revision":"N"}`.
+//! and sends no further model until the shell replies `{"kind":"ack","revision":"N"}`.
+//! Independent host-only `{"kind":"localViewer","presenting":bool}` messages
+//! arrive even while a model awaits its ACK; they never enter package logic.
 //!
 //! Nothing here logs a payload, a failure body or the capability.
 
@@ -294,6 +296,8 @@ fn read_response(mut reader: impl BufRead) -> Result<Vec<u8>> {
 
 #[derive(Debug)]
 pub enum WatchEvent {
+    /// Host-only viewer state. Never forwarded to surface package logic.
+    LocalViewer { presenting: bool },
     /// A model push. Ack `revision` once it is applied.
     Model { revision: String, model: String },
     /// The watch socket reconnected after a loss; pushes may have been missed.
@@ -408,6 +412,13 @@ fn serve_watch(
                 let Ok(push) = serde_json::from_str::<Value>(&text) else {
                     return;
                 };
+                if push.get("kind").and_then(Value::as_str) == Some("localViewer") {
+                    let Some(presenting) = push.get("presenting").and_then(Value::as_bool) else {
+                        return;
+                    };
+                    events(WatchEvent::LocalViewer { presenting });
+                    continue;
+                }
                 let (Some("model"), Some(revision), Some(model)) = (
                     push.get("kind").and_then(Value::as_str),
                     push.get("revision").and_then(Value::as_str),
@@ -453,5 +464,46 @@ mod tests {
         assert!(
             matches!(read_response(denied), Err(KorridError::Unavailable(r)) if r == "HTTP 401")
         );
+    }
+
+    #[test]
+    fn host_viewer_facts_are_delivered_even_with_a_model_pending_ack() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            for value in [
+                json!({"kind":"model", "revision":"1", "model":{"presentation":{"kind":"catalog"}}}),
+                json!({"kind":"localViewer", "presenting":true}),
+                json!({"kind":"localViewer", "presenting":false}),
+            ] {
+                socket
+                    .send(Message::Text(value.to_string().into()))
+                    .unwrap();
+            }
+            let _ = socket.close(None);
+        });
+        let stream = TcpStream::connect(loopback(port)).unwrap();
+        let (mut socket, _) =
+            tungstenite::client(format!("ws://127.0.0.1:{port}/"), stream).unwrap();
+        let events = std::sync::Mutex::new(Vec::new());
+        let (_acks, receiver) = mpsc::channel();
+        serve_watch(
+            &mut socket,
+            &|event| events.lock().unwrap().push(event),
+            &receiver,
+            &AtomicBool::new(false),
+        );
+        server.join().unwrap();
+        let events = events.into_inner().unwrap();
+        assert!(matches!(
+            &events[..],
+            [
+                WatchEvent::Model { .. },
+                WatchEvent::LocalViewer { presenting: true },
+                WatchEvent::LocalViewer { presenting: false }
+            ]
+        ));
     }
 }

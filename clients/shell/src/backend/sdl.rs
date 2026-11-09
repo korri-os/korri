@@ -51,6 +51,13 @@ impl Sdl {
 }
 
 impl Backend for Sdl {
+    fn local_viewer(&self, presenting: bool, gameplay_overlay: bool) {
+        korri_window_sdl::set_presentation(korri_window_sdl::Presentation::for_viewer(
+            presenting,
+            gameplay_overlay,
+        ));
+    }
+
     fn shared_window(&self) -> bool {
         true
     }

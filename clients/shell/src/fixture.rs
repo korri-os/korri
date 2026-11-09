@@ -45,6 +45,7 @@ struct Surface {
 }
 
 struct State {
+    local_viewer_presenting: bool,
     base: Value,
     games: Vec<Value>,
     surfaces: BTreeMap<String, Surface>,
@@ -77,6 +78,13 @@ pub struct Fixture {
 const ORIGIN: &str = "http://127.0.0.1:9";
 
 impl Fixture {
+    /// The same host-only fact as the embedded viewer edge, not a model field.
+    pub fn set_local_viewer_presenting(&self, presenting: bool) {
+        let (lock, changed) = &*self.shared;
+        lock.lock().unwrap().local_viewer_presenting = presenting;
+        changed.notify_all();
+    }
+
     /// Serve `model` (a `SurfaceModel` whose catalog is replaced by a cursor
     /// window over `games`).
     pub fn start(model: Value, games: Vec<Value>, behaviour: Behaviour) -> io::Result<Self> {
@@ -87,6 +95,7 @@ impl Fixture {
         let capability: String = entropy.iter().map(|byte| format!("{byte:02x}")).collect();
         let shared = Arc::new((
             Mutex::new(State {
+                local_viewer_presenting: false,
                 base: model,
                 games,
                 surfaces: BTreeMap::new(),
@@ -590,7 +599,19 @@ fn watch(
         .set_read_timeout(Some(Duration::from_millis(20)))?;
     let mut sent: Option<u64> = None;
     let mut acked = true;
+    let mut viewer_sent = None;
     loop {
+        let presenting = lock.lock().unwrap().local_viewer_presenting;
+        if viewer_sent != Some(presenting) {
+            socket
+                .send(Message::Text(
+                    json!({"kind":"localViewer", "presenting":presenting})
+                        .to_string()
+                        .into(),
+                ))
+                .map_err(io::Error::other)?;
+            viewer_sent = Some(presenting);
+        }
         // Push when acked and the revision moved on.
         let push = {
             let mut state = lock.lock().unwrap();

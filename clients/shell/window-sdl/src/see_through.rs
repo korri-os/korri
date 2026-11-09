@@ -1,4 +1,4 @@
-//! Opt-in plane-composition probe, not a surface presentation policy.
+//! Graphics-plane composition for the embedded viewer and the opt-in probe.
 //!
 //! Keep Slint's reused buffer and streaming texture intact. Clearing the
 //! target and copying only its right half leaves exact transparent black on
@@ -26,12 +26,12 @@ pub fn request_alpha(sdl: &Sdl) -> Result<(), String> {
     Ok(())
 }
 
-pub struct Diagnostic {
+pub struct Composition {
     surface: *mut c_void,
     marshal: Option<Marshal>,
 }
 
-impl Diagnostic {
+impl Composition {
     pub fn open(sdl: &Sdl, window: *mut ffi::Window, gl_renderer: bool) -> Result<Self, String> {
         // SAFETY: live SDL window; the pixel-format name is static.
         let format = unsafe {
@@ -90,9 +90,6 @@ impl Diagnostic {
             }
             eprintln!("sdl: see-through: clearing Wayland opaque region before each present");
         }
-        eprintln!(
-            "sdl: see-through enabled: left floor(width/2) columns transparent; right unchanged"
-        );
         Ok(diagnostic)
     }
 
@@ -101,10 +98,12 @@ impl Diagnostic {
         sdl: &Sdl,
         renderer: *mut ffi::Renderer,
         texture: *mut ffi::Texture,
-        width: u32,
-        height: u32,
+        size: (u32, u32),
+        presentation: crate::Presentation,
+        diagnostic: bool,
     ) -> Result<(), String> {
-        if let Some(marshal) = self.marshal {
+        let transparent = presentation != crate::Presentation::Surface || diagnostic;
+        if let Some(marshal) = self.marshal.filter(|_| transparent) {
             // SAFETY: live SDL-owned wl_surface on SDL's thread. Core
             // wl_surface v1 opcode 4 is set_opaque_region(?object). NULL
             // means no opaque pixels. Repeat because SDL 2.0.4 can reset it
@@ -114,14 +113,25 @@ impl Diagnostic {
         // SDL_BLENDMODE_NONE on the texture is intentional: it replaces
         // destination RGBA, retaining Slint's premultiplied alpha exactly.
         // SDL 2.0.4's ordinary BLEND would multiply premultiplied RGB again.
-        let rect = right_half(width, height);
-        // SAFETY: live SDL objects; both rectangles are in texture/output bounds.
+        // SAFETY: live SDL objects, rectangles within output/texture bounds.
         unsafe {
-            if (sdl.SDL_SetRenderDrawColor)(renderer, 0, 0, 0, 0) != 0
-                || (sdl.SDL_RenderClear)(renderer) != 0
-                || (sdl.SDL_RenderCopy)(renderer, texture, &rect, &rect) != 0
+            if transparent
+                && ((sdl.SDL_SetRenderDrawColor)(renderer, 0, 0, 0, 0) != 0
+                    || (sdl.SDL_RenderClear)(renderer) != 0)
             {
-                return Err(format!("see-through: clear/copy failed: {}", sdl.error()));
+                return Err(format!("see-through: clear failed: {}", sdl.error()));
+            }
+            if presentation == crate::Presentation::Stream {
+                return Ok(());
+            }
+            let rect = right_half(size.0, size.1);
+            let rect = if diagnostic && presentation == crate::Presentation::Surface {
+                &rect
+            } else {
+                std::ptr::null()
+            };
+            if (sdl.SDL_RenderCopy)(renderer, texture, rect, rect) != 0 {
+                return Err(format!("see-through: copy failed: {}", sdl.error()));
             }
         }
         Ok(())

@@ -169,6 +169,8 @@ in
           KORRI_SHELL_SEE_THROUGH=1 SDL_RENDER_DRIVER=software \
             cargo test --locked --release --manifest-path "$crate/window-sdl/Cargo.toml" \
               see_through_tests::transparent_half_preserves_rgba_and_partial_uploads -- --ignored --nocapture
+          SDL_RENDER_DRIVER=software cargo test --locked --release --manifest-path "$crate/window-sdl/Cargo.toml" \
+            see_through_tests::presenting_skips_surface_render_and_resumes_with_the_latest_view -- --ignored --nocapture
         '';
     shell-webos-proof =
       makeApp "shell-webos-proof"

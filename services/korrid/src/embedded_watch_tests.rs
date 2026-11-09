@@ -146,6 +146,10 @@ command = ["never-run"]
             .await
             .unwrap();
         socket.send(Message::Text(watch.into())).await.unwrap();
+        assert_eq!(
+            receive(&mut socket).await,
+            serde_json::json!({"kind":"localViewer", "presenting":false})
+        );
         let first = receive(&mut socket).await;
         assert_eq!(first["kind"], "model");
         assert_eq!(
@@ -317,6 +321,10 @@ fn embedded_owner_binding_platform_keeps_its_identity_rpc_and_surface_watch() {
             ))
             .await
             .unwrap();
+        assert_eq!(
+            receive(&mut socket).await,
+            serde_json::json!({"kind":"localViewer", "presenting":false})
+        );
         let push = receive(&mut socket).await;
         assert_eq!(push["kind"], "model");
         ack(&mut socket, &push).await;
@@ -444,6 +452,10 @@ fn embedded_input_edge_feeds_native_socket_and_controller_facts_and_is_joined() 
             ))
             .await
             .unwrap();
+        assert_eq!(
+            receive(&mut surface).await,
+            serde_json::json!({"kind":"localViewer", "presenting":false})
+        );
         let push = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 let push = receive(&mut surface).await;
@@ -484,5 +496,95 @@ fn embedded_input_edge_feeds_native_socket_and_controller_facts_and_is_joined() 
             stopped.load(Ordering::SeqCst),
             "edge task must be joined before stop returns"
         );
+    });
+}
+
+#[test]
+fn local_viewer_host_fact_crosses_watch_without_model_ack_and_is_resent_on_reconnect() {
+    let _guard = crate::tests::embedded_server_guard();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        let readable = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let (send, source) = tokio::sync::oneshot::channel();
+        let platform = EmbeddedPlatform {
+            native_input: Some(Box::new(move |source| {
+                send.send(source).ok().unwrap();
+                tokio::spawn(std::future::pending())
+            })),
+            ..Default::default()
+        };
+        let port = start_local_shell_server(
+            readable.path().to_str().unwrap(),
+            private.path().to_str().unwrap(),
+            platform,
+        )
+        .unwrap();
+        let _stop = Stop;
+        let source = source.await.unwrap();
+        let capability = zeroize::Zeroizing::new(local_server_capability().unwrap());
+        let connect = || async {
+            let mut request = format!("ws://127.0.0.1:{port}/")
+                .into_client_request()
+                .unwrap();
+            request.headers_mut().insert(
+                "Origin",
+                format!("http://127.0.0.1:{port}").parse().unwrap(),
+            );
+            let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+            socket
+                .send(Message::Text(
+                    format!("Bearer {}", capability.as_str()).into(),
+                ))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Text(
+                    serde_json::json!({"_tag":"app.surface.watch","payload":{"surfaceId":"zone"}})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            socket
+        };
+        let mut socket = connect().await;
+        assert_eq!(
+            receive(&mut socket).await,
+            serde_json::json!({"kind":"localViewer", "presenting":false})
+        );
+        let model = receive(&mut socket).await;
+        assert_eq!(model["kind"], "model");
+        assert!(
+            model["model"].get("localViewer").is_none(),
+            "surface treaty must not carry this fact"
+        );
+        // Deliberately leave the model unacknowledged: video readiness/exit must
+        // still reach the host while package logic is busy applying that model.
+        for presenting in [true, false, true] {
+            source.set_local_viewer_presenting(presenting);
+            assert_eq!(
+                receive(&mut socket).await,
+                serde_json::json!({"kind":"localViewer", "presenting":presenting})
+            );
+        }
+        socket.close(None).await.unwrap();
+        let mut socket = connect().await;
+        assert_eq!(
+            receive(&mut socket).await,
+            serde_json::json!({"kind":"localViewer", "presenting":true})
+        );
+        let model = receive(&mut socket).await;
+        ack(&mut socket, &model).await;
+        source.set_local_viewer_presenting(false);
+        loop {
+            let push = receive(&mut socket).await;
+            if push["kind"] == "localViewer" {
+                assert_eq!(push["presenting"], false);
+                break;
+            }
+            ack(&mut socket, &push).await;
+        }
     });
 }

@@ -49,6 +49,37 @@ pub enum Placement {
     Windowed { width: u32, height: u32 },
 }
 
+/// The host's graphics-plane presentation, independent of surface pixels.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Presentation {
+    #[default]
+    Surface,
+    /// Video below this foreground window: no surface rendering or upload.
+    Stream,
+    /// The package owns the overlay pixels, over transparent black.
+    GameplayOverlay,
+}
+
+impl Presentation {
+    pub fn for_viewer(presenting: bool, gameplay_overlay: bool) -> Self {
+        match (presenting, gameplay_overlay) {
+            (false, _) => Self::Surface,
+            (true, false) => Self::Stream,
+            (true, true) => Self::GameplayOverlay,
+        }
+    }
+}
+
+thread_local! {
+    static PRESENTATION: Cell<Presentation> = const { Cell::new(Presentation::Surface) };
+}
+
+/// Called on the UI thread by the shell after a host fact or model change.
+/// The next event-loop iteration invalidates and presents the new mode.
+pub fn set_presentation(presentation: Presentation) {
+    PRESENTATION.set(presentation);
+}
+
 /// Logical height the view is laid out for when no scale is given: a
 /// 1080-line output gets scale 1.5. A guess for a TV seen from a sofa, not a
 /// measured value. `SLINT_SCALE_FACTOR`, Slint's own name, overrides it.
@@ -183,8 +214,9 @@ struct Screen {
     buffer: Vec<PremultipliedRgbaColor>,
     /// The texture no longer holds the buffer (new texture, device reset).
     upload_all: bool,
-    /// Explicit plane-composition diagnostic; absent in normal rendering.
-    see_through: Option<see_through::Diagnostic>,
+    composition: see_through::Composition,
+    diagnostic: bool,
+    presentation: Presentation,
 }
 
 #[derive(Default)]
@@ -385,8 +417,30 @@ impl SdlPlatform {
         if !self.visible.get() {
             return Ok(());
         }
+        let presentation = PRESENTATION.get();
+        {
+            let mut screen = self.screen.borrow_mut();
+            if screen.presentation != presentation {
+                screen.presentation = presentation;
+                // Resume with a complete repaint: nothing was rendered while
+                // video alone was visible, including resize and view changes.
+                screen.upload_all = true;
+                self.slint_window.request_redraw();
+            }
+        }
         let mut failure = None;
         self.slint_window.draw_if_needed(|renderer| {
+            if presentation == Presentation::Stream {
+                let screen = self.screen.borrow();
+                if let Err(error) = compose(self.sdl(), &screen) {
+                    failure = Some(error);
+                    return;
+                }
+                // SAFETY: live renderer on its event-loop thread. No Slint
+                // renderer, pixel buffer write or texture upload on this path.
+                unsafe { (self.sdl().SDL_RenderPresent)(screen.renderer) };
+                return;
+            }
             let mut screen = self.screen.borrow_mut();
             let screen = &mut *screen;
             let started = Instant::now();
@@ -416,27 +470,9 @@ impl SdlPlatform {
                 }
                 screen.upload_all = false;
             }
-            if let Some(diagnostic) = &screen.see_through {
-                if let Err(error) = diagnostic.copy(
-                    &self.shared.sdl,
-                    screen.renderer,
-                    screen.texture,
-                    screen.width,
-                    screen.height,
-                ) {
-                    failure = Some(error);
-                    return;
-                }
-            } else {
-                // SAFETY: renderer and texture are live; full-target copy.
-                unsafe {
-                    (self.shared.sdl.SDL_RenderCopy)(
-                        screen.renderer,
-                        screen.texture,
-                        std::ptr::null(),
-                        std::ptr::null(),
-                    );
-                }
+            if let Err(error) = compose(self.sdl(), screen) {
+                failure = Some(error);
+                return;
             }
             // SAFETY: live renderer on the event-loop thread.
             unsafe {
@@ -815,7 +851,9 @@ impl SdlPlatform {
     fn event_loop(&self) -> Result<(), PlatformError> {
         let mut first = None;
         while self.frame_iteration(first.take())? {
-            let wait = if self.slint_window.has_active_animations() {
+            let wait = if PRESENTATION.get() != Presentation::Stream
+                && self.slint_window.has_active_animations()
+            {
                 Duration::from_millis(16)
             } else {
                 slint::platform::duration_until_next_timer_update()
@@ -831,6 +869,17 @@ impl SdlPlatform {
         }
         Ok(())
     }
+}
+
+fn compose(sdl: &Sdl, screen: &Screen) -> Result<(), String> {
+    screen.composition.copy(
+        sdl,
+        screen.renderer,
+        screen.texture,
+        (screen.width, screen.height),
+        screen.presentation,
+        screen.diagnostic,
+    )
 }
 
 /// SDL's `wl_display`, or null when SDL is not on Wayland.
@@ -859,9 +908,9 @@ fn wayland_window_info(sdl: &Sdl, window: *mut ffi::Window) -> Option<ffi::SysWm
 
 fn open_screen(sdl: &Sdl, title: &str, placement: Placement) -> Result<Screen, String> {
     let see_through = see_through::enabled(std::env::var_os("KORRI_SHELL_SEE_THROUGH").as_deref());
-    if see_through {
-        see_through::request_alpha(sdl)?;
-    }
+    // The viewer can become ready after window creation. Its existing EGL
+    // buffer must already have alpha; never replace the foreground window.
+    see_through::request_alpha(sdl)?;
     let title = CString::new(title).unwrap();
     let (width, height, flags) = match placement {
         Placement::Windowed { width, height } => (
@@ -942,15 +991,15 @@ fn open_screen(sdl: &Sdl, title: &str, placement: Placement) -> Result<Screen, S
             formats.contains(&ffi::SDL_PIXELFORMAT_ABGR8888)
         );
     }
-    let diagnostic = if see_through {
+    let composition = {
         // The GL attribute query is meaningful only with a GL renderer.
         // SDL compatibility libraries may return requested attributes even
         // for a software renderer with no current GL context.
         let name = unsafe { ffi::text(info.name) };
         eprintln!("sdl: see-through: renderer {name}");
         let gl_renderer = matches!(name.as_str(), "opengl" | "opengles" | "opengles2");
-        match see_through::Diagnostic::open(sdl, window, gl_renderer) {
-            Ok(diagnostic) => Some(diagnostic),
+        match see_through::Composition::open(sdl, window, gl_renderer) {
+            Ok(composition) => composition,
             Err(error) => {
                 // SAFETY: live renderer/window, owned here; no texture yet.
                 unsafe {
@@ -960,9 +1009,12 @@ fn open_screen(sdl: &Sdl, title: &str, placement: Placement) -> Result<Screen, S
                 return Err(error);
             }
         }
-    } else {
-        None
     };
+    if see_through {
+        eprintln!(
+            "sdl: see-through enabled: left floor(width/2) columns transparent; right unchanged"
+        );
+    }
     let mut screen = Screen {
         window,
         renderer,
@@ -972,7 +1024,9 @@ fn open_screen(sdl: &Sdl, title: &str, placement: Placement) -> Result<Screen, S
         pixels_per_point: 1.0,
         buffer: Vec::new(),
         upload_all: true,
-        see_through: diagnostic,
+        composition,
+        diagnostic: see_through,
+        presentation: Presentation::Surface,
     };
     measure(sdl, &mut screen);
     if let Err(error) = make_texture(sdl, &mut screen) {

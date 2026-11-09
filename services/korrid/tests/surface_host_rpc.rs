@@ -481,6 +481,8 @@ async fn embedded_surface_watch_uses_the_rpc_hub_and_authenticates() {
         .unwrap();
     let read =
         |message: Message| -> Value { serde_json::from_str(message.to_text().unwrap()).unwrap() };
+    let host = read(socket.next().await.unwrap().unwrap());
+    assert_eq!(host, json!({"kind":"localViewer", "presenting":false}));
     let first = read(
         tokio::time::timeout(std::time::Duration::from_secs(5), socket.next())
             .await

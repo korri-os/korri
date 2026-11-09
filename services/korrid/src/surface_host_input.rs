@@ -174,6 +174,8 @@ struct Shared {
     state: Mutex<SourceState>,
     /// Gamepad presence and evidence for the surface model's `controllers`.
     controllers: Arc<crate::surface::controllers::Controllers>,
+    /// Host-only graphics-plane fact; never part of a surface model.
+    local_viewer_presenting: watch::Sender<bool>,
 }
 
 /// Sole producer (share through Arc when host lifecycle and ingress both use it).
@@ -221,6 +223,21 @@ impl SurfaceHostInputSource {
             state.local_viewers.push(sender);
         }
         (baseline, receiver)
+    }
+
+    /// The embedded viewer edge calls this after confirmed readiness, and clears
+    /// it on exit/stop/disconnect. This is not inferred from a live far session.
+    /// Watches receive the current value on attach, independently of model ACKs.
+    pub fn set_local_viewer_presenting(&self, presenting: bool) {
+        self.shared
+            .local_viewer_presenting
+            .send_if_modified(|value| {
+                if *value == presenting {
+                    return false;
+                }
+                *value = presenting;
+                true
+            });
     }
 
     /// A DeviceAdded without values declares a neutral arrival. Use publish_device
@@ -566,6 +583,7 @@ fn broadcast(state: &mut SourceState, class: NativeInputDeviceClass, frames: &[A
 
 impl Drop for SurfaceHostInputSource {
     fn drop(&mut self) {
+        self.set_local_viewer_presenting(false);
         self.reset();
         self.shared
             .state
@@ -603,6 +621,7 @@ pub fn router_with_surfaces(
     );
     let shared = Arc::new(Shared {
         controllers: Arc::clone(&surfaces.controllers),
+        local_viewer_presenting: watch::channel(false).0,
         limits,
         state: Mutex::new(SourceState {
             connected: true,
@@ -901,6 +920,7 @@ async fn serve(
         Selection::Native(subscription) => subscription,
         Selection::Surface(surface_id) => {
             // A watch receives no input: release the input slot first.
+            let presenting = connection.shared.local_viewer_presenting.subscribe();
             drop(connection);
             if crate::surface::check_surface_id(&surface_id).is_err() {
                 return;
@@ -908,7 +928,7 @@ async fn serve(
             let Some(hub) = surfaces.hub.get().cloned() else {
                 return;
             };
-            crate::surface::watch::serve(socket, hub, surface_id).await;
+            crate::surface::watch::serve(socket, hub, surface_id, presenting).await;
             return;
         }
     };

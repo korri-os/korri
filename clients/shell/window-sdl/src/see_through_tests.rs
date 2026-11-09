@@ -60,6 +60,7 @@ fn transparent_half_preserves_rgba_and_partial_uploads() {
             alpha: 128,
         };
         screen.buffer.fill(pixel);
+        screen.buffer[0] = PremultipliedRgbaColor::default();
         upload(&sdl, &screen, (0, 0, width, height)).unwrap();
         // ARGB render target makes alpha measurable even under Xvfb, whose
         // desktop window itself need not be composited or alpha-capable.
@@ -107,12 +108,7 @@ fn transparent_half_preserves_rgba_and_partial_uploads() {
             );
             let source: Vec<_> = screen.buffer.iter().map(rgba).collect();
             assert_eq!(actual, source);
-            screen
-                .see_through
-                .as_ref()
-                .unwrap()
-                .copy(&sdl, screen.renderer, screen.texture, width, height)
-                .unwrap();
+            compose(&sdl, &screen).unwrap();
             assert_eq!(
                 unsafe {
                     read_pixels(
@@ -136,6 +132,42 @@ fn transparent_half_preserves_rgba_and_partial_uploads() {
                     "width={width}, pixel={i}, partial={partial}"
                 );
             }
+            screen.diagnostic = false;
+            for (presenting, overlay) in [
+                (false, false),
+                (true, false),
+                (true, true),
+                (true, false),
+                (false, false),
+                (true, true),
+                (false, true),
+            ] {
+                screen.presentation = Presentation::for_viewer(presenting, overlay);
+                compose(&sdl, &screen).unwrap();
+                assert_eq!(
+                    unsafe {
+                        read_pixels(
+                            screen.renderer,
+                            std::ptr::null(),
+                            ffi::SDL_PIXELFORMAT_ABGR8888,
+                            actual.as_mut_ptr().cast(),
+                            width as c_int * 4,
+                        )
+                    },
+                    0
+                );
+                let expected = if presenting && !overlay {
+                    vec![[0; 4]; screen.buffer.len()]
+                } else {
+                    source.clone()
+                };
+                assert_eq!(
+                    actual, expected,
+                    "presenting={presenting}, overlay={overlay}, width={width}"
+                );
+            }
+            screen.presentation = Presentation::Surface;
+            screen.diagnostic = true;
             assert_eq!(
                 screen.buffer.iter().map(rgba).collect::<Vec<_>>(),
                 source,
@@ -153,4 +185,78 @@ fn transparent_half_preserves_rgba_and_partial_uploads() {
     }
     // SAFETY: every SDL object has been destroyed.
     unsafe { (sdl.SDL_Quit)() };
+}
+
+slint::slint! {
+    export component PresentationProbe inherits Window {
+        in property <bool> changed;
+        background: changed ? #00ff00 : #ff0000;
+    }
+}
+
+struct TestPlatform(Rc<SdlPlatform>);
+impl slint::platform::Platform for TestPlatform {
+    fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
+        self.0.create_window_adapter()
+    }
+}
+
+#[test]
+#[ignore = "requires workstation SDL and Xvfb; never run on the TV"]
+fn presenting_skips_surface_render_and_resumes_with_the_latest_view() {
+    use slint::ComponentHandle;
+    let platform = Rc::new(
+        SdlPlatform::open(
+            "Presentation test",
+            Placement::Windowed {
+                width: 64,
+                height: 64,
+            },
+        )
+        .unwrap(),
+    );
+    slint::platform::set_platform(Box::new(TestPlatform(platform.clone()))).unwrap();
+    let view = PresentationProbe::new().unwrap();
+    view.show().unwrap();
+    platform.render().unwrap();
+    let before = platform.screen.borrow().buffer.clone();
+    let frames = platform.stats.borrow().frames;
+    set_presentation(Presentation::for_viewer(true, false));
+    platform.render().unwrap();
+    view.set_changed(true);
+    platform.render().unwrap();
+    assert_eq!(
+        platform.stats.borrow().frames,
+        frames,
+        "no surface renders during stream"
+    );
+    assert!(platform
+        .screen
+        .borrow()
+        .buffer
+        .iter()
+        .zip(&before)
+        .all(|(a, b)| rgba(a) == rgba(b)));
+    set_presentation(Presentation::for_viewer(true, true));
+    platform.render().unwrap();
+    let screen = platform.screen.borrow();
+    let pixel = &screen.buffer[screen.buffer.len() / 2];
+    assert_eq!(
+        rgba(pixel),
+        [0, 255, 0, 255],
+        "overlay renders the latest view"
+    );
+    drop(screen);
+    set_presentation(Presentation::Stream);
+    platform.render().unwrap();
+    view.set_changed(false);
+    set_presentation(Presentation::Surface);
+    platform.render().unwrap();
+    let screen = platform.screen.borrow();
+    assert_eq!(
+        rgba(&screen.buffer[screen.buffer.len() / 2]),
+        [255, 0, 0, 255]
+    );
+    drop(screen);
+    platform.close();
 }

@@ -52,6 +52,10 @@ use std::{
 /// Everything the shell reacts to.
 #[derive(Debug)]
 pub enum Event {
+    LocalViewer {
+        generation: u64,
+        presenting: bool,
+    },
     /// `window`: 0 for a surface's `Surface`, 1 for its `Overlay`.
     Host {
         generation: u64,
@@ -183,6 +187,7 @@ pub struct Shell {
     compilations: usize,
     korrid: Korrid,
     backend: Rc<dyn Backend>,
+    local_viewer_presenting: bool,
     post: Arc<dyn Post>,
     options: Options,
     router: Router,
@@ -243,6 +248,7 @@ impl Shell {
             compilations: 0,
             korrid,
             backend,
+            local_viewer_presenting: false,
             post,
             options,
             router: Router::new(true),
@@ -402,6 +408,18 @@ impl Shell {
                     self.presses(presses);
                 }
             }
+            Event::LocalViewer {
+                generation,
+                presenting,
+            } => {
+                if self
+                    .current
+                    .as_ref()
+                    .is_some_and(|c| c.generation == generation)
+                {
+                    self.local_viewer_presenting = presenting;
+                }
+            }
             Event::Model {
                 generation,
                 revision,
@@ -430,6 +448,10 @@ impl Shell {
                 outcome,
             } => self.logic_done(generation, *outcome),
         }
+        self.backend.local_viewer(
+            self.local_viewer_presenting,
+            self.current.as_ref().is_some_and(|c| c.gameplay_overlay),
+        );
     }
 
     fn host(&mut self, generation: u64, window: u8, event: HostEvent) {
@@ -804,6 +826,10 @@ impl Shell {
                         model,
                     },
                     WatchEvent::Reconnected => Event::Reconnected { generation },
+                    WatchEvent::LocalViewer { presenting } => Event::LocalViewer {
+                        generation,
+                        presenting,
+                    },
                 })
             }),
         );

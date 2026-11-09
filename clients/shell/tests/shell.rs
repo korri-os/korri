@@ -66,7 +66,15 @@ fn source(id: &str) -> PathBuf {
 }
 
 fn rig(ids: &[&str], games: usize, behaviour: Behaviour) -> Rig {
-    let backend: Rc<dyn Backend> = Rc::new(Headless::install());
+    rig_with_backend(ids, games, behaviour, Rc::new(Headless::install()))
+}
+
+fn rig_with_backend(
+    ids: &[&str],
+    games: usize,
+    behaviour: Behaviour,
+    backend: Rc<dyn Backend>,
+) -> Rig {
     let root = tempfile::tempdir().unwrap();
     let packages: Vec<Package> = ids
         .iter()
@@ -745,4 +753,64 @@ fn resized_comes_before_the_first_view_and_follows_every_window_change() {
     rig.until("probe again", |r| r.shell.current_id() == Some("probe"));
     assert_eq!(rig.int("resizes"), 1.0);
     assert_eq!(rig.int("views-before-first-resize"), 0.0);
+}
+
+/// Observes the host/backend contract while using the real headless renderer.
+struct ObservedBackend {
+    inner: Headless,
+    viewer: std::cell::Cell<(bool, bool)>,
+}
+impl Backend for ObservedBackend {
+    fn local_viewer(&self, presenting: bool, overlay: bool) {
+        self.viewer.set((presenting, overlay));
+    }
+    fn shared_window(&self) -> bool {
+        self.inner.shared_window()
+    }
+    fn attach(
+        &self,
+        window: &slint::Window,
+        sink: Rc<dyn Fn(HostEvent)>,
+        frames: korri_shell::backend::FrameCounter,
+    ) {
+        self.inner.attach(window, sink, frames);
+    }
+    fn place(&self, window: &slint::Window, placement: Placement) {
+        self.inner.place(window, placement);
+    }
+}
+
+#[test]
+fn host_viewer_watch_and_overlay_model_drive_the_backend_without_entering_surface_logic() {
+    let backend = Rc::new(ObservedBackend {
+        inner: Headless::install(),
+        viewer: Default::default(),
+    });
+    let mut rig = rig_with_backend(&["pico"], 12, Behaviour::default(), backend.clone());
+    assert_eq!(backend.viewer.get(), (false, false));
+    rig.fixture.set_local_viewer_presenting(true);
+    rig.until("viewer presenting", |_| {
+        backend.viewer.get() == (true, false)
+    });
+    rig.fixture.set_overlay(true);
+    rig.until("gameplay overlay over video", |_| {
+        backend.viewer.get() == (true, true)
+    });
+    rig.fixture.set_local_viewer_presenting(false);
+    rig.until("viewer stopped in overlay", |_| {
+        backend.viewer.get() == (false, true)
+    });
+    rig.fixture.set_overlay(false);
+    rig.until("catalog restored", |_| {
+        backend.viewer.get() == (false, false)
+    });
+    rig.shell.handle(Event::LocalViewer {
+        generation: 9999,
+        presenting: true,
+    });
+    assert_eq!(
+        backend.viewer.get(),
+        (false, false),
+        "retired watches cannot change presentation"
+    );
 }

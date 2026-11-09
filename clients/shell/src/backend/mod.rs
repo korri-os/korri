@@ -107,6 +107,10 @@ impl FrameCounter {
 }
 
 pub trait Backend {
+    /// Only an embedded graphics-plane backend needs to react to local video.
+    /// Desktop viewers retain their own window and existing focus lifecycle.
+    fn local_viewer(&self, _presenting: bool, _gameplay_overlay: bool) {}
+
     /// True when every component draws into one native window, so a switch
     /// replaces the window's content instead of opening another window.
     fn shared_window(&self) -> bool;
