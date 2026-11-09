@@ -4346,11 +4346,39 @@ async fn plugin_admin_call<T>(
     request: PluginAdminRequest,
     answer: impl FnOnce(PluginAdminResponse) -> Option<T>,
 ) -> Result<T, RpcFailure> {
+    if state.plugin_admin.is_none() {
+        // ADR 0054: the Android app answers plugin requests itself.
+        if let Some(admin) = android_plugin_admin() {
+            let response = tokio::task::spawn_blocking(move || admin.handle(request))
+                .await
+                .map_err(|_| plugin_repositories::not_configured())??;
+            return answer(response).ok_or_else(plugin_repositories::wrong_response);
+        }
+    }
     let socket = state
         .plugin_admin
         .as_ref()
         .ok_or_else(plugin_repositories::not_configured)?;
     answer(socket.request(&request).await?).ok_or_else(plugin_repositories::wrong_response)
+}
+
+static ANDROID_PLUGIN_ADMIN: std::sync::OnceLock<android_plugin_admin::AndroidPluginAdmin> =
+    std::sync::OnceLock::new();
+
+fn android_plugin_admin() -> Option<&'static android_plugin_admin::AndroidPluginAdmin> {
+    ANDROID_PLUGIN_ADMIN.get()
+}
+
+/// Called once by the Android edge after `use_android_store`.
+pub fn use_android_plugin_admin(private_root: &std::path::Path, official: Option<String>) {
+    if let Some(store) = plugin_installation::android_store() {
+        let _ = ANDROID_PLUGIN_ADMIN.set(android_plugin_admin::AndroidPluginAdmin::new(
+            private_root,
+            store,
+            official,
+            Box::new(android_plugin_admin::https_fetch),
+        ));
+    }
 }
 
 fn applied(response: PluginAdminResponse) -> Option<plugin_admin::PluginChangeApplied> {
@@ -5902,6 +5930,7 @@ pub mod plugin;
 pub mod plugin_discovery;
 pub mod plugin_installation;
 pub mod nixfree_install;
+pub mod android_plugin_admin;
 pub mod plugin_policy;
 mod plugin_references;
 #[cfg(test)]

@@ -17,6 +17,11 @@ use std::ptr;
 mod network;
 mod viewer;
 
+/// The official catalog the Android app offers (ADR 0043). The Android build
+/// sets it from `nix/product/published-plugins.nix` `catalogUrl`; without it
+/// the person adds a repository by hand.
+const ANDROID_OFFICIAL_CATALOG: Option<&str> = option_env!("KORRI_OFFICIAL_CATALOG_URL");
+
 #[no_mangle]
 pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_version(
     mut env: JNIEnv,
@@ -123,6 +128,10 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
     };
     // ADR 0054: plugins live in app storage; korrid installs them itself.
     crate::plugin_installation::use_android_store(std::path::Path::new(&private_state_root));
+    crate::use_android_plugin_admin(
+        std::path::Path::new(&private_state_root),
+        ANDROID_OFFICIAL_CATALOG.map(str::to_owned),
+    );
     match start_local_server(
         &allowed_origin,
         &local_storage_root,

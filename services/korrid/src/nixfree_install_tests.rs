@@ -2,7 +2,7 @@ use super::*;
 use base64::Engine;
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
-const STORE_PATH: &str = "/nix/store/c0j4s87fx0j81n7s1szhszpimjlp9f48-korri-plugin";
+pub(crate) const STORE_PATH: &str = "/nix/store/c0j4s87fx0j81n7s1szhszpimjlp9f48-korri-plugin";
 
 fn nar_str(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
@@ -11,7 +11,7 @@ fn nar_str(out: &mut Vec<u8>, bytes: &[u8]) {
 }
 
 /// A NAR of one directory holding the given regular files, sorted by name.
-fn nar_of(files: &[(&str, &[u8])]) -> Vec<u8> {
+pub(crate) fn nar_of(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = Vec::new();
     for t in ["nix-archive-1", "(", "type", "directory"] {
         nar_str(&mut out, t.as_bytes());
@@ -32,20 +32,20 @@ fn nar_of(files: &[(&str, &[u8])]) -> Vec<u8> {
     out
 }
 
-fn manifest(extra: &str) -> Vec<u8> {
+pub(crate) fn manifest(extra: &str) -> Vec<u8> {
     format!(
         r#"{{"publisher":{{"namespace":"@korri"}},"entry":"plugin.ts","sources":["plugin.ts"]{extra}}}"#
     )
     .into_bytes()
 }
 
-struct Fixture {
-    archive: Vec<u8>,
-    sha256: String,
-    key: String,
+pub(crate) struct Fixture {
+    pub(crate) archive: Vec<u8>,
+    pub(crate) sha256: String,
+    pub(crate) key: String,
 }
 
-fn fixture_with(nar: &[u8], references: &str, sign: bool) -> Fixture {
+pub(crate) fn fixture_with(nar: &[u8], references: &str, sign: bool) -> Fixture {
     let rng = ring::rand::SystemRandom::new();
     let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
     let pair = Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap();

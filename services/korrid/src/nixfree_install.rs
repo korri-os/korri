@@ -526,11 +526,7 @@ impl AndroidPluginStore {
     }
 
     pub fn read(&self) -> Result<Vec<EnabledPackage>, String> {
-        match fs::read(self.registry_path()) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
-            Err(e) => Err(e.to_string()),
-        }
+        read_list(&self.registry_path())
     }
 
     /// Install one release and enable it, replacing an earlier release of the
@@ -555,18 +551,51 @@ impl AndroidPluginStore {
             fs::rename(&staging, &dest).map_err(storage)?;
         }
         package.package = dest;
-        let mut enabled = self.read().map_err(InstallError::Storage)?;
-        enabled.retain(|p| p.id != package.id);
-        enabled.push(package.clone());
-        enabled.sort_by(|a, b| a.id.cmp(&b.id));
-        let bytes = crate::plugin_installation::encode(&enabled).map_err(InstallError::Storage)?;
-        let temporary = self.root.join(".enabled-packages.json.tmp");
-        fs::write(&temporary, bytes).map_err(storage)?;
-        fs::rename(&temporary, self.registry_path()).map_err(storage)?;
+        for path in [self.installed_path(), self.registry_path()] {
+            let mut list = read_list(&path).map_err(InstallError::Storage)?;
+            list.retain(|p| p.id != package.id);
+            list.push(package.clone());
+            write_list(&path, list).map_err(InstallError::Storage)?;
+        }
         Ok(package)
     }
+
+    fn installed_path(&self) -> PathBuf {
+        self.root.join("installed-packages.json")
+    }
+
+    /// Enable or disable an installed plugin. Disabling keeps its files.
+    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
+        let installed = read_list(&self.installed_path())?;
+        let package = installed
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or("this plugin is not installed")?;
+        let mut list = self.read()?;
+        list.retain(|p| p.id != id);
+        if enabled {
+            list.push(package);
+        }
+        write_list(&self.registry_path(), list)
+    }
+}
+
+fn read_list(path: &Path) -> Result<Vec<EnabledPackage>, String> {
+    match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn write_list(path: &Path, mut list: Vec<EnabledPackage>) -> Result<(), String> {
+    list.sort_by(|a, b| a.id.cmp(&b.id));
+    let bytes = crate::plugin_installation::encode(&list)?;
+    let temporary = path.with_extension("json.tmp");
+    fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
+    fs::rename(&temporary, path).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
 #[path = "nixfree_install_tests.rs"]
-mod tests;
+pub(crate) mod tests;
