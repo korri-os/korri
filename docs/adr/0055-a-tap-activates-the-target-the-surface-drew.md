@@ -54,14 +54,20 @@ targets carry an `act`, which is what Confirm runs. Zone's Confirm handler
 - On a range control inside a scrolling list, the drag locks to the first axis
   the finger moves along. Sideways adjusts the control, and up or down scrolls
   the list.
-- While the finger moves, the view shows the value at once. Logic sends it
-  through the existing hold-and-wait path that controller steps use (Pico's
-  `SteppedRange`, `Waited`, `LeftRange`; 180 ms after the last change), so the
-  plugin is not flooded.
+- While the finger moves, the view shows the value at once. Logic sends a
+  value to the plugin only when the value, snapped to a step, changes. That is
+  how each controller step already sends, so a drag sends at most one call per
+  step it crosses.
 - `Activated` also gets an optional `released` flag. The view sets it on the
-  message it sends when the finger lifts. Logic then sends a held range value
-  at once instead of waiting 180 ms. The full variant is
+  message it sends when the finger lifts. Logic then sends the final value if
+  it differs from the last one sent. The full variant is
   `Activated { target, at?, released? }`.
+- Correction (2026-11-09, during the build): an earlier text of this record
+  said a held value waits 180 ms on an existing hold path. No package has a
+  running hold. Pico's adapter answers its wait at once, and Zone sends every
+  step at once. The step rule above replaces that text. The owner's choice
+  stands: the game reacts while the finger slides, and the plugin is not
+  flooded.
 - Every tap and drag counts as activity: it resets `Tick.idle_ms` as `Pressed`
   does.
 - While the screen is idle or in attract mode, the first tap only wakes it and
