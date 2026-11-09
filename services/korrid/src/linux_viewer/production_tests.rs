@@ -293,7 +293,18 @@ esac
             height: 720
         })
     );
-    viewer.start(launch, &address).await.unwrap();
+    // The Linux viewer still requests its local 1280x720, not the far size.
+    viewer
+        .start(
+            launch,
+            &address,
+            Some(crate::launcher::plugin_launch::PluginDisplay {
+                width: 640,
+                height: 480,
+            }),
+        )
+        .await
+        .unwrap();
     assert_eq!(
         &*provisioned.lock().unwrap(),
         &[("sunshine-host".into(), certificate.into())]

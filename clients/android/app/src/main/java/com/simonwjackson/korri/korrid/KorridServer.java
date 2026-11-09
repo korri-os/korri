@@ -54,8 +54,8 @@ public final class KorridServer {
     public static String viewerDisplay() {
         return com.limelight.KorriStreamViewer.viewerDisplay();
     }
-    public static String viewerStart(String launchId, String address) throws Exception {
-        return com.limelight.KorriStreamViewer.start(launchId, address);
+    public static String viewerStart(String launchId, String address, int width, int height) throws Exception {
+        return com.limelight.KorriStreamViewer.start(launchId, address, width, height);
     }
     public static String viewerStatus(String launchId) {
         return com.limelight.KorriStreamViewer.status(launchId);

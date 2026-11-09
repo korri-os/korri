@@ -47,6 +47,7 @@ impl LaunchReservations {
         let identity = SessionPrepared {
             game_id: game_id.into(),
             launch_id: crate::generate_launch_id(),
+            display: None,
         };
         let reservation = Arc::new(LaunchReservation {
             identity: identity.clone(),

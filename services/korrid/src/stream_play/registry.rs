@@ -117,6 +117,7 @@ impl UpstreamRegistry {
         let address = viewer.moonlight_address.clone();
         let mut active = client.stream_play(launch_id, device_label).await?;
         let selected = SelectedRemoteSession {
+            display: None,
             viewer_target: LinuxViewerStatus::Running,
             participation: Participation::StreamPlayer {
                 game_id: active.game_id.clone(),
@@ -130,7 +131,11 @@ impl UpstreamRegistry {
             viewer: Some(viewer),
         };
         registry.set_selected(selected.clone());
-        if let Err(error) = registry.viewer.start(launch_id, &address).await {
+        if let Err(error) = registry
+            .viewer
+            .start(launch_id, &address, selected.display.clone())
+            .await
+        {
             if let Some(reach) = selected
                 .viewer
                 .as_ref()

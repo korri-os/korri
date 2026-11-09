@@ -93,7 +93,7 @@ async fn stream_play_local_buttons_reach_seats_only_while_the_viewer_is_focused(
             })
             .unwrap();
     };
-    viewer.start(launch, "far").await.unwrap();
+    viewer.start(launch, "far", None).await.unwrap();
     control.status(); // The local-game watcher must not take the viewer's input.
     send(GamepadState::neutral());
     send(button);

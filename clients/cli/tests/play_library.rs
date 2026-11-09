@@ -406,6 +406,7 @@ fn play_library_one_launch_overrides_use_runner_schema_and_never_write_settings(
     let accepted =
         RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(SelectedGameLaunch {
             session: SessionPrepared {
+                display: None,
                 game_id: "game".into(),
                 launch_id: "new-launch".into(),
             },
@@ -773,6 +774,7 @@ fn play_library_save_checks_never_hide_partial_failure_or_block_on_in_use() {
     let accepted =
         RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(SelectedGameLaunch {
             session: SessionPrepared {
+                display: None,
                 game_id: "game".into(),
                 launch_id: "accepted".into(),
             },
@@ -1369,6 +1371,7 @@ fn play_library_remote_refused_save_preflight_stays_visible_and_does_not_lock_la
             snapshot_response(test_snapshot()),
             RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(SelectedGameLaunch {
                 session: SessionPrepared {
+                    display: None,
                     game_id: "game".into(),
                     launch_id: "remote-launch".into(),
                 },
@@ -1638,6 +1641,7 @@ fn play_library_another_games_failure_does_not_block_this_launch() {
     let accepted =
         RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(SelectedGameLaunch {
             session: SessionPrepared {
+                display: None,
                 game_id: "game".into(),
                 launch_id: "accepted".into(),
             },

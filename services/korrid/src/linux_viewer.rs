@@ -39,10 +39,12 @@ pub trait LinuxStreamViewer: Send + Sync {
         None
     }
 
+    /// Android follows the far composition; Linux retains its local size.
     fn start<'a>(
         &'a self,
         launch_id: &'a str,
         moonlight_address: &'a str,
+        display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>>;
 
     fn status<'a>(
@@ -69,6 +71,7 @@ impl LinuxStreamViewer for UnavailableLinuxStreamViewer {
         &'a self,
         _launch_id: &'a str,
         _moonlight_address: &'a str,
+        _display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(async {
             Err(LinuxViewerError::new(
@@ -142,6 +145,7 @@ pub(crate) mod test_backend {
         pub action: LinuxViewerAction,
         pub launch_id: String,
         pub moonlight_address: Option<String>,
+        pub display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     }
 
     #[derive(Clone, Default)]
@@ -199,12 +203,14 @@ pub(crate) mod test_backend {
             action: LinuxViewerAction,
             launch_id: &str,
             moonlight_address: Option<&str>,
+            display: Option<crate::launcher::plugin_launch::PluginDisplay>,
         ) -> Result<(), LinuxViewerError> {
             let mut state = self.inner.lock().expect("test viewer poisoned");
             state.calls.push(LinuxViewerCall {
                 action,
                 launch_id: launch_id.into(),
                 moonlight_address: moonlight_address.map(Into::into),
+                display,
             });
             if state
                 .failures
@@ -231,9 +237,15 @@ pub(crate) mod test_backend {
             &'a self,
             launch_id: &'a str,
             moonlight_address: &'a str,
+            display: Option<crate::launcher::plugin_launch::PluginDisplay>,
         ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
             Box::pin(async move {
-                self.record(LinuxViewerAction::Start, launch_id, Some(moonlight_address))?;
+                self.record(
+                    LinuxViewerAction::Start,
+                    launch_id,
+                    Some(moonlight_address),
+                    display,
+                )?;
                 self.inner
                     .lock()
                     .expect("test viewer poisoned")
@@ -248,7 +260,7 @@ pub(crate) mod test_backend {
             launch_id: &'a str,
         ) -> BoxFuture<'a, Result<LinuxViewerStatus, LinuxViewerError>> {
             Box::pin(async move {
-                self.record(LinuxViewerAction::Status, launch_id, None)?;
+                self.record(LinuxViewerAction::Status, launch_id, None, None)?;
                 let block = self
                     .inner
                     .lock()
@@ -279,7 +291,7 @@ pub(crate) mod test_backend {
             launch_id: &'a str,
         ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
             Box::pin(async move {
-                self.record(LinuxViewerAction::Background, launch_id, None)?;
+                self.record(LinuxViewerAction::Background, launch_id, None, None)?;
                 self.inner
                     .lock()
                     .expect("test viewer poisoned")
@@ -294,7 +306,7 @@ pub(crate) mod test_backend {
             launch_id: &'a str,
         ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
             Box::pin(async move {
-                self.record(LinuxViewerAction::ResumeAndFocus, launch_id, None)?;
+                self.record(LinuxViewerAction::ResumeAndFocus, launch_id, None, None)?;
                 self.inner
                     .lock()
                     .expect("test viewer poisoned")
@@ -306,7 +318,7 @@ pub(crate) mod test_backend {
 
         fn stop<'a>(&'a self, launch_id: &'a str) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
             Box::pin(async move {
-                self.record(LinuxViewerAction::Stop, launch_id, None)?;
+                self.record(LinuxViewerAction::Stop, launch_id, None, None)?;
                 self.inner
                     .lock()
                     .expect("test viewer poisoned")

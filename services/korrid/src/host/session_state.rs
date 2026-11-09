@@ -2149,6 +2149,10 @@ impl HostSessionControl {
                 return Ok(SessionPrepared {
                     game_id: game_id.into(),
                     launch_id: launch_id.clone(),
+                    display: self
+                        .backend
+                        .display(launch_id)
+                        .map_err(|error| failure("HostLaunchFailed", error.message))?,
                 });
             }
             ActiveState::Running { .. }
@@ -2485,6 +2489,10 @@ impl HostSessionControl {
             }
         };
         let mut launch_environment = environment.clone();
+        // Like placement, retain the composed fact on the exact unit so a
+        // repeated prepare after restart cannot substitute a new display mode.
+        launch_environment.remove(super::systemd_unit::DISPLAY_ENV);
+        let mut display = None;
         if configured_command
             .get(1)
             .is_some_and(|v| v == "plugin-launch")
@@ -2493,6 +2501,14 @@ impl HostSessionControl {
                 let composition: crate::launcher::plugin_launch::LaunchComposition =
                     serde_json::from_str(encoded)
                         .map_err(|e| failure("PlacementFailed", e.to_string()))?;
+                display = composition.display;
+                if let Some(display) = &display {
+                    launch_environment.insert(
+                        super::systemd_unit::DISPLAY_ENV.into(),
+                        serde_json::to_string(display)
+                            .map_err(|e| failure("PlacementFailed", e.to_string()))?,
+                    );
+                }
                 if let Some(placement) = composition.placement {
                     launch_environment.insert(
                         super::systemd_unit::PLACEMENT_ENV.into(),
@@ -2617,6 +2633,7 @@ impl HostSessionControl {
                 Ok(SessionPrepared {
                     game_id: game_id.into(),
                     launch_id,
+                    display,
                 })
             }
             Ok(LaunchUnitState::Stopping) => {
@@ -8762,6 +8779,60 @@ printf '[{{"success":true}}]'
                 total_playtime_seconds: 60.0,
             }
         );
+    }
+
+    #[test]
+    fn prepare_returns_the_composed_display_and_retains_it_for_repeated_prepare() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        for display in [
+            None,
+            Some(PluginDisplay {
+                width: 640,
+                height: 480,
+            }),
+            Some(PluginDisplay {
+                width: 2448,
+                height: 1848,
+            }),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let backend =
+                Arc::new(super::super::systemd_unit::InMemoryLaunchUnitBackend::default());
+            let control = HostSessionControl::new(root.path(), backend.clone());
+            let input = serde_json::json!({"runnerId":"runner","program":"game",
+                "accountRoot":root.path().join("users").join(PERSON),"saveRoot":root.path(),"cacheRoot":root.path(),
+                "files":{},"artifacts":{}});
+            let composition = crate::launcher::plugin_launch::LaunchComposition {
+                display: display.clone(),
+                ..Default::default()
+            };
+            let handoff = serde_json::json!({"plan":{"command":"game","args":[],"saveLocations":[]},
+                "runnerArgv":["game"]});
+            let command = vec![
+                "korrid".into(),
+                "plugin-launch".into(),
+                "unused-source".into(),
+                input.to_string(),
+                serde_json::to_string(&composition).unwrap(),
+                handoff.to_string(),
+            ];
+            let prepared = control
+                .prepare("game", Some(PERSON), Ok(&command), &BTreeMap::new())
+                .unwrap();
+            assert_eq!(prepared.display, display);
+            assert_eq!(backend.display(&prepared.launch_id).unwrap(), display);
+            // Admission resumes this exact launch without composing a new one.
+            let repeated = control
+                .prepare(
+                    "game",
+                    Some(PERSON),
+                    Err(failure("UnexpectedCompose", "must resume")),
+                    &BTreeMap::new(),
+                )
+                .unwrap();
+            assert_eq!(repeated.launch_id, prepared.launch_id);
+            assert_eq!(repeated.display, display);
+        }
     }
 
     #[test]

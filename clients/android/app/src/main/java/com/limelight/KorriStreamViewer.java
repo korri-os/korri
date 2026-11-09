@@ -96,8 +96,7 @@ public final class KorriStreamViewer {
 
     /**
      * Temporary rule until stream size becomes a cascading setting: a Korri
-     * stream asks for the screen's own resolution, so the far display takes the
-     * screen's shape. Landscape pair (long side first), the form of
+     * viewer offers the screen's own resolution to the far korrid. Landscape pair (long side first), the form of
      * {@code prefConfig.width/height}; Game inverts it in portrait.
      */
     static int[] screenStreamSize(Context context) {
@@ -133,7 +132,7 @@ public final class KorriStreamViewer {
         return width + "x" + height;
     }
 
-    public static String start(String launchId, String address) throws Exception {
+    public static String start(String launchId, String address, int width, int height) throws Exception {
         requireWorker();
         KorriStreamViewer host = host();
         synchronized (host.effects) {
@@ -142,7 +141,7 @@ public final class KorriStreamViewer {
             Session current = new Session(launchId);
             host.session = current;
             try {
-                current.intent = host.prepare(current, address);
+                current.intent = host.prepare(current, address, width, height);
                 host.launch(current);
                 if (!current.state.await(Phase.RUNNING, START_TIMEOUT_MS)) throw failure();
                 return "Running";
@@ -293,7 +292,7 @@ public final class KorriStreamViewer {
         });
     }
 
-    private Intent prepare(Session current, String address) throws Exception {
+    private Intent prepare(Session current, String address, int width, int height) throws Exception {
         // Log only fixed stage names and exception classes. Exception messages,
         // addresses, IDs and certificate material must not enter diagnostics.
         String stage = "address";
@@ -336,17 +335,22 @@ public final class KorriStreamViewer {
                     .putExtra(Game.EXTRA_SERVER_CERT, certificate.getEncoded())
                     .putExtra(Game.EXTRA_KORRI_LAUNCH_ID, current.state.launchId)
                     .putExtra(EXTRA_GENERATION, current.state.generation);
-            // Ask for the same screen size that viewerDisplay() sent to the far
-            // korrid, so the far display's shape and the stream's shape agree.
-            int[] size = screenStreamSize(context);
-            if (size != null) {
-                intent.putExtra(Game.EXTRA_WIDTH, size[0]).putExtra(Game.EXTRA_HEIGHT, size[1]);
-            }
+            putStreamSize(intent, context, width, height);
             return intent;
         } catch (Exception error) {
             LimeLog.warning("Exact Android viewer prepare failed: stage=" + stage
                     + " error=" + error.getClass().getSimpleName());
             throw error;
+        }
+    }
+
+    /** The far launch fixes the stream size; Game applies portrait inversion. */
+    static void putStreamSize(Intent intent, Context context, int width, int height) {
+        int[] size = width > 0 && height > 0
+                ? new int[] {Math.max(width, height), Math.min(width, height)}
+                : screenStreamSize(context);
+        if (size != null) {
+            intent.putExtra(Game.EXTRA_WIDTH, size[0]).putExtra(Game.EXTRA_HEIGHT, size[1]);
         }
     }
 

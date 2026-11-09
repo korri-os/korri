@@ -58,6 +58,24 @@ public class KorriStreamViewerBoundaryTest {
     }
 
     @Test
+    @Config(qualifiers = "w1088dp-h981dp-xhdpi")
+    public void streamIntentUsesTheFarDisplayOrFallsBackToTheScreen() {
+        android.app.Application app = RuntimeEnvironment.getApplication();
+        for (int[] display : new int[][] {{640, 480}, {1848, 2448}}) {
+            Intent intent = new Intent();
+            KorriStreamViewer.putStreamSize(intent, app, display[0], display[1]);
+            assertEquals(Math.max(display[0], display[1]), intent.getIntExtra(Game.EXTRA_WIDTH, 0));
+            assertEquals(Math.min(display[0], display[1]), intent.getIntExtra(Game.EXTRA_HEIGHT, 0));
+        }
+        Intent fallback = new Intent();
+        KorriStreamViewer.putStreamSize(fallback, app, 0, 0);
+        int[] screen = KorriStreamViewer.screenStreamSize(app);
+        assertNotNull(screen);
+        assertEquals(screen[0], fallback.getIntExtra(Game.EXTRA_WIDTH, 0));
+        assertEquals(screen[1], fallback.getIntExtra(Game.EXTRA_HEIGHT, 0));
+    }
+
+    @Test
     public void processRecreationCannotStartAnUnownedGameOrCrashItsTeardown() {
         KorriStreamViewer.initialize(RuntimeEnvironment.getApplication());
         Intent stale = new Intent(RuntimeEnvironment.getApplication(), Game.class)
@@ -72,7 +90,7 @@ public class KorriStreamViewerBoundaryTest {
     @Test
     public void effectsNeverBlockTheAndroidMainThread() {
         KorriStreamViewer.initialize(RuntimeEnvironment.getApplication());
-        assertThrows(IllegalStateException.class, () -> KorriStreamViewer.start(LAUNCH, "peer:47989"));
+        assertThrows(IllegalStateException.class, () -> KorriStreamViewer.start(LAUNCH, "peer:47989", 640, 480));
         assertThrows(IllegalStateException.class, () -> KorriStreamViewer.background(LAUNCH));
         assertThrows(IllegalStateException.class, () -> KorriStreamViewer.resume(LAUNCH));
         assertThrows(IllegalStateException.class, () -> KorriStreamViewer.stop(LAUNCH));

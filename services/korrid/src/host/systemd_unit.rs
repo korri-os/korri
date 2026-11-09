@@ -75,6 +75,7 @@ impl LaunchUnitError {
     }
 }
 
+pub(super) const DISPLAY_ENV: &str = "KORRI_LIVE_DISPLAY";
 pub(super) const PLACEMENT_ENV: &str = "KORRI_LIVE_PLACEMENT";
 
 pub(super) const RUNNER_ID_ENV: &str = "KORRI_LIVE_RUNNER_ID";
@@ -199,6 +200,13 @@ pub trait LaunchUnitBackend: Send + Sync {
         &self,
         _launch_id: &str,
     ) -> Result<Option<super::display_placement::Placement>, LaunchUnitError> {
+        Ok(None)
+    }
+    /// The display from this exact launch's composition, retained by its unit.
+    fn display(
+        &self,
+        _launch_id: &str,
+    ) -> Result<Option<crate::launcher::plugin_launch::PluginDisplay>, LaunchUnitError> {
         Ok(None)
     }
     /// Processes of this launch, used to recognize its compositor windows.
@@ -624,6 +632,7 @@ pub(crate) struct InMemoryLaunchUnitBackend {
     status_text: Mutex<BTreeMap<String, String>>,
     failed_units: Mutex<BTreeMap<String, i32>>,
     runners: Mutex<BTreeMap<String, String>>,
+    displays: Mutex<BTreeMap<String, crate::launcher::plugin_launch::PluginDisplay>>,
     placements: Mutex<BTreeMap<String, super::display_placement::Placement>>,
     window_pids: Mutex<BTreeMap<String, BTreeSet<i32>>>,
     thawed: Mutex<Vec<String>>,
@@ -784,6 +793,14 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
                 .unwrap()
                 .unwrap_or(LaunchUnitState::Running),
         );
+        if let Some(encoded) = environment.get(DISPLAY_ENV) {
+            let display = serde_json::from_str(encoded)
+                .map_err(|e| LaunchUnitError::new(LaunchUnitErrorKind::Protocol, e.to_string()))?;
+            self.displays
+                .lock()
+                .unwrap()
+                .insert(launch_id.into(), display);
+        }
         if let Some(encoded) = environment.get(PLACEMENT_ENV) {
             let placement = serde_json::from_str(encoded)
                 .map_err(|e| LaunchUnitError::new(LaunchUnitErrorKind::Protocol, e.to_string()))?;
@@ -898,6 +915,13 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
         launch_id: &str,
     ) -> Result<Option<super::display_placement::Placement>, LaunchUnitError> {
         Ok(self.placements.lock().unwrap().get(launch_id).cloned())
+    }
+
+    fn display(
+        &self,
+        launch_id: &str,
+    ) -> Result<Option<crate::launcher::plugin_launch::PluginDisplay>, LaunchUnitError> {
+        Ok(self.displays.lock().unwrap().get(launch_id).cloned())
     }
 
     fn state_with_status(
@@ -2480,6 +2504,34 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         Ok(placement)
     }
 
+    fn display(
+        &self,
+        launch_id: &str,
+    ) -> Result<Option<crate::launcher::plugin_launch::PluginDisplay>, LaunchUnitError> {
+        let output =
+            self.require_success(&self.systemctl, &Self::runner_id_arguments(launch_id)?)?;
+        let value = std::str::from_utf8(&output.stdout)
+            .map_err(|e| LaunchUnitError::new(LaunchUnitErrorKind::Protocol, e.to_string()))?;
+        let serialized = value.trim().strip_prefix("Environment=").ok_or_else(|| {
+            LaunchUnitError::new(LaunchUnitErrorKind::Protocol, "missing Environment")
+        })?;
+        let mut display = None;
+        for assignment in Self::parse_systemd_environment(serialized)? {
+            if let Some(value) = assignment.strip_prefix(&format!("{DISPLAY_ENV}=")) {
+                if display.is_some() {
+                    return Err(LaunchUnitError::new(
+                        LaunchUnitErrorKind::Protocol,
+                        "duplicate display",
+                    ));
+                }
+                display = Some(serde_json::from_str(value).map_err(|e| {
+                    LaunchUnitError::new(LaunchUnitErrorKind::Protocol, e.to_string())
+                })?);
+            }
+        }
+        Ok(display)
+    }
+
     /// Stops the unit. systemd 259 refuses `stop` on a frozen unit
     /// ("Cannot perform operation on frozen unit"), so a unit observed
     /// frozen or in a freezer transition is thawed first. A thaw failure is
@@ -3100,6 +3152,39 @@ mod startup_diagnostic_tests {
                 "korrid traversed the game runtime directory"
             );
         }
+    }
+
+    #[test]
+    fn composed_display_recovers_from_exact_live_unit_environment_after_restart() {
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemctl");
+        let display = crate::launcher::plugin_launch::PluginDisplay {
+            width: 640,
+            height: 480,
+        };
+        let assignment = format!("{DISPLAY_ENV}={}", serde_json::to_string(&display).unwrap());
+        let environment = format!(
+            "Environment={}\n",
+            serde_json::to_string(&assignment).unwrap()
+        );
+        fs::write(root.path().join("reply"), environment).unwrap();
+        fs::write(
+            &helper,
+            format!("#!/bin/sh\ncat '{}'\n", root.path().join("reply").display()),
+        )
+        .unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = SystemdLaunchUnitBackend::new(
+            helper.clone(),
+            helper,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+        )
+        .unwrap();
+        assert_eq!(
+            backend.display("0123456789abcdef0123456789abcdef").unwrap(),
+            Some(display)
+        );
     }
 
     #[test]

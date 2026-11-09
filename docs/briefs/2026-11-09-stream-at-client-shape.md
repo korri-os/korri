@@ -111,3 +111,29 @@ resolved this on 2026-11-09: carry the existing Nix `display.mode` string as
 `mode` alongside its derived width and height. Restore that native mode
 verbatim. Custom modes use its `@...` refresh, rather than assuming every
 device is configured at 60 Hz. No second authored mode is introduced.
+
+## Stream request follows the composed display (#398)
+
+The RG35XX Pro's H700 cedrus H.264 encoder accepts at most 1920x1088.
+Its watched panel stays at 640x480. Asking Sunshine for the Fold7 screen's
+2448x1848 made every encode fail and the viewer disconnect after no video.
+
+`SessionPrepared.display` now returns the existing `LaunchComposition.display`
+(`PluginDisplay`), after shaping. Android uses that size for Game's stream
+extras, long side first; Game still applies portrait inversion. `viewerDisplay()`
+still offers the phone's screen size with prepare. Thus aka's unwatched display
+can still shape to 2448x1848, while the Pro requests 640x480. If shaping fails,
+the returned size is the configured mode used by composition. When no launch
+display exists, Android keeps its screen-size request. Linux still requests its
+local size.
+
+The exact launch unit retains the composition's display as `KORRI_LIVE_DISPLAY`,
+parallel to its existing placement metadata, so repeated prepare after korrid
+restart returns the original composition rather than reading a new screen size.
+The near selection retains the returned size when reopening its decoder.
+Joiners share the viewer start path, but stream-play returns `ActiveSession`,
+which has no composed display; they keep their existing size request. No second
+wire field is added for them.
+
+This fixes the request mismatch, not encoder capability negotiation. A far
+unwatched display shaped beyond its encoder's limits can still fail to encode.

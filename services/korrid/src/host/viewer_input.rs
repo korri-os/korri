@@ -106,11 +106,12 @@ impl LinuxStreamViewer for LocalInputViewer {
         &'a self,
         launch: &'a str,
         address: &'a str,
+        display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(async move {
             let _operation = self.operation.lock().await;
             self.input(launch, Input::Begin).await?;
-            let result = match self.viewer.start(launch, address).await {
+            let result = match self.viewer.start(launch, address, display).await {
                 Ok(()) => self.input(launch, Input::Focus).await,
                 Err(error) => Err(error),
             };

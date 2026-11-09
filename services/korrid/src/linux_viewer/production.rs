@@ -565,6 +565,7 @@ impl LinuxStreamViewer for ProductionLinuxStreamViewer {
         &'a self,
         launch: &'a str,
         address: &'a str,
+        _display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(async move {
             validate_launch(launch)?;

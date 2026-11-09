@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 const CONTROL: &str = "(Ljava/lang/String;)Ljava/lang/String;";
 const DISPLAY: &str = "()Ljava/lang/String;";
-const START: &str = "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;";
+const START: &str = "(Ljava/lang/String;Ljava/lang/String;II)Ljava/lang/String;";
 
 struct AndroidViewer {
     vm: JavaVM,
@@ -22,6 +22,7 @@ impl AndroidViewer {
         method: &str,
         launch_id: &str,
         address: Option<&str>,
+        display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<LinuxViewerStatus, LinuxViewerError> {
         let unavailable = || LinuxViewerError::new("Android exact-launch viewer effect failed");
         let mut env = self.vm.attach_current_thread().map_err(|_| unavailable())?;
@@ -34,6 +35,18 @@ impl AndroidViewer {
             let address = address.map(|address| env.new_string(address)).transpose()?;
             if let Some(address) = &address {
                 arguments.push(JValue::Object(address.as_ref()));
+                let (width, height) = display
+                    .as_ref()
+                    .map(|d| (d.width, d.height))
+                    .unwrap_or((0, 0));
+                let width = i32::try_from(width).map_err(|_| {
+                    jni::errors::Error::JniCall(jni::errors::JniError::InvalidArguments)
+                })?;
+                let height = i32::try_from(height).map_err(|_| {
+                    jni::errors::Error::JniCall(jni::errors::JniError::InvalidArguments)
+                })?;
+                arguments.push(JValue::Int(width));
+                arguments.push(JValue::Int(height));
             }
             let signature = if address.is_some() { START } else { CONTROL };
             let value = env
@@ -63,13 +76,16 @@ impl Adapter {
         method: &'static str,
         launch: &str,
         address: Option<&str>,
+        display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<LinuxViewerStatus, LinuxViewerError> {
         let viewer = self.0.clone();
         let launch = launch.to_owned();
         let address = address.map(str::to_owned);
-        tokio::task::spawn_blocking(move || viewer.invoke(method, &launch, address.as_deref()))
-            .await
-            .map_err(|_| LinuxViewerError::new("Android viewer worker failed"))?
+        tokio::task::spawn_blocking(move || {
+            viewer.invoke(method, &launch, address.as_deref(), display)
+        })
+        .await
+        .map_err(|_| LinuxViewerError::new("Android viewer worker failed"))?
     }
 
     async fn confirm(
@@ -77,9 +93,10 @@ impl Adapter {
         method: &'static str,
         launch: &str,
         address: Option<&str>,
+        display: Option<crate::launcher::plugin_launch::PluginDisplay>,
         expected: LinuxViewerStatus,
     ) -> Result<(), LinuxViewerError> {
-        if self.observe(method, launch, address).await? == expected {
+        if self.observe(method, launch, address, display).await? == expected {
             Ok(())
         } else {
             Err(LinuxViewerError::new(
@@ -115,11 +132,13 @@ impl LinuxStreamViewer for Adapter {
         &'a self,
         launch: &'a str,
         address: &'a str,
+        display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(self.confirm(
             "viewerStart",
             launch,
             Some(address),
+            display,
             LinuxViewerStatus::Running,
         ))
     }
@@ -127,12 +146,13 @@ impl LinuxStreamViewer for Adapter {
         &'a self,
         launch: &'a str,
     ) -> BoxFuture<'a, Result<LinuxViewerStatus, LinuxViewerError>> {
-        Box::pin(self.observe("viewerStatus", launch, None))
+        Box::pin(self.observe("viewerStatus", launch, None, None))
     }
     fn background<'a>(&'a self, launch: &'a str) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
         Box::pin(self.confirm(
             "viewerBackground",
             launch,
+            None,
             None,
             LinuxViewerStatus::Backgrounded,
         ))
@@ -141,10 +161,16 @@ impl LinuxStreamViewer for Adapter {
         &'a self,
         launch: &'a str,
     ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(self.confirm("viewerResume", launch, None, LinuxViewerStatus::Running))
+        Box::pin(self.confirm(
+            "viewerResume",
+            launch,
+            None,
+            None,
+            LinuxViewerStatus::Running,
+        ))
     }
     fn stop<'a>(&'a self, launch: &'a str) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
-        Box::pin(self.confirm("viewerStop", launch, None, LinuxViewerStatus::Stopped))
+        Box::pin(self.confirm("viewerStop", launch, None, None, LinuxViewerStatus::Stopped))
     }
 }
 

@@ -1071,10 +1071,18 @@ export interface PeerList {
 export interface PeerListRequest {
 }
 
+/** The compositor's logical output size, after transform and scaling. */
+export interface PluginDisplay {
+	width: number;
+	height: number;
+}
+
 export interface SessionPrepared {
 	gameId: string;
 	/** Identity created by korrid while preparing this exact launch. */
 	launchId: string;
+	/** The display used by this launch's composition, when it has one. */
+	display?: PluginDisplay;
 }
 
 /** Direct projection of the reservation producer's atomic phases. */
@@ -1211,12 +1219,6 @@ export interface PluginLaunchOutput {
 	files?: ProvisionedFile[];
 	/** Whole folders under saveRoot, identified by stable runner-declared keys. */
 	saveLocations?: SaveLocation[];
-}
-
-/** The compositor's logical output size, after transform and scaling. */
-export interface PluginDisplay {
-	width: number;
-	height: number;
 }
 
 /** ADR 0007 and the first launch.compose treaty. Modifiers own their settings. */

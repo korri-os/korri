@@ -183,6 +183,9 @@ pub struct SessionPrepared {
     pub game_id: String,
     /** Identity created by korrid while preparing this exact launch. */
     pub launch_id: String,
+    /** The display used by this launch's composition, when it has one. */
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<crate::launcher::plugin_launch::PluginDisplay>,
 }
 
 #[typeshare]

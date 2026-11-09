@@ -305,6 +305,7 @@ enum SelectedRemoteRoute {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SelectedRemoteSession {
+    display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     participation: Participation,
     route: SelectedRemoteRoute,
     launch_id: String,
@@ -1004,8 +1005,10 @@ impl UpstreamRegistry {
                 let prepared = SessionPrepared {
                     game_id: prepared.game_id,
                     launch_id: prepared.session_id,
+                    display: None,
                 };
                 self.set_selected(SelectedRemoteSession {
+                    display: None,
                     viewer_target: LinuxViewerStatus::Running,
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Legacy {
@@ -1042,6 +1045,7 @@ impl UpstreamRegistry {
                 );
                 let prepared = client.prepare_stream(game_id, viewer_display).await?;
                 let selected = SelectedRemoteSession {
+                    display: prepared.session.display.clone(),
                     viewer_target: LinuxViewerStatus::Running,
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Native {
@@ -1053,7 +1057,11 @@ impl UpstreamRegistry {
                 self.set_selected(selected.clone());
                 if let Err(error) = self
                     .viewer
-                    .start(&prepared.session.launch_id, &moonlight_address)
+                    .start(
+                        &prepared.session.launch_id,
+                        &moonlight_address,
+                        selected.display.clone(),
+                    )
                     .await
                 {
                     if let Some(reach) = &reach {
@@ -1134,7 +1142,11 @@ impl UpstreamRegistry {
                         self.set_selected(recovering.clone());
                     }
                 }
-                match self.viewer.start(&selected.launch_id, &address).await {
+                match self
+                    .viewer
+                    .start(&selected.launch_id, &address, selected.display.clone())
+                    .await
+                {
                     Ok(()) if viewer_backgrounded => {
                         self.viewer.background(&selected.launch_id).await
                     }
@@ -2098,6 +2110,7 @@ mod tests {
             .find(|host| matches!(host.client, RegisteredClient::Native(_)))
             .unwrap();
         registry.set_selected(SelectedRemoteSession {
+            display: None,
             viewer_target: LinuxViewerStatus::Running,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
@@ -2216,6 +2229,7 @@ mod tests {
     struct ExactNativeState {
         launch_id: String,
         active_phase: Arc<std::sync::Mutex<Option<String>>>,
+        display: Arc<std::sync::Mutex<Option<crate::launcher::plugin_launch::PluginDisplay>>>,
         viewer_display:
             Arc<std::sync::Mutex<Option<crate::launcher::plugin_launch::PluginDisplay>>>,
         steps: Arc<std::sync::Mutex<Option<korri_surface_treaty::SurfaceSteps>>>,
@@ -2344,6 +2358,7 @@ mod tests {
                         session: SessionPrepared {
                             game_id: "game".into(),
                             launch_id: state.launch_id.clone(),
+                            display: state.display.lock().unwrap().clone(),
                         },
                         warnings: Vec::new(),
                     },
@@ -2448,6 +2463,7 @@ mod tests {
         let state = ExactNativeState {
             launch_id: "11111111111111111111111111111111".into(),
             active_phase: Default::default(),
+            display: Default::default(),
             viewer_display: Default::default(),
             steps: Default::default(),
             stop_pending,
@@ -3392,6 +3408,7 @@ command = ["native-game"]
             .find(|host| matches!(host.client, RegisteredClient::Native(_)))
             .unwrap();
         registry.set_selected(SelectedRemoteSession {
+            display: None,
             viewer_target: LinuxViewerStatus::Running,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
@@ -3581,33 +3598,72 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn native_prepare_starts_one_exact_viewer_with_the_selected_peer_address() {
-        let (native_url, state) = exact_native_server(false).await;
-        let viewer = TestLinuxStreamViewer::default();
-        let display = crate::launcher::plugin_launch::PluginDisplay {
-            width: 2176,
-            height: 1812,
-        };
-        viewer.set_display(display.clone());
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
-            .with_linux_viewer(Arc::new(viewer.clone()));
-
-        let prepared = registry.prepare_stream("game", None).await.unwrap();
-
-        assert_eq!(*state.viewer_display.lock().unwrap(), Some(display));
-        assert_eq!(prepared.session.launch_id, state.launch_id);
+    async fn native_prepare_preserves_the_far_composed_display() {
+        let prepared: crate::game_routes::SelectedGameLaunch =
+            serde_json::from_value(serde_json::json!({
+                "session": {"gameId": "game", "launchId": "exact",
+                    "display": {"width": 640, "height": 480}},
+                "warnings": []
+            }))
+            .unwrap();
         assert_eq!(
-            viewer.calls(),
-            vec![LinuxViewerCall {
-                action: LinuxViewerAction::Start,
-                launch_id: state.launch_id,
-                moonlight_address: Some("zao:47989".into()),
-            }]
+            serde_json::to_value(prepared).unwrap()["session"]["display"],
+            serde_json::json!({"width": 640, "height": 480})
         );
-        assert!(registry
-            .selected()
-            .and_then(|selected| selected.viewer)
-            .is_some_and(|viewer| viewer.confirmed_live));
+    }
+
+    #[tokio::test]
+    async fn native_prepare_starts_one_exact_viewer_with_the_far_composed_display() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        for composed in [
+            None,
+            Some(PluginDisplay {
+                width: 640,
+                height: 480,
+            }),
+            Some(PluginDisplay {
+                width: 2448,
+                height: 1848,
+            }),
+        ] {
+            let (native_url, state) = exact_native_server(false).await;
+            *state.display.lock().unwrap() = composed.clone();
+            let viewer = TestLinuxStreamViewer::default();
+            let screen = PluginDisplay {
+                width: 2448,
+                height: 1848,
+            };
+            viewer.set_display(screen.clone());
+            let registry =
+                UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+                    .with_linux_viewer(Arc::new(viewer.clone()));
+
+            let prepared = registry.prepare_stream("game", None).await.unwrap();
+
+            assert_eq!(*state.viewer_display.lock().unwrap(), Some(screen));
+            assert_eq!(prepared.session.launch_id, state.launch_id);
+            assert_eq!(prepared.session.display, composed);
+            assert_eq!(registry.selected().unwrap().display, composed);
+            assert_eq!(
+                viewer.calls(),
+                vec![LinuxViewerCall {
+                    display: composed.clone(),
+                    action: LinuxViewerAction::Start,
+                    launch_id: state.launch_id.clone(),
+                    moonlight_address: Some("zao:47989".into()),
+                }]
+            );
+            assert!(registry.selected().unwrap().viewer.unwrap().confirmed_live);
+
+            // Reopening a released decoder must keep the same composed size.
+            viewer.seed(&state.launch_id, LinuxViewerStatus::Stopped);
+            registry.session_status().await.unwrap();
+            assert_eq!(viewer.calls().last().unwrap().display, composed);
+            assert_eq!(
+                viewer.calls().last().unwrap().action,
+                LinuxViewerAction::Start
+            );
+        }
     }
 
     #[tokio::test]
@@ -4100,11 +4156,13 @@ command = ["native-game"]
             viewer.calls(),
             vec![
                 LinuxViewerCall {
+                    display: None,
                     action: LinuxViewerAction::Status,
                     launch_id: state.launch_id.clone(),
                     moonlight_address: None,
                 },
                 LinuxViewerCall {
+                    display: None,
                     action: LinuxViewerAction::Start,
                     launch_id: state.launch_id,
                     moonlight_address: Some("zao:47989".into()),
@@ -4646,6 +4704,7 @@ command = ["native-game"]
             UpstreamHostConfig::native("sobo", reachable),
         ]);
         let selected = SelectedRemoteSession {
+            display: None,
             viewer_target: LinuxViewerStatus::Running,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
@@ -4796,6 +4855,7 @@ command = ["native-game"]
             "http://127.0.0.1:9".into(),
         )]);
         let selected = SelectedRemoteSession {
+            display: None,
             viewer_target: LinuxViewerStatus::Running,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
