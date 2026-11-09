@@ -253,16 +253,10 @@ pub(crate) async fn dispatch(
             )))
         }
         RpcRequest::SessionControls(request) if peers.has_selected_session() => Some(
-            RpcResponse::SessionControls(unavailable_remote_session_controls(
-                session_status_outcome(peers.session_status().await),
-                &request.launch_id,
-            )),
+            RpcResponse::SessionControls(peers.session_controls(&request.launch_id).await),
         ),
         RpcRequest::SessionControlInvoke(request) if peers.has_selected_session() => Some(
-            RpcResponse::SessionControlInvoke(unavailable_remote_session_control(
-                session_status_outcome(peers.session_status().await),
-                request,
-            )),
+            RpcResponse::SessionControlInvoke(peers.invoke_session_control(request.clone()).await),
         ),
         _ => None,
     }
@@ -293,6 +287,10 @@ pub(crate) fn stream_player_control_refusal(
         _ => RpcResponse::SessionControlInvoke(SessionControlInvokeOutcome::Err(failure)),
     })
 }
+
+#[cfg(test)]
+#[path = "gameplay_controls_tests.rs"]
+mod gameplay_controls_tests;
 
 #[cfg(test)]
 mod tests {
@@ -387,6 +385,19 @@ mod tests {
             .any(|call| call.action == LinuxViewerAction::Start
                 && call.launch_id == prepared.session.launch_id));
         assert!(state.remote.as_ref().unwrap().has_selected_session());
+        let controls = crate::dispatch(
+            &state,
+            &AuthorizationContext::LocalSurfaceHost,
+            RpcRequest::SessionControls(SessionControlsRequest {
+                launch_id: prepared.session.launch_id.clone(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(controls, RpcResponse::SessionControls(SessionControlsOutcome::Ok(ref controls)) if controls.groups.is_empty()),
+            "a game without plugin controls must report an empty list: {controls:?}"
+        );
         assert!(matches!(
             far.session_status().await.unwrap(),
             host::control::HostSessionStatus::Running { .. }

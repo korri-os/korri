@@ -11,7 +11,9 @@ use crate::{
     upstream::{UpstreamClient, UpstreamConfig, UpstreamSessionStatus, UpstreamSessionStop},
     upstream_native::{NativeClient, NATIVE_RPC_TIMEOUT},
     CatalogHostFailure, CatalogSnapshot, Game, GameSource, MoonlightCertificateProvisioned,
-    MoonlightCertificateRevoked, SessionPrepared, SessionTransitionResult, SourceStatus,
+    MoonlightCertificateRevoked, SessionControlFailure, SessionControlFailureReason,
+    SessionControlInvokeOutcome, SessionControlInvokeRequest, SessionControlsOutcome,
+    SessionPrepared, SessionTransitionResult, SourceStatus,
 };
 use futures::future::join_all;
 use serde::Deserialize;
@@ -1341,6 +1343,77 @@ impl UpstreamRegistry {
         client.source_status(device_public_key).await
     }
 
+    pub async fn session_controls(&self, launch_id: &str) -> SessionControlsOutcome {
+        let result = async {
+            let registry = self.resolved().map_err(gameplay_control_failure)?;
+            let _mutation = registry.remote_prepare_mutation.lock().await;
+            registry
+                .selected_gameplay_client(launch_id)?
+                .session_controls(launch_id)
+                .await
+                .map_err(gameplay_control_failure)
+        }
+        .await;
+        result.unwrap_or_else(SessionControlsOutcome::Err)
+    }
+
+    pub async fn invoke_session_control(
+        &self,
+        request: SessionControlInvokeRequest,
+    ) -> SessionControlInvokeOutcome {
+        let result = async {
+            let registry = self.resolved().map_err(gameplay_control_failure)?;
+            let _mutation = registry.remote_prepare_mutation.lock().await;
+            registry
+                .selected_gameplay_client(&request.launch_id)?
+                .invoke_session_control(request)
+                .await
+                .map_err(gameplay_control_failure)
+        }
+        .await;
+        result.unwrap_or_else(SessionControlInvokeOutcome::Err)
+    }
+
+    /// Route only this device's exact selection. The holder validates live
+    /// identity, starter authority, declarations and values at execution time.
+    fn selected_gameplay_client(
+        &self,
+        launch_id: &str,
+    ) -> Result<&NativeClient, SessionControlFailure> {
+        let selected = self
+            .selected()
+            .ok_or_else(|| gameplay_control_failure(UpstreamError::NoActiveSession))?;
+        if launch_id.is_empty() || selected.launch_id != launch_id {
+            return Err(gameplay_control_failure(UpstreamError::StaleLaunchIdentity));
+        }
+        if matches!(selected.participation, Participation::StreamPlayer { .. }) {
+            return Err(SessionControlFailure {
+                reason: SessionControlFailureReason::NotSessionStarter,
+                message: "A stream player cannot use the holding device's gameplay controls."
+                    .into(),
+            });
+        }
+        if self
+            .retire_selected_if_revoked(&selected)
+            .map_err(gameplay_control_failure)?
+        {
+            return Err(gameplay_control_failure(UpstreamError::SourcePeerNotFound));
+        }
+        let SelectedRemoteRoute::Native { device_public_key } = &selected.route else {
+            return Err(SessionControlFailure {
+                reason: SessionControlFailureReason::Unavailable,
+                message: "The selected peer does not expose live gameplay controls.".into(),
+            });
+        };
+        let host = self
+            .native_host_by_route_key(device_public_key)
+            .ok_or_else(|| gameplay_control_failure(UpstreamError::SourcePeerNotFound))?;
+        let RegisteredClient::Native(client) = &host.client else {
+            unreachable!("native_host_by_route_key returned a legacy client")
+        };
+        Ok(client)
+    }
+
     /// Android Leave holds input in its Surface host, not the far cgroup freezer.
     /// Validate the exact selected launch using the real peer before publishing Home.
     pub async fn session_leave_live(
@@ -1986,6 +2059,22 @@ fn valid_public_key(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn gameplay_control_failure(error: UpstreamError) -> SessionControlFailure {
+    let reason = match error.code() {
+        "StaleLaunchIdentity"
+        | "SelectedRemoteSessionReplaced"
+        | "NoActiveSession"
+        | "SessionCompleted"
+        | "HostLaunchFailed" => SessionControlFailureReason::StaleSession,
+        "NotSessionStarter" => SessionControlFailureReason::NotSessionStarter,
+        _ => SessionControlFailureReason::Unavailable,
+    };
+    SessionControlFailure {
+        reason,
+        message: error.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     include!("stream_play/registry_tests.rs");
@@ -2134,6 +2223,9 @@ mod tests {
         terminal_error: Arc<std::sync::Mutex<Option<String>>>,
         freeze_failures: Arc<std::sync::Mutex<usize>>,
         thaw_failures: Arc<std::sync::Mutex<usize>>,
+        controls: Arc<Mutex<Option<SessionControlsOutcome>>>,
+        control_outcome: Arc<Mutex<Option<SessionControlInvokeOutcome>>>,
+        control_invocations: Arc<Mutex<Vec<SessionControlInvokeRequest>>>,
     }
 
     impl ExactNativeState {
@@ -2257,6 +2349,35 @@ mod tests {
                     },
                 ))
             }
+            crate::RpcRequest::SessionControls(request) => {
+                assert_eq!(request.launch_id, state.launch_id);
+                RpcResponse::SessionControls(state.controls.lock().unwrap().clone().unwrap_or_else(
+                    || {
+                        SessionControlsOutcome::Ok(crate::SessionControls {
+                            launch_id: state.launch_id.clone(),
+                            title: None,
+                            groups: Vec::new(),
+                            retroarch_telemetry: None,
+                        })
+                    },
+                ))
+            }
+            crate::RpcRequest::SessionControlInvoke(request) => {
+                assert_eq!(request.launch_id, state.launch_id);
+                state.control_invocations.lock().unwrap().push(request);
+                RpcResponse::SessionControlInvoke(
+                    state
+                        .control_outcome
+                        .lock()
+                        .unwrap()
+                        .clone()
+                        .unwrap_or_else(|| {
+                            SessionControlInvokeOutcome::Ok(crate::SessionControlCompleted {
+                                launch_id: state.launch_id.clone(),
+                            })
+                        }),
+                )
+            }
             crate::RpcRequest::SessionLeave(request) => {
                 if request.expected_launch_id.as_deref() != Some(state.launch_id.as_str()) {
                     RpcResponse::SessionLeave(SessionTransitionOutcome::Err(RpcFailure {
@@ -2333,6 +2454,9 @@ mod tests {
             terminal_error: Default::default(),
             freeze_failures: Default::default(),
             thaw_failures: Default::default(),
+            controls: Default::default(),
+            control_outcome: Default::default(),
+            control_invocations: Default::default(),
         };
         let url = serve(
             Router::new()
@@ -2341,6 +2465,120 @@ mod tests {
         )
         .await;
         (url, state)
+    }
+
+    #[tokio::test]
+    async fn selected_native_gameplay_controls_forward_values_and_typed_refusals() {
+        let (url, state) = exact_native_server(false).await;
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)]);
+        let launch = registry
+            .prepare_stream("game", None)
+            .await
+            .unwrap()
+            .session
+            .launch_id;
+        assert!(
+            matches!(registry.session_controls(&launch).await, SessionControlsOutcome::Ok(c) if c.groups.is_empty())
+        );
+        for value in [
+            None,
+            Some(crate::SessionControlValue::Toggle(true)),
+            Some(crate::SessionControlValue::Choice("core-option".into())),
+            Some(crate::SessionControlValue::Range(0.5)),
+        ] {
+            let request = SessionControlInvokeRequest {
+                launch_id: launch.clone(),
+                control_id: "plugin/control".into(),
+                value,
+            };
+            assert!(
+                matches!(registry.invoke_session_control(request.clone()).await, SessionControlInvokeOutcome::Ok(c) if c.launch_id == launch)
+            );
+            assert_eq!(
+                serde_json::to_value(state.control_invocations.lock().unwrap().last().unwrap())
+                    .unwrap(),
+                serde_json::to_value(request).unwrap()
+            );
+        }
+        for reason in [
+            SessionControlFailureReason::NotSessionStarter,
+            SessionControlFailureReason::StaleSession,
+            SessionControlFailureReason::UnknownControl,
+            SessionControlFailureReason::Disabled,
+            SessionControlFailureReason::InvalidValue,
+            SessionControlFailureReason::Unavailable,
+        ] {
+            let failure = SessionControlFailure {
+                reason,
+                message: "peer refusal".into(),
+            };
+            *state.controls.lock().unwrap() = Some(SessionControlsOutcome::Err(failure.clone()));
+            *state.control_outcome.lock().unwrap() =
+                Some(SessionControlInvokeOutcome::Err(failure.clone()));
+            assert!(
+                matches!(registry.session_controls(&launch).await, SessionControlsOutcome::Err(f) if f == failure)
+            );
+            assert!(
+                matches!(registry.invoke_session_control(SessionControlInvokeRequest { launch_id: launch.clone(), control_id: "plugin/control".into(), value: None }).await, SessionControlInvokeOutcome::Err(f) if f == failure)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn gameplay_controls_never_target_an_unselected_launch_or_a_stream_players_holder() {
+        let (url, state) = exact_native_server(false).await;
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)]);
+        assert!(
+            matches!(registry.session_controls("absent").await, SessionControlsOutcome::Err(f) if f.reason == SessionControlFailureReason::StaleSession)
+        );
+        let launch = registry
+            .prepare_stream("game", None)
+            .await
+            .unwrap()
+            .session
+            .launch_id;
+        for stale in ["", "replacement"] {
+            assert!(
+                matches!(registry.session_controls(stale).await, SessionControlsOutcome::Err(f) if f.reason == SessionControlFailureReason::StaleSession)
+            );
+            assert!(
+                matches!(registry.invoke_session_control(SessionControlInvokeRequest { launch_id: stale.into(), control_id: "plugin/control".into(), value: None }).await, SessionControlInvokeOutcome::Err(f) if f.reason == SessionControlFailureReason::StaleSession)
+            );
+        }
+        // A mismatched successful peer reply must not publish controls for a replacement.
+        *state.controls.lock().unwrap() =
+            Some(SessionControlsOutcome::Ok(crate::SessionControls {
+                launch_id: "replacement".into(),
+                title: None,
+                groups: Vec::new(),
+                retroarch_telemetry: None,
+            }));
+        *state.control_outcome.lock().unwrap() = Some(SessionControlInvokeOutcome::Ok(
+            crate::SessionControlCompleted {
+                launch_id: "replacement".into(),
+            },
+        ));
+        assert!(
+            matches!(registry.session_controls(&launch).await, SessionControlsOutcome::Err(f) if f.reason == SessionControlFailureReason::StaleSession)
+        );
+        assert!(
+            matches!(registry.invoke_session_control(SessionControlInvokeRequest { launch_id: launch.clone(), control_id: "plugin/control".into(), value: None }).await, SessionControlInvokeOutcome::Err(f) if f.reason == SessionControlFailureReason::StaleSession)
+        );
+        let calls = state.control_invocations.lock().unwrap().len();
+        let mut selected = registry.selected().unwrap();
+        selected.participation = Participation::StreamPlayer {
+            game_id: Some("game".into()),
+            game_title: None,
+            device_label: "phone".into(),
+        };
+        registry.set_selected(selected);
+        assert!(
+            matches!(registry.session_controls(&launch).await, SessionControlsOutcome::Err(f) if f.reason == SessionControlFailureReason::NotSessionStarter)
+        );
+        assert!(
+            matches!(registry.invoke_session_control(SessionControlInvokeRequest { launch_id: launch, control_id: "plugin/control".into(), value: None }).await, SessionControlInvokeOutcome::Err(f) if f.reason == SessionControlFailureReason::NotSessionStarter)
+        );
+        assert_eq!(state.control_invocations.lock().unwrap().len(), calls);
     }
 
     async fn abortable_native_server(

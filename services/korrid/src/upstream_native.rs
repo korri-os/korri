@@ -4,7 +4,8 @@ use crate::{
     MoonlightCertificateAttested, MoonlightCertificateProvisionOutcome,
     MoonlightCertificateProvisionRequest, MoonlightCertificateProvisioned,
     MoonlightCertificateRevokeOutcome, MoonlightCertificateRevokeRequest,
-    MoonlightCertificateRevoked, RpcFailure, RpcRequest, RpcResponse, SessionEndOutcome,
+    MoonlightCertificateRevoked, RpcFailure, RpcRequest, RpcResponse, SessionControlInvokeOutcome,
+    SessionControlInvokeRequest, SessionControlsOutcome, SessionControlsRequest, SessionEndOutcome,
     SessionEndPhase, SessionEndRequest, SessionLeaveRequest, SessionPrepareRequest,
     SessionResumeRequest, SessionStatusOutcome, SessionStatusRequest, SessionTransitionOutcome,
     SessionTransitionResult, SourceStatus, SourceStatusOutcome, SourceStatusRequest,
@@ -437,6 +438,46 @@ impl NativeClient {
         };
         self.ensure_not_revoked()?;
         result
+    }
+
+    pub async fn session_controls(
+        &self,
+        launch_id: &str,
+    ) -> Result<SessionControlsOutcome, UpstreamError> {
+        match self
+            .call(RpcRequest::SessionControls(SessionControlsRequest {
+                launch_id: launch_id.into(),
+            }))
+            .await?
+        {
+            RpcResponse::SessionControls(SessionControlsOutcome::Ok(controls))
+                if controls.launch_id != launch_id =>
+            {
+                Err(UpstreamError::SelectedRemoteSessionReplaced)
+            }
+            RpcResponse::SessionControls(outcome) => Ok(outcome),
+            _ => Err(UpstreamError::Wire(
+                "invalid session controls response".into(),
+            )),
+        }
+    }
+
+    pub async fn invoke_session_control(
+        &self,
+        request: SessionControlInvokeRequest,
+    ) -> Result<SessionControlInvokeOutcome, UpstreamError> {
+        let launch_id = request.launch_id.clone();
+        match self.call(RpcRequest::SessionControlInvoke(request)).await? {
+            RpcResponse::SessionControlInvoke(SessionControlInvokeOutcome::Ok(completed))
+                if completed.launch_id != launch_id =>
+            {
+                Err(UpstreamError::SelectedRemoteSessionReplaced)
+            }
+            RpcResponse::SessionControlInvoke(outcome) => Ok(outcome),
+            _ => Err(UpstreamError::Wire(
+                "invalid session control response".into(),
+            )),
+        }
     }
 
     pub async fn session_stop(
@@ -942,6 +983,10 @@ fn checked_response(
             }
             SessionStatusOutcome::Err(e) => Some(e),
         },
+        // Gameplay refusals have SessionControlFailure, not RpcFailure. Keep
+        // that typed outcome for the overlay (unknown, disabled, stale, etc.).
+        (RpcRequest::SessionControls(_), RpcResponse::SessionControls(_))
+        | (RpcRequest::SessionControlInvoke(_), RpcResponse::SessionControlInvoke(_)) => None,
         (RpcRequest::SessionPrepare(_), RpcResponse::SessionPrepare(outcome)) => match outcome {
             SelectedGameLaunchOutcome::Ok(_) => None,
             SelectedGameLaunchOutcome::Err(e) => Some(e),

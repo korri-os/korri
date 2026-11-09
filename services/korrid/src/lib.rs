@@ -2328,49 +2328,6 @@ fn host_session_status_outcome(
     }
 }
 
-fn unavailable_remote_session_controls(
-    status: SessionStatusOutcome,
-    expected_launch_id: &str,
-) -> SessionControlsOutcome {
-    match status {
-        SessionStatusOutcome::Ok(SessionStatus {
-            netplay: None,
-            stream_play_launch_id: None,
-            active: Some(active),
-            ..
-        }) if active.launch_id == expected_launch_id => {
-            SessionControlsOutcome::Err(SessionControlFailure {
-                reason: SessionControlFailureReason::Unavailable,
-                message: "The selected peer does not expose live gameplay controls.".into(),
-            })
-        }
-        SessionStatusOutcome::Ok(_) => SessionControlsOutcome::Err(SessionControlFailure {
-            reason: SessionControlFailureReason::StaleSession,
-            message: "That game is no longer running. Reload the session before acting.".into(),
-        }),
-        SessionStatusOutcome::Err(failure) if is_terminal_session_identity_code(&failure.code) => {
-            SessionControlsOutcome::Err(SessionControlFailure {
-                reason: SessionControlFailureReason::StaleSession,
-                message: "That game is no longer running. Reload the session before acting.".into(),
-            })
-        }
-        SessionStatusOutcome::Err(failure) => SessionControlsOutcome::Err(SessionControlFailure {
-            reason: SessionControlFailureReason::Unavailable,
-            message: failure.message,
-        }),
-    }
-}
-
-fn unavailable_remote_session_control(
-    status: SessionStatusOutcome,
-    request: &SessionControlInvokeRequest,
-) -> SessionControlInvokeOutcome {
-    match unavailable_remote_session_controls(status, &request.launch_id) {
-        SessionControlsOutcome::Err(failure) => SessionControlInvokeOutcome::Err(failure),
-        SessionControlsOutcome::Ok(_) => unreachable!("remote controls never materialize locally"),
-    }
-}
-
 fn host_session_stop_outcome(
     result: Result<host::control::HostSessionStop, RpcFailure>,
 ) -> SessionEndOutcome {
@@ -3515,18 +3472,12 @@ async fn dispatch(
                 .await
                 .map(SessionControlsOutcome::Ok)
                 .unwrap_or_else(SessionControlsOutcome::Err),
-            ServerMode::Brain(brain) => unavailable_remote_session_controls(
-                session_status_outcome(brain.upstream.session_status().await),
-                &request.launch_id,
-            ),
+            ServerMode::Brain(brain) => brain.upstream.session_controls(&request.launch_id).await,
         }),
         RpcRequest::SessionControlInvoke(request) => {
             RpcResponse::SessionControlInvoke(match &state.mode {
                 ServerMode::Host(host) => host.invoke_session_control(request).await,
-                ServerMode::Brain(brain) => unavailable_remote_session_control(
-                    session_status_outcome(brain.upstream.session_status().await),
-                    &request,
-                ),
+                ServerMode::Brain(brain) => brain.upstream.invoke_session_control(request).await,
             })
         }
         RpcRequest::SessionEnd(request) => {
@@ -6768,70 +6719,6 @@ mod tests {
             assert_eq!(overlay.launch_id, active.launch_id);
             assert_eq!(overlay.phase, active.phase);
             assert_eq!(intent.lock().unwrap().as_deref(), Some("a"));
-        }
-    }
-
-    #[test]
-    fn remote_gameplay_controls_refuse_stale_identity_before_unavailable_routing() {
-        let exact = unavailable_remote_session_controls(
-            SessionStatusOutcome::Ok(SessionStatus {
-                netplay: None,
-                stream_play_launch_id: None,
-                stream_play_ended: None,
-                active: Some(ActiveSession {
-                    netplay: None,
-                    person_public_key: None,
-                    stream_players: Vec::new(),
-                    launch_id: "launch-a".into(),
-                    host: Some("peer".into()),
-                    game_id: Some("wario".into()),
-                    steps: None,
-                    initial_handoff: None,
-                    focus_ownership: None,
-                    title: Some("Wario Land 4".into()),
-                    phase: Some("frozen".into()),
-                }),
-                pending_launches: None,
-                observation_failure: None,
-                overlay: None,
-            }),
-            "launch-a",
-        );
-        assert!(matches!(
-            exact,
-            SessionControlsOutcome::Err(SessionControlFailure {
-                reason: SessionControlFailureReason::Unavailable,
-                ..
-            })
-        ));
-        for stale in [
-            unavailable_remote_session_controls(
-                SessionStatusOutcome::Ok(SessionStatus {
-                    netplay: None,
-                    stream_play_launch_id: None,
-                    stream_play_ended: None,
-                    active: None,
-                    pending_launches: None,
-                    observation_failure: None,
-                    overlay: None,
-                }),
-                "launch-a",
-            ),
-            unavailable_remote_session_controls(
-                SessionStatusOutcome::Err(RpcFailure {
-                    code: "NoActiveSession".into(),
-                    message: "none".into(),
-                }),
-                "launch-a",
-            ),
-        ] {
-            assert!(matches!(
-                stale,
-                SessionControlsOutcome::Err(SessionControlFailure {
-                    reason: SessionControlFailureReason::StaleSession,
-                    ..
-                })
-            ));
         }
     }
 

@@ -2168,13 +2168,13 @@ impl HostSessionControl {
         // Stored route choices apply to new launches, not the running game.
         // Resolve failures only after resume and conflicts under the same lock.
         let composed;
-        let (configured_command, limits, hooks, steps) = match preparation {
+        let (configured_command, limits, hooks, steps, runner_id) = match preparation {
             LaunchPreparation::Ready {
                 command,
                 limits,
                 hooks,
                 steps,
-            } => (command, limits, hooks, steps),
+            } => (command, limits, hooks, steps, runner_id),
             LaunchPreparation::Compose(compose) => {
                 // Invalidate before composition: a mode command can succeed and
                 // any subsequent plugin/runtime/hook check can still refuse.
@@ -2186,6 +2186,7 @@ impl HostSessionControl {
                     composed.limits.as_ref(),
                     composed.hooks.as_ref(),
                     composed.steps.as_deref(),
+                    composed.runner_id.as_deref(),
                 )
             }
         };
