@@ -4,6 +4,10 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.graphics.Point;
+import android.hardware.display.DisplayManager;
+import android.os.Build;
+import android.view.Display;
 
 import com.limelight.preferences.PreferenceConfiguration;
 import android.os.Handler;
@@ -90,17 +94,43 @@ public final class KorriStreamViewer {
         if (Looper.myLooper() == Looper.getMainLooper()) throw failure();
     }
 
-    /** The same preference and portrait inversion used by Game's stream request. */
+    /**
+     * Temporary rule until stream size becomes a cascading setting: a Korri
+     * stream asks for the screen's own resolution, so the far display takes the
+     * screen's shape. Landscape pair (long side first), the form of
+     * {@code prefConfig.width/height}; Game inverts it in portrait.
+     */
+    static int[] screenStreamSize(Context context) {
+        DisplayManager displays = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+        Display display = displays == null ? null : displays.getDisplay(Display.DEFAULT_DISPLAY);
+        if (display == null) return null;
+        int width, height;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            width = display.getMode().getPhysicalWidth();
+            height = display.getMode().getPhysicalHeight();
+        } else {
+            Point size = new Point();
+            display.getRealSize(size);
+            width = size.x;
+            height = size.y;
+        }
+        if (width <= 0 || height <= 0) return null;
+        return new int[] {Math.max(width, height), Math.min(width, height)};
+    }
+
+    /** The screen stream size with the portrait inversion Game applies to its request. */
     public static String viewerDisplay() {
         KorriStreamViewer host = instance;
         if (host == null) return "";
+        int[] size = screenStreamSize(host.context);
+        if (size == null) return "";
         PreferenceConfiguration config = PreferenceConfiguration.readPreferences(host.context);
         boolean invert = config.autoOrientation && config.autoInvertVideoResolution
                 && host.context.getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_PORTRAIT;
-        int width = invert ? config.height : config.width;
-        int height = invert ? config.width : config.height;
-        return width > 0 && height > 0 ? width + "x" + height : "";
+        int width = invert ? size[1] : size[0];
+        int height = invert ? size[0] : size[1];
+        return width + "x" + height;
     }
 
     public static String start(String launchId, String address) throws Exception {
@@ -266,7 +296,7 @@ public final class KorriStreamViewer {
         if (trusted.getPairState() != HostCertificateState.ACCEPTED) throw failure();
         NvApp selected = streamApp(trusted.getAppList());
         // These extras are the retained ServerHelper/Game decoder contract.
-        return new Intent(context, Game.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        Intent intent = new Intent(context, Game.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(Game.EXTRA_HOST, tuple.address)
                 .putExtra(Game.EXTRA_PORT, tuple.port)
                 .putExtra(Game.EXTRA_HTTPS_PORT, computer.httpsPort)
@@ -280,6 +310,13 @@ public final class KorriStreamViewer {
                 .putExtra(Game.EXTRA_SERVER_CERT, certificate.getEncoded())
                 .putExtra(Game.EXTRA_KORRI_LAUNCH_ID, current.state.launchId)
                 .putExtra(EXTRA_GENERATION, current.state.generation);
+        // Ask for the same screen size that viewerDisplay() sent to the far
+        // korrid, so the far display's shape and the stream's shape agree.
+        int[] size = screenStreamSize(context);
+        if (size != null) {
+            intent.putExtra(Game.EXTRA_WIDTH, size[0]).putExtra(Game.EXTRA_HEIGHT, size[1]);
+        }
+        return intent;
     }
 
     static NvApp streamApp(List<NvApp> apps) {

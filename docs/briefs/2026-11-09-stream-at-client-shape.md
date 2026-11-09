@@ -44,6 +44,12 @@ puts it back when the shell takes the display again.
    `fn display(&self) -> Option<PluginDisplay>` (default `None`). The Linux
    production viewer returns the size it gives Moonlight. The Android adapter
    asks Java (`KorriStreamViewer`) for the stream size Moonlight will request.
+   **Owner decision, 2026-11-09:** on Android that size is the screen's own
+   resolution at stream start (default display mode, long side first, with
+   Game's portrait inversion), not the Moonlight resolution setting. The
+   viewer passes the same size to `Game` as `EXTRA_WIDTH`/`EXTRA_HEIGHT`, so
+   the far display and the stream request agree. This is temporary: stream
+   size is meant to become a cascading setting.
    `upstreams.rs` passes it to `prepare_stream`. A joiner (`stream_play`)
    sends nothing and keeps the starter's shape.
 3. **Display facts.** `KORRID_DISPLAYS` entries carry `unwatched` from the

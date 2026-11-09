@@ -26,29 +26,35 @@ public class KorriStreamViewerBoundaryTest {
     private static final String LAUNCH = "0123456789abcdef0123456789abcdef";
 
     @Test
-    @Config(shadows = com.limelight.shadows.ShadowMoonBridge.class)
-    public void viewerDisplayUsesStreamPreferencesAndGamePortraitInversion() {
+    @Config(shadows = com.limelight.shadows.ShadowMoonBridge.class, qualifiers = "w1088dp-h981dp-xhdpi")
+    public void viewerDisplayUsesTheScreenAndGamePortraitInversionNotTheResolutionSetting() {
         android.app.Application app = RuntimeEnvironment.getApplication();
         KorriStreamViewer.initialize(app);
+        int[] screen = KorriStreamViewer.screenStreamSize(app);
+        assertNotNull(screen);
+        assertTrue("landscape pair", screen[0] >= screen[1]);
+        String landscape = screen[0] + "x" + screen[1];
+        String portrait = screen[1] + "x" + screen[0];
+        assertNotEquals("the screen, not the setting", "1920x1080", landscape);
         PreferenceManager.getDefaultSharedPreferences(app).edit()
-                .putString("list_resolution", "2176x1812")
+                .putString("list_resolution", "1920x1080")
                 .putBoolean("checkbox_auto_orientation", true)
                 .putBoolean("checkbox_auto_invert_video_resolution", true)
                 .apply();
         Configuration configuration = new Configuration(app.getResources().getConfiguration());
         configuration.orientation = Configuration.ORIENTATION_LANDSCAPE;
         app.getResources().updateConfiguration(configuration, app.getResources().getDisplayMetrics());
-        assertEquals("2176x1812", KorriStreamViewer.viewerDisplay());
+        assertEquals(landscape, KorriStreamViewer.viewerDisplay());
         configuration.orientation = Configuration.ORIENTATION_PORTRAIT;
         app.getResources().updateConfiguration(configuration, app.getResources().getDisplayMetrics());
-        assertEquals("1812x2176", KorriStreamViewer.viewerDisplay());
+        assertEquals(portrait, KorriStreamViewer.viewerDisplay());
         PreferenceManager.getDefaultSharedPreferences(app).edit()
                 .putBoolean("checkbox_auto_orientation", false).apply();
-        assertEquals("2176x1812", KorriStreamViewer.viewerDisplay());
+        assertEquals(landscape, KorriStreamViewer.viewerDisplay());
         PreferenceManager.getDefaultSharedPreferences(app).edit()
                 .putBoolean("checkbox_auto_orientation", true)
                 .putBoolean("checkbox_auto_invert_video_resolution", false).apply();
-        assertEquals("2176x1812", KorriStreamViewer.viewerDisplay());
+        assertEquals(landscape, KorriStreamViewer.viewerDisplay());
     }
 
     @Test
