@@ -21,7 +21,7 @@ export component PicoGameDetail inherits Rectangle {
         width: root.width;
         height: root.height;
         frame: frame;
-        if question == "" : GameDetail { reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; detail: detail; }
+        if question == "" : GameDetail { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; detail: detail; }
         if question == "location" : PicoLocationPicker { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; places: card; }
         if question == "modal" : PicoModal { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
     }

@@ -50,7 +50,7 @@ export component PicoResumeList inherits VerticalLayout {
                     property <length> scroll: max(0, min(count * (slot-w + gap) - gap - self.width, (focused + 1) * (slot-w + gap) - gap - self.width));
                     // A sideways drag slides the rack a cart at a time; focus follows (ADR 0055).
                     slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "resume"; pitch: root.slot-w + root.gap; rest: rack.scroll; first: root.focused <= 0; last: root.focused >= root.count - 1; }
-                    PicoTap { slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+                    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
                     // The cart, its shadow and its target read the row through the list
                     // by index: after the shell updates a row in place, the row's own
                     // copy can lag a render (seen when the probe reads elements between

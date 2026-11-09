@@ -40,7 +40,7 @@ export component ZoneSaveBand {
         height: root.band-h;
         clip: true;
         // Between the cards: a drag still slides the band, a tap does nothing.
-        ZoneTap { slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+        ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
         for c[i] in root.cards: ZoneSaveCard { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { slide.move(dx); }  slid => { slide.release(); } 
             cache-rendering-hint: true;
             x: root.shift + i * (root.card-w + root.gap);

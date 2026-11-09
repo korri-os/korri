@@ -98,7 +98,7 @@ export component ZoneCardBand {
         // The band's image stays the band's size: a parked card is not in it.
         clip: true;
         // Between the cards: a drag still slides the band, a tap does nothing.
-        ZoneTap { slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+        ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
         // A fixed pool of slots, one per card from reach + 1 before the focus to
         // reach + 1 after it. Slot j holds the card whose index is j modulo the
         // pool, so a move hands only one slot a new card (the one about to
