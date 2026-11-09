@@ -66,7 +66,7 @@ export type SurfaceLaunchSettingsScopeKind = "any" | "family" | "runner";
  *
  * Directional repeat: the first repeat after 400 ms, then every 100 ms.
  */
-export type SurfaceMessage = { _tag: "Pressed"; button: SurfaceButton } | { _tag: "KorriPublished" } | { _tag: "PreferenceStored"; key: string } | { _tag: "Tick"; idleMs: number } | { _tag: "Resized"; width: number; height: number } | { _tag: "Activated"; target: string; at?: number; released?: boolean } | { _tag: "Dragged"; region: string; by: number };
+export type SurfaceMessage = { _tag: "Pressed"; button: SurfaceButton } | { _tag: "KorriPublished" } | { _tag: "PreferenceStored"; key: string } | { _tag: "Tick"; idleMs: number } | { _tag: "Resized"; width: number; height: number } | { _tag: "Activated"; target: string; at?: number; released?: boolean } | { _tag: "Dragged"; region: string; by: number } | { _tag: "Touched" };
 
 /**
  * How this device reaches the network right now. Grounded in legacy

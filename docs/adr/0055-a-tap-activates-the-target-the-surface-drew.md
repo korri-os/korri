@@ -51,8 +51,15 @@ targets carry an `act`, which is what Confirm runs. Zone's Confirm handler
   ends, keeps the highlight hidden, and loads more games through the existing
   focus-driven paging.
 - While the person uses touch, the package hides its focus highlight. The
-  highlight comes back on the next button press. Logic can tell `Activated`
-  from `Pressed`, so this adds nothing to the treaty.
+  highlight comes back on the next button press, and that press brings the
+  focused target back into sight even when it does not move focus.
+- Owner decision during review (2026-11-09): a plain list scroll sends
+  nothing to logic, so logic could not know touch was in use. The treaty
+  gains a third variant, `Touched`, with no fields. The shell sends it once
+  per gesture when a finger goes down anywhere, before any `Activated` or
+  `Dragged` from that gesture. It says only that touch is in use. It names
+  no target and does not wake an idle surface by itself; waking stays with
+  the gesture's `Activated` or `Dragged`, or the attract cover.
 - Each package makes its hint chips tappable. A tapped hint is a target whose
   `act` runs the package's own handler for that button, so a touch-only person
   can reach Options and Menu. Android's back gesture already arrives as Back.

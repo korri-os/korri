@@ -1474,6 +1474,12 @@ pub enum SurfaceMessage {
     /// signed number of whole items moved since the last `Dragged`. The
     /// surface moves focus by `by` within the region, clamped at its ends.
     Dragged { region: String, by: i32 },
+    /// A finger went down anywhere on the surface (ADR 0055). The shell sends
+    /// it once per gesture, before any `Activated` or `Dragged` that gesture
+    /// produces. It says only that touch is in use, so the surface can hide
+    /// its focus highlight until the next `Pressed`. It names no target and
+    /// does not wake an idle surface by itself.
+    Touched,
 }
 
 // ---------------------------------------------------------------------------
@@ -1800,6 +1806,10 @@ mod tests {
             })
             .unwrap(),
             json!({"_tag": "Dragged", "region": "shelf", "by": -2})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceMessage::Touched).unwrap(),
+            json!({"_tag": "Touched"})
         );
         let slid: SurfaceMessage = serde_json::from_value(
             json!({"_tag": "Activated", "target": "control:volume", "at": 0.5, "released": true}),
