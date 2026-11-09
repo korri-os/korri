@@ -52,6 +52,37 @@ public class KorriOverlayInputTest {
         }
     }
 
+    @Test public void overlayLeavesSystemVolumeAndPowerKeysToAndroidWhileGameplayStaysHeld() {
+        Game game = Robolectric.buildActivity(Game.class).get();
+        com.limelight.nvstream.NvConnection connection = new com.limelight.nvstream.NvConnection(
+                game, new com.limelight.nvstream.http.ComputerDetails.AddressTuple("127.0.0.1", 47989),
+                47984, "test", null, null, null, com.limelight.nvstream.NvConnection.AppLaunchPolicy.EXACT);
+        ReflectionHelpers.setField(game, "conn", connection);
+        ReflectionHelpers.setField(game, "korriViewerRequested", true);
+        ReflectionHelpers.setField(game, "surfaceOverlay", new SurfaceView(game));
+        Surface surface = new Surface(new SurfaceTexture(0));
+        KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 1, () -> fail("Unexpected renderer failure"));
+        connection.setInputHeld(true);
+        try {
+            for (int code : new int[] { KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN,
+                    KeyEvent.KEYCODE_VOLUME_MUTE, KeyEvent.KEYCODE_POWER }) {
+                // These are the pre-IME/Activity callbacks before Android's own
+                // default handling. Returning false gives the system its key.
+                assertFalse(game.handleKeyDown(new KeyEvent(KeyEvent.ACTION_DOWN, code)));
+                assertFalse(game.handleKeyUp(new KeyEvent(KeyEvent.ACTION_UP, code)));
+                assertArrayEquals(new int[0], KorriSurfaceHost.takeKeys());
+                assertTrue(ReflectionHelpers.<Boolean>getField(connection, "inputHeld"));
+            }
+            assertTrue(game.handleKeyDown(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_DOWN)));
+            assertTrue(game.handleKeyUp(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_DOWN)));
+            assertEquals(6, KorriSurfaceHost.takeKeys().length);
+            assertTrue(ReflectionHelpers.<Boolean>getField(connection, "inputHeld"));
+        } finally {
+            KorriSurfaceHost.detach(attachment);
+            surface.release();
+        }
+    }
+
     @Test public void korriGuideSendsOneResumePairOnReleaseAcrossPreImeAndActivityDispatch() {
         Game game = Robolectric.buildActivity(Game.class).get();
         ReflectionHelpers.setField(game, "korriViewerRequested", true);

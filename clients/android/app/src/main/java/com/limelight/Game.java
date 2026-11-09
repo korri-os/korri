@@ -2143,6 +2143,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyDown(KeyEvent event) {
+        if (surfaceOverlay != null && KorriSurfaceHost.isSystemKey(event.getKeyCode())) return false;
         if (handleKorriHomeKey(event) || forwardSurfaceOverlayKey(event)) return true;
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
@@ -2240,6 +2241,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyUp(KeyEvent event) {
+        if (surfaceOverlay != null && KorriSurfaceHost.isSystemKey(event.getKeyCode())) return false;
         if (handleKorriHomeKey(event) || forwardSurfaceOverlayKey(event)) return true;
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
@@ -4332,7 +4334,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     // StreamView.onKeyPreIme reaches handleKeyDown/Up before Activity dispatch.
     // Keep both edges blocked, including while the Surface is being created.
     private boolean forwardSurfaceOverlayKey(KeyEvent event) {
-        if (surfaceOverlay == null) return false;
+        if (surfaceOverlay == null || KorriSurfaceHost.isSystemKey(event.getKeyCode())) return false;
         KorriSurfaceHost.forward(event);
         return true;
     }

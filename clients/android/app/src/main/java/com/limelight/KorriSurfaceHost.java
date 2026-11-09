@@ -56,8 +56,16 @@ public final class KorriSurfaceHost {
         if (attachment != null && active == attachment) attachment.resized = true;
     }
 
+    /** Android keeps these keys regardless of which gameplay overlay is shown. */
+    static boolean isSystemKey(int code) {
+        return code == KeyEvent.KEYCODE_VOLUME_UP
+                || code == KeyEvent.KEYCODE_VOLUME_DOWN
+                || code == KeyEvent.KEYCODE_VOLUME_MUTE
+                || code == KeyEvent.KEYCODE_POWER;
+    }
+
     public static synchronized boolean forward(KeyEvent event) {
-        if (active == null) return false;
+        if (active == null || isSystemKey(event.getKeyCode())) return false;
         if (!active.closing && (event.getAction() == KeyEvent.ACTION_UP
                 || (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0))) {
             // Guide is host-owned. Menu dismisses the overlay even over a question.

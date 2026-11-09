@@ -127,10 +127,7 @@ public class KorriGameOverlay implements KorriOverlayHostExclusion.LegacyHost {
     public boolean handleKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
         // System keys stay with the system.
-        if (code == KeyEvent.KEYCODE_VOLUME_UP
-                || code == KeyEvent.KEYCODE_VOLUME_DOWN
-                || code == KeyEvent.KEYCODE_VOLUME_MUTE
-                || code == KeyEvent.KEYCODE_POWER) {
+        if (KorriSurfaceHost.isSystemKey(code)) {
             return false;
         }
         switch (code) {
