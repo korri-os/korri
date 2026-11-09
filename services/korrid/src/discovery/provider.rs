@@ -81,12 +81,13 @@ pub fn scan_installed_apps(
         .discovery_providers()
         .any(|p| p.id == ANDROID_INSTALLED_APPS)
     {
+        eprintln!("korrid discovery: @korri:android-app discovery is not enabled");
         return Some(result);
     }
-    let apps = INSTALLED_APPS
-        .read()
-        .expect("installed apps lock")
-        .clone()?;
+    let Some(apps) = INSTALLED_APPS.read().expect("installed apps lock").clone() else {
+        eprintln!("korrid discovery: no installed-app report yet; keeping Android games");
+        return None;
+    };
     let fail = |diagnostics: &mut Vec<DiscoveryDiagnostic>, message: &str| {
         eprintln!("korrid discovery: {message}");
         diagnostics.push(DiscoveryDiagnostic {
@@ -143,6 +144,11 @@ pub fn scan_installed_apps(
         );
         return None;
     }
+    eprintln!(
+        "korrid discovery: {} installed apps reported, {} Android games",
+        apps.len(),
+        observations.len()
+    );
     result.observations = observations;
     Some(result)
 }
