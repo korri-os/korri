@@ -96,21 +96,35 @@ fn the_real_android_app_plugin_discovers_and_launches_on_android() {
     .unwrap();
     let json = crate::script::eval_plugin_snapshot(&source).unwrap();
     let registry = |platform| {
-        let plugin = crate::plugin::decode_plugin_declaration_on("@korri", &json, platform).unwrap();
+        let plugin =
+            crate::plugin::decode_plugin_declaration_on("@korri", &json, platform).unwrap();
         crate::plugin::PluginRegistry::new(vec![plugin], ["@korri:android-app".to_owned()]).unwrap()
     };
-    assert!(registry("aarch64-android").runners().contains_key("@korri:android-app/android-app"));
-    assert!(registry("aarch64-linux").runners().is_empty(), "no Android runner on Linux");
+    assert!(registry("aarch64-android")
+        .runners()
+        .contains_key("@korri:android-app/android-app"));
+    assert!(
+        registry("aarch64-linux").runners().is_empty(),
+        "no Android runner on Linux"
+    );
 
     let input = serde_json::json!({"apps": [
         {"packageName": "com.example.game", "label": "Game", "isGame": true, "added": false},
         {"packageName": "com.android.settings", "label": "Settings", "isGame": false, "added": false},
         {"packageName": "com.example.mine", "label": "Mine", "isGame": false, "added": true}
     ]});
-    let output = crate::script::call_plugin_operation_snapshot(&source, "discovery.discover", &input.to_string()).unwrap();
+    let output = crate::script::call_plugin_operation_snapshot(
+        &source,
+        "discovery.discover",
+        &input.to_string(),
+    )
+    .unwrap();
     let observations: Vec<crate::discovery::provider::ProviderRefReleaseObservation> =
         serde_json::from_str(&output).unwrap();
-    let refs: Vec<_> = observations.iter().map(|o| o.target.provider_ref.as_str()).collect();
+    let refs: Vec<_> = observations
+        .iter()
+        .map(|o| o.target.provider_ref.as_str())
+        .collect();
     assert_eq!(refs, vec!["com.example.game", "com.example.mine"]);
 
     let launch: PluginLaunchInput = serde_json::from_value(serde_json::json!({
@@ -119,7 +133,8 @@ fn the_real_android_app_plugin_discovers_and_launches_on_android() {
         "androidPackage": "com.example.game"
     }))
     .unwrap();
-    let plan = plugin_launch::evaluate_android(&source, &launch, &["com.example.game".to_owned()]).unwrap();
+    let plan = plugin_launch::evaluate_android(&source, &launch, &["com.example.game".to_owned()])
+        .unwrap();
     assert_eq!(plan.android.package, "com.example.game");
     assert!(plugin_launch::evaluate_android(&source, &launch, &["com.other".to_owned()]).is_err());
 }

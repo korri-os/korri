@@ -126,6 +126,7 @@ async fn android_selected_launch(
             session: SessionPrepared {
                 game_id: session.game_id,
                 launch_id: session.launch_id,
+                display: None,
             },
             warnings: Vec::new(),
         })
@@ -3204,7 +3205,9 @@ async fn dispatch(
                     .await
                     .map_err(|_| installed_routes_unsupported())
                     .and_then(|result| result)
-                    .map(|snapshot| launch_settings::LaunchSettingsSnapshotOutcome::Ok(Box::new(snapshot)))
+                    .map(|snapshot| {
+                        launch_settings::LaunchSettingsSnapshotOutcome::Ok(Box::new(snapshot))
+                    })
                     .unwrap_or_else(launch_settings::LaunchSettingsSnapshotOutcome::Err)
                 }
                 ServerMode::Brain(_) => launch_settings::LaunchSettingsSnapshotOutcome::Err(

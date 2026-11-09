@@ -131,17 +131,25 @@ fn installs_from_a_real_https_catalog_when_given() {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
-    let store: &'static AndroidPluginStore = Box::leak(Box::new(AndroidPluginStore::new(dir.path())));
-    let admin = AndroidPluginAdmin::new(dir.path(), store, Some(url.clone()), Box::new(https_fetch));
+    let store: &'static AndroidPluginStore =
+        Box::leak(Box::new(AndroidPluginStore::new(dir.path())));
+    let admin =
+        AndroidPluginAdmin::new(dir.path(), store, Some(url.clone()), Box::new(https_fetch));
     for namespace in ["@korri", "@simonwjackson"] {
         admin
-            .handle(PluginAdminRequest::TrustPublisher(PluginTrustPublisherRequest {
-                namespace: namespace.into(),
-                public_key: key.clone(),
-            }))
+            .handle(PluginAdminRequest::TrustPublisher(
+                PluginTrustPublisherRequest {
+                    namespace: namespace.into(),
+                    public_key: key.clone(),
+                },
+            ))
             .unwrap();
     }
-    for id in ["@korri:android-app", "@korri:homebrewhub", "@simonwjackson:savagewind"] {
+    for id in [
+        "@korri:android-app",
+        "@korri:homebrewhub",
+        "@simonwjackson:savagewind",
+    ] {
         let PluginAdminResponse::Inspection(inspection) = admin
             .handle(PluginAdminRequest::Inspect(PluginInspectRequest {
                 url: url.clone(),
