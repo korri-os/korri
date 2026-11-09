@@ -3179,6 +3179,34 @@ async fn dispatch(
                         launch_settings::LaunchSettingsSnapshotOutcome::Ok(Box::new(snapshot))
                     })
                     .unwrap_or_else(launch_settings::LaunchSettingsSnapshotOutcome::Err),
+                ServerMode::Brain(brain) if android_local_sessions().is_some() => {
+                    // ADR 0054: games on this Android device have no Korri
+                    // launch settings yet; show only the person's layers.
+                    let root = brain.local_storage_root.clone();
+                    let owner = brain.local_owner_public_key().map(str::to_owned);
+                    tokio::task::spawn_blocking(move || {
+                        launch_settings::resolution::snapshot_for_person(
+                            &root,
+                            None,
+                            request.game_id.as_deref(),
+                            &launch_settings::helper::Client::default(),
+                            owner.as_deref(),
+                        )
+                        .map(|mut snapshot| {
+                            snapshot.route_layers =
+                                launch_settings::LaunchSettingsRouteLayers::Unavailable(
+                                    "Android games have no Korri launch settings".into(),
+                                );
+                            snapshot
+                        })
+                        .map_err(game_routes::settings_failure)
+                    })
+                    .await
+                    .map_err(|_| installed_routes_unsupported())
+                    .and_then(|result| result)
+                    .map(|snapshot| launch_settings::LaunchSettingsSnapshotOutcome::Ok(Box::new(snapshot)))
+                    .unwrap_or_else(launch_settings::LaunchSettingsSnapshotOutcome::Err)
+                }
                 ServerMode::Brain(_) => launch_settings::LaunchSettingsSnapshotOutcome::Err(
                     installed_routes_unsupported(),
                 ),
