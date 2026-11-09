@@ -71,6 +71,28 @@ UI. Each milestone ends in something the owner can check on the TV.
   a multi-call `main` binary, so the launcher, brain, shell and viewer share
   one exe path, or a viewer inside the main process. The shell window also
   needs see-through regions to show video.
+- **M4a and M4b on the TV (2026-11-08).** With the shell's left half
+  transparent (8 alpha bits, Wayland opaque region cleared), the TV's own
+  display capture (`com.webos.service.tv.capture/executeOneShot`, method
+  `DISPLAY`) showed the NDL test pattern in the left half and Zone in the
+  right. Graphics composite over the video plane, so the M5 overlay is
+  feasible, and the capture includes video, so picture checks can be
+  automated. With appinfo `main` = `bin/korri-webos` (landed `e80d3a96f`), the
+  LS2 role binds to it, normal launch works (70 games), and
+  `korri-webos media-test` opens NDL with no role edit.
+- **First real stream (2026-11-08, `wip/webos-viewer-appversion` 651261748,
+  host aka).** Zone's PLAY drives the whole chain: far launch, embedded
+  identity, public serverinfo, native attestation, certificate provisioning
+  with no PIN, authenticated serverinfo, app list (`Korri Stream` = 1820356324),
+  transport launch, then READY. The TV's display capture shows the game full
+  screen under a transparent shell. The pad controls the game, with the same
+  lag as in Zone (#373). `app.session.end` stops the exact launch: the viewer
+  exits 0, Zone returns with the same PID, and aka's unit deactivates cleanly.
+  Fixed on the way: Sunshine's `7.1.431.-1` appversion was rejected, and the
+  local cause was masked by the host's exit 143. **Open: no sound.** The TV
+  Pulse stream runs on `pcm_output` at 100% but its monitor is all zeros,
+  while aka routes game audio to Sunshine's capture. The cause is under
+  investigation in the viewer.
 - **Gamepad latency** is tracked in #373, the cursor in #370, and the gradient
   noise in Zone's no-art covers in #386 (backlog).
 - **Resources (Zone idle).** korrid 12 MB RSS, about 9% CPU; shell 114 to
