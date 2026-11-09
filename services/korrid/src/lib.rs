@@ -6427,6 +6427,25 @@ mod tests {
         assert!(matches!(exited, SessionStatusOutcome::Err(_)));
         assert_eq!(*exited_intent.lock().unwrap(), None);
 
+        // Native peer completion is translated into Ok with no active
+        // session before the brain correlates its process-local Home intent.
+        let absent_intent = overlay_intent::OverlayIntent::default();
+        *absent_intent.lock().unwrap() = Some("a".into());
+        let changes = absent_intent.subscribe();
+        let absent = correlate_overlay_status(
+            &absent_intent,
+            session_status_outcome(Ok(upstream::UpstreamSessionStatus::SessionStatus {
+                active: None,
+            })),
+        );
+        let SessionStatusOutcome::Ok(absent) = absent else {
+            panic!("expected status");
+        };
+        assert!(absent.active.is_none());
+        assert!(absent.overlay.is_none());
+        assert_eq!(*absent_intent.lock().unwrap(), None);
+        assert!(changes.has_changed().unwrap());
+
         let remote_replaced_intent = overlay_intent::OverlayIntent::default();
         *remote_replaced_intent.lock().unwrap() = Some("a".into());
         let remote_replaced = correlate_overlay_status(

@@ -1660,6 +1660,117 @@ mod overlay {
         panic!("Open Korri never showed the catalog");
     }
 
+    #[tokio::test]
+    async fn an_ended_home_launch_does_not_leave_a_problem_for_the_next_activity() {
+        let mut outcomes = idle_outcomes(2);
+        let frozen = json!({ "launchId": "L1", "gameId": "g00001", "phase": "frozen" });
+        outcomes.insert(
+            "app.session.status".into(),
+            json!({ "_tag": "Ok", "payload": { "active": frozen, "overlay": frozen } }),
+        );
+        outcomes.insert(
+            "app.session.controls".into(),
+            json!({ "_tag": "Ok", "payload": { "launchId": "L1", "groups": [] } }),
+        );
+        let (hub, outcomes, _directory) = hub_with(outcomes);
+        hub.model("pico").unwrap();
+        home_intent("L1");
+        tokio::time::timeout(Duration::from_secs(4), async {
+            loop {
+                let model = hub.model("pico").unwrap();
+                if matches!(model.presentation, SurfacePresentation::GameplayOverlay(_))
+                    && model.status == SurfaceStatus::Browsing
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        // The brain (and its surface hub) outlive Android activities. The far
+        // holder now reports no active session, as after quitting the game.
+        outcomes.lock().unwrap().insert(
+            "app.session.status".into(),
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        tokio::time::timeout(Duration::from_secs(4), async {
+            loop {
+                let model = hub.model("pico").unwrap();
+                if matches!(model.presentation, SurfacePresentation::Catalog(_))
+                    || matches!(model.status, SurfaceStatus::Problem { .. })
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        for _ in 0..3 {
+            let model = hub.model("pico").unwrap();
+            assert!(
+                matches!(model.presentation, SurfacePresentation::Catalog(_)),
+                "{model:?}"
+            );
+            assert!(!matches!(model.status, SurfaceStatus::Problem { .. }));
+        }
+    }
+
+    #[tokio::test]
+    async fn an_absent_session_exits_the_overlay_without_a_problem() {
+        use crate::surface::overlay::{OverlayController, OverlayExit};
+        let (korrid, script) = super::acquisition_gate::scripted();
+        super::acquisition_gate::push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        let exits = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = exits.clone();
+        let overlay = OverlayController::new(
+            "L1".into(),
+            None,
+            korrid,
+            Arc::new(|| {}),
+            Box::new(move |exit| observed.lock().unwrap().push(exit)),
+        );
+
+        overlay.refresh().await;
+
+        assert_eq!(*exits.lock().unwrap(), vec![OverlayExit::SessionEnded]);
+        assert!(!matches!(
+            overlay.model().status,
+            SurfaceStatus::Problem { .. }
+        ));
+        assert_eq!(script.lock().unwrap().calls.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_different_live_launch_still_reports_session_changed() {
+        use crate::surface::overlay::OverlayController;
+        let (korrid, script) = super::acquisition_gate::scripted();
+        super::acquisition_gate::push(
+            &script,
+            "app.session.status",
+            json!({ "_tag": "Ok", "payload": { "active": { "launchId": "L2", "phase": "frozen" } } }),
+        );
+        let overlay = OverlayController::new(
+            "L1".into(),
+            None,
+            korrid,
+            Arc::new(|| {}),
+            Box::new(|_| panic!("a replacement launch must not silently exit")),
+        );
+
+        overlay.refresh().await;
+
+        assert!(
+            matches!(overlay.model().status, SurfaceStatus::Problem { kicker, can_retry: false, .. } if kicker == "Session changed")
+        );
+        assert_eq!(script.lock().unwrap().calls.len(), 1);
+    }
+
     use korri_surface_treaty::SurfacePresentation;
 }
 

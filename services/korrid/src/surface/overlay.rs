@@ -403,10 +403,15 @@ impl OverlayController {
             }
             SessionStatusOutcome::Ok(status) => status.active,
         };
-        let Some(active) = active.filter(|active| active.launch_id == self.launch_id) else {
-            self.stale();
+        let Some(active) = active else {
+            self.lock().sticky = false;
+            (self.exit)(OverlayExit::SessionEnded);
             return;
         };
+        if active.launch_id != self.launch_id {
+            self.stale();
+            return;
+        }
         if matches!(active.phase.as_deref(), Some("running" | "focus-failed")) {
             self.lock().sticky = false;
             self.could_not_resume();
