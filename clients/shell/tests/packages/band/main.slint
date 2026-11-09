@@ -1,8 +1,9 @@
 // A test package for surface-probe: a band of eight cards that draws only the
 // focused card and one either side, and keeps the focused card centred.
 import "fonts/tiny5.ttf";
-export struct Card { label: string, focused: bool }
+export struct Card { label: string, focused: bool, focus-id: string }
 export component Surface inherits Window {
+    callback activated(target: string, at: float, released: bool);
     in property <[Card]> cards;
     in property <int> current;
     preferred-width: 640px;
@@ -16,7 +17,8 @@ export component Surface inherits Window {
             accessible-item-selectable: true;
             accessible-item-selected: card.focused;
             background: card.focused ? #f0c040 : #304050;
-            Text { text: card.label; color: white; font-size: 20px; }
+            TouchArea { clicked => { root.activated(card.focus-id, -1, false); } }
+        Text { text: card.label; color: white; font-size: 20px; }
         }
     }
 }

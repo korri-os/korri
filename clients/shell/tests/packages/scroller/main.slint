@@ -1,8 +1,9 @@
 // A test package for surface-probe: a list of ten rows in a box that shows
 // four, scrolled so the focused row stays in view.
 import "fonts/tiny5.ttf";
-export struct Row { label: string, focused: bool }
+export struct Row { label: string, focused: bool, focus-id: string }
 export component Surface inherits Window {
+    callback activated(target: string, at: float, released: bool);
     in property <[Row]> rows;
     in property <int> top;
     preferred-width: 640px;
@@ -19,7 +20,8 @@ export component Surface inherits Window {
             accessible-item-selectable: true;
             accessible-item-selected: row.focused;
             background: row.focused ? #f0c040 : #304050;
-            Text { text: row.label; color: white; font-size: 20px; }
+            TouchArea { clicked => { root.activated(row.focus-id, -1, false); } }
+        Text { text: row.label; color: white; font-size: 20px; }
         }
     }
 }

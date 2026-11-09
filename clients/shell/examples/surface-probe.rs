@@ -31,6 +31,11 @@
 //!     across states is its region and its place in the region's drawing
 //!     order, never its label or values (src/targets.rs).
 //!
+//!     ADR 0055: at every size, reveal each drawn target with its existing
+//!     focused entry, then synthesize native touch at its centre. The root's
+//!     activated callback must yield exactly one Activated with its focusId.
+//!     Virtual targets are checked when the walk brings them into view.
+//!
 //!     With --still, a state whose unchanged view, applied again, changes a
 //!     pixel is a failure too.
 //!
@@ -61,8 +66,9 @@ use korri_shell::{
 };
 use serde_json::{json, Value};
 use slint::ComponentHandle;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
+use std::{cell::RefCell, rc::Rc};
 
 fn sizes(text: &str) -> Vec<(u32, u32)> {
     text.split(',')
@@ -521,6 +527,13 @@ fn walk(
     // only what changed, and arrays keep their models.
     let mut binder = Binder::new(&definition);
     let mut images = ImageCache::new(&package.dir);
+    let activations = Rc::new(RefCell::new(Vec::new()));
+    let received = activations.clone();
+    view::bind_activated(&instance, move |message| {
+        received.borrow_mut().push(message)
+    })?;
+    let mut tap_seen = BTreeSet::new();
+    let mut tap_proven = BTreeSet::new();
     let presses: Vec<&'static str> = vec![
         "up", "down", "left", "right", "confirm", "back", "menu", "options",
     ];
@@ -674,6 +687,29 @@ fn walk(
             binder.apply(&instance, &view, &mut images)?;
             match korri_shell::targets::drawn(&instance, &mut binder, &view, &mut images) {
                 Ok(drawn) => {
+                    for (id, result) in taps(
+                        &instance,
+                        &mut binder,
+                        &view,
+                        &mut images,
+                        &drawn,
+                        &activations,
+                    )? {
+                        tap_seen.insert(id.clone());
+                        match result {
+                            Some(Ok(())) => {
+                                tap_proven.insert(id);
+                            }
+                            Some(Err(error)) => failures.push(format!(
+                                "{} at {}x{}: [{}] tap {id:?}: {error}",
+                                model_file.display(),
+                                size.0,
+                                size.1,
+                                path.join(" ")
+                            )),
+                            None => (), // Prove virtual/clipped targets when the focus walk reveals them.
+                        }
+                    }
                     for target in drawn {
                         if target.entry.focused {
                             state.focused_entries += 1;
@@ -718,8 +754,100 @@ fn walk(
         }
     }
     instance.hide()?;
+    for id in tap_seen.difference(&tap_proven) {
+        failures.push(format!(
+            "{} at {}x{}: target {id:?} was drawn but no walked state made its centre tappable",
+            model_file.display(),
+            size.0,
+            size.1
+        ));
+    }
     failures.extend(directions(model_file, size, &walked, &edges));
     Ok((walked.len(), failures))
+}
+
+/// ADR 0055: light each entry to use its existing reveal geometry, then tap the
+/// drawn centre through Slint's native touch path. No package logic is changed.
+/// Targets a virtual band does not reveal are proved in a later walked state.
+type TapResult = (String, Option<std::result::Result<(), String>>);
+fn taps(
+    instance: &slint_interpreter::ComponentInstance,
+    binder: &mut Binder,
+    view: &Value,
+    images: &mut ImageCache,
+    targets: &[korri_shell::targets::Target],
+    activations: &RefCell<Vec<Value>>,
+) -> Result<Vec<TapResult>> {
+    use i_slint_core::{
+        input::TouchPhase,
+        platform::{InternalEvent, WindowEvent},
+    };
+    let entries = korri_shell::targets::entries(view);
+    let mut results = Vec::new();
+    for (n, target) in targets.iter().enumerate() {
+        // Hidden layers are not drawn targets. A virtual entry will be checked
+        // when its package draws it in another state.
+        if target.element.is_none() {
+            continue;
+        }
+        let id = target.entry.id.as_ref().with_context(|| {
+            format!(
+                "{}: a tappable focus target needs its existing focusId",
+                korri_shell::targets::path_text(&target.entry.path)
+            )
+        })?;
+        binder.apply(
+            instance,
+            &korri_shell::targets::lit(view, &entries, Some(n)),
+            images,
+        )?;
+        // Let the package's reveal timers and any animations settle, without
+        // rendering twenty full frames just to read geometry.
+        for _ in 0..20 {
+            Headless::advance(std::time::Duration::from_millis(25));
+            slint::platform::update_timers_and_animations();
+        }
+        let selected = korri_shell::targets::elements(instance)
+            .into_iter()
+            .find(|e| e.selected && !e.hidden && e.visible);
+        let Some(element) = selected else {
+            results.push((id.clone(), None));
+            continue;
+        };
+        let (x, y) = element.center();
+        let size = instance
+            .window()
+            .size()
+            .to_logical(instance.window().scale_factor());
+        if x < 0.0
+            || y < 0.0
+            || x >= size.width
+            || y >= size.height
+            || !korri_shell::targets::selected_center_is_visible(instance, x, y)
+        {
+            results.push((id.clone(), None));
+            continue;
+        }
+        activations.borrow_mut().clear();
+        for phase in [TouchPhase::Started, TouchPhase::Ended] {
+            instance
+                .window()
+                .dispatch_event(WindowEvent::internal(InternalEvent::Touch {
+                    id: 0,
+                    position: i_slint_core::lengths::LogicalPoint::new(x, y),
+                    phase,
+                }));
+        }
+        let messages = activations.borrow();
+        let correct = messages.len() == 1
+            && messages[0]["_tag"] == "Activated"
+            && messages[0]["target"] == *id;
+        results.push((id.clone(), Some(if correct { Ok(()) } else {
+            Err(format!("synthetic tap at ({x:.1},{y:.1}) yielded {messages:?}; expected Activated with target {id:?}"))
+        })));
+    }
+    binder.apply(instance, view, images)?;
+    Ok(results)
 }
 
 /// A2 (8.3): every direction from every focused state goes where the

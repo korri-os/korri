@@ -71,10 +71,48 @@ pub fn elements(instance: &ComponentInstance) -> Vec<Element> {
         .collect()
 }
 
+/// Whether the selected element's centre is inside every ancestor clip.
+/// `ElementHandle::is_visible` also accepts a sliver whose centre is clipped;
+/// the tap probe must wait for the focus walk to reveal that centre instead.
+/// This reads Slint's existing item geometry; it adds no package convention.
+pub fn selected_center_is_visible(instance: &ComponentInstance, x: f32, y: f32) -> bool {
+    use i_slint_core::{
+        accessibility::AccessibleStringProperty,
+        item_tree::{ItemRc, ParentItemTraversalMode},
+    };
+    use std::ops::ControlFlow;
+    let tree = instance.item_tree();
+    let root = ItemRc::new_root(tree.clone());
+    root.visit_descendants(|item| {
+        if item
+            .accessible_string_property(AccessibleStringProperty::ItemSelected)
+            .is_none_or(|selected| selected != "true")
+        {
+            return ControlFlow::Continue(());
+        }
+        let mut parent = item.parent_item(ParentItemTraversalMode::StopAtPopups);
+        while let Some(ancestor) = parent {
+            if ancestor.borrow().as_ref().clips_children() {
+                let rect = ancestor
+                    .transform_to_item_tree(&tree)
+                    .outer_transformed_rect(&ancestor.geometry().cast());
+                if !rect.contains((x, y).into()) {
+                    return ControlFlow::Break(false);
+                }
+            }
+            parent = ancestor.parent_item(ParentItemTraversalMode::StopAtPopups);
+        }
+        ControlFlow::Break(true)
+    })
+    .unwrap_or(false)
+}
+
 /// A view entry with `focused`: where it is in the view, its region, and its flags.
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub path: Vec<Value>,
+    /// The package's existing activation target id (ADR 0055).
+    pub id: Option<String>,
     pub region: String,
     pub active: bool,
     pub focused: bool,
@@ -88,6 +126,11 @@ pub fn entries(view: &Value) -> Vec<Entry> {
                 if map.contains_key("focused") {
                     out.push(Entry {
                         path: path.clone(),
+                        id: map
+                            .get("focusId")
+                            .and_then(Value::as_str)
+                            .filter(|id| !id.is_empty())
+                            .map(str::to_owned),
                         region: map
                             .get(view::FOCUS_REGION)
                             .and_then(Value::as_str)

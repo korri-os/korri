@@ -30,8 +30,8 @@ globalThis.surface = {
     top: s.top,
     sideTop: s.sideTop,
     hideSide: model.clockLabel === "HIDE",
-    cells: Array.from({ length: COLUMNS * ROWS }, (_, i) => ({ label: String(i), focused: s.region === "cells" && s.cell === i, focusRegion: "cells" })),
-    side: Array.from({ length: SIDE }, (_, i) => ({ label: "S" + i, focused: s.region === "side" && s.side === i, focusRegion: "side" })),
+    cells: Array.from({ length: COLUMNS * ROWS }, (_, i) => ({ label: String(i), focused: s.region === "cells" && s.cell === i, focusId: "cells:" + i, focusRegion: "cells" })),
+    side: Array.from({ length: SIDE }, (_, i) => ({ label: "S" + i, focused: s.region === "side" && s.side === i, focusId: "side:" + i, focusRegion: "side" })),
     focusPlan: {
       cells: { right: { to: "side", entry: "first" } },
       side: { left: { to: "cells", entry: "remembered" } },

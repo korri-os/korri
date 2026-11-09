@@ -2,9 +2,10 @@
 // rows with the same buttons; a header and a button with the same word) and
 // a choice row whose value left and right step in place.
 import "fonts/tiny5.ttf";
-export struct Button { label: string, focused: bool }
-export struct Choice { label: string, value: string, focused: bool }
+export struct Button { label: string, focused: bool, focus-id: string }
+export struct Choice { label: string, value: string, focused: bool, focus-id: string }
 export component Surface inherits Window {
+    callback activated(target: string, at: float, released: bool);
     in property <string> header;
     in property <[Button]> first;
     in property <[Button]> second;
@@ -20,6 +21,7 @@ export component Surface inherits Window {
         accessible-item-selectable: true;
         accessible-item-selected: b.focused;
         background: b.focused ? #f0c040 : #304050;
+        TouchArea { clicked => { root.activated(b.focus-id, -1, false); } }
         Text { text: b.label; color: white; font-size: 20px; }
     }
     for b[i] in root.second: Rectangle {
@@ -28,6 +30,7 @@ export component Surface inherits Window {
         accessible-item-selectable: true;
         accessible-item-selected: b.focused;
         background: b.focused ? #f0c040 : #304050;
+        TouchArea { clicked => { root.activated(b.focus-id, -1, false); } }
         Text { text: b.label; color: white; font-size: 20px; }
     }
     Rectangle {
@@ -36,6 +39,7 @@ export component Surface inherits Window {
         accessible-item-selectable: true;
         accessible-item-selected: root.choice.focused;
         background: root.choice.focused ? #f0c040 : #304050;
+        TouchArea { clicked => { root.activated(root.choice.focus-id, -1, false); } }
         Text { text: root.choice.label + ": " + root.choice.value; color: white; font-size: 20px; }
     }
 }

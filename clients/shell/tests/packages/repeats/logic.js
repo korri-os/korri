@@ -22,9 +22,9 @@ globalThis.surface = {
   },
   view: (s) => ({
     header: "Back up",
-    first: LABELS.map((label, i) => ({ label, focused: s.row === 0 && s.col === i, focusRegion: "rows" })),
-    second: LABELS.map((label, i) => ({ label, focused: s.row === 1 && s.col === i, focusRegion: "rows" })),
-    choice: { label: "Quality", value: VALUES[s.value], focused: s.row === 2, focusRegion: "choice" },
+    first: LABELS.map((label, i) => ({ label, focused: s.row === 0 && s.col === i, focusId: "first:" + i, focusRegion: "rows" })),
+    second: LABELS.map((label, i) => ({ label, focused: s.row === 1 && s.col === i, focusId: "second:" + i, focusRegion: "rows" })),
+    choice: { label: "Quality", value: VALUES[s.value], focused: s.row === 2, focusId: "choice", focusRegion: "choice" },
     focusPlan: {
       rows: { down: { to: "choice", entry: "first" } },
       choice: { up: { to: "rows", entry: "remembered" } },

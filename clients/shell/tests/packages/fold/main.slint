@@ -2,8 +2,9 @@
 // clipped by a scrolling box, and a side list scrolled out of view until it is
 // entered (contract 8.4 with scroll-clipped targets).
 import "fonts/tiny5.ttf";
-export struct Target { label: string, focused: bool }
+export struct Target { label: string, focused: bool, focus-id: string }
 export component Surface inherits Window {
+    callback activated(target: string, at: float, released: bool);
     in property <[Target]> cells;
     in property <[Target]> side;
     in property <int> top;
@@ -25,7 +26,8 @@ export component Surface inherits Window {
             accessible-item-selectable: true;
             accessible-item-selected: cell.focused;
             background: cell.focused ? #f0c040 : #405060;
-            Text { text: cell.label; color: white; font-size: 20px; }
+            TouchArea { clicked => { root.activated(cell.focus-id, -1, false); } }
+        Text { text: cell.label; color: white; font-size: 20px; }
         }
     }
     // A list on the right; scrolled out of its box until it is entered.
@@ -40,7 +42,8 @@ export component Surface inherits Window {
             accessible-item-selectable: true;
             accessible-item-selected: row.focused;
             background: row.focused ? #f0c040 : #304050;
-            Text { text: row.label; color: white; font-size: 20px; }
+            TouchArea { clicked => { root.activated(row.focus-id, -1, false); } }
+        Text { text: row.label; color: white; font-size: 20px; }
         }
     }
 }

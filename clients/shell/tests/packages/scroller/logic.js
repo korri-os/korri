@@ -13,6 +13,6 @@ globalThis.surface = {
   },
   view: (s) => ({
     top: s.top,
-    rows: Array.from({ length: ROWS }, (_, i) => ({ label: "Same", focused: i === s.focus, focusRegion: "list" })),
+    rows: Array.from({ length: ROWS }, (_, i) => ({ label: "Same", focused: i === s.focus, focusId: "list:" + i, focusRegion: "list" })),
   }),
 };

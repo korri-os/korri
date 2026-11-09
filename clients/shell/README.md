@@ -135,6 +135,34 @@ The probe runs on its own clock, starting at the same instant every run, with
 views changed and two runs draw the same pixels; `--still` fails a state
 whose unchanged view, applied again, changes a pixel.
 
+## Touch (ADR 0055)
+
+Every package root (`Surface`, and `Overlay` when exported) declares:
+
+```slint
+callback activated(target: string, at: float, released: bool);
+```
+
+The verifier rejects a missing callback or a different signature. The shell
+binds it by name and sends `Activated` to logic, not a synthetic `Pressed`.
+A negative `at` omits the position; false `released` omits the release flag.
+Each tappable entry keeps its existing `focusId` in the view and binds it to
+Slint. The view alone decides which target the finger hit.
+
+Android passes native touch down, move, up and cancel to Slint. The hosted
+gameplay overlay receives coordinates relative to its SurfaceView, converted
+from pixels to logical units by its density. Controller samples stay on the
+controller path. The #376 game input hold remains in force for the whole
+overlay lifetime, including touches outside the panel. The package draws no
+target there. Linux touch through korrid remains out of scope.
+
+At each swept size, `surface-probe walk` lights each entry, lets its existing
+reveal timers settle, and taps its drawn centre through native Slint touch.
+Exactly one `Activated` must name the entry's `focusId`. Targets a virtual
+band does not draw or reveal are checked when the focus walk reaches them.
+Accessibility selection stays tied to `focused`, even when touch hides the
+visible focus highlight. No extra package probe interface is required.
+
 ## Wire
 
 `POST /rpc` with `app.surface.declare`, `.preferences`, `.model`, `.request`;
@@ -143,8 +171,9 @@ the model watch is a root WebSocket (`Origin`, then `Bearer CAP`, then
 `korri-surface-treaty` crate (`contracts/surface/`).
 
 Once a second the shell sends the active surface `{"_tag":"Tick","idleMs":N}`
-(contract amendment A1, section 7.1): `N` is the time since the last `Pressed`
-it delivered to that surface, or since the surface loaded. Each `Tick` is an
+(contract amendment A1, section 7.1, and ADR 0055): `N` is the time since the
+last button or pointer activity, or since the surface loaded. Every pointer
+event resets it, including a drag or cancellation with no activation. Each `Tick` is an
 `update` call measured against the 50 ms budget. The verifier's sweep includes ticks.
 
 Right after `init`, before the first `view()`, and on every window size or

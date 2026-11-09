@@ -10,6 +10,6 @@ globalThis.surface = {
   },
   view: (s) => ({
     current: s.focus,
-    cards: Array.from({ length: CARDS }, (_, i) => ({ label: "Card", focused: i === s.focus, focusRegion: "band" })),
+    cards: Array.from({ length: CARDS }, (_, i) => ({ label: "Card", focused: i === s.focus, focusId: "band:" + i, focusRegion: "band" })),
   }),
 };

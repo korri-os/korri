@@ -25,8 +25,8 @@ globalThis.surface = {
     return { state: s, requests: [] };
   },
   view: (s) => ({
-    tabs: TABS.map((label, i) => ({ label, focused: s.region === "tabs" && s.tab === i, focusRegion: "tabs", focusActive: i === s.active })),
-    cells: CELLS.map((label, i) => ({ label, focused: s.region === "cells" && s.cell === i, focusRegion: "cells" })),
+    tabs: TABS.map((label, i) => ({ label, focused: s.region === "tabs" && s.tab === i, focusId: "tabs:" + i, focusRegion: "tabs", focusActive: i === s.active })),
+    cells: CELLS.map((label, i) => ({ label, focused: s.region === "cells" && s.cell === i, focusId: "cells:" + i, focusRegion: "cells" })),
     focusPlan: {
       tabs: { down: { to: "cells", entry: "remembered" } },
       cells: { up: { to: "tabs", entry: "active" } },
