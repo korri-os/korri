@@ -3,7 +3,8 @@
 
 Usage: integrate.py APP_MODULE_DIR FOLDERS
   APP_MODULE_DIR  the Gradle app module (holds src/main/AndroidManifest.xml)
-  FOLDERS         "key=relative/path[;key=path]", relative to getExternalFilesDir(null),
+  FOLDERS         "key=relative/path[;key=internal:path]": relative to
+                  getExternalFilesDir(null), or to getFilesDir() with "internal:",
                   keyed like the plugin's saveLocations
 
 It copies the provider sources into the module and declares, in the app's own
@@ -18,7 +19,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SOURCES = HERE / "src/main/java/dev/korri/savebridge"
-FOLDERS_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}=[^;=\s]+(;[a-z0-9][a-z0-9._-]{0,63}=[^;=\s]+)*$")
+_ENTRY = r"[a-z0-9][a-z0-9._-]{0,63}=(internal:)?[^;=:\s]+"
+FOLDERS_RE = re.compile(rf"^{_ENTRY}(;{_ENTRY})*$")
 
 BLOCK = """
     <!-- Korri save bridge (ADR 0054): one permission name in every Korri-signed

@@ -33,7 +33,8 @@ import java.util.Map;
  * Folders are declared in the game APK's own manifest, in its native format:
  * {@code <meta-data android:name="dev.korri.savebridge.folders"
  *  android:value="save=v190/save" />}, paths relative to
- * {@code getExternalFilesDir(null)}. Keys match the plugin's saveLocations keys.
+ * {@code getExternalFilesDir(null)}, or to {@code getFilesDir()} with an
+ * {@code internal:} prefix. Keys match the plugin's saveLocations keys.
  */
 public final class KorriSaveBridgeProvider extends ContentProvider {
     public static final String FOLDERS = "dev.korri.savebridge.folders";
@@ -58,11 +59,18 @@ public final class KorriSaveBridgeProvider extends ContentProvider {
             Bundle meta = context.getPackageManager()
                     .getApplicationInfo(context.getPackageName(), PackageManager.GET_META_DATA).metaData;
             String spec = meta == null ? null : meta.getString(FOLDERS);
-            File base = context.getExternalFilesDir(null);
             for (String entry : spec == null ? new String[0] : spec.split(";")) {
                 String[] kv = entry.split("=", 2);
-                if (kv.length == 2 && Paths.validKey(kv[0]) && Paths.validRelative(kv[1])) {
-                    folders.put(kv[0], new File(base, kv[1]));
+                if (kv.length != 2 || !Paths.validKey(kv[0])) {
+                    continue;
+                }
+                // "internal:" paths are under getFilesDir(); others under
+                // getExternalFilesDir(null).
+                boolean internal = kv[1].startsWith("internal:");
+                String relative = internal ? kv[1].substring("internal:".length()) : kv[1];
+                if (Paths.validRelative(relative)) {
+                    File base = internal ? context.getFilesDir() : context.getExternalFilesDir(null);
+                    folders.put(kv[0], new File(base, relative));
                 }
             }
         } catch (PackageManager.NameNotFoundException e) {

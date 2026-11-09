@@ -33,8 +33,14 @@ class IntegrateTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             integrate(root, "save=v190/save")
 
+    def test_internal_storage_folders(self):
+        root = self.module()
+        integrate(root, "save=internal:saves;data=v1/x")
+        self.assertIn('android:value="save=internal:saves;data=v1/x"',
+                      (root / "src/main/AndroidManifest.xml").read_text())
+
     def test_refuses_bad_folder_maps(self):
-        for bad in ["", "save", "Save=x", "save=../x", "save=a b", "save=x;"]:
+        for bad in ["", "save", "Save=x", "save=../x", "save=a b", "save=x;", "save=other:x"]:
             with self.assertRaises(SystemExit, msg=bad):
                 integrate(self.module(), bad)
 
