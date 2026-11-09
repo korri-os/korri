@@ -1,6 +1,7 @@
 # Stream at the client's shape
 
-**Status: design, 2026-11-09. Hardware gate open: the dummy plug's custom mode is not yet tested.**
+**Status: implementation, 2026-11-09. Custom-mode hardware gate passed on aka
+at 08:30Z. Sunshine capture and encoding verification is still pending.**
 
 ## Problem
 
@@ -50,8 +51,11 @@ puts it back when the shell takes the display again.
    `unwatched: bool`.
 4. **Shape.** Keep the client's aspect ratio. Scale to the pixel area of the
    display's configured mode (aka: 1920x1080), so GPU and encoder cost stay as
-   today. Round both sides down to even numbers. Never exceed 4096 on a side.
-   If the client size is already within that area, use it as is.
+   today. Round both sides down to multiples of 8: CVT uses eight-pixel
+   horizontal granularity, and aligning both sides is safer for the encoder.
+   Never exceed 4096 on a side. If the client size is already within that area,
+   do not scale it up; still round both sides down to multiples of 8. For
+   example, 2176x1812 at a 1920x1080 pixel budget becomes 1576x1312.
 5. **Apply.** Only when a `viewerDisplay` is present, the placement is one
    pane on the main display, and that display is `unwatched`. korrid runs
    `output <name> mode --custom <W>x<H>@60Hz` through its existing Sway
@@ -73,12 +77,23 @@ puts it back when the shell takes the display again.
 
 ## Hardware gate
 
-Before deploy: on aka with no game running, check that
-`swaymsg output HDMI-A-1 mode --custom 1576x1314@60Hz` is accepted by the
-dummy plug, that a Moonlight session then logs `Resolution: 1576x1314`, and
-that `swaymsg output HDMI-A-1 mode 1920x1080@60Hz` restores it. If custom modes
-fail, use the listed mode with the nearest aspect (the plug lists 4:3, 5:4 and
-16:10 modes) instead, and record that change here.
+The owner reported these results on aka at **2026-11-09 08:30Z**:
+
+- `swaymsg -- output HDMI-A-1 mode --custom 1576x1314@60Hz` is accepted
+  by the dummy plug. `get_outputs` reads back `1576x1314@60000`.
+- Custom `1920x1200@60Hz`, `1600x1200@60Hz` and `1576x1314@30Hz` work too.
+- Restoring with `mode 1920x1080@60Hz` works.
+- Plain `mode 1600x1200@60Hz`, without `--custom` and not a listed mode,
+  returns success but leaves the output at 1920x1080. Read-back confirmation
+  is required and must remain in place.
+- On the command line, `swaymsg` needs `--` before
+  `output ... mode --custom`. Without it, `swaymsg` reads `--custom` as its
+  own flag. `SwaymsgCompositorControl::command` already passes `--`.
+
+The custom-mode acceptance gate has passed. Sunshine capturing and encoding
+at the shaped size is **not yet verified**. Check that after deploy with a
+real stream. The policy now rounds both sides to multiples of 8, so the
+2176x1812 example selects 1576x1312 rather than the tested 1576x1314 mode.
 
 ## Implementation clarification
 

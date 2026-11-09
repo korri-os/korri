@@ -35,6 +35,7 @@ fn isolated(name: &str) -> bool {
 struct Fixture {
     root: tempfile::TempDir,
     runtime: HostRuntime,
+    backend: Arc<super::control::InMemoryLaunchUnitBackend>,
 }
 impl Fixture {
     fn new(displays: usize) -> Self {
@@ -57,7 +58,7 @@ case "$command" in
   printf '%s\n' "$command" >> commands
   case "$command" in
    *'mode --custom'*)
-    printf 1578x1314 > mode
+    printf 1576x1312 > mode
     touch shaped
     if test -f block-shape; then
       while ! test -f release-shape; do sleep 0.01; done
@@ -81,16 +82,21 @@ esac
         std::env::set_var("KORRID_DISPLAYS", facts.to_string());
         let config = root.path().join("host.toml");
         fs::write(&config, "label = 'shape-test'\n").unwrap();
+        let backend = Arc::new(super::control::InMemoryLaunchUnitBackend::default());
         let runtime = HostRuntime::from_paths_with_backend(
             &config,
             None,
             root.path().join("private"),
-            Arc::new(super::control::InMemoryLaunchUnitBackend::default()),
+            backend.clone(),
         )
         .with_route_registry(root.path().into(), registry)
         .with_shell_unit(Arc::new(super::control::RecordingShellUnit::identity_only()));
         runtime.claim_save_owner();
-        Self { root, runtime }
+        Self {
+            root,
+            runtime,
+            backend,
+        }
     }
     fn catalog(&self) -> Result<Vec<display_placement::SurfaceDisplay>, String> {
         catalog(&self.runtime)
@@ -158,7 +164,7 @@ fn catalog_during_prepare_waits_and_never_restores_a_running_game() {
         fixture.catalog().unwrap();
         assert_eq!(
             fixture.mode(),
-            "1578x1314",
+            "1576x1312",
             "catalog must not restore a live game"
         );
     }
@@ -172,21 +178,118 @@ fn failed_prepare_invalidates_catalog_receipt_before_the_output_changes() {
     }
     let fixture = Fixture::new(2);
     fixture.catalog().unwrap();
-    let path = fixture.root.path().join("plugin-mgba/retroarch.ts");
-    let source = fs::read_to_string(&path).unwrap();
-    let source = source.replace("export const handlers = {", "export const handlers = {\n 'runtime.resolve': () => ({ ready: false, missing: ['runtime refused after shaping'] }),");
-    assert!(source.contains("runtime refused after shaping"));
-    fs::write(path, source).unwrap();
+    // Effect-free runtime checks now finish before shaping. Exercise a later
+    // failure instead: the native unit exits before prepare can hand it back.
+    fixture.backend.set_launch_completed(true);
     let failure = prepare(&fixture.runtime).unwrap_err();
     assert!(
-        failure.message.contains("runtime refused after shaping"),
+        failure.message.contains("exited before prepare completed"),
         "{failure:?}"
     );
-    assert_eq!(fixture.mode(), "1578x1314");
+    assert_eq!(fixture.mode(), "1576x1312");
     fixture.catalog().unwrap();
     assert_eq!(
         fixture.mode(),
         "1920x1080",
         "a cached catalog receipt must not skip restoration after failed prepare"
     );
+}
+
+#[test]
+fn catalog_observes_completed_unit_even_when_cached_session_is_stopping() {
+    let name = "catalog_observes_completed_unit_even_when_cached_session_is_stopping";
+    if isolated(name) {
+        return;
+    }
+    for count in [1, 2] {
+        let fixture = Fixture::new(count);
+        let launched = prepare(&fixture.runtime).unwrap();
+        fixture.backend.configure_stop(false, false, None);
+        assert!(matches!(
+            fixture
+                .runtime
+                .control()
+                .unwrap()
+                .stop(&launched.session.launch_id),
+            HostSessionStop::AlreadyStopping { .. }
+        ));
+        assert_eq!(fixture.mode(), "1576x1312");
+        fixture.backend.complete_live();
+        // Do not poll status. Catalog placement must observe the native unit
+        // itself before deciding whether it may restore the configured mode.
+        fixture.catalog().unwrap();
+        assert_eq!(fixture.mode(), "1920x1080");
+    }
+}
+
+#[test]
+fn limits_description_does_not_hold_native_session_authority() {
+    let name = "limits_description_does_not_hold_native_session_authority";
+    if isolated(name) {
+        return;
+    }
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::unix::net::UnixListener,
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("limits.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    std::env::set_var("KORRID_LIMITS_SOCKET", &socket);
+    let fixture = Fixture::new(1);
+    let (describing, entered) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let helper = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut line = String::new();
+        BufReader::new(&stream).read_line(&mut line).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&line).unwrap()["_tag"],
+            "Describe"
+        );
+        describing.send(()).unwrap();
+        released.recv_timeout(Duration::from_secs(2)).unwrap();
+        stream
+            .write_all(b"{\"_tag\":\"Err\",\"payload\":\"no test limits\"}\n")
+            .unwrap();
+    });
+    let runtime = fixture.runtime.clone();
+    let preparing = thread::spawn(move || prepare(&runtime));
+    entered.recv_timeout(Duration::from_secs(2)).unwrap();
+    let (answer, received) = mpsc::channel();
+    let runtime = fixture.runtime.clone();
+    let observer = thread::spawn(move || {
+        let control = runtime.control().unwrap();
+        let status = control.control_status();
+        let stop = control.stop("00000000000000000000000000000000");
+        answer.send((status, stop)).unwrap();
+    });
+    let while_describing = received.recv_timeout(Duration::from_millis(250));
+    release.send(()).unwrap();
+    helper.join().unwrap();
+    preparing.join().unwrap().unwrap();
+    observer.join().unwrap();
+    assert_eq!(
+        while_describing.unwrap(),
+        (HostSessionStatus::NoActive, HostSessionStop::NoActive)
+    );
+}
+
+#[test]
+fn runtime_refusal_precedes_viewer_output_effects() {
+    let name = "runtime_refusal_precedes_viewer_output_effects";
+    if isolated(name) {
+        return;
+    }
+    let fixture = Fixture::new(2);
+    fixture.catalog().unwrap();
+    let path = fixture.root.path().join("plugin-mgba/retroarch.ts");
+    let source = fs::read_to_string(&path).unwrap().replace("export const handlers = {", "export const handlers = {\n 'runtime.resolve': () => ({ ready: false, missing: ['runtime refused before shaping'] }),");
+    fs::write(path, source).unwrap();
+    assert!(prepare(&fixture.runtime)
+        .unwrap_err()
+        .message
+        .contains("runtime refused before shaping"));
+    assert!(!fixture.root.path().join("shaped").exists());
+    assert_eq!(fixture.mode(), "1920x1080");
 }

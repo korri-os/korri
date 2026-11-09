@@ -722,14 +722,13 @@ impl HostRuntime {
 
     /// Every fresh launch obtains its command through this owner gate. The
     /// executor receives the Result and ignores a refusal only when resuming
-    /// the exact existing session. Viewer-dependent composition runs under its
-    /// transition lock because it can change the native output mode.
+    /// the exact existing session. Resolve the launch before transition authority;
+    /// the viewer-dependent output effect is applied separately under that lock.
     fn prepare_launch_command(
         &self,
         game_id: &str,
         runner_id: Option<&str>,
         launch_override: Option<crate::launch_settings::LaunchOverride>,
-        viewer_display: Option<crate::launcher::plugin_launch::PluginDisplay>,
     ) -> Result<HostLaunchCommand, RpcFailure> {
         use crate::launch_timeline::{measure, LaunchStage};
         let catalog_started = std::time::Instant::now();
@@ -804,7 +803,7 @@ impl HostRuntime {
                 &route,
                 launch_override,
                 compositor_focus::launch_display(),
-                viewer_display,
+                None,
                 &owner,
             )
             .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
@@ -880,20 +879,33 @@ impl HostRuntime {
             let launcher = self.launcher.as_ref().ok_or_else(|| {
                 config_failure(self.config.as_ref().expect_err("invalid host config"))
             })?;
-            if viewer_display.is_some() {
-                // Composition may resize an unwatched output. Admission, that
-                // effect and game start hold one native session transaction.
+            // All route, plugin/runtime and settings work (including describe)
+            // precedes native authority. Only display shaping depends on it.
+            let launch = self.prepare_launch_command(game_id, None, None);
+            if let Some(viewer_display) = viewer_display {
                 return launch_timeline::measure(
                     game_id,
                     launch_timeline::LaunchStage::UnitStart,
                     || {
                         launcher.prepare_composed(game_id, person_public_key, || {
-                            self.prepare_launch_command(game_id, None, None, viewer_display)
+                            let mut launch = launch?;
+                            if let (Some(runner_id), Some(limits)) =
+                                (&launch.runner_id, &launch.limits)
+                            {
+                                linux_plugin::shape_launch_command(
+                                    &mut launch.command,
+                                    &viewer_display,
+                                    runner_id,
+                                    &limits.build,
+                                    &mut launch.warnings,
+                                )
+                                .map_err(crate::game_routes::unavailable)?;
+                            }
+                            Ok(launch)
                         })
                     },
                 );
             }
-            let launch = self.prepare_launch_command(game_id, None, None, None);
             launch_timeline::measure(game_id, launch_timeline::LaunchStage::UnitStart, || {
                 launcher.prepare_command_with_limits(
                     game_id,
@@ -1393,7 +1405,6 @@ impl HostRuntime {
             game_id,
             request.runner_id.as_deref(),
             request.launch.clone(),
-            None,
         );
         let runner_id = launch
             .as_ref()
@@ -1475,7 +1486,6 @@ impl HostRuntime {
                     game_id,
                     Some(&request.runner_id),
                     request.launch.clone(),
-                    None,
                 );
                 let launcher = runtime.launcher.as_ref().ok_or_else(|| {
                     config_failure(runtime.config.as_ref().expect_err("invalid host config"))

@@ -205,7 +205,7 @@ fn inspect_route(
         _ => None,
     }));
     let displays = crate::host::display_placement::configured_displays().map_err(error)?;
-    let mut placement = if displays.is_empty() {
+    let placement = if displays.is_empty() {
         None
     } else {
         Some(
@@ -223,43 +223,14 @@ fn inspect_route(
             .map_err(error)?,
         )
     };
-    let shaped = if let Some(placement) = placement.as_mut() {
-        let control = crate::host::configured_compositor();
-        match crate::host::display_placement::apply_client_shape(
-            control.as_deref(),
-            &displays,
-            placement,
-            viewer_display.as_ref(),
-        ) {
-            Ok(size) => size,
-            Err(message) => {
-                warnings.push(super::typed_settings::LaunchWarning {
-                    setting: "viewerDisplay".into(),
-                    runner_id: route.runner_id.clone(),
-                    build: build.clone(),
-                    message,
-                });
-                // A custom mode was not confirmed. Use configured geometry,
-                // never an unconfirmed live output from before preparation.
-                Some(PluginDisplay {
-                    width: placement.width,
-                    height: placement.height,
-                })
-            }
-        }
-    } else {
-        None
-    };
-    let display = shaped.or_else(|| {
-        placement
-            .as_ref()
-            .filter(|_| displays.len() > 1)
-            .map(|p| PluginDisplay {
-                width: p.width,
-                height: p.height,
-            })
-            .or(display)
-    });
+    let display = placement
+        .as_ref()
+        .filter(|_| displays.len() > 1)
+        .map(|p| PluginDisplay {
+            width: p.width,
+            height: p.height,
+        })
+        .or(display);
     let mut composition = LaunchComposition {
         placement: placement.clone(),
         display,
@@ -268,6 +239,14 @@ fn inspect_route(
         cwd: resolved.cwd.clone(),
         ..Default::default()
     };
+    shape_composition(
+        &displays,
+        &mut composition,
+        viewer_display.as_ref(),
+        &route.runner_id,
+        &build,
+        &mut warnings,
+    );
     for (id, record) in resolved.modifiers.iter_mut() {
         if record.enabled != Some(true) {
             continue;
@@ -384,6 +363,73 @@ fn inspect_route(
             route.release_id.clone(),
         ],
     }))
+}
+
+/// Apply only the native viewer-dependent effect to an already resolved launch.
+/// Route, settings, plugin validation and runtime readiness are read beforehand.
+pub(crate) fn shape_launch_command(
+    command: &mut [String],
+    viewer: &PluginDisplay,
+    runner_id: &str,
+    build: &str,
+    warnings: &mut Vec<super::typed_settings::LaunchWarning>,
+) -> Result<(), String> {
+    if command.len() != 6 || command[1] != "plugin-prepare" {
+        return Err("viewer shaping requires a resolved plugin launch".into());
+    }
+    let mut composition: LaunchComposition =
+        serde_json::from_str(&command[4]).map_err(|e| e.to_string())?;
+    let displays = crate::host::display_placement::configured_displays()?;
+    shape_composition(
+        &displays,
+        &mut composition,
+        Some(viewer),
+        runner_id,
+        build,
+        warnings,
+    );
+    command[4] = serde_json::to_string(&composition).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn shape_composition(
+    displays: &[crate::host::display_placement::Display],
+    composition: &mut LaunchComposition,
+    viewer_display: Option<&PluginDisplay>,
+    runner_id: &str,
+    build: &str,
+    warnings: &mut Vec<super::typed_settings::LaunchWarning>,
+) {
+    let shaped = if let Some(placement) = composition.placement.as_mut() {
+        let control = crate::host::configured_compositor();
+        match crate::host::display_placement::apply_client_shape(
+            control.as_deref(),
+            displays,
+            placement,
+            viewer_display,
+        ) {
+            Ok(size) => size,
+            Err(message) => {
+                warnings.push(super::typed_settings::LaunchWarning {
+                    setting: "viewerDisplay".into(),
+                    runner_id: runner_id.into(),
+                    build: build.into(),
+                    message,
+                });
+                // A custom mode was not confirmed. Use configured geometry,
+                // never an unconfirmed live output from before preparation.
+                Some(PluginDisplay {
+                    width: placement.width,
+                    height: placement.height,
+                })
+            }
+        }
+    } else {
+        None
+    };
+    if let Some(size) = shaped {
+        composition.display = Some(size);
+    }
 }
 
 /// Evaluate the same effect-free preparation used by the game handoff.

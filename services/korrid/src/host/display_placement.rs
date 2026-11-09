@@ -141,14 +141,15 @@ pub fn choose(
     Ok(plan)
 }
 
-/// Bound encoder cost without changing the viewer's aspect ratio.
+/// Bound encoder cost at the viewer's aspect, rounded down to CVT/encoder
+/// eight-pixel granularity on both sides.
 pub(crate) fn client_shape(
     viewer: &crate::launcher::plugin_launch::PluginDisplay,
     configured: &Display,
 ) -> Result<crate::launcher::plugin_launch::PluginDisplay, String> {
     use crate::launcher::plugin_launch::PluginDisplay;
-    if viewer.width < 2 || viewer.height < 2 {
-        return Err("viewer display must have at least two pixels per side".into());
+    if viewer.width < 8 || viewer.height < 8 {
+        return Err("viewer display must have at least eight pixels per side".into());
     }
     let width = f64::from(viewer.width);
     let height = f64::from(viewer.height);
@@ -158,10 +159,10 @@ pub(crate) fn client_shape(
         .min(1.0)
         .min(4096.0 / width)
         .min(4096.0 / height);
-    let width = (width * scale) as u32 & !1;
-    let height = (height * scale) as u32 & !1;
+    let width = (width * scale) as u32 & !7;
+    let height = (height * scale) as u32 & !7;
     if width == 0 || height == 0 {
-        return Err("viewer aspect ratio cannot fit an even output mode".into());
+        return Err("viewer aspect ratio cannot fit an eight-pixel-aligned output mode".into());
     }
     Ok(PluginDisplay { width, height })
 }
@@ -703,15 +704,18 @@ mod tests {
     }
 
     #[test]
-    fn client_shape_preserves_aspect_within_area_and_even_side_limits() {
+    fn client_shape_preserves_aspect_within_area_and_eight_pixel_side_limits() {
         use crate::launcher::plugin_launch::PluginDisplay;
         let mut configured = displays().remove(0);
         configured.width = 1920;
         configured.height = 1080;
         for (width, height, expected) in [
-            (2176, 1812, (1578, 1314)),
+            (2176, 1812, (1576, 1312)),
             (1280, 720, (1280, 720)),
             (641, 481, (640, 480)),
+            (647, 487, (640, 480)),
+            (15, 15, (8, 8)),
+            (8, 8, (8, 8)),
             (1920, 1080, (1920, 1080)),
             (10000, 100, (4096, 40)),
             (100, 10000, (40, 4096)),
@@ -721,7 +725,7 @@ mod tests {
             assert_eq!((size.width, size.height), expected);
             assert!(u64::from(size.width) * u64::from(size.height) <= 1920 * 1080);
             assert!(size.width <= 4096 && size.height <= 4096);
-            assert_eq!((size.width % 2, size.height % 2), (0, 0));
+            assert_eq!((size.width % 8, size.height % 8), (0, 0));
         }
         assert!(client_shape(
             &PluginDisplay {
@@ -741,8 +745,16 @@ mod tests {
         .is_err());
         assert!(client_shape(
             &PluginDisplay {
+                width: 7,
+                height: 1080
+            },
+            &configured
+        )
+        .is_err());
+        assert!(client_shape(
+            &PluginDisplay {
                 width: u32::MAX,
-                height: 2
+                height: 8
             },
             &configured
         )
@@ -766,7 +778,7 @@ mod tests {
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
         std::fs::write(
             dir.path().join("outputs"),
-            r#"[{"name":"DSI-2","current_mode":{"width":1578,"height":1314,"refresh":60000}}]"#,
+            r#"[{"name":"DSI-2","current_mode":{"width":1576,"height":1312,"refresh":60000}}]"#,
         )
         .unwrap();
         let mut ds = unwatched_main();
@@ -783,12 +795,12 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!((size.width, size.height), (1578, 1314));
-        assert_eq!((p.width, p.height), (1578, 1314));
+        assert_eq!((size.width, size.height), (1576, 1312));
+        assert_eq!((p.width, p.height), (1576, 1312));
         let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
         assert_eq!(
             events,
-            "output DSI-2 mode --custom 1578x1314@120Hz\nget_outputs\n"
+            "output DSI-2 mode --custom 1576x1312@120Hz\nget_outputs\n"
         );
     }
 
@@ -857,10 +869,10 @@ mod tests {
     fn shell_restores_only_unwatched_main_without_a_game_and_only_if_different() {
         for count in [1, 2] {
             for (unwatched, game, width, restores) in [
-                (true, false, 1578, true),
+                (true, false, 1576, true),
                 (true, false, 1920, false),
-                (false, false, 1578, false),
-                (true, true, 1578, false),
+                (false, false, 1576, false),
+                (true, true, 1576, false),
             ] {
                 let dir = tempfile::tempdir().unwrap();
                 let control = sway_program(dir.path(), r#"[{"success":true}]"#);

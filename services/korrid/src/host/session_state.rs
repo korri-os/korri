@@ -1268,7 +1268,7 @@ impl HostSessionControl {
         request: super::display_placement::SurfaceDisplaysRequest,
     ) -> Result<Vec<super::display_placement::SurfaceDisplay>, String> {
         let mut state = self.lock_state_named("surface_displays");
-        self.refresh_recovery(&mut state);
+        self.refresh_native_state_locked(&mut state);
         let catalog_idle = matches!(
             &*state,
             ActiveState::NoActive | ActiveState::Completed { .. } | ActiveState::Failed { .. }
@@ -2229,6 +2229,14 @@ impl HostSessionControl {
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
         let sandbox = super::systemd_unit::LaunchSandbox::new(configured_command, environment);
         let mut game_environment = environment.clone();
+        // Hooks use the final display-dependent plan, not its provisional size
+        // from effect-free resolution. Reuse the plan already rendered for start.
+        let rendered_environment = prepared_plan.as_ref().map(|(_, prepared)| {
+            crate::launcher::linux_plugin::PlanEnvironment {
+                values: prepared.plan.env.clone().into_iter().collect(),
+                unset: prepared.plan.env_unset.clone(),
+            }
+        });
         if let Some(hooks) = hooks {
             if hooks
                 .resolved
@@ -2239,10 +2247,13 @@ impl HostSessionControl {
             {
                 return Err(failure("HookFailed", "HookFailed { phase: before, step: 1000, reason: at most 1000 hook steps fit the authorized unit names }"));
             }
-            for name in &hooks.environment_changes.unset {
+            let environment_changes = rendered_environment
+                .as_ref()
+                .unwrap_or(&hooks.environment_changes);
+            for name in &environment_changes.unset {
                 game_environment.remove(name);
             }
-            game_environment.extend(hooks.environment_changes.values.clone());
+            game_environment.extend(environment_changes.values.clone());
         }
         let hook_environment = hooks.map(|hooks| {
             super::hooks::environment(
@@ -2713,81 +2724,7 @@ impl HostSessionControl {
         inspect_focus: bool,
         observe: impl FnOnce(HostSessionStatus, Option<FocusOwnership>, Option<InitialHandoff>) -> T,
     ) -> T {
-        self.refresh_recovery(&mut state);
-        let tracked = match &*state {
-            ActiveState::Running { launch_id, .. }
-            | ActiveState::Frozen { launch_id, .. }
-            | ActiveState::FocusFailed { launch_id, .. }
-            | ActiveState::Stopping { launch_id, .. } => Some(launch_id.clone()),
-            ActiveState::Completed { .. }
-            | ActiveState::Failed { .. }
-            | ActiveState::NoActive
-            | ActiveState::RecoveryPending
-            | ActiveState::RecoveryBlocked => None,
-        };
-        if let Some(launch_id) = tracked {
-            let observed = self
-                .backend
-                .state_with_status(&launch_id)
-                .map(|(unit_state, text)| {
-                    if self.initial_handoff_for(&state) == Some(InitialHandoff::Waiting) {
-                        if let Some((exact, progress)) = self
-                            .runner_steps
-                            .lock()
-                            .expect("runner steps poisoned")
-                            .as_mut()
-                        {
-                            if exact == &launch_id {
-                                if let Some(text) = text {
-                                    progress.advance(&text);
-                                }
-                            }
-                        }
-                    }
-                    unit_state
-                });
-            match observed {
-                Ok(
-                    observed @ (LaunchUnitState::Running
-                    | LaunchUnitState::Frozen
-                    | LaunchUnitState::FreezerTransition),
-                ) => {
-                    if matches!(&*state, ActiveState::FocusFailed { .. })
-                        && observed == LaunchUnitState::Running
-                    {
-                        // Preserve the compositor failure and keep the streamed
-                        // seat revoked. Status observation never freezes or thaws
-                        // a focus-failed game.
-                    } else if !matches!(&*state, ActiveState::Stopping { .. }) {
-                        // An in-flight exact stop owns the Stopping state;
-                        // only reconcile the freezer state of a live launch.
-                        let game_id = tracked_game_id(&state);
-                        *state = active_from_observed(observed, launch_id.clone(), game_id);
-                    }
-                }
-                Ok(LaunchUnitState::Stopping) => {
-                    let _ = self.stop_seats(&launch_id);
-                    let game_id = tracked_game_id(&state);
-                    *state = ActiveState::Stopping {
-                        launch_id: launch_id.clone(),
-                        game_id,
-                    };
-                }
-                Ok(LaunchUnitState::Completed) => {
-                    if self.stop_seats(&launch_id).is_ok() && self.complete_active().is_ok() {
-                        *state = ActiveState::Completed {
-                            launch_id: launch_id.clone(),
-                        };
-                    } else {
-                        *state = ActiveState::RecoveryBlocked;
-                    }
-                }
-                Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
-                    let _ = self.fail_active(&mut state, launch_id, error.message);
-                }
-                Err(_) => *state = ActiveState::RecoveryBlocked,
-            }
-        }
+        self.refresh_native_state_locked(&mut state);
         state.reconcile = false;
         let ownership = if inspect_focus && !self.input_seats.is_fenced() {
             match &*state {
@@ -2823,6 +2760,87 @@ impl HostSessionControl {
             ownership,
             self.initial_handoff_for(&state),
         )
+    }
+
+    /// Reconcile the tracked exact unit while the caller holds native session
+    /// authority. Catalog placement needs the same terminal-state observation
+    /// as status; recovery alone does not refresh a cached live phase.
+    fn refresh_native_state_locked(&self, state: &mut ActiveState) {
+        self.refresh_recovery(state);
+        let tracked = match &*state {
+            ActiveState::Running { launch_id, .. }
+            | ActiveState::Frozen { launch_id, .. }
+            | ActiveState::FocusFailed { launch_id, .. }
+            | ActiveState::Stopping { launch_id, .. } => Some(launch_id.clone()),
+            ActiveState::Completed { .. }
+            | ActiveState::Failed { .. }
+            | ActiveState::NoActive
+            | ActiveState::RecoveryPending
+            | ActiveState::RecoveryBlocked => None,
+        };
+        if let Some(launch_id) = tracked {
+            let observed = self
+                .backend
+                .state_with_status(&launch_id)
+                .map(|(unit_state, text)| {
+                    if self.initial_handoff_for(state) == Some(InitialHandoff::Waiting) {
+                        if let Some((exact, progress)) = self
+                            .runner_steps
+                            .lock()
+                            .expect("runner steps poisoned")
+                            .as_mut()
+                        {
+                            if exact == &launch_id {
+                                if let Some(text) = text {
+                                    progress.advance(&text);
+                                }
+                            }
+                        }
+                    }
+                    unit_state
+                });
+            match observed {
+                Ok(
+                    observed @ (LaunchUnitState::Running
+                    | LaunchUnitState::Frozen
+                    | LaunchUnitState::FreezerTransition),
+                ) => {
+                    if matches!(&*state, ActiveState::FocusFailed { .. })
+                        && observed == LaunchUnitState::Running
+                    {
+                        // Preserve the compositor failure and keep the streamed
+                        // seat revoked. Status observation never freezes or thaws
+                        // a focus-failed game.
+                    } else if !matches!(&*state, ActiveState::Stopping { .. }) {
+                        // An in-flight exact stop owns the Stopping state;
+                        // only reconcile the freezer state of a live launch.
+                        let game_id = tracked_game_id(state);
+                        *state = active_from_observed(observed, launch_id.clone(), game_id);
+                    }
+                }
+                Ok(LaunchUnitState::Stopping) => {
+                    let _ = self.stop_seats(&launch_id);
+                    let game_id = tracked_game_id(state);
+                    *state = ActiveState::Stopping {
+                        launch_id: launch_id.clone(),
+                        game_id,
+                    };
+                }
+                Ok(LaunchUnitState::Completed) => {
+                    if self.stop_seats(&launch_id).is_ok() && self.complete_active().is_ok() {
+                        *state = ActiveState::Completed {
+                            launch_id: launch_id.clone(),
+                        };
+                    } else {
+                        *state = ActiveState::RecoveryBlocked;
+                    }
+                }
+                Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                    let _ = self.fail_active(state, launch_id, error.message);
+                }
+                Err(_) => *state = ActiveState::RecoveryBlocked,
+            }
+        }
     }
 
     /// A failed unit retains exit metadata until its exact stop. If another
