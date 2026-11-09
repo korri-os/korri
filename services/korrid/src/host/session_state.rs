@@ -196,6 +196,18 @@ enum ActiveState {
     RecoveryBlocked,
 }
 
+/// Viewer-dependent composition performs a native output effect. Defer it until
+/// admission holds the same session mutex as game start and catalog placement.
+enum LaunchPreparation<'a> {
+    Ready {
+        command: Result<&'a [String], RpcFailure>,
+        limits: Option<&'a crate::launch_settings::session::SessionLimits>,
+        hooks: Option<&'a super::hooks::LaunchHooks>,
+        steps: Option<&'a [crate::plugin::RunnerStep]>,
+    },
+    Compose(Box<dyn FnOnce() -> Result<super::HostLaunchCommand, RpcFailure> + 'a>),
+}
+
 /// What korrid last applied to the shell unit's freezer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ShellFreezerState {
@@ -1255,11 +1267,17 @@ impl HostSessionControl {
         &self,
         request: super::display_placement::SurfaceDisplaysRequest,
     ) -> Result<Vec<super::display_placement::SurfaceDisplay>, String> {
+        let mut state = self.lock_state_named("surface_displays");
+        self.refresh_recovery(&mut state);
+        let catalog_idle = matches!(
+            &*state,
+            ActiveState::NoActive | ActiveState::Completed { .. } | ActiveState::Failed { .. }
+        );
         let mut displays = super::display_placement::configured_displays()?;
         if displays.len() <= 1 {
             if let (Some(display), Some(control)) = (displays.first_mut(), self.compositor.as_ref())
             {
-                if !request.overlay {
+                if !request.overlay && catalog_idle {
                     super::display_placement::place_surface(
                         control.as_ref(),
                         std::slice::from_ref(display),
@@ -1277,28 +1295,28 @@ impl HostSessionControl {
                 &displays, None,
             ));
         }
+        // A catalog flag is presentation intent, not proof that the holder is
+        // idle. Never focus the shell, power off game outputs, or restore a mode
+        // while an exact launch is live or recovery cannot prove absence.
+        if !request.overlay && !catalog_idle {
+            state.reconcile = false;
+            return Ok(super::display_placement::surface_rectangles(
+                &displays, None,
+            ));
+        }
         // Catalog requests return only main-display facts, even when the surface
         // asks for all. Overlay requests retain their free-display placement.
         // A live unit PID keys the effect-free catalog cache.
         let catalog_shell_pids = if !request.overlay {
             let shell_pids = self.shell_pids()?;
             if let Some(rectangles) = self.cached_catalog_rectangles(&shell_pids) {
+                state.reconcile = false;
                 return Ok(rectangles);
             }
             Some(shell_pids)
         } else {
             None
         };
-        let mut state = self.lock_state_named("surface_displays");
-        // Another mounted request may have completed while this one waited
-        // for native authority. Do not perform a second synchronous restore.
-        if let Some(pids) = catalog_shell_pids.as_ref() {
-            if let Some(rectangles) = self.cached_catalog_rectangles(pids) {
-                state.reconcile = false;
-                return Ok(rectangles);
-            }
-        }
-
         let launch_id = match &*state {
             ActiveState::Running { launch_id, .. }
             | ActiveState::Frozen { launch_id, .. }
@@ -1958,15 +1976,17 @@ impl HostSessionControl {
         let session = self.prepare_inner(
             game_id,
             person_public_key,
-            configured_command,
+            LaunchPreparation::Ready {
+                command: configured_command,
+                limits,
+                hooks,
+                steps,
+            },
             environment,
             true,
             None,
             None,
-            limits,
             &mut warnings,
-            hooks,
-            steps,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -1982,15 +2002,17 @@ impl HostSessionControl {
         self.prepare_inner(
             game_id,
             person_public_key,
-            configured_command,
+            LaunchPreparation::Ready {
+                command: configured_command,
+                limits: None,
+                hooks: None,
+                steps: None,
+            },
             environment,
             true,
             None,
             None,
-            None,
             &mut Vec::new(),
-            None,
-            None,
         )
     }
 
@@ -2012,15 +2034,17 @@ impl HostSessionControl {
         let session = self.prepare_inner(
             game_id,
             person_public_key,
-            configured_command,
+            LaunchPreparation::Ready {
+                command: configured_command,
+                limits,
+                hooks,
+                steps,
+            },
             environment,
             false,
             Some(runner_id),
             None,
-            limits,
             &mut warnings,
-            hooks,
-            steps,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -2039,15 +2063,38 @@ impl HostSessionControl {
         let session = self.prepare_inner(
             &reservation.identity.game_id,
             reservation.person.as_deref(),
-            configured_command,
+            LaunchPreparation::Ready {
+                command: configured_command,
+                limits,
+                hooks,
+                steps,
+            },
             environment,
             false,
             runner_id,
             Some(reservation),
-            limits,
             &mut warnings,
-            hooks,
-            steps,
+        )?;
+        Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
+    }
+
+    pub(super) fn prepare_composed(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+        environment: &BTreeMap<String, String>,
+        compose: impl FnOnce() -> Result<super::HostLaunchCommand, RpcFailure>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        let mut warnings = Vec::new();
+        let session = self.prepare_inner(
+            game_id,
+            person_public_key,
+            LaunchPreparation::Compose(Box::new(compose)),
+            environment,
+            true,
+            None,
+            None,
+            &mut warnings,
         )?;
         Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
     }
@@ -2056,15 +2103,12 @@ impl HostSessionControl {
         &self,
         game_id: &str,
         person_public_key: Option<&str>,
-        configured_command: Result<&[String], RpcFailure>,
+        preparation: LaunchPreparation<'_>,
         environment: &BTreeMap<String, String>,
         resume_same_game: bool,
         runner_id: Option<&str>,
         reservation: Option<&LaunchReservation>,
-        limits: Option<&crate::launch_settings::session::SessionLimits>,
         warnings: &mut Vec<crate::launcher::typed_settings::LaunchWarning>,
-        hooks: Option<&super::hooks::LaunchHooks>,
-        steps: Option<&[crate::plugin::RunnerStep]>,
     ) -> Result<SessionPrepared, RpcFailure> {
         if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(failure("HostStopping", "korrid is stopping"));
@@ -2123,6 +2167,28 @@ impl HostSessionControl {
         }
         // Stored route choices apply to new launches, not the running game.
         // Resolve failures only after resume and conflicts under the same lock.
+        let composed;
+        let (configured_command, limits, hooks, steps) = match preparation {
+            LaunchPreparation::Ready {
+                command,
+                limits,
+                hooks,
+                steps,
+            } => (command, limits, hooks, steps),
+            LaunchPreparation::Compose(compose) => {
+                // Invalidate before composition: a mode command can succeed and
+                // any subsequent plugin/runtime/hook check can still refuse.
+                self.invalidate_catalog_placement();
+                composed = compose()?;
+                warnings.extend(composed.warnings.iter().cloned());
+                (
+                    Ok(composed.command.as_slice()),
+                    composed.limits.as_ref(),
+                    composed.hooks.as_ref(),
+                    composed.steps.as_deref(),
+                )
+            }
+        };
         let prepared_command = crate::launcher::plugin_launch::prepare_command(configured_command?)
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
         let configured_command = prepared_command.as_slice();

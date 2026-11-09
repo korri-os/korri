@@ -3,6 +3,8 @@ pub mod display_placement;
 pub(crate) mod launch_diagnostics;
 #[cfg(test)]
 pub(crate) use compositor_focus::CompositorControl;
+#[cfg(test)]
+mod client_shape_tests;
 mod config;
 pub(crate) mod control;
 #[cfg(test)]
@@ -720,7 +722,8 @@ impl HostRuntime {
 
     /// Every fresh launch obtains its command through this owner gate. The
     /// executor receives the Result and ignores a refusal only when resuming
-    /// the exact existing session. Route work stays outside its transition lock.
+    /// the exact existing session. Viewer-dependent composition runs under its
+    /// transition lock because it can change the native output mode.
     fn prepare_launch_command(
         &self,
         game_id: &str,
@@ -877,17 +880,20 @@ impl HostRuntime {
             let launcher = self.launcher.as_ref().ok_or_else(|| {
                 config_failure(self.config.as_ref().expect_err("invalid host config"))
             })?;
-            // Repeating prepare resumes the exact existing launch. Its picture
-            // size is already fixed; only a fresh launch may change the mode.
-            let viewer_display = viewer_display.filter(|_| {
-                matches!(
-                    launcher.control().control_status(),
-                    HostSessionStatus::NoActive
-                        | HostSessionStatus::Completed { .. }
-                        | HostSessionStatus::Failed { .. }
-                )
-            });
-            let launch = self.prepare_launch_command(game_id, None, None, viewer_display);
+            if viewer_display.is_some() {
+                // Composition may resize an unwatched output. Admission, that
+                // effect and game start hold one native session transaction.
+                return launch_timeline::measure(
+                    game_id,
+                    launch_timeline::LaunchStage::UnitStart,
+                    || {
+                        launcher.prepare_composed(game_id, person_public_key, || {
+                            self.prepare_launch_command(game_id, None, None, viewer_display)
+                        })
+                    },
+                );
+            }
+            let launch = self.prepare_launch_command(game_id, None, None, None);
             launch_timeline::measure(game_id, launch_timeline::LaunchStage::UnitStart, || {
                 launcher.prepare_command_with_limits(
                     game_id,

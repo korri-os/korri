@@ -174,6 +174,16 @@ impl HostLauncher {
         )
     }
 
+    pub(super) fn prepare_composed(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+        compose: impl FnOnce() -> Result<super::HostLaunchCommand, RpcFailure>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        self.control
+            .prepare_composed(game_id, person_public_key, &self.environment, compose)
+    }
+
     pub fn prepare_fresh_route(
         &self,
         game_id: &str,
