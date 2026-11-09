@@ -47,29 +47,46 @@ fn catalog_offers_only_android_releases_and_install_needs_trust_and_review() {
 
     // An unknown repository is refused.
     assert!(admin
-        .handle(PluginAdminRequest::Catalog(PluginRepositoryRequest { url: REPO.into() }))
+        .handle(PluginAdminRequest::Catalog(PluginRepositoryRequest {
+            url: REPO.into()
+        }))
         .is_err());
     admin
-        .handle(PluginAdminRequest::RepositoryAdd(PluginRepositoryRequest { url: REPO.into() }))
+        .handle(PluginAdminRequest::RepositoryAdd(PluginRepositoryRequest {
+            url: REPO.into(),
+        }))
         .unwrap();
     let PluginAdminResponse::Catalog(catalog) = admin
-        .handle(PluginAdminRequest::Catalog(PluginRepositoryRequest { url: REPO.into() }))
+        .handle(PluginAdminRequest::Catalog(PluginRepositoryRequest {
+            url: REPO.into(),
+        }))
         .unwrap()
     else {
         panic!("wrong response")
     };
     assert_eq!(catalog.entries.len(), 1, "the Linux record is not offered");
-    assert_eq!(catalog.entries[0].publisher.state, PluginPublisherState::New);
+    assert_eq!(
+        catalog.entries[0].publisher.state,
+        PluginPublisherState::New
+    );
 
     // Untrusted publisher, then a stale approval, then success.
-    assert_eq!(install(&admin, &f.sha256).unwrap_err().code, CODE_PUBLISHER_NOT_TRUSTED);
+    assert_eq!(
+        install(&admin, &f.sha256).unwrap_err().code,
+        CODE_PUBLISHER_NOT_TRUSTED
+    );
     admin
-        .handle(PluginAdminRequest::TrustPublisher(PluginTrustPublisherRequest {
-            namespace: "@korri".into(),
-            public_key: f.key.clone(),
-        }))
+        .handle(PluginAdminRequest::TrustPublisher(
+            PluginTrustPublisherRequest {
+                namespace: "@korri".into(),
+                public_key: f.key.clone(),
+            },
+        ))
         .unwrap();
-    assert_eq!(install(&admin, "stale").unwrap_err().code, CODE_NEEDS_REVIEW);
+    assert_eq!(
+        install(&admin, "stale").unwrap_err().code,
+        CODE_NEEDS_REVIEW
+    );
     install(&admin, &f.sha256).unwrap();
     assert_eq!(admin.store.read().unwrap()[0].id, "@korri:homebrewhub");
 
@@ -92,10 +109,12 @@ fn a_rebound_namespace_key_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let admin = admin(dir.path(), a.archive.clone(), &a.sha256, "aarch64-android");
     let trust = |key: &str| {
-        admin.handle(PluginAdminRequest::TrustPublisher(PluginTrustPublisherRequest {
-            namespace: "@korri".into(),
-            public_key: key.into(),
-        }))
+        admin.handle(PluginAdminRequest::TrustPublisher(
+            PluginTrustPublisherRequest {
+                namespace: "@korri".into(),
+                public_key: key.into(),
+            },
+        ))
     };
     trust(&a.key).unwrap();
     assert_eq!(trust(&b.key).unwrap_err().code, CODE_PUBLISHER_KEY_CHANGED);

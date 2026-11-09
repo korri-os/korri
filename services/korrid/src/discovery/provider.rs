@@ -73,11 +73,20 @@ pub fn scan_installed_apps(
     diagnostics: &mut Vec<DiscoveryDiagnostic>,
 ) -> Option<ProviderScan> {
     use crate::plugin_discovery::ANDROID_INSTALLED_APPS;
-    let mut result = ProviderScan { id: ANDROID_INSTALLED_APPS.into(), ..Default::default() };
-    if !registry.discovery_providers().any(|p| p.id == ANDROID_INSTALLED_APPS) {
+    let mut result = ProviderScan {
+        id: ANDROID_INSTALLED_APPS.into(),
+        ..Default::default()
+    };
+    if !registry
+        .discovery_providers()
+        .any(|p| p.id == ANDROID_INSTALLED_APPS)
+    {
         return Some(result);
     }
-    let apps = INSTALLED_APPS.read().expect("installed apps lock").clone()?;
+    let apps = INSTALLED_APPS
+        .read()
+        .expect("installed apps lock")
+        .clone()?;
     let fail = |diagnostics: &mut Vec<DiscoveryDiagnostic>, message: &str| {
         eprintln!("korrid discovery: {message}");
         diagnostics.push(DiscoveryDiagnostic {
@@ -88,7 +97,9 @@ pub fn scan_installed_apps(
         });
     };
     if apps.len() > MAX_INSTALLED_APPS
-        || apps.iter().any(|a| !crate::plugin::is_android_package(&a.package_name))
+        || apps
+            .iter()
+            .any(|a| !crate::plugin::is_android_package(&a.package_name))
     {
         fail(diagnostics, "the installed-app report is invalid");
         return None;
@@ -105,9 +116,9 @@ pub fn scan_installed_apps(
             script::call_plugin_operation_snapshot(&source, "discovery.discover", &input)
                 .map_err(|e| e.to_string())
         });
-    let observations: Vec<ProviderRefReleaseObservation> = match output
-        .and_then(|output| serde_json::from_str(&output).map_err(|e| format!("invalid provider observations: {e}")))
-    {
+    let observations: Vec<ProviderRefReleaseObservation> = match output.and_then(|output| {
+        serde_json::from_str(&output).map_err(|e| format!("invalid provider observations: {e}"))
+    }) {
         Ok(observations) => observations,
         Err(error) => {
             fail(diagnostics, &error);
@@ -126,7 +137,10 @@ pub fn scan_installed_apps(
             || o.launch.runner != "@korri:android-app/android-app"
             || o.source.relative_path != format!("installed-apps/{}", o.target.provider_ref)
     }) {
-        fail(diagnostics, "@korri:android-app returned an observation outside its contract");
+        fail(
+            diagnostics,
+            "@korri:android-app returned an observation outside its contract",
+        );
         return None;
     }
     result.observations = observations;

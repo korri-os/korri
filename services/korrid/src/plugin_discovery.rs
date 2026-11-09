@@ -23,13 +23,9 @@ pub struct ReleaseDiscoveryProvider {
 pub fn validate(owner: &str, providers: &[ReleaseDiscoveryProvider]) -> Result<(), String> {
     let mut seen = BTreeSet::new();
     for provider in providers {
-        let known = (owner == "@korri:steam"
-            && LOCATIONS.iter().any(|(id, _)| *id == provider.id))
+        let known = (owner == "@korri:steam" && LOCATIONS.iter().any(|(id, _)| *id == provider.id))
             || (owner == "@korri:android-app" && provider.id == ANDROID_INSTALLED_APPS);
-        if !known
-            || provider.title.trim().is_empty()
-            || !seen.insert(&provider.id)
-        {
+        if !known || provider.title.trim().is_empty() || !seen.insert(&provider.id) {
             return Err(format!("invalid discovery provider {}: unknown first-party provider, empty title or duplicate id", provider.id));
         }
     }

@@ -65,12 +65,18 @@ pub struct AndroidLocalSessions {
 }
 
 fn failure(code: &str, message: impl Into<String>) -> RpcFailure {
-    RpcFailure { code: code.into(), message: message.into() }
+    RpcFailure {
+        code: code.into(),
+        message: message.into(),
+    }
 }
 
 impl AndroidLocalSessions {
     pub fn new(launcher: Arc<dyn AppLauncher>) -> Self {
-        Self { launcher, active: Mutex::new(None) }
+        Self {
+            launcher,
+            active: Mutex::new(None),
+        }
     }
 
     pub fn active(&self) -> Option<LocalSession> {
@@ -89,9 +95,13 @@ impl AndroidLocalSessions {
     ) -> Result<LocalSession, RpcFailure> {
         let mut active = self.active.lock().expect("android session lock");
         if active.is_some() {
-            return Err(failure("SessionBusy", "another game is already live on this device"));
+            return Err(failure(
+                "SessionBusy",
+                "another game is already live on this device",
+            ));
         }
-        let (plan, content_path) = prepare(root, snapshot, registry, route, person, &*self.launcher)?;
+        let (plan, content_path) =
+            prepare(root, snapshot, registry, route, person, &*self.launcher)?;
         self.launcher
             .start(&plan, content_path.as_deref())
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
@@ -108,25 +118,41 @@ impl AndroidLocalSessions {
     }
 
     fn exact(&self, expected: Option<&str>) -> Result<LocalSession, RpcFailure> {
-        let active = self
-            .active()
-            .ok_or_else(|| failure("NoActiveSession", "This device holds no local game session."))?;
+        let active = self.active().ok_or_else(|| {
+            failure(
+                "NoActiveSession",
+                "This device holds no local game session.",
+            )
+        })?;
         if expected.is_some_and(|id| id != active.launch_id) {
-            return Err(failure("SessionMismatch", "That game is no longer the live session."));
+            return Err(failure(
+                "SessionMismatch",
+                "That game is no longer the live session.",
+            ));
         }
         Ok(active)
     }
 
     pub fn leave(&self, expected: Option<&str>) -> Result<(LocalSession, bool), RpcFailure> {
         let session = self.exact(expected)?;
-        self.launcher.show_korri().map_err(|m| failure("HostControlFailed", m))?;
-        Ok((self.set_phase(&session.launch_id, Phase::Left), session.phase != Phase::Left))
+        self.launcher
+            .show_korri()
+            .map_err(|m| failure("HostControlFailed", m))?;
+        Ok((
+            self.set_phase(&session.launch_id, Phase::Left),
+            session.phase != Phase::Left,
+        ))
     }
 
     pub fn resume(&self, expected: Option<&str>) -> Result<(LocalSession, bool), RpcFailure> {
         let session = self.exact(expected)?;
-        self.launcher.resume(&session.package).map_err(|m| failure("HostControlFailed", m))?;
-        Ok((self.set_phase(&session.launch_id, Phase::Playing), session.phase != Phase::Playing))
+        self.launcher
+            .resume(&session.package)
+            .map_err(|m| failure("HostControlFailed", m))?;
+        Ok((
+            self.set_phase(&session.launch_id, Phase::Playing),
+            session.phase != Phase::Playing,
+        ))
     }
 
     /// Closes the live session. The app may keep running.
@@ -134,7 +160,10 @@ impl AndroidLocalSessions {
         let session = self.exact(expected)?;
         *self.active.lock().expect("android session lock") = None;
         if let Err(message) = self.launcher.end_session(&session) {
-            eprintln!("korrid android: end of {} incomplete: {message}", session.package);
+            eprintln!(
+                "korrid android: end of {} incomplete: {message}",
+                session.package
+            );
         }
         Ok(session)
     }
@@ -154,7 +183,10 @@ impl AndroidLocalSessions {
 
     fn set_phase(&self, launch_id: &str, phase: Phase) -> LocalSession {
         let mut active = self.active.lock().expect("android session lock");
-        let session = active.as_mut().filter(|s| s.launch_id == launch_id).expect("exact session");
+        let session = active
+            .as_mut()
+            .filter(|s| s.launch_id == launch_id)
+            .expect("exact session");
         session.phase = phase;
         session.clone()
     }
@@ -194,7 +226,10 @@ pub fn prepare(
                 .map_err(|e| unavailable(e.to_string()))
         })
         .transpose()?;
-    let provider_ref = route.provider_target.as_ref().map(|t| t.provider_ref.clone());
+    let provider_ref = route
+        .provider_target
+        .as_ref()
+        .map(|t| t.provider_ref.clone());
     // A provider-ref runner (no androidPackages) may start exactly the
     // game's own package; otherwise the first installed declared package.
     let allowed: Vec<String> = match &runner.android_packages {
@@ -209,7 +244,10 @@ pub fn prepare(
     let Some(android_package) = android_package else {
         return Err(failure(
             "AndroidAppMissing",
-            format!("Install {} to play this game here", allowed.first().map_or("the app", String::as_str)),
+            format!(
+                "Install {} to play this game here",
+                allowed.first().map_or("the app", String::as_str)
+            ),
         ));
     };
     let account_root = crate::saves::account_root(root, person).map_err(unavailable)?;
@@ -225,7 +263,9 @@ pub fn prepare(
         account_root: account_root.display().to_string(),
         save_root: account_root
             .join("saves")
-            .join(crate::host::play_log::encode_uri_component(&route.playable_id))
+            .join(crate::host::play_log::encode_uri_component(
+                &route.playable_id,
+            ))
             .display()
             .to_string(),
         cache_root: root.join("cache").display().to_string(),

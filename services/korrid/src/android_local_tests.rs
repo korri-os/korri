@@ -9,7 +9,10 @@ impl AppLauncher for Fake {
         package == "com.example.game"
     }
     fn start(&self, plan: &AndroidLaunchOutput, _: Option<&str>) -> Result<(), String> {
-        self.calls.lock().unwrap().push(format!("start {}", plan.android.package));
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("start {}", plan.android.package));
         Ok(())
     }
     fn resume(&self, package: &str) -> Result<(), String> {
@@ -21,7 +24,10 @@ impl AppLauncher for Fake {
         Ok(())
     }
     fn end_session(&self, session: &LocalSession) -> Result<(), String> {
-        self.calls.lock().unwrap().push(format!("end {}", session.package));
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("end {}", session.package));
         Ok(())
     }
 }
@@ -53,7 +59,12 @@ fn leave_resume_and_end_follow_the_live_session() {
     assert!(sessions.active().is_none());
     assert_eq!(
         *fake.calls.lock().unwrap(),
-        vec!["korri", "korri", "resume com.example.game", "end com.example.game"]
+        vec![
+            "korri",
+            "korri",
+            "resume com.example.game",
+            "end com.example.game"
+        ]
     );
 }
 

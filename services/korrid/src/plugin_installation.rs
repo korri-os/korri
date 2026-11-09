@@ -51,7 +51,9 @@ static ANDROID_STORE: std::sync::OnceLock<crate::nixfree_install::AndroidPluginS
 
 /// Called once by the Android edge with the app's private state root.
 pub fn use_android_store(private_root: &Path) {
-    let _ = ANDROID_STORE.set(crate::nixfree_install::AndroidPluginStore::new(private_root));
+    let _ = ANDROID_STORE.set(crate::nixfree_install::AndroidPluginStore::new(
+        private_root,
+    ));
 }
 
 pub fn android_store() -> Option<&'static crate::nixfree_install::AndroidPluginStore> {

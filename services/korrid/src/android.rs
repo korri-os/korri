@@ -132,7 +132,10 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
         Ok(launcher) => crate::use_android_local_sessions(std::sync::Arc::new(launcher)),
         Err(_) => {
             let _ = env.exception_clear();
-            let _ = env.throw_new("java/lang/IllegalStateException", "Android app launcher is unavailable");
+            let _ = env.throw_new(
+                "java/lang/IllegalStateException",
+                "Android app launcher is unavailable",
+            );
             return -1;
         }
     }
@@ -608,7 +611,9 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_appLeft(
     package: JString,
     closed: jni::sys::jboolean,
 ) {
-    if let (Ok(package), Some(sessions)) = (env.get_string(&package), crate::android_local_sessions()) {
+    if let (Ok(package), Some(sessions)) =
+        (env.get_string(&package), crate::android_local_sessions())
+    {
         sessions.app_left(&String::from(package), closed != 0);
     }
 }

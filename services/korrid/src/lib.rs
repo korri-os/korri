@@ -80,7 +80,8 @@ static ANDROID_LOCAL_SESSIONS: std::sync::OnceLock<Arc<android_local::AndroidLoc
 
 /// ADR 0054: set once by the Android edge with its app launcher.
 pub fn use_android_local_sessions(launcher: Arc<dyn android_local::AppLauncher>) {
-    let _ = ANDROID_LOCAL_SESSIONS.set(Arc::new(android_local::AndroidLocalSessions::new(launcher)));
+    let _ =
+        ANDROID_LOCAL_SESSIONS.set(Arc::new(android_local::AndroidLocalSessions::new(launcher)));
 }
 
 pub fn android_local_sessions() -> Option<&'static Arc<android_local::AndroidLocalSessions>> {
@@ -100,10 +101,13 @@ async fn android_selected_launch(
             code: "OwnerRequired".into(),
             message: "Bind this device to its owner before playing".into(),
         })?;
-    let registry = brain.registry_source.registry().map_err(|error| RpcFailure {
-        code: "PluginPolicyInvalid".into(),
-        message: error.to_string(),
-    })?;
+    let registry = brain
+        .registry_source
+        .registry()
+        .map_err(|error| RpcFailure {
+            code: "PluginPolicyInvalid".into(),
+            message: error.to_string(),
+        })?;
     let root = brain.local_storage_root.clone();
     tokio::task::spawn_blocking(move || {
         let (snapshot, _) = config::settings::runner_choice_snapshot(&root)
@@ -119,7 +123,10 @@ async fn android_selected_launch(
         acquisition::require_ready(&root, &registry, &route)?;
         let session = sessions.launch(&root, &snapshot, &registry, &route, &person)?;
         Ok(game_routes::SelectedGameLaunch {
-            session: SessionPrepared { game_id: session.game_id, launch_id: session.launch_id },
+            session: SessionPrepared {
+                game_id: session.game_id,
+                launch_id: session.launch_id,
+            },
             warnings: Vec::new(),
         })
     })
@@ -163,7 +170,11 @@ fn android_end(
 ) -> SessionEndOutcome {
     sessions
         .end(expected)
-        .map(|_| SessionEndOutcome::Ok(SessionEndResult { phase: SessionEndPhase::Ended }))
+        .map(|_| {
+            SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Ended,
+            })
+        })
         .unwrap_or_else(SessionEndOutcome::Err)
 }
 
@@ -3213,11 +3224,15 @@ async fn dispatch(
                     .map(game_routes::SelectedGameLaunchOutcome::Ok)
                     .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
                 ServerMode::Brain(brain) => match android_local_sessions() {
-                    Some(sessions) => android_selected_launch(brain, sessions, request, authorization)
-                        .await
-                        .map(game_routes::SelectedGameLaunchOutcome::Ok)
-                        .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
-                    None => game_routes::SelectedGameLaunchOutcome::Err(installed_routes_unsupported()),
+                    Some(sessions) => {
+                        android_selected_launch(brain, sessions, request, authorization)
+                            .await
+                            .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                            .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err)
+                    }
+                    None => {
+                        game_routes::SelectedGameLaunchOutcome::Err(installed_routes_unsupported())
+                    }
                 },
             })
         }
@@ -3248,7 +3263,9 @@ async fn dispatch(
                         }
                         (Err(_), Ok(local)) => CatalogSnapshotOutcome::Ok(local),
                         (Ok(snapshot), Err(_)) => CatalogSnapshotOutcome::Ok(snapshot),
-                        (Err(error), Err(_)) => CatalogSnapshotOutcome::Err(upstream_failure(error)),
+                        (Err(error), Err(_)) => {
+                            CatalogSnapshotOutcome::Err(upstream_failure(error))
+                        }
                     }
                 }
                 ServerMode::Brain(brain) => brain
@@ -3516,7 +3533,9 @@ async fn dispatch(
             if matches!(state.mode, ServerMode::Brain(_))
                 && android_local_sessions().is_some_and(|s| s.active().is_some()) =>
         {
-            let session = android_local_sessions().and_then(|s| s.active()).expect("checked");
+            let session = android_local_sessions()
+                .and_then(|s| s.active())
+                .expect("checked");
             RpcResponse::SessionStatus(SessionStatusOutcome::Ok(android_session_status(session)))
         }
         RpcRequest::SessionStatus(_) => {
@@ -3726,7 +3745,10 @@ async fn dispatch(
                 && android_local_sessions().is_some_and(|s| s.active().is_some()) =>
         {
             let sessions = android_local_sessions().expect("checked");
-            RpcResponse::SessionLeave(android_freeze(sessions, request.expected_launch_id.as_deref()))
+            RpcResponse::SessionLeave(android_freeze(
+                sessions,
+                request.expected_launch_id.as_deref(),
+            ))
         }
         RpcRequest::SessionLeave(request) => {
             if cfg!(target_os = "android") {
@@ -3801,7 +3823,10 @@ async fn dispatch(
                 && android_local_sessions().is_some_and(|s| s.active().is_some()) =>
         {
             let sessions = android_local_sessions().expect("checked");
-            RpcResponse::SessionResume(android_thaw(sessions, request.expected_launch_id.as_deref()))
+            RpcResponse::SessionResume(android_thaw(
+                sessions,
+                request.expected_launch_id.as_deref(),
+            ))
         }
         RpcRequest::SessionResume(request) => {
             if cfg!(target_os = "android") {
@@ -6095,16 +6120,16 @@ pub fn issue_folder_selection_receipt(
         .map(|grant| grant.token)
 }
 
+pub mod android_local;
+pub mod android_plugin_admin;
 #[cfg(test)]
 mod controller_count_tests;
 pub mod host;
 pub mod launcher;
+pub mod nixfree_install;
 pub mod plugin;
 pub mod plugin_discovery;
 pub mod plugin_installation;
-pub mod nixfree_install;
-pub mod android_plugin_admin;
-pub mod android_local;
 pub mod plugin_policy;
 mod plugin_references;
 #[cfg(test)]

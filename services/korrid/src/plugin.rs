@@ -1730,7 +1730,9 @@ fn normalize_plugin(
         .filter(|runner| !runner_runs_on(runner, platform))
         .map(|runner| runner.id.clone())
         .collect();
-    declaration.runners.retain(|_, runner| runner_runs_on(runner, platform));
+    declaration
+        .runners
+        .retain(|_, runner| runner_runs_on(runner, platform));
     declaration.session_controls.retain(|_, control| {
         !(control.owner.kind == SessionControlOwnerKind::Runner
             && dropped_runners.contains(&control.owner.id))
@@ -1797,10 +1799,14 @@ fn validate_runner_platforms(local_id: &str, runner: &RunnerRecord) -> Result<bo
     };
     match (&runner.android_packages, android) {
         (None, false) => Ok(false),
-        (Some(_), false) => Err(invalid("androidPackages require platforms [aarch64-android]")),
+        (Some(_), false) => Err(invalid(
+            "androidPackages require platforms [aarch64-android]",
+        )),
         // A provider-ref runner: each game's ref is its package (ADR 0054).
         (None, true) if runner.systems.is_some() => Ok(true),
-        (None, true) => Err(invalid("an Android runner needs androidPackages or systems")),
+        (None, true) => Err(invalid(
+            "an Android runner needs androidPackages or systems",
+        )),
         (Some(packages), true) => {
             let mut seen = BTreeSet::new();
             if packages.is_empty()
@@ -1808,7 +1814,9 @@ fn validate_runner_platforms(local_id: &str, runner: &RunnerRecord) -> Result<bo
                     .iter()
                     .any(|p| !is_android_package(p) || !seen.insert(p))
             {
-                return Err(invalid("androidPackages must be distinct Android package names"));
+                return Err(invalid(
+                    "androidPackages must be distinct Android package names",
+                ));
             }
             Ok(true)
         }
@@ -1826,7 +1834,9 @@ pub(crate) fn is_android_package(name: &str) -> bool {
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_alphabetic())
-                && segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
         })
 }
 

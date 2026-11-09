@@ -16,14 +16,20 @@ pub struct JniAppLauncher {
 
 pub fn adapter(env: &mut JNIEnv) -> Result<JniAppLauncher, jni::errors::Error> {
     let class = env.find_class(CLASS)?;
-    Ok(JniAppLauncher { vm: env.get_java_vm()?, class: env.new_global_ref(class)? })
+    Ok(JniAppLauncher {
+        vm: env.get_java_vm()?,
+        class: env.new_global_ref(class)?,
+    })
 }
 
 impl JniAppLauncher {
     /// Call a static `String m(String...)` method; "ok" means success.
     fn call(&self, method: &str, args: &[&str]) -> Result<String, String> {
         let mut env = self.vm.attach_current_thread().map_err(|e| e.to_string())?;
-        let signature = format!("({})Ljava/lang/String;", "Ljava/lang/String;".repeat(args.len()));
+        let signature = format!(
+            "({})Ljava/lang/String;",
+            "Ljava/lang/String;".repeat(args.len())
+        );
         let result = env.with_local_frame(8, |env| -> Result<String, jni::errors::Error> {
             let class: &JClass<'_> = self.class.as_obj().into();
             let strings = args
@@ -31,7 +37,9 @@ impl JniAppLauncher {
                 .map(|a| env.new_string(a))
                 .collect::<Result<Vec<_>, _>>()?;
             let values: Vec<JValue> = strings.iter().map(|s| JValue::Object(s.as_ref())).collect();
-            let value = env.call_static_method(class, method, &signature, &values)?.l()?;
+            let value = env
+                .call_static_method(class, method, &signature, &values)?
+                .l()?;
             let value = jni::objects::JString::from(value);
             let text = String::from(env.get_string(&value)?);
             Ok(text)
@@ -51,7 +59,8 @@ impl JniAppLauncher {
 
 impl AppLauncher for JniAppLauncher {
     fn is_installed(&self, package: &str) -> bool {
-        self.call("isInstalled", &[package]).is_ok_and(|v| v == "yes")
+        self.call("isInstalled", &[package])
+            .is_ok_and(|v| v == "yes")
     }
     fn start(&self, plan: &AndroidLaunchOutput, content_path: Option<&str>) -> Result<(), String> {
         let json = serde_json::to_string(&plan.android).map_err(|e| e.to_string())?;

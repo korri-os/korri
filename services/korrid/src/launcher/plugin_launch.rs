@@ -100,7 +100,11 @@ pub enum AndroidLaunchData {
 #[serde(deny_unknown_fields)]
 pub struct AndroidLaunchOutput {
     pub android: AndroidLaunch,
-    #[serde(default, rename = "saveLocations", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        rename = "saveLocations",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub save_locations: Vec<crate::saves::types::SaveLocation>,
 }
 
@@ -112,7 +116,10 @@ pub fn evaluate_android(
     allowed_packages: &[String],
 ) -> Result<AndroidLaunchOutput, String> {
     if !crate::script::has_plugin_operation_snapshot(source, crate::script::LAUNCH_PREPARE)? {
-        return Err(format!("Android runner {} has no launch.prepare handler", input.runner_id));
+        return Err(format!(
+            "Android runner {} has no launch.prepare handler",
+            input.runner_id
+        ));
     }
     let encoded = serde_json::to_string(input).map_err(|e| e.to_string())?;
     let result = crate::script::call_plugin_operation_snapshot(
@@ -134,14 +141,21 @@ pub(crate) fn validate_android_plan(
 ) -> Result<(), String> {
     let launch = &plan.android;
     if !allowed_packages.contains(&launch.package) {
-        return Err(format!("{} is not one of the runner's androidPackages", launch.package));
+        return Err(format!(
+            "{} is not one of the runner's androidPackages",
+            launch.package
+        ));
     }
     let java_name = |name: &str| {
         !name.is_empty()
             && name.len() <= 255
             && name.split('.').all(|part| {
-                part.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-                    && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+                part.chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    && part
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
             })
     };
     if launch.activity.as_deref().is_some_and(|a| !java_name(a)) {

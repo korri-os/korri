@@ -85,14 +85,21 @@ pub fn parse_narinfo(text: &str) -> Result<NarInfo, InstallError> {
     let mut fields: BTreeMap<&str, &str> = BTreeMap::new();
     let mut signatures = Vec::new();
     for line in text.lines().filter(|l| !l.is_empty()) {
-        let (key, value) = line.split_once(": ").ok_or_else(|| bad("line has no field"))?;
+        let (key, value) = line
+            .split_once(": ")
+            .ok_or_else(|| bad("line has no field"))?;
         if key == "Sig" {
             signatures.push(value.to_owned());
         } else if fields.insert(key, value).is_some() {
             return Err(bad("repeats a field"));
         }
     }
-    let get = |key: &str| fields.get(key).copied().ok_or_else(|| bad(&format!("lacks {key}")));
+    let get = |key: &str| {
+        fields
+            .get(key)
+            .copied()
+            .ok_or_else(|| bad(&format!("lacks {key}")))
+    };
     let store_path = get("StorePath")?.to_owned();
     validate_store_path(&store_path)?;
     let references = fields
@@ -102,9 +109,15 @@ pub fn parse_narinfo(text: &str) -> Result<NarInfo, InstallError> {
     Ok(NarInfo {
         store_path,
         url: get("URL")?.to_owned(),
-        compression: fields.get("Compression").copied().unwrap_or("bzip2").to_owned(),
+        compression: fields
+            .get("Compression")
+            .copied()
+            .unwrap_or("bzip2")
+            .to_owned(),
         nar_hash: get("NarHash")?.to_owned(),
-        nar_size: get("NarSize")?.parse().map_err(|_| bad("NarSize is not a number"))?,
+        nar_size: get("NarSize")?
+            .parse()
+            .map_err(|_| bad("NarSize is not a number"))?,
         references,
         signatures,
         ca: fields.get("CA").map(|ca| (*ca).to_owned()),
@@ -223,7 +236,10 @@ fn read_cache(bytes: &[u8]) -> Result<Cache, InstallError> {
             return Err(bad("archive entries must be regular files".into()));
         }
         let path = entry.path().map_err(|e| bad(e.to_string()))?.into_owned();
-        let name = path.to_str().ok_or_else(|| bad("non-UTF-8 path".into()))?.to_owned();
+        let name = path
+            .to_str()
+            .ok_or_else(|| bad("non-UTF-8 path".into()))?
+            .to_owned();
         let mut content = Vec::new();
         entry
             .read_to_end(&mut content)
@@ -231,7 +247,8 @@ fn read_cache(bytes: &[u8]) -> Result<Cache, InstallError> {
         if name == "nix-cache-info" {
             saw_cache_info = true;
         } else if name.ends_with(".narinfo") && !name.contains('/') {
-            let text = String::from_utf8(content).map_err(|_| bad("narinfo is not UTF-8".into()))?;
+            let text =
+                String::from_utf8(content).map_err(|_| bad("narinfo is not UTF-8".into()))?;
             narinfos.push(parse_narinfo(&text)?);
         } else if let Some(nar) = name.strip_prefix("nar/") {
             if nar.contains('/') || !(nar.ends_with(".nar") || nar.ends_with(".nar.xz")) {
@@ -254,9 +271,16 @@ fn decompress(info: &NarInfo, bytes: &[u8]) -> Result<Vec<u8>, InstallError> {
     let mut out = Vec::new();
     match info.compression.as_str() {
         "none" => out.extend_from_slice(bytes),
-        "xz" => lzma_rs::xz_decompress(&mut io::BufReader::new(bytes), &mut LimitedWriter::new(&mut out))
-            .map_err(|e| InstallError::Nar(format!("xz: {e}")))?,
-        other => return Err(InstallError::Nar(format!("unsupported compression {other}"))),
+        "xz" => lzma_rs::xz_decompress(
+            &mut io::BufReader::new(bytes),
+            &mut LimitedWriter::new(&mut out),
+        )
+        .map_err(|e| InstallError::Nar(format!("xz: {e}")))?,
+        other => {
+            return Err(InstallError::Nar(format!(
+                "unsupported compression {other}"
+            )))
+        }
     }
     Ok(out)
 }
@@ -291,7 +315,9 @@ pub fn install_archive(
     dest: &Path,
 ) -> Result<EnabledPackage, InstallError> {
     if archive.len() as u64 > MAX_ARCHIVE_BYTES {
-        return Err(InstallError::Archive("archive exceeds its size bound".into()));
+        return Err(InstallError::Archive(
+            "archive exceeds its size bound".into(),
+        ));
     }
     if hex::encode(Sha256::digest(archive)) != release.archive_sha256 {
         return Err(InstallError::ArchiveHash);
@@ -370,11 +396,16 @@ fn read_manifest(package: &Path) -> Result<Manifest, InstallError> {
         (
             "ports",
             manifest.ports.is_null()
-                || manifest.ports.as_object().is_some_and(|o| o.values().all(|v| v.as_array().is_some_and(Vec::is_empty))),
+                || manifest
+                    .ports
+                    .as_object()
+                    .is_some_and(|o| o.values().all(|v| v.as_array().is_some_and(Vec::is_empty))),
         ),
     ] {
         if !empty {
-            return Err(InstallError::NotDeclarationOnly(format!("manifest has {field}")));
+            return Err(InstallError::NotDeclarationOnly(format!(
+                "manifest has {field}"
+            )));
         }
     }
     Ok(manifest)
@@ -387,7 +418,11 @@ pub fn unpack_nar(nar: &[u8], dest: &Path) -> Result<(), InstallError> {
     if dest.exists() {
         return Err(InstallError::Storage("destination already exists".into()));
     }
-    let mut reader = NarReader { bytes: nar, at: 0, entries: 0 };
+    let mut reader = NarReader {
+        bytes: nar,
+        at: 0,
+        entries: 0,
+    };
     reader.expect("nix-archive-1")?;
     reader.node(dest, true).map_err(|e| match e {
         NarError::Format(m) => InstallError::Nar(m),
@@ -424,21 +459,30 @@ impl NarReader<'_> {
         let end = start.checked_add(len).ok_or_else(bad)?;
         let padded = end.checked_add((8 - len % 8) % 8).ok_or_else(bad)?;
         let value = self.bytes.get(start..end).ok_or_else(bad)?;
-        if self.bytes.get(end..padded).ok_or_else(bad)?.iter().any(|b| *b != 0) {
+        if self
+            .bytes
+            .get(end..padded)
+            .ok_or_else(bad)?
+            .iter()
+            .any(|b| *b != 0)
+        {
             return Err(InstallError::Nar("non-zero padding".into()));
         }
         self.at = padded;
         Ok(value)
     }
     fn string(&mut self) -> Result<String, InstallError> {
-        String::from_utf8(self.bytes()?.to_vec()).map_err(|_| InstallError::Nar("non-UTF-8 token".into()))
+        String::from_utf8(self.bytes()?.to_vec())
+            .map_err(|_| InstallError::Nar("non-UTF-8 token".into()))
     }
     fn expect(&mut self, token: &str) -> Result<(), InstallError> {
         let got = self.string()?;
         if got == token {
             Ok(())
         } else {
-            Err(InstallError::Nar(format!("expected {token:?}, found {got:?}")))
+            Err(InstallError::Nar(format!(
+                "expected {token:?}, found {got:?}"
+            )))
         }
     }
 
@@ -465,12 +509,19 @@ impl NarReader<'_> {
                                 || name == ".."
                                 || name.contains('/')
                                 || name.contains('\0')
-                                || previous.as_ref().is_some_and(|p| p.as_str() >= name.as_str())
+                                || previous
+                                    .as_ref()
+                                    .is_some_and(|p| p.as_str() >= name.as_str())
                             {
-                                return Err(NarError::Format(format!("invalid entry name {name:?}")));
+                                return Err(NarError::Format(format!(
+                                    "invalid entry name {name:?}"
+                                )));
                             }
                             let child = path.join(&name);
-                            if !matches!(Path::new(&name).components().next(), Some(Component::Normal(_))) {
+                            if !matches!(
+                                Path::new(&name).components().next(),
+                                Some(Component::Normal(_))
+                            ) {
                                 return Err(NarError::Format("invalid entry name".into()));
                             }
                             self.expect("node")?;
@@ -493,7 +544,9 @@ impl NarReader<'_> {
                     token = self.string()?;
                 }
                 if token != "contents" {
-                    return Err(NarError::Format(format!("expected contents, found {token:?}")));
+                    return Err(NarError::Format(format!(
+                        "expected contents, found {token:?}"
+                    )));
                 }
                 let contents = self.bytes()?.to_vec();
                 let mut file = fs::OpenOptions::new()
@@ -505,7 +558,9 @@ impl NarReader<'_> {
                 self.expect(")")?;
                 Ok(())
             }
-            "symlink" => Err(NarError::Format("symlinks are not allowed in Android plugins".into())),
+            "symlink" => Err(NarError::Format(
+                "symlinks are not allowed in Android plugins".into(),
+            )),
             other => Err(NarError::Format(format!("unknown node type {other:?}"))),
         }
     }
@@ -518,7 +573,9 @@ pub struct AndroidPluginStore {
 
 impl AndroidPluginStore {
     pub fn new(private_root: &Path) -> Self {
-        Self { root: private_root.join("plugins") }
+        Self {
+            root: private_root.join("plugins"),
+        }
     }
 
     pub fn registry_path(&self) -> PathBuf {

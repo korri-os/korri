@@ -68,7 +68,10 @@ pub struct AndroidPluginAdmin {
 
 fn refused(category: PluginRefusalCategory, message: impl Into<String>) -> RpcFailure {
     let failure = PluginRefusal::new(category, message).into_failure();
-    RpcFailure { code: failure.code, message: failure.message }
+    RpcFailure {
+        code: failure.code,
+        message: failure.message,
+    }
 }
 fn other(message: impl Into<String>) -> RpcFailure {
     refused(PluginRefusalCategory::Other, message)
@@ -105,7 +108,12 @@ impl AndroidPluginAdmin {
         official: Option<String>,
         fetch: Box<Fetch>,
     ) -> Self {
-        Self { root: private_root.join("plugins"), store, official, fetch }
+        Self {
+            root: private_root.join("plugins"),
+            store,
+            official,
+            fetch,
+        }
     }
 
     fn state_path(&self) -> PathBuf {
@@ -121,8 +129,11 @@ impl AndroidPluginAdmin {
     fn save(&self, state: &State) -> Result<(), RpcFailure> {
         fs::create_dir_all(&self.root).map_err(|e| other(e.to_string()))?;
         let temporary = self.root.join(".admin.json.tmp");
-        fs::write(&temporary, serde_json::to_vec(state).map_err(|e| other(e.to_string()))?)
-            .map_err(|e| other(e.to_string()))?;
+        fs::write(
+            &temporary,
+            serde_json::to_vec(state).map_err(|e| other(e.to_string()))?,
+        )
+        .map_err(|e| other(e.to_string()))?;
         fs::rename(&temporary, self.state_path()).map_err(|e| other(e.to_string()))
     }
 
@@ -160,7 +171,10 @@ impl AndroidPluginAdmin {
     }
 
     fn publisher(&self, state: &State, plugin_id: &str) -> PluginPublisher {
-        let namespace = plugin_id.split_once(':').map_or(plugin_id, |(ns, _)| ns).to_owned();
+        let namespace = plugin_id
+            .split_once(':')
+            .map_or(plugin_id, |(ns, _)| ns)
+            .to_owned();
         match state.publishers.get(&namespace) {
             Some(key) => PluginPublisher {
                 namespace,
@@ -216,7 +230,9 @@ impl AndroidPluginAdmin {
                     }
                     _ => {}
                 }
-                state.publishers.insert(request.namespace, request.public_key);
+                state
+                    .publishers
+                    .insert(request.namespace, request.public_key);
                 self.save(&state)?;
                 PluginAdminResponse::Applied(PluginChangeApplied {})
             }
@@ -235,15 +251,19 @@ impl AndroidPluginAdmin {
             }
             PluginAdminRequest::RepositoryAdd(PluginRepositoryRequest { url }) => {
                 if !url.starts_with("https://") {
-                    return Err(refused(PluginRefusalCategory::Other, "repository URLs must use HTTPS"));
+                    return Err(refused(
+                        PluginRefusalCategory::Other,
+                        "repository URLs must use HTTPS",
+                    ));
                 }
-                let result = if state.repositories.contains(&url) || self.official.as_ref() == Some(&url) {
-                    PluginRepositoryAddResult::AlreadyPresent
-                } else {
-                    state.repositories.push(url);
-                    self.save(&state)?;
-                    PluginRepositoryAddResult::Added
-                };
+                let result =
+                    if state.repositories.contains(&url) || self.official.as_ref() == Some(&url) {
+                        PluginRepositoryAddResult::AlreadyPresent
+                    } else {
+                        state.repositories.push(url);
+                        self.save(&state)?;
+                        PluginRepositoryAddResult::Added
+                    };
                 PluginAdminResponse::RepositoryAdded(result)
             }
             PluginAdminRequest::RepositoryRemove(PluginRepositoryRequest { url }) => {
@@ -263,33 +283,33 @@ impl AndroidPluginAdmin {
                 let mut seen = std::collections::BTreeSet::new();
                 let mut records = self.catalog(&url)?;
                 records.sort_by_key(|r| r.platform != "aarch64-android");
-                let entries = records
-                    .into_iter()
-                    .filter(|r| seen.insert((r.plugin_id.clone(), r.release_version.clone())))
-                    .map(|r| PluginCatalogEntry {
-                        installed: state
-                            .installs
-                            .iter()
-                            .find(|i| i.id == r.plugin_id)
-                            .map(|i| {
-                                if i.enabled && enabled.iter().any(|p| p.id == i.id) {
-                                    PluginInstalledState::Enabled
-                                } else {
-                                    PluginInstalledState::Disabled
-                                }
-                            }),
-                        publisher: self.publisher(&state, &r.plugin_id),
-                        plugin_id: r.plugin_id,
-                        title: r.title,
-                        description: r.description,
-                        release_version: r.release_version,
-                    })
-                    .collect();
+                let entries =
+                    records
+                        .into_iter()
+                        .filter(|r| seen.insert((r.plugin_id.clone(), r.release_version.clone())))
+                        .map(|r| PluginCatalogEntry {
+                            installed: state.installs.iter().find(|i| i.id == r.plugin_id).map(
+                                |i| {
+                                    if i.enabled && enabled.iter().any(|p| p.id == i.id) {
+                                        PluginInstalledState::Enabled
+                                    } else {
+                                        PluginInstalledState::Disabled
+                                    }
+                                },
+                            ),
+                            publisher: self.publisher(&state, &r.plugin_id),
+                            plugin_id: r.plugin_id,
+                            title: r.title,
+                            description: r.description,
+                            release_version: r.release_version,
+                        })
+                        .collect();
                 PluginAdminResponse::Catalog(PluginCatalog { entries })
             }
             PluginAdminRequest::Inspect(request) => {
                 self.known_url(&state, &request.url)?;
-                let record = self.record(&request.url, &request.plugin_id, &request.release_version)?;
+                let record =
+                    self.record(&request.url, &request.plugin_id, &request.release_version)?;
                 PluginAdminResponse::Inspection(PluginInspection {
                     publisher: self.publisher(&state, &record.plugin_id),
                     id: record.plugin_id,
@@ -303,7 +323,8 @@ impl AndroidPluginAdmin {
             }
             PluginAdminRequest::Install(request) => {
                 self.known_url(&state, &request.url)?;
-                let record = self.record(&request.url, &request.plugin_id, &request.release_version)?;
+                let record =
+                    self.record(&request.url, &request.plugin_id, &request.release_version)?;
                 if request.approval != record.archive_sha256 {
                     return Err(refused(
                         PluginRefusalCategory::NeedsReview,
@@ -312,16 +333,21 @@ impl AndroidPluginAdmin {
                 }
                 let namespace = record.plugin_id.split_once(':').map_or("", |(ns, _)| ns);
                 let key = state.publishers.get(namespace).cloned().ok_or_else(|| {
-                    refused(PluginRefusalCategory::PublisherNotTrusted, "trust this publisher before installing")
+                    refused(
+                        PluginRefusalCategory::PublisherNotTrusted,
+                        "trust this publisher before installing",
+                    )
                 })?;
-                let archive =
-                    (self.fetch)(&record.archive_url, nixfree_install::MAX_ARCHIVE_BYTES).map_err(other)?;
+                let archive = (self.fetch)(&record.archive_url, nixfree_install::MAX_ARCHIVE_BYTES)
+                    .map_err(other)?;
                 let release = ReleaseRef {
                     plugin_id: &record.plugin_id,
                     store_path: &record.store_path,
                     archive_sha256: &record.archive_sha256,
                 };
-                self.store.install(&archive, &release, &key).map_err(|e| other(e.to_string()))?;
+                self.store
+                    .install(&archive, &release, &key)
+                    .map_err(|e| other(e.to_string()))?;
                 state.installs.retain(|i| i.id != record.plugin_id);
                 state.installs.push(PluginRepositoryInstall {
                     id: record.plugin_id,
@@ -339,12 +365,16 @@ impl AndroidPluginAdmin {
                     .find(|i| i.id == request.id)
                     .ok_or_else(|| other("this plugin is not installed"))?;
                 install.enabled = request.enabled;
-                self.store.set_enabled(&request.id, request.enabled).map_err(|e| other(e.to_string()))?;
+                self.store
+                    .set_enabled(&request.id, request.enabled)
+                    .map_err(|e| other(e.to_string()))?;
                 self.save(&state)?;
                 PluginAdminResponse::Applied(PluginChangeApplied {})
             }
             PluginAdminRequest::InspectArchive(_) | PluginAdminRequest::InstallArchive(_) => {
-                return Err(other("sideloaded archives are not supported on Android yet"))
+                return Err(other(
+                    "sideloaded archives are not supported on Android yet",
+                ))
             }
         })
     }
