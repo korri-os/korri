@@ -94,6 +94,7 @@ public class KorriShellActivity extends NativeActivity {
     public boolean shellOverlayClosing() { return KorriSurfaceHost.closing(); }
     public void shellOverlayReleased(boolean failed) { KorriSurfaceHost.acknowledgeRelease(failed); }
     public int[] shellTakeOverlayKeys() { return KorriSurfaceHost.takeKeys(); }
+    public float[] shellTakeOverlayPointers() { return KorriSurfaceHost.takePointers(); }
     public int[] shellTakeOverlayAxes() { return KorriSurfaceHost.takeAxes(); }
 
     public String shellSurfacePage() { return surfacePage; }

@@ -73,6 +73,14 @@ impl Backend for Winit {
                     }
                     return EventResult::PreventDefault;
                 }
+                WindowEvent::Touch(_)
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::CursorMoved { .. }
+                | WindowEvent::CursorEntered { .. }
+                | WindowEvent::CursorLeft { .. }
+                | WindowEvent::MouseWheel { .. } => {
+                    sink(HostEvent::PointerActivity);
+                }
                 WindowEvent::Focused(focused) => sink(HostEvent::Focus(*focused)),
                 WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                     sink(HostEvent::Resized)

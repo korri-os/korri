@@ -4254,7 +4254,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         surfaceOverlay = view;
         view.setZOrderMediaOverlay(true);
         view.getHolder().setFormat(android.graphics.PixelFormat.TRANSLUCENT);
-        view.setOnTouchListener((v, event) -> true);
         view.getHolder().addCallback(new SurfaceHolder.Callback() {
             private KorriSurfaceHost.Attachment attachment;
             @Override public void surfaceCreated(SurfaceHolder holder) {
@@ -4324,7 +4323,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
-        return surfaceOverlay != null || super.dispatchTouchEvent(event);
+        if (surfaceOverlay != null) {
+            // The Activity consumes the entire gesture, including outside the
+            // package's panel. Slint alone decides whether a target was hit.
+            int[] origin = new int[2];
+            surfaceOverlay.getLocationInWindow(origin);
+            MotionEvent local = MotionEvent.obtain(event);
+            local.offsetLocation(-origin[0], -origin[1]);
+            KorriSurfaceHost.forwardTouch(local);
+            local.recycle();
+            return true;
+        }
+        return super.dispatchTouchEvent(event);
     }
 
     void hideSurfaceOverlay() {

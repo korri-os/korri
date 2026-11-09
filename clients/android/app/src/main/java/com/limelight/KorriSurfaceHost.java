@@ -17,6 +17,7 @@ public final class KorriSurfaceHost {
         final CountDownLatch released = new CountDownLatch(1);
         final ArrayList<Integer> keys = new ArrayList<>();
         final ArrayList<Integer> axes = new ArrayList<>();
+        final ArrayList<Float> pointers = new ArrayList<>();
         final Runnable failure;
         boolean taken;
         boolean closing;
@@ -42,6 +43,7 @@ public final class KorriSurfaceHost {
             attachment.closing = true;
             attachment.keys.clear();
             attachment.axes.clear();
+            attachment.pointers.clear();
             if (!attachment.taken) acknowledgeRelease(false);
         }
         boolean interrupted = false;
@@ -94,6 +96,47 @@ public final class KorriSurfaceHost {
                     : Math.round(Math.max(-1, Math.min(1, value)) * 1000));
         }
         return true;
+    }
+
+    /** Touch in SurfaceView pixels. It never passes through the controller mapper. */
+    public static synchronized boolean forwardTouch(MotionEvent event) {
+        if (active == null) return false;
+        if (active.closing) return true;
+        if ((event.getSource() & InputDevice.SOURCE_CLASS_JOYSTICK) != 0
+                || event.isFromSource(InputDevice.SOURCE_DPAD)
+                || event.isFromSource(InputDevice.SOURCE_GAMEPAD)) return true;
+        int action = event.getActionMasked();
+        int phase;
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN: phase = 0; break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_POINTER_UP: phase = 1; break;
+            case MotionEvent.ACTION_MOVE: phase = 2; break;
+            case MotionEvent.ACTION_CANCEL:
+            case MotionEvent.ACTION_OUTSIDE: phase = 3; break;
+            default: return true;
+        }
+        for (int i = 0; i < event.getPointerCount(); i++) {
+            if (phase < 2 && i != event.getActionIndex()) continue;
+            float x = event.getX(i), y = event.getY(i);
+            if (!Float.isFinite(x) || !Float.isFinite(y)) continue;
+            active.pointers.add((float) phase);
+            active.pointers.add((float) event.getPointerId(i));
+            active.pointers.add(x);
+            active.pointers.add(y);
+        }
+        return true;
+    }
+
+    // Four floats per touch sample: phase (down/up/move/cancel = 0/1/2/3), id, X, Y.
+    // Rust divides pixels by the hosted Slint window's density, just as NativeActivity does.
+    public static synchronized float[] takePointers() {
+        if (active == null) return new float[0];
+        float[] pointers = new float[active.pointers.size()];
+        for (int i = 0; i < pointers.length; i++) pointers[i] = active.pointers.get(i);
+        active.pointers.clear();
+        return pointers;
     }
 
     // Five integers per sample: device, X, Y, HAT_X, HAT_Y. Axis units are

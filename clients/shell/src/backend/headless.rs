@@ -99,6 +99,41 @@ impl Headless {
             .freeze_animation_tick(Some(now.as_millis() as u64));
     }
 
+    /// Deliver native touch to the front window, including its activity signal.
+    /// Uses the same Slint touch phases as the Android NativeActivity and hosted Surface.
+    pub fn touch(
+        id: i32,
+        position: slint::LogicalPosition,
+        phase: i_slint_core::input::TouchPhase,
+    ) {
+        use i_slint_core::platform::{InternalEvent, WindowEvent};
+        let window = WINDOWS.with(|w| {
+            w.borrow()
+                .iter()
+                .filter_map(Weak::upgrade)
+                .rfind(|w| w.window().is_visible())
+        });
+        let Some(window) = window else {
+            return;
+        };
+        let sink = SINKS.with(|s| {
+            s.borrow()
+                .iter()
+                .find(|(w, ..)| w.upgrade().is_some_and(|w| Rc::ptr_eq(&w, &window)))
+                .map(|(_, sink, ..)| sink.clone())
+        });
+        if let Some(sink) = sink {
+            sink(HostEvent::PointerActivity);
+        }
+        window
+            .window()
+            .dispatch_event(WindowEvent::internal(InternalEvent::Touch {
+                id,
+                position: i_slint_core::lengths::logical_point_from_api(position),
+                phase,
+            }));
+    }
+
     /// Visible windows that are still alive.
     pub fn live_windows() -> usize {
         WINDOWS.with(|w| {

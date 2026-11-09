@@ -822,3 +822,77 @@ fn resized_comes_before_the_first_view_and_follows_every_window_change() {
     assert_eq!(rig.int("resizes"), 1.0);
     assert_eq!(rig.int("views-before-first-resize"), 0.0);
 }
+
+#[test]
+fn native_pointer_events_reset_idle_without_cursor_presses() {
+    use i_slint_core::input::TouchPhase;
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    for (phase, x, y) in [
+        (TouchPhase::Started, 400.0, 400.0),
+        (TouchPhase::Moved, 300.0, 200.0),
+        (TouchPhase::Ended, 300.0, 200.0),
+        (TouchPhase::Started, 400.0, 400.0),
+        (TouchPhase::Cancelled, 300.0, 200.0),
+    ] {
+        std::thread::sleep(Duration::from_millis(300));
+        rig.shell.handle(Event::Idle);
+        rig.settle();
+        assert!(rig.int("idle-ms") >= 300.0);
+        Headless::touch(0, slint::LogicalPosition::new(x, y), phase);
+        // Deliver the queued pointer activity before asking for the tick.
+        for event in std::mem::take(&mut *rig.queue.0.lock().unwrap()) {
+            rig.shell.handle(event);
+        }
+        rig.shell.handle(Event::Idle);
+        rig.settle();
+        assert!(rig.int("idle-ms") < 250.0, "{}", rig.int("idle-ms"));
+        assert_eq!(rig.int("count"), 0.0, "a drag must not synthesize Pressed");
+    }
+}
+
+#[test]
+fn taps_on_both_package_roots_reach_logic_as_activated() {
+    use i_slint_core::input::TouchPhase;
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    let tap = |rig: &mut Rig| {
+        for phase in [TouchPhase::Started, TouchPhase::Ended] {
+            Headless::touch(0, slint::LogicalPosition::new(80.0, 60.0), phase);
+        }
+        rig.settle();
+    };
+    tap(&mut rig);
+    assert_eq!(
+        serde_json::from_str::<Value>(&rig.string("activation")).unwrap(),
+        json!({"_tag": "Activated", "target": "probe:tap"})
+    );
+    rig.fixture.set_overlay(true);
+    rig.until("overlay", |r| r.shell.overlay_shown());
+    // A different callback value proves that Overlay, not the hidden Surface, delivered it.
+    tap(&mut rig);
+    assert!(
+        matches!(rig.shell.overlay_property("activation"), Some(SlintValue::String(s))
+        if serde_json::from_str::<Value>(&s).unwrap() == json!({"_tag": "Activated", "target": "probe:overlay"}))
+    );
+    assert_eq!(rig.int("count"), 0.0);
+}
+
+#[test]
+fn touch_outside_the_overlay_panel_and_cancel_activate_nothing() {
+    use i_slint_core::input::TouchPhase;
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    rig.fixture.set_overlay(true);
+    rig.until("overlay", |r| r.shell.overlay_shown());
+    for (x, y, finish) in [
+        (300.0, 300.0, TouchPhase::Ended),
+        (80.0, 60.0, TouchPhase::Cancelled),
+    ] {
+        Headless::touch(0, slint::LogicalPosition::new(x, y), TouchPhase::Started);
+        Headless::touch(0, slint::LogicalPosition::new(x, y), finish);
+        rig.settle();
+        assert!(
+            matches!(rig.shell.overlay_property("activation"), Some(SlintValue::String(s)) if s.is_empty())
+        );
+        assert!(rig.shell.overlay_shown());
+        assert_eq!(rig.int("count"), 0.0);
+    }
+}

@@ -52,6 +52,30 @@ public class KorriOverlayInputTest {
         }
     }
 
+    @Test public void activityRoutesTheWholeTouchGestureToSlintInSurfaceCoordinates() {
+        Game game = Robolectric.buildActivity(Game.class).get();
+        SurfaceView view = new SurfaceView(game);
+        view.layout(10, 20, 650, 500);
+        ReflectionHelpers.setField(game, "surfaceOverlay", view);
+        Surface surface = new Surface(new SurfaceTexture(0));
+        KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 2, () -> fail("Unexpected failure"));
+        try {
+            for (int action : new int[] { 0, 2, 1, 3 }) {
+                MotionEvent event = MotionEvent.obtain(0, 0, action, 120, 240, 0);
+                event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                assertTrue(game.dispatchTouchEvent(event));
+                int[] origin = new int[2];
+                view.getLocationInWindow(origin);
+                assertArrayEquals(new float[] { action, 0, 120 - origin[0], 240 - origin[1] }, KorriSurfaceHost.takePointers(), 0);
+                assertArrayEquals(new int[0], KorriSurfaceHost.takeAxes());
+                event.recycle();
+            }
+        } finally {
+            KorriSurfaceHost.detach(attachment);
+            surface.release();
+        }
+    }
+
     @Test public void overlayLeavesSystemVolumeAndPowerKeysToAndroidWhileGameplayStaysHeld() {
         Game game = Robolectric.buildActivity(Game.class).get();
         com.limelight.nvstream.NvConnection connection = new com.limelight.nvstream.NvConnection(

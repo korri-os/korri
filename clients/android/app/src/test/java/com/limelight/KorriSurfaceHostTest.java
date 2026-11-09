@@ -77,8 +77,34 @@ public class KorriSurfaceHostTest {
                 java.nio.charset.StandardCharsets.UTF_8);
         for (String method : new String[] { "android.view.Surface shellTakeOverlaySurface()",
                 "float shellOverlayDensity()", "boolean shellOverlayResized()", "boolean shellOverlayClosing()",
-                "void shellOverlayReleased(boolean)", "int[] shellTakeOverlayKeys()", "int[] shellTakeOverlayAxes()" }) {
+                "void shellOverlayReleased(boolean)", "int[] shellTakeOverlayKeys()", "int[] shellTakeOverlayAxes()", "float[] shellTakeOverlayPointers()" }) {
             assertTrue(method, rules.contains("public " + method + ";"));
+        }
+    }
+
+    @Test public void touchPhasesAndPixelsNeverBecomeStickAxesAndAreClearedOnClose() {
+        Surface surface = new Surface(new SurfaceTexture(0));
+        KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 2, () -> fail("Unexpected failure"));
+        try {
+            for (int action : new int[] { 0, 2, 1, 3 }) {
+                android.view.MotionEvent event = android.view.MotionEvent.obtain(0, 0, action, 120, 240, 0);
+                event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                assertTrue(KorriSurfaceHost.forwardTouch(event));
+                assertArrayEquals(new float[] { action, 0, 120, 240 }, KorriSurfaceHost.takePointers(), 0);
+                assertArrayEquals(new int[0], KorriSurfaceHost.takeAxes());
+                event.setSource(android.view.InputDevice.SOURCE_JOYSTICK);
+                assertTrue(KorriSurfaceHost.forwardTouch(event));
+                assertArrayEquals(new float[0], KorriSurfaceHost.takePointers(), 0);
+                event.recycle();
+            }
+            android.view.MotionEvent event = android.view.MotionEvent.obtain(0, 0, 0, 120, 240, 0);
+            KorriSurfaceHost.forwardTouch(event);
+            event.recycle();
+            KorriSurfaceHost.detach(attachment);
+            assertArrayEquals(new float[0], KorriSurfaceHost.takePointers(), 0);
+        } finally {
+            KorriSurfaceHost.detach(attachment);
+            surface.release();
         }
     }
 

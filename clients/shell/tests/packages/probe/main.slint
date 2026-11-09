@@ -1,6 +1,8 @@
 // A test package: shows what the shell delivered, and misbehaves on demand.
 import "fonts/tiny5.ttf";
 export component Surface inherits Window {
+    callback activated(target: string, at: float, released: bool);
+    in property <string> activation;
     in property <string> word;
     in property <int> count;
     in property <int> total;
@@ -12,6 +14,10 @@ export component Surface inherits Window {
     in property <int> height-seen;
     in property <int> resizes;
     in property <int> views-before-first-resize;
+    TouchArea {
+        x: 40px; y: 40px; width: 80px; height: 40px;
+        clicked => { root.activated("probe:tap", -1, false); }
+    }
     preferred-width: 640px;
     preferred-height: 480px;
     background: #102030;
@@ -24,8 +30,14 @@ export component Surface inherits Window {
 }
 
 export component Overlay inherits Window {
+    callback activated(target: string, at: float, released: bool);
+    in property <string> activation;
     in property <string> heading;
     in property <int> controls;
+    TouchArea {
+        x: 40px; y: 40px; width: 80px; height: 40px;
+        clicked => { root.activated("probe:overlay", -1, false); }
+    }
     preferred-width: 640px;
     preferred-height: 480px;
     background: #301020;

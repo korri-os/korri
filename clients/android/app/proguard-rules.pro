@@ -76,6 +76,7 @@
     public void shellOverlayReleased(boolean);
     public int[] shellTakeOverlayKeys();
     public int[] shellTakeOverlayAxes();
+    public float[] shellTakeOverlayPointers();
 }
 
 # ADR 0054: Rust calls these static methods through JNI by name.

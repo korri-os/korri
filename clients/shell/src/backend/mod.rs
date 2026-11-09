@@ -38,6 +38,8 @@ pub enum HostEvent {
         key: Key,
         pressed: bool,
     },
+    /// A native pointer event, including moves and cancellation. It is not a button.
+    PointerActivity,
     Focus(bool),
     Close,
     /// The window finished drawing a frame. Sent once per window, and once more each

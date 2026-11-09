@@ -3,7 +3,7 @@
 use super::{Backend, FrameCounter, HostEvent, Placement};
 use crate::{
     config::Connection,
-    input::{android::AndroidInput, drag::Drag, native::NativeEvent},
+    input::{android::AndroidInput, native::NativeEvent},
     korrid::Korrid,
     package::Package,
     shell::{Event, Options, Post, Shell},
@@ -17,7 +17,7 @@ use i_slint_backend_android_activity::{
     AndroidPlatform,
 };
 use jni::{
-    objects::{JIntArray, JObject, JValue},
+    objects::{JFloatArray, JIntArray, JObject, JValue},
     JavaVM,
 };
 use slint::android::AndroidApp;
@@ -49,12 +49,9 @@ impl Android {
         let front: Front = Default::default();
         let events = front.clone();
         let touch = front.clone();
-        let drag = Rc::new(RefCell::new(Drag::default()));
-        let focus_drag = drag.clone();
         let input = Rc::new(RefCell::new(AndroidInput::default()));
         let focus_input = input.clone();
         let event_input = input.clone();
-        let touch_app = app.clone();
         let native_focus = Rc::new(std::cell::Cell::new(false));
         let overlay_focus = Rc::new(std::cell::Cell::new(false));
         let activity_focus = native_focus.clone();
@@ -69,7 +66,6 @@ impl Android {
                 PollEvent::Main(MainEvent::LostFocus) => {
                     activity_focus.set(false);
                     focus_input.borrow_mut().set_active(surface_focus.get());
-                    focus_drag.borrow_mut().cancel();
                     Some(HostEvent::Focus(false))
                 }
                 PollEvent::Main(
@@ -109,8 +105,8 @@ impl Android {
             };
             let source: u32 = motion.source().into();
             // SOURCE_CLASS_JOYSTICK. Never interpret a touchscreen's pixel X/Y
-            // as stick axes or let gamepad motion enter the touch drag path.
-            if source & 0x10 != 0 {
+            // as stick axes or let gamepad motion enter the touch path.
+            if source & 0x10 != 0 || source & 0x201 == 0x201 || source & 0x401 == 0x401 {
                 if let Some(pointer) = motion.pointers().next() {
                     let axis = |axis| {
                         if motion.action() == MotionAction::Cancel {
@@ -129,40 +125,12 @@ impl Android {
                 }
                 return true;
             }
-            // Only single-finger drags become momentary directional presses;
-            // no surface hit-testing or focus model lives at this edge.
-            let mut drag = drag.borrow_mut();
-            if motion.pointer_count() != 1 {
-                drag.cancel();
-                return true;
+            if let Some((sink, ..)) = touch.borrow().as_ref() {
+                sink(HostEvent::PointerActivity);
             }
-            let Some(pointer) = motion.pointers().next() else {
-                return true;
-            };
-            match motion.action() {
-                MotionAction::Down => drag.begin(pointer.x(), pointer.y()),
-                MotionAction::Move => {
-                    if let Some(window) = touch_app.native_window() {
-                        for key in drag.moved(
-                            pointer.x(),
-                            pointer.y(),
-                            window.width() as f32,
-                            window.height() as f32,
-                        ) {
-                            if let Some((sink, ..)) = touch.borrow().as_ref() {
-                                sink(HostEvent::Key { key, pressed: true });
-                                sink(HostEvent::Key {
-                                    key,
-                                    pressed: false,
-                                });
-                            }
-                        }
-                    }
-                }
-                MotionAction::Up | MotionAction::Cancel | MotionAction::Outside => drag.cancel(),
-                _ => (),
-            }
-            true
+            // Let Slint deliver native touch (including cancel) to TouchArea and
+            // Flickable. No cursor steps or synthetic Pressed messages.
+            false
         }));
         slint::platform::set_platform(Box::new(platform))?;
         Ok(Self {
@@ -406,6 +374,44 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
                                 sample[4] as f32 / 1000.0,
                             );
                             shell.handle(Event::Native(events));
+                        }
+                    }
+                    let pointers = env
+                        .call_method(activity.as_obj(), "shellTakeOverlayPointers", "()[F", &[])?
+                        .l()?;
+                    let pointers = JFloatArray::from(pointers);
+                    let mut flat = vec![0.0; env.get_array_length(&pointers)? as usize];
+                    env.get_float_array_region(&pointers, 0, &mut flat)?;
+                    for sample in flat.chunks_exact(4) {
+                        if !shell.overlay_shown() {
+                            continue;
+                        }
+                        if let Some(window) = backend.overlay.borrow().as_ref() {
+                            use i_slint_core::{
+                                input::TouchPhase,
+                                platform::{InternalEvent, WindowEvent},
+                            };
+                            let phase = match sample[0] as i32 {
+                                0 => TouchPhase::Started,
+                                1 => TouchPhase::Ended,
+                                2 => TouchPhase::Moved,
+                                3 => TouchPhase::Cancelled,
+                                _ => continue,
+                            };
+                            if let Some((sink, ..)) = backend.overlay_front.borrow().as_ref() {
+                                sink(HostEvent::PointerActivity);
+                            }
+                            let scale = window.window().scale_factor();
+                            window.window().dispatch_event(WindowEvent::internal(
+                                InternalEvent::Touch {
+                                    id: sample[1] as i32,
+                                    position: i_slint_core::lengths::LogicalPoint::new(
+                                        sample[2] / scale,
+                                        sample[3] / scale,
+                                    ),
+                                    phase,
+                                },
+                            ));
                         }
                     }
                     Ok(())

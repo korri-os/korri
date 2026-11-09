@@ -28,12 +28,21 @@ pub fn pressed(button: Button) -> Value {
     json(SurfaceMessage::Pressed { button })
 }
 
+/// Slint's root callback uses a negative position and false release as absent values.
+pub fn activated(target: &str, at: f32, released: bool) -> Value {
+    json(SurfaceMessage::Activated {
+        target: target.to_owned(),
+        at: (at >= 0.0).then_some(at),
+        released: released.then_some(true),
+    })
+}
+
 pub fn korri_published() -> Value {
     json(SurfaceMessage::KorriPublished)
 }
 
 /// Contract amendment A1 (section 7.1): once a second, the time since the
-/// last `Pressed` delivered to the surface, or since it loaded.
+/// last button or pointer activity, or since the surface loaded.
 pub fn tick(idle_ms: u32) -> Value {
     json(SurfaceMessage::Tick { idle_ms })
 }

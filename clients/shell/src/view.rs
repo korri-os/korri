@@ -144,6 +144,39 @@ pub fn declared(definition: &ComponentDefinition) -> BTreeMap<String, Type> {
         .collect()
 }
 
+/// ADR 0055: every package root has this one generic callback, never per-control callbacks.
+pub fn check_activated(definition: &ComponentDefinition, root: &str) -> Result<()> {
+    let valid = definition
+        .properties_and_callbacks()
+        .any(|(name, (ty, _))| {
+            name == "activated"
+                && matches!(ty, Type::Callback(callback)
+            if callback.args == [Type::String, Type::Float32, Type::Bool]
+                && callback.return_type == Type::Void)
+        });
+    if !valid {
+        bail!("{root} must declare callback activated(target: string, at: float, released: bool)");
+    }
+    Ok(())
+}
+
+/// Carry the view's target to logic. Slint decides what was hit; the shell does not.
+pub fn bind_activated(instance: &ComponentInstance, send: impl Fn(Json) + 'static) -> Result<()> {
+    instance
+        .set_callback("activated", move |args| {
+            if let [Value::String(target), Value::Number(at), Value::Bool(released)] = args {
+                send(crate::messages::activated(
+                    target.as_str(),
+                    *at as f32,
+                    *released,
+                ));
+            }
+            Value::Void
+        })
+        .context("bind activated(target: string, at: float, released: bool)")?;
+    Ok(())
+}
+
 fn image_request(
     fields: &serde_json::Map<String, Json>,
 ) -> Result<Option<(&str, Option<pico8::Mode>)>> {
@@ -603,6 +636,39 @@ mod tests {
             in property <image> art;
             in property <bool> lit;
         }"#;
+
+    #[test]
+    fn bound_activation_uses_the_treaty_and_omits_both_sentinels() -> Result<()> {
+        crate::backend::headless::Headless::install();
+        let definition = compile(
+            r#"export component Surface inherits Window {
+            callback activated(target: string, at: float, released: bool);
+        }"#,
+        );
+        let instance = definition.create()?;
+        let received = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = received.clone();
+        bind_activated(&instance, move |message| sink.borrow_mut().push(message))?;
+        for (at, released) in [(-1.0, false), (0.5, true), (0.0, false)] {
+            instance.invoke(
+                "activated",
+                &[
+                    Value::String("range:volume".into()),
+                    Value::Number(at),
+                    Value::Bool(released),
+                ],
+            )?;
+        }
+        assert_eq!(
+            *received.borrow(),
+            vec![
+                json!({"_tag": "Activated", "target": "range:volume"}),
+                json!({"_tag": "Activated", "target": "range:volume", "at": 0.5, "released": true}),
+                json!({"_tag": "Activated", "target": "range:volume", "at": 0.0}),
+            ]
+        );
+        Ok(())
+    }
 
     #[test]
     fn the_focus_plan_is_checked_and_never_bound() -> Result<()> {

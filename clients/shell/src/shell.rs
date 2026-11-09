@@ -58,6 +58,12 @@ pub enum Event {
         window: u8,
         event: HostEvent,
     },
+    /// A package root's generic callback, queued just like host button events.
+    Activated {
+        generation: u64,
+        window: u8,
+        message: Value,
+    },
     Native(Vec<NativeEvent>),
     Model {
         generation: u64,
@@ -122,8 +128,8 @@ pub struct LoadTiming {
 
 struct Loaded {
     generation: u64,
-    /// The last `Pressed` delivered to this surface, or when it loaded.
-    last_press: Instant,
+    /// The last button or pointer activity, or when this surface loaded.
+    last_activity: Instant,
     /// The last size sent in `Resized`, in logical pixels.
     size: (f32, f32),
     package: Package,
@@ -405,6 +411,20 @@ impl Shell {
                 window,
                 event,
             } => self.host(generation, window, event),
+            Event::Activated {
+                generation,
+                window,
+                message,
+            } => {
+                if self.current.as_ref().is_some_and(|c| {
+                    c.generation == generation
+                        && ((window == 0 && c.surface_shown)
+                            || (window == 1 && c.overlay.is_some()))
+                }) {
+                    self.activity();
+                    self.update(&message);
+                }
+            }
             Event::Native(events) => {
                 let now = self.now();
                 for event in events {
@@ -497,6 +517,15 @@ impl Shell {
                 }
                 self.presses(presses);
             }
+            HostEvent::PointerActivity => {
+                if self
+                    .current
+                    .as_ref()
+                    .is_some_and(|c| c.generation == generation)
+                {
+                    self.activity();
+                }
+            }
             HostEvent::Focus(focused) => {
                 let windows = self.focused.get_or_insert_with(Default::default);
                 if focused {
@@ -571,17 +600,23 @@ impl Shell {
         }
     }
 
-    /// Send the active surface `Tick` with the time since its last press.
+    /// Send the active surface `Tick` with the time since its last input activity.
     fn idle(&mut self) {
         let Some(current) = self.current.as_ref() else {
             return;
         };
         let idle = current
-            .last_press
+            .last_activity
             .elapsed()
             .as_millis()
             .min(u32::MAX as u128) as u32;
         self.update(&messages::tick(idle));
+    }
+
+    fn activity(&mut self) {
+        if let Some(current) = self.current.as_mut() {
+            current.last_activity = Instant::now();
+        }
     }
 
     pub fn press(&mut self, button: Button) {
@@ -591,9 +626,7 @@ impl Shell {
             self.notice_press(button);
             return;
         }
-        if let Some(current) = self.current.as_mut() {
-            current.last_press = Instant::now();
-        }
+        self.activity();
         self.update(&messages::pressed(button));
         korri_input_trace::record("ui_applied", format_args!("button={button:?}"));
     }
@@ -780,6 +813,7 @@ impl Shell {
         let generation = self.next_generation;
         let mut images = ImageCache::new(&package.dir);
         let surface = views.surface.create()?;
+        self.bind_activated(&surface, generation, 0)?;
         let mut surface_binder = Binder::new(&views.surface);
         let drawn = Rc::new(Cell::new(false));
         self.attach(surface.window(), generation, 0);
@@ -843,7 +877,7 @@ impl Shell {
         };
         let mut loaded = Loaded {
             generation,
-            last_press: Instant::now(),
+            last_activity: Instant::now(),
             size,
             package,
             logic,
@@ -922,6 +956,22 @@ impl Shell {
         }
     }
 
+    fn bind_activated(
+        &self,
+        component: &ComponentInstance,
+        generation: u64,
+        window: u8,
+    ) -> Result<()> {
+        let post = self.post.clone();
+        crate::view::bind_activated(component, move |message| {
+            post.post(Event::Activated {
+                generation,
+                window,
+                message,
+            });
+        })
+    }
+
     fn attach(&self, window: &slint::Window, generation: u64, role: u8) {
         let post = self.post.clone();
         self.backend.attach(
@@ -977,6 +1027,7 @@ impl Shell {
         if created {
             let definition = loaded.overlay_definition.as_ref().expect("checked");
             let component = self.backend.create_overlay(definition)?;
+            self.bind_activated(&component, loaded.generation, 1)?;
             self.attach(component.window(), loaded.generation, 1);
             self.backend
                 .place(component.window(), self.options.placement);

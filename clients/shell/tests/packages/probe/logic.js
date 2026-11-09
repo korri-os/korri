@@ -3,6 +3,7 @@ globalThis.surface = {
   preferences: { "probe.word": { mark: "device", initial: "first" } },
   init: (model, preferences) => ({ word: preferences["probe.word"], count: 0, stored: false, idle: -1, ticks: 0 }),
   update: (state, message, model) => {
+    if (message._tag === "Activated") return { state: { ...state, activation: JSON.stringify(message) }, requests: [] };
     if (message._tag === "PreferenceStored") return { state: { ...state, stored: message.key === "probe.word" }, requests: [] };
     // A2: the first Resized must come before the first view (views counts them).
     if (message._tag === "Resized") return { state: { ...state, width: message.width, height: message.height, resizes: (state.resizes || 0) + 1, viewsBeforeFirstResize: state.resizes ? state.viewsBeforeFirstResize : (globalThis.views || 0) }, requests: [] };
@@ -25,6 +26,7 @@ globalThis.surface = {
     }
   },
   view: (state, model) => (globalThis.views = (globalThis.views || 0) + 1, {
+    activation: state.activation || "",
     widthSeen: state.width || 0,
     heightSeen: state.height || 0,
     resizes: state.resizes || 0,
@@ -38,6 +40,7 @@ globalThis.surface = {
     focusedGame: model.focusedGame ? model.focusedGame.gameId : "",
   }),
   overlay: (state, model) => ({
+    activation: state.activation || "",
     heading: model.presentation.kind === "gameplay-overlay" ? (model.presentation.title || "") : "",
     controls: model.presentation.kind === "gameplay-overlay" ? model.presentation.controls.length : 0,
   }),
