@@ -10,6 +10,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REORDER_TASKS" />
+    <!-- ADR 0054: the save bridge in Korri-built game APKs. Every Korri-signed
+         app declares the same signature-level permission. -->
+    <permission
+        android:name="dev.korri.permission.SAVE_BRIDGE"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="dev.korri.permission.SAVE_BRIDGE" />
     <!-- ADR 0054: notice when a game on this device leaves or closes. A
          special app-op the person grants in Settings. -->
     <uses-permission
