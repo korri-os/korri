@@ -4,7 +4,9 @@
 
 use super::{Backend, FrameCounter, HostEvent, Placement};
 use slint::platform::{
-    software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel},
+    software_renderer::{
+        MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, Rgb565Pixel,
+    },
     Platform, WindowAdapter,
 };
 use std::{
@@ -145,6 +147,24 @@ impl Headless {
             front = Some(buffer.iter().map(|p| p.0).collect());
         }
         front
+    }
+
+    /// Render the front visible window once with its alpha kept: premultiplied RGBA, where a
+    /// transparent window background stays transparent. For compositing a see-through
+    /// Overlay over a picture (the probe's `overlay`); reports no frames to the shell.
+    pub fn render_rgba() -> Option<Vec<PremultipliedRgbaColor>> {
+        slint::platform::update_timers_and_animations();
+        let windows: Vec<_> =
+            WINDOWS.with(|w| w.borrow().iter().filter_map(Weak::upgrade).collect());
+        let window = windows.into_iter().rfind(|w| w.window().is_visible())?;
+        let size = window.window().size();
+        let mut buffer =
+            vec![PremultipliedRgbaColor::default(); (size.width * size.height) as usize];
+        window.request_redraw();
+        window.draw_if_needed(|renderer| {
+            renderer.render(&mut buffer, size.width as usize);
+        });
+        Some(buffer)
     }
 }
 

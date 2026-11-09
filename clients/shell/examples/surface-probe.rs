@@ -39,6 +39,12 @@
 //!     what the views changed (property animations and timers still run).
 //!
 //!     Default sizes: 320x240, 640x480, 480x800, 1280x720, 1920x1080.
+//! surface-probe overlay PACKAGE --model FILE --backdrops IMG[,IMG…] --sizes … [--press B,B…] [--out OUT]
+//!     Draw the package's Overlay from FILE (a gameplay-overlay SurfaceModel)
+//!     after the presses, with its alpha kept, over each backdrop (a game
+//!     frame, scaled to cover the window): OUT/<backdrop>.<W>x<H>.png. Also
+//!     OUT/black.<W>x<H>.png, the Overlay over black: what a window without
+//!     alpha shows (softbuffer on Wayland and X11 drops it).
 //! ```
 //!
 //! Same Slint software renderer and view conversion as the shell.
@@ -818,6 +824,113 @@ fn directions(
     failures
 }
 
+/// The Overlay of `dir` from `model_file` after `presses`, composited over each backdrop.
+fn overlay(
+    dir: &Path,
+    model_file: &Path,
+    backdrops: &[PathBuf],
+    presses: &[String],
+    sizes: &[(u32, u32)],
+    out: &Path,
+) -> Result<()> {
+    std::fs::create_dir_all(out)?;
+    let package = Package::at(dir)?;
+    let views = package::compile(&package)?;
+    let definition = views.overlay.clone().context("no Overlay")?;
+    let source = package.logic_source()?;
+    let mut model: Value = serde_json::from_str(&std::fs::read_to_string(model_file)?)?;
+    // A fixture's Ready catalog lists its `games`: Korri publishes a window of them.
+    if model["catalog"]["_tag"] == "Ready" {
+        let games = model["catalog"]["games"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        model["catalog"] = catalog::window(
+            &games,
+            &catalog::default_query(),
+            &json!({"_tag": "Start"}),
+            catalog::DEFAULT_COUNT,
+        );
+    }
+    let pictures: Vec<(String, image::RgbImage)> = backdrops
+        .iter()
+        .map(|path| {
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let picture = image::open(path)
+                .with_context(|| format!("open {}", path.display()))?
+                .to_rgb8();
+            Ok((name, picture))
+        })
+        .collect::<Result<_>>()?;
+    for &size in sizes {
+        let instance = definition.create()?;
+        instance.show()?;
+        let mut binder = Binder::new(&definition);
+        let mut images = ImageCache::new(&package.dir);
+        let mut engine = Engine::load(
+            &source,
+            Limits {
+                stuck: std::time::Duration::from_secs(5),
+                ..Limits::default()
+            },
+        )?;
+        engine.set_model(&model.to_string())?;
+        engine.init(&engine::effective_preferences(
+            engine.declaration(),
+            &BTreeMap::new(),
+        ))?;
+        engine.update(&messages::resized(size.0 as f32, size.1 as f32))?;
+        engine.update(&messages::korri_published())?;
+        for press in presses {
+            engine.update(&json!({"_tag": "Pressed", "button": press}))?;
+        }
+        let view = engine.overlay()?.context("overlay() returned nothing")?;
+        binder.apply(&instance, &view, &mut images)?;
+        render(&instance, size);
+        let frame = Headless::render_rgba().context("no window")?;
+        let mut grounds = vec![("black".to_owned(), image::RgbImage::new(size.0, size.1))];
+        for (name, picture) in &pictures {
+            let scale = (size.0 as f32 / picture.width() as f32)
+                .max(size.1 as f32 / picture.height() as f32);
+            let (w, h) = (
+                (picture.width() as f32 * scale).ceil() as u32,
+                (picture.height() as f32 * scale).ceil() as u32,
+            );
+            let scaled =
+                image::imageops::resize(picture, w, h, image::imageops::FilterType::Triangle);
+            let cropped = image::imageops::crop_imm(
+                &scaled,
+                (w - size.0) / 2,
+                (h - size.1) / 2,
+                size.0,
+                size.1,
+            )
+            .to_image();
+            grounds.push((name.clone(), cropped));
+        }
+        for (name, mut ground) in grounds {
+            for (i, p) in frame.iter().enumerate() {
+                let pixel = ground.get_pixel_mut(i as u32 % size.0, i as u32 / size.0);
+                let keep = 255 - p.alpha as u32;
+                pixel.0 = [
+                    (p.red as u32 + pixel.0[0] as u32 * keep / 255).min(255) as u8,
+                    (p.green as u32 + pixel.0[1] as u32 * keep / 255).min(255) as u8,
+                    (p.blue as u32 + pixel.0[2] as u32 * keep / 255).min(255) as u8,
+                ];
+            }
+            let path = out.join(format!("{name}.{}x{}.png", size.0, size.1));
+            ground
+                .save(&path)
+                .with_context(|| format!("save {}", path.display()))?;
+        }
+        instance.hide()?;
+    }
+    Ok(())
+}
+
 fn clone_korri(k: &Korri) -> Korri {
     Korri {
         base: k.base.clone(),
@@ -884,6 +997,23 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        _ => bail!("usage: surface-probe previews DIR --sizes … --out OUT | walk PACKAGE --model FILE --sizes … [--max N] [--still] [--out OUT]"),
+        Some("overlay") => {
+            let dir = PathBuf::from(args.get(1).context("PACKAGE")?);
+            let model = PathBuf::from(flag("--model").context("--model FILE")?);
+            let backdrops: Vec<PathBuf> = flag("--backdrops")
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .collect();
+            let presses: Vec<String> = flag("--press")
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect();
+            overlay(&dir, &model, &backdrops, &presses, &sizes, &out)
+        }
+        _ => bail!("usage: surface-probe previews DIR --sizes … --out OUT | walk PACKAGE --model FILE --sizes … [--max N] [--still] [--out OUT] | overlay PACKAGE --model FILE --backdrops IMG,… --sizes … [--press B,…] [--out OUT]"),
     }
 }

@@ -232,6 +232,9 @@ still layers. Numbers and screenshots: `evidence/`.
   compile or draws nothing; `walk PACKAGE --model FILE` presses every button
   from every state reached and fails a state whose focused control is not
   drawn inside the window. Pico's tests use both (`packages/pico/README.md`).
+  `overlay PACKAGE --model FILE --backdrops IMG,…` draws the package's
+  Overlay with its alpha kept over each picture (a game frame), and over
+  black, as a window without alpha shows it.
 
 ## Backends
 
