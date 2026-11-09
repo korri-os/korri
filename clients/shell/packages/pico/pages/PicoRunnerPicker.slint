@@ -6,9 +6,10 @@ import { PicoGameOverlay, SheetView } from "../ui/templates/PicoGameOverlay.slin
 // RUNTIMES: the runners this device has for a game, their facts, and
 // Korri's actions, over the catalog.
 export component PicoRunnerPicker inherits Rectangle {
+    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     in property <SheetView> sheet;
-    overlay := PicoGameOverlay { activated(target, at, released) => { root.activated(target, at, released); } 
+    overlay := PicoGameOverlay { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;

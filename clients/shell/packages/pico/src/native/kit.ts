@@ -11,11 +11,18 @@ import type { PicoShelfGame } from "../pico-shelf-game"
 
 /**
  * A face button and what it does. A hint is a focus target a finger can press
- * (ADR 0055): `hint:a`, `hint:b`, `hint:lr` run that button's own handler
- * (program.ts `activated`). The cursor never walks onto one (hints are not
- * in a screen's `targets`), so `focused` stays false.
+ * (ADR 0055): `hint:a`, `hint:b` run that button's own handler, and ◀▶ is two
+ * targets, `hint:left` (the hint's own) and `hint:right` (`right`), one a
+ * half (program.ts `activated`). The cursor never walks onto one (hints are
+ * not in a screen's `targets`), so `focused` stays false.
  */
-export interface HintView { readonly key: "a" | "b" | "lr"; readonly label: string; readonly focused: false; readonly focusId: string }
+export interface HintView {
+  readonly key: "a" | "b" | "lr"
+  readonly label: string
+  readonly focused: false
+  readonly focusId: string
+  readonly right?: { readonly focused: false; readonly focusId: string }
+}
 
 /**
  * The target a view entry stands for. view() turns it into the convention's
@@ -287,9 +294,10 @@ const NARROWEST = new WeakMap<object, number>()
 
 export const A = (label: string): HintView => ({ key: "a", label, focused: false, focusId: HINT_A })
 export const B = (label: string): HintView => ({ key: "b", label, focused: false, focusId: HINT_B })
-export const LR = (label: string): HintView => ({ key: "lr", label, focused: false, focusId: HINT_LR })
+export const LR = (label: string): HintView => ({ key: "lr", label, focused: false, focusId: HINT_LEFT, right: { focused: false, focusId: HINT_RIGHT } })
 
 /** The hints' focus-target ids, and the button each stands for (ADR 0055). */
 export const HINT_A = "hint:a"
 export const HINT_B = "hint:b"
-export const HINT_LR = "hint:lr"
+export const HINT_LEFT = "hint:left"
+export const HINT_RIGHT = "hint:right"

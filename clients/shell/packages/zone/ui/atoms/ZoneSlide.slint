@@ -3,7 +3,7 @@ import { Tokens } from "../../ui/tokens.slint";
 // How a rack that moves by focus follows a finger (ADR 0055): the band and
 // the save band. Draws nothing. The rack adds `offset` to its row's place;
 // its cards' ZoneTaps report a sideways drag through `move` and the lift
-// through `release`.
+// through `release` (with `fling` false when the system cancelled it).
 //
 // The row stays under the finger between whole items: `offset` follows the
 // finger, held to one item either side of the place focus gives the row
@@ -80,9 +80,10 @@ export component ZoneSlide {
         push(dx);
     }
     // The finger lifted: a fling when it was moving, else the row settles.
-    public function release() {
+    // A cancelled gesture (`fling` false) settles at once, with no fling.
+    public function release(fling: bool) {
         held = false;
-        if ((animation-tick() - stamp) / 1ms > 80) {
+        if (!fling || (animation-tick() - stamp) / 1ms > 80) {
             speed = 0;
         }
         flinging = Math.abs(speed) > 0.3;

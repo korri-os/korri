@@ -50,7 +50,7 @@ export component PicoResumeList inherits VerticalLayout {
                     property <length> scroll: max(0, min(count * (slot-w + gap) - gap - self.width, (focused + 1) * (slot-w + gap) - gap - self.width));
                     // A sideways drag slides the rack a cart at a time; focus follows (ADR 0055).
                     slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "resume"; pitch: root.slot-w + root.gap; rest: rack.scroll; first: root.focused <= 0; last: root.focused >= root.count - 1; }
-                    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+                    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); }  x: 0; y: 0; width: parent.width; height: parent.height; }
                     // The cart, its shadow and its target read the row through the list
                     // by index: after the shell updates a row in place, the row's own
                     // copy can lag a render (seen when the probe reads elements between
@@ -72,7 +72,7 @@ export component PicoResumeList inherits VerticalLayout {
                             Rectangle { visible: root.games[i].cart.target && root.games[i].cart.focused && Tokens.ring; x: shell.x + 3 * Tokens.p; y: shell.y + 3 * Tokens.p; width: shell.width; height: shell.height; background: Cycle.now; }
                             shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: parent.height - self.shell-h - 2 * Tokens.p; cart: root.games[i].cart; box-w: 20 * Tokens.p; box-h: 28 * Tokens.p; }
                             Rectangle { x: 0; y: parent.height - 2 * Tokens.p; width: parent.width; height: 2 * Tokens.p; background: P8.floor; }
-                            PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: parent.width; height: parent.height; target: root.games[i].cart.target ? root.games[i].cart.focus-id : ""; slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); } }
+                            PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: parent.width; height: parent.height; target: root.games[i].cart.target ? root.games[i].cart.focus-id : ""; slides: true;  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); } }
                         }
                         Text { text: game.title; font-size: Tokens.sm; color: P8.ink; wrap: word-wrap; overflow: elide; height: min(self.preferred-height, lines.height); }
                         PicoLine { text: game.subtitle; color: P8.ink-quiet; }

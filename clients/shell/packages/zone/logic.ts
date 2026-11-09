@@ -259,15 +259,19 @@ export function update(state: State, message: Message, model: Model): { state: S
       const id = message.target
       const screen = screenOf(state)
       const overlaid = model.presentation.kind === "gameplay-overlay"
-      if (id === ZONE_HINT_BACK || id === ZONE_HINT_CONFIRM) {
-        zone = pressed(zone, id === ZONE_HINT_BACK ? "back" : "confirm", model, screen, out)
-      } else if (!overlaid && (holdsEveryPress(zone, model) || topLayer(zone.nav) === "idle")) {
+      if (!overlaid && (holdsEveryPress(zone, model) || topLayer(zone.nav) === "idle")) {
         // The attract, or the results tally: the tap is one press, nothing more.
         zone = pressed(zone, "confirm", model, screen, out)
       } else {
-        // Only a target drawn now: a stale id, or one from a layer that went, does nothing.
+        // Only a target drawn now (a hint too): a stale id, or one from a layer that went, does nothing.
         const drawn = overlaid ? overlay(state, model) : view(state, model)
         if (!drawnTargets(drawn).has(id)) return { state, requests: [] }
+        if (id === ZONE_HINT_BACK || id === ZONE_HINT_CONFIRM) {
+          zone = pressed(zone, id === ZONE_HINT_BACK ? "back" : "confirm", model, screen, out)
+          idleTurns = 0
+          touched = true
+          break
+        }
         const range = overlaid && message.at !== undefined && id.startsWith("control:") ? id.slice("control:".length) : undefined
         focusOn(zone, id, model, screen, inner => {
           zone = run(zone, inner, model, out)
@@ -320,7 +324,7 @@ export function update(state: State, message: Message, model: Model): { state: S
   }
   // The clock lives while the tally does.
   if (zone.nav.tally === undefined || zone.nav.tally.leaving) tally = undefined
-  return { state: { zone, reported: focused, moving, idleTurns, size, ...(tally === undefined ? {} : { tally }), ...(touched ? { touched } : {}) }, requests: out }
+  return { state: { zone, reported: focused, moving, idleTurns, size, ...(tally === undefined ? {} : { tally }), ...(touched ? { touched } : {})}, requests: out }
 }
 
 /** A button press, as Pressed delivers it: Back by backRoute (contract 7.2), the rest by src/press.ts. */

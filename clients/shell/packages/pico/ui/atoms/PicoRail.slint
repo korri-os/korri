@@ -10,6 +10,9 @@ import { Tokens } from "../tokens.slint";
 export component PicoRail inherits Rectangle {
     in property <length> spacing: 3 * Tokens.p;
     in property <length> margin: Tokens.u;
+    // A finger moved it (ADR 0055): passed up to the root, which hides the
+    // focus highlight until the next button press. Nothing reaches logic.js.
+    callback scrolled();
     // How far it is slid: by `show`, or by a finger.
     property <length> scroll: -flick.content-x;
     property <length> limit: max(0, row.width - root.width);
@@ -37,6 +40,7 @@ export component PicoRail inherits Rectangle {
     clip: true;
     height: row.preferred-height;
     flick := Flickable {
+        flicked => { root.scrolled(); }
         x: 0;
         y: 0;
         width: root.width;

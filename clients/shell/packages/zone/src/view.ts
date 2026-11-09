@@ -192,6 +192,8 @@ const HINTS = Object.freeze({
   back: Object.freeze({ label: "Back", focused: false, focusId: ZONE_HINT_BACK, focusRegion: "hints" }),
   confirm: Object.freeze({ label: "Confirm", focused: false, focusId: ZONE_HINT_CONFIRM, focusRegion: "hints" }),
 })
+/** PAUSED draws only B BACK (ZonePaused): its CONFIRM is no target. */
+const PAUSED_HINTS = Object.freeze({ back: HINTS.back })
 
 const EMPTY_DIALOG = { shown: false, headline: "", korri: false, lines: [] as string[], title: "", buttons: [] as Btn[] }
 
@@ -849,12 +851,14 @@ export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel, screen
     rows: rows.map((entry, index) => ("focused" in entry ? { ...entry, focusRegion: region(index) } : entry)),
     screen: planned.screen,
     focusPlan,
+    // Where the cursor is: the question's button, else the focused control.
+    focusKey: planned.focusKey !== "" ? planned.focusKey : (rows.find(entry => entry.focused === true)?.focusId as string | undefined) ?? "",
   }
 }
 
 function pausedView(state: ZoneSurfaceState, korri: SurfaceModel) {
   const overlay = korri.presentation
-  const empty = { look: state.look, heading: "Paused", korriHeading: false, hasArt: false, rows: [] as Row[], focusAt: 0, dialog: EMPTY_DIALOG, busy: EMPTY_BUSY, hints: HINTS, strip: ZONE_NO_STRIP }
+  const empty = { look: state.look, heading: "Paused", korriHeading: false, hasArt: false, rows: [] as Row[], focusAt: 0, dialog: EMPTY_DIALOG, busy: EMPTY_BUSY, hints: PAUSED_HINTS, strip: ZONE_NO_STRIP }
   if (overlay.kind !== "gameplay-overlay") return empty
   const model = state.overlay
   const rows: Row[] = []
@@ -906,7 +910,7 @@ function pausedView(state: ZoneSurfaceState, korri: SurfaceModel) {
     focusAt: Math.max(0, rows.findIndex(entry => entry.focused)),
     dialog,
     busy: status.busy,
-    hints: HINTS,
+    hints: PAUSED_HINTS,
     // The status strip (#378): read-only facts, no focus target.
     strip: zoneStatusStrip(overlayViewerFacts(korri) ?? {}),
   }

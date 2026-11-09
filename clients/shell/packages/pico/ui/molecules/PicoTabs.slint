@@ -7,6 +7,7 @@ import { PicoRail } from "../atoms/PicoRail.slint";
 // The spines of a panel: one coloured tab per group, as a row over the card
 // or a column beside it. A row too long for the box slides with the cursor.
 export component PicoTabs inherits Rectangle {
+    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <[ButtonView]> spines;
@@ -22,7 +23,7 @@ export component PicoTabs inherits Rectangle {
         spacing: 3 * Tokens.p;
         for spine[i] in spines : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  button: spine; font-size: Tokens.md; ground: P8.spine(i); ink: P8.ink-dark; lit-ground: P8.spine(i); }
     }
-    if !beside : tabs-row := PicoRail { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+    if !beside : tabs-row := PicoRail { scrolled => { root.scrolled(); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
         x: 0;
         y: 0;
         width: root.width;

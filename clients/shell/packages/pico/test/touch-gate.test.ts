@@ -99,3 +99,29 @@ describe("touch reaches the root", () => {
   })
 })
 
+describe("the gesture rules", () => {
+  const read = (file: string) => code(readFileSync(join(ROOT, file), "utf8"))
+  const tap = read("ui/atoms/PicoTap.slint")
+  const finish = tap.slice(tap.indexOf("function finish"), tap.indexOf("pointer-event"))
+
+  test("a cancel completes nothing: no activation, no released, no fling; the scroll region stops holding", () => {
+    expect(tap).toMatch(/event\.kind == PointerEventKind\.cancel\) \{\s*finish\(false\);/)
+    const cancel = finish.slice(finish.indexOf("if (!lifted)"), finish.indexOf("} else if (wakes)"))
+    expect(cancel).toMatch(/root\.holding\(false\)/)
+    expect(cancel).toMatch(/root\.slid\(false\)/)
+    expect(cancel).not.toMatch(/activated|slid\(true\)/)
+    // A rack told `slid(false)` settles with no fling.
+    expect(read("ui/atoms/PicoSlide.slint")).toMatch(/public function release\(fling: bool\) \{\s*held = false;\s*if \(!fling \|\|/)
+  })
+
+  test("the attract's cover wakes on any lift, a tap or a drag", () => {
+    expect(finish).toMatch(/\} else if \(wakes\) \{\s*root\.activated\(target, -1, false\);/)
+    expect(read("ui/organisms/PicoAttract.slint")).toMatch(/wakes: true;/)
+  })
+
+  test("no target sends `at` but a range: no chip halves by `at`", () => {
+    expect(tap).not.toMatch(/halves/)
+    const sends = [...finish.matchAll(/root\.activated\(target, ([^,]+),/g)].map(match => match[1])
+    expect(sends.filter(at => at !== "-1")).toEqual(["along(self.mouse-x)", "along(self.mouse-x)"])
+  })
+})

@@ -13,6 +13,7 @@ import { Row, Head, WellInfo } from "../types.slint";
 // black lip over and under it, 4 art px of ground from each strip, the
 // black wedge in its bottom-left corner standing still under the rows.
 export component ZoneSkyBand {
+    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     property <length> a: Tokens.a;
     in property <Head> head;
@@ -89,7 +90,7 @@ export component ZoneSkyBand {
                 stripes: root.well.stripes;
                 initials: root.well.initials;
             }
-            ZoneRowList { activated(target, at, released) => { root.activated(target, at, released); } 
+            ZoneRowList { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
                 x: 8 * root.a + (root.well.shown ? parent.well-w + 8 * root.a : 0);
                 y: 4 * root.a;
                 width: parent.width - self.x - 8 * root.a;

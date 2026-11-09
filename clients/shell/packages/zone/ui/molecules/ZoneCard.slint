@@ -21,7 +21,7 @@ export component ZoneCard {
     in property <string> focus-id;
     // A sideways drag on it slides the band (ZoneSlide).
     callback slide(dx: length);
-    callback slid();
+    callback slid(fling: bool);
     // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
     accessible-role: button;
     accessible-item-selectable: root.visible;
@@ -118,5 +118,5 @@ export component ZoneCard {
         height: root.tag-h;
         tags: root.card.tags;
     }
-    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { root.slide(dx); }  slid => { root.slid(); }  x: 0; y: 0; width: root.width; height: root.height; target: root.focus-id; slides: true; }
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { root.slide(dx); }  slid(fling) => { root.slid(fling); }  x: 0; y: 0; width: root.width; height: root.height; target: root.focus-id; slides: true; }
 }

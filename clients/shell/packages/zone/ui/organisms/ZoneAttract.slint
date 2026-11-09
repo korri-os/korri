@@ -63,6 +63,6 @@ export component ZoneAttract {
             face: "korri";
         }
     }
-    // A tap anywhere on it wakes the screen and does nothing else (ADR 0055).
-    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: "attract"; }
+    // A tap or a drag anywhere on it wakes the screen and does nothing else (ADR 0055).
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: "attract"; wakes: true; }
 }

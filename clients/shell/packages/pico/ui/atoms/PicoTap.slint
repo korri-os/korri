@@ -12,7 +12,15 @@ import { Tokens } from "../tokens.slint";
 // On a rack that moves by focus (`slides`: the shelf, RESUME, Find's and the store's results), a drag that goes
 // sideways first slides the row: each move goes to `slide` (in window
 // coordinates, so the row moving under the finger does not count) and the
-// lift to `slid`; the rack's PicoSlide turns that into whole-item steps.
+// lift to `slid(true)`; the rack's PicoSlide turns that into whole-item
+// steps and runs the fling.
+//
+// A cancel (the system took the gesture) ends it with nothing: no
+// activation, no `released`, no fling (`slid(false)`), and the scroll region
+// stops holding still.
+//
+// A cover that only wakes the screen (`wakes`: the attract) sends one plain
+// activation when the finger lifts, whether it tapped or dragged.
 //
 // A range (`range`, with its track from `track-start` to `track-end` in
 // local x): a tap that starts on the control sends the finger's place along
@@ -20,21 +28,19 @@ import { Tokens } from "../tokens.slint";
 // first sends `at` on every move and `released` on the lift, and holds its
 // scroll region still (`holding`) so the axis stays locked. A press that
 // starts off the control (on the row's label) is a plain tap.
-//
-// A chip whose halves mean two ways (◀▶ ADJUST, `halves`) sends which half
-// as `at`, 0 to 1 across the chip.
+
 export component PicoTap inherits TouchArea {
     // The focus target's id; empty: no target here (disabled, or drawn for show).
     in property <string> target;
     in property <bool> range;
     in property <length> track-start;
     in property <length> track-end;
-    in property <bool> halves;
     in property <bool> slides;
+    in property <bool> wakes;
     callback activated(target: string, at: float, released: bool);
     callback holding(on: bool);
     callback slide(dx: length);
-    callback slid();
+    callback slid(fling: bool);
     // Past drag-start: a drag, not a tap.
     property <bool> dragged;
     // A range drag, locked sideways.
@@ -49,16 +55,24 @@ export component PicoTap inherits TouchArea {
         return track-end <= track-start ? 0 : Math.clamp((x - track-start) / (track-end - track-start), 0, 1);
     }
     function finish(lifted: bool) {
-        if (sliding) {
+        if (!lifted) {
+            // Cancelled: nothing completes.
+            if (sliding) {
+                root.holding(false);
+            }
+            if (rowing) {
+                root.slid(false);
+            }
+        } else if (wakes) {
+            root.activated(target, -1, false);
+        } else if (sliding) {
             root.activated(target, along(self.mouse-x), true);
             root.holding(false);
         } else if (rowing) {
-            root.slid();
-        } else if (lifted && !dragged && target != "") {
+            root.slid(true);
+        } else if (!dragged && target != "") {
             if (on-control) {
                 root.activated(target, along(self.mouse-x), true);
-            } else if (halves) {
-                root.activated(target, self.width > 0 ? Math.clamp(self.mouse-x / self.width, 0, 1) : 0.5, true);
             } else {
                 root.activated(target, -1, false);
             }

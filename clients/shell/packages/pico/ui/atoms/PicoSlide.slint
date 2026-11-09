@@ -80,9 +80,10 @@ export component PicoSlide {
         push(dx);
     }
     // The finger lifted: a fling when it was moving, else the row settles.
-    public function release() {
+    // A cancelled gesture (`fling` false) settles at once, with no fling.
+    public function release(fling: bool) {
         held = false;
-        if ((animation-tick() - stamp) / 1ms > 80) {
+        if (!fling || (animation-tick() - stamp) / 1ms > 80) {
             speed = 0;
         }
         flinging = Math.abs(speed) > 0.3;

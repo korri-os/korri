@@ -17,7 +17,7 @@ export component ZoneSaveCard {
     in property <bool> focused;
     // A sideways drag on it slides the save band (ZoneSlide).
     callback slide(dx: length);
-    callback slid();
+    callback slid(fling: bool);
     // Whether a drag on it slides a band: on the save band, not alone (first boot's NEW).
     in property <bool> slides;
     // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
@@ -131,5 +131,5 @@ export component ZoneSaveCard {
             ink: "ink";
         }
     }
-    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { root.slide(dx); }  slid => { root.slid(); }  x: 0; y: 0; width: root.width; height: root.height; target: root.card.focus-id; slides: root.slides; }
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { root.slide(dx); }  slid(fling) => { root.slid(fling); }  x: 0; y: 0; width: root.width; height: root.height; target: root.card.focus-id; slides: root.slides; }
 }

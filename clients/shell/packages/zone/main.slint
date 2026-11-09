@@ -16,7 +16,9 @@
 // moves by focus (the band, the save band) sends `dragged(region, by)` each
 // time the finger crosses a whole card: `Dragged` moves focus by `by` in
 // that region. `touching` hides the focus highlight after a tap or a drag,
-// until the next button press.
+// and a finger's scroll of a list hides it here in the view
+// (`scrolled-by-finger`) until the cursor next moves (`focus-key`) or a
+// button follows a tap.
 //
 // Frame cost: every still part stands in a `cache-rendering-hint` layer
 // (the shell's Slint caches them, clients/shell/vendor), and a page that is
@@ -44,6 +46,27 @@ export component Surface inherits Window {
     callback dragged(region: string, by: int);
     // A tap or a drag came last, not a button: the focus highlight hides.
     in property <bool> touching;
+    // Where logic's cursor is: a move ends a finger's scroll.
+    in property <string> focus-key;
+    // A finger scrolled a list (ADR 0055): the highlight hides too.
+    // View-local: no message, no logic per frame.
+    property <bool> scrolled-by-finger;
+    function finger-scrolled() {
+        if (!self.scrolled-by-finger) {
+            self.scrolled-by-finger = true;
+            Tokens.touching = true;
+        }
+    }
+    // What ends a finger's scroll, in one place: for now the cursor moving,
+    // or a button after a tap (logic's `touching` falling). The highlight
+    // returns, and the lists bring the focused row back (Tokens.ring).
+    function finger-done() {
+        self.scrolled-by-finger = false;
+        Tokens.touching = self.touching;
+    }
+    changed focus-key => {
+        self.finger-done();
+    }
     title: "Zone";
     background: Tokens.ground-fill;
 
@@ -115,7 +138,11 @@ export component Surface inherits Window {
         Tokens.touching = self.touching;
     }
     changed touching => {
-        Tokens.touching = self.touching;
+        if (self.touching) {
+            Tokens.touching = true;
+        } else {
+            self.finger-done();
+        }
     }
     changed screen => {
         Tokens.screen = self.screen;
@@ -133,7 +160,7 @@ export component Surface inherits Window {
         Tokens.ground = self.ground;
     }
 
-    if root.page == "games": ZoneGames { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); } 
+    if root.page == "games": ZoneGames { scrolled => { root.finger-scrolled(); }  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -165,7 +192,7 @@ export component Surface inherits Window {
         attract: root.attract;
         attract-card: root.attract-card;
     }
-    if root.page == "options" || root.page == "join": ZoneOptions { activated(target, at, released) => { root.activated(target, at, released); } 
+    if root.page == "options" || root.page == "join": ZoneOptions { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -178,7 +205,7 @@ export component Surface inherits Window {
         well: root.well;
         keyboard: root.keyboard;
     }
-    if root.page == "runwith": ZoneRunWith { activated(target, at, released) => { root.activated(target, at, released); } 
+    if root.page == "runwith": ZoneRunWith { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -190,7 +217,7 @@ export component Surface inherits Window {
         well: root.well;
         keyboard: root.keyboard;
     }
-    if root.page == "store": ZoneStore { activated(target, at, released) => { root.activated(target, at, released); } 
+    if root.page == "store": ZoneStore { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -203,7 +230,7 @@ export component Surface inherits Window {
         keyboard: root.keyboard;
         bottom-room: root.busy.shown ? 60 * Tokens.a : 0;
     }
-    if root.page == "launch": ZoneLaunchSettings { activated(target, at, released) => { root.activated(target, at, released); } 
+    if root.page == "launch": ZoneLaunchSettings { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -235,7 +262,7 @@ export component Surface inherits Window {
         slab-id: root.slab.focus-id;
         keyboard: root.keyboard;
     }
-    if root.page == "onboarding": ZoneOnboarding { activated(target, at, released) => { root.activated(target, at, released); } 
+    if root.page == "onboarding": ZoneOnboarding { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -276,6 +303,27 @@ export component Overlay inherits Window {
     callback dragged(region: string, by: int);
     // A tap or a drag came last, not a button: the focus highlight hides.
     in property <bool> touching;
+    // Where logic's cursor is: a move ends a finger's scroll.
+    in property <string> focus-key;
+    // A finger scrolled a list (ADR 0055): the highlight hides too.
+    // View-local: no message, no logic per frame.
+    property <bool> scrolled-by-finger;
+    function finger-scrolled() {
+        if (!self.scrolled-by-finger) {
+            self.scrolled-by-finger = true;
+            Tokens.touching = true;
+        }
+    }
+    // What ends a finger's scroll, in one place: for now the cursor moving,
+    // or a button after a tap (logic's `touching` falling). The highlight
+    // returns, and the lists bring the focused row back (Tokens.ring).
+    function finger-done() {
+        self.scrolled-by-finger = false;
+        Tokens.touching = self.touching;
+    }
+    changed focus-key => {
+        self.finger-done();
+    }
     title: "Zone overlay";
     background: Tokens.ground-live;
     in property <string> look: "blend";
@@ -299,7 +347,11 @@ export component Overlay inherits Window {
         Tokens.touching = self.touching;
     }
     changed touching => {
-        Tokens.touching = self.touching;
+        if (self.touching) {
+            Tokens.touching = true;
+        } else {
+            self.finger-done();
+        }
     }
     changed screen => {
         Tokens.screen = self.screen;
@@ -313,7 +365,7 @@ export component Overlay inherits Window {
     changed look => {
         Tokens.look = self.look;
     }
-    ZonePaused { activated(target, at, released) => { root.activated(target, at, released); } 
+    ZonePaused { scrolled => { root.finger-scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;

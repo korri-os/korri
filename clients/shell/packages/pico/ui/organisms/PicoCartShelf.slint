@@ -38,7 +38,7 @@ export component PicoCartShelf inherits Rectangle {
     // A sideways drag slides the shelf a cart at a time; focus follows (ADR 0055).
     slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "shelf"; pitch: root.pitch; rest: root.scroll; first: root.place <= 0; last: root.place >= root.total - 1; }
     // Between the carts: a drag still slides, a tap does nothing.
-    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: root.width; height: root.height; }
+    PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); }  x: 0; y: 0; width: root.width; height: root.height; }
     Rectangle {
         x: -scroll + slide.offset;
         y: 0;
@@ -63,7 +63,7 @@ export component PicoCartShelf inherits Rectangle {
                 accessible-item-selected: (cart.target && cart.focused);
             }
             // Over the cart and its slot: a tap on either is a tap on the cart.
-            PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: min(0, 8 * Tokens.p - parent.y); width: parent.width; height: max(parent.height, 8 * Tokens.p - parent.y + slot-h) - self.y; target: cart.target ? cart.focus-id : ""; slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); } }
+            PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: min(0, 8 * Tokens.p - parent.y); width: parent.width; height: max(parent.height, 8 * Tokens.p - parent.y + slot-h) - self.y; target: cart.target ? cart.focus-id : ""; slides: true;  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); } }
             shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; cart: cart; box-w: art-w; box-h: art-h; }
         }
     }

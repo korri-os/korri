@@ -46,6 +46,8 @@ function lines<T extends Btnish>(buttons: readonly T[], width: number, cap: numb
  */
 /** The regions that hold a target in the view under way (regionOf notes each; focusView reads them for the exits). */
 let REGIONS = new Set<string>()
+/** The focused target's focusId in the view under way (regionOf notes it): the view's `focusKey`. */
+let FOCUS_KEY = ""
 
 function regionOf<T>(value: T, region: string, active?: (entry: Json) => boolean): T {
   if (Array.isArray(value)) {
@@ -59,6 +61,7 @@ function regionOf<T>(value: T, region: string, active?: (entry: Json) => boolean
     if (inner !== null && typeof inner === "object") regionOf(inner, region, active)
   }
   if ("focused" in entry) {
+    if (entry.focused === true && typeof entry.focusId === "string") FOCUS_KEY = entry.focusId
     entry.focusRegion = region
     if (active?.(entry) === true) entry.focusActive = true
     if (isTarget(entry)) REGIONS.add(region)
@@ -162,10 +165,11 @@ export interface ZoneViewFocus {
  * The view with its regions, exits and the plan's decisions for .slint.
  * `overlay`: the view is PAUSED's Overlay, whose dialog has the whole window.
  */
-export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen, overlay = false): V & { focusPlan: ZoneFocusPlan; screen: Json } {
+export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen, overlay = false): V & { focusPlan: ZoneFocusPlan; screen: Json; focusKey: string } {
   // In place: surfaceView (and overlayView) make the view fresh for this call.
   const view: Json = raw
   REGIONS = new Set<string>()
+  FOCUS_KEY = ""
   const page = zoneShown(state, korri)
   const nav = state.nav
   const layer = topLayer(nav)
@@ -282,7 +286,10 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
   if (!hidden.has("cardMarks") && marks.length > 0) {
     REGIONS.add("band")
     const active = marks[raw.focusedCard as number]
-    if (active !== undefined && "focused" in active) active.focusActive = true
+    if (active !== undefined && "focused" in active) {
+      active.focusActive = true
+      if (active.focused === true && typeof active.focusId === "string") FOCUS_KEY = active.focusId
+    }
   }
   if (!hidden.has("actions")) view.actions = regionOf(view.actions, "actions")
   if (!hidden.has("find")) view.find = regionOf(view.find, "find")
@@ -413,6 +420,8 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     if (regions.has(region)) focusPlan[region] = kept
   }
   view.focusPlan = focusPlan
+  // Where the cursor is: main.slint ends a finger's scroll when it moves (ADR 0055).
+  view.focusKey = FOCUS_KEY
   // A layer that is not shown is sent as only that: .slint reads none of its
   // other fields while it is hidden (every one stands under `if …shown`), and
   // each field costs the view call (its JSON) on every press.
@@ -426,7 +435,7 @@ export function focusView<V extends Json>(raw: V, state: ZoneSurfaceState, korri
     view.next = NOTHING
     view.newSave = NOTHING
   }
-  return view as V & { focusPlan: ZoneFocusPlan; screen: Json }
+  return view as V & { focusPlan: ZoneFocusPlan; screen: Json; focusKey: string }
 }
 
 /** The tabs as the plan places them, for the focus graph. */

@@ -12,6 +12,7 @@ import { PicoSettingsPanel, PanelView } from "PicoSettingsPanel.slint";
 // and the identity dialog. `mode`: "panel", "modal", "choice", "editor" or
 // "identity". Launch settings draws the same, with its own frame.
 export component PicoSettings inherits Rectangle {
+    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     in property <PanelView> panel;
@@ -19,13 +20,13 @@ export component PicoSettings inherits Rectangle {
     in property <EditorView> editor;
     in property <IdentityView> identity;
     in property <string> mode: "panel";
-    shell := PicoScreenShell { activated(target, at, released) => { root.activated(target, at, released); } 
+    shell := PicoScreenShell { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
-        if mode == "panel" : PicoSettingsPanel { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  panel: panel; }
+        if mode == "panel" : PicoSettingsPanel { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  panel: panel; }
         if mode == "modal" : PicoModal { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
         if mode == "choice" : PicoChoicePicker { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; choices: card; }
         if mode == "editor" : PicoTextEditor { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }

@@ -5,16 +5,17 @@ import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slin
 
 // FIND: the library, narrowed by Korri to what is typed and chosen.
 export component PicoLibrary inherits Rectangle {
+    callback scrolled();
     callback dragged(region: string, by: int);
     callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     in property <FindView> find;
-    shell := PicoScreenShell { activated(target, at, released) => { root.activated(target, at, released); } 
+    shell := PicoScreenShell { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
-        PicoLibraryBrowser { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  find: find; }
+        PicoLibraryBrowser { scrolled => { root.scrolled(); }  dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  find: find; }
     }
 }

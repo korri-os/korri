@@ -46,7 +46,7 @@ import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScree
 import { interned } from "./intern"
 import { memo, share } from "./memo"
 import { type Direction, firstIn, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
-import { cartView, type CartView, flatEntry, HINT_A, HINT_B, HINT_LR } from "./kit"
+import { cartView, type CartView, flatEntry, HINT_A, HINT_B, HINT_LEFT, HINT_RIGHT, type HintView } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
 import { qrPath } from "./qr"
 import { overlayScreen, runnerScreen } from "./sheet"
@@ -464,17 +464,23 @@ function leftRange(id: string, korri: KorriModel): Act {
  * A tap on a focus target (ADR 0055): the cursor moves there, as a d-pad
  * move would, then it does what Confirm does there. An id that names no
  * target on the screen shown (stale, or a disabled control) does nothing.
- * While attract shows, the tap only wakes the screen. A hint runs its
- * button's own handler and leaves the cursor where it is. A range takes the
+ * While attract shows, the tap only wakes the screen. A hint drawn now runs
+ * its button's own handler and leaves the cursor where it is; one not drawn
+ * is stale. A range takes the
  * finger's place along its track (`at`) through the same hold and wait a
  * step uses.
  */
 function activated(step: Step, message: Extract<SurfaceMessage, { _tag: "Activated" }>, korri: KorriModel): Step | undefined {
   const id = message.target
-  if (id === HINT_A) return pressed(step, "confirm", korri)
-  if (id === HINT_B) return pressed(step, "back", korri)
-  if (id === HINT_LR) return pressed(step, (message.at ?? 1) < 0.5 ? "left" : "right", korri)
   const s = step.state
+  const button = HINT_BUTTONS[id]
+  if (button !== undefined) {
+    const model = picoModelFrom(korri)
+    const overlaid = korri.presentation.kind === "gameplay-overlay"
+    if (!overlaid && model.onboarding === undefined && attractShowing(s.nav, model)) return run(step, [{ to: "nav", message: { _tag: "PressedScreen" } }], korri)
+    const shown = overlaid ? overlayView(s, korri) : catalogScreen(s, korri)
+    return shown !== undefined && hintsDrawn(shown.view).has(id) ? pressed(step, button, korri) : undefined
+  }
   if (korri.presentation.kind === "gameplay-overlay") {
     const screen = overlayView(s, korri)
     const target = screen?.targets.find(candidate => candidate.id === id)
@@ -548,6 +554,21 @@ function dragged(step: Step, message: Extract<SurfaceMessage, { _tag: "Dragged" 
 /** Where a drag enters a region: its active or remembered target, else its first. */
 function enterRegion(targets: readonly Target<Act>[], wanted: string | undefined): string | undefined {
   return targets.some(target => target.id === wanted) ? wanted : firstIn(targets, targets[0]?.region ?? "")?.id
+}
+
+/** The button each hint runs (ADR 0055). */
+const HINT_BUTTONS: Readonly<Record<string, string>> = { [HINT_A]: "confirm", [HINT_B]: "back", [HINT_LEFT]: "left", [HINT_RIGHT]: "right" }
+
+/** The hint targets a view draws: its frame's hints, or its sheet's. */
+function hintsDrawn(shown: Screen["view"]): Set<string> {
+  const ids = new Set<string>()
+  for (const part of [shown["frame"], shown["sheet"]] as ({ readonly hints?: readonly HintView[] } | undefined)[]) {
+    for (const hint of part?.hints ?? []) {
+      ids.add(hint.focusId)
+      if (hint.right !== undefined) ids.add(hint.right.focusId)
+    }
+  }
+  return ids
 }
 
 /** The pause menu's range a target stands for. */
@@ -676,7 +697,7 @@ function marked(value: unknown, screen: Screen): unknown {
  * presses them, the cursor never walks onto them (ADR 0055). */
 const targetsOf = memo(8, (screen: Screen) => [screen.targets], (screen: Screen) => new Map([...screen.targets, ...HINT_TARGETS].map(target => [target.id, target] as const)))
 
-const HINT_TARGETS: readonly Target<Act>[] = [HINT_A, HINT_B, HINT_LR].map((id, i) => ({ id, region: "hints", box: { x: i * 10, y: 2000, w: 8, h: 8 } }))
+const HINT_TARGETS: readonly Target<Act>[] = [HINT_A, HINT_B, HINT_LEFT, HINT_RIGHT].map((id, i) => ({ id, region: "hints", box: { x: i * 10, y: 2000, w: 8, h: 8 } }))
 
 /**
  * What marking found in a part of a view, by the part: nothing to mark
@@ -819,6 +840,7 @@ export function view(s: State, raw: KorriModel) {
   return viewOf(s, interned(raw))
 }
 
+
 /** The view reads the screen's inputs, the notices' round and the font. */
 const viewOf = memo(
   2,
@@ -853,6 +875,8 @@ function buildView(s: State, korri: KorriModel) {
     },
     split: plan ?? NO_SPLIT,
     touching: s.touched,
+    // Where the cursor is: main.slint ends a finger's scroll when it moves.
+    focusKey: covering ? "" : s.focus ?? "",
   }
   return { ...(marked(drawn, screen) as typeof drawn), focusPlan: covering ? {} : focusPlanOf(s, korri, screen) }
 }
@@ -889,6 +913,8 @@ function buildOverlay(s: State, korri: KorriModel) {
     fontFamily: font?.family ?? "Pico Tiny5",
     fontRows: font?.rows ?? 7,
     touching: s.touched,
+    // Where the cursor is: main.slint ends a finger's scroll when it moves.
+    focusKey: s.overlayFocus ?? "",
     ...(shown?.view ?? {}),
   }
   return shown === undefined ? drawn : { ...(marked(drawn, shown) as typeof drawn), focusPlan: focusPlanOf(s, korri, shown) }

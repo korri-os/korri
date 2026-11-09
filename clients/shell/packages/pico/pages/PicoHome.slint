@@ -7,12 +7,13 @@ import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slin
 // Home: the library in the screen shell. MENU's list is mounted at window
 // level by main.slint, over every screen.
 export component PicoHome inherits Rectangle {
+    callback scrolled();
     callback dragged(region: string, by: int);
     callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     in property <HomeView> home;
     in property <CardView> card;
-    shell := PicoScreenShell { activated(target, at, released) => { root.activated(target, at, released); } 
+    shell := PicoScreenShell { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
         frame: frame;
         PicoHomeLayout { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); } 
             reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }

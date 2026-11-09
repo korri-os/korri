@@ -173,18 +173,35 @@ describe("hint chips", () => {
     expect(pico.state().focus?.startsWith("hint:")).toBe(false)
   })
 
-  test("◀▶ ADJUST steps the focused range left on its left half and right on its right half", () => {
+  test("◀▶ ADJUST is two targets, its halves, with no `at`: the left steps left, the right steps right", () => {
     const pico = shell(overlayModel())
     pico.tap("control:vol")
-    const hints = (pico.overlay()["sheet"] as { hints: { key: string; focusId: string }[] }).hints
-    expect(hints[0]).toMatchObject({ key: "lr", focusId: "hint:lr" })
+    const hints = (pico.overlay()["sheet"] as { hints: { key: string; focusId: string; right?: { focusId: string; focusRegion: string } }[] }).hints
+    expect(hints[0]).toMatchObject({ key: "lr", focusId: "hint:left", right: { focusId: "hint:right", focusRegion: "hints" } })
     pico.requests.length = 0
-    pico.tap("hint:lr", 0.2, true)
-    pico.tap("hint:lr", 0.9, true)
-    pico.tap("hint:lr", 0.9, true)
+    pico.tap("hint:left")
+    pico.tap("hint:right")
+    pico.tap("hint:right")
     expect(pico.requests.filter(request => request._tag === "InvokeGameplayControl").map(request => (request as { value?: { value: number } }).value?.value))
       .toEqual([70, 80, 90])
     expect(pico.state().overlayFocus).toBe("control:vol")
+  })
+
+  test("a hint that is not drawn now is stale: it does nothing", () => {
+    // Home draws A and B only: ◀▶'s halves, and the old single id, name nothing there.
+    const pico = shell()
+    const before = pico.state()
+    expect(before.focus).toBe("cart:celeste")
+    for (const stale of ["hint:left", "hint:right", "hint:lr"]) {
+      const next = pico.tap(stale)
+      expect(next.state).toBe(before)
+      expect(next.requests).toEqual([])
+    }
+    // In the pause menu ◀▶ shows only while a range has the cursor.
+    const paused = shell(overlayModel())
+    paused.tap("control:ff")
+    const resting = paused.state()
+    expect(paused.tap("hint:right").state).toBe(resting)
   })
 })
 
@@ -275,9 +292,40 @@ describe("scrolling", () => {
       // The region is a Flickable, and the offset `show` moves is the Flickable's.
       expect(text).toMatch(/flick\s*:=\s*Flickable\s*\{/)
       expect(text).toMatch(/flick\.content-[xy]\s*=/)
-      // It reports nothing: no callback but `reveal`'s pass-through, no `activated`.
-      expect(text).not.toMatch(/activated|flicked\s*=>/)
+      // It reports nothing to logic.js: no `activated`, no `dragged`; a finger's
+      // move only tells the view (`scrolled`, up to the root).
+      expect(text).not.toMatch(/activated|dragged/)
+      expect(text).toMatch(/flicked\s*=>\s*\{\s*root\.scrolled\(\);\s*\}/)
     }
+  })
+
+  test("a finger's scroll hides the highlight in the view, until the cursor moves or a button follows a tap", () => {
+    // The view: each root keeps `scrolled-by-finger`, set by a finger's
+    // scroll; the highlight hides while it or logic's `touching` is set. What
+    // ends it sits in one function, `finger-done`: the cursor moving
+    // (`focus-key`), or `touching` falling (a button after a tap).
+    const main = code(read(join(ROOT, "main.slint")))
+    for (const root of ["Surface", "Overlay"]) {
+      const body = main.slice(main.indexOf(`export component ${root}`))
+      expect(body).toMatch(/in property <string> focus-key;/)
+      expect(body).toMatch(/function finger-scrolled\(\)\s*\{\s*if \(!scrolled-by-finger\)\s*\{\s*scrolled-by-finger = true;\s*Tokens\.touching = true;/)
+      expect(body).toMatch(/function finger-done\(\)\s*\{\s*scrolled-by-finger = false;\s*Tokens\.touching = touching;/)
+      expect(body).toMatch(/changed focus-key => \{ finger-done\(\); \}/)
+      expect(body).toMatch(/changed touching => \{ if \(touching\) \{ Tokens\.touching = true; \} else \{ finger-done\(\); \} \}/)
+      expect(body).toMatch(/scrolled => \{ root\.finger-scrolled\(\); \}/)
+    }
+    // Logic: `focusKey` is where the cursor is, a function of the state alone
+    // (the focus walks deduplicate views), so a move changes it and nothing else does.
+    const pico = shell()
+    expect(pico.view()["focusKey"]).toBe("cart:celeste")
+    pico.press("up")
+    pico.send({ _tag: "Tick", idleMs: 1_000 })
+    pico.send({ _tag: "KorriPublished" })
+    expect(pico.view()["focusKey"]).toBe("cart:celeste")
+    pico.press("right")
+    expect(pico.view()["focusKey"]).toBe("cart:hollow")
+    const paused = shell(overlayModel())
+    expect(paused.overlay()["focusKey"]).toBe(paused.state().overlayFocus)
   })
 
   test("the cursor stays where it is across everything but a button or a tap", () => {

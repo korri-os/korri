@@ -33,8 +33,8 @@ export component PicoStoreResults inherits VerticalLayout {
         property <length> scroll: max(0, min(results.length * slot-w - self.width, focused-result * slot-w - self.width / 2 + slot-w / 2));
         // A sideways drag slides the results a game at a time; focus follows (ADR 0055).
         slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "results"; pitch: root.slot-w; rest: parent.scroll; first: root.focused-result <= 0; last: root.focused-result >= root.results.length - 1; }
-        PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
-        for result[i] in results : PicoResultRow {  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+        PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+        for result[i] in results : PicoResultRow {  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
             x: i * slot-w - parent.scroll + slide.offset;
             y: 0;
             width: slot-w - 4 * Tokens.p;

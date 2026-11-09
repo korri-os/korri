@@ -34,6 +34,7 @@ export struct FindView {
 // Korri found, in a rack that keeps the cursor's game in view. Chips that do
 // not fit a row scroll with the cursor.
 export component PicoLibraryBrowser inherits VerticalLayout {
+    callback scrolled();
     callback dragged(region: string, by: int);
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
@@ -42,8 +43,8 @@ export component PicoLibraryBrowser inherits VerticalLayout {
     property <length> slot-w: 54 * Tokens.p;
     spacing: 3 * Tokens.p;
     PicoQueryField { query: find.query; }
-    sections := PicoRail { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  for b in find.sections : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { sections.show(left, top, wide, tall); }  button: b; } }
-    orders := PicoRail { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  for b in find.orders : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { orders.show(left, top, wide, tall); }  button: b; } }
+    sections := PicoRail { scrolled => { root.scrolled(); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  for b in find.sections : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { sections.show(left, top, wide, tall); }  button: b; } }
+    orders := PicoRail { scrolled => { root.scrolled(); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  for b in find.orders : PicoChip { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { orders.show(left, top, wide, tall); }  button: b; } }
     PicoKeyboard { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  keys: find.keys; rows: find.key-rows; }
     if find.empty : VerticalLayout {
         PicoLine { text: "NOTHING MATCHES"; color: P8.go; }
@@ -55,8 +56,8 @@ export component PicoLibraryBrowser inherits VerticalLayout {
         property <length> scroll: max(0, min(find.result-count * slot-w - self.width, find.focused-result * slot-w - self.width / 2 + slot-w / 2));
         // A sideways drag slides the results a game at a time; focus follows (ADR 0055).
         slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "results"; pitch: root.slot-w; rest: parent.scroll; first: find.focused-result <= 0; last: find.focused-result >= find.result-count - 1; }
-        PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
-        for result[i] in find.results : PicoResultRow {  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+        PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+        for result[i] in find.results : PicoResultRow {  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
             x: (find.first-result + i) * slot-w - parent.scroll + slide.offset;
             y: 0;
             width: slot-w - 4 * Tokens.p;

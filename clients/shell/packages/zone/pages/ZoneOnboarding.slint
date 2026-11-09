@@ -16,6 +16,7 @@ import { ZoneShell } from "../ui/templates/ZoneShell.slint";
 import { Hints, Foot, Row, Seat, Btn, NewSave, Keyboard } from "../ui/types.slint";
 
 export component ZoneOnboarding {
+    callback scrolled();
     callback activated(target: string, at: float, released: bool);
     in property <Hints> hints;
     in property <string> banner;
@@ -48,7 +49,7 @@ export component ZoneOnboarding {
         property <length> seat-h: Math.min(self.stage-h - 12 * root.a, 140 * root.a);
         property <length> seat-w: Math.min(self.seat-h * 0.82, (root.width - 24 * root.a - self.vs-w - (self.n - 1) * 8 * root.a) / Math.max(1, self.n));
         property <length> row-w: self.n * self.seat-w + (self.n - 1) * 8 * root.a + self.vs-w;
-        if root.rows.length > 0: ZoneRowList { activated(target, at, released) => { root.activated(target, at, released); } 
+        if root.rows.length > 0: ZoneRowList { scrolled => { root.scrolled(); }  activated(target, at, released) => { root.activated(target, at, released); } 
             x: 12 * root.a;
             y: 4 * root.a;
             width: root.width - 24 * root.a;

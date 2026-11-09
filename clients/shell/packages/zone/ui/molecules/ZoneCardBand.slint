@@ -98,7 +98,7 @@ export component ZoneCardBand {
         // The band's image stays the band's size: a parked card is not in it.
         clip: true;
         // Between the cards: a drag still slides the band, a tap does nothing.
-        ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+        ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); }  x: 0; y: 0; width: parent.width; height: parent.height; }
         // A fixed pool of slots, one per card from reach + 1 before the focus to
         // reach + 1 after it. Slot j holds the card whose index is j modulo the
         // pool, so a move hands only one slot a new card (the one about to
@@ -119,7 +119,7 @@ export component ZoneCardBand {
             // A spare slot stays laid out, parked past the band's right edge
             // (the band clips it, so nothing of it is drawn): on a move only
             // its place changes, and its card needs no layout in the press frame.
-            ZoneCard { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { slide.move(dx); }  slid => { slide.release(); } 
+            ZoneCard { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); } 
                 cache-rendering-hint: true;
                 x: parent.shown ? root.card-x(parent.i + root.first-index) : root.width + 4 * root.side-w;
                 width: parent.shown ? root.card-w(parent.i + root.first-index) : root.side-w;
