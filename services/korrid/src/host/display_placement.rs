@@ -141,11 +141,11 @@ pub fn choose(
     Ok(plan)
 }
 
-/// Bound encoder cost at the viewer's aspect, rounded down to CVT/encoder
-/// eight-pixel granularity on both sides.
+/// The viewer's own size: an unwatched display has no fixed resolution, so
+/// the stream needs no scaling (owner, 2026-11-09). Only the 4096-per-side
+/// encoder limit scales it down, keeping the aspect ratio.
 pub(crate) fn client_shape(
     viewer: &crate::launcher::plugin_launch::PluginDisplay,
-    configured: &Display,
 ) -> Result<crate::launcher::plugin_launch::PluginDisplay, String> {
     use crate::launcher::plugin_launch::PluginDisplay;
     if viewer.width < 8 || viewer.height < 8 {
@@ -153,12 +153,7 @@ pub(crate) fn client_shape(
     }
     let width = f64::from(viewer.width);
     let height = f64::from(viewer.height);
-    let area = f64::from(configured.width) * f64::from(configured.height);
-    let scale = (area / (width * height))
-        .sqrt()
-        .min(1.0)
-        .min(4096.0 / width)
-        .min(4096.0 / height);
+    let scale = 1.0_f64.min(4096.0 / width).min(4096.0 / height);
     let width = (width * scale) as u32 & !7;
     let height = (height * scale) as u32 & !7;
     if width == 0 || height == 0 {
@@ -214,7 +209,7 @@ pub(crate) fn apply_client_shape(
     {
         return Ok(None);
     }
-    let size = client_shape(viewer, main)?;
+    let size = client_shape(viewer)?;
     let refresh = configured_refresh(main)?;
     let control = control.ok_or("compositor unavailable for viewer display")?;
     let result = (|| {
@@ -704,13 +699,12 @@ mod tests {
     }
 
     #[test]
-    fn client_shape_preserves_aspect_within_area_and_eight_pixel_side_limits() {
+    fn client_shape_keeps_the_viewer_size_within_eight_pixel_side_limits() {
         use crate::launcher::plugin_launch::PluginDisplay;
-        let mut configured = displays().remove(0);
-        configured.width = 1920;
-        configured.height = 1080;
         for (width, height, expected) in [
-            (2176, 1812, (1576, 1312)),
+            (2176, 1812, (2176, 1808)),
+            (2448, 1848, (2448, 1848)),
+            (5120, 1440, (4096, 1152)),
             (1280, 720, (1280, 720)),
             (641, 481, (640, 480)),
             (647, 487, (640, 480)),
@@ -719,11 +713,10 @@ mod tests {
             (1920, 1080, (1920, 1080)),
             (10000, 100, (4096, 40)),
             (100, 10000, (40, 4096)),
-            (u32::MAX, u32::MAX, (1440, 1440)),
+            (u32::MAX, u32::MAX, (4096, 4096)),
         ] {
-            let size = client_shape(&PluginDisplay { width, height }, &configured).unwrap();
+            let size = client_shape(&PluginDisplay { width, height }).unwrap();
             assert_eq!((size.width, size.height), expected);
-            assert!(u64::from(size.width) * u64::from(size.height) <= 1920 * 1080);
             assert!(size.width <= 4096 && size.height <= 4096);
             assert_eq!((size.width % 8, size.height % 8), (0, 0));
         }
@@ -732,7 +725,6 @@ mod tests {
                 width: 0,
                 height: 1080
             },
-            &configured
         )
         .is_err());
         assert!(client_shape(
@@ -740,7 +732,6 @@ mod tests {
                 width: 1,
                 height: 1080
             },
-            &configured
         )
         .is_err());
         assert!(client_shape(
@@ -748,7 +739,6 @@ mod tests {
                 width: 7,
                 height: 1080
             },
-            &configured
         )
         .is_err());
         assert!(client_shape(
@@ -756,7 +746,6 @@ mod tests {
                 width: u32::MAX,
                 height: 8
             },
-            &configured
         )
         .is_err());
     }
@@ -778,7 +767,7 @@ mod tests {
         let control = sway_program(dir.path(), r#"[{"success":true}]"#);
         std::fs::write(
             dir.path().join("outputs"),
-            r#"[{"name":"DSI-2","current_mode":{"width":1576,"height":1312,"refresh":60000}}]"#,
+            r#"[{"name":"DSI-2","current_mode":{"width":2176,"height":1808,"refresh":60000}}]"#,
         )
         .unwrap();
         let mut ds = unwatched_main();
@@ -795,12 +784,12 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!((size.width, size.height), (1576, 1312));
-        assert_eq!((p.width, p.height), (1576, 1312));
+        assert_eq!((size.width, size.height), (2176, 1808));
+        assert_eq!((p.width, p.height), (2176, 1808));
         let events = std::fs::read_to_string(dir.path().join("events")).unwrap();
         assert_eq!(
             events,
-            "output DSI-2 mode --custom 1576x1312@120Hz\nget_outputs\n"
+            "output DSI-2 mode --custom 2176x1808@120Hz\nget_outputs\n"
         );
     }
 
@@ -869,10 +858,10 @@ mod tests {
     fn shell_restores_only_unwatched_main_without_a_game_and_only_if_different() {
         for count in [1, 2] {
             for (unwatched, game, width, restores) in [
-                (true, false, 1576, true),
+                (true, false, 2176, true),
                 (true, false, 1920, false),
-                (false, false, 1576, false),
-                (true, true, 1576, false),
+                (false, false, 2176, false),
+                (true, true, 2176, false),
             ] {
                 let dir = tempfile::tempdir().unwrap();
                 let control = sway_program(dir.path(), r#"[{"success":true}]"#);

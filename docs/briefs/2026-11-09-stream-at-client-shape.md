@@ -55,13 +55,15 @@ puts it back when the shell takes the display again.
 3. **Display facts.** `KORRID_DISPLAYS` entries carry `unwatched` from the
    existing Nix option (`korri-linux-host-core.nix`). `Display` gains
    `unwatched: bool`.
-4. **Shape.** Keep the client's aspect ratio. Scale to the pixel area of the
-   display's configured mode (aka: 1920x1080), so GPU and encoder cost stay as
-   today. Round both sides down to multiples of 8: CVT uses eight-pixel
+4. **Shape.** Use the client's own size. **Owner decision, 2026-11-09:** the
+   dummy plug takes virtually any mode, so there is no 1080p pixel budget; an
+   earlier version of this brief capped the size at the configured mode's
+   area. Only the 4096-per-side limit scales a size down, keeping the aspect
+   ratio. Round both sides down to multiples of 8: CVT uses eight-pixel
    horizontal granularity, and aligning both sides is safer for the encoder.
-   Never exceed 4096 on a side. If the client size is already within that area,
-   do not scale it up; still round both sides down to multiples of 8. For
-   example, 2176x1812 at a 1920x1080 pixel budget becomes 1576x1312.
+   For example, a Galaxy Z Fold inner screen at 2448x1848 stays 2448x1848, and
+   2176x1812 becomes 2176x1808. Cost: the game renders and Sunshine encodes at
+   the client's full resolution.
 5. **Apply.** Only when a `viewerDisplay` is present, the placement is one
    pane on the main display, and that display is `unwatched`. korrid runs
    `output <name> mode --custom <W>x<H>@60Hz` through its existing Sway
@@ -100,8 +102,7 @@ The owner reported these results on aka at **2026-11-09 08:30Z**:
 
 The custom-mode acceptance gate has passed. Sunshine capturing and encoding
 at the shaped size is **not yet verified**. Check that after deploy with a
-real stream. The policy now rounds both sides to multiples of 8, so the
-2176x1812 example selects 1576x1312 rather than the tested 1576x1314 mode.
+real stream.
 
 ## Implementation clarification
 

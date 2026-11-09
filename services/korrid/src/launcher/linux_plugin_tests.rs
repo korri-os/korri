@@ -832,7 +832,7 @@ fn viewer_shape_reaches_launch_composition_or_becomes_a_launch_warning() {
         .unwrap();
         let composition: LaunchComposition = serde_json::from_str(&launch.command[4]).unwrap();
         let expected = if behavior == "accept" {
-            (1576, 1312)
+            (2176, 1808)
         } else {
             (1920, 1080)
         };
@@ -858,7 +858,7 @@ printf '%s\n' "$command" >> "$KORRI_CLIENT_SHAPE_EVENTS"
 case "$command" in
  get_outputs)
   if test "$KORRI_CLIENT_SHAPE_LAUNCH_TEST" = accept; then
-   printf '[{"name":"HDMI-A-1","current_mode":{"width":1576,"height":1312,"refresh":60000}}]'
+   printf '[{"name":"HDMI-A-1","current_mode":{"width":2176,"height":1808,"refresh":60000}}]'
   else
    printf '[{"name":"HDMI-A-1","current_mode":{"width":1920,"height":1080,"refresh":60000}}]'
   fi;;
@@ -888,6 +888,6 @@ esac
         );
         assert!(std::fs::read_to_string(directory.path().join("events"))
             .unwrap()
-            .starts_with("output HDMI-A-1 mode --custom 1576x1312@60Hz\n"));
+            .starts_with("output HDMI-A-1 mode --custom 2176x1808@60Hz\n"));
     }
 }

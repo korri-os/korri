@@ -58,7 +58,7 @@ case "$command" in
   printf '%s\n' "$command" >> commands
   case "$command" in
    *'mode --custom'*)
-    printf 1576x1312 > mode
+    printf 2176x1808 > mode
     touch shaped
     if test -f block-shape; then
       while ! test -f release-shape; do sleep 0.01; done
@@ -164,7 +164,7 @@ fn catalog_during_prepare_waits_and_never_restores_a_running_game() {
         fixture.catalog().unwrap();
         assert_eq!(
             fixture.mode(),
-            "1576x1312",
+            "2176x1808",
             "catalog must not restore a live game"
         );
     }
@@ -185,7 +185,7 @@ fn failed_prepare_invalidates_catalog_receipt_before_the_output_changes() {
         failure.message.contains("exited before prepare completed"),
         "{failure:?}"
     );
-    assert_eq!(fixture.mode(), "1576x1312");
+    assert_eq!(fixture.mode(), "2176x1808");
     fixture.catalog().unwrap();
     assert_eq!(
         fixture.mode(),
@@ -212,7 +212,7 @@ fn catalog_observes_completed_unit_even_when_cached_session_is_stopping() {
                 .stop(&launched.session.launch_id),
             HostSessionStop::AlreadyStopping { .. }
         ));
-        assert_eq!(fixture.mode(), "1576x1312");
+        assert_eq!(fixture.mode(), "2176x1808");
         fixture.backend.complete_live();
         // Do not poll status. Catalog placement must observe the native unit
         // itself before deciding whether it may restore the configured mode.
@@ -378,7 +378,7 @@ fn runtime_refusal_after_shaping_does_not_cache_out_restore() {
         .message
         .contains("runtime refused after shaping"));
     assert!(fixture.root.path().join("shaped").exists());
-    assert_eq!(fixture.mode(), "1576x1312");
+    assert_eq!(fixture.mode(), "2176x1808");
     fixture.catalog().unwrap();
     assert_eq!(fixture.mode(), "1920x1080");
 }
