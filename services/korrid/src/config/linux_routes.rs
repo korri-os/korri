@@ -39,7 +39,8 @@ fn linux_route_candidates_for_runner(
         };
         let system_id = release.system.as_ref().map(|s| s.0.as_str()).unwrap_or("");
         for runner in registry.runners().values().filter(|runner| {
-            runner.program.is_some()
+            // ADR 0054: an Android runner starts a package, not a program.
+            (runner.program.is_some() || runner.is_android())
                 && chosen_runner.is_none_or(|id| runner.id == id)
                 && match (&runner.releases, &runner.systems) {
                     (Some(releases), _) => releases.iter().any(|candidate| candidate.0 == key),
@@ -50,11 +51,11 @@ fn linux_route_candidates_for_runner(
             if emitted.contains(&runner.id) {
                 continue;
             }
-            let program = registry
-                .installed_file(
-                    &runner.id,
-                    runner.program.as_deref().expect("filtered native runner"),
-                )
+            let program = runner
+                .program
+                .as_deref()
+                .map(|program| registry.installed_file(&runner.id, program))
+                .transpose()
                 .map_err(|error| failure(error.to_string()))?;
             let core_path = runner
                 .core
@@ -94,7 +95,7 @@ fn linux_route_candidates_for_runner(
                 family_id: runner.family.clone(),
                 integration_token: String::new(),
                 flattened_target,
-                linux_runner: Some(ResolvedLinuxRunner {
+                linux_runner: program.as_ref().map(|program| ResolvedLinuxRunner {
                     program: program.display().to_string(),
                 }),
                 core_path: core_path.clone(),

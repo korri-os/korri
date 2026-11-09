@@ -14,6 +14,7 @@ use jni::{
     JNIEnv,
 };
 use std::ptr;
+mod app_launcher;
 mod network;
 mod viewer;
 
@@ -126,6 +127,15 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
         reach: Some(reach),
         viewer: Some(viewer),
     };
+    // ADR 0054: games on this device start through the app's launcher.
+    match app_launcher::adapter(&mut env) {
+        Ok(launcher) => crate::use_android_local_sessions(std::sync::Arc::new(launcher)),
+        Err(_) => {
+            let _ = env.exception_clear();
+            let _ = env.throw_new("java/lang/IllegalStateException", "Android app launcher is unavailable");
+            return -1;
+        }
+    }
     // ADR 0054: plugins live in app storage; korrid installs them itself.
     crate::plugin_installation::use_android_store(std::path::Path::new(&private_state_root));
     crate::use_android_plugin_admin(
@@ -587,5 +597,18 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_reportIn
             );
             -1
         }
+    }
+}
+
+/// ADR 0054: usage events say the game's app left the foreground, or closed.
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_appLeft(
+    mut env: JNIEnv,
+    _class: JClass,
+    package: JString,
+    closed: jni::sys::jboolean,
+) {
+    if let (Ok(package), Some(sessions)) = (env.get_string(&package), crate::android_local_sessions()) {
+        sessions.app_left(&String::from(package), closed != 0);
     }
 }

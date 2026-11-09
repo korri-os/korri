@@ -113,8 +113,13 @@ pub fn list(
         {
             system_runners.insert(route.system_id.clone(), id.0.clone());
         }
-        let warnings = linux_plugin::preflight_route(root, &snapshot, registry, &route, person)
-            .map_err(|error| unavailable(error.to_string()))?;
+        // ADR 0054: an Android route has no Linux preflight and no program.
+        let warnings = if route.linux_runner.is_some() {
+            linux_plugin::preflight_route(root, &snapshot, registry, &route, person)
+                .map_err(|error| unavailable(error.to_string()))?
+        } else {
+            Vec::new()
+        };
         let package = registry
             .installed_package(&route.runner_id)
             .map_err(|error| unavailable(error.to_string()))?;
@@ -123,7 +128,10 @@ pub fn list(
             family_id: route.family_id,
             runner_build: package.package.display().to_string(),
             system_id: route.system_id,
-            program: route.linux_runner.expect("Linux runner").program,
+            program: route
+                .linux_runner
+                .map(|runner| runner.program)
+                .unwrap_or_default(),
             warnings,
         });
     }

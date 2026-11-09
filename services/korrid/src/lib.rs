@@ -75,6 +75,129 @@ pub use play_log::{PlayEntry, PlayLog};
 use plugin_admin::{PluginAdminRequest, PluginAdminResponse};
 use surface_host_access::{SurfaceHostAccess, SurfaceHostPermission};
 
+static ANDROID_LOCAL_SESSIONS: std::sync::OnceLock<Arc<android_local::AndroidLocalSessions>> =
+    std::sync::OnceLock::new();
+
+/// ADR 0054: set once by the Android edge with its app launcher.
+pub fn use_android_local_sessions(launcher: Arc<dyn android_local::AppLauncher>) {
+    let _ = ANDROID_LOCAL_SESSIONS.set(Arc::new(android_local::AndroidLocalSessions::new(launcher)));
+}
+
+pub fn android_local_sessions() -> Option<&'static Arc<android_local::AndroidLocalSessions>> {
+    ANDROID_LOCAL_SESSIONS.get()
+}
+
+async fn android_selected_launch(
+    brain: &BrainRuntime,
+    sessions: &'static Arc<android_local::AndroidLocalSessions>,
+    request: game_routes::SelectedGameLaunchRequest,
+    authorization: &authorization::AuthorizationContext,
+) -> Result<game_routes::SelectedGameLaunch, RpcFailure> {
+    let person = authorization
+        .person_public_key(brain.local_owner_public_key())
+        .map(str::to_owned)
+        .ok_or_else(|| RpcFailure {
+            code: "OwnerRequired".into(),
+            message: "Bind this device to its owner before playing".into(),
+        })?;
+    let registry = brain.registry_source.registry().map_err(|error| RpcFailure {
+        code: "PluginPolicyInvalid".into(),
+        message: error.to_string(),
+    })?;
+    let root = brain.local_storage_root.clone();
+    tokio::task::spawn_blocking(move || {
+        let (snapshot, _) = config::settings::runner_choice_snapshot(&root)
+            .map_err(game_routes::settings_failure)?;
+        let route = config::resolver::resolve_linux_route(
+            &root,
+            &snapshot,
+            &registry,
+            &request.game_id,
+            Some(&request.runner_id),
+        )
+        .map_err(|error| route_diagnostic_failure(&error))?;
+        acquisition::require_ready(&root, &registry, &route)?;
+        let session = sessions.launch(&root, &snapshot, &registry, &route, &person)?;
+        Ok(game_routes::SelectedGameLaunch {
+            session: SessionPrepared { game_id: session.game_id, launch_id: session.launch_id },
+            warnings: Vec::new(),
+        })
+    })
+    .await
+    .map_err(|_| RpcFailure {
+        code: "HostControlFailed".into(),
+        message: "Android launch worker failed".into(),
+    })?
+}
+
+fn android_session_status(session: android_local::LocalSession) -> SessionStatus {
+    SessionStatus {
+        netplay: None,
+        stream_play_launch_id: None,
+        stream_play_ended: None,
+        pending_launches: None,
+        observation_failure: None,
+        active: Some(ActiveSession {
+            steps: None,
+            netplay: None,
+            person_public_key: None,
+            stream_players: Vec::new(),
+            initial_handoff: None,
+            focus_ownership: None,
+            launch_id: session.launch_id,
+            host: None,
+            game_id: Some(session.game_id),
+            title: session.title,
+            phase: Some(match session.phase {
+                android_local::Phase::Playing => "playing".into(),
+                android_local::Phase::Left => "left".into(),
+            }),
+        }),
+        overlay: None,
+    }
+}
+
+fn android_end(
+    sessions: &android_local::AndroidLocalSessions,
+    expected: Option<&str>,
+) -> SessionEndOutcome {
+    sessions
+        .end(expected)
+        .map(|_| SessionEndOutcome::Ok(SessionEndResult { phase: SessionEndPhase::Ended }))
+        .unwrap_or_else(SessionEndOutcome::Err)
+}
+
+fn android_transition(
+    result: Result<(android_local::LocalSession, bool), RpcFailure>,
+) -> SessionTransitionOutcome {
+    result
+        .map(|(session, changed)| {
+            SessionTransitionOutcome::Ok(SessionTransitionResult {
+                launch_id: session.launch_id,
+                state: match session.phase {
+                    android_local::Phase::Left => SessionFreezerState::Frozen,
+                    android_local::Phase::Playing => SessionFreezerState::Running,
+                },
+                changed,
+            })
+        })
+        .unwrap_or_else(SessionTransitionOutcome::Err)
+}
+
+fn android_freeze(
+    sessions: &android_local::AndroidLocalSessions,
+    expected: Option<&str>,
+) -> SessionTransitionOutcome {
+    android_transition(sessions.leave(expected))
+}
+
+fn android_thaw(
+    sessions: &android_local::AndroidLocalSessions,
+    expected: Option<&str>,
+) -> SessionTransitionOutcome {
+    android_transition(sessions.resume(expected))
+}
+
 fn installed_routes_unsupported() -> RpcFailure {
     RpcFailure {
         code: "OperationUnsupported".into(),
@@ -3089,9 +3212,13 @@ async fn dispatch(
                     .await
                     .map(game_routes::SelectedGameLaunchOutcome::Ok)
                     .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
-                ServerMode::Brain(_) => {
-                    game_routes::SelectedGameLaunchOutcome::Err(installed_routes_unsupported())
-                }
+                ServerMode::Brain(brain) => match android_local_sessions() {
+                    Some(sessions) => android_selected_launch(brain, sessions, request, authorization)
+                        .await
+                        .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                        .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
+                    None => game_routes::SelectedGameLaunchOutcome::Err(installed_routes_unsupported()),
+                },
             })
         }
         RpcRequest::PeerList(_) => RpcResponse::PeerList(peer_list(state)),
@@ -3367,6 +3494,13 @@ async fn dispatch(
                 message: "This device holds no local game session.".into(),
             }))
         }
+        RpcRequest::SessionStatus(_)
+            if matches!(state.mode, ServerMode::Brain(_))
+                && android_local_sessions().is_some_and(|s| s.active().is_some()) =>
+        {
+            let session = android_local_sessions().and_then(|s| s.active()).expect("checked");
+            RpcResponse::SessionStatus(SessionStatusOutcome::Ok(android_session_status(session)))
+        }
         RpcRequest::SessionStatus(_) => {
             let (outcome, recovered_overlay_intent) = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => (
@@ -3483,6 +3617,13 @@ async fn dispatch(
                 ServerMode::Brain(brain) => brain.upstream.invoke_session_control(request).await,
             })
         }
+        RpcRequest::SessionEnd(request)
+            if matches!(state.mode, ServerMode::Brain(_))
+                && android_local_sessions().is_some_and(|s| s.active().is_some()) =>
+        {
+            let sessions = android_local_sessions().expect("checked");
+            RpcResponse::SessionEnd(android_end(sessions, request.expected_launch_id.as_deref()))
+        }
         RpcRequest::SessionEnd(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => session_stop_outcome(
@@ -3562,6 +3703,13 @@ async fn dispatch(
             };
             RpcResponse::SessionViewer(outcome)
         }
+        RpcRequest::SessionLeave(request)
+            if matches!(state.mode, ServerMode::Brain(_))
+                && android_local_sessions().is_some_and(|s| s.active().is_some()) =>
+        {
+            let sessions = android_local_sessions().expect("checked");
+            RpcResponse::SessionLeave(android_freeze(sessions, request.expected_launch_id.as_deref()))
+        }
         RpcRequest::SessionLeave(request) => {
             if cfg!(target_os = "android") {
                 if let ServerMode::Brain(brain) = &state.mode {
@@ -3629,6 +3777,13 @@ async fn dispatch(
             };
             state.reconcile_freeze_overlay_intent(request.expected_launch_id.as_deref(), &outcome);
             RpcResponse::SessionLeave(outcome)
+        }
+        RpcRequest::SessionResume(request)
+            if matches!(state.mode, ServerMode::Brain(_))
+                && android_local_sessions().is_some_and(|s| s.active().is_some()) =>
+        {
+            let sessions = android_local_sessions().expect("checked");
+            RpcResponse::SessionResume(android_thaw(sessions, request.expected_launch_id.as_deref()))
         }
         RpcRequest::SessionResume(request) => {
             if cfg!(target_os = "android") {
@@ -5931,6 +6086,7 @@ pub mod plugin_discovery;
 pub mod plugin_installation;
 pub mod nixfree_install;
 pub mod android_plugin_admin;
+pub mod android_local;
 pub mod plugin_policy;
 mod plugin_references;
 #[cfg(test)]

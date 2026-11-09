@@ -1756,6 +1756,15 @@ fn normalize_plugin(
     })
 }
 
+impl RunnerRecord {
+    /// ADR 0054: this runner starts an Android package.
+    pub fn is_android(&self) -> bool {
+        self.platforms
+            .as_ref()
+            .is_some_and(|platforms| platforms.iter().any(|p| p == "aarch64-android"))
+    }
+}
+
 fn runner_runs_on(runner: &RunnerRecord, platform: &str) -> bool {
     match &runner.platforms {
         Some(platforms) => platforms.iter().any(|p| p == platform),
