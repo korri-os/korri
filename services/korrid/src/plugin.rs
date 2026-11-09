@@ -1789,7 +1789,9 @@ fn validate_runner_platforms(local_id: &str, runner: &RunnerRecord) -> Result<bo
     match (&runner.android_packages, android) {
         (None, false) => Ok(false),
         (Some(_), false) => Err(invalid("androidPackages require platforms [aarch64-android]")),
-        (None, true) => Err(invalid("an Android runner needs androidPackages")),
+        // A provider-ref runner: each game's ref is its package (ADR 0054).
+        (None, true) if runner.systems.is_some() => Ok(true),
+        (None, true) => Err(invalid("an Android runner needs androidPackages or systems")),
         (Some(packages), true) => {
             let mut seen = BTreeSet::new();
             if packages.is_empty()
@@ -2994,6 +2996,7 @@ mod runner_platform_tests {
     fn android_runner_rules_are_strict() {
         for json in [
             r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android"]}}}"#,
+            r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android"],"androidPackages":[]}}}"#,
             r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android"],"androidPackages":["bad"]}}}"#,
             r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android"],"androidPackages":["a.b"],"program":"x"}}}"#,
             r#"{"name":"a","runners":{"r":{"platforms":["aarch64-android","aarch64-linux"],"androidPackages":["a.b"]}}}"#,
