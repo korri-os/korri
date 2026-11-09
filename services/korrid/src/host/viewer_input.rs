@@ -98,6 +98,10 @@ impl LocalInputViewer {
     }
 }
 impl LinuxStreamViewer for LocalInputViewer {
+    fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+        self.viewer.display()
+    }
+
     fn start<'a>(
         &'a self,
         launch: &'a str,

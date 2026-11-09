@@ -127,3 +127,25 @@ async fn stream_play_local_buttons_reach_seats_only_while_the_viewer_is_focused(
     drop(coordinator);
     thread.join().unwrap();
 }
+
+#[test]
+fn local_input_wrapper_reports_the_inner_viewer_display_without_input_authority() {
+    let inner = Arc::new(TestLinuxStreamViewer::default());
+    let viewer = LocalInputViewer {
+        viewer: inner.clone(),
+        control: Err(crate::RpcFailure {
+            code: "Unavailable".into(),
+            message: "no input".into(),
+        }),
+        coordinator: None,
+        operation: tokio::sync::Mutex::new(()),
+    };
+    assert_eq!(viewer.display(), None);
+    let display = crate::launcher::plugin_launch::PluginDisplay {
+        width: 2176,
+        height: 1812,
+    };
+    inner.set_display(display.clone());
+    assert_eq!(viewer.display(), Some(display));
+    assert!(inner.calls().is_empty());
+}
