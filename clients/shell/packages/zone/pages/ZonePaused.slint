@@ -1,5 +1,6 @@
-// ZonePaused: the gameplay overlay (src/plan/paused.ts). The running game's
-// art (else the grey checker of 16 art px squares), the red band a quarter
+// ZonePaused: the gameplay overlay (src/plan/paused.ts). The running game
+// itself (ADR 0053: it keeps running, and the window is see-through; Zone
+// showed the game's art muted here), the red band a quarter
 // of the height (40 to 72 art px) with Korri's title at caps-3 (caps-2
 // when it must) rising over its black slab, the yellow wedge in the
 // bottom-right corner, Korri's controls then its groups stepping down-left
@@ -11,7 +12,6 @@ import { ZoneShape } from "../ui/atoms/ZoneShape.slint";
 import { ZonePanel } from "../ui/atoms/ZonePanel.slint";
 import { ZoneCaps } from "../ui/atoms/ZoneCaps.slint";
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap.slint";
-import { ZoneVeil } from "../ui/atoms/ZoneVeil.slint";
 import { ZonePausedControl } from "../ui/organisms/ZonePausedControl.slint";
 import { ZoneStatusLayer } from "../ui/organisms/ZoneStatusLayer.slint";
 import { Row, Dialog, Busy, Hints } from "../ui/types.slint";
@@ -19,8 +19,6 @@ import { Row, Dialog, Busy, Hints } from "../ui/types.slint";
 export component ZonePaused {
     in property <string> heading: "Paused";
     in property <bool> korri-heading;
-    in property <bool> has-art;
-    in property <image> art;
     in property <[Row]> rows;
     in property <Dialog> dialog;
     in property <Busy> busy;
@@ -37,45 +35,9 @@ export component ZonePaused {
         width: root.width;
         height: root.height;
         cache-rendering-hint: true;
-        if root.a > 0: Image {
-            x: 0;
-            y: 0;
-            width: root.width;
-            height: root.height;
-            source: root.a >= 4 * Tokens.unit ? @image-url("../art/checker-4.png") : root.a >= 3 * Tokens.unit ? @image-url("../art/checker-3.png")
-                : root.a >= 2 * Tokens.unit ? @image-url("../art/checker-2.png") : @image-url("../art/checker-1.png");
-            horizontal-tiling: repeat;
-            vertical-tiling: repeat;
-            image-rendering: pixelated;
-            // Retain the existing ground, but let a live game show through it.
-            opacity: 0.35;
-        }
-        if root.has-art: Rectangle {
-            x: 0;
-            y: 0;
-            width: root.width;
-            height: root.height;
-            clip: true;
-            property <float> ratio: root.art.width / Math.max(1, root.art.height);
-            property <bool> wider: ratio > root.width / Math.max(Tokens.unit, root.height);
-            Image {
-                width: parent.wider ? root.height * parent.ratio : root.width;
-                height: parent.wider ? root.height : root.width / Math.max(0.01, parent.ratio);
-                x: (root.width - self.width) / 2;
-                y: (root.height - self.height) / 2;
-                source: root.art;
-                image-fit: fill;
-                image-rendering: pixelated;
-            }
-            // Zone shows the art in grey; Slint has no grey filter, so the
-            // veil mutes it instead (README.md, differences).
-            ZoneVeil {
-                x: 0;
-                y: 0;
-                width: root.width;
-                height: root.height;
-            }
-        }
+        // No ground and no veil: the live game shows unmuted between the band
+        // and the wedge. Every word stands on its own slab, so it reads over
+        // any frame; Zone's veil would halve the game's light.
         ZoneShape {
             x: root.width - root.wedge;
             y: root.height - root.wedge;

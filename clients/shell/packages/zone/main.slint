@@ -242,11 +242,13 @@ export component Surface inherits Window {
     }
 }
 
-// PAUSED: the Overlay, driven by overlay().
+// PAUSED: the Overlay, driven by overlay(). See-through: the running game
+// is PAUSED's ground (ADR 0053). A window without alpha (the shell on Linux)
+// shows black there instead. `has-art` and `art` stay declared for the
+// view's sake; the live game takes the cover art's place.
 export component Overlay inherits Window {
     title: "Zone overlay";
-    // The host may composite this window over a live game.
-    background: transparent;
+    background: Tokens.ground-live;
     in property <string> look: "blend";
     in property <Screen> screen: Tokens.screen;
     in property <string> heading: "Paused";
@@ -284,8 +286,6 @@ export component Overlay inherits Window {
         height: root.height;
         heading: root.heading;
         korri-heading: root.korri-heading;
-        has-art: root.has-art;
-        art: root.art;
         rows: root.rows;
         focus-at: root.focus-at;
         dialog: root.dialog;

@@ -17,7 +17,7 @@ fixtures' words and look are Zone's.
 | `src/view.ts`, `src/rows.ts` | The view. |
 | `src/keys.ts`, `src/qr.ts` | The keyboard's grid; the backup's QR code (own encoder, held equal to `qrcode` by test). |
 | `fonts/` | Zone Caps, Jersey 10 (converted from Zone's woff2), Anton; their licences; `fonts/source/` the Zone Caps grid and the font build scripts. |
-| `art/` | The veil's checker and PAUSED's grey checker, one tile per art pixel size. |
+| `art/` | The veil's checker, one tile per art pixel size. |
 | `test/` | The gates and plan tests (`bun test packages/zone/test` in `clients/shell`), and `bite.sh`, which plants a defect for each gate and shows it fail. |
 | `preview/` | `scenarios/` (Zone's fixtures as models, with the presses to each page), `shots.sh` (the real shell under Xvfb), side-by-side and five-size images. |
 
@@ -31,7 +31,11 @@ fixtures' words and look are Zone's.
   near either end of the window, a window around the focused game. The band
   travels in absolute places (`firstIndex` plus the card), so a new window
   does not move it.
-- `Overlay` draws PAUSED from `overlay()`.
+- `Overlay` draws PAUSED from `overlay()`, see-through over the running game
+  (ADR 0053): no ground and no veil, so the game shows unmuted between the
+  band and the wedge. A note that reaches past the wedge stands on a slab of
+  the wedge's yellow. A window without alpha (the shell on Linux) shows black
+  there.
 
 ## Checks
 
@@ -66,7 +70,8 @@ See the report of the conversion (stage `native-zone`); the lasting ones:
 
 - Stairs: every 45 degree edge is one straight line in all three looks
   (Zone's pixel looks cut them as one-art-px stairs).
-- PAUSED's game art is muted by the veil, not turned grey (Slint has no grey filter).
+- PAUSED shows the running game itself, unmuted, where Zone showed the game's
+  art in grey (ADR 0053).
 - A section spine's caption stands letter under letter (Slint draws no rotated text).
 - Timers come from the shell's Tick (contract 7.1, once a second): the idle
   attract, and the results tally's end of count-up and its 8 s close (to
