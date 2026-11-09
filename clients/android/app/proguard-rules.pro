@@ -75,3 +75,11 @@
     public int[] shellTakeOverlayKeys();
     public int[] shellTakeOverlayAxes();
 }
+
+# ADR 0054: Rust calls these static methods through JNI by name.
+-keep class com.simonwjackson.korri.korrid.KorriAppLauncher {
+    public static java.lang.String *(...);
+}
+# The save bridge provider is named in Korri-built game APKs' manifests and
+# its client is called from KorriAppLauncher.
+-keep class dev.korri.savebridge.** { *; }
