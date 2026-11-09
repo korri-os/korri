@@ -3233,6 +3233,24 @@ async fn dispatch(
                         .map(CatalogSnapshotOutcome::Ok)
                         .unwrap_or_else(CatalogSnapshotOutcome::Err)
                 }
+                ServerMode::Brain(brain) if android_local_sessions().is_some() => {
+                    // ADR 0054: the Android app also plays games on itself.
+                    // Its own games join the peers' library; with no peer
+                    // reachable, its own games are the library.
+                    let local = brain_local_catalog(brain, authorization);
+                    match (brain.upstream.catalog_snapshot().await, local) {
+                        (Ok(mut snapshot), Ok(local)) => {
+                            if !brain_caller_is_owner(brain, authorization) {
+                                snapshot = strip_play_stats(snapshot);
+                            }
+                            snapshot.games.extend(local.games);
+                            CatalogSnapshotOutcome::Ok(snapshot)
+                        }
+                        (Err(_), Ok(local)) => CatalogSnapshotOutcome::Ok(local),
+                        (Ok(snapshot), Err(_)) => CatalogSnapshotOutcome::Ok(snapshot),
+                        (Err(error), Err(_)) => CatalogSnapshotOutcome::Err(upstream_failure(error)),
+                    }
+                }
                 ServerMode::Brain(brain) => brain
                     .upstream
                     .catalog_snapshot()
