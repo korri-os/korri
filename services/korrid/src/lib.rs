@@ -3145,6 +3145,27 @@ async fn dispatch(
                 .await
                 .map(game_routes::GameRoutesOutcome::Ok)
                 .unwrap_or_else(game_routes::GameRoutesOutcome::Err),
+            ServerMode::Brain(brain) if android_local_sessions().is_some() => {
+                // ADR 0054: routes for games on this Android device.
+                let person = authorization
+                    .person_public_key(brain.local_owner_public_key())
+                    .map(str::to_owned);
+                let root = brain.local_storage_root.clone();
+                match brain.registry_source.registry() {
+                    Ok(registry) => tokio::task::spawn_blocking(move || {
+                        game_routes::list(&root, &registry, &request.game_id, person.as_deref())
+                    })
+                    .await
+                    .map_err(|_| installed_routes_unsupported())
+                    .and_then(|result| result)
+                    .map(game_routes::GameRoutesOutcome::Ok)
+                    .unwrap_or_else(game_routes::GameRoutesOutcome::Err),
+                    Err(error) => game_routes::GameRoutesOutcome::Err(RpcFailure {
+                        code: "PluginPolicyInvalid".into(),
+                        message: error.to_string(),
+                    }),
+                }
+            }
             ServerMode::Brain(_) => {
                 game_routes::GameRoutesOutcome::Err(installed_routes_unsupported())
             }
