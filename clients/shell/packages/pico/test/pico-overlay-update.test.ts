@@ -52,6 +52,11 @@ test("Back withdraws a destructive question before it dismisses anything", () =>
   expect(asked.state.asking).toBeUndefined()
 })
 
+test("the host Menu toggle dismisses even while a destructive question is open", () => {
+  const asked = story({ _tag: "AskedControl", control: quit }, { _tag: "PressedMenu" })
+  expect(asked.requests).toEqual([{ _tag: "DismissGameplayOverlay" }])
+})
+
 test("a confirmed question sends its control once and closes", () => {
   const { state, requests } = story({ _tag: "AskedControl", control: quit }, { _tag: "ConfirmedControl" }, { _tag: "ConfirmedControl" })
   expect(requests).toEqual([{ _tag: "InvokeGameplayControl", controlId: "quit", value: undefined }])

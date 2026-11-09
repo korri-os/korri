@@ -388,6 +388,24 @@ fn run(app: AndroidApp) -> anyhow::Result<()> {
                             shell.handle(Event::Native(events));
                         }
                     }
+                    let axes = env
+                        .call_method(activity.as_obj(), "shellTakeOverlayAxes", "()[I", &[])?
+                        .l()?;
+                    let axes = JIntArray::from(axes);
+                    let mut flat = vec![0; env.get_array_length(&axes)? as usize];
+                    env.get_int_array_region(&axes, 0, &mut flat)?;
+                    for sample in flat.chunks_exact(5) {
+                        if shell.overlay_shown() {
+                            let events = input.borrow_mut().axes(
+                                sample[0],
+                                sample[1] as f32 / 1000.0,
+                                sample[2] as f32 / 1000.0,
+                                sample[3] as f32 / 1000.0,
+                                sample[4] as f32 / 1000.0,
+                            );
+                            shell.handle(Event::Native(events));
+                        }
+                    }
                     Ok(())
                 });
                 if result.is_err() {

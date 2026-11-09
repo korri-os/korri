@@ -419,6 +419,10 @@ function menu(steps: Steps, korri: SurfaceModel): void {
       return
     }
     case "paused":
+      if (korri.presentation.kind === "gameplay-overlay") {
+        steps.put("overlay", updateOverlay(state.overlay, message, korri.presentation))
+      }
+      return
     case "onboarding":
     case "runwith":
     case "store":

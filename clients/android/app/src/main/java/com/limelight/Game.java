@@ -2119,8 +2119,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (forwardSurfaceOverlayKey(event)) return true;
-        if (handleKorriHomeKey(event)) return true;
+        if (handleKorriHomeKey(event) || forwardSurfaceOverlayKey(event)) return true;
         // Guide toggles the overlay closed. This must live at dispatch
         // level: while the overlay is showing its WebView holds focus, and
         // key events route to Chromium's internal focused child — skipping
@@ -2144,7 +2143,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyDown(KeyEvent event) {
-        if (forwardSurfaceOverlayKey(event) || handleKorriHomeKey(event)) return true;
+        if (handleKorriHomeKey(event) || forwardSurfaceOverlayKey(event)) return true;
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -2241,7 +2240,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyUp(KeyEvent event) {
-        if (forwardSurfaceOverlayKey(event) || handleKorriHomeKey(event)) return true;
+        if (handleKorriHomeKey(event) || forwardSurfaceOverlayKey(event)) return true;
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -2719,7 +2718,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     // Returns true if the event was consumed
     // NB: View is only present if called from a view callback
     public boolean handleMotionEvent(View view, MotionEvent event) {
-        if (surfaceOverlay != null) return true;
+        if (surfaceOverlay != null) {
+            KorriSurfaceHost.forward(event);
+            return true;
+        }
         // Pass through mouse/touch/joystick input if we're not grabbing
         if (!grabbedInput) {
             return false;
@@ -4305,10 +4307,25 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
+    private final KorriOverlayHomeKey overlayHomeKey = new KorriOverlayHomeKey();
+
     private boolean handleKorriHomeKey(KeyEvent event) {
-        if (!korriViewerRequested || (event.getKeyCode() != KeyEvent.KEYCODE_BUTTON_MODE
-                && event.getKeyCode() != KeyEvent.KEYCODE_BACK)) return false;
-        if (event.getAction() == KeyEvent.ACTION_UP) showGameMenu();
+        if (!korriViewerRequested) return false;
+        switch (overlayHomeKey.handle(event, surfaceOverlay != null)) {
+            case UNHANDLED: return false;
+            case OPEN:
+                showGameMenu();
+                break;
+            case CLOSE:
+                if (surfaceOverlay != null) {
+                    // Resume on the completed press, not its down edge. The up
+                    // edge must never fall through and reopen the removed View.
+                    KorriSurfaceHost.forward(KeyEvent.changeAction(event, KeyEvent.ACTION_DOWN));
+                    KorriSurfaceHost.forward(event);
+                }
+                break;
+            case CONSUMED: break;
+        }
         return true;
     }
 
@@ -4321,7 +4338,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
-        return surfaceOverlay != null || super.dispatchGenericMotionEvent(event);
+        if (surfaceOverlay != null) {
+            KorriSurfaceHost.forward(event);
+            return true;
+        }
+        return super.dispatchGenericMotionEvent(event);
     }
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {

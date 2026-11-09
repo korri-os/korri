@@ -73,4 +73,5 @@
     public boolean shellOverlayClosing();
     public void shellOverlayReleased(boolean);
     public int[] shellTakeOverlayKeys();
+    public int[] shellTakeOverlayAxes();
 }

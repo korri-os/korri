@@ -199,6 +199,38 @@ mod tests {
     }
 
     #[test]
+    fn hosted_overlay_hat_and_stick_samples_use_the_same_threshold_priority_and_repeat() {
+        let mut source = AndroidInput::default();
+        let mut router = Router::new(false);
+        source.set_active(true);
+        router.set_active(true, 0.0);
+        // Exact axes emitted by Game/KorriSurfaceHost's Nacon-style sample.
+        assert_eq!(
+            route(&mut router, source.axes(7, -0.8, 0.7, 1.0, -1.0), 0.0),
+            vec![Press::Button(Button::Up)]
+        );
+        assert!(router.tick(399.0).is_empty());
+        assert_eq!(router.tick(400.0), vec![Press::Button(Button::Up)]);
+        assert_eq!(router.tick(500.0), vec![Press::Button(Button::Up)]);
+        route(&mut router, source.axes(7, 0.0, 0.0, 0.0, 0.0), 501.0);
+        assert!(!router.holding());
+        assert!(router.tick(1000.0).is_empty());
+        assert!(route(&mut router, source.axes(7, 0.599, 0.0, 0.0, 0.0), 1001.0).is_empty());
+        assert_eq!(
+            route(&mut router, source.axes(7, 0.601, 0.0, 0.0, 0.0), 1002.0),
+            vec![Press::Button(Button::Right)]
+        );
+        route(&mut router, source.axes(7, 0.0, 0.0, 0.0, 0.0), 1003.0);
+        // Digital D-pad keys still use the same overlay router.
+        assert_eq!(
+            route(&mut router, source.key(7, 20, true).unwrap(), 1004.0),
+            vec![Press::Button(Button::Down)]
+        );
+        route(&mut router, source.key(7, 20, false).unwrap(), 1005.0);
+        assert!(!router.holding());
+    }
+
+    #[test]
     fn android_shoulders_switch_once_only_on_the_same_device() {
         let mut source = AndroidInput::default();
         let mut router = Router::new(true);

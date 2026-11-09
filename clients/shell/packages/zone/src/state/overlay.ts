@@ -54,6 +54,8 @@ export type ZoneOverlayMessage =
   | { readonly _tag: "KorriPublished" }
   /** The host's Back: withdraws a question, else asks to return to the game. */
   | { readonly _tag: "PressedBack" }
+  /** The host's overlay toggle always returns to the game. */
+  | { readonly _tag: "PressedMenu" }
   | { readonly _tag: "FocusedControl"; readonly controlId: string }
   /** A on a row. */
   | { readonly _tag: "PressedControl"; readonly controlId: string }
@@ -159,6 +161,8 @@ function step(
   switch (message._tag) {
     case "KorriPublished":
       return stay({ ...model, leaving: false })
+    case "PressedMenu":
+      return ask({ ...model, asking: undefined, answer: 0 }, { _tag: "DismissGameplayOverlay" })
     case "PressedBack":
       return model.asking !== undefined
         ? stay({ ...model, asking: undefined, answer: 0 })

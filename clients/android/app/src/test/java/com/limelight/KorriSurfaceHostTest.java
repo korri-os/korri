@@ -77,16 +77,16 @@ public class KorriSurfaceHostTest {
                 java.nio.charset.StandardCharsets.UTF_8);
         for (String method : new String[] { "android.view.Surface shellTakeOverlaySurface()",
                 "float shellOverlayDensity()", "boolean shellOverlayResized()", "boolean shellOverlayClosing()",
-                "void shellOverlayReleased(boolean)", "int[] shellTakeOverlayKeys()" }) {
+                "void shellOverlayReleased(boolean)", "int[] shellTakeOverlayKeys()", "int[] shellTakeOverlayAxes()" }) {
             assertTrue(method, rules.contains("public " + method + ";"));
         }
     }
 
-    @Test public void guideBecomesBackOnlyWhileTheSurfaceOwnsInput() {
+    @Test public void guideBecomesMenuOnlyWhileTheSurfaceOwnsInput() {
         Surface surface = new Surface(new SurfaceTexture(0));
         KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 1, () -> fail("Unexpected renderer failure"));
         KorriSurfaceHost.forward(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BUTTON_MODE));
-        assertEquals(KeyEvent.KEYCODE_BACK, KorriSurfaceHost.takeKeys()[1]);
+        assertEquals(KeyEvent.KEYCODE_MENU, KorriSurfaceHost.takeKeys()[1]);
         KorriSurfaceHost.detach(attachment);
         surface.release();
     }

@@ -1,6 +1,8 @@
 package com.limelight;
 
 import android.view.KeyEvent;
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.Surface;
 import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -14,6 +16,7 @@ public final class KorriSurfaceHost {
         final float density;
         final CountDownLatch released = new CountDownLatch(1);
         final ArrayList<Integer> keys = new ArrayList<>();
+        final ArrayList<Integer> axes = new ArrayList<>();
         final Runnable failure;
         boolean taken;
         boolean closing;
@@ -38,6 +41,7 @@ public final class KorriSurfaceHost {
             if (active != attachment) return;
             attachment.closing = true;
             attachment.keys.clear();
+            attachment.axes.clear();
             if (!attachment.taken) acknowledgeRelease(false);
         }
         boolean interrupted = false;
@@ -56,14 +60,42 @@ public final class KorriSurfaceHost {
         if (active == null) return false;
         if (!active.closing && (event.getAction() == KeyEvent.ACTION_UP
                 || (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0))) {
-            // Guide is host-owned. In an overlay it has the same meaning as Back.
+            // Guide is host-owned. Menu dismisses the overlay even over a question.
             int code = event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_MODE
-                    ? KeyEvent.KEYCODE_BACK : event.getKeyCode();
+                    ? KeyEvent.KEYCODE_MENU : event.getKeyCode();
             active.keys.add(event.getDeviceId());
             active.keys.add(code);
             active.keys.add(event.getAction() == KeyEvent.ACTION_DOWN ? 1 : 0);
         }
         return true;
+    }
+
+    /** Raw controller samples only; Rust owns threshold, D-pad priority and repeat. */
+    public static synchronized boolean forward(MotionEvent event) {
+        if (active == null) return false;
+        if (active.closing) return true;
+        if ((event.getSource() & InputDevice.SOURCE_CLASS_JOYSTICK) == 0
+                && !event.isFromSource(InputDevice.SOURCE_DPAD)) return true;
+        if (event.getActionMasked() != MotionEvent.ACTION_MOVE
+                && event.getActionMasked() != MotionEvent.ACTION_CANCEL) return true;
+        active.axes.add(event.getDeviceId());
+        for (int axis : new int[] { MotionEvent.AXIS_X, MotionEvent.AXIS_Y,
+                MotionEvent.AXIS_HAT_X, MotionEvent.AXIS_HAT_Y }) {
+            float value = event.getActionMasked() == MotionEvent.ACTION_CANCEL ? 0 : event.getAxisValue(axis);
+            active.axes.add(Float.isNaN(value) || Float.isInfinite(value) ? 0
+                    : Math.round(Math.max(-1, Math.min(1, value)) * 1000));
+        }
+        return true;
+    }
+
+    // Five integers per sample: device, X, Y, HAT_X, HAT_Y. Axis units are
+    // [-1000,1000], the same measured samples AndroidInput sends to the mapper.
+    public static synchronized int[] takeAxes() {
+        if (active == null) return new int[0];
+        int[] axes = new int[active.axes.size()];
+        for (int i = 0; i < axes.length; i++) axes[i] = active.axes.get(i);
+        active.axes.clear();
+        return axes;
     }
 
     public static synchronized Surface takeSurface() {

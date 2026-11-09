@@ -52,6 +52,70 @@ public class KorriOverlayInputTest {
         }
     }
 
+    @Test public void korriGuideSendsOneResumePairOnReleaseAcrossPreImeAndActivityDispatch() {
+        Game game = Robolectric.buildActivity(Game.class).get();
+        ReflectionHelpers.setField(game, "korriViewerRequested", true);
+        Surface surface = new Surface(new SurfaceTexture(0));
+        KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 1, () -> fail("Unexpected renderer failure"));
+        ReflectionHelpers.setField(game, "surfaceOverlay", new SurfaceView(game));
+        try {
+            assertTrue(game.handleKeyDown(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BUTTON_MODE)));
+            assertArrayEquals(new int[0], KorriSurfaceHost.takeKeys());
+            assertTrue(game.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_MODE)));
+            int[] keys = KorriSurfaceHost.takeKeys();
+            assertEquals(6, keys.length);
+            assertEquals(KeyEvent.KEYCODE_MENU, keys[1]);
+            assertEquals(1, keys[2]);
+            assertEquals(KeyEvent.KEYCODE_MENU, keys[4]);
+            assertEquals(0, keys[5]);
+            // A second route for the same release cannot enqueue another Resume.
+            assertTrue(game.handleKeyUp(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_MODE)));
+            assertArrayEquals(new int[0], KorriSurfaceHost.takeKeys());
+        } finally {
+            KorriSurfaceHost.detach(attachment);
+            surface.release();
+        }
+    }
+
+    @Test public void gameForwardsHatAndStickMotionButNotTouchAndClearsItOnClose() {
+        Game game = Robolectric.buildActivity(Game.class).get();
+        Surface surface = new Surface(new SurfaceTexture(0));
+        KorriSurfaceHost.Attachment attachment = KorriSurfaceHost.attach(surface, 1, () -> fail("Unexpected renderer failure"));
+        ReflectionHelpers.setField(game, "surfaceOverlay", new SurfaceView(game));
+        MotionEvent.PointerProperties properties = new MotionEvent.PointerProperties();
+        properties.id = 0;
+        MotionEvent.PointerCoords coords = new MotionEvent.PointerCoords();
+        coords.setAxisValue(MotionEvent.AXIS_X, -0.8f);
+        coords.setAxisValue(MotionEvent.AXIS_Y, 0.7f);
+        coords.setAxisValue(MotionEvent.AXIS_HAT_X, 1);
+        coords.setAxisValue(MotionEvent.AXIS_HAT_Y, -1);
+        MotionEvent motion = MotionEvent.obtain(0, 0, MotionEvent.ACTION_MOVE, 1,
+                new MotionEvent.PointerProperties[] { properties }, new MotionEvent.PointerCoords[] { coords },
+                0, 0, 1, 1, 7, 0, android.view.InputDevice.SOURCE_JOYSTICK, 0);
+        try {
+            assertTrue(game.dispatchGenericMotionEvent(motion));
+            assertArrayEquals(new int[] { 7, -800, 700, 1000, -1000 }, KorriSurfaceHost.takeAxes());
+            assertTrue(game.handleMotionEvent(null, motion));
+            assertArrayEquals(new int[] { 7, -800, 700, 1000, -1000 }, KorriSurfaceHost.takeAxes());
+            motion.setAction(MotionEvent.ACTION_CANCEL);
+            assertTrue(game.dispatchGenericMotionEvent(motion));
+            assertArrayEquals(new int[] { 7, 0, 0, 0, 0 }, KorriSurfaceHost.takeAxes());
+            motion.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            assertTrue(game.dispatchTouchEvent(motion));
+            assertTrue(game.dispatchGenericMotionEvent(motion));
+            assertArrayEquals(new int[0], KorriSurfaceHost.takeAxes());
+            motion.setSource(android.view.InputDevice.SOURCE_DPAD);
+            motion.setAction(MotionEvent.ACTION_MOVE);
+            assertTrue(game.dispatchGenericMotionEvent(motion));
+            KorriSurfaceHost.detach(attachment);
+            assertArrayEquals(new int[0], KorriSurfaceHost.takeAxes());
+        } finally {
+            KorriSurfaceHost.detach(attachment);
+            motion.recycle();
+            surface.release();
+        }
+    }
+
     @Test
     @Config(shadows = com.limelight.shadows.ShadowMoonBridge.class)
     public void rendererFailureRemovesOnlyTheOverlayAndKeepsTheGameAndStreamSurface() {
