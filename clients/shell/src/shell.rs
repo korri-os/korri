@@ -448,6 +448,7 @@ impl Shell {
                 outcome,
             } => self.logic_done(generation, *outcome),
         }
+        self.follow_focus();
         self.backend.local_viewer(
             self.local_viewer_presenting,
             self.current.as_ref().is_some_and(|c| c.gameplay_overlay),
@@ -486,6 +487,9 @@ impl Shell {
                 }
             }
             HostEvent::Key { key, pressed } => {
+                if !self.router.active() {
+                    return;
+                }
                 korri_input_trace::record("key_ui", format_args!("key={key:?} pressed={pressed}"));
                 let now = self.now();
                 let presses = self.router.key(key, pressed, now);
@@ -523,10 +527,13 @@ impl Shell {
     /// Input is live while any shell window has focus (the portal's rule:
     /// a page without focus receives no controller input).
     fn follow_focus(&mut self) {
-        let active = self
-            .focused
-            .as_ref()
-            .is_none_or(|windows| !windows.is_empty());
+        let gameplay = self.local_viewer_presenting
+            && !self.current.as_ref().is_some_and(|c| c.gameplay_overlay);
+        let active = !gameplay
+            && self
+                .focused
+                .as_ref()
+                .is_none_or(|windows| !windows.is_empty());
         if active == self.router.active() {
             return;
         }

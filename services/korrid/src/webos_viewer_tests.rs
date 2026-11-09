@@ -369,3 +369,24 @@ async fn child_gets_existing_native_frames_and_neutralization_before_close() {
     assert_eq!(events[2]["kind"], "device-state-complete");
     assert_eq!(events.last().unwrap()["kind"], "device-removed");
 }
+
+#[tokio::test]
+async fn dropping_viewer_reaps_child_without_a_parent_thread_reference_cycle() {
+    let fixture = Fixture::new("pass");
+    fixture
+        .viewer
+        .start("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "127.0.0.1")
+        .await
+        .unwrap();
+    let pid = fixture.pid();
+    let session = Arc::downgrade(&fixture.viewer.session);
+    let presentations = fixture.presentations.clone();
+    drop(fixture);
+    assert!(session.upgrade().is_none());
+    assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ESRCH)
+    );
+    assert_eq!(*presentations.lock().unwrap(), [true, false]);
+}

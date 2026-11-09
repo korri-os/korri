@@ -814,3 +814,26 @@ fn host_viewer_watch_and_overlay_model_drive_the_backend_without_entering_surfac
         "retired watches cannot change presentation"
     );
 }
+
+#[test]
+fn viewer_play_retires_hidden_surface_input_and_returns_it_after_stop() {
+    let mut rig = rig(&["probe", "pico"], 12, Behaviour::default());
+    let active = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let observed = active.clone();
+    rig.shell
+        .on_native_active(Box::new(move |value| observed.borrow_mut().push(value)));
+    rig.fixture.set_local_viewer_presenting(true);
+    rig.until("native attachment retired", |_| {
+        active.borrow().last() == Some(&false)
+    });
+    rig.key(Key::Right);
+    rig.key(Key::F2);
+    assert_eq!(rig.shell.current_id(), Some("probe"));
+    assert_eq!(rig.int("count"), 0.0);
+    rig.fixture.set_local_viewer_presenting(false);
+    rig.until("native attachment restored", |_| {
+        active.borrow().last() == Some(&true)
+    });
+    rig.key(Key::Right);
+    assert_eq!(rig.int("count"), 1.0);
+}

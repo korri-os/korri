@@ -190,14 +190,17 @@ fn start(
         .parent()
         .ok_or("missing app bin directory")?
         .join("korri-webos");
+    let presentation = input.clone();
     platform.viewer_factory = Some(Box::new(move |provision| {
         korrid::webos_viewer::viewer(
             executable,
             PathBuf::from(STATE_ROOT).join("moonlight"),
             provision,
-            std::sync::Arc::new(
-                |_presenting| { /* host presentation setter wired at composition */ },
-            ),
+            std::sync::Arc::new(move |presenting| {
+                if let Some(source) = presentation.get() {
+                    source.set_local_viewer_presenting(presenting);
+                }
+            }),
             std::sync::Arc::new(move || input.get().cloned()),
         )
     }));

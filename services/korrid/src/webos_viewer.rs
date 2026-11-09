@@ -270,6 +270,9 @@ impl WebosViewer {
             .name("webos-viewer-parent".into())
             .spawn(move || {
                 let child = this.launch_child(&host, port, &pin);
+                // Do not retain session -> child -> parent-thread -> session.
+                // Dropping the last viewer must still reap its owned child.
+                drop(this);
                 let live = child.is_ok();
                 if ready.send(child).is_ok() && live {
                     let _ = stopped.recv();
