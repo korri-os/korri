@@ -26,7 +26,7 @@ def check_ipk(path, product_relays):
         names = set(archive.getnames())
         assert len(names) == len(archive.getmembers()), "duplicate payload names"
         assert all(member.isfile() or member.isdir() for member in archive.getmembers())
-        expected = {'product-relays.json', 'bin/korri-webos', 'lib/libss4s.so', 'lib/ss4s-ndl-webos4.so', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid',
+        expected = {'product-relays.json', 'bin/korri-webos', 'lib/libss4s.so', 'lib/ss4s-ndl-webos4.so', 'lib/ss4s-pulse.so', 'bin/korri-shell', 'bin/fixture-korrid', 'bin/webos-korrid',
                     'cache/index.json', 'cache/surfaces/zone.json', 'cache/surfaces/pico.json',
                     'packages/zone/main.slint', 'packages/pico/main.slint',
                     'packages/zone/logic.js', 'packages/pico/logic.js'}
@@ -34,7 +34,7 @@ def check_ipk(path, product_relays):
         assert APP_BASE + 'bin/webos-owner-sign' not in names
         assert not any('KORRID_RPC_CAPABILITY' in name for name in names)
         assert APP_BASE + 'launch.sh' not in names
-        assert {name for name in names if name.endswith('.so') or '.so.' in name} == {APP_BASE + 'lib/libss4s.so', APP_BASE + 'lib/ss4s-ndl-webos4.so'}
+        assert {name for name in names if name.endswith('.so') or '.so.' in name} == {APP_BASE + 'lib/libss4s.so', APP_BASE + 'lib/ss4s-ndl-webos4.so', APP_BASE + 'lib/ss4s-pulse.so'}
         assert archive.extractfile(APP_BASE + 'product-relays.json').read() == product_relays.read_bytes()
         assert archive.getmember(APP_BASE + 'product-relays.json').mode == 0o644
         metadata = json.load(archive.extractfile(APP_BASE + 'appinfo.json'))

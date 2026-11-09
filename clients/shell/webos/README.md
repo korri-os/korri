@@ -1,8 +1,10 @@
 # webOS M2: native shell over the real local korrid
 
 Workstation tasks never contact the TV. The parent owns all TV operations.
-M2 lists the owner's federated library. It does **not** implement playback,
-remote input, a webOS network-settings adapter, or a product device-join UI.
+M2 lists the owner's federated library. The embedded M4 viewer integration is
+implemented but not yet TV-accepted; see [M4 integration](VIEWER.md).
+Remote play keys, webOS network settings and product device joining remain out
+of scope.
 `bin/korri-webos --fixture` retains M1's twelve sample games as an explicit fallback.
 There is no automatic fallback to sample data on a real-brain error.
 
@@ -16,7 +18,8 @@ composing routes. No bind/close/rebind or placeholder origin is used. Its
 per-process capability is random. The existing `start_local_server` entrypoint
 retains its explicit-origin signature and behavior for JNI.
 There are no local runners, launchers, installed plugins, systemd units, local
-person signer, D-Bus discovery worker, iroh listener, or native stream viewer.
+person signer, D-Bus discovery worker or iroh listener. The webOS edge now
+supplies the embedded exact-launch stream viewer.
 The startup signature and identity/federation schemas are unchanged. Embedded
 startup now wires the existing bounded authenticated root WebSocket and shared
 SurfaceSlot, as the shell requires for `app.surface.watch` model pushes and
@@ -383,21 +386,18 @@ validation, pacing, looping, signal cleanup and close-time frame reporting.
 The normal-mode tests compile the same launcher for the desktop. The existing
 `shell-webos-proof` uses it with the real fixture brain and SDL shell.
 
-The IPK checker inspects **all six** ELFs: four executables and two libraries.
+The IPK checker inspects **all seven** ELFs: four executables and three libraries.
 It checks ARM EABI5 soft-float, GLIBC ≤ 2.19, GLIBCXX ≤ 3.4.19 and CXXABI ≤ 1.3.7.
 It audits strong imports and direct NEEDED against the original TV evidence in
 `~/.cache/research/korri-webos-m2/evidence/tvlibs/` and the checked runtime in
 `~/.cache/research/korri-lg-b7-prep-20261029T175543Z/readiness/tv-runtime-glibc-2.19/`.
 Weak UND symbols are optional. GLOBAL/WEAK zero-valued ABS exports fail.
 
-**Pending provider copy:** the parent has no original `libgcc_s.so.1` copy yet.
-One explicit exception admits only its 13 versioned imports extracted from the
-actual M3 IPK at source `0cdccd0a682de7eb2fe357532eed059d01c366ed`. Those
-shell/brain executables ran on this B7 on 2026-11-06/07. New libgcc_s symbols
-still fail. The checker prints this limitation rather than claiming a complete
-provider proof. When the parent obtains the actual library, it takes precedence;
-remove `PENDING_LIBGCC_SYMBOLS` after verifying that copy. No other missing
-provider is allowed.
+**Real provider, 2026-11-08:** the original TV `libgcc_s.so.1` now participates
+in the same symbol audit, SHA256
+`645c0dfa0eca6d830abbc82bb11a8441176c6d33309ae9254df09efbebe33aa1`.
+The temporary 13-import exception is removed. Every required import needs a
+real provider. This library is evidence only; it is never bundled.
 
 ### SDK preparation in a fresh worktree
 

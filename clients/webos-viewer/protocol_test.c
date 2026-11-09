@@ -11,6 +11,22 @@
             return 1;                                                                              \
         }                                                                                          \
     } while (0)
+static int last_buttons, last_mask, last_x, last_y, sends;
+static int record(short slot, short mask, int buttons, unsigned char lt, unsigned char rt, short lx,
+                  short ly, short rx, short ry) {
+    (void)slot;
+    (void)lt;
+    (void)rt;
+    (void)rx;
+    (void)ry;
+    last_buttons = buttons;
+    last_mask = mask;
+    last_x = lx;
+    last_y = ly;
+    sends++;
+    return 0;
+}
+static int input(const char *json) { return kv_input_frame(json, strlen(json)); }
 int main(void) {
     const char *info = "<root "
                        "status_code=\"200\"><uniqueid>uuid</uniqueid><appversion>7.1.431.0</"
@@ -39,6 +55,48 @@ int main(void) {
         "status_code=\"200\"><resume>&bomb;</resume></root>"};
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
         CHECK(kv_session_parse(bad[i], strlen(bad[i]), 1, url) != 0);
+    int app;
+    const char *apps = "<root "
+                       "status_code=\"200\"><App><AppTitle>Other</AppTitle><ID>9</ID></"
+                       "App><App><ID>123</ID><AppTitle>Korri Stream</AppTitle></App></root>";
+    CHECK(!kv_applist_parse(apps, strlen(apps), &app) && app == 123);
+    const char *bad_apps[] = {
+        "<root status_code=\"200\"/>",
+        "<root status_code=\"200\"><App><ID>0</ID><AppTitle>Korri Stream</AppTitle></App></root>",
+        "<root status_code=\"200\"><App><ID>1</ID><ID>2</ID><AppTitle>Korri "
+        "Stream</AppTitle></App></root>",
+        "<root status_code=\"200\"><App><ID>1</ID><AppTitle>Korri "
+        "Stream</AppTitle></App><App><ID>2</ID><AppTitle>Korri Stream</AppTitle></App></root>",
+        "<!DOCTYPE root [<!ENTITY x 'Korri Stream'>]><root "
+        "status_code=\"200\"><App><ID>1</ID><AppTitle>&x;</AppTitle></App></root>"};
+    for (size_t i = 0; i < sizeof(bad_apps) / sizeof(bad_apps[0]); i++)
+        CHECK(kv_applist_parse(bad_apps[i], strlen(bad_apps[i]), &app));
+    kv_input_sender(record);
+    CHECK(!input("{\"kind\":\"device-added\",\"device\":{\"deviceId\":\"pad\",\"class\":"
+                 "\"gamepad\",\"axes\":[{\"code\":0.0,\"minimum\":-32768.0,\"maximum\":32767.0},{"
+                 "\"code\":1.0,\"minimum\":-32768.0,\"maximum\":32767.0}]}}"));
+    CHECK(!input(
+        "{\"kind\":\"input\",\"deviceId\":\"pad\",\"type\":1.0,\"code\":304.0,\"value\":1.0}"));
+    CHECK(!input("{\"kind\":\"device-state-complete\",\"deviceId\":\"pad\"}"));
+    CHECK(last_buttons == 0); /* held baseline must not be a new press */
+    CHECK(!input(
+        "{\"kind\":\"input\",\"deviceId\":\"pad\",\"type\":1.0,\"code\":304.0,\"value\":0.0}"));
+    CHECK(!input(
+        "{\"kind\":\"input\",\"deviceId\":\"pad\",\"type\":0.0,\"code\":0.0,\"value\":0.0}"));
+    CHECK(!input(
+        "{\"kind\":\"input\",\"deviceId\":\"pad\",\"type\":1.0,\"code\":304.0,\"value\":1.0}"));
+    CHECK(!input(
+        "{\"kind\":\"input\",\"deviceId\":\"pad\",\"type\":3.0,\"code\":0.0,\"value\":32767.0}"));
+    CHECK(!input(
+        "{\"kind\":\"input\",\"deviceId\":\"pad\",\"type\":3.0,\"code\":1.0,\"value\":-32768.0}"));
+    CHECK(!input(
+        "{\"kind\":\"input\",\"deviceId\":\"pad\",\"type\":0.0,\"code\":0.0,\"value\":0.0}"));
+    CHECK(last_buttons == A_FLAG && last_mask == 1 && last_x == 32767 && last_y == 32767);
+    CHECK(!input("{\"kind\":\"device-removed\",\"deviceId\":\"pad\"}"));
+    CHECK(last_buttons == 0 && last_mask == 0 && sends > 0);
+    CHECK(input("{broken") != 0);
+    kv_input_reset();
+    kv_input_sender(NULL);
     /* Real ss4s module, no SDL, display, sound server or network. Exercise its
      * open/feed/close contract twice, including the vendored close correction. */
     SS4S_Config config = {.videoDriver = "dummy", .audioDriver = "dummy"};

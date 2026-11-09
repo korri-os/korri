@@ -78,7 +78,6 @@ def audit(
     root: Path,
     evidence: Path,
     *,
-    pending_libgcc_symbols: frozenset[str] = frozenset(),
     additional_evidence: tuple[Path, ...] = (),
 ) -> None:
     bundle = [library(path) for path in elf_files(root)]
@@ -100,17 +99,14 @@ def audit(
         for item in bundle
         for name in sorted(item.zero_absolute_exports)
     ]
-    pending_exports: set[str] = set()
     for item in bundle:
         for name in item.needed:
             provider = providers.get(name)
-            if provider is None and name == "libgcc_s.so.1" and pending_libgcc_symbols:
-                pending_exports.update(pending_libgcc_symbols)
-            elif provider is None:
+            if provider is None:
                 missing.append(f"{item.path.name}: missing NEEDED {name}")
             else:
                 selected[provider.path] = provider
-    exports = pending_exports.union(*(item.exports for item in selected.values()))
+    exports = set().union(*(item.exports for item in selected.values()))
     for item in bundle:
         missing.extend(
             f"{item.path.name}: undefined {name}"
@@ -118,12 +114,6 @@ def audit(
         )
     if missing:
         raise ValueError("symbol audit failed:\n" + "\n".join(missing))
-    if pending_exports:
-        print(
-            "PENDING PROVIDER COPY: libgcc_s.so.1; only these TV-proven imports allowed:"
-        )
-        for name in sorted(pending_exports):
-            print(f"  {name}")
     for item in sorted(selected.values(), key=lambda item: str(item.path)):
         if item.path.parent in evidence_roots:
             digest = hashlib.sha256(item.path.read_bytes()).hexdigest()
@@ -134,7 +124,7 @@ def audit(
             f"{len(item.optional_imports)} weak undefined imports optional; no zero-valued ABS exports"
         )
     print(
-        "PASS: packaged imports/direct NEEDED checked (explicit pending provider noted above); weak UND optional; no zero-valued ABS exports"
+        "PASS: all required packaged imports/direct NEEDED resolve; weak UND optional; no zero-valued ABS exports"
     )
 
 

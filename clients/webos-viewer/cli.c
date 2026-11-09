@@ -38,10 +38,12 @@ int main(int argc, char **argv) {
     if (argc < 3)
         return usage();
     int identity = !strcmp(argv[1], "identity"), info = !strcmp(argv[1], "info");
+    int resolve = !strcmp(argv[1], "resolve");
     int resume = !strcmp(argv[1], "resume") || !strcmp(argv[1], "resume-check");
     int check = !strcmp(argv[1], "launch-check") || !strcmp(argv[1], "resume-check");
     int launch = !strcmp(argv[1], "launch") || resume || check;
-    if ((identity && argc != 3) || (info && argc != 6) || (!identity && !info && !launch) ||
+    if ((identity && argc != 3) || ((info || resolve) && argc != 6) ||
+        (!identity && !info && !resolve && !launch) ||
         (launch && (check ? argc != 7 : (argc != 8 && argc != 9))))
         return usage();
     unsigned port = 0, app = 0, seconds = 0;
@@ -76,6 +78,14 @@ int main(int argc, char **argv) {
         }
         if (!server.paired) {
             kv_fail("client certificate has not been provisioned");
+            goto done;
+        }
+        if (resolve) {
+            int resolved;
+            if (kv_applist(id, argv[3], port, pin, &resolved))
+                goto done;
+            printf("%d\n", resolved);
+            result = 0;
             goto done;
         }
         if ((!resume && server.current_game != 0) || (resume && server.current_game != (int)app)) {

@@ -193,6 +193,17 @@ class ViewerTests(unittest.TestCase):
             b"<state>SUNSHINE_SERVER_FREE</state></root>"
         )
 
+    def test_authenticated_applist_resolves_one_transport_without_launch(self):
+        apps = b'<root status_code="200"><App><ID>123</ID><AppTitle>Korri Stream</AppTitle></App></root>'
+        result, requests = self.request(
+            [self.response(self.serverinfo()), self.response(apps)], action="resolve"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, b"123\n")
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(requests[1].startswith(b"GET /applist?"))
+        self.assertNotIn(b"/cancel", b"".join(requests))
+
     def test_launch_uses_authenticated_session_material_and_bounds_url(self):
         from urllib.parse import parse_qs, urlsplit
 

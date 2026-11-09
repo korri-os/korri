@@ -70,6 +70,8 @@ pub mod surface_host_access;
 pub mod surface_host_input;
 #[doc(hidden)]
 pub mod webos_owner_sign;
+#[cfg(target_os = "linux")]
+pub mod webos_viewer;
 
 pub use play_log::{PlayEntry, PlayLog};
 use plugin_admin::{PluginAdminRequest, PluginAdminResponse};
@@ -5389,6 +5391,12 @@ pub type EmbeddedNativeInput = Box<
         + Send,
 >;
 
+/// Builds one platform viewer with korrid's existing authenticated broker.
+pub type EmbeddedViewerFactory = Box<
+    dyn FnOnce(linux_viewer::CertificateProvision) -> Arc<dyn linux_viewer::LinuxStreamViewer>
+        + Send,
+>;
+
 /// Effects and public product configuration supplied by the embedding host.
 #[derive(Default)]
 pub struct EmbeddedPlatform {
@@ -5398,6 +5406,8 @@ pub struct EmbeddedPlatform {
     /// None retains the empty input baseline (including Android/JNI).
     pub native_input: Option<EmbeddedNativeInput>,
     pub owner_binding: Option<owner_binding::OwnerBindingCoordinator>,
+    /// Platform viewer constructed with the existing authenticated broker.
+    pub viewer_factory: Option<EmbeddedViewerFactory>,
     pub(crate) reach: Option<federation::reach::Environment>,
     pub(crate) viewer: Option<Arc<dyn linux_viewer::LinuxStreamViewer>>,
 }
@@ -5504,8 +5514,22 @@ fn start_local_server_for_platform(
         federation.credentials.clone(),
     )
     .with_federation(federation.directory.clone());
-    let has_viewer = platform.viewer.is_some();
-    let upstream = match platform.viewer {
+    let broker = upstream.clone();
+    let provision: linux_viewer::CertificateProvision = Arc::new(move |uuid, certificate| {
+        let broker = broker.clone();
+        Box::pin(async move {
+            broker
+                .moonlight_certificate_provision(&uuid, &certificate)
+                .await
+                .map_err(|e| linux_viewer::LinuxViewerError::new(e.to_string()))
+        })
+    });
+    let viewer = platform
+        .viewer_factory
+        .map(|create| create(provision))
+        .or(platform.viewer);
+    let has_viewer = viewer.is_some();
+    let upstream = match viewer {
         Some(viewer) => upstream.with_linux_viewer(viewer),
         None => upstream,
     };

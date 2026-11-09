@@ -30,6 +30,9 @@ int kv_session_parse(const char *xml, size_t length, int resume, char url[1024])
 int kv_serverinfo_public(const char *host, unsigned http_port, kv_serverinfo *out);
 int kv_serverinfo_authenticated(kv_identity *identity, const char *host, unsigned https_port,
                                 const char *server_certificate, kv_serverinfo *out);
+int kv_applist_parse(const char *xml, size_t length, int *app_id);
+int kv_applist(kv_identity *identity, const char *host, unsigned https_port,
+               const char *server_certificate, int *app_id);
 int kv_launch(kv_identity *identity, const char *host, unsigned https_port,
               const char *server_certificate, int app_id, int resume, STREAM_CONFIGURATION *config,
               char rtsp_url[1024]);
@@ -42,6 +45,14 @@ int kv_launch(kv_identity *identity, const char *host, unsigned https_port,
 int kv_stream(const char *host, const kv_serverinfo *server, const char *rtsp_url,
               STREAM_CONFIGURATION *config, int dummy, volatile sig_atomic_t *stop,
               unsigned seconds);
+/* Inherited private socket; -1 disables workstation CLI readiness. */
+void kv_stream_channel(int descriptor);
+/* Same serialized NativeInputEvent/control records as korrid's local source. */
+typedef int (*kv_controller_send)(short, short, int, unsigned char, unsigned char, short, short,
+                                  short, short);
+void kv_input_sender(kv_controller_send send);
+int kv_input_frame(const char *json, size_t length);
+void kv_input_reset(void);
 const char *kv_error(void);
 #ifdef __cplusplus
 }

@@ -39,6 +39,8 @@ let
         tar xf ${pkgs.libopus.src} --strip-components=1 -C opus-source
         cmake -S . -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$out" \
+          -DKORRI_WEBOS_LAUNCHER=${../shell/webos/launcher.c} \
+          -DKORRI_MEDIA_SOURCE=${../webos-embedded-viewer-spike/media-test.c} \
           -DSS4S_SOURCE="$PWD/ss4s-source" \
           -DCOMMON_SOURCE=${../android/app/src/main/jni/moonlight-core/moonlight-common-c} \
           -DMBEDTLS_SOURCE="$PWD/mbedtls-source" \

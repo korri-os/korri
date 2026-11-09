@@ -167,6 +167,7 @@ struct SourceState {
     next_request: u64,
     devices: BTreeMap<String, Device>,
     clients: Vec<Option<Client>>,
+    local_viewers: Vec<mpsc::Sender<Arc<str>>>,
 }
 struct Shared {
     limits: SurfaceHostInputLimits,
@@ -181,6 +182,47 @@ pub struct SurfaceHostInputSource {
     shared: Arc<Shared>,
 }
 impl SurfaceHostInputSource {
+    /// In-process platform consumer of the SAME native frames and baseline.
+    /// Queue overflow/producer loss closes it; a viewer must neutralize on EOF.
+    pub fn subscribe_local_gamepads(&self) -> (Vec<Arc<str>>, mpsc::Receiver<Arc<str>>) {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .expect("native input mutex poisoned");
+        let (sender, receiver) = mpsc::channel(self.shared.limits.queued_events);
+        let mut baseline = Vec::new();
+        for device in state
+            .devices
+            .values()
+            .filter(|d| d.class == NativeInputDeviceClass::Gamepad)
+        {
+            baseline.push(Arc::clone(&device.text));
+            baseline.extend(device.values.values().cloned());
+            // The existing completion record distinguishes held baseline from
+            // a real press. No second controller state is maintained here.
+            let event: NativeInputEvent =
+                serde_json::from_str(&device.text).expect("encoded device");
+            if let NativeInputEvent::DeviceAdded(added) = event {
+                baseline.push(
+                    encode(
+                        &NativeInputControl::DeviceStateComplete(NativeInputDeviceStateComplete {
+                            kind: NativeInputDeviceStateCompleteKind::DeviceStateComplete,
+                            device_id: added.device.device_id,
+                        }),
+                        self.shared.limits.event_bytes,
+                    )
+                    .expect("bounded completion"),
+                );
+            }
+        }
+        state.local_viewers.retain(|queue| !queue.is_closed());
+        if state.connected && state.suspended.is_none() && state.local_viewers.is_empty() {
+            state.local_viewers.push(sender);
+        }
+        (baseline, receiver)
+    }
+
     /// A DeviceAdded without values declares a neutral arrival. Use publish_device
     /// with the complete current baseline for real controller arrivals.
     pub fn publish(&self, event: NativeInputEvent) -> Result<(), PublishError> {
@@ -396,6 +438,7 @@ impl SurfaceHostInputSource {
             .lock()
             .expect("native input mutex poisoned");
         state.devices.clear();
+        state.local_viewers.clear();
         for client in state.clients.iter_mut().flatten() {
             client.stop.send_replace(true);
             client.subscription = None;
@@ -424,6 +467,7 @@ impl SurfaceHostInputSource {
                 .expect("native request counter exhausted");
             let request_id = state.next_request.to_string();
             state.suspended = Some(request_id.clone());
+            state.local_viewers.clear();
             let mut receivers = Vec::new();
             for client in state.clients.iter_mut().flatten() {
                 // Local retirement won the same mutex: it cleared surface host data
@@ -493,6 +537,13 @@ fn broadcast(state: &mut SourceState, class: NativeInputDeviceClass, frames: &[A
     if state.suspended.is_some() {
         return;
     }
+    if class == NativeInputDeviceClass::Gamepad {
+        state.local_viewers.retain(|queue| {
+            frames
+                .iter()
+                .all(|text| queue.try_send(Arc::clone(text)).is_ok())
+        });
+    }
     for client in state.clients.iter_mut().flatten() {
         let Some(subscription) = &client.subscription else {
             continue;
@@ -559,6 +610,7 @@ pub fn router_with_surfaces(
             next_generation: 0,
             next_request: 0,
             devices: BTreeMap::new(),
+            local_viewers: Vec::new(),
             clients: (0..limits.connections).map(|_| None).collect(),
         }),
     });

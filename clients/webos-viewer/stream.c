@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #define _POSIX_C_SOURCE 200809L
 #include "internal.h"
+#include <errno.h>
 #include <opus_multistream.h>
 #include <pthread.h>
 #include <ss4s.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -17,6 +19,8 @@ static pthread_mutex_t status_lock = PTHREAD_MUTEX_INITIALIZER;
 static SS4S_Player *player;
 static OpusMSDecoder *audio;
 static int ended, fatal, connected, first_frame, frame_samples;
+static int channel = -1;
+void kv_stream_channel(int descriptor) { channel = descriptor; }
 static unsigned char *video_buffer;
 #define FRAME_LIMIT (8 * 1024 * 1024)
 static void fail_stream(void) {
@@ -212,10 +216,49 @@ int kv_stream(const char *host, const kv_serverinfo *server, const char *rtsp,
         goto done;
     }
     unsigned long long start = seconds_now();
+    int notified = 0;
+    char input[16385];
+    size_t input_used = 0;
     for (;;) {
         pthread_mutex_lock(&status_lock);
         int finished = ended || fatal, ready = connected && first_frame;
         pthread_mutex_unlock(&status_lock);
+        if (ready && !notified && channel >= 0) {
+            if (send(channel, "R", 1, MSG_NOSIGNAL) != 1) {
+                fail_stream();
+                break;
+            }
+            notified = 1;
+        }
+        if (channel >= 0) {
+            ssize_t n = recv(channel, input + input_used, sizeof(input) - input_used, MSG_DONTWAIT);
+            if (n == 0) {
+                kv_input_reset();
+                break;
+            }
+            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+                fail_stream();
+                break;
+            }
+            if (n > 0) {
+                input_used += (size_t)n;
+                size_t consumed = 0;
+                for (size_t i = 0; i < input_used; i++)
+                    if (input[i] == '\n') {
+                        if (kv_input_frame(input + consumed, i - consumed)) {
+                            fail_stream();
+                            break;
+                        }
+                        consumed = i + 1;
+                    }
+                memmove(input, input + consumed, input_used - consumed);
+                input_used -= consumed;
+                if (input_used == sizeof(input)) {
+                    fail_stream();
+                    break;
+                }
+            }
+        }
         if (*stop || finished || (seconds && seconds_now() - start >= seconds))
             break;
         if (!ready && seconds_now() - start >= 15) {
@@ -225,6 +268,7 @@ int kv_stream(const char *host, const kv_serverinfo *server, const char *rtsp,
         struct timespec delay = {.tv_sec = 0, .tv_nsec = 20000000};
         nanosleep(&delay, NULL);
     }
+    kv_input_reset();
     LiStopConnection(); /* Only the owner thread, never inside a callback. */
     pthread_mutex_lock(&status_lock);
     result = fatal || !connected || !first_frame ? -1 : 0;

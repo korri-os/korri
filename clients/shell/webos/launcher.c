@@ -20,6 +20,10 @@
 int korri_media_test_main(int argc, char **argv);
 #endif
 
+#ifdef KORRI_VIEWER
+int korri_viewer_main(int argc, char **argv);
+#endif
+
 static pid_t brain_pid, shell_pid;
 static volatile sig_atomic_t interrupted;
 static char work[PATH_MAX];
@@ -168,6 +172,16 @@ int main(int argc, char **argv) {
   if (geteuid() == 0) {
     fprintf(stderr, "korri-shell: launcher refuses root\n");
     return 1;
+  }
+  if (argc > 1 && strcmp(argv[1], "viewer") == 0) {
+#ifdef KORRI_VIEWER
+    unsetenv("CREDENTIALS_DIRECTORY");
+    unsetenv("KORRID_ADDRESS");
+    unsetenv("KORRID_SHELL_ORIGIN");
+    return korri_viewer_main(argc - 1, argv + 1);
+#else
+    return 2;
+#endif
   }
   if (argc > 1 && strcmp(argv[1], "media-test") == 0) {
 #ifdef KORRI_MEDIA_TEST

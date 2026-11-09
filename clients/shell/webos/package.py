@@ -33,26 +33,10 @@ TV_LIBRARIES = pathlib.Path.home() / '.cache/research/korri-webos-m2/evidence/tv
 TV_RUNTIME = pathlib.Path.home() / '.cache/research/korri-lg-b7-prep-20261029T175543Z/readiness/tv-runtime-glibc-2.19'
 
 
-# ONE temporary provider exception, approved by the parent on 2026-11-08.
-# Extracted from the actual M3 IPK at source 0cdccd0a682de7eb2fe357532eed059d01c366ed,
-# whose shell/brain ran on this B7 on 2026-11-06/07. Not SDK export guesses.
-# Remove this exception when the actual TV libgcc_s.so.1 copy is available.
-PENDING_LIBGCC_SYMBOLS = frozenset({
-    '_Unwind_VRS_Set@GCC_3.5', '__aeabi_unwind_cpp_pr1@GCC_3.5',
-    '__aeabi_unwind_cpp_pr0@GCC_3.5', '_Unwind_Backtrace@GCC_4.3.0',
-    '_Unwind_GetDataRelBase@GCC_3.0', '_Unwind_GetRegionStart@GCC_3.0',
-    '_Unwind_GetTextRelBase@GCC_3.0', '_Unwind_VRS_Get@GCC_3.5',
-    '__gnu_unwind_frame@GCC_3.5', '_Unwind_Resume@GCC_3.0',
-    '_Unwind_DeleteException@GCC_3.0', '_Unwind_RaiseException@GCC_3.0',
-    '_Unwind_GetLanguageSpecificData@GCC_3.0',
-})
-
-
 def audit_payload(stage):
     if not TV_LIBRARIES.is_dir():
         raise ValueError('TV symbol evidence is missing: ' + str(TV_LIBRARIES))
-    audit(stage, TV_LIBRARIES, pending_libgcc_symbols=PENDING_LIBGCC_SYMBOLS,
-          additional_evidence=(TV_RUNTIME,))
+    audit(stage, TV_LIBRARIES, additional_evidence=(TV_RUNTIME,))
 
 
 def stage_surfaces(stage, verifier):
@@ -127,7 +111,7 @@ def main():
         parser.error('source checkout must be clean')
     release = ROOT / '.cache/shell-webos-target/armv7-unknown-linux-gnueabi/release'
     binaries = [release / name for name in ('korri-webos', 'korri-shell', 'fixture-korrid', 'webos-korrid')]
-    libraries = [release / 'lib' / name for name in ('libss4s.so', 'ss4s-ndl-webos4.so')]
+    libraries = [release / 'lib' / name for name in ('libss4s.so', 'ss4s-ndl-webos4.so', 'ss4s-pulse.so')]
     dependencies = ''
     for binary in binaries + libraries:
         verify_build_record(binary, binary.parent, args.source_sha)

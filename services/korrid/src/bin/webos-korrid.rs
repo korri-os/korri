@@ -1,6 +1,6 @@
 //! webOS composition: the existing embedded brain, with no local plugins,
-//! signer, system service, reach listener or stream viewer. M2 lists peers'
-//! libraries over signed HTTP. Playback is not implemented by this edge.
+//! signer, system service or reach listener. M2 lists peers' libraries over
+//! signed HTTP. The owned multi-call viewer performs M4 transport/media.
 use std::{
     ffi::OsString,
     fs::{self, DirBuilder, File, OpenOptions},
@@ -179,7 +179,28 @@ fn start(
     private_directory(credentials, false).map_err(|error| error.to_string())?;
     let mut platform = korrid::EmbeddedPlatform::default();
     platform.relays = relays;
-    platform.native_input = Some(Box::new(evdev_input::start));
+    let input = std::sync::Arc::new(std::sync::OnceLock::new());
+    let producer = input.clone();
+    platform.native_input = Some(Box::new(move |source| {
+        let _ = producer.set(source.clone());
+        evdev_input::start(source)
+    }));
+    let executable = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .ok_or("missing app bin directory")?
+        .join("korri-webos");
+    platform.viewer_factory = Some(Box::new(move |provision| {
+        korrid::webos_viewer::viewer(
+            executable,
+            PathBuf::from(STATE_ROOT).join("moonlight"),
+            provision,
+            std::sync::Arc::new(
+                |_presenting| { /* host presentation setter wired at composition */ },
+            ),
+            std::sync::Arc::new(move || input.get().cloned()),
+        )
+    }));
     let port = korrid::start_local_shell_server(
         state.storage.to_str().ok_or("storage path must be UTF-8")?,
         state.private.to_str().ok_or("private path must be UTF-8")?,

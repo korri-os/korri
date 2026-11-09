@@ -264,3 +264,111 @@ int kv_launch(kv_identity *id, const char *host, unsigned port, const char *pin,
     free(response);
     return result;
 }
+
+/* App-list schema is Sunshine's root/App/{AppTitle,ID}. Require exactly one
+ * positive Korri Stream, never a guessed or persisted transport ID. */
+typedef struct {
+    XML_Parser parser;
+    unsigned depth;
+    int bad, root, app, field, seen, matches, id;
+    char title[1024], number[32];
+    size_t used;
+} app_document;
+static void app_reject(app_document *d) {
+    d->bad = 1;
+    XML_StopParser(d->parser, XML_FALSE);
+}
+static void XMLCALL app_start(void *context, const char *name, const char **attrs) {
+    app_document *d = context;
+    d->depth++;
+    if (d->depth == 1) {
+        int status = 0;
+        for (int i = 0; attrs[i]; i += 2)
+            if (!strcmp(attrs[i], "status_code"))
+                status = !strcmp(attrs[i + 1], "200");
+        if (strcmp(name, "root") || !status || d->root)
+            app_reject(d);
+        d->root = 1;
+    } else if (d->depth == 2 && !strcmp(name, "App")) {
+        d->app = 1;
+        d->seen = 0;
+        d->title[0] = d->number[0] = 0;
+    } else if (d->depth == 3 && d->app) {
+        d->field = !strcmp(name, "AppTitle") ? 1 : !strcmp(name, "ID") ? 2 : 0;
+        if (d->field && (d->seen & d->field))
+            app_reject(d);
+        d->seen |= d->field;
+        d->used = 0;
+    } else if (d->depth > 16 || d->field)
+        app_reject(d);
+}
+static void XMLCALL app_text(void *context, const char *data, int length) {
+    app_document *d = context;
+    if (!d->field)
+        return;
+    char *out = d->field == 1 ? d->title : d->number;
+    size_t capacity = d->field == 1 ? sizeof(d->title) : sizeof(d->number);
+    if (length < 0 || d->used + (size_t)length >= capacity) {
+        app_reject(d);
+        return;
+    }
+    memcpy(out + d->used, data, (size_t)length);
+    d->used += (size_t)length;
+    out[d->used] = 0;
+}
+static void XMLCALL app_end(void *context, const char *name) {
+    (void)name;
+    app_document *d = context;
+    if (d->depth == 3)
+        d->field = 0;
+    if (d->depth == 2 && d->app) {
+        unsigned id;
+        if (d->seen != 3 || number(d->number, INT_MAX, &id) || !id)
+            app_reject(d);
+        else if (!strcmp(d->title, "Korri Stream")) {
+            d->matches++;
+            d->id = (int)id;
+        }
+        d->app = 0;
+    }
+    d->depth--;
+}
+static void XMLCALL app_doctype(void *context, const char *a, const char *b, const char *c,
+                                int subset) {
+    (void)a;
+    (void)b;
+    (void)c;
+    (void)subset;
+    app_reject(context);
+}
+int kv_applist_parse(const char *xml, size_t length, int *app_id) {
+    if (!length || length > KV_LIMIT || memchr(xml, 0, length))
+        return kv_fail("app-list size rejected");
+    app_document d = {0};
+    d.parser = XML_ParserCreate(NULL);
+    if (!d.parser)
+        return kv_fail("app-list allocation failed");
+    XML_SetUserData(d.parser, &d);
+    XML_SetElementHandler(d.parser, app_start, app_end);
+    XML_SetCharacterDataHandler(d.parser, app_text);
+    XML_SetStartDoctypeDeclHandler(d.parser, app_doctype);
+    int valid = XML_Parse(d.parser, xml, (int)length, XML_TRUE) == XML_STATUS_OK && !d.bad &&
+                d.root && d.matches == 1;
+    XML_ParserFree(d.parser);
+    if (!valid)
+        return kv_fail("expected exactly one valid Korri Stream app");
+    *app_id = d.id;
+    return 0;
+}
+int kv_applist(kv_identity *id, const char *host, unsigned port, const char *pin, int *app_id) {
+    char path[128], uuid[37], *response;
+    size_t length;
+    if (!pin || request_uuid(uuid))
+        return kv_fail("app-list requires provisioned pin");
+    snprintf(path, sizeof(path), "/applist?uniqueid=%s&uuid=%s", id->uniqueid, uuid);
+    if (kv_http(id, host, port, pin, path, &response, &length))
+        return -1;
+    int result = kv_applist_parse(response, length, app_id);
+    free(response);
+    return result;
+}

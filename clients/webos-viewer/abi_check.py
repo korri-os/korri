@@ -12,6 +12,7 @@ from symbol_audit import elf_files
 def check(root: Path) -> None:
     for relative in (
         "bin/webos-viewer-test",
+        "bin/korri-webos",
         "lib/libss4s.so",
         "lib/ss4s-ndl-webos4.so",
         "lib/ss4s-pulse.so",
@@ -39,7 +40,12 @@ def check(root: Path) -> None:
             raise ValueError("incorrect ARM interpreter")
         if "Tag_ABI_VFP_args: VFP registers" in report:
             raise ValueError("hard-float argument ABI")
-        if "(RPATH)" in report or "(RUNPATH)" in report or "/nix/store/" in report:
+        paths = re.findall(r"\((?:RPATH|RUNPATH)\).*?\[(.*?)\]", report)
+        allowed = {"korri-webos": "$ORIGIN/../lib", "libss4s.so": "$ORIGIN"}
+        if (
+            any(value != allowed.get(path.name) for value in paths)
+            or "/nix/store/" in report
+        ):
             raise ValueError("target has build-host dynamic paths")
         versions = re.findall(r"Name: GLIBC_(\S+)", report)
         for version in versions:
@@ -47,7 +53,9 @@ def check(root: Path) -> None:
                 map(int, version.split("."))
             ) > (2, 19):
                 raise ValueError(f"unsupported GLIBC_{version}")
-        print(f"{path.relative_to(root)}: ARM32 soft-float; GLIBC <= 2.19; no RPATH")
+        print(
+            f"{path.relative_to(root)}: ARM32 soft-float; GLIBC <= 2.19; package-relative paths only"
+        )
 
 
 if __name__ == "__main__":

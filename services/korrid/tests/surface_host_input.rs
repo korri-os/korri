@@ -1350,3 +1350,45 @@ async fn current_state_key_space_and_values_are_bounded_by_linux_evdev() {
         assert_eq!(source.publish(event), Err(PublishError::InvalidInput));
     }
 }
+
+#[tokio::test]
+async fn local_viewer_gets_the_same_atomic_baseline_frames_and_eof_on_loss() {
+    let (_server, source) = server().await;
+    let NativeInputEvent::DeviceAdded(device) = added("pad", "gamepad") else {
+        unreachable!()
+    };
+    source
+        .publish_device(device.device, vec![key_value("pad", 304.0, 1.0)])
+        .unwrap();
+    let (baseline, mut frames) = source.subscribe_local_gamepads();
+    let baseline: Vec<Value> = baseline
+        .iter()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(baseline[0]["kind"], "device-added");
+    assert_eq!(baseline[1]["value"], 1.0);
+    assert_eq!(baseline[2]["kind"], "device-state-complete");
+    source
+        .publish_frame("pad", vec![key_value("pad", 304.0, 0.0)])
+        .unwrap();
+    let release: Value = serde_json::from_str(&frames.recv().await.unwrap()).unwrap();
+    let report: Value = serde_json::from_str(&frames.recv().await.unwrap()).unwrap();
+    assert_eq!(release["value"], 0.0);
+    assert_eq!(report["type"], 0.0);
+    source.reset();
+    assert!(frames.recv().await.is_none());
+}
+
+#[tokio::test]
+async fn local_viewer_input_overflow_closes_instead_of_losing_release_silently() {
+    let mut small = limits();
+    small.queued_events = 1;
+    let (_server, source) = server_with(small, SurfaceHostPermission::LocalSessions).await;
+    source.publish(added("pad", "gamepad")).unwrap();
+    let (_, mut frames) = source.subscribe_local_gamepads();
+    source
+        .publish_frame("pad", vec![key_value("pad", 304.0, 1.0)])
+        .unwrap();
+    assert!(frames.recv().await.is_some());
+    assert!(frames.recv().await.is_none());
+}
