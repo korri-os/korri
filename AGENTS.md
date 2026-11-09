@@ -166,6 +166,12 @@ repositories, and no Korri client ships an outside repository address.
 - Never compile software or dispatch builds from target devices. Follow
   `nix/device-cache/README.md` for prebuilt downloads and cache-failure policy.
   Runtime TS/JS transpilation remains part of the plugin scripting contract.
+- Every Korri device is a development device. No one waits to play on it.
+  When a deploy breaks a device and a forward fix is already known, go straight
+  to that fix; do not roll back first only to restore play. Roll back only when
+  no fix is known, when the device would otherwise become unreachable, or when
+  the rollback is part of a procedure's own failure handling. The recovery
+  limits below still apply.
 - Debug the Retroid Pocket Mini V2 on its running system with prebuilt
   artifacts and scoped runtime edits. Since 2026-10-01 it boots from internal
   UFS. `nix/devices/rpminiv2/INTERNAL.md` records the layout and recovery.
