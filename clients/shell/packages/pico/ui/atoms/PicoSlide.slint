@@ -1,0 +1,111 @@
+import { Tokens } from "../tokens.slint";
+
+// How a rack that moves by focus follows a finger (ADR 0055): the shelf,
+// RESUME, Find's and the store's results. Draws nothing. The rack adds
+// `offset` to its row's place; its carts' PicoTaps report a sideways drag
+// through `move` and the lift through `release`.
+//
+// The row stays under the finger between whole items: `offset` follows the
+// finger, held to one item either side of the place focus gives the row
+// (`rest`). Each time the finger has crossed a whole item (`pitch`), it
+// sends `dragged(region, ±n)` (by is never 0) and logic.js moves focus that
+// far; when the row's place follows the new focus, `offset` takes up the
+// difference, so the row does not jump. A lift with speed runs the fling
+// here, frame by frame, sending a step at each whole item as it slows, then
+// the row settles onto its place. Logic runs only on whole-item steps.
+//
+// The one place a drag on a rack is handled: the racks only wire it.
+export component PicoSlide {
+    // The rack's focus region: what `dragged` names.
+    in property <string> region;
+    // One item's step along the row.
+    in property <length> pitch;
+    // The row's place from focus alone (the larger, the further left the row
+    // stands); the rack's own binding.
+    in property <length> rest;
+    // Focus stands at the row's first or last item: the row gives only a
+    // little that way, and a fling stops.
+    in property <bool> first;
+    in property <bool> last;
+    // What the rack adds to its row's x.
+    out property <length> offset;
+    callback dragged(region: string, by: int);
+    // The finger is down, a fling runs, or the row settles.
+    property <bool> held;
+    property <bool> flinging;
+    property <bool> settling;
+    property <bool> active: held || flinging || settling;
+    // The finger's travel since the last whole step.
+    property <length> carry;
+    // The finger's speed, in logical px a millisecond (right is positive).
+    property <float> speed;
+    property <duration> stamp;
+    property <length> seen-rest: rest;
+    // The row's place followed a step: keep the row where the finger has it.
+    changed rest => {
+        if (active) {
+            offset = bound(offset + (rest - seen-rest));
+        }
+        seen-rest = rest;
+    }
+    pure function bound(value: length) -> length {
+        return Math.clamp(value, last ? -pitch / 4 : -pitch, first ? pitch / 4 : pitch);
+    }
+    function push(dx: length) {
+        offset = bound(offset + dx);
+        carry += dx;
+        if (pitch > 0 && carry >= pitch) {
+            let steps = Math.floor(carry / pitch);
+            carry -= steps * pitch;
+            root.dragged(region, -steps);
+        } else if (pitch > 0 && carry <= -pitch) {
+            let steps = Math.floor(-carry / pitch);
+            carry += steps * pitch;
+            root.dragged(region, steps);
+        }
+    }
+    // The finger moved `dx` along the row.
+    public function move(dx: length) {
+        let now = animation-tick();
+        let dt = (now - stamp) / 1ms;
+        stamp = now;
+        if (!held) {
+            held = true;
+            flinging = false;
+            settling = false;
+            speed = 0;
+        } else if (dt > 0 && dt < 100) {
+            speed = 0.6 * speed + 0.4 * (dx / Tokens.px(1)) / dt;
+        }
+        push(dx);
+    }
+    // The finger lifted: a fling when it was moving, else the row settles.
+    public function release() {
+        held = false;
+        if ((animation-tick() - stamp) / 1ms > 80) {
+            speed = 0;
+        }
+        flinging = Math.abs(speed) > 0.3;
+        settling = !flinging;
+    }
+    Timer {
+        interval: 16ms;
+        running: root.flinging || root.settling;
+        triggered => {
+            if (root.flinging) {
+                root.push(root.speed * 16 * Tokens.px(1));
+                root.speed = root.speed * 0.95;
+                if (Math.abs(root.speed) < 0.05 || (root.first && root.speed > 0) || (root.last && root.speed < 0)) {
+                    root.flinging = false;
+                    root.settling = true;
+                }
+            } else {
+                root.offset = Math.abs(root.offset) < Tokens.px(1) ? 0 : root.offset * 0.75;
+                if (root.offset == 0) {
+                    root.settling = false;
+                    root.carry = 0;
+                }
+            }
+        }
+    }
+}

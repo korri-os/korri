@@ -24,6 +24,7 @@ export struct StoreView {
 // GET GAMES: the providers, one provider's search on Pico's keyboard and its
 // results, then one entry and where getting it stands.
 export component PicoStore inherits Rectangle {
+    callback dragged(region: string, by: int);
     callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
     in property <StoreView> store;
@@ -39,7 +40,7 @@ export component PicoStore inherits Rectangle {
         if mode == "modal" : PicoModal { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
         if mode == "editor" : PicoTextEditor { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }
         if mode == "store" && store.view == "providers" : PicoStoreProviders { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  message: store.message; providers: store.providers; }
-        if mode == "store" && store.view == "results" : PicoStoreResults { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); } 
+        if mode == "store" && store.view == "results" : PicoStoreResults { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); } 
             search: store.search;
             note: store.search-note;
             results: store.results;

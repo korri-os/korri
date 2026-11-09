@@ -4,15 +4,19 @@
 // The binding: the one file that knows the view. `Surface` draws the catalog
 // and first-boot setup from logic.js `view()`; `Overlay` draws the pause menu
 // over a running game from `overlay()`. Every component below it takes plain
-// properties (ui/atoms … ui/templates, pages/). One generic activation
-// callback and no per-control callbacks, and no keys: the shell delivers
-// buttons to logic.js, which moves Pico's cursor. A tap or a click on a focus
-// target reports that target's id through `activated` (ADR 0055): every layer
-// passes it up to the root, and the shell carries it to logic.js as
-// `Activated { target, at, released }`. `at` is the finger's place along a
-// range's track, 0 to 1, and `at < 0` means absent; `released` is true on
-// the message sent as the finger lifts off a range, and false means absent. `touching` hides the focus highlight
-// after a tap, until the next button press.
+// properties (ui/atoms … ui/templates, pages/). Input: one generic
+// activation callback and one drag callback, no per-control callbacks, and
+// no keys. The shell delivers buttons to logic.js, which moves Pico's
+// cursor. A tap or a click on a focus target reports that target's id
+// through `activated` (ADR 0055): every layer passes it up to the root, and
+// the shell carries it to logic.js as `Activated { target, at, released }`.
+// `at` is the finger's place along a range's track, 0 to 1 (`at < 0`:
+// absent); `released` is true on the message sent as the finger lifts off a
+// range (false: absent). A sideways drag or fling on a rack that moves by
+// focus (the shelf, RESUME, Find's and the store's results) sends
+// `dragged(region, by)` each time the finger crosses a whole cart:
+// `Dragged` moves the cursor `by` carts in that region. `touching` hides the
+// focus highlight after a tap or a drag, until the next button press.
 //
 // The window's size goes to the tokens (ui/tokens.slint), and every size
 // follows from it: the layout is a function of width and height alone.
@@ -71,7 +75,9 @@ export {
 export component Surface inherits Window {
     // A focus target was tapped or clicked (ADR 0055): one callback for every target.
     callback activated(target: string, at: float, released: bool);
-    // A tap came last, not a button: the focus highlight hides.
+    // A rack that moves by focus was dragged across `by` whole items (ADR 0055).
+    callback dragged(region: string, by: int);
+    // A tap or a drag came last, not a button: the focus highlight hides.
     in property <bool> touching;
     in property <string> font-family: "Pico Tiny5";
     in property <int> font-rows: 7;
@@ -125,12 +131,12 @@ export component Surface inherits Window {
             width: displays.choose-w;
             height: displays.choose-h;
             clip: true;
-            if page == "home" : PicoHome { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; home: home; card: card; }
-            if page == "find" : PicoLibrary { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; find: find; }
+            if page == "home" : PicoHome { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; home: home; card: card; }
+            if page == "find" : PicoLibrary { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; find: find; }
             if page == "detail" : PicoGameDetail { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; detail: detail; card: card; question: question; }
             if page == "settings" : PicoSettings { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
             if page == "launch" : PicoLaunchSettings { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; panel: panel; card: card; editor: editor; identity: identity; mode: mode; }
-            if page == "store" : PicoStore { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; store: store; card: card; editor: editor; mode: mode; }
+            if page == "store" : PicoStore { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; store: store; card: card; editor: editor; mode: mode; }
             if page == "setup" : PicoOnboarding { activated(target, at, released) => { root.activated(target, at, released); }  frame: frame; setup: setup; editor: editor; identity: identity; mode: mode; }
             if page == "runner" : PicoRunnerPicker { activated(target, at, released) => { root.activated(target, at, released); }  sheet: sheet; }
             if attract.shown : PicoAttract { activated(target, at, released) => { root.activated(target, at, released); }  attract: attract; }
@@ -162,7 +168,9 @@ export component Surface inherits Window {
 export component Overlay inherits Window {
     // A focus target was tapped or clicked (ADR 0055): one callback for every target.
     callback activated(target: string, at: float, released: bool);
-    // A tap came last, not a button: the focus highlight hides.
+    // A rack that moves by focus was dragged across `by` whole items (ADR 0055).
+    callback dragged(region: string, by: int);
+    // A tap or a drag came last, not a button: the focus highlight hides.
     in property <bool> touching;
     in property <string> font-family: "Pico Tiny5";
     in property <int> font-rows: 7;

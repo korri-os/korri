@@ -1,5 +1,6 @@
 import { P8 } from "../palette.slint";
 import { Tokens, Cycle } from "../tokens.slint";
+import { PicoSlide } from "../atoms/PicoSlide.slint";
 import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 
@@ -8,6 +9,7 @@ import { PicoCart, CartView } from "../molecules/PicoCart.slint";
 // shadow that cycles under the cursor. The rack scrolls only as far as it
 // must to keep the chosen cart in view, with one cart of margin each side.
 export component PicoCartShelf inherits Rectangle {
+    callback dragged(region: string, by: int);
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <[CartView]> carts;
@@ -33,8 +35,12 @@ export component PicoCartShelf inherits Rectangle {
     changed scroll => { held = scroll; }
     height: rack-h;
     clip: true;
+    // A sideways drag slides the shelf a cart at a time; focus follows (ADR 0055).
+    slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "shelf"; pitch: root.pitch; rest: root.scroll; first: root.place <= 0; last: root.place >= root.total - 1; }
+    // Between the carts: a drag still slides, a tap does nothing.
+    PicoTap { slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: root.width; height: root.height; }
     Rectangle {
-        x: -scroll;
+        x: -scroll + slide.offset;
         y: 0;
         width: content-w;
         height: rack-h - 3 * Tokens.p;
@@ -57,7 +63,7 @@ export component PicoCartShelf inherits Rectangle {
                 accessible-item-selected: (cart.target && cart.focused);
             }
             // Over the cart and its slot: a tap on either is a tap on the cart.
-            PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: min(0, 8 * Tokens.p - parent.y); width: parent.width; height: max(parent.height, 8 * Tokens.p - parent.y + slot-h) - self.y; target: cart.target ? cart.focus-id : ""; }
+            PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: min(0, 8 * Tokens.p - parent.y); width: parent.width; height: max(parent.height, 8 * Tokens.p - parent.y + slot-h) - self.y; target: cart.target ? cart.focus-id : ""; slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); } }
             shell := PicoCart { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; cart: cart; box-w: art-w; box-h: art-h; }
         }
     }

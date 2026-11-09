@@ -46,6 +46,7 @@ export struct HomeView {
 // when the body (`room`) is short. A body too short for its content grows,
 // and the screen shell scrolls it to the cursor.
 export component PicoHomeLayout inherits VerticalLayout {
+    callback dragged(region: string, by: int);
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <HomeView> home;
@@ -71,7 +72,7 @@ export component PicoHomeLayout inherits VerticalLayout {
                 index: home.stage.index;
                 total: home.stage.total;
             }
-            rack := PicoCartShelf { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+            rack := PicoCartShelf { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
                 x: 0;
                 y: parent.height - self.height;
                 width: parent.width;
@@ -87,7 +88,7 @@ export component PicoHomeLayout inherits VerticalLayout {
         if home.body == "hero" : VerticalLayout {
             spacing: Tokens.u;
             PicoGameHero { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  title: home.hero.title; subtitle: home.hero.subtitle; open: home.hero.open; }
-            if home.hero.resume.length > 0 : PicoResumeList { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  games: home.hero.resume; first: home.hero.resume-first; count: home.hero.resume-count; focused: home.hero.resume-focused; }
+            if home.hero.resume.length > 0 : PicoResumeList { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  games: home.hero.resume; first: home.hero.resume-first; count: home.hero.resume-count; focused: home.hero.resume-focused; }
         }
         if home.body == "stage" : PicoLaunchStage { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  vertical-stretch: 1; min-height: 60 * Tokens.p; launch: home.launch; }
         if home.body == "grid" || home.body == "hero" : Rectangle { vertical-stretch: 1; }

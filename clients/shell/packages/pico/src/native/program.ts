@@ -45,7 +45,7 @@ import { update as picoUpdate } from "../state/update"
 import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScreen, sameQuery } from "./catalog"
 import { interned } from "./intern"
 import { memo, share } from "./memo"
-import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
+import { type Direction, firstIn, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
 import { cartView, type CartView, flatEntry, HINT_A, HINT_B, HINT_LR } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
 import { qrPath } from "./qr"
@@ -507,6 +507,49 @@ function activated(step: Step, message: Extract<SurfaceMessage, { _tag: "Activat
   return pressed(next, "confirm", korri)
 }
 
+/** The racks that move by focus, which a finger drags item by item (ADR 0055). */
+export const DRAG_ROWS: ReadonlySet<string> = new Set(["shelf", "resume", "results"])
+
+/**
+ * A finger dragged a rack across `by` whole items (ADR 0055): the cursor
+ * moves `by` targets along that region, one d-pad press at a time (so each
+ * step runs its `enter`, and the window follows the cursor with MoveCatalog
+ * as a walk would), and stops at the region's end. A cursor outside the
+ * region enters it first, on its active target. A region that is no drag
+ * row, or not on the screen shown, does nothing (undefined). While attract
+ * shows, the drag only wakes the screen.
+ */
+function dragged(step: Step, message: Extract<SurfaceMessage, { _tag: "Dragged" }>, korri: KorriModel): Step | undefined {
+  const { region, by } = message
+  if (!DRAG_ROWS.has(region) || !Number.isInteger(by) || by === 0 || korri.presentation.kind === "gameplay-overlay") return undefined
+  const model = picoModelFrom(korri)
+  if (model.onboarding === undefined && attractShowing(step.state.nav, model)) return run(step, [{ to: "nav", message: { _tag: "PressedScreen" } }], korri)
+  const screen = catalogScreen(step.state, korri)
+  const inRegion = screen.targets.filter(target => target.region === region)
+  if (inRegion.length === 0) return undefined
+  let next = step
+  if (!inRegion.some(target => target.id === step.state.focus)) {
+    const entry = enterRegion(inRegion, screen.active?.[region] ?? step.state.remembered[region])
+    const arrived = inRegion.find(target => target.id === entry)
+    const moved: Act = model.onboarding === undefined ? [{ to: "nav", message: { _tag: "MovedFocus" } }] : []
+    next = sync(settle(run({ ...next, state: { ...next.state, focus: entry } }, [...moved, ...(arrived?.enter ?? [])], korri), korri), korri)
+  }
+  const direction: Direction = by > 0 ? "right" : "left"
+  for (let count = 0; count < Math.abs(by); count += 1) {
+    const targets = catalogScreen(next.state, korri).targets.filter(target => target.region === region)
+    const to = moveFocus(targets, next.state.focus, direction)
+    if (to === undefined || to === next.state.focus) break
+    next = sync(settle(pressed(next, direction, korri), korri), korri)
+    if (next.state.focus !== to) break
+  }
+  return next
+}
+
+/** Where a drag enters a region: its active or remembered target, else its first. */
+function enterRegion(targets: readonly Target<Act>[], wanted: string | undefined): string | undefined {
+  return targets.some(target => target.id === wanted) ? wanted : firstIn(targets, targets[0]?.region ?? "")?.id
+}
+
 /** The pause menu's range a target stands for. */
 function rangeControl(id: string, korri: KorriModel) {
   if (korri.presentation.kind !== "gameplay-overlay") return undefined
@@ -560,6 +603,14 @@ function updated(state: State, message: SurfaceMessage, korri: KorriModel): { st
       // A button brings the focus highlight back (ADR 0055).
       if (step.state.touched) step = { ...step, state: { ...step.state, touched: false } }
       step = pressed(step, message.button, korri)
+      break
+    case "Dragged":
+      // A drag hides the focus highlight until the next button, as a tap does.
+      {
+        const slid = dragged(step, message, korri)
+        if (slid === undefined) return { state, requests: [] }
+        step = slid.state.touched ? slid : { ...slid, state: { ...slid.state, touched: true } }
+      }
       break
     case "Activated":
       // A tap hides the focus highlight until the next button.

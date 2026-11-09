@@ -1,5 +1,7 @@
 import { P8 } from "../palette.slint";
 import { Tokens } from "../tokens.slint";
+import { PicoTap } from "../atoms/PicoTap.slint";
+import { PicoSlide } from "../atoms/PicoSlide.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
 import { PicoChip } from "../atoms/PicoChip.slint";
 import { PicoRail } from "../atoms/PicoRail.slint";
@@ -32,6 +34,7 @@ export struct FindView {
 // Korri found, in a rack that keeps the cursor's game in view. Chips that do
 // not fit a row scroll with the cursor.
 export component PicoLibraryBrowser inherits VerticalLayout {
+    callback dragged(region: string, by: int);
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     alignment: start;
@@ -50,8 +53,11 @@ export component PicoLibraryBrowser inherits VerticalLayout {
         min-height: 54 * Tokens.p;
         clip: true;
         property <length> scroll: max(0, min(find.result-count * slot-w - self.width, find.focused-result * slot-w - self.width / 2 + slot-w / 2));
-        for result[i] in find.results : PicoResultRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
-            x: (find.first-result + i) * slot-w - parent.scroll;
+        // A sideways drag slides the results a game at a time; focus follows (ADR 0055).
+        slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "results"; pitch: root.slot-w; rest: parent.scroll; first: find.focused-result <= 0; last: find.focused-result >= find.result-count - 1; }
+        PicoTap { slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+        for result[i] in find.results : PicoResultRow {  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
+            x: (find.first-result + i) * slot-w - parent.scroll + slide.offset;
             y: 0;
             width: slot-w - 4 * Tokens.p;
             height: parent.height;

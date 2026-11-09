@@ -3,10 +3,11 @@
  * `Activated { target, at?, released? }`. The cursor moves there, then it
  * does what Confirm does there. A stale id does nothing; attract only wakes;
  * the focus highlight hides until the next button; hints run their button;
- * a range takes the finger's place through the hold and wait a step uses.
+ * a range takes the finger's place, sent when its snapped value changes; a
+ * drag across a rack moves the cursor item by item (`Dragged`).
  */
 import { describe, expect, test } from "bun:test"
-import type { KorriModel, SurfaceMessage, SurfaceRequest } from "../src/model"
+import type { CatalogFrom, CatalogQuery, KorriModel, SurfaceGame, SurfaceMessage, SurfaceRequest } from "../src/model"
 import { catalogScreen, init, overlay, update, view } from "../src/native/program"
 import type { State } from "../src/native/types"
 import type { PicoOverlayControlView, PicoOverlayView } from "../src/pico-overlay-view"
@@ -287,5 +288,118 @@ describe("scrolling", () => {
       pico.send(message)
       expect(pico.state().focus).toBe(focus)
     }
+  })
+})
+
+/** A korrid in miniature for paging: the cursor window over many games, every request answered. */
+class Library {
+  query: CatalogQuery = { text: "", order: "korri" }
+  from: CatalogFrom = { _tag: "Start" }
+  count = 50
+  requests: SurfaceRequest[] = []
+  constructor(public games: SurfaceGame[]) {}
+  model(): KorriModel {
+    let first = 0
+    if (this.from._tag === "Around") {
+      const id = this.from.gameId
+      const at = Math.max(0, this.games.findIndex(game => game.id === id))
+      first = Math.max(0, Math.min(at - Math.floor(this.count / 2), this.games.length - this.count))
+    }
+    const base = fixtureModel as unknown as KorriModel
+    return {
+      ...base,
+      catalog: {
+        _tag: "Ready", total: this.games.length, window: this.games.slice(first, first + this.count), firstIndex: first,
+        ...(first > 0 ? { before: `b${first}` } : {}),
+        ...(first + this.count < this.games.length ? { after: `a${first + this.count}` } : {}),
+        query: this.query,
+      },
+    } as KorriModel
+  }
+  answer(requests: readonly SurfaceRequest[]): boolean {
+    let changed = false
+    for (const request of requests) {
+      this.requests.push(request)
+      if (request._tag === "MoveCatalog") {
+        this.query = request.query
+        this.from = request.from
+        this.count = request.count
+        changed = true
+      }
+    }
+    return changed
+  }
+}
+
+function library(size: number) {
+  const korri = new Library(Array.from({ length: size }, (_, i) => ({ id: `g${i}`, title: `Game ${String(i).padStart(3, "0")}` })))
+  let state: State = init(korri.model(), {})
+  const send = (message: SurfaceMessage) => {
+    let next = update(state, message, korri.model())
+    state = next.state
+    while (korri.answer(next.requests)) {
+      next = update(state, { _tag: "KorriPublished" }, korri.model())
+      state = next.state
+    }
+  }
+  send({ _tag: "Resized", width: 640, height: 480 })
+  send({ _tag: "KorriPublished" })
+  return { korri, send, state: () => state, view: () => view(state, korri.model()) as Record<string, unknown> }
+}
+
+describe("a drag across a rack that moves by focus", () => {
+  test("moves the cursor by n carts in that region, through each cart's enter, and stops at the ends", () => {
+    const pico = library(30)
+    expect(pico.state().focus).toBe("cart:g0")
+    pico.send({ _tag: "Dragged", region: "shelf", by: 2 })
+    expect(pico.state().focus).toBe("cart:g2")
+    // Arriving chose the cart, as a d-pad move does.
+    expect(pico.state().nav.home.selectedGameId).toBe("g2")
+    pico.send({ _tag: "Dragged", region: "shelf", by: -5 })
+    expect(pico.state().focus).toBe("cart:g0")
+    pico.send({ _tag: "Dragged", region: "shelf", by: 100 })
+    expect(pico.state().focus).toBe("cart:g29")
+    pico.send({ _tag: "Dragged", region: "shelf", by: 1 })
+    expect(pico.state().focus).toBe("cart:g29")
+  })
+
+  test("asks Korri for the window as a d-pad walk does", () => {
+    const dragged = library(120)
+    const walked = library(120)
+    for (let i = 0; i < 60; i += 1) {
+      dragged.send({ _tag: "Dragged", region: "shelf", by: 1 })
+      walked.send({ _tag: "Pressed", button: "right" })
+    }
+    const paging = (korri: Library) => korri.requests.filter(request => request._tag === "MoveCatalog" || request._tag === "FocusGame")
+    expect(dragged.state().focus).toBe("cart:g60")
+    expect(paging(dragged.korri).some(request => request._tag === "MoveCatalog")).toBe(true)
+    expect(paging(dragged.korri)).toEqual(paging(walked.korri))
+    expect(dragged.state().focus).toBe(walked.state().focus)
+  })
+
+  test("hides the highlight until the next button, which shows it again", () => {
+    const pico = library(10)
+    pico.send({ _tag: "Dragged", region: "shelf", by: 1 })
+    expect(pico.view()["touching"]).toBe(true)
+    pico.send({ _tag: "Pressed", button: "right" })
+    expect(pico.view()["touching"]).toBe(false)
+  })
+
+  test("while attract shows, the first drag only wakes the screen", () => {
+    const pico = library(10)
+    pico.send({ _tag: "Tick", idleMs: 45_000 })
+    expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(true)
+    pico.send({ _tag: "Dragged", region: "shelf", by: 3 })
+    expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(false)
+    expect(pico.state().focus).toBe("cart:g0")
+  })
+
+  test("a region that is no drag row, or not on the screen, is ignored", () => {
+    const pico = shell()
+    const before = pico.state()
+    for (const region of ["menu", "floor", "resume", "results", "nope"]) {
+      expect(pico.send({ _tag: "Dragged", region, by: 1 }).state).toBe(before)
+    }
+    expect(shell(overlayModel()).send({ _tag: "Dragged", region: "shelf", by: 1 }).requests).toEqual([])
   })
 })
