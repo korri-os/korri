@@ -302,8 +302,13 @@ async fn restart_and_wait_with(
                 ["show", "--property=StatusText", "--value", INPUTD_UNIT],
             )
             .await?;
+            // Missing is healthy: inputd runs and sees no gamepad, as on a host
+            // with no controller attached. Ambiguous and Recovering are faults.
             if status.status.success()
-                && String::from_utf8_lossy(&status.stdout).trim_end() == "Ready"
+                && matches!(
+                    String::from_utf8_lossy(&status.stdout).trim_end(),
+                    "Ready" | "Missing"
+                )
             {
                 return Ok(());
             }
@@ -523,13 +528,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn active_inputd_must_publish_ready() {
+    async fn active_inputd_must_publish_ready_or_missing() {
         let root = tempfile::tempdir().unwrap();
-        let ready = fake_systemctl(root.path(), "Ready");
-        restart_and_wait_with(&ready, Duration::from_secs(1), Duration::from_millis(1))
-            .await
-            .unwrap();
-        for status in ["Missing", "Ambiguous", "Recovering"] {
+        for status in ["Ready", "Missing"] {
+            let script = fake_systemctl(root.path(), status);
+            restart_and_wait_with(&script, Duration::from_secs(1), Duration::from_millis(1))
+                .await
+                .unwrap();
+        }
+        for status in ["Ambiguous", "Recovering"] {
             let script = fake_systemctl(root.path(), status);
             assert!(restart_and_wait_with(
                 &script,
