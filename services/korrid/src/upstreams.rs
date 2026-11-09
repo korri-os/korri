@@ -307,8 +307,9 @@ struct SelectedRemoteSession {
     route: SelectedRemoteRoute,
     launch_id: String,
     viewer: Option<SelectedViewer>,
-    /// Local Open Korri intent; independent of the far execution phase.
-    viewer_backgrounded: bool,
+    /// Local viewer intent, using its existing Running/Backgrounded/Stopped
+    /// lifecycle. Independent of the far game's execution phase.
+    viewer_target: LinuxViewerStatus,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1003,7 +1004,7 @@ impl UpstreamRegistry {
                     launch_id: prepared.session_id,
                 };
                 self.set_selected(SelectedRemoteSession {
-                    viewer_backgrounded: false,
+                    viewer_target: LinuxViewerStatus::Running,
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Legacy {
                         label: host.label.clone(),
@@ -1039,7 +1040,7 @@ impl UpstreamRegistry {
                 );
                 let prepared = client.prepare_stream(game_id, viewer_display).await?;
                 let selected = SelectedRemoteSession {
-                    viewer_backgrounded: false,
+                    viewer_target: LinuxViewerStatus::Running,
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Native {
                         device_public_key: route_key,
@@ -1101,7 +1102,11 @@ impl UpstreamRegistry {
         let Some(viewer) = &selected.viewer else {
             return Ok(());
         };
-        let viewer_backgrounded = selected.viewer_backgrounded || far_phase.viewer_backgrounded();
+        if selected.viewer_target == LinuxViewerStatus::Stopped {
+            return Ok(());
+        }
+        let viewer_backgrounded = selected.viewer_target == LinuxViewerStatus::Backgrounded
+            || far_phase.viewer_backgrounded();
         let mut recovering = selected.clone();
         let result = match self.viewer.status(&selected.launch_id).await {
             Ok(LinuxViewerStatus::Running) if viewer_backgrounded => {
@@ -1359,14 +1364,22 @@ impl UpstreamRegistry {
         let registry = self.resolved()?;
         let _mutation = registry.remote_prepare_mutation.lock().await;
         let selected = registry.exact_live_selection(expected).await?;
-        registry
-            .viewer
-            .resume_and_focus(&selected.launch_id)
-            .await
-            .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
-        let mut resumed = selected.clone();
-        resumed.viewer_backgrounded = false;
-        registry.set_selected(resumed);
+        if selected.viewer_target == LinuxViewerStatus::Stopped {
+            // Disconnect retains the exact far identity, not a decoder. Renew
+            // its route and restart only this viewer when the person resumes.
+            let mut resumed = selected.clone();
+            resumed.viewer_target = LinuxViewerStatus::Running;
+            registry
+                .recover_viewer(&resumed, RecoveredFarPhase::Running)
+                .await?;
+        } else {
+            registry
+                .viewer
+                .resume_and_focus(&selected.launch_id)
+                .await
+                .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
+        }
+        registry.set_viewer_target(&selected, LinuxViewerStatus::Running);
         Ok(SessionTransitionResult {
             launch_id: selected.launch_id,
             state: crate::SessionFreezerState::Running,
@@ -1387,16 +1400,25 @@ impl UpstreamRegistry {
             crate::SessionViewerAction::Disconnect => registry.viewer.stop(expected).await,
         }
         .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
-        if action == crate::SessionViewerAction::OpenKorri {
-            let mut backgrounded = selected.clone();
-            backgrounded.viewer_backgrounded = true;
-            registry.set_selected(backgrounded);
-        }
-        if action == crate::SessionViewerAction::Disconnect {
-            if matches!(selected.participation, Participation::StreamPlayer { .. }) {
+        match action {
+            crate::SessionViewerAction::OpenKorri => {
+                registry.set_viewer_target(&selected, LinuxViewerStatus::Backgrounded)
+            }
+            crate::SessionViewerAction::Disconnect
+                if matches!(selected.participation, Participation::StreamPlayer { .. }) =>
+            {
                 registry.stop_stream_player(&selected).await?;
-            } else {
-                registry.clear_selected_if(&selected);
+            }
+            crate::SessionViewerAction::Disconnect => {
+                if let Some(reach) = selected
+                    .viewer
+                    .as_ref()
+                    .and_then(|viewer| viewer.reach.as_ref())
+                {
+                    reach.release();
+                }
+                registry.set_viewer_target(&selected, LinuxViewerStatus::Stopped);
+                registry.set_viewer_confirmed(&selected, false);
             }
         }
         Ok(())
@@ -1842,6 +1864,18 @@ impl UpstreamRegistry {
         *current = Some(selected);
     }
 
+    fn set_viewer_target(&self, expected: &SelectedRemoteSession, target: LinuxViewerStatus) {
+        let mut selected = self
+            .selected_remote_session
+            .lock()
+            .expect("selected remote session mutex poisoned");
+        if let Some(current) = selected.as_mut().filter(|current| {
+            current.route == expected.route && current.launch_id == expected.launch_id
+        }) {
+            current.viewer_target = target;
+        }
+    }
+
     fn set_viewer_confirmed(&self, expected: &SelectedRemoteSession, confirmed_live: bool) {
         let mut selected = self
             .selected_remote_session
@@ -1975,7 +2009,7 @@ mod tests {
             .find(|host| matches!(host.client, RegisteredClient::Native(_)))
             .unwrap();
         registry.set_selected(SelectedRemoteSession {
-            viewer_backgrounded: false,
+            viewer_target: LinuxViewerStatus::Running,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: host.native_route_key().unwrap(),
@@ -3120,7 +3154,7 @@ command = ["native-game"]
             .find(|host| matches!(host.client, RegisteredClient::Native(_)))
             .unwrap();
         registry.set_selected(SelectedRemoteSession {
-            viewer_backgrounded: false,
+            viewer_target: LinuxViewerStatus::Running,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: host.native_route_key().unwrap(),
@@ -3408,14 +3442,38 @@ command = ["native-game"]
             .session_viewer(&launch, crate::SessionViewerAction::Disconnect)
             .await
             .unwrap();
-        assert!(registry.selected().is_none());
-        assert_eq!(
-            state.active_phase.lock().unwrap().as_deref(),
-            Some("running")
-        );
         assert_eq!(
             viewer.calls().last().unwrap().action,
             LinuxViewerAction::Stop
+        );
+        let starts_before_status = viewer
+            .calls()
+            .iter()
+            .filter(|c| c.action == LinuxViewerAction::Start)
+            .count();
+        for _ in 0..3 {
+            let status = registry.session_status().await.unwrap();
+            let active = active_session(&status).unwrap();
+            assert_eq!(active.launch_id, launch);
+            assert_eq!(active.phase.as_deref(), Some("running"));
+        }
+        assert_eq!(
+            starts_before_status,
+            viewer
+                .calls()
+                .iter()
+                .filter(|c| c.action == LinuxViewerAction::Start)
+                .count()
+        );
+        registry.session_resume_live(Some(&launch)).await.unwrap();
+        assert_eq!(
+            viewer.calls().last().unwrap().action,
+            LinuxViewerAction::Start
+        );
+        assert_eq!(viewer.calls().last().unwrap().launch_id, launch);
+        assert_eq!(
+            state.active_phase.lock().unwrap().as_deref(),
+            Some("running")
         );
     }
 
@@ -4350,7 +4408,7 @@ command = ["native-game"]
             UpstreamHostConfig::native("sobo", reachable),
         ]);
         let selected = SelectedRemoteSession {
-            viewer_backgrounded: false,
+            viewer_target: LinuxViewerStatus::Running,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: registry.hosts[0].device_public_key.clone().unwrap(),
@@ -4500,7 +4558,7 @@ command = ["native-game"]
             "http://127.0.0.1:9".into(),
         )]);
         let selected = SelectedRemoteSession {
-            viewer_backgrounded: false,
+            viewer_target: LinuxViewerStatus::Running,
             participation: Participation::Starter,
             route: SelectedRemoteRoute::Native {
                 device_public_key: registry.hosts[0].device_public_key.clone().unwrap(),

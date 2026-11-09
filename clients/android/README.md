@@ -124,8 +124,9 @@ Surface focus are tracked separately, including after Open Korri.
 
 Open Korri backgrounds the exact viewer and releases its decoder, but retains
 its selected launch for Resume. Observation does not reopen it automatically.
-Disconnect stops the exact viewer and releases its selection without ending or
-freezing the far game. End uses the existing exact far-session End operation.
+Disconnect stops the exact viewer without ending or freezing the far game.
+The selected far launch stays observable and resumable; status reads never
+restart a viewer the person disconnected. End uses the existing exact far-session End operation.
 The legacy non-Korri `overlay.html` path is unchanged.
 
 ## Identity and discovery
