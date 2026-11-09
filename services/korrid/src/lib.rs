@@ -5755,8 +5755,13 @@ enum EmbeddedOrigin<'a> {
 }
 
 fn embedded_registry_source() -> plugin_policy::RegistrySource {
-    // Both public embedded entrypoints use an explicit empty selection,
-    // never the standalone Linux installed registry.
+    // ADR 0054: the Android app installs plugins into its own storage and
+    // reads them from there (plugin_installation::read).
+    if plugin_installation::android_store().is_some() {
+        return plugin_policy::RegistrySource::Installed;
+    }
+    // Other embedded entrypoints use an explicit empty selection, never the
+    // standalone Linux installed registry.
     plugin_policy::RegistrySource::Selected(Arc::new(
         plugin::PluginRegistry::new(Vec::new(), Vec::new())
             .expect("an empty plugin selection is valid"),
