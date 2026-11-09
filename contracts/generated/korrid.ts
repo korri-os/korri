@@ -216,6 +216,41 @@ export interface ActiveSession {
 	phase?: string;
 }
 
+export enum AndroidLaunchData {
+	Content = "content",
+}
+
+/**
+ * ADR 0054: how an Android runner starts its app. Separate fields, never an
+ * `intent:` string. korrid adds the content grant and launch flags itself;
+ * a plugin cannot name either.
+ */
+export interface AndroidLaunch {
+	package: string;
+	/** Omitted: the package's current launcher activity, looked up at launch. */
+	activity?: string;
+	action?: string;
+	/** Only `content`: a read-only grant for exactly this launch's game file. */
+	data?: AndroidLaunchData;
+}
+
+export enum SaveKind {
+	Save = "save",
+	Savestate = "savestate",
+	Screenshot = "screenshot",
+}
+
+export interface SaveLocation {
+	key: string;
+	kind: SaveKind;
+	path: string;
+}
+
+export interface AndroidLaunchOutput {
+	android: AndroidLaunch;
+	saveLocations?: SaveLocation[];
+}
+
 export interface SemanticFormat {
 	id: string;
 	version?: string;
@@ -468,6 +503,23 @@ export interface IdentityStatusRequest {
 
 export interface IdentitySwitchCompleted {
 	ownerPublicKey: string;
+}
+
+/**
+ * ADR 0054: the installed-app form of discovery input. Only fields that
+ * Android's PackageManager produces.
+ */
+export interface InstalledApp {
+	packageName: string;
+	label: string;
+	/** `ApplicationInfo.category == CATEGORY_GAME` or the legacy `isGame` flag. */
+	isGame: boolean;
+	/** The person added this app to the library themselves. */
+	added: boolean;
+}
+
+export interface InstalledAppsDiscoveryInput {
+	apps: InstalledApp[];
 }
 
 export interface Invite {
@@ -1193,18 +1245,6 @@ export interface ProvisionedFile {
 	content: string;
 }
 
-export enum SaveKind {
-	Save = "save",
-	Savestate = "savestate",
-	Screenshot = "screenshot",
-}
-
-export interface SaveLocation {
-	key: string;
-	kind: SaveKind;
-	path: string;
-}
-
 /**
  * Legacy launch plan plus the existing provisioned files/directories.
  * Approval authorizes output; this treaty adds no path or argument policy.
@@ -1340,6 +1380,11 @@ export interface PluginLaunchInput {
 	/** Ready runtime paths, under own bare keys or full foreign artifact ids. */
 	artifacts: Record<string, string>;
 	overrides?: PluginLaunchOverrides;
+	/**
+	 * ADR 0054: on Android, the installed one of the runner's
+	 * `androidPackages`.
+	 */
+	androidPackage?: string;
 }
 
 /** Legacy `PluginListResponse`. */
