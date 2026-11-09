@@ -19,6 +19,9 @@ for authors who know it.
   Nix.
 - Getting started needs no CI and no account on a hosting service. A CI
   template is optional, for authors who want it.
+- A device without Nix (the Android app, ADR 0054) may read and verify a
+  published Nix archive and its signature itself. Korri never writes Nix
+  formats.
 - An author who knows Nix keeps full control: their own `plugin.nix`, their
   own flake, and every builder input.
 

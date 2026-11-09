@@ -1,12 +1,12 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Plugins launch Android apps, and the Android app ships only as a sideload
 
-**Owner decisions, 2026-11-08.** The design interview about Android apps
-launched through plugins is not finished. This record holds the decisions made
-so far. It becomes accepted when the interview ends.
+**Owner decisions, 2026-11-08 and 2026-11-09.** The design interview about
+Android apps launched through plugins. The owner accepted the result on
+2026-11-09 and chose to build the first four validation candidates.
 
 ## Decision
 
@@ -14,8 +14,9 @@ so far. It becomes accepted when the interview ends.
   three kinds of app: an external emulator app started with a game file
   (Dolphin, NetherSX2, Azahar, DuckStation), a native Android game installed
   on the phone (legacy `@korri:android-app`), and an emulator APK that Korri
-  builds and patches itself (legacy `plugins/retroarch/android/`). The in-app
-  libretro cores of #293 are a separate route and not part of this decision.
+  builds and patches itself (legacy `plugins/retroarch/android/`). Engines
+  that run inside Korri's own app, such as the libretro cores of #293, are a
+  fourth route (see "User data", case 1).
 - **Sideload only.** The Android app does not ship on Google Play. This
   answers question 1 of #291. Play rules limit `QUERY_ALL_PACKAGES`,
   accessibility services, All-files access and downloaded executable code,
@@ -82,6 +83,30 @@ so far. It becomes accepted when the interview ends.
   follows nixpkgs' `lib.systems.examples.aarch64-android`. Nix itself has no
   Android system string: that example elaborates to `aarch64-linux` (checked
   2026-11-08).
+- **The phone reads Nix packages without Nix.** Nix still builds and signs
+  every plugin (ADR 0048). korrid on Android installs a catalog release by
+  checking the archive SHA-256, the narinfo ed25519 signature against the
+  publisher key the device owner trusts (ADR 0044), and the NAR hash, then
+  unpacking it into the app's private storage. Korri reads Nix formats on the
+  phone; it never writes them. An Android release carries no `packages`,
+  `files` or `services`, and korrid refuses one that does.
+- **Android dependencies are releases.** `requires` names Nix store paths,
+  which the phone cannot resolve. An Android release names its dependencies
+  through `requiresReleases` only.
+- **User data, four cases.** Every plugin keeps the one save contract
+  (`saveLocations`), and korrid copies at session boundaries, as on Linux.
+  Only how korrid reaches the folder differs:
+  1. *Inside Korri's app*: plain folders in Korri's storage. Only for engines
+     that Korri builds and audits, because they share Korri's Linux user ID
+     and could read korrid's files.
+  2. *A Korri-built APK*: the **Korri save bridge**, a small library in each
+     such APK with a provider that only Korri's signing key can call. korrid
+     copies saves in before launch, tells the app to quit on End, and copies
+     them out after. The engine keeps plain paths in its own storage.
+  3. *A third-party app that writes to a folder the person picks*: a
+     persistable folder grant.
+  4. *A third-party app with a closed folder*: it still launches, but its
+     saves stay outside sync.
 - **A refused permission weakens the session, not the launch.** Without the
   accessibility service there is no Guide button. Without Usage access, the
   session ends only when the person comes back to Korri. Korri says what is
