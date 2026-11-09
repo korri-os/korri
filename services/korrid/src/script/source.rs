@@ -320,6 +320,24 @@ fn component(directory: &File, name: &str) -> Result<File, std::io::Error> {
     }
 }
 
+/// One directory step that needs search permission only (`O_PATH`).
+fn path_component(parent: &File, name: &str) -> std::io::Result<File> {
+    let name = CString::new(name).map_err(|_| std::io::ErrorKind::InvalidInput)?;
+    let fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        // openat returned a new, exclusively owned descriptor.
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+}
+
 fn open_root(root: &Path, budget: &mut Budget) -> Result<File, String> {
     let root = root.to_str().ok_or("source root must be UTF-8")?;
     let relative = root
@@ -330,15 +348,18 @@ fn open_root(root: &Path, budget: &mut Budget) -> Result<File, String> {
     }
     budget.paths(root.len())?;
     budget.step()?;
+    // O_PATH walks the ancestors with search permission only. An Android
+    // app may not read "/" or "/data", but may pass through them to its own
+    // private folders (ADR 0054). Every step still refuses symlinks.
     let mut directory = OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open("/")
         .map_err(|_| "source root unavailable")?;
     for part in relative.split('/').filter(|part| !part.is_empty()) {
         budget.step()?;
         budget.paths(part.len() + 1)?;
-        directory = component(&directory, part)
+        directory = path_component(&directory, part)
             .map_err(|_| "source root must be an exact directory without symlinks")?;
         if !directory
             .metadata()
