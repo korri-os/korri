@@ -1,0 +1,145 @@
+call,main-1,branch-1,main-2,branch-2,main-3,branch-3,main-4,branch-4,main-5,branch-5
+overlay after Pressed back (close MENU),0.21,0.285,0.184,0.203,0.215,0.225,0.405,0.422,0.467,0.385
+overlay after Pressed back (find),0.197,0.17,0.171,0.193,0.223,0.39,0.47,0.356,0.432,0.457
+overlay after Pressed back (game),0.121,0.124,0.092,0.105,0.196,0.2,0.245,0.221,0.228,0.242
+overlay after Pressed back (settings),0.106,0.178,0.099,0.1,0.174,0.252,0.246,0.228,0.254,0.306
+overlay after Pressed confirm (SETTINGS),0.109,0.091,0.096,0.136,0.118,0.241,0.24,0.183,0.232,0.267
+overlay after Pressed confirm (open Find),0.147,0.173,0.103,0.137,0.155,0.266,0.278,0.288,0.313,0.371
+overlay after Pressed confirm (open MENU),0.137,0.183,0.102,0.126,0.123,0.246,0.245,0.22,0.257,0.273
+overlay after Pressed confirm (open the game),0.111,0.112,0.152,0.123,0.128,0.204,0.227,0.19,0.235,0.197
+overlay after Pressed confirm (wakes),0.109,0.113,0.171,0.125,0.178,0.221,0.26,0.245,0.258,0.199
+overlay after Pressed down (find),0.188,0.198,0.1,0.138,0.273,0.26,0.299,0.237,0.301,0.279
+overlay after Pressed down (game),0.101,0.107,0.094,0.108,0.112,0.186,0.214,0.181,0.184,0.188
+overlay after Pressed down (grid),0.202,0.184,0.177,0.204,0.401,0.37,0.525,0.439,0.516,0.478
+overlay after Pressed down (menu),0.125,0.159,0.188,0.122,0.124,0.24,0.277,0.221,0.263,0.278
+overlay after Pressed down (pause menu),1.286,1.858,1.238,1.337,1.56,2.158,2.409,2.298,2.884,2.726
+overlay after Pressed down (settings),0.109,0.087,0.09,0.104,0.117,0.232,0.212,0.18,0.195,0.255
+overlay after Pressed down (to MENU),0.205,0.413,0.182,0.212,0.217,0.34,0.391,0.416,0.406,0.371
+overlay after Pressed left,0.191,0.237,0.175,0.195,0.335,0.333,0.417,0.349,0.455,0.374
+overlay after Pressed menu (back to the shelf),0.242,0.219,0.216,0.379,0.272,0.479,0.302,0.433,0.556,0.507
+overlay after Pressed menu (grid),0.216,0.29,0.198,0.215,0.265,0.395,0.493,0.396,0.495,0.5
+overlay after Pressed menu (hero),0.225,0.228,0.197,0.273,0.267,0.405,0.551,0.492,0.58,0.542
+overlay after Pressed right,0.199,0.177,0.182,0.195,0.308,0.327,0.335,0.378,0.428,0.404
+overlay after Pressed right (find),0.212,0.277,0.179,0.2,0.294,0.41,0.415,0.397,0.445,0.497
+overlay after Pressed right (grid),0.289,0.272,0.209,0.203,0.263,0.415,0.529,0.49,0.525,0.483
+overlay after Pressed right (hero),0.227,0.295,0.199,0.205,0.243,0.258,0.512,0.484,0.594,0.509
+overlay after Pressed up (hero),0.216,0.324,0.177,0.265,0.25,0.338,0.52,0.416,0.535,0.474
+overlay after Resized,0.217,0.255,0.206,0.303,0.269,0.319,0.326,0.354,0.436,0.419
+overlay after Tick,0.115,0.172,0.111,0.106,0.128,0.198,0.235,0.24,0.243,0.198
+overlay after catalog again,0.161,0.174,0.149,0.11,0.122,0.195,0.244,0.262,0.247,0.191
+overlay after catalog again after the game,0.216,0.237,0.233,0.172,0.255,0.279,0.269,0.214,0.429,0.42
+overlay after catalog arrives,0.17,0.154,0.221,0.137,0.255,0.313,0.229,0.346,0.324,0.33
+overlay after clock,0.188,0.276,0.184,0.19,0.313,0.342,0.37,0.336,0.41,0.357
+overlay after pause menu,1.748,2.578,1.653,1.945,1.955,2.817,2.859,2.999,3.644,3.562
+overlay after status,0.178,0.211,0.16,0.178,0.217,0.327,0.359,0.358,0.414,0.324
+overlay after status back,0.191,0.381,0.175,0.192,0.276,0.389,0.391,0.374,0.41,0.354
+setModel after Pressed back (close MENU),1.669,2.583,1.311,1.394,1.668,1.781,2.999,3.047,3.016,2.929
+setModel after Pressed back (find),1.426,1.224,1.215,1.389,1.553,2.822,2.705,2.431,2.67,2.963
+setModel after Pressed down (find),1.662,1.396,1.283,1.382,1.704,3.077,2.617,2.948,2.976,3.021
+setModel after Pressed down (grid),1.415,1.89,1.234,1.391,2.896,2.637,2.927,2.955,2.988,2.919
+setModel after Pressed down (to MENU),1.454,2.476,1.338,1.609,2.784,2.837,2.903,2.983,3.079,2.914
+setModel after Pressed left,1.41,2.245,1.281,1.45,2.165,2.592,2.818,2.754,3.046,2.809
+setModel after Pressed menu (back to the shelf),1.478,2.334,1.306,2.43,1.611,1.576,1.678,2.316,3.365,3.091
+setModel after Pressed menu (grid),1.463,1.902,1.273,1.335,1.748,2.957,2.616,2.879,2.884,3.294
+setModel after Pressed menu (hero),2.094,2.861,1.827,2.138,2.464,3.863,4.142,4.66,4.217,4.337
+setModel after Pressed right,1.459,1.299,1.344,1.408,2.488,2.514,2.756,2.969,2.972,2.917
+setModel after Pressed right (find),1.385,2.039,1.25,1.304,1.503,2.89,2.838,2.614,2.935,3.055
+setModel after Pressed right (grid),1.48,1.216,1.266,1.383,1.59,2.601,2.979,2.749,2.903,3.151
+setModel after Pressed right (hero),2.025,2.821,1.833,1.94,2.298,4.012,4.136,3.181,4.393,4.403
+setModel after Pressed up (hero),2.156,3.401,1.85,1.986,2.469,4.023,4.16,4.409,4.321,4.478
+setModel after catalog arrives,1.435,1.381,1.502,1.165,2.58,3.178,1.844,3.057,2.924,2.956
+setModel after status,1.349,2.504,1.168,1.482,2.494,2.639,2.684,2.854,3.164,2.651
+setModel after status back,1.327,1.463,1.551,1.389,2.831,2.641,2.817,2.843,3.012,2.711
+setModel catalog again,1.355,2.621,1.252,1.336,1.543,2.59,2.591,2.952,2.944,2.803
+setModel catalog again after the game,1.347,2.239,1.319,1.351,1.561,2.844,2.724,2.672,2.955,2.945
+setModel catalog arrives,1.57,1.357,1.813,1.182,2.897,3.012,2.157,3.011,3.066,3.405
+setModel clock,1.327,2.533,1.264,1.297,1.542,2.525,2.491,2.804,2.888,2.75
+setModel pause menu,1.507,2.153,1.401,2.578,1.695,2.499,2.84,3.235,3.2,3.17
+setModel status,1.443,2.322,1.3,1.425,1.454,2.685,2.564,2.822,3.129,2.675
+setModel status back,1.42,1.529,1.271,1.316,1.606,2.713,2.535,2.857,3.094,2.751
+update KorriPublished after Pressed back (close MENU),3.461,4.82,2.781,3.506,3.593,3.711,5.823,5.578,5.58,5.623
+update KorriPublished after Pressed back (find),3.13,2.765,2.857,3.177,3.695,5.704,6.134,4.874,5.592,6.159
+update KorriPublished after Pressed down (find),3.726,3.264,2.88,3.337,3.92,6.116,5.91,5.939,6.223,6.142
+update KorriPublished after Pressed down (grid),3.164,3.905,2.903,3.268,5.646,5.621,6.122,6.112,6.199,6.2
+update KorriPublished after Pressed down (to MENU),3.517,5.254,2.944,3.801,5.067,5.391,5.811,6.017,6.037,5.711
+update KorriPublished after Pressed left,3.14,4.274,2.904,3.321,4.365,5.263,5.72,5.344,6.126,5.585
+update KorriPublished after Pressed menu (back to the shelf),7.625,9.321,6.676,11.729,8.267,7.667,7.596,12.241,15.255,14.037
+update KorriPublished after Pressed menu (grid),3.446,3.859,2.913,3.186,3.994,6.107,5.851,5.829,5.723,6.134
+update KorriPublished after Pressed menu (hero),7.94,10.02,6.768,8.022,9.436,12.994,14.516,15.351,14.896,15.143
+update KorriPublished after Pressed right,3.221,2.905,3.011,3.229,4.584,5.243,5.404,5.72,5.887,5.824
+update KorriPublished after Pressed right (find),3.35,4.113,2.904,3.391,3.731,5.843,6.138,5.736,5.98,6.333
+update KorriPublished after Pressed right (grid),3.725,3.042,2.942,3.245,3.625,5.495,6.082,5.767,5.944,6.367
+update KorriPublished after Pressed right (hero),3.582,5.176,3.223,3.45,4.038,4.724,6.666,5.193,7.343,7.016
+update KorriPublished after Pressed up (hero),3.932,5.296,2.992,3.481,4.276,4.712,6.947,6.743,6.563,6.875
+update KorriPublished after catalog arrives,3.096,2.709,3.421,2.452,5.482,5.645,3.798,5.791,5.624,5.447
+update KorriPublished after status,2.907,4.587,2.765,3.163,4.764,5.205,5.374,5.607,5.798,5.138
+update KorriPublished after status back,2.96,3.508,3.661,3.13,5.192,5.55,5.569,5.569,5.9,5.318
+update Pressed back (close MENU),4.169,5.795,3.327,3.64,4.141,5.105,6.784,6.516,7.067,7.046
+update Pressed back (find),4.399,5.558,3.89,6.489,7.248,7.931,6.675,6.964,7.636,8.293
+update Pressed back (game),4.002,4.049,3.5,3.922,4.494,6.828,6.833,7.102,7.109,6.809
+update Pressed back (settings),4.016,3.59,3.606,4.025,5.133,7.719,7.914,7.586,6.867,8.294
+update Pressed confirm (SETTINGS),4.555,3.847,3.965,4.381,5.032,8.125,8.461,7.4,8.141,8.837
+update Pressed confirm (open Find),7.929,10.823,6.224,7.716,8.656,9.751,12.872,13.972,14.236,14.119
+update Pressed confirm (open MENU),4.643,4.091,3.769,4.498,4.752,7.127,7.653,7.286,7.788,7.811
+update Pressed confirm (open the game),4.037,4.111,5.424,4.312,5.616,6.636,6.461,7.419,7.159,6.815
+update Pressed confirm (wakes),2.327,2.541,3.345,2.372,4.23,4.095,4.103,4.245,4.493,4.275
+update Pressed down (find),3.931,4.464,3.105,3.693,4.236,6.241,6.445,6.905,6.748,6.701
+update Pressed down (game),2.549,2.651,3.51,2.568,2.887,4.238,4.543,4.788,4.648,4.343
+update Pressed down (grid),5.84,7.592,5.236,5.837,10.854,10.711,11.42,11.806,11.665,11.897
+update Pressed down (menu),3.709,4.835,2.929,3.342,5.578,5.971,5.72,6.055,5.993,6.307
+update Pressed down (pause menu),1.634,2.257,1.544,1.667,1.841,2.748,2.608,2.842,3.309,3.126
+update Pressed down (settings),2.857,2.428,2.533,2.831,3.253,5.614,5.411,4.915,5.272,5.749
+update Pressed down (to MENU),4.111,4.665,3.159,4.068,6.506,6.254,6.502,6.754,6.688,6.431
+update Pressed left,3.596,4.767,3.369,3.912,5.511,6.076,6.783,6.42,7.223,6.733
+update Pressed menu (back to the shelf),6.787,7.721,5.322,9.022,6.828,6.6,6.511,10.501,12.006,11.184
+update Pressed menu (grid),16.575,19.998,12.362,13.196,16.546,27.807,25.935,27.318,26.252,29.068
+update Pressed menu (hero),3.555,4.742,3.473,3.942,6.597,5.696,6.564,6.616,6.777,6.727
+update Pressed right,4.412,3.932,4.025,4.332,6.398,6.858,6.794,7.675,7.869,7.821
+update Pressed right (find),3.981,5.126,3.383,3.941,4.435,6.877,6.82,6.659,6.906,7.444
+update Pressed right (grid),7.286,7.515,5.401,5.809,7.02,10.229,11.067,11.353,10.888,12.055
+update Pressed right (hero),3.99,5.254,3.881,4.02,4.541,4.759,7.247,7.866,8.099,7.732
+update Pressed up (hero),4.088,3.965,3.779,4.406,6.044,6.689,8.268,7.631,8.438,7.979
+update Resized,2.359,2.258,2.221,3.74,2.647,3.985,2.47,4.391,4.751,4.57
+update Tick,0.066,0.115,0.059,0.066,0.072,0.118,0.119,0.121,0.141,0.125
+update catalog again,2.948,4.834,2.697,2.876,3.322,4.909,4.948,5.259,5.424,5.178
+update catalog again after the game,4.455,6.053,4.142,4.496,5.102,7.522,7.421,6.317,8.875,8.842
+update catalog arrives,8.745,7.861,9.023,7.094,15.981,16.151,11.503,15.936,16.334,16.746
+update clock,4.276,6.694,4.089,4.395,5.195,7.572,7.696,8.251,8.283,7.785
+update pause menu,4.255,5.965,3.916,6.748,4.991,6.961,5.741,7.799,8.229,8.13
+update status,4.189,6.59,4.498,4.287,6.527,7.366,7.525,7.383,8.347,7.322
+update status back,5.779,6.42,5.146,5.702,6.687,10.07,10.218,10.378,11.361,10.376
+view after Pressed back (close MENU),4.261,6.207,3.894,4.251,4.341,4.333,6.93,7.26,7.474,7.518
+view after Pressed back (find),4.124,3.594,3.7,4.119,4.913,7.76,7.75,6.977,7.431,8.351
+view after Pressed back (game),3.48,3.743,2.912,3.339,4.011,6.237,6.079,6.565,6.282,5.714
+view after Pressed back (settings),3.97,5.866,3.647,3.91,4.853,8.029,7.113,7.823,7.14,8.216
+view after Pressed confirm (SETTINGS),3.581,3.094,3.158,4.246,4.068,7.068,6.863,6.338,6.887,7.393
+view after Pressed confirm (open Find),10.574,15.795,8.134,9.746,14.97,17.409,17.549,17.679,19.151,19.463
+view after Pressed confirm (open MENU),4.862,4.874,3.799,4.694,4.95,8.211,8.234,8.434,8.47,8.8
+view after Pressed confirm (open the game),2.788,2.947,3.841,2.894,3.262,5.054,4.876,5.199,5.057,5.063
+view after Pressed confirm (wakes),3.484,3.654,5.051,3.648,5.875,6.042,6.313,6.656,6.872,6.677
+view after Pressed down (find),6.9,6.328,5.514,6.598,9.348,12.221,12.111,12.377,12.717,12.871
+view after Pressed down (game),2.378,2.403,2.432,2.435,2.609,4.266,3.924,4.351,4.357,4.205
+view after Pressed down (grid),7.399,8.854,6.769,7.646,15.183,14.338,15.236,15.454,15.663,15.838
+view after Pressed down (menu),3.997,6.251,3.368,4.117,5.47,7.556,7.269,7.579,7.01,7.781
+view after Pressed down (pause menu),2.037,3.252,1.923,2.047,2.318,3.788,3.804,3.797,4.126,4.171
+view after Pressed down (settings),3.106,2.596,2.804,3.175,3.451,6.151,5.634,5.369,5.752,6.398
+view after Pressed down (to MENU),4.062,6.037,3.371,4.115,4.256,6.435,6.342,6.98,7.002,6.965
+view after Pressed left,4.37,5.634,4.013,4.562,5.647,7.667,8.187,8.098,8.936,8.166
+view after Pressed menu (back to the shelf),4.1,4.175,3.758,6.644,4.6,5.742,4.563,7.652,8.784,8.089
+view after Pressed menu (grid),10.31,15.141,9.145,10.655,12.603,20.045,18.944,20.484,20.191,21.436
+view after Pressed menu (hero),5.772,6.931,5.016,6.077,6.669,10.507,11.349,11.311,11.491,11.756
+view after Pressed right,4.898,4.365,4.445,4.892,6.675,7.786,8.403,9.185,9.312,9.109
+view after Pressed right (find),6.875,9.922,6.176,6.971,10.364,13.837,12.482,13.024,13.242,14.457
+view after Pressed right (grid),9.243,9.219,6.818,7.618,8.703,12.85,14.627,15.016,14.904,16.557
+view after Pressed right (hero),5.057,7.18,4.674,4.794,5.666,6.059,9.469,8.151,10.458,10.204
+view after Pressed up (hero),5.901,7.938,4.503,5.322,6.167,6.328,10.182,10.083,9.571,10.585
+view after Resized,3.739,3.718,3.447,6.044,4.302,6.492,5.084,6.886,7.357,7.268
+view after Tick,3.301,5.401,2.989,3.177,4.287,5.782,6.089,6.307,6.466,6.141
+view after catalog again,2.116,3.915,2.594,2.099,2.362,4.034,4.174,4.142,4.296,4.053
+view after catalog again after the game,3.298,4.948,3.277,3.322,3.754,5.592,5.953,4.045,6.917,7.114
+view after catalog arrives,4.569,3.953,4.654,3.62,7.992,7.684,6.099,9.316,8.809,8.601
+view after clock,3.546,5.681,3.336,3.516,3.857,6.055,6.181,6.799,6.653,6.111
+view after pause menu,4.778,6.888,4.464,7.736,5.386,7.807,7.137,8.521,9.496,9.429
+view after status,2.753,3.323,2.338,2.66,3.736,4.718,4.825,5.052,5.28,4.793
+view after status back,3.404,5.735,3.124,3.452,6.806,6.654,6.513,6.813,7.116,6.418
+view again (JSON only),1.838,2.887,1.738,1.826,2.1,3.272,2.522,2.194,4.172,4.153

@@ -194,3 +194,21 @@ Before updating the app, take a protected backup of its private `files`,
 `shared_prefs`, `databases` and `no_backup` directories plus its installed APK.
 Use `install -r`; never uninstall, clear app data, or replace Amber ownership.
 JVM/source tests alone do not prove native rendering or lifecycle behavior.
+
+### Opt-in gameplay acceptance (#376)
+
+`KorriGameplayOverlayDeviceTest` requires an idle owned phone and one real game
+on aka. It refuses a pre-existing selected session. It starts one exact test
+launch, opens/resumes twice, switches Pico/Zone, captures a six-second recording
+and audio counters, performs Open Korri/return, then Disconnect/reconnect, and
+ends that same launch last. The title argument must select exactly one entry.
+If there are several launch locations it selects the requested aka location.
+
+Build the app and device-test APK, and confirm that the phone is free. Use the
+existing runner with `-e class com.limelight.KorriGameplayOverlayDeviceTest`,
+`-e gameTitle 'THE REAL TITLE'` and `-e evidenceRun UNIQUE-RUN-NAME`.
+It captures only new evidence under private `cache/overlay-376/UNIQUE-RUN-NAME/`
+and `/sdcard/Download/korri-376-UNIQUE-RUN-NAME.mp4`. No capability is written or
+logged. Resume/input routing uses injected Android keys. The other controls use
+the real SurfaceRequests. This does not prove physical controller firmware or
+USB-only overlay navigation.
