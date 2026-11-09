@@ -737,10 +737,25 @@ impl LaunchablesState {
         let Some(choice) = choices.into_iter().next() else {
             return match failure {
                 Some(failure) => {
-                    state.notice = Some(LaunchNotice::launch(format!(
-                        "{}: {}",
-                        failure.code, failure.message
-                    )));
+                    // A later observation of the compensated host unit (143)
+                    // must not erase the failed launch's known local cause or
+                    // trap its dismissible Problem in startup recovery.
+                    let known_launch_failure = matches!(
+                        &state.notice,
+                        Some(LaunchNotice::Launch {
+                            subject: Some(_),
+                            ..
+                        })
+                    );
+                    if known_launch_failure && failure.code == "HostLaunchFailed" {
+                        return ready(state);
+                    }
+                    if !known_launch_failure {
+                        state.notice = Some(LaunchNotice::launch(format!(
+                            "{}: {}",
+                            failure.code, failure.message
+                        )));
+                    }
                     LaunchablesState::Loaded(Loaded {
                         phase: Phase::Recovery,
                         content: state,

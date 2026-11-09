@@ -1068,3 +1068,26 @@ mod manual_pending_launch_choices {
         }
     }
 }
+
+#[test]
+fn local_viewer_failure_survives_host_exit_observation_after_compensation() {
+    let game: Game = from(
+        json!({"id":"skate3", "title":"Skate 3", "source":source("aka"), "supportsRunnerSelection":false}),
+    );
+    let subject = launch_subject_for_game(&game, ready().entries());
+    let failed = ready().begin_preparing(&game.title, Some(subject)).with_local_catalog_prepare_outcome(
+        &from(json!({"_tag":"Err", "payload":{"code":"ViewerStartFailed", "message":"public serverinfo unavailable"}})), &game,
+    );
+    let observed = failed.with_session_status(&status(json!({"_tag":"Ok", "payload":{
+        "active":null, "observationFailure":{"code":"HostLaunchFailed", "message":"game unit failed with exit status 143"}
+    }})));
+    assert_eq!(tag(&observed), "Ready");
+    assert!(
+        notice(&observed)
+            .unwrap()
+            .message()
+            .contains("ViewerStartFailed"),
+        "local cause was erased: {:?}",
+        notice(&observed)
+    );
+}

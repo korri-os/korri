@@ -7,6 +7,15 @@
 #include <unistd.h>
 
 static volatile sig_atomic_t stopping;
+/* kv_error contains literals only. Never log URLs, response bodies, keys or pins. */
+static void diagnostic(const char *stage, const char *outcome, const char *cause) {
+    fprintf(stderr, "korri-webos viewer pid=%ld stage=%s outcome=%s", (long)getpid(), stage,
+            outcome);
+    if (cause)
+        fprintf(stderr, " cause=%s", cause);
+    fputc('\n', stderr);
+    fflush(stderr);
+}
 static void stop(int sig) {
     (void)sig;
     stopping = 1;
@@ -24,15 +33,23 @@ int korri_viewer_main(int argc, char **argv) {
     if (argc == 4 && !strcmp(argv[1], "discover")) {
         unsigned port = port_number(argv[3]);
         kv_serverinfo server;
-        if (!port || kv_serverinfo_public(argv[2], port, &server))
+        diagnostic("public_serverinfo", "started", NULL);
+        if (!port || kv_serverinfo_public(argv[2], port, &server)) {
+            diagnostic("public_serverinfo", "failed", kv_error());
             return 1;
+        }
+        diagnostic("public_serverinfo", "ok", NULL);
         printf("%s\n%u\n", server.uuid, server.https_port);
         return 0;
     }
     if (argc == 3 && !strcmp(argv[1], "identity")) {
         kv_identity *id;
-        if (kv_identity_open(argv[2], &id))
+        diagnostic("identity", "started", NULL);
+        if (kv_identity_open(argv[2], &id)) {
+            diagnostic("identity", "failed", kv_error());
             return 1;
+        }
+        diagnostic("identity", "ok", NULL);
         int result = fputs(kv_identity_certificate(id), stdout) < 0;
         kv_identity_free(id);
         return result;
@@ -61,15 +78,34 @@ int korri_viewer_main(int argc, char **argv) {
     if (!used || memchr(pin, 0, used))
         return 1;
     kv_identity *id;
-    if (kv_identity_open(argv[2], &id))
+    diagnostic("identity", "started", NULL);
+    if (kv_identity_open(argv[2], &id)) {
+        diagnostic("identity", "failed", kv_error());
         return 1;
+    }
+    diagnostic("identity", "ok", NULL);
+    const char *stage = "authenticated_serverinfo";
     int result = 1, app;
     kv_serverinfo server;
-    if (kv_serverinfo_authenticated(id, argv[3], port, pin, &server) || !server.paired ||
-        kv_applist(id, argv[3], port, pin, &app))
+    diagnostic(stage, "started", NULL);
+    if (kv_serverinfo_authenticated(id, argv[3], port, pin, &server))
         goto done;
-    if (server.current_game && server.current_game != app)
+    if (!server.paired) {
+        diagnostic(stage, "failed", "client certificate not provisioned");
+        goto close;
+    }
+    diagnostic(stage, "ok", NULL);
+    stage = "applist";
+    diagnostic(stage, "started", NULL);
+    if (kv_applist(id, argv[3], port, pin, &app))
         goto done;
+    diagnostic(stage, "ok", NULL);
+    fprintf(stderr, "korri-webos viewer pid=%ld stage=applist_resolved app_id=%d outcome=ok\n",
+            (long)getpid(), app);
+    if (server.current_game && server.current_game != app) {
+        diagnostic("transport", "failed", "different transport is occupied");
+        goto close;
+    }
     STREAM_CONFIGURATION config;
     LiInitializeStreamConfiguration(&config);
     config.width = 1920;
@@ -83,11 +119,18 @@ int korri_viewer_main(int argc, char **argv) {
     config.encryptionFlags = (int)ENCFLG_ALL;
     config.colorSpace = COLORSPACE_REC_709;
     char rtsp[1024];
+    stage = "transport_launch";
+    diagnostic(stage, "started", NULL);
     if (kv_launch(id, argv[3], port, pin, app, server.current_game != 0, &config, rtsp))
         goto done;
+    diagnostic(stage, "ok", NULL);
+    stage = "stream";
+    diagnostic(stage, "started", NULL);
     kv_stream_channel(3);
     result = kv_stream(argv[3], &server, rtsp, &config, 0, &stopping, 0) ? 1 : 0;
 done:
+    diagnostic(stage, result ? "failed" : "ok", result ? kv_error() : NULL);
+close:
     kv_identity_free(id);
     return result;
 }

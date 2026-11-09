@@ -28,6 +28,8 @@ pub struct Behaviour {
     pub refuse_declare: Vec<String>,
     /// Refuse every `app.surface.request` whose tag is listed.
     pub refuse_requests: Vec<String>,
+    /// Accepted LaunchGame publishes this local pre-READY failure as Problem.
+    pub launch_failure: Option<String>,
 }
 
 #[derive(Default)]
@@ -525,9 +527,33 @@ fn rpc(shared: &Arc<(Mutex<State>, Condvar)>, request: &Value) -> Value {
             if state.behaviour.refuse_requests.contains(&tag) {
                 return err(&method, "refused by the fixture");
             }
+            let launch_failure = state.behaviour.launch_failure.clone();
+            let problem = state.base["status"]["_tag"] == "Problem";
             let surface = state.surfaces.entry(surface_id).or_default();
             let mut publish = false;
             match tag.as_str() {
+                "LaunchGame" if launch_failure.is_some() => {
+                    let reason = state
+                        .behaviour
+                        .launch_failure
+                        .clone()
+                        .expect("configured failure");
+                    let game_id = request.get("gameId").cloned().unwrap_or(Value::Null);
+                    state.base["status"] = json!({"_tag":"Problem", "kicker":"Couldn't start the game", "reason":reason, "canRetry":false, "gameId":game_id});
+                    for surface in state.surfaces.values_mut() {
+                        surface.revision += 1;
+                    }
+                    changed.notify_all();
+                    return ok(&method, Value::Null);
+                }
+                "Dismiss" if problem => {
+                    state.base["status"] = json!({"_tag":"Browsing"});
+                    for surface in state.surfaces.values_mut() {
+                        surface.revision += 1;
+                    }
+                    changed.notify_all();
+                    return ok(&method, Value::Null);
+                }
                 "RememberPreference" => {
                     let (Some(key), Some(value)) = (
                         request.get("key").and_then(Value::as_str),

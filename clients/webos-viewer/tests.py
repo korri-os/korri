@@ -112,6 +112,7 @@ class ViewerTests(unittest.TestCase):
         require_client=True,
         extra=(),
         server_change=None,
+        multicall=False,
     ):
         self.bootstrap()
         server = self.root / "server"
@@ -178,7 +179,23 @@ class ViewerTests(unittest.TestCase):
         pin = self.identity / "client.pem" if wrong_pin else original_pin
         if server_change == "expired":
             pin = server / "client.pem"
-        result = run(action, self.identity, "127.0.0.1", port, pin, *extra)
+        if multicall:
+            result = subprocess.run(
+                [
+                    str(Path(BINARY).with_name("korri-webos")),
+                    "viewer",
+                    "stream",
+                    str(self.identity),
+                    "127.0.0.1",
+                    str(port),
+                ],
+                input=pin.read_bytes(),
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        else:
+            result = run(action, self.identity, "127.0.0.1", port, pin, *extra)
         thread.join(20)
         self.assertFalse(thread.is_alive())
         self.assertFalse(errors, errors)
@@ -192,6 +209,29 @@ class ViewerTests(unittest.TestCase):
             b"<currentgame>" + str(game).encode() + b"</currentgame>"
             b"<state>SUNSHINE_SERVER_FREE</state></root>"
         )
+
+    def test_multicall_logs_authenticated_stages_without_pin_or_session_material(self):
+        apps = b'<root status_code="200"><App><ID>321</ID><AppTitle>Korri Stream</AppTitle></App></root>'
+        session = b'<root status_code="200"><gamesession>1</gamesession><sessionUrl0>rtspenc://127.0.0.1:48010</sessionUrl0></root>'
+        result, requests = self.request(
+            [
+                self.response(self.serverinfo()),
+                self.response(apps),
+                self.response(session),
+            ],
+            multicall=True,
+        )
+        # Native test builds intentionally have no NDL module: stop before RTSP.
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(requests), 3)
+        self.assertIn(b"stage=authenticated_serverinfo outcome=ok", result.stderr)
+        self.assertIn(b"stage=applist_resolved app_id=321 outcome=ok", result.stderr)
+        self.assertIn(b"stage=transport_launch outcome=ok", result.stderr)
+        self.assertIn(b"stage=stream outcome=failed cause=", result.stderr)
+        self.assertNotIn(b"-----BEGIN", result.stderr)
+        self.assertNotIn(b"rikey=", result.stderr)
+        self.assertNotIn(b"rtspenc://", result.stderr)
+        self.assertNotIn(b"/cancel", b"".join(requests))
 
     def test_authenticated_applist_resolves_one_transport_without_launch(self):
         apps = b'<root status_code="200"><App><ID>123</ID><AppTitle>Korri Stream</AppTitle></App></root>'

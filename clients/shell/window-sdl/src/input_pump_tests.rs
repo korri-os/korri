@@ -77,7 +77,9 @@ fn native_frame_and_sdl_key_reach_the_same_presented_frame() {
         .unwrap();
     platform.run_jobs();
     assert_eq!(late.load(Ordering::SeqCst), 1);
-    platform.pump_events(None).unwrap();
+    platform
+        .pump_events(None, &mut FrameBudget::default())
+        .unwrap();
     // A complete native frame arrives from a worker after the old drain.
     platform.run_jobs();
     let native = Arc::new(AtomicUsize::new(0));
@@ -134,5 +136,30 @@ fn native_frame_and_sdl_key_reach_the_same_presented_frame() {
     let pixel = screen.buffer[screen.buffer.len() / 2 + screen.width as usize / 2];
     assert_eq!((pixel.red, pixel.green, pixel.blue), (0, 255, 0));
     drop(screen);
+    // A continuing producer must not starve the next rendered frame. Keep
+    // the load finite so the unbounded implementation fails rather than hangs.
+    let work = Arc::new(AtomicUsize::new(0));
+    for _ in 0..4096 {
+        let work = work.clone();
+        platform
+            .shared
+            .jobs
+            .lock()
+            .unwrap()
+            .push_back(Box::new(move || {
+                work.fetch_add(1, Ordering::SeqCst);
+            }));
+    }
+    component.set_native_ready(false);
+    let before_fair_frame = platform.stats.borrow().frames;
+    assert!(platform.frame_iteration(None).unwrap());
+    assert!(
+        work.load(Ordering::SeqCst) < 4096,
+        "queued work must yield before exhausting a producer's backlog"
+    );
+    assert!(
+        platform.stats.borrow().frames > before_fair_frame,
+        "clock and Problem updates must still present during a backlog"
+    );
     platform.close();
 }

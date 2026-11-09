@@ -5,6 +5,7 @@
 #include <opus_multistream.h>
 #include <pthread.h>
 #include <ss4s.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -228,6 +229,7 @@ int kv_stream(const char *host, const kv_serverinfo *server, const char *rtsp,
                 fail_stream();
                 break;
             }
+            fprintf(stderr, "korri-webos viewer pid=%ld stage=ready outcome=ok\n", (long)getpid());
             notified = 1;
         }
         if (channel >= 0) {

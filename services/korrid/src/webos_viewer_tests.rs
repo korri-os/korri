@@ -414,3 +414,22 @@ async fn idle_child_exit_clears_presentation_without_waiting_for_far_status() {
         .unwrap();
     assert_eq!(*fixture.presentations.lock().unwrap(), [true, false]);
 }
+
+#[tokio::test]
+async fn child_local_failure_is_reported_instead_of_only_its_exit_code() {
+    let fixture = Fixture::new("sys.stderr.write('dependency secret must not be relayed\\nkorri-webos viewer pid=42 stage=applist outcome=failed cause=expected exactly one valid Korri Stream app\\n'); sys.stderr.flush(); sys.exit(1)");
+    let failure = fixture
+        .viewer
+        .start("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "127.0.0.1")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        failure.contains("applist")
+            && failure.contains("expected exactly one valid Korri Stream app"),
+        "{failure}"
+    );
+    assert!(!failure.contains("secret"));
+    assert!(!fixture.presentations.lock().unwrap().contains(&true));
+    fixture.assert_reaped(fixture.pid());
+}

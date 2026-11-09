@@ -837,3 +837,58 @@ fn viewer_play_retires_hidden_surface_input_and_returns_it_after_stop() {
     rig.key(Key::Right);
     assert_eq!(rig.int("count"), 1.0);
 }
+
+#[test]
+fn failed_launch_before_ready_keeps_zone_pad_dismiss_and_clock_updates_live() {
+    let behavior = Behaviour {
+        launch_failure: Some("ViewerStartFailed: public serverinfo unavailable".into()),
+        ..Default::default()
+    };
+    let mut rig = rig(&["zone"], 12, behavior);
+    let queue = rig.queue.clone();
+    let _input = korri_shell::input::native::NativeInput::start(
+        rig.fixture.connection(),
+        true,
+        Box::new(move |event| queue.post(Event::Native(event))),
+    );
+    rig.until("pad subscribed", |r| r.fixture.input_subscribers() == 1);
+    rig.fixture.send_input(&Fixture::gamepad_frames("pad"));
+    rig.settle();
+    let field = |rig: &Rig, property: &str, field: &str| {
+        let Some(SlintValue::Struct(value)) = rig.shell.surface_property(property) else {
+            panic!("missing {property}")
+        };
+        value.get_field(field).cloned().expect("view field")
+    };
+    // Zone opens its game detail, then PLAY, through real native pad frames.
+    for _ in 0..3 {
+        if !rig.requests("LaunchGame").is_empty() {
+            break;
+        }
+        rig.fixture.send_input(&Fixture::press_frames("pad", 304));
+        rig.settle();
+    }
+    rig.until("launch accepted", |r| !r.requests("LaunchGame").is_empty());
+    rig.until("Problem shown", |r| {
+        field(r, "dialog", "shown") == SlintValue::Bool(true)
+    });
+    assert!(!rig.shell.overlay_shown());
+    rig.fixture
+        .publish(|model| model["clockLabel"] = json!("8:20 PM"));
+    rig.until("clock while Problem shown", |r| {
+        field(r, "foot", "clock") == SlintValue::String("8:20 PM".into())
+    });
+    rig.fixture.send_input(&Fixture::press_frames("pad", 304));
+    rig.until("pad dismissed Problem", |r| {
+        !r.requests("Dismiss").is_empty()
+    });
+    rig.until("Zone restored", |r| {
+        field(r, "dialog", "shown") == SlintValue::Bool(false)
+    });
+    rig.fixture
+        .publish(|model| model["clockLabel"] = json!("8:21 PM"));
+    rig.until("clock after dismiss", |r| {
+        field(r, "foot", "clock") == SlintValue::String("8:21 PM".into())
+    });
+    assert_eq!(rig.shell.current_id(), Some("zone"));
+}

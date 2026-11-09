@@ -869,6 +869,7 @@ impl UpstreamRegistry {
     }
 
     async fn moonlight_native_peer(&self, host_uuid: &str) -> Result<NativeClient, UpstreamError> {
+        eprintln!("korrid viewer stage=attest outcome=started");
         let registry = self.resolved()?;
         let native: Vec<NativeClient> = registry
             .hosts
@@ -905,11 +906,19 @@ impl UpstreamRegistry {
                 }
             }
         }
-        match matched.len() {
+        let result = match matched.len() {
             0 => Err(first_failure.unwrap_or(UpstreamError::MoonlightHostNotFound)),
             1 => Ok(matched.remove(0)),
             _ => Err(UpstreamError::MoonlightHostAmbiguous),
+        };
+        match &result {
+            Ok(_) => eprintln!("korrid viewer stage=attest outcome=ok"),
+            Err(error) => eprintln!(
+                "korrid viewer stage=attest outcome=failed code={}",
+                error.code()
+            ),
         }
+        result
     }
 
     pub async fn moonlight_certificate_attest(
@@ -927,10 +936,19 @@ impl UpstreamRegistry {
         client_certificate: &str,
     ) -> Result<MoonlightCertificateProvisioned, UpstreamError> {
         timeout(MOONLIGHT_CERTIFICATE_BROKER_TIMEOUT, async {
-            self.moonlight_native_peer(host_uuid)
-                .await?
+            let peer = self.moonlight_native_peer(host_uuid).await?;
+            eprintln!("korrid viewer stage=provision outcome=started");
+            let result = peer
                 .moonlight_certificate_provision(host_uuid, client_certificate)
-                .await
+                .await;
+            match &result {
+                Ok(_) => eprintln!("korrid viewer stage=provision outcome=ok"),
+                Err(error) => eprintln!(
+                    "korrid viewer stage=provision outcome=failed code={}",
+                    error.code()
+                ),
+            }
+            result
         })
         .await
         .map_err(|_| UpstreamError::MoonlightCertificatePeerUnavailable)?
@@ -1026,7 +1044,21 @@ impl UpstreamRegistry {
                 .await?;
                 let moonlight_address = viewer.moonlight_address.clone();
                 let reach = viewer.reach.clone();
-                let prepared = client.prepare_stream(game_id).await?;
+                eprintln!("korrid viewer stage=far_prepare outcome=started");
+                let prepared = match client.prepare_stream(game_id).await {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        eprintln!(
+                            "korrid viewer stage=far_prepare outcome=failed code={}",
+                            error.code()
+                        );
+                        return Err(error);
+                    }
+                };
+                eprintln!(
+                    "korrid viewer stage=far_launch_accepted launch_id={} outcome=ok",
+                    prepared.session.launch_id
+                );
                 let selected = SelectedRemoteSession {
                     participation: Participation::Starter,
                     route: SelectedRemoteRoute::Native {
@@ -1061,7 +1093,28 @@ impl UpstreamRegistry {
         selected: &SelectedRemoteSession,
         start_error: String,
     ) -> Result<T, UpstreamError> {
-        match client.session_stop(&selected.launch_id, false).await {
+        eprintln!("korrid viewer stage=compensation launch_id={} outcome=started reason=local_viewer_start_failed", selected.launch_id);
+        let compensation = client.session_stop(&selected.launch_id, false).await;
+        match &compensation {
+            Ok(result) => {
+                let outcome = match result {
+                    UpstreamSessionStop::Stopped { .. } => "stopped",
+                    UpstreamSessionStop::NothingToStop {} => "nothing_to_stop",
+                    UpstreamSessionStop::StopPending { .. } => "pending",
+                    _ => "not_confirmed",
+                };
+                eprintln!(
+                    "korrid viewer stage=compensation launch_id={} outcome={outcome}",
+                    selected.launch_id
+                );
+            }
+            Err(error) => eprintln!(
+                "korrid viewer stage=compensation launch_id={} outcome=failed code={}",
+                selected.launch_id,
+                error.code()
+            ),
+        }
+        match compensation {
             Ok(UpstreamSessionStop::Stopped { .. } | UpstreamSessionStop::NothingToStop {}) => {
                 self.clear_selected_if(selected);
                 Err(viewer_error("ViewerStartFailed", start_error))

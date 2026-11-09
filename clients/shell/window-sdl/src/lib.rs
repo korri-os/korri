@@ -88,6 +88,21 @@ const DESIGN_HEIGHT: f32 = 720.0;
 const WHEEL_STEP: f32 = 60.0;
 /// Longest wait between loop turns when Slint has no timer pending.
 const IDLE_WAIT: Duration = Duration::from_secs(1);
+// One busy producer cannot prevent presentation, timers or another input path.
+const JOBS_PER_FRAME: usize = 64;
+const EVENTS_PER_FRAME: usize = 64;
+struct FrameBudget {
+    jobs: usize,
+    events: usize,
+}
+impl Default for FrameBudget {
+    fn default() -> Self {
+        Self {
+            jobs: JOBS_PER_FRAME,
+            events: EVENTS_PER_FRAME,
+        }
+    }
+}
 
 /// Set the two variables Moonlight TV's `main()` sets on webOS before SDL
 /// starts (`src/main.c` at 89221f66: `EGL_PLATFORM=wayland`,
@@ -728,12 +743,18 @@ impl SdlPlatform {
         LogicalPosition::new(x as f32 * factor, y as f32 * factor)
     }
 
+    #[cfg(test)]
     fn run_jobs(&self) {
+        self.run_jobs_bounded(&mut FrameBudget::default());
+    }
+
+    fn run_jobs_bounded(&self, budget: &mut FrameBudget) {
         // A native frame can arrive while an earlier model/logic job runs.
         // Do not leave it in a drained snapshot until after another render.
-        loop {
+        while budget.jobs > 0 {
             let job = self.shared.jobs.lock().unwrap().pop_front();
             let Some(job) = job else { break };
+            budget.jobs -= 1;
             job();
         }
     }
@@ -814,19 +835,24 @@ impl SdlPlatform {
         self.probe.borrow_mut().focus(focus);
     }
 
-    fn pump_events(&self, first: Option<ffi::Event>) -> Result<(), PlatformError> {
+    fn pump_events(
+        &self,
+        first: Option<ffi::Event>,
+        budget: &mut FrameBudget,
+    ) -> Result<(), PlatformError> {
         if let Some(event) = first {
             self.handle(&event)?;
-            self.run_jobs();
+            self.run_jobs_bounded(budget);
         }
         let mut event = ffi::Event::zeroed();
         // SAFETY: initialized SDL, valid event storage, UI thread.
-        while unsafe { (self.sdl().SDL_PollEvent)(&mut event) } == 1 {
+        while budget.events > 0 && unsafe { (self.sdl().SDL_PollEvent)(&mut event) } == 1 {
+            budget.events -= 1;
             self.handle(&event)?;
             // SDL keys and the thread-safe SDL_PushEvent wake use this SAME
             // checkpoint. Both apply host work in this pump iteration, before
             // its next presentation, rather than scheduling another render.
-            self.run_jobs();
+            self.run_jobs_bounded(budget);
         }
         Ok(())
     }
@@ -835,12 +861,13 @@ impl SdlPlatform {
     /// nonblocking pump also catches work queued while timers or jobs ran.
     fn frame_iteration(&self, first: Option<ffi::Event>) -> Result<bool, PlatformError> {
         self.sample_keyboard_focus();
+        let mut budget = FrameBudget::default();
         if first.is_some() {
-            self.pump_events(first)?;
+            self.pump_events(first, &mut budget)?;
         }
         slint::platform::update_timers_and_animations();
-        self.pump_events(None)?;
-        self.run_jobs();
+        self.pump_events(None, &mut budget)?;
+        self.run_jobs_bounded(&mut budget);
         if self.shared.quit.load(Ordering::SeqCst) {
             return Ok(false);
         }
@@ -851,7 +878,9 @@ impl SdlPlatform {
     fn event_loop(&self) -> Result<(), PlatformError> {
         let mut first = None;
         while self.frame_iteration(first.take())? {
-            let wait = if PRESENTATION.get() != Presentation::Stream
+            let wait = if !self.shared.jobs.lock().unwrap().is_empty() {
+                Duration::ZERO
+            } else if PRESENTATION.get() != Presentation::Stream
                 && self.slint_window.has_active_animations()
             {
                 Duration::from_millis(16)

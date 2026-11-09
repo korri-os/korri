@@ -25,6 +25,14 @@ before implementation. They add no peer RPC field or surface treaty variant.
 All network fixtures use loopback. No power, screensaver or app registration
 behavior changes. Existing system SDL remains unbundled.
 
+## First-TV failure follow-up
+
+See [the evidence, test-first reproductions and retest order](../../../docs/briefs/2026-11-09-webos-first-stream-failure.md).
+Viewer stages now go to stderr without logger setup. The surface retains a known
+local start failure instead of replacing it with the compensated host's exit 143.
+The SDL job/event pump yields to presentation under a producer backlog. The exact
+TV stall still needs the owner's capture if it recurs.
+
 ## Workstation checks
 
 Run expensive commands serially with `CARGO_BUILD_JOBS=2`:

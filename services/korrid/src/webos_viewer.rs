@@ -15,6 +15,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+mod diagnostics;
+use diagnostics::Diagnostics;
 
 fn error(message: impl ToString) -> LinuxViewerError {
     LinuxViewerError::new(message.to_string())
@@ -61,6 +63,7 @@ struct Session {
 }
 struct OwnedChild {
     child: Child,
+    diagnostics: Diagnostics,
     _channel: UnixStream,
     presenting: Arc<dyn Fn(bool) + Send + Sync>,
     _parent_thread: Option<ParentThread>,
@@ -95,8 +98,17 @@ impl Drop for OwnedChild {
         // Let the owning C thread neutralize input and release media first.
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
-            if !matches!(self.child.try_wait(), Ok(None)) {
-                return;
+            match self.child.try_wait() {
+                Ok(Some(status)) => {
+                    eprintln!(
+                        "korrid viewer stage=child_exit pid={} status={status}",
+                        self.child.id()
+                    );
+                    self.diagnostics.finish();
+                    return;
+                }
+                Err(_) => return,
+                Ok(None) => {}
             }
             if Instant::now() >= deadline {
                 break;
@@ -104,8 +116,18 @@ impl Drop for OwnedChild {
             std::thread::sleep(Duration::from_millis(10));
         }
         // Child::kill targets an unreaped owned handle, never a name or saved PID.
+        eprintln!(
+            "korrid viewer stage=child_stop_timeout pid={} action=kill",
+            self.child.id()
+        );
         let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Ok(status) = self.child.wait() {
+            eprintln!(
+                "korrid viewer stage=child_exit pid={} status={status}",
+                self.child.id()
+            );
+        }
+        self.diagnostics.finish();
     }
 }
 
@@ -128,7 +150,7 @@ impl WebosViewer {
         command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         let parent = std::process::id();
         // SAFETY: only async-signal-safe syscalls run after fork. The parent
         // check closes the death-before-prctl race. No capability is inherited.
@@ -151,6 +173,15 @@ impl WebosViewer {
             .stdout(Stdio::piped())
             .spawn()
             .map_err(error)?;
+        let mut diagnostics =
+            match Diagnostics::start(child.stderr.take().expect("piped diagnostics")) {
+                Ok(log) => log,
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(error);
+                }
+            };
         let mut pipe = child
             .stdout
             .take()
@@ -181,6 +212,11 @@ impl WebosViewer {
             }
             match child.try_wait() {
                 Ok(Some(status)) => {
+                    diagnostics.finish();
+                    eprintln!(
+                        "korrid viewer stage=helper_exit mode={} status={status}",
+                        arguments[0]
+                    );
                     // Drain bytes written immediately before exit.
                     match pipe
                         .take((limit + 1 - output.len()) as u64)
@@ -193,7 +229,9 @@ impl WebosViewer {
                     break if status.success() && output.len() <= limit {
                         String::from_utf8(output).map_err(error)
                     } else {
-                        Err(error("viewer preparation failed"))
+                        Err(error(diagnostics.failure().unwrap_or_else(|| {
+                            format!("viewer {} failed: {status}", arguments[0])
+                        })))
                     };
                 }
                 Ok(None) => {}
@@ -206,6 +244,7 @@ impl WebosViewer {
         };
         let _ = child.kill();
         let _ = child.wait();
+        diagnostics.finish();
         result
     }
     fn prepare(&self, address: &str) -> Result<(String, u16, String, String), LinuxViewerError> {
@@ -225,12 +264,15 @@ impl WebosViewer {
         {
             return Err(error("invalid Moonlight route"));
         }
+        eprintln!("korrid viewer stage=identity outcome=started");
         let certificate = self.output(
             &["identity".into(), self.identity.display().to_string()],
             8192,
         )?;
         crate::host::moonlight_certificate::validate_single_pem(&certificate)
             .map_err(|_| error("invalid viewer public certificate"))?;
+        eprintln!("korrid viewer stage=identity outcome=ok");
+        eprintln!("korrid viewer stage=public_serverinfo outcome=started");
         let discovery = self.output(
             &[
                 "discover".into(),
@@ -251,6 +293,7 @@ impl WebosViewer {
         if port == 0 || lines.next().is_some() {
             return Err(error("invalid discovery result"));
         }
+        eprintln!("korrid viewer stage=public_serverinfo outcome=ok");
         Ok((host, port, uuid.to_owned(), certificate))
     }
     async fn launch(&self, address: &str) -> Result<OwnedChild, LinuxViewerError> {
@@ -260,9 +303,11 @@ impl WebosViewer {
             tokio::task::spawn_blocking(move || this.prepare(&address))
                 .await
                 .map_err(error)??;
+        eprintln!("korrid viewer stage=certificate_broker outcome=started");
         let pin = (self.provision)(uuid, certificate)
             .await?
             .server_certificate;
+        eprintln!("korrid viewer stage=certificate_broker outcome=ok");
         let this = self.clone();
         let (ready, result) = tokio::sync::oneshot::channel();
         let (stop, stopped) = std::sync::mpsc::channel();
@@ -300,6 +345,7 @@ impl WebosViewer {
             .set_read_timeout(Some(self.readiness_timeout))
             .map_err(error)?;
         let fd = child_channel.as_raw_fd();
+        let retained_channel = parent.try_clone().map_err(error)?;
         let mut command = self.command();
         command
             .args([
@@ -321,7 +367,20 @@ impl WebosViewer {
                 Ok(())
             });
         }
-        let child = command.spawn().map_err(error)?;
+        let mut child = command.spawn().map_err(error)?;
+        eprintln!(
+            "korrid viewer stage=child_spawn pid={} outcome=ok",
+            child.id()
+        );
+        let diagnostics = match Diagnostics::start(child.stderr.take().expect("piped diagnostics"))
+        {
+            Ok(log) => log,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
         drop(child_channel);
         let callback = self.presenting.clone();
         let visible = std::sync::atomic::AtomicBool::new(false);
@@ -332,7 +391,8 @@ impl WebosViewer {
         });
         let mut owned = OwnedChild {
             child,
-            _channel: parent.try_clone().map_err(error)?,
+            diagnostics,
+            _channel: retained_channel,
             presenting: presenting.clone(),
             input: None,
             _parent_thread: None,
@@ -345,14 +405,27 @@ impl WebosViewer {
         stdin.write_all(pin.as_bytes()).map_err(error)?;
         drop(stdin);
         let mut ready = [0];
-        parent
-            .read_exact(&mut ready)
-            .map_err(|_| error("viewer exited or readiness timed out"))?;
+        if let Err(read_error) = parent.read_exact(&mut ready) {
+            let status = owned.child.try_wait().map_err(error)?;
+            if status.is_some() {
+                owned.diagnostics.finish();
+            }
+            return Err(error(owned.diagnostics.failure().unwrap_or_else(
+                || match status {
+                    Some(status) => format!("viewer exited before READY: {status}"),
+                    None => format!("viewer READY wait failed: {read_error}"),
+                },
+            )));
+        }
         if ready != *b"R" || owned.child.try_wait().map_err(error)?.is_some() {
             return Err(error("viewer readiness was not confirmed"));
         }
         // Host-only presentation fact; never a surface treaty field. The
         // embedded composition supplies the one setter owned by the shell edge.
+        eprintln!(
+            "korrid viewer stage=ready pid={} outcome=ok",
+            owned.child.id()
+        );
         presenting(true);
         {
             let (baseline, mut receiver) = match (self.input)() {
@@ -461,7 +534,17 @@ impl LinuxStreamViewer for WebosViewer {
             if session.as_ref().is_some_and(|s| s.child.is_some()) {
                 return Err(error("viewer already active"));
             }
-            let child = self.launch(address).await?;
+            eprintln!("korrid viewer stage=start launch_id={launch} outcome=started");
+            let child = match self.launch(address).await {
+                Ok(child) => child,
+                Err(error) => {
+                    eprintln!(
+                        "korrid viewer stage=start launch_id={launch} outcome=failed cause={error}"
+                    );
+                    (self.presenting)(false);
+                    return Err(error);
+                }
+            };
             log::info!("webOS viewer ready for exact launch {launch}");
             *session = Some(Session {
                 launch: launch.into(),
