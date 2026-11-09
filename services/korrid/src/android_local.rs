@@ -113,7 +113,10 @@ impl AndroidLocalSessions {
                 *pending = None;
                 Ok(())
             }
-            _ => Err(failure("SessionMismatch", "That launch is no longer reserved.")),
+            _ => Err(failure(
+                "SessionMismatch",
+                "That launch is no longer reserved.",
+            )),
         }
     }
 

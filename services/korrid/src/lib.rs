@@ -3497,22 +3497,21 @@ async fn dispatch(
                 unreachable!("checked Brain mode")
             };
             let sessions = android_local_sessions().expect("checked");
-            let outcome = match sessions
-                .take_reservation(&request.game_id, &request.expected_launch_id)
-            {
-                Ok(()) => {
-                    android_launch(
-                        brain,
-                        sessions,
-                        request.game_id,
-                        request.runner_id,
-                        Some(request.expected_launch_id),
-                        authorization,
-                    )
-                    .await
-                }
-                Err(failure) => Err(failure),
-            };
+            let outcome =
+                match sessions.take_reservation(&request.game_id, &request.expected_launch_id) {
+                    Ok(()) => {
+                        android_launch(
+                            brain,
+                            sessions,
+                            request.game_id,
+                            request.runner_id,
+                            Some(request.expected_launch_id),
+                            authorization,
+                        )
+                        .await
+                    }
+                    Err(failure) => Err(failure),
+                };
             RpcResponse::SessionStart(
                 outcome
                     .map(game_routes::SelectedGameLaunchOutcome::Ok)
