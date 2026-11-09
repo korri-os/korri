@@ -178,8 +178,7 @@ fn failed_prepare_invalidates_catalog_receipt_before_the_output_changes() {
     }
     let fixture = Fixture::new(2);
     fixture.catalog().unwrap();
-    // Effect-free runtime checks now finish before shaping. Exercise a later
-    // failure instead: the native unit exits before prepare can hand it back.
+    // The native unit can exit after shaping, before prepare hands it back.
     fixture.backend.set_launch_completed(true);
     let failure = prepare(&fixture.runtime).unwrap_err();
     assert!(
@@ -223,8 +222,8 @@ fn catalog_observes_completed_unit_even_when_cached_session_is_stopping() {
 }
 
 #[test]
-fn limits_description_does_not_hold_native_session_authority() {
-    let name = "limits_description_does_not_hold_native_session_authority";
+fn composition_waits_for_native_admission_before_describing_limits() {
+    let name = "composition_waits_for_native_admission_before_describing_limits";
     if isolated(name) {
         return;
     }
@@ -237,8 +236,7 @@ fn limits_description_does_not_hold_native_session_authority() {
     let listener = UnixListener::bind(&socket).unwrap();
     std::env::set_var("KORRID_LIMITS_SOCKET", &socket);
     let fixture = Fixture::new(1);
-    let (describing, entered) = mpsc::channel();
-    let (release, released) = mpsc::channel();
+    let (describing, described) = mpsc::channel();
     let helper = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         let mut line = String::new();
@@ -248,48 +246,139 @@ fn limits_description_does_not_hold_native_session_authority() {
             "Describe"
         );
         describing.send(()).unwrap();
-        released.recv_timeout(Duration::from_secs(2)).unwrap();
         stream
             .write_all(b"{\"_tag\":\"Err\",\"payload\":\"no test limits\"}\n")
             .unwrap();
     });
+    let (locked, acquired) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let runtime = fixture.runtime.clone();
+    let holder = thread::spawn(move || {
+        runtime.control().unwrap().observe_status(|_, _, _| {
+            locked.send(()).unwrap();
+            released.recv().unwrap();
+        });
+    });
+    acquired.recv().unwrap();
     let runtime = fixture.runtime.clone();
     let preparing = thread::spawn(move || prepare(&runtime));
-    entered.recv_timeout(Duration::from_secs(2)).unwrap();
-    let (answer, received) = mpsc::channel();
-    let runtime = fixture.runtime.clone();
-    let observer = thread::spawn(move || {
-        let control = runtime.control().unwrap();
-        let status = control.control_status();
-        let stop = control.stop("00000000000000000000000000000000");
-        answer.send((status, stop)).unwrap();
-    });
-    let while_describing = received.recv_timeout(Duration::from_millis(250));
+    let early = described.recv_timeout(Duration::from_millis(250));
     release.send(()).unwrap();
-    helper.join().unwrap();
+    holder.join().unwrap();
     preparing.join().unwrap().unwrap();
-    observer.join().unwrap();
-    assert_eq!(
-        while_describing.unwrap(),
-        (HostSessionStatus::NoActive, HostSessionStop::NoActive)
+    helper.join().unwrap();
+    assert!(
+        early.is_err(),
+        "composition read limits before obtaining native session authority"
     );
 }
 
 #[test]
-fn runtime_refusal_precedes_viewer_output_effects() {
-    let name = "runtime_refusal_precedes_viewer_output_effects";
+fn resumed_and_conflicting_prepares_do_not_create_netplay_credentials() {
+    let name = "resumed_and_conflicting_prepares_do_not_create_netplay_credentials";
+    if isolated(name) {
+        return;
+    }
+    let mut fixture = Fixture::new(1);
+    let registry = fixture.runtime.route_registry().unwrap();
+    let package = registry
+        .installed_package("@korri:mgba/mgba")
+        .unwrap()
+        .clone();
+    let source = fs::read_to_string(package.package.join("plugin.ts")).unwrap();
+    // Use the established netplay declaration from host::netplay's native
+    // fixture. Only admission and credential lifetime are exercised here.
+    let source = source.replace(
+        "program: \"retroarch\",",
+        "program: \"retroarch\", netplay: { library: 'Snes9x 2010', version: '1.52.4fe690dd' },",
+    );
+    assert!(source.contains("netplay: { library:"));
+    fs::write(package.package.join("plugin.ts"), source).unwrap();
+    fixture.runtime = fixture.runtime.with_route_registry(
+        fixture.root.path().into(),
+        crate::plugin::PluginRegistry::from_installed(vec![package]).unwrap(),
+    );
+    let library_path = fixture.root.path().join("catalog/library.yaml");
+    let mut library: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&library_path).unwrap()).unwrap();
+    use sha2::{Digest, Sha256};
+    let other_identity = format!("sha256:{}", hex::encode(Sha256::digest(b"other rom")));
+    fs::write(fixture.root.path().join("roms/other.gba"), b"other rom").unwrap();
+    library["library"]["other"] = library["library"][crate::plugin_test_fixtures::GBA_ID].clone();
+    library["library"]["other"]["releases"][0]["identity"]["value"] = other_identity.clone().into();
+    fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
+    let device_path = fixture.root.path().join("device.yaml");
+    let mut device: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&device_path).unwrap()).unwrap();
+    let mut location = device["locations"]
+        .as_mapping()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    location[0]["path"] = "other.gba".into();
+    device["locations"][other_identity] = location;
+    fs::write(device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
+    let launched = prepare(&fixture.runtime).unwrap();
+    let credentials = || {
+        fs::read_dir(fixture.runtime.private_state_root.join("netplay"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let initial = credentials();
+    assert_eq!(initial.len(), 1);
+    for viewer in [
+        None,
+        Some(PluginDisplay {
+            width: 2176,
+            height: 1812,
+        }),
+    ] {
+        let resumed = fixture
+            .runtime
+            .prepare_blocking(
+                crate::plugin_test_fixtures::GBA_ID,
+                fixture.runtime.owner_public_key().as_deref(),
+                viewer.clone(),
+            )
+            .unwrap();
+        assert_eq!(resumed.session.launch_id, launched.session.launch_id);
+        let refusal = fixture
+            .runtime
+            .prepare_blocking(
+                "other",
+                fixture.runtime.owner_public_key().as_deref(),
+                viewer,
+            )
+            .unwrap_err();
+        assert_eq!(refusal.code, "ActiveSessionConflict");
+    }
+    assert_eq!(
+        credentials(),
+        initial,
+        "resumes and conflicts must not run netplay composition"
+    );
+}
+
+#[test]
+fn runtime_refusal_after_shaping_does_not_cache_out_restore() {
+    let name = "runtime_refusal_after_shaping_does_not_cache_out_restore";
     if isolated(name) {
         return;
     }
     let fixture = Fixture::new(2);
     fixture.catalog().unwrap();
     let path = fixture.root.path().join("plugin-mgba/retroarch.ts");
-    let source = fs::read_to_string(&path).unwrap().replace("export const handlers = {", "export const handlers = {\n 'runtime.resolve': () => ({ ready: false, missing: ['runtime refused before shaping'] }),");
+    let source = fs::read_to_string(&path).unwrap().replace("export const handlers = {", "export const handlers = {\n 'runtime.resolve': () => ({ ready: false, missing: ['runtime refused after shaping'] }),");
     fs::write(path, source).unwrap();
     assert!(prepare(&fixture.runtime)
         .unwrap_err()
         .message
-        .contains("runtime refused before shaping"));
-    assert!(!fixture.root.path().join("shaped").exists());
+        .contains("runtime refused after shaping"));
+    assert!(fixture.root.path().join("shaped").exists());
+    assert_eq!(fixture.mode(), "1576x1312");
+    fixture.catalog().unwrap();
     assert_eq!(fixture.mode(), "1920x1080");
 }

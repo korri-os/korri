@@ -2229,14 +2229,6 @@ impl HostSessionControl {
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
         let sandbox = super::systemd_unit::LaunchSandbox::new(configured_command, environment);
         let mut game_environment = environment.clone();
-        // Hooks use the final display-dependent plan, not its provisional size
-        // from effect-free resolution. Reuse the plan already rendered for start.
-        let rendered_environment = prepared_plan.as_ref().map(|(_, prepared)| {
-            crate::launcher::linux_plugin::PlanEnvironment {
-                values: prepared.plan.env.clone().into_iter().collect(),
-                unset: prepared.plan.env_unset.clone(),
-            }
-        });
         if let Some(hooks) = hooks {
             if hooks
                 .resolved
@@ -2247,13 +2239,10 @@ impl HostSessionControl {
             {
                 return Err(failure("HookFailed", "HookFailed { phase: before, step: 1000, reason: at most 1000 hook steps fit the authorized unit names }"));
             }
-            let environment_changes = rendered_environment
-                .as_ref()
-                .unwrap_or(&hooks.environment_changes);
-            for name in &environment_changes.unset {
+            for name in &hooks.environment_changes.unset {
                 game_environment.remove(name);
             }
-            game_environment.extend(environment_changes.values.clone());
+            game_environment.extend(hooks.environment_changes.values.clone());
         }
         let hook_environment = hooks.map(|hooks| {
             super::hooks::environment(

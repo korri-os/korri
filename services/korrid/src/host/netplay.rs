@@ -220,7 +220,7 @@ impl HostRuntime {
         input: PluginLaunchNetplay,
         source: PathBuf,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
-        let mut launch = self.prepare_launch_command(game, Some(runner), None)?;
+        let mut launch = self.prepare_launch_command(game, Some(runner), None, None)?;
         if launch.command.get(5).map(String::as_str) != Some(release) {
             let root = self.route_root()?;
             let registry = self.route_registry()?;

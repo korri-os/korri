@@ -74,6 +74,8 @@ puts it back when the shell takes the display again.
 - The Hookshot patch for screens narrower than 16:9 (separate work, after
   this).
 - Watched displays and dual-pane placements.
+- Known limit: composition, including the limits helper, runs under the session
+  lock, as before this change.
 
 ## Hardware gate
 

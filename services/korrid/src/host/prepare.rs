@@ -152,28 +152,6 @@ impl HostLauncher {
         )
     }
 
-    pub fn prepare_command_with_limits(
-        &self,
-        game_id: &str,
-        person_public_key: Option<&str>,
-        configured_command: Result<&[String], RpcFailure>,
-        limits: Option<&crate::launch_settings::session::SessionLimits>,
-        warnings: Vec<crate::launcher::typed_settings::LaunchWarning>,
-        hooks: Option<&super::hooks::LaunchHooks>,
-        steps: Option<&[crate::plugin::RunnerStep]>,
-    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
-        self.control.prepare_with_limits(
-            game_id,
-            person_public_key,
-            configured_command,
-            &self.environment,
-            limits,
-            warnings,
-            hooks,
-            steps,
-        )
-    }
-
     pub(super) fn prepare_composed(
         &self,
         game_id: &str,
