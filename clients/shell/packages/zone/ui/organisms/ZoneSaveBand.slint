@@ -6,12 +6,16 @@
 // the band unmarked while a keyboard, a dialog or the slab holds it.
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
+import { ZoneSlide } from "../atoms/ZoneSlide.slint";
 import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
 import { ZoneSaveCard } from "../molecules/ZoneSaveCard.slint";
 import { ZoneActionRow } from "../molecules/ZoneActionRow.slint";
 import { SaveCard, Btn } from "../types.slint";
 
 export component ZoneSaveBand {
+    callback dragged(region: string, by: int);
+    callback activated(target: string, at: float, released: bool);
     in property <[SaveCard]> cards;
     in property <int> at;
     in property <bool> marked;
@@ -25,14 +29,19 @@ export component ZoneSaveBand {
     property <length> card-w: Math.floor(card-h * 0.7 / a) * a;
     property <length> gap: 8 * a;
     property <length> track: root.width / 2 - at * (card-w + gap) - card-w / 2;
-    property <length> shift: Math.max(Math.min(track, 20 * a), Math.min(20 * a, root.width - cards.length * (card-w + gap) - 20 * a + gap));
+    property <length> rest-shift: Math.max(Math.min(track, 20 * a), Math.min(20 * a, root.width - cards.length * (card-w + gap) - 20 * a + gap));
+    // A sideways drag slides the band a card at a time; focus follows (ADR 0055).
+    slide := ZoneSlide { dragged(region, by) => { root.dragged(region, by); }  region: "saves"; pitch: root.card-w + root.gap; rest: -root.rest-shift; first: root.at <= 0; last: root.at >= root.cards.length - 1; }
+    property <length> shift: rest-shift + slide.offset;
     Rectangle {
         x: 0;
         y: 0;
         width: root.width;
         height: root.band-h;
         clip: true;
-        for c[i] in root.cards: ZoneSaveCard {
+        // Between the cards: a drag still slides the band, a tap does nothing.
+        ZoneTap { slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
+        for c[i] in root.cards: ZoneSaveCard { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { slide.move(dx); }  slid => { slide.release(); } 
             cache-rendering-hint: true;
             x: root.shift + i * (root.card-w + root.gap);
             y: (root.band-h - root.card-h) / 2;
@@ -41,9 +50,10 @@ export component ZoneSaveBand {
             card: c;
             // The card's own focus (the view's), or its buttons' (`lit`).
             focused: c.focused || (root.lit && i == root.at);
+            slides: true;
         }
     }
-    if root.marked: ZoneTriangle {
+    if root.marked && Tokens.ring: ZoneTriangle {
         x: 4 * root.a;
         y: root.band-h / 2 - 6 * root.a;
         width: 10 * root.a;
@@ -51,14 +61,14 @@ export component ZoneSaveBand {
         left: true;
         ink: root.at > 0 ? Tokens.red : Tokens.steel;
     }
-    if root.marked: ZoneTriangle {
+    if root.marked && Tokens.ring: ZoneTriangle {
         x: root.width - 14 * root.a;
         y: root.band-h / 2 - 6 * root.a;
         width: 10 * root.a;
         height: 12 * root.a;
         ink: root.at < root.cards.length - 1 ? Tokens.red : Tokens.steel;
     }
-    if root.retired.length > 0: ZoneActionRow {
+    if root.retired.length > 0: ZoneActionRow { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: root.band-h + 4 * root.a;
         width: root.width;

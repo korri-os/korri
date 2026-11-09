@@ -1,6 +1,7 @@
 // ZoneSaveCard
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
 import { ZoneMeasure } from "../atoms/ZoneMeasure.slint";
 import { ZoneShape } from "../atoms/ZoneShape.slint";
@@ -11,8 +12,16 @@ import { SaveCard } from "../types.slint";
 // frame, the pale header with its stripes and the label, the window with
 // the teal diagonal, the emblem over its word on a black tag, the foot bar.
 export component ZoneSaveCard {
+    callback activated(target: string, at: float, released: bool);
     in property <SaveCard> card;
     in property <bool> focused;
+    // A sideways drag on it slides the save band (ZoneSlide).
+    callback slide(dx: length);
+    callback slid();
+    // Whether a drag on it slides a band: on the save band, not alone (first boot's NEW).
+    in property <bool> slides;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: focused && Tokens.ring;
     // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
     accessible-role: button;
     accessible-item-selectable: true;
@@ -27,11 +36,11 @@ export component ZoneSaveCard {
     Rectangle {
         width: parent.width;
         height: parent.height;
-        x: root.focused ? 3 * root.a : 2 * root.a;
+        x: root.ring ? 3 * root.a : 2 * root.a;
         y: self.x;
         background: Tokens.shade;
     }
-    if root.focused: Rectangle {
+    if root.ring: Rectangle {
         x: -2 * root.a;
         y: -2 * root.a;
         width: root.width + 4 * root.a;
@@ -122,4 +131,5 @@ export component ZoneSaveCard {
             ink: "ink";
         }
     }
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { root.slide(dx); }  slid => { root.slid(); }  x: 0; y: 0; width: root.width; height: root.height; target: root.card.focus-id; slides: root.slides; }
 }

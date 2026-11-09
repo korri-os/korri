@@ -1,6 +1,7 @@
 // ZoneTally
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
 import { ZonePanel } from "../atoms/ZonePanel.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
 import { Tally } from "../types.slint";
@@ -9,6 +10,7 @@ import { Tally } from "../types.slint";
 // row's label, its bar and its value counting up together over 1.2 s, 300 ms
 // apart.
 export component ZoneTally {
+    callback activated(target: string, at: float, released: bool);
     // A focus trap: the walk keeps a press inside the layer that holds the focus.
     accessible-role: groupbox;
     accessible-label: "zone-trap";
@@ -95,4 +97,6 @@ export component ZoneTally {
             face: "fact";
         }
     }
+    // A tap anywhere on it is a press: the first skips the count-up, the next closes it.
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: "tally"; }
 }

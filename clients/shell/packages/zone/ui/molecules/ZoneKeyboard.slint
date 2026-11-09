@@ -1,6 +1,7 @@
 // ZoneKeyboard
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
 import { ZoneShape } from "../atoms/ZoneShape.slint";
 import { ZonePanel } from "../atoms/ZonePanel.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
@@ -15,6 +16,7 @@ import { Keyboard } from "../types.slint";
 // wears the pink drop. Its plan is src/plan/keyboard.ts: key unit and
 // height whole art px, the spacing yielding before the keys.
 export component ZoneKeyboard {
+    callback activated(target: string, at: float, released: bool);
     in property <Keyboard> board;
     property <length> a: Tokens.a;
     property <length> c1: 10 * a;
@@ -152,7 +154,7 @@ export component ZoneKeyboard {
         y: root.keys-y + k.row * (root.key-h + root.gap);
         width: k.units * root.unit + (k.units - 1) * root.gap;
         height: root.key-h;
-        if k.focused: ZonePanel {
+        if k.focused && Tokens.ring: ZonePanel {
             x: -3 * root.a;
             y: 3 * root.a;
             width: parent.width;
@@ -176,5 +178,6 @@ export component ZoneKeyboard {
             ink: k.current ? "hud" : "white";
             face: k.fact ? "fact" : "caps";
         }
+        ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: parent.width; height: parent.height; target: k.focus-id; }
     }
 }

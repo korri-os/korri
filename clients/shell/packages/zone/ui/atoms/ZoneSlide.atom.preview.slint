@@ -1,0 +1,10 @@
+// ZoneSlide's preview states: it draws nothing, so the state shows a card at its offset.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneSlide } from "./ZoneSlide.slint";
+
+export component Default inherits ZonePreview {
+    slide := ZoneSlide { region: "band"; pitch: 60 * Tokens.a; rest: 0; }
+    Rectangle { x: 20 * Tokens.a + slide.offset; y: 20 * Tokens.a; width: 50 * Tokens.a; height: 70 * Tokens.a; background: Tokens.black; }
+}

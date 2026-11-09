@@ -7,6 +7,7 @@
 // yellow where it reaches past the wedge over the live game.
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
 import { ZoneShape } from "../atoms/ZoneShape.slint";
 import { ZonePanel } from "../atoms/ZonePanel.slint";
 import { ZoneUnderline } from "../atoms/ZoneUnderline.slint";
@@ -16,6 +17,7 @@ import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
 import { Row } from "../types.slint";
 
 export component ZonePausedControl {
+    callback activated(target: string, at: float, released: bool);
     in property <Row> it;
     // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
     accessible-role: button;
@@ -26,6 +28,13 @@ export component ZonePausedControl {
     in property <float> nudge: Tokens.nudge-button;
     property <length> a: Tokens.a;
     property <length> c1: Tokens.c1;
+    // A range is dragged sideways: the rows hold still (ZoneTap).
+    callback holding(on: bool);
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: it.focused && Tokens.ring;
+    // Where the value ends, and a range's bar: the track a finger moves along.
+    property <length> right-end: root.width - root.cap - 6 * root.a;
+    property <length> meter-w: root.it.kind == "range" ? 3.5 * root.c1 : 0;
     if root.it.kind == "title": Rectangle {
         x: 0;
         y: 0;
@@ -74,7 +83,7 @@ export component ZonePausedControl {
         y: 0;
         width: root.width;
         height: root.height;
-        if root.it.focused: ZoneUnderline {
+        if root.ring: ZoneUnderline {
             x: 0;
             y: 4 * root.a;
             width: root.width;
@@ -99,8 +108,8 @@ export component ZonePausedControl {
             ink: root.it.disabled ? "flat" : root.it.danger ? "danger" : "white";
             colour: Tokens.steel;
         }
-        property <length> right-end: root.width - root.cap - 6 * root.a;
-        property <length> meter-w: root.it.kind == "range" ? 3.5 * root.c1 : 0;
+        property <length> right-end: root.right-end;
+        property <length> meter-w: root.meter-w;
         // The value takes what the label leaves, at least 40% of the row's
         // words, and ends in "…" past that: a long choice (a mouse mode)
         // never runs over its label or past the panel.
@@ -130,7 +139,7 @@ export component ZonePausedControl {
             ink: root.it.saving ? "hud" : "white";
             face: "fact";
         }
-        if root.it.focused && root.it.choice && root.it.value != "": ZoneTriangle {
+        if root.ring && root.it.choice && root.it.value != "": ZoneTriangle {
             x: value.x - 2 * root.a - 2 * root.a * root.nudge - 5 * root.a;
             y: value.y + (root.c1 - 6 * root.a) / 2;
             width: 5 * root.a;
@@ -138,12 +147,24 @@ export component ZonePausedControl {
             left: true;
             ink: Tokens.red;
         }
-        if root.it.focused && root.it.choice && root.it.value != "": ZoneTriangle {
+        if root.ring && root.it.choice && root.it.value != "": ZoneTriangle {
             x: parent.right-end + 2 * root.a + 2 * root.a * root.nudge;
             y: value.y + (root.c1 - 6 * root.a) / 2;
             width: 5 * root.a;
             height: 6 * root.a;
             ink: Tokens.red;
         }
+    }
+    if root.it.kind == "item" || root.it.kind == "range": ZoneTap {
+        activated(target, at, released) => { root.activated(target, at, released); }
+        holding(on) => { root.holding(on); }
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        target: root.it.focus-id;
+        range: root.it.kind == "range";
+        track-start: root.right-end - root.meter-w;
+        track-end: root.right-end;
     }
 }

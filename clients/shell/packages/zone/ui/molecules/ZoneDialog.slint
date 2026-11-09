@@ -25,6 +25,7 @@ import { Dialog } from "../types.slint";
 // the plan did not break (a preview state's sentence) wrap here, and lines
 // that would still not fit are cut at the layer, never the buttons.
 export component ZoneDialog {
+    callback activated(target: string, at: float, released: bool);
     // A focus trap: the walk keeps a press inside the layer that holds the focus.
     accessible-role: groupbox;
     accessible-label: "zone-trap";
@@ -140,7 +141,7 @@ export component ZoneDialog {
         }
         // The buttons' cap is the plan's (src/plan/screen.ts dialogButtons):
         // caps-2, caps-1, or less for words that would leave the window.
-        row := ZoneActionRow {
+        row := ZoneActionRow { activated(target, at, released) => { root.activated(target, at, released); } 
             x: root.width / 8;
             width: root.width * 3 / 4;
             y: root.panel-h - root.pad - self.needed;

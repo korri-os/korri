@@ -16,6 +16,7 @@ import { ZoneRunWithRoute } from "ZoneRunWithRoute.slint";
 import { Row } from "../types.slint";
 
 export component ZoneRowList inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
     in property <[Row]> rows;
     in property <float> label-share: 0.55;
     property <length> a: Tokens.a;
@@ -23,85 +24,111 @@ export component ZoneRowList inherits Rectangle {
     in-out property <length> focus-h;
     property <length> list-h: list.preferred-height;
     property <length> scroll: list-h <= root.height ? 0 : Math.clamp(focus-y + focus-h / 2 - root.height / 2, 0, list-h - root.height);
+    // A finger scrolls the list too (ADR 0055): it is a Flickable, and the
+    // place the focus gives it is set again whenever the focus moves (or the
+    // highlight comes back with a press), so a scroll by hand moves no focus.
+    property <bool> ring: Tokens.ring;
+    init => {
+        flick.content-y = -root.scroll;
+    }
+    changed scroll => {
+        flick.content-y = -root.scroll;
+    }
+    changed focus-y => {
+        flick.content-y = -root.scroll;
+    }
+    changed ring => {
+        if (root.ring) {
+            flick.content-y = -root.scroll;
+        }
+    }
     clip: true;
-    list := VerticalLayout {
+    flick := Flickable {
         x: 0;
-        y: -root.scroll;
-        height: self.preferred-height;
+        y: 0;
         width: root.width;
-        spacing: 0;
-        for r in root.rows: VerticalLayout {
-            // The row the cursor stands on, or whose button it stands on (the view's `holds`).
-            property <bool> holds: r.holds;
-            // A row of buttons keeps its held button's line in view; any other row, itself.
-            property <length> keep-y: r.kind == "buttons" ? 4 * root.a + r.holds-line * (2 * Tokens.c1 + 5 * root.a) : 0;
-            property <length> keep-h: r.kind == "buttons" ? 2 * Tokens.c1 : self.preferred-height;
-            // The list keeps the holding row in view. Slint cannot read a repeated
-            // row's place from outside, so the row reports it: when it is made, and
-            // whenever its data or its place changes (the shell updates a changed
-            // row in place, so `init` alone would miss the cursor moving).
-            function keep() {
-                if (self.holds) {
-                    root.focus-y = self.y + self.keep-y;
-                    root.focus-h = self.keep-h;
+        height: root.height;
+        content-width: root.width;
+        content-height: root.list-h;
+        list := VerticalLayout {
+            x: 0;
+            y: 0;
+            height: self.preferred-height;
+            width: root.width;
+            spacing: 0;
+            for r in root.rows: VerticalLayout {
+                // The row the cursor stands on, or whose button it stands on (the view's `holds`).
+                property <bool> holds: r.holds;
+                // A row of buttons keeps its held button's line in view; any other row, itself.
+                property <length> keep-y: r.kind == "buttons" ? 4 * root.a + r.holds-line * (2 * Tokens.c1 + 5 * root.a) : 0;
+                property <length> keep-h: r.kind == "buttons" ? 2 * Tokens.c1 : self.preferred-height;
+                // The list keeps the holding row in view. Slint cannot read a repeated
+                // row's place from outside, so the row reports it: when it is made, and
+                // whenever its data or its place changes (the shell updates a changed
+                // row in place, so `init` alone would miss the cursor moving).
+                function keep() {
+                    if (self.holds) {
+                        root.focus-y = self.y + self.keep-y;
+                        root.focus-h = self.keep-h;
+                    }
                 }
-            }
-            init => { self.keep(); }
-            changed holds => { self.keep(); }
-            changed keep-y => { self.keep(); }
-            changed keep-h => { self.keep(); }
-            changed y => { self.keep(); }
-            if r.kind == "title" || r.kind == "caption": ZoneOptionGroup {
-                title: r.label;
-                caption: r.kind == "caption";
-            }
-            if r.kind == "item" || r.kind == "range": ZoneOptionRow {
-                it: r;
-                label-share: root.label-share;
-            }
-            if r.kind == "route": ZoneRunWithRoute {
-                route: r;
-            }
-            if r.kind == "note" || r.kind == "problem" || r.kind == "text": ZoneWarningLines {
-                line: r.label;
-                fact: r.label-fact;
-                warning: r.kind == "problem";
-                full: r.kind != "note";
-            }
-            if r.kind == "buttons": Rectangle {
-                height: buttons.needed + 8 * root.a;
-                buttons := ZoneActionRow {
-                    x: 0;
-                    y: 4 * root.a;
-                    width: parent.width;
-                    buttons: r.buttons;
+                init => { self.keep(); }
+                changed holds => { self.keep(); }
+                changed keep-y => { self.keep(); }
+                changed keep-h => { self.keep(); }
+                changed y => { self.keep(); }
+                if r.kind == "title" || r.kind == "caption": ZoneOptionGroup {
+                    title: r.label;
+                    caption: r.kind == "caption";
                 }
-            }
-            if r.kind == "tags": Rectangle {
-                height: 1.55 * Tokens.c1 + 4 * root.a;
-                ZoneTagRow {
-                    x: 4 * root.a;
-                    y: 2 * root.a;
-                    width: self.natural;
-                    fill: false;
-                    tags: r.tags;
+                if r.kind == "item" || r.kind == "range": ZoneOptionRow { activated(target, at, released) => { root.activated(target, at, released); } 
+                    it: r;
+                    label-share: root.label-share;
                 }
-            }
-            if r.kind == "word": Rectangle {
-                height: 2 * Tokens.c1 + 12 * root.a;
-                ZonePanel {
-                    x: (parent.width - self.width) / 2;
-                    y: 4 * root.a;
-                    width: word.natural + 2 * (2 * Tokens.c1 + 6 * root.a);
-                    height: 2 * Tokens.c1 + 4 * root.a;
-                    run: 2 * Tokens.c1;
-                    ink: Tokens.black;
+                if r.kind == "route": ZoneRunWithRoute { activated(target, at, released) => { root.activated(target, at, released); } 
+                    route: r;
                 }
-                word := ZoneCaps {
-                    x: (parent.width - self.natural) / 2;
-                    y: 6 * root.a;
-                    text: r.label;
-                    cap: Tokens.c2;
+                if r.kind == "note" || r.kind == "problem" || r.kind == "text": ZoneWarningLines {
+                    line: r.label;
+                    fact: r.label-fact;
+                    warning: r.kind == "problem";
+                    full: r.kind != "note";
+                }
+                if r.kind == "buttons": Rectangle {
+                    height: buttons.needed + 8 * root.a;
+                    buttons := ZoneActionRow { activated(target, at, released) => { root.activated(target, at, released); } 
+                        x: 0;
+                        y: 4 * root.a;
+                        width: parent.width;
+                        buttons: r.buttons;
+                    }
+                }
+                if r.kind == "tags": Rectangle {
+                    height: 1.55 * Tokens.c1 + 4 * root.a;
+                    ZoneTagRow {
+                        x: 4 * root.a;
+                        y: 2 * root.a;
+                        width: self.natural;
+                        fill: false;
+                        tags: r.tags;
+                    }
+                }
+                if r.kind == "word": Rectangle {
+                    height: 2 * Tokens.c1 + 12 * root.a;
+                    ZonePanel {
+                        x: (parent.width - self.width) / 2;
+                        y: 4 * root.a;
+                        width: word.natural + 2 * (2 * Tokens.c1 + 6 * root.a);
+                        height: 2 * Tokens.c1 + 4 * root.a;
+                        run: 2 * Tokens.c1;
+                        ink: Tokens.black;
+                    }
+                    word := ZoneCaps {
+                        x: (parent.width - self.natural) / 2;
+                        y: 6 * root.a;
+                        text: r.label;
+                        cap: Tokens.c2;
+                    }
                 }
             }
         }

@@ -1,6 +1,7 @@
 // ZoneTab: one tab of the strip; the active one is the banner, the others black panels; a focused tab lifts 2 art px and wears the pink drop.
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "./ZoneTap.slint";
 import { ZoneBanner } from "./ZoneBanner.slint";
 import { ZonePanel } from "./ZonePanel.slint";
 import { ZoneCaps } from "./ZoneCaps.slint";
@@ -10,6 +11,7 @@ import { Tab } from "../types.slint";
 // One tab: the active one is the banner, the others black panels. A
 // focused tab lifts 2 art px with the snap and wears the pink drop.
 export component ZoneTab {
+    callback activated(target: string, at: float, released: bool);
     in property <Tab> tab;
     property <length> a: Tokens.a;
     in property <length> pad-y;
@@ -21,7 +23,9 @@ export component ZoneTab {
     out property <length> span: tab.active ? banner.span : tab-w;
     width: span;
     height: 0;
-    property <length> lift: tab.focused ? -2 * a : 0;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: tab.focused && Tokens.ring;
+    property <length> lift: ring ? -2 * a : 0;
     animate lift {
         duration: 180ms;
         easing: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -38,20 +42,21 @@ export component ZoneTab {
         accessible-item-selectable: true;
         accessible-item-selected: root.tab.focused;
         accessible-label: root.tab.label;
+        ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: parent.width; height: parent.height; target: root.tab.focus-id; }
     }
     banner := ZoneBanner {
         x: 0;
         visible: root.tab.active;
         y: -self.height / 2 + root.lift;
         label: root.tab.label;
-        focused: root.tab.focused;
+        focused: root.ring;
     }
     if !root.tab.active: Rectangle {
         x: 0;
         y: -root.th / 2 + root.lift;
         width: root.tab-w;
         height: root.th;
-        if root.tab.focused: ZonePanel {
+        if root.ring: ZonePanel {
             x: -3 * root.a;
             y: 3 * root.a;
             width: root.tab-w;

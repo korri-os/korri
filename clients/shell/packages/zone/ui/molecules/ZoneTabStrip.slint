@@ -9,6 +9,7 @@ import { Tab, Hints } from "../types.slint";
 // tight (least gaps), keys (the hints keep only their keycaps), stacked (the
 // tabs take a row of their own under the hints, which take their words back).
 export component ZoneTabStrip {
+    callback activated(target: string, at: float, released: bool);
     property <length> a: Tokens.a;
     in property <[Tab]> tabs;
     in property <bool> tabs-shown;
@@ -45,19 +46,19 @@ export component ZoneTabStrip {
             return i == self.active ? (root.width - (i == 0 ? t0.span : i == 1 ? t1.span : t2.span)) / 2
                 : (i == 0 || (i == 1 && self.active == 0)) ? self.pair-x : self.pair-x + self.pair-w - (i == 1 ? t1.span : t2.span);
         }
-        t0 := ZoneTab {
+        t0 := ZoneTab { activated(target, at, released) => { root.activated(target, at, released); } 
             x: parent.wraps ? parent.wrapped-x(0) : (root.width - parent.tabs-w) / 2;
             y: parent.wraps && parent.active != 0 ? root.third-cy : root.row-cy;
             tab: root.tabs[0];
             pad-y: root.least ? root.a : 5 * root.a;
         }
-        t1 := ZoneTab {
+        t1 := ZoneTab { activated(target, at, released) => { root.activated(target, at, released); } 
             x: parent.wraps ? parent.wrapped-x(1) : t0.x + t0.span + root.gap;
             y: parent.wraps && parent.active != 1 ? root.third-cy : root.row-cy;
             tab: root.tabs[1];
             pad-y: root.least ? root.a : 5 * root.a;
         }
-        t2 := ZoneTab {
+        t2 := ZoneTab { activated(target, at, released) => { root.activated(target, at, released); } 
             x: parent.wraps ? parent.wrapped-x(2) : t1.x + t1.span + root.gap;
             y: parent.wraps && parent.active != 2 ? root.third-cy : root.row-cy;
             tab: root.tabs[2];
@@ -71,22 +72,24 @@ export component ZoneTabStrip {
         label: root.banner;
         focused: false;
     }
-    ZoneKeycap {
+    ZoneKeycap { activated(target, at, released) => { root.activated(target, at, released); } 
         cache-rendering-hint: true;
         x: root.margin;
         y: root.cy - self.height / 2;
         key: "B";
-        word: root.hints.back;
+        word: root.hints.back.label;
+        focus-id: root.hints.back.focus-id;
         key-ink: Tokens.key-b;
         words: root.words;
         pad: root.least ? 2 * root.a : 5 * root.a;
     }
-    ZoneKeycap {
+    ZoneKeycap { activated(target, at, released) => { root.activated(target, at, released); } 
         cache-rendering-hint: true;
         x: root.width - root.margin - self.span;
         y: root.cy - self.height / 2;
         key: "A";
-        word: root.hints.confirm;
+        word: root.hints.confirm.label;
+        focus-id: root.hints.confirm.focus-id;
         key-ink: Tokens.key-a;
         words: root.words;
         pad: root.least ? 2 * root.a : 5 * root.a;

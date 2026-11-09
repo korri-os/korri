@@ -1,0 +1,108 @@
+import { Tokens } from "../../ui/tokens.slint";
+
+// Where a finger (or a mouse) presses a focus target (ADR 0055). Placed over
+// the target, the size of it; it draws nothing. It reports the target's id
+// through `activated`, which every layer passes up to the root's one
+// callback; logic.js moves the cursor there and does what Confirm does.
+//
+// A press that moves more than Tokens.drag-start is a drag, and a drag never
+// activates. A region that scrolls (ZoneRowList, PAUSED's rows: Slint Flickables) takes a drag
+// along its axis before this sees it, so the region follows the finger.
+//
+// On a rack that moves by focus (`slides`: the band, the save band), a drag that goes
+// sideways first slides the row: each move goes to `slide` (in window
+// coordinates, so the row moving under the finger does not count) and the
+// lift to `slid`; the rack's ZoneSlide turns that into whole-item steps.
+//
+// A range (`range`, with its track from `track-start` to `track-end` in
+// local x): a tap that starts on the control sends the finger's place along
+// the track as `at` (0 to 1) with `released`; a drag that goes sideways
+// first sends `at` on every move and `released` on the lift, and holds its
+// scroll region still (`holding`) so the axis stays locked. A press that
+// starts off the control (on the row's label) is a plain tap.
+//
+// A chip whose halves mean two ways (◀▶ ADJUST, `halves`) sends which half
+// as `at`, 0 to 1 across the chip.
+export component ZoneTap inherits TouchArea {
+    // The focus target's id; empty: no target here (disabled, or drawn for show).
+    in property <string> target;
+    in property <bool> range;
+    in property <length> track-start;
+    in property <length> track-end;
+    in property <bool> halves;
+    in property <bool> slides;
+    callback activated(target: string, at: float, released: bool);
+    callback holding(on: bool);
+    callback slide(dx: length);
+    callback slid();
+    // Past drag-start: a drag, not a tap.
+    property <bool> dragged;
+    // A range drag, locked sideways.
+    property <bool> sliding;
+    // A rack drag, locked sideways.
+    property <bool> rowing;
+    property <length> finger-x;
+    // The press started on the range's control.
+    property <bool> on-control;
+    enabled: target != "" || slides;
+    pure function along(x: length) -> float {
+        return track-end <= track-start ? 0 : Math.clamp((x - track-start) / (track-end - track-start), 0, 1);
+    }
+    function finish(lifted: bool) {
+        if (sliding) {
+            root.activated(target, along(self.mouse-x), true);
+            root.holding(false);
+        } else if (rowing) {
+            root.slid();
+        } else if (lifted && !dragged && target != "") {
+            if (on-control) {
+                root.activated(target, along(self.mouse-x), true);
+            } else if (halves) {
+                root.activated(target, self.width > 0 ? Math.clamp(self.mouse-x / self.width, 0, 1) : 0.5, true);
+            } else {
+                root.activated(target, -1, false);
+            }
+        }
+        dragged = false;
+        sliding = false;
+        rowing = false;
+        on-control = false;
+    }
+    pointer-event(event) => {
+        if (event.button != PointerEventButton.left && event.kind != PointerEventKind.cancel) {
+            return;
+        }
+        if (event.kind == PointerEventKind.down) {
+            dragged = false;
+            sliding = false;
+            rowing = false;
+            on-control = range && self.mouse-x >= track-start - Tokens.drag-start && self.mouse-x <= track-end + Tokens.drag-start;
+        } else if (event.kind == PointerEventKind.up) {
+            finish(true);
+        } else if (event.kind == PointerEventKind.cancel) {
+            finish(false);
+        }
+    }
+    moved => {
+        if (!dragged && (Math.abs(self.mouse-x - self.pressed-x) > Tokens.drag-start || Math.abs(self.mouse-y - self.pressed-y) > Tokens.drag-start)) {
+            dragged = true;
+            let sideways = Math.abs(self.mouse-x - self.pressed-x) > Math.abs(self.mouse-y - self.pressed-y);
+            sliding = on-control && sideways;
+            rowing = slides && !on-control && sideways;
+            if (sliding) {
+                root.holding(true);
+            }
+            if (rowing) {
+                finger-x = self.absolute-position.x + self.pressed-x;
+            }
+        }
+        if (sliding) {
+            root.activated(target, along(self.mouse-x), false);
+        }
+        if (rowing) {
+            let now = self.absolute-position.x + self.mouse-x;
+            root.slide(now - finger-x);
+            finger-x = now;
+        }
+    }
+}

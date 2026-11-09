@@ -10,12 +10,13 @@ import { ZoneFoot } from "../molecules/ZoneFoot.slint";
 import { Tab, Hints, Foot } from "../types.slint";
 
 export component ZoneShell {
+    callback activated(target: string, at: float, released: bool);
     in property <[Tab]> tabs;
     in property <bool> tabs-shown: true;
     in property <string> banner;
     in property <int> pips;
     in property <int> pip;
-    in property <Hints> hints: { back: "Back", confirm: "Confirm" };
+    in property <Hints> hints: { back: { label: "Back" }, confirm: { label: "Confirm" } };
     in property <Foot> foot;
     in property <bool> rings: true;
     property <length> a: Tokens.a;
@@ -37,7 +38,7 @@ export component ZoneShell {
         height: root.body-h;
         @children
     }
-    ZoneTabStrip {
+    ZoneTabStrip { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;

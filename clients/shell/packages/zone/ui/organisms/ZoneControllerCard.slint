@@ -1,6 +1,7 @@
 // ZoneControllerCard
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
 import { ZoneShape } from "../atoms/ZoneShape.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
 import { ZoneEmblem } from "../atoms/ZoneEmblem.slint";
@@ -10,6 +11,7 @@ import { Seat } from "../types.slint";
 // the pad emblem, the black corner tab with its seat, the name bar; a seat
 // not heard yet reads WAITING.
 export component ZoneControllerCard {
+    callback activated(target: string, at: float, released: bool);
     in property <Seat> seat;
     // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
     accessible-role: button;
@@ -19,7 +21,7 @@ export component ZoneControllerCard {
     property <length> a: Tokens.a;
     in property <float> nudge: Tokens.nudge-button;
     property <length> c1: 10 * a;
-    if root.seat.focused: Rectangle {
+    if root.seat.focused && Tokens.ring: Rectangle {
         x: -2 * root.a;
         y: -2 * root.a;
         width: root.width + 4 * root.a;
@@ -116,4 +118,5 @@ export component ZoneControllerCard {
         cap: root.c1;
         face: "fact";
     }
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: root.seat.focus-id; }
 }

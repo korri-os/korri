@@ -23,6 +23,8 @@ import { ZoneShell } from "../ui/templates/ZoneShell.slint";
 import { Mark, Tab, Hints, Foot, Card, Fact, Btn, Row, Keyboard, LaunchCard, Tally } from "../ui/types.slint";
 
 export component ZoneGames {
+    callback dragged(region: string, by: int);
+    callback activated(target: string, at: float, released: bool);
     in property <[Tab]> tabs;
     in property <Hints> hints;
     in property <Foot> foot;
@@ -51,7 +53,7 @@ export component ZoneGames {
     in property <int> attract-card;
     property <length> a: Tokens.a;
     property <bool> has-games: catalog == "Ready" && cards.length > 0;
-    shell := ZoneShell {
+    shell := ZoneShell { activated(target, at, released) => { root.activated(target, at, released); } 
         // The attract is opaque from its first frame (the title card's ground)
         // and leaves at once on a press: while it shows, the page under it
         // is not drawn (its ground, band and triangles stop animating).
@@ -67,7 +69,7 @@ export component ZoneGames {
         property <length> facts-h: 18 * root.a;
         property <length> acts-h: Math.max(26 * root.a, row.needed + 4 * root.a);
         property <length> band-h: Math.max(0, self.body-h - (root.has-games ? self.facts-h + self.acts-h : 0));
-        if root.has-games && !root.typing: ZoneCardBand {
+        if root.has-games && !root.typing: ZoneCardBand { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); } 
             x: 0;
             y: 4 * root.a;
             width: root.width;
@@ -86,7 +88,7 @@ export component ZoneGames {
             height: shell.facts-h;
             facts: root.facts;
         }
-        row := ZoneActionRow {
+        row := ZoneActionRow { activated(target, at, released) => { root.activated(target, at, released); } 
             cache-rendering-hint: true;
             visible: root.has-games;
             x: 0;
@@ -142,13 +144,13 @@ export component ZoneGames {
                 image-rendering: pixelated;
             }
         }
-        if root.find-shown && !root.typing: ZoneButton {
+        if root.find-shown && !root.typing: ZoneButton { activated(target, at, released) => { root.activated(target, at, released); } 
             cache-rendering-hint: true;
             x: root.width - 12 * root.a - self.span;
             y: 4 * root.a;
             btn: root.find;
         }
-        if root.get-shown && !root.typing: ZoneButton {
+        if root.get-shown && !root.typing: ZoneButton { activated(target, at, released) => { root.activated(target, at, released); } 
             cache-rendering-hint: true;
             x: 21 * root.a;
             y: 4 * root.a;
@@ -180,7 +182,7 @@ export component ZoneGames {
                 face: "fact";
             }
         }
-        if root.opts-shown: ZoneGameOpts {
+        if root.opts-shown: ZoneGameOpts { activated(target, at, released) => { root.activated(target, at, released); } 
             x: 0;
             y: 0;
             width: root.width;
@@ -190,7 +192,7 @@ export component ZoneGames {
         }
     }
     // The FIND keyboard rises over everything below the tabs.
-    if root.keyboard.shown: ZoneOptionsEntry {
+    if root.keyboard.shown: ZoneOptionsEntry { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: Tokens.top-h;
         width: root.width;
@@ -205,14 +207,14 @@ export component ZoneGames {
         height: root.height;
         card: root.launch-card;
     }
-    if root.tally.shown: ZoneTally {
+    if root.tally.shown: ZoneTally { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         tally: root.tally;
     }
-    if root.attract: ZoneAttract {
+    if root.attract: ZoneAttract { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;

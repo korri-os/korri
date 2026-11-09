@@ -10,6 +10,7 @@ import { ZoneTagRow } from "../molecules/ZoneTagRow.slint";
 import { Row } from "../types.slint";
 
 export component ZoneRunWithRoute {
+    callback activated(target: string, at: float, released: bool);
     in property <Row> route;
     property <length> a: Tokens.a;
     property <length> tags-h: route.tags.length > 0 ? 1.55 * Tokens.c1 + 4 * a : 0;
@@ -21,7 +22,7 @@ export component ZoneRunWithRoute {
         fill: false;
         tags: root.route.tags;
     }
-    row := ZoneOptionRow {
+    row := ZoneOptionRow { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: root.tags-h;
         width: root.width;

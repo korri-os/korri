@@ -6,6 +6,18 @@
 // size, the look, the screen group's ground) and hands each page plain
 // properties. Below it every component is a shape (ui/, pages/).
 //
+// Input: one generic activation callback and one drag callback, no
+// per-control callbacks (ADR 0055). A tap or a click on a focus target
+// reports its id through `activated(target, at, released)`; every layer
+// passes it up to the root and the shell carries it to logic.js as
+// `Activated`. `at` is the finger's place along a range's track, 0 to 1
+// (`at < 0`: absent); `released` is true on the message sent as the finger
+// lifts off a range (false: absent). A sideways drag or fling on a rack that
+// moves by focus (the band, the save band) sends `dragged(region, by)` each
+// time the finger crosses a whole card: `Dragged` moves focus by `by` in
+// that region. `touching` hides the focus highlight after a tap or a drag,
+// until the next button press.
+//
 // Frame cost: every still part stands in a `cache-rendering-hint` layer
 // (the shell's Slint caches them, clients/shell/vendor), and a page that is
 // not shown holds no items. Each frame only the ground's three dots and the
@@ -26,6 +38,12 @@ import { ZonePaused } from "pages/ZonePaused.slint";
 export { Screen, Mark, Tab, Hints, Signal, Foot, Btn, Tag, Row, Key, Keyboard, Dialog, Busy, Card, Fact, Strip, Head, WellInfo, SaveCard, Seat, NewSave, LaunchCard, TallyRow, Tally, Hud }
 
 export component Surface inherits Window {
+    // A focus target was tapped or clicked (ADR 0055): one callback for every target.
+    callback activated(target: string, at: float, released: bool);
+    // A rack moved by focus was dragged across `by` whole items (ADR 0055).
+    callback dragged(region: string, by: int);
+    // A tap or a drag came last, not a button: the focus highlight hides.
+    in property <bool> touching;
     title: "Zone";
     background: Tokens.ground-fill;
 
@@ -94,6 +112,10 @@ export component Surface inherits Window {
         Tokens.look = self.look;
         Tokens.ground = self.ground;
         Tokens.screen = self.screen;
+        Tokens.touching = self.touching;
+    }
+    changed touching => {
+        Tokens.touching = self.touching;
     }
     changed screen => {
         Tokens.screen = self.screen;
@@ -111,7 +133,7 @@ export component Surface inherits Window {
         Tokens.ground = self.ground;
     }
 
-    if root.page == "games": ZoneGames {
+    if root.page == "games": ZoneGames { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -143,7 +165,7 @@ export component Surface inherits Window {
         attract: root.attract;
         attract-card: root.attract-card;
     }
-    if root.page == "options" || root.page == "join": ZoneOptions {
+    if root.page == "options" || root.page == "join": ZoneOptions { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -156,7 +178,7 @@ export component Surface inherits Window {
         well: root.well;
         keyboard: root.keyboard;
     }
-    if root.page == "runwith": ZoneRunWith {
+    if root.page == "runwith": ZoneRunWith { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -168,7 +190,7 @@ export component Surface inherits Window {
         well: root.well;
         keyboard: root.keyboard;
     }
-    if root.page == "store": ZoneStore {
+    if root.page == "store": ZoneStore { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -181,7 +203,7 @@ export component Surface inherits Window {
         keyboard: root.keyboard;
         bottom-room: root.busy.shown ? 60 * Tokens.a : 0;
     }
-    if root.page == "launch": ZoneLaunchSettings {
+    if root.page == "launch": ZoneLaunchSettings { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -193,7 +215,7 @@ export component Surface inherits Window {
         well: root.well;
         keyboard: root.keyboard;
     }
-    if root.page == "savedata": ZoneSaveData {
+    if root.page == "savedata": ZoneSaveData { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -210,9 +232,10 @@ export component Surface inherits Window {
         qr: root.qr;
         secret: root.secret;
         slab-focused: root.slab.focused;
+        slab-id: root.slab.focus-id;
         keyboard: root.keyboard;
     }
-    if root.page == "onboarding": ZoneOnboarding {
+    if root.page == "onboarding": ZoneOnboarding { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -229,7 +252,7 @@ export component Surface inherits Window {
         new-save: root.new-save;
         keyboard: root.keyboard;
     }
-    ZoneStatusLayer {
+    ZoneStatusLayer { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -247,6 +270,12 @@ export component Surface inherits Window {
 // shows black there instead. `has-art` and `art` stay declared for the
 // view's sake; the live game takes the cover art's place.
 export component Overlay inherits Window {
+    // A focus target was tapped or clicked (ADR 0055): one callback for every target.
+    callback activated(target: string, at: float, released: bool);
+    // A rack moved by focus was dragged across `by` whole items (ADR 0055).
+    callback dragged(region: string, by: int);
+    // A tap or a drag came last, not a button: the focus highlight hides.
+    in property <bool> touching;
     title: "Zone overlay";
     background: Tokens.ground-live;
     in property <string> look: "blend";
@@ -267,6 +296,10 @@ export component Overlay inherits Window {
         Tokens.look = self.look;
         Tokens.ground = "paused";
         Tokens.screen = self.screen;
+        Tokens.touching = self.touching;
+    }
+    changed touching => {
+        Tokens.touching = self.touching;
     }
     changed screen => {
         Tokens.screen = self.screen;
@@ -280,7 +313,7 @@ export component Overlay inherits Window {
     changed look => {
         Tokens.look = self.look;
     }
-    ZonePaused {
+    ZonePaused { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;

@@ -11,7 +11,7 @@ import os
 
 FILL = "x: 0; y: 0; width: parent.width; height: parent.height;"
 TABS = '[{ label: "Games", active: true }, { label: "Options" }, { label: "Save data" }]'
-HINTS = '{ back: "Back", confirm: "Confirm" }'
+HINTS = '{ back: { label: "Back" }, confirm: { label: "Confirm" } }'
 FOOT = '{ shown: true, time-label: "Time", clock: "21:47", device: "mini", signal: { shown: true, name: "hummingbird-lake", korri: true, bars: 3, strength: "72%" }, build: "korri 0.4.1 · 9a1fb22" }'
 TAGS = '[{ label: "Switch", kind: "system", korri: true }, { label: "Here", kind: "here" }]'
 CARDS = ('[{ title: "Celeste Classic", initials: "CC", stripes: 1, tags: [{ label: "PICO-8", kind: "system", korri: true }, { label: "Here", kind: "here" }, { label: "Continue", kind: "continue" }] },'

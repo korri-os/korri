@@ -1,6 +1,7 @@
 // ZoneOptionRow: one row of OPTIONS (and of every list page): the label on its black panel, the value on its own (bars before a network's words, a range's bar), the pink drop when focused, the red triangles inside the value panel's ends on a choice, the red caret blinking while Korri saves.
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
 import { ZoneShape } from "../atoms/ZoneShape.slint";
 import { ZonePanel } from "../atoms/ZonePanel.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
@@ -10,6 +11,7 @@ import { ZoneUnderline } from "../atoms/ZoneUnderline.slint";
 import { Row } from "../types.slint";
 
 export component ZoneOptionRow {
+    callback activated(target: string, at: float, released: bool);
     in property <Row> it;
     // A focus target, for the walk that reads what is drawn (tests/zone_package.rs).
     accessible-role: button;
@@ -29,13 +31,15 @@ export component ZoneOptionRow {
     out property <length> need: cell + 4 * a;
     height: need;
     property <bool> lit: it.focused;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: it.focused && Tokens.ring;
     // ---- item: label panel, value panel ----
     Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
         height: parent.height;
-        if root.it.focused: ZoneUnderline {
+        if root.ring: ZoneUnderline {
             x: 0;
             y: 0;
             width: root.label-w;
@@ -106,7 +110,7 @@ export component ZoneOptionRow {
             face: root.it.value-fact ? "fact" : "caps";
         }
         // Choice triangles inside the value panel's ends, nudging.
-        if root.it.focused && root.it.choice: Rectangle {
+        if root.ring && root.it.choice: Rectangle {
             x: 0;
             y: 0;
             width: parent.width;
@@ -136,4 +140,5 @@ export component ZoneOptionRow {
             background: Tokens.red;
         }
     }
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: root.it.focus-id; }
 }

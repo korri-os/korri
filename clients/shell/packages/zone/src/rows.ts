@@ -32,6 +32,8 @@ export interface Btn {
   readonly danger: boolean
   /** Its line in its row of buttons (src/focus.ts sets it from the plan). */
   readonly line: number
+  /** Its focus target's id, "" when it is none: what a tap on it reports (ADR 0055). */
+  readonly focusId: string
 }
 
 export interface Tag {
@@ -64,6 +66,9 @@ export interface Row {
   readonly tags: readonly Tag[]
   /** A row of buttons holds the cursor on one of its buttons: the list keeps it in view. */
   readonly holds: boolean
+  /** Its focus target's id, "" when it is none: what a tap on it reports (ADR 0055).
+   * Every row sends it, so a row that stops being a target never keeps an old one. */
+  readonly focusId: string
 }
 
 const NONE: Row = {
@@ -81,11 +86,12 @@ const NONE: Row = {
   buttons: [],
   tags: [],
   holds: false,
+  focusId: "",
 }
 
 export const row = (fields: Partial<Row>): Row => ({ ...NONE, ...fields })
 export const btn = (label: string, fields: Partial<Btn> = {}): Btn =>
-  ({ label, focused: false, lit: false, disabled: false, danger: false, line: 0, ...fields })
+  ({ label, focused: false, lit: false, disabled: false, danger: false, line: 0, focusId: "", ...fields })
 export const tag = (label: string, kind: string, korri = false): Tag => ({ label, kind, korri })
 
 /** ZoneBars' rule: one bar a quarter, never none while connected. */
@@ -137,6 +143,7 @@ export function optionRows(plan: ZoneOptionsPlan, options: ZoneOptions, captions
         // The connection's SSID is Korri's name: its own case (ZoneSignal draws it as a fact).
         valueFact: entry.keepCase?.value === true || (entry.signal?._tag === "Connection" && entry.signal.connection._tag === "Wifi"),
         focused,
+        focusId: `row:${entry.id}`,
         disabled: entry.disabled === true,
         danger: interaction?.kind === "action" && interaction.destructive === true,
         choice: interaction?.kind === "choice" || interaction?.kind === "number",
@@ -168,6 +175,7 @@ export function actionButtons(actions: readonly SurfaceAction[], focused: string
     // The row holds the cursor when one of its buttons does: the list keeps it in view.
     holds: actions.some(action => action.id === focused),
     buttons: actions.map(action => btn(action.label, {
+      focusId: `button:${action.id}`,
       focused: action.id === focused,
       lit: action.id === lit,
       disabled: !action.enabled,
@@ -198,11 +206,11 @@ export function runWithRows(state: ZoneSurfaceState, choice: ZoneRunWithOpen): R
   for (const warning of choice.warnings) rows.push(row({ kind: "problem", label: warning, labelFact: true }))
   if (choice.message !== "") rows.push(row({ kind: "text", label: choice.message, labelFact: true }))
   for (const orphan of plan.orphans) {
-    rows.push(row({ kind: "route", tags: [tag("Saved", "here"), tag(orphan.label, "system", true)], label: orphan.runnerId, labelFact: true, value: "Unavailable", focused: focused === zoneSavedRowId(orphan.label) }))
+    rows.push(row({ kind: "route", tags: [tag("Saved", "here"), tag(orphan.label, "system", true)], label: orphan.runnerId, labelFact: true, value: "Unavailable", focused: focused === zoneSavedRowId(orphan.label), focusId: `row:${zoneSavedRowId(orphan.label)}` }))
   }
   for (const entry of plan.routes) {
     const saved = entry.saved.length === 0 ? [] : [tag("Saved", "here"), ...entry.saved.map(label => tag(label, "system", true))]
-    rows.push(row({ kind: "route", tags: saved, label: entry.route.program, labelFact: true, value: entry.route.runnerBuild, valueFact: true, focused: focused === entry.id }))
+    rows.push(row({ kind: "route", tags: saved, label: entry.route.program, labelFact: true, value: entry.route.runnerBuild, valueFact: true, focused: focused === entry.id, focusId: `row:${entry.id}` }))
     if (focused === entry.id) rows.push(row({ kind: "note", label: entry.route.runnerBuild, labelFact: true }))
     for (const warning of entry.route.warnings) rows.push(row({ kind: "problem", label: warning, labelFact: true }))
     if (entry.route.actions.length > 0) rows.push(actionButtons(entry.route.actions, focused))
@@ -251,7 +259,7 @@ export function storeRows(state: ZoneSurfaceState, korri: SurfaceModel): StoreSh
             for (const provider of providers.providers) {
               const id = zoneStoreProviderRow(provider.id)
               ids.push({ id, row: rows.length })
-              rows.push(row({ kind: "item", label: provider.title, labelFact: true, value: "Open", focused: focusRow(id) }))
+              rows.push(row({ kind: "item", label: provider.title, labelFact: true, value: "Open", focused: focusRow(id), focusId: `row:${id}` }))
             }
           }
         }
@@ -263,7 +271,7 @@ export function storeRows(state: ZoneSurfaceState, korri: SurfaceModel): StoreSh
         first = ZONE_STORE_SEARCH_ROW
         rows.push(row({ kind: "title", label: "Search" }))
         ids.push({ id: ZONE_STORE_SEARCH_ROW, row: rows.length })
-        rows.push(row({ kind: "item", label: "Search for", value: search._tag === "Idle" ? "" : search.query, valueFact: true, focused: focusRow(ZONE_STORE_SEARCH_ROW) }))
+        rows.push(row({ kind: "item", label: "Search for", value: search._tag === "Idle" ? "" : search.query, valueFact: true, focused: focusRow(ZONE_STORE_SEARCH_ROW), focusId: `row:${ZONE_STORE_SEARCH_ROW}` }))
         if (search._tag === "Searching") rows.push(row({ kind: "word", label: "Searching" }))
         if (search._tag === "Problem") dialog = { headline: "Search", korri: false, line: search.message, actions: search.actions }
         if (search._tag === "Ready") {
@@ -273,7 +281,7 @@ export function storeRows(state: ZoneSurfaceState, korri: SurfaceModel): StoreSh
             for (const entry of search.entries) {
               const id = zoneStoreEntryRow(entry.id)
               ids.push({ id, row: rows.length })
-              rows.push(row({ kind: "item", label: entry.title, labelFact: true, value: entry.system ?? "", valueFact: true, focused: focusRow(id) }))
+              rows.push(row({ kind: "item", label: entry.title, labelFact: true, value: entry.system ?? "", valueFact: true, focused: focusRow(id), focusId: `row:${id}` }))
             }
           }
         }
@@ -301,7 +309,7 @@ export function storeRows(state: ZoneSurfaceState, korri: SurfaceModel): StoreSh
           rows.push(row({
             kind: "buttons",
             holds: entries.some(entry => focusRow(entry.id)),
-            buttons: entries.map(entry => btn(entry.label, { focused: focusRow(entry.id), lit: entry.id === lit, disabled: entry.disabled })),
+            buttons: entries.map(entry => btn(entry.label, { focused: focusRow(entry.id), lit: entry.id === lit, disabled: entry.disabled, focusId: `button:${entry.id}` })),
           }))
         }
         switch (get._tag) {

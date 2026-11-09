@@ -7,6 +7,7 @@ import { ZoneShell } from "../ui/templates/ZoneShell.slint";
 import { Tab, Hints, Foot, Head, Row, WellInfo, Keyboard } from "../ui/types.slint";
 
 export component ZoneRunWith {
+    callback activated(target: string, at: float, released: bool);
 
     in property <Hints> hints;
     in property <Foot> foot;
@@ -15,7 +16,7 @@ export component ZoneRunWith {
     in property <WellInfo> well;
     in property <Keyboard> keyboard;
     in property <length> bottom-room: 0;
-    shell := ZoneShell {
+    shell := ZoneShell { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -24,7 +25,7 @@ export component ZoneRunWith {
         banner: "Run with";
         hints: root.hints;
         foot: root.foot;
-        ZoneSkyBand {
+        ZoneSkyBand { activated(target, at, released) => { root.activated(target, at, released); } 
             x: 0;
             y: 0;
             width: root.width;
@@ -36,7 +37,7 @@ export component ZoneRunWith {
             bottom-room: root.bottom-room;
         }
     }
-    if root.keyboard.shown: ZoneOptionsEntry {
+    if root.keyboard.shown: ZoneOptionsEntry { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: Tokens.top-h;
         width: root.width;

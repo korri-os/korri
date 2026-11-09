@@ -13,6 +13,8 @@ import { ZoneShell } from "../ui/templates/ZoneShell.slint";
 import { Tab, Hints, Foot, SaveCard, Btn, Keyboard } from "../ui/types.slint";
 
 export component ZoneSaveData {
+    callback dragged(region: string, by: int);
+    callback activated(target: string, at: float, released: bool);
     in property <[Tab]> tabs;
     in property <Hints> hints;
     in property <Foot> foot;
@@ -25,9 +27,10 @@ export component ZoneSaveData {
     in property <image> qr;
     in property <string> secret;
     in property <bool> slab-focused;
+    in property <string> slab-id;
     in property <Keyboard> keyboard;
     property <length> a: Tokens.a;
-    shell := ZoneShell {
+    shell := ZoneShell { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -35,7 +38,7 @@ export component ZoneSaveData {
         tabs: root.tabs;
         hints: root.hints;
         foot: root.foot;
-        if !root.qr-shown: ZoneSaveBand {
+        if !root.qr-shown: ZoneSaveBand { dragged(region, by) => { root.dragged(region, by); }  activated(target, at, released) => { root.activated(target, at, released); } 
             x: 0;
             y: 4 * root.a;
             width: root.width;
@@ -57,16 +60,17 @@ export component ZoneSaveData {
             height: shell.side;
             code: root.qr;
         }
-        if root.qr-shown: ZoneSecretSlab {
+        if root.qr-shown: ZoneSecretSlab { activated(target, at, released) => { root.activated(target, at, released); } 
             x: shell.beside ? shell.side + 16 * root.a : 8 * root.a;
             y: shell.beside ? 8 * root.a : shell.side + 16 * root.a;
             width: root.width - self.x - 8 * root.a;
             height: shell.body-h - self.y - 8 * root.a;
             secret: root.secret;
             focused: root.slab-focused;
+            focus-id: root.slab-id;
         }
     }
-    if root.keyboard.shown: ZoneOptionsEntry {
+    if root.keyboard.shown: ZoneOptionsEntry { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: Tokens.top-h;
         width: root.width;

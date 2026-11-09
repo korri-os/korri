@@ -15,6 +15,7 @@ import { Busy } from "../types.slint";
 // the meter's track (done red, the current one yellow, the rest bare track),
 // and "Step i of n · label" in Korri's facts, wrapped in the words' width.
 export component ZoneBusyStrip {
+    callback activated(target: string, at: float, released: bool);
     in property <Busy> busy;
     property <length> a: Tokens.a;
     in property <float> nudge: Tokens.nudge-button;
@@ -101,7 +102,7 @@ export component ZoneBusyStrip {
         cap: root.c1;
         face: "fact";
     }
-    row := ZoneActionRow {
+    row := ZoneActionRow { activated(target, at, released) => { root.activated(target, at, released); } 
         x: root.width - self.width - root.cut / 2 - root.pad;
         y: root.pad;
         width: Math.max((1 * Tokens.unit), (root.busy.buttons.length > 0 ? 160 * root.a : (1 * Tokens.unit)));

@@ -16,6 +16,7 @@ import { ZoneShell } from "../ui/templates/ZoneShell.slint";
 import { Hints, Foot, Row, Seat, Btn, NewSave, Keyboard } from "../ui/types.slint";
 
 export component ZoneOnboarding {
+    callback activated(target: string, at: float, released: bool);
     in property <Hints> hints;
     in property <string> banner;
     in property <int> pips: 4;
@@ -28,7 +29,7 @@ export component ZoneOnboarding {
     in property <NewSave> new-save;
     in property <Keyboard> keyboard;
     property <length> a: Tokens.a;
-    shell := ZoneShell {
+    shell := ZoneShell { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
@@ -47,14 +48,14 @@ export component ZoneOnboarding {
         property <length> seat-h: Math.min(self.stage-h - 12 * root.a, 140 * root.a);
         property <length> seat-w: Math.min(self.seat-h * 0.82, (root.width - 24 * root.a - self.vs-w - (self.n - 1) * 8 * root.a) / Math.max(1, self.n));
         property <length> row-w: self.n * self.seat-w + (self.n - 1) * 8 * root.a + self.vs-w;
-        if root.rows.length > 0: ZoneRowList {
+        if root.rows.length > 0: ZoneRowList { activated(target, at, released) => { root.activated(target, at, released); } 
             x: 12 * root.a;
             y: 4 * root.a;
             width: root.width - 24 * root.a;
             height: shell.stage-h - 4 * root.a;
             rows: root.rows;
         }
-        for s[i] in root.seats: ZoneControllerCard {
+        for s[i] in root.seats: ZoneControllerCard { activated(target, at, released) => { root.activated(target, at, released); } 
             cache-rendering-hint: true;
             x: (root.width - shell.row-w) / 2 + i * (shell.seat-w + 8 * root.a) + (root.versus && i > 0 ? shell.vs-w : 0);
             y: (shell.stage-h - self.height) / 2;
@@ -81,7 +82,7 @@ export component ZoneOnboarding {
                 face: "fact";
             }
         }
-        if root.new-save.shown: ZoneSaveCard {
+        if root.new-save.shown: ZoneSaveCard { activated(target, at, released) => { root.activated(target, at, released); } 
             height: Math.min(shell.stage-h - 16 * root.a, Tokens.card-most * root.a);
             width: Math.floor(self.height * 0.7 / root.a) * root.a;
             x: (root.width - self.width) / 2;
@@ -89,13 +90,13 @@ export component ZoneOnboarding {
             card: { header: "New", word: "Start", emblem: "key", foot: root.new-save.started ? "Ready" : "", foot-kind: "saved", focused: root.new-save.focused };
             focused: root.new-save.focused;
         }
-        ZoneButton {
+        ZoneButton { activated(target, at, released) => { root.activated(target, at, released); } 
             x: (root.width - self.span) / 2;
             y: shell.body-h - shell.next-h + 6 * root.a;
             btn: root.next;
         }
     }
-    if root.keyboard.shown: ZoneOptionsEntry {
+    if root.keyboard.shown: ZoneOptionsEntry { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: Tokens.top-h;
         width: root.width;

@@ -29,6 +29,16 @@ export global Tokens {
     in-out property <length> height: 480px;
     in-out property <string> look: "blend";
     in-out property <string> ground: "games";
+    // A tap or a drag came last, not a button (ADR 0055): the focus
+    // highlight hides until the next button press. main.slint writes it.
+    in-out property <bool> touching;
+    // Whether a focus target draws its highlight (the pink drop, the edge,
+    // the triangles, the lift): not while touch is in use. The target stays
+    // focused, and selected for the probe; only the highlight hides.
+    out property <bool> ring: !touching;
+    // How far a press may move, in logical px, before it is a drag and no
+    // longer a tap (ADR 0055; Slint's Flickable starts at the same 8).
+    out property <length> drag-start: 8px;
 
     // ---- Design inputs: the grid and the plan's thresholds (art px) ----
     /** Art rows the short side holds (art-px.ts ZONE_ART_ROWS). */

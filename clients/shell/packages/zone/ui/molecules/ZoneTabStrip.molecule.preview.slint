@@ -6,15 +6,15 @@ import { ZonePreview } from "../../ui/preview-frame.slint";
 import { ZoneTabStrip } from "./ZoneTabStrip.slint";
 
 export component Games inherits ZonePreview {
-    ZoneTabStrip { x: 0; y: 0; width: parent.width; height: Tokens.top-h; tabs: [{ label: "Games", active: true }, { label: "Options" }, { label: "Save data" }]; tabs-shown: true; hints: { back: "Back", confirm: "Confirm" }; }
+    ZoneTabStrip { x: 0; y: 0; width: parent.width; height: Tokens.top-h; tabs: [{ label: "Games", active: true }, { label: "Options" }, { label: "Save data" }]; tabs-shown: true; hints: { back: { label: "Back" }, confirm: { label: "Confirm" } }; }
 }
 
 export component FocusedTab inherits ZonePreview {
     ground: "options";
-    ZoneTabStrip { x: 0; y: 0; width: parent.width; height: Tokens.top-h; tabs: [{ label: "Games" }, { label: "Options", active: true, focused: true }, { label: "Save data" }]; tabs-shown: true; hints: { back: "Back", confirm: "Confirm" }; }
+    ZoneTabStrip { x: 0; y: 0; width: parent.width; height: Tokens.top-h; tabs: [{ label: "Games" }, { label: "Options", active: true, focused: true }, { label: "Save data" }]; tabs-shown: true; hints: { back: { label: "Back" }, confirm: { label: "Confirm" } }; }
 }
 
 export component Banner inherits ZonePreview {
     ground: "options";
-    ZoneTabStrip { x: 0; y: 0; width: parent.width; height: Tokens.top-h; tabs-shown: false; banner: "Run with"; hints: { back: "Back", confirm: "Confirm" }; }
+    ZoneTabStrip { x: 0; y: 0; width: parent.width; height: Tokens.top-h; tabs-shown: false; banner: "Run with"; hints: { back: { label: "Back" }, confirm: { label: "Confirm" } }; }
 }

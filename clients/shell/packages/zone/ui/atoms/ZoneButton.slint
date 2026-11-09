@@ -1,6 +1,7 @@
 // ZoneButton: black panel, white caps (steel when inert, red when destructive), the pink drop when lit or focused, the breathing red triangles when focused.
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "./ZoneTap.slint";
 import { ZonePanel } from "./ZonePanel.slint";
 import { ZoneCaps } from "./ZoneCaps.slint";
 import { ZoneMeasure } from "./ZoneMeasure.slint";
@@ -12,6 +13,7 @@ import { Btn } from "../types.slint";
 // danger red when destructive), the pink drop when lit (2 art px) or
 // focused (3), and the breathing red triangles when focused.
 export component ZoneButton {
+    callback activated(target: string, at: float, released: bool);
     in property <Btn> btn;
     // False on a row that draws nothing (a trial row): not a focus target.
     in property <bool> target: true;
@@ -27,7 +29,9 @@ export component ZoneButton {
     out property <length> span: btn.label == "" ? 0 : words.preferred-width + 2 * (run + 5 * a);
     width: span;
     height: 2 * cap;
-    property <length> depth: btn.focused ? 3 * a : 2 * a;
+    // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
+    property <bool> ring: btn.focused && Tokens.ring;
+    property <length> depth: ring ? 3 * a : 2 * a;
     words := ZoneMeasure {
         text: root.btn.label.to-uppercase();
         cap: root.cap;
@@ -37,7 +41,7 @@ export component ZoneButton {
         y: 0;
         width: parent.width;
         height: parent.height;
-        if root.btn.lit || root.btn.focused: ZoneUnderline {
+        if root.btn.lit || root.ring: ZoneUnderline {
             x: 0;
             y: 0;
             width: root.width;
@@ -65,14 +69,14 @@ export component ZoneButton {
     // The inline cursor: 7 art px wide, 1.1 times as tall, breathing 2 to 4 art px.
     property <length> tw: 7 * a;
     property <length> gap: 2 * a + 2 * a * nudge;
-    if root.btn.focused: ZoneTriangle {
+    if root.ring: ZoneTriangle {
         x: -root.gap - root.tw;
         y: (root.height - root.tw * 1.1) / 2;
         width: root.tw;
         height: root.tw * 1.1;
         ink: Tokens.red;
     }
-    if root.btn.focused: ZoneTriangle {
+    if root.ring: ZoneTriangle {
         x: root.width + root.gap;
         y: (root.height - root.tw * 1.1) / 2;
         width: root.tw;
@@ -80,4 +84,5 @@ export component ZoneButton {
         left: true;
         ink: Tokens.red;
     }
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: root.target && root.btn.label != "" ? root.btn.focus-id : ""; }
 }

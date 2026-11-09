@@ -1,14 +1,23 @@
 // ZoneKeycap: the disc, its letter, and at a wide enough strip the word on a black tail behind it.
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "./ZoneTap.slint";
 import { ZoneShape } from "./ZoneShape.slint";
 import { ZoneCaps } from "./ZoneCaps.slint";
 
 // A keycap hint (ZoneKeycap): the disc, its letter, and at a wide enough
 // strip the word on a black tail behind it.
 export component ZoneKeycap {
+    callback activated(target: string, at: float, released: bool);
     in property <string> key;
     in property <string> word;
+    // The hint's focus target (ADR 0055): a tap runs its button. Empty: none.
+    in property <string> focus-id;
+    // A focus target for the probe; the cursor is never on it.
+    accessible-role: button;
+    accessible-item-selectable: root.focus-id != "";
+    accessible-item-selected: false;
+    accessible-label: root.word;
     in property <color> key-ink;
     property <length> a: Tokens.a;
     in property <bool> words;
@@ -68,4 +77,5 @@ export component ZoneKeycap {
         ink: "flat";
         colour: root.key-ink;
     }
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: root.focus-id; }
 }

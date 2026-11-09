@@ -777,3 +777,162 @@ function onboarding(state: ZoneSurfaceState, button: Direction | "confirm", korr
   if (focus.startsWith("net:")) message({ _tag: "OnboardingJoin", networkId: focus.slice(4) })
   void cardCount
 }
+
+// ---- Touch (ADR 0055) ----
+
+/**
+ * The fact a page would report when the cursor arrives on target `id` (the
+ * `focusId` src/view.ts gives every drawn target): the message that puts
+ * Zone's cursor there, as the d-pad would. logic.ts first checks that the
+ * id names a target drawn now, then sends this, then Confirm (`press`).
+ */
+export function focusOn(state: ZoneSurfaceState, id: string, korri: SurfaceModel, screen: ZoneScreen, send: Send): void {
+  SCREEN = screen
+  const nav = state.nav
+  const colon = id.indexOf(":")
+  const kind = colon === -1 ? id : id.slice(0, colon)
+  const rest = colon === -1 ? "" : id.slice(colon + 1)
+  const index = Number(rest)
+  const games = (message: ZoneNavMessage) => send({ _tag: "Games", message })
+  const page = zoneShown(state, korri)
+  switch (kind) {
+    case "tab":
+      return games({ _tag: "FocusedTab", tab: rest as (typeof ZONE_TABS)[number] })
+    case "card":
+      return games({ _tag: "FocusedCard", index })
+    case "action":
+      return games({ _tag: "FocusedAction", index })
+    case "find":
+      return games({ _tag: "FocusedFind" })
+    case "get":
+      return games({ _tag: "FocusedGetGames" })
+    case "opt":
+      return games({ _tag: "FocusedGameOpt", index })
+    case "control":
+      return send({ _tag: "Paused", message: { _tag: "FocusedControl", controlId: rest } })
+    case "save":
+      return send({ _tag: "SaveData", message: { _tag: "FocusedSaveCard", index } })
+    case "retired":
+      // Off the tabs first: the retired key's buttons stand under its card.
+      if (nav.zone === "tabs") send({ _tag: "SaveData", message: { _tag: "FocusedSaveCard", index: state.identity.card } })
+      return send({ _tag: "SaveData", message: { _tag: "FocusedRetiredAction", action: rest === "delete" ? "delete" : "backup" } })
+    case "secret":
+      return send({ _tag: "SaveData", message: { _tag: "FocusedSecret" } })
+    case "target":
+      return send({ _tag: "Onboarding", message: { _tag: "FocusedTarget", target: rest } })
+    case "key":
+      return focusKey(state, rest, korri, send)
+    case "dialog":
+      return focusDialog(state, index, korri, send)
+    case "busy":
+      if (korri.status._tag === "Busy") send({ _tag: "Status", message: { _tag: "FocusedStatusButton", index } })
+      return
+    case "row":
+      switch (page) {
+        case "options":
+        case "join":
+          return send({ _tag: "Options", message: { _tag: "FocusedRow", rowId: rest } })
+        case "launch":
+          return send({ _tag: "Launch", message: { _tag: "FocusedRow", rowId: rest } })
+        case "runwith":
+          return send({ _tag: "RunWith", message: { _tag: "FocusedRow", rowId: rest } })
+        case "store":
+          return send({ _tag: "Store", message: { _tag: "FocusedRow", rowId: rest } })
+        default:
+          return
+      }
+    case "button":
+      switch (page) {
+        case "launch":
+          return send({ _tag: "FocusedLaunchAction", actionId: rest })
+        case "runwith":
+          return send({ _tag: "RunWith", message: { _tag: "FocusedRow", rowId: rest } })
+        case "store":
+          return send({ _tag: "Store", message: { _tag: "FocusedRow", rowId: rest } })
+        default:
+          return
+      }
+  }
+}
+
+/** A key of the keyboard over the page: its owner's FocusedKey. */
+function focusKey(state: ZoneSurfaceState, id: string, korri: SurfaceModel, send: Send): void {
+  switch (zoneShown(state, korri)) {
+    case "games":
+      return send({ _tag: "Games", message: { _tag: "FocusedKey", id } })
+    case "options":
+    case "join":
+      return send({ _tag: "Options", message: { _tag: "FocusedKey", keyId: id } })
+    case "launch":
+      return send({ _tag: "Launch", message: { _tag: "FocusedKey", keyId: id } })
+    case "store":
+      return send({ _tag: "Store", message: { _tag: "FocusedKey", id } })
+    case "savedata":
+      return send({ _tag: "SaveData", message: { _tag: "FocusedKey", key: id } })
+    case "onboarding":
+      return send({ _tag: "Onboarding", message: { _tag: "FocusedKey", id } })
+    default:
+      return
+  }
+}
+
+/** A dialog's button: Korri's status layer's, or the page's own question's. */
+function focusDialog(state: ZoneSurfaceState, index: number, korri: SurfaceModel, send: Send): void {
+  const status = korri.status._tag
+  if (status === "Problem" || status === "Confirm" || status === "ChooseSave" || status === "Paused" || status === "Ended") {
+    return send({ _tag: "Status", message: { _tag: "FocusedStatusButton", index } })
+  }
+  const answer = index === 0 ? 0 : 1
+  switch (zoneShown(state, korri)) {
+    case "paused":
+      return send({ _tag: "Paused", message: { _tag: "FocusedAnswer", index: answer } })
+    case "games":
+      // GAME OPTS.' question, or RELOAD (the cursor off the tabs).
+      if (state.nav.opts.asking !== undefined) return send({ _tag: "Games", message: { _tag: "FocusedAnswer", index } })
+      return send({ _tag: "Games", message: { _tag: "FocusedCard", index: state.nav.card } })
+    case "options":
+    case "join":
+      return send({ _tag: "Options", message: { _tag: "FocusedDialogButton", index: answer } })
+    case "launch":
+      return send({ _tag: "Launch", message: { _tag: "FocusedDialogButton", index: answer } })
+    case "store":
+      return send({ _tag: "Store", message: { _tag: "FocusedDialogButton", index } })
+    case "savedata": {
+      const flow = state.identity.flow._tag
+      if (flow === "disposition" || flow === "trust" || flow === "confirmDelete" || flow === "confirmBackedUp") {
+        return send({ _tag: "SaveData", message: { _tag: "FocusedChoice", index: answer } })
+      }
+      return
+    }
+    default:
+      return
+  }
+}
+
+/** The racks a finger drags item by item (ADR 0055), by their focus region. */
+export const ZONE_DRAG_ROWS: ReadonlySet<string> = new Set(["band", "saves"])
+
+/**
+ * A finger dragged a rack across `by` whole items: the cursor walks that
+ * far along it, one d-pad press at a time, entering it first when it is
+ * elsewhere, and stops at its ends (each press stops there). False when the
+ * rack is not on the page: nothing happens.
+ */
+export function dragOn(state: ZoneSurfaceState, region: string, by: number, korri: SurfaceModel, screen: ZoneScreen, send: Send, now: () => ZoneSurfaceState): boolean {
+  SCREEN = screen
+  const page = zoneShown(state, korri)
+  const layer = topLayer(state.nav)
+  if (region === "band") {
+    if (page !== "games" || layer !== "none" || bandGames(state.nav, korri).length === 0) return false
+    if (state.nav.zone !== "cards") send({ _tag: "Games", message: { _tag: "FocusedCard", index: state.nav.card } })
+  } else if (region === "saves") {
+    const flow = state.identity.flow._tag
+    if (page !== "savedata" || (flow !== "idle" && flow !== "retired") || korri.identityManagement?.status._tag === "BackupReady") return false
+    if (state.nav.zone === "tabs" || flow === "retired") send({ _tag: "SaveData", message: { _tag: "FocusedSaveCard", index: state.identity.card } })
+  } else {
+    return false
+  }
+  const button = by > 0 ? "right" : "left"
+  for (let step = 0; step < Math.abs(by); step++) press(now(), button, korri, screen, send)
+  return true
+}

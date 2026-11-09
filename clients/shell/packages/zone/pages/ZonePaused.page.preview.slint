@@ -7,12 +7,12 @@ import { ZonePaused } from "./ZonePaused.slint";
 
 export component Default inherits ZonePreview {
     ground: "paused";
-    ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1, holds: true }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: "Back", confirm: "Confirm" }; }
+    ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1, holds: true }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: { label: "Back" }, confirm: { label: "Confirm" } }; }
 }
 
 export component Question inherits ZonePreview {
     ground: "paused";
-    ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1, holds: true }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: "Back", confirm: "Confirm" }; dialog: { shown: true, headline: "Restart", buttons: [{ label: "No", focused: true }, { label: "Yes" }] }; }
+    ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1, holds: true }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: { label: "Back" }, confirm: { label: "Confirm" } }; dialog: { shown: true, headline: "Restart", buttons: [{ label: "No", focused: true }, { label: "Yes" }] }; }
 }
 
 export component Strip inherits ZonePreview {

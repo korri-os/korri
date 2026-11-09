@@ -85,6 +85,8 @@ const REACT: Readonly<Record<string, string>> = {
 const ADDED: Readonly<Record<string, string>> = {
   "ui/atoms/ZoneShape.slint": "a filled path: CSS drew every slant with clip-path; Slint needs one Path element for them",
   "ui/atoms/ZoneMeasure.slint": "measures words in a look's face without drawing them: the DOM measured its own boxes",
+  "ui/atoms/ZoneTap.slint": "where a finger presses a focus target (ADR 0055): the DOM's click and pointer events did this",
+  "ui/atoms/ZoneSlide.slint": "how a rack that moves by focus follows a finger, card by card (ADR 0055): the DOM's scroll and fling did this",
   "ui/molecules/ZoneFactLine.slint": "GAMES' facts line, markup inside ZoneGames.tsx",
   "ui/organisms/ZoneRowList.slint": "the scrolled list of rows every list page shares; CSS scrolled each page's own box",
   "ui/organisms/ZoneSkyBand.slint": "OPTIONS' sky band with its lips and black wedge, drawn by four pages' stylesheets",

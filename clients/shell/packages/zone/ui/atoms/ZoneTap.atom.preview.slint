@@ -1,0 +1,13 @@
+// ZoneTap's preview states: it draws nothing, so each state shows the box it covers.
+
+import { Tokens } from "../../ui/tokens.slint";
+import { ZonePreview } from "../../ui/preview-frame.slint";
+import { ZoneTap } from "./ZoneTap.slint";
+
+export component Default inherits ZonePreview {
+    Rectangle { x: 20 * Tokens.a; y: 20 * Tokens.a; width: parent.width - 40 * Tokens.a; height: 30 * Tokens.a; background: Tokens.black; ZoneTap { x: 0; y: 0; width: parent.width; height: parent.height; target: "row"; } }
+}
+
+export component Range inherits ZonePreview {
+    Rectangle { x: 20 * Tokens.a; y: 20 * Tokens.a; width: parent.width - 40 * Tokens.a; height: 30 * Tokens.a; background: Tokens.black; ZoneTap { x: 0; y: 0; width: parent.width; height: parent.height; target: "range"; range: true; track-start: parent.width / 2; track-end: parent.width; } }
+}

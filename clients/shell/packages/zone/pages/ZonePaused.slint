@@ -25,6 +25,7 @@ import { ZoneFactLine } from "../ui/molecules/ZoneFactLine.slint";
 import { Row, Dialog, Busy, Hints, Strip } from "../ui/types.slint";
 
 export component ZonePaused {
+    callback activated(target: string, at: float, released: bool);
     in property <string> heading: "Paused";
     in property <bool> korri-heading;
     in property <[Row]> rows;
@@ -101,11 +102,12 @@ export component ZonePaused {
             cap: root.title-cap;
             face: root.korri-heading ? "korri" : "caps";
         }
-        ZoneKeycap {
+        ZoneKeycap { activated(target, at, released) => { root.activated(target, at, released); } 
             x: 8 * root.a;
             y: root.height - 20 * root.a;
             key: "B";
-            word: root.hints.back;
+            word: root.hints.back.label;
+            focus-id: root.hints.back.focus-id;
             key-ink: Tokens.key-b;
             words: true;
             pad: 2 * root.a;
@@ -123,25 +125,52 @@ export component ZonePaused {
     // A list taller than its room scrolls, the focused row in view.
     in property <int> focus-at;
     property <length> shown-h: Math.min(list-h, room-h);
-    property <length> scroll: Math.clamp((focus-at + 1) * pitch - room-h, 0, Math.max(0, list-h - room-h));
+    // Where the focus puts the list; a finger scrolls it too (ADR 0055): the
+    // rows are a Flickable, and the next press brings the focused row back.
+    property <length> want: Math.clamp((focus-at + 1) * pitch - room-h, 0, Math.max(0, list-h - room-h));
+    property <bool> ring: Tokens.ring;
+    init => {
+        rows-flick.content-y = -root.want;
+    }
+    changed want => {
+        rows-flick.content-y = -root.want;
+    }
+    changed focus-at => {
+        rows-flick.content-y = -root.want;
+    }
+    changed ring => {
+        if (root.ring) {
+            rows-flick.content-y = -root.want;
+        }
+    }
     Rectangle {
         x: 0;
         y: root.height - root.rows-foot - 8 * root.a - root.shown-h;
         width: root.width;
         height: root.shown-h + 4 * root.a;
         clip: true;
-        for r[i] in root.rows: ZonePausedControl {
-            property <int> step: Math.clamp(root.stairs - (root.count - 1 - i), 0, root.stairs);
-            x: root.rows-left + (root.stairs - self.step) * root.c1;
-            y: i * root.pitch - root.scroll;
-            width: root.col-w - (root.stairs - self.step) * root.c1;
-            height: root.pitch;
-            it: r;
-            cap: root.cap;
+        rows-flick := Flickable {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            content-width: parent.width;
+            content-height: root.list-h;
+            for r[i] in root.rows: ZonePausedControl { activated(target, at, released) => { root.activated(target, at, released); }  holding(on) => { rows-flick.interactive = !on; } 
+                property <int> step: Math.clamp(root.stairs - (root.count - 1 - i), 0, root.stairs);
+                x: root.rows-left + (root.stairs - self.step) * root.c1;
+                y: i * root.pitch;
+                width: root.col-w - (root.stairs - self.step) * root.c1;
+                height: root.pitch;
+                it: r;
+                cap: root.cap;
+            }
         }
     }
     // More rows above or below what the list shows: a red mark pointing the
     // way, in the margin right of the rows, level with the list's top or foot.
+    // `scroll` is where the list stands now: by the focus, or by a finger.
+    property <length> scroll: -rows-flick.content-y;
     property <length> list-top: root.height - root.rows-foot - 8 * root.a - root.shown-h;
     property <length> mark: 6 * root.a;
     if root.scroll > 0: ZoneShape {
@@ -160,7 +189,7 @@ export component ZonePaused {
         ink: Tokens.red;
         commands: "M 0 0 L " + Tokens.pt(self.width, 0) + " L " + Tokens.pt(self.width / 2, self.height) + " Z";
     }
-    ZoneStatusLayer {
+    ZoneStatusLayer { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;

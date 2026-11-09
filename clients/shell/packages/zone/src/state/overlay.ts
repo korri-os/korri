@@ -13,7 +13,8 @@
  *
  * Korri owns the overlay (`SurfaceGameplayOverlayPresentation`); `update`
  * receives it beside this value and never stores it. Every change of value
- * is invoked as it happens: a range is asked once per step.
+ * is invoked as it happens: a range is asked once per step, and a finger on
+ * a range (`SetRange`, ADR 0055) once per step its snapped value crosses.
  *
  * `dismissOnSuccess` is the host's to act on. The portal's overlay
  * controller returns to the game itself after a control with it succeeds
@@ -62,6 +63,9 @@ export type ZoneOverlayMessage =
   | { readonly _tag: "PressedControl"; readonly controlId: string }
   /** Left or right on a toggle, choice or range row. */
   | { readonly _tag: "SteppedControl"; readonly controlId: string; readonly direction: -1 | 1 }
+  /** A finger set a range at `at` along its track, 0 to 1 (ADR 0055). Sent
+   * as a step is: only when the value, snapped to the step, changes. */
+  | { readonly _tag: "SetRange"; readonly controlId: string; readonly at: number }
   /** The cursor is on NO (0) or YES (1). */
   | { readonly _tag: "FocusedAnswer"; readonly index: 0 | 1 }
   /** A on NO or YES. */
@@ -97,6 +101,14 @@ function placesOf(step: number): number {
 /** One step of a range, kept within min and max. */
 export function rangeStep(value: number, min: number, max: number, step: number, direction: -1 | 1): number {
   const next = Number((value + direction * step).toFixed(placesOf(step)))
+  return Math.min(max, Math.max(min, next))
+}
+
+/** The value at a finger's place along a range's track: min to max, snapped to the step. */
+export function rangeAt(min: number, max: number, step: number, at: number): number {
+  const share = Math.min(1, Math.max(0, at))
+  const steps = step > 0 ? Math.round((share * (max - min)) / step) : 0
+  const next = Number((min + steps * step).toFixed(placesOf(step)))
   return Math.min(max, Math.max(min, next))
 }
 
@@ -196,6 +208,15 @@ function step(
       if (control.interaction.kind === "command") return stay(model)
       const value = stepValue(model, control, message.direction)
       return value === undefined ? stay(model) : change({ ...model, focusedId: control.id }, control, value)
+    }
+    case "SetRange": {
+      const control = findControl(overlay, message.controlId)
+      if (control === undefined || !control.enabled || model.leaving || model.asking !== undefined) return stay(model)
+      const interaction = control.interaction
+      if (interaction.kind !== "range") return stay(model)
+      const from = model.moving[control.id] ?? interaction.value
+      const next = rangeAt(interaction.min, interaction.max, interaction.step, message.at)
+      return next === from ? stay({ ...model, focusedId: control.id }) : change({ ...model, focusedId: control.id }, control, { kind: "range", value: next })
     }
     case "FocusedAnswer":
       return model.asking === undefined ? stay(model) : stay({ ...model, answer: message.index })

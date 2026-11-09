@@ -8,12 +8,16 @@
 // not move the band. A fixed pool of card slots follows the focus.
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
+import { ZoneSlide } from "../atoms/ZoneSlide.slint";
 import { ZoneTriangle } from "../atoms/ZoneTriangle.slint";
 import { ZoneCard } from "ZoneCard.slint";
 import { ZoneSectionCard } from "ZoneSectionCard.slint";
 import { Card, Mark } from "../types.slint";
 
 export component ZoneCardBand {
+    callback dragged(region: string, by: int);
+    callback activated(target: string, at: float, released: bool);
     in property <[Card]> cards;
     in property <int> focused-card;
     in property <bool> card-focused;
@@ -75,7 +79,10 @@ export component ZoneCardBand {
     }
     // Modern travels to a layout unit (1/64 px); the pixel looks to whole art px.
     property <length> raw-x: root.width / 2 - (f * (side-w + gap) + room + focus-w / 2);
-    property <length> track-x: Tokens.modern ? Math.round(raw-x / Tokens.unit * 64) / 64 * Tokens.unit : Math.round(raw-x / a) * a;
+    property <length> rest-x: Tokens.modern ? Math.round(raw-x / Tokens.unit * 64) / 64 * Tokens.unit : Math.round(raw-x / a) * a;
+    // A sideways drag slides the band a card at a time; focus follows (ADR 0055).
+    slide := ZoneSlide { dragged(region, by) => { root.dragged(region, by); }  region: "band"; pitch: root.side-w + root.gap; rest: -root.rest-x; first: root.focused-card <= 0; last: root.focused-card >= root.cards.length - 1; }
+    property <length> track-x: rest-x + slide.offset;
     pure function card-w(i: int) -> length {
         return side-w + share(i) * (focus-w - side-w);
     }
@@ -90,6 +97,8 @@ export component ZoneCardBand {
         cache-rendering-hint: true;
         // The band's image stays the band's size: a parked card is not in it.
         clip: true;
+        // Between the cards: a drag still slides the band, a tap does nothing.
+        ZoneTap { slides: true;  slide(dx) => { slide.move(dx); }  slid => { slide.release(); }  x: 0; y: 0; width: parent.width; height: parent.height; }
         // A fixed pool of slots, one per card from reach + 1 before the focus to
         // reach + 1 after it. Slot j holds the card whose index is j modulo the
         // pool, so a move hands only one slot a new card (the one about to
@@ -110,7 +119,7 @@ export component ZoneCardBand {
             // A spare slot stays laid out, parked past the band's right edge
             // (the band clips it, so nothing of it is drawn): on a move only
             // its place changes, and its card needs no layout in the press frame.
-            ZoneCard {
+            ZoneCard { activated(target, at, released) => { root.activated(target, at, released); }  slide(dx) => { slide.move(dx); }  slid => { slide.release(); } 
                 cache-rendering-hint: true;
                 x: parent.shown ? root.card-x(parent.i + root.first-index) : root.width + 4 * root.side-w;
                 width: parent.shown ? root.card-w(parent.i + root.first-index) : root.side-w;
@@ -119,6 +128,7 @@ export component ZoneCardBand {
                 card: parent.c;
                 focused: parent.i == root.focused-card;
                 lit: parent.shown && root.marks[parent.i].focused;
+                focus-id: parent.shown ? root.marks[parent.i].focus-id : "";
             }
             ZoneSectionCard {
                 visible: parent.shown && parent.c.section != "" && (parent.i == 0 || root.cards[parent.i - 1].section != parent.c.section);
@@ -134,14 +144,14 @@ export component ZoneCardBand {
     property <length> focused-w: card-w(focus-index);
     property <bool> first: focus-index <= 0;
     property <bool> last: focus-index >= total - 1;
-    if root.cards.length > 0 && root.card-h > 0 && root.card-focused: ZoneTriangle {
+    if root.cards.length > 0 && root.card-h > 0 && root.card-focused && Tokens.ring: ZoneTriangle {
         x: root.focused-x - (2 * root.a + (root.first ? 0 : 2 * root.a * root.nudge)) - root.tri;
         y: root.cy - self.height / 2;
         width: root.tri;
         height: root.tri * 1.1;
         ink: root.first ? Tokens.steel : Tokens.red;
     }
-    if root.cards.length > 0 && root.card-h > 0 && root.card-focused: ZoneTriangle {
+    if root.cards.length > 0 && root.card-h > 0 && root.card-focused && Tokens.ring: ZoneTriangle {
         x: root.focused-x + root.focused-w + 2 * root.a + (root.last ? 0 : 2 * root.a * root.nudge);
         y: root.cy - self.height / 2;
         width: root.tri;

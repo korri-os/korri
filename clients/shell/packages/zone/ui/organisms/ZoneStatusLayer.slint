@@ -15,6 +15,7 @@ import { ZoneDialog } from "../molecules/ZoneDialog.slint";
 import { Busy, Dialog, Hud } from "../types.slint";
 
 export component ZoneStatusLayer {
+    callback activated(target: string, at: float, released: bool);
     // A focus trap: the walk keeps a press inside the layer that holds the focus.
     accessible-role: groupbox;
     accessible-label: "zone-trap";
@@ -77,7 +78,7 @@ export component ZoneStatusLayer {
             width: root.width;
             height: root.height;
         }
-        strip := ZoneBusyStrip {
+        strip := ZoneBusyStrip { activated(target, at, released) => { root.activated(target, at, released); } 
             x: 8 * root.a;
             width: root.width - 16 * root.a;
             y: root.height - root.foot-h - self.needed - 6 * root.a;
@@ -85,7 +86,7 @@ export component ZoneStatusLayer {
             busy: root.busy;
         }
     }
-    if root.dialog.shown: ZoneDialog {
+    if root.dialog.shown: ZoneDialog { activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: root.header-h;
         width: root.width;

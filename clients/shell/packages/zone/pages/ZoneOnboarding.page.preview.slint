@@ -6,9 +6,9 @@ import { ZonePreview } from "../ui/preview-frame.slint";
 import { ZoneOnboarding } from "./ZoneOnboarding.slint";
 
 export component Controllers inherits ZonePreview {
-    ZoneOnboarding { x: 0; y: 0; width: parent.width; height: parent.height; hints: { back: "Back", confirm: "Confirm" }; banner: "Controllers"; pip: 0; seats: [{ seat: "1P", name: "Xbox Wireless Controller", heard: true, focused: true }, { seat: "2P", name: "8BitDo Pro 2", heard: true }]; versus: true; seat-name: "Xbox Wireless Controller"; next: { label: "Next", lit: true }; }
+    ZoneOnboarding { x: 0; y: 0; width: parent.width; height: parent.height; hints: { back: { label: "Back" }, confirm: { label: "Confirm" } }; banner: "Controllers"; pip: 0; seats: [{ seat: "1P", name: "Xbox Wireless Controller", heard: true, focused: true }, { seat: "2P", name: "8BitDo Pro 2", heard: true }]; versus: true; seat-name: "Xbox Wireless Controller"; next: { label: "Next", lit: true }; }
 }
 
 export component Identity inherits ZonePreview {
-    ZoneOnboarding { x: 0; y: 0; width: parent.width; height: parent.height; hints: { back: "Back", confirm: "Confirm" }; banner: "Identity"; pip: 3; new-save: { shown: true, focused: true }; next: { label: "Finish", disabled: true }; }
+    ZoneOnboarding { x: 0; y: 0; width: parent.width; height: parent.height; hints: { back: { label: "Back" }, confirm: { label: "Confirm" } }; banner: "Identity"; pip: 3; new-save: { shown: true, focused: true }; next: { label: "Finish", disabled: true }; }
 }

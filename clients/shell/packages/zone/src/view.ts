@@ -175,10 +175,23 @@ function keyboardView(fields: {
       at: key.at,
       units: key.units,
       focused: key.id === lit,
+      focusId: `key:${key.id}`,
       current: key.key.kind === "layer" && key.key.layer === fields.layer,
     })),
   }
 }
+
+/**
+ * The hints: focus targets a finger presses to run that button (ADR 0055),
+ * in their own region with no exits, so the cursor never walks onto them.
+ * Shared, never written: their region is set here, not by src/focus.ts.
+ */
+export const ZONE_HINT_BACK = "hint:back"
+export const ZONE_HINT_CONFIRM = "hint:confirm"
+const HINTS = Object.freeze({
+  back: Object.freeze({ label: "Back", focused: false, focusId: ZONE_HINT_BACK, focusRegion: "hints" }),
+  confirm: Object.freeze({ label: "Confirm", focused: false, focusId: ZONE_HINT_CONFIRM, focusRegion: "hints" }),
+})
 
 const EMPTY_DIALOG = { shown: false, headline: "", korri: false, lines: [] as string[], title: "", buttons: [] as Btn[] }
 
@@ -193,7 +206,7 @@ export function shownDialog(state: ZoneSurfaceState, korri: SurfaceModel, screen
 }
 
 function dialogView(headline: string, korri: boolean, lines: readonly string[], title: string, buttons: Btn[]) {
-  return { shown: true, headline, korri, lines: lines.filter(line => line !== ""), title, buttons }
+  return { shown: true, headline, korri, lines: lines.filter(line => line !== ""), title, buttons: buttons.map((button, index) => ({ ...button, focusId: `dialog:${index}` })) }
 }
 
 const EMPTY_BUSY = { shown: false, kicker: "", detail: "", game: "", buttons: [] as Btn[], meter: false, share: 0, sweep: false, figures: "", foot: true, steps: 0, step: 0, stepWords: "" }
@@ -225,7 +238,7 @@ function statusView(state: ZoneSurfaceState, korri: SurfaceModel) {
         kicker: status.kicker,
         detail: progress === undefined ? (status.detail ?? "") : "",
         game: gameTitleOf(korri, status.gameId),
-        buttons: (status.actions ?? []).map((action, index) => btn(action.label, { focused: index === focus, lit: index === focus, disabled: !action.enabled, danger: action.destructive === true })),
+        buttons: (status.actions ?? []).map((action, index) => btn(action.label, { focused: index === focus, lit: index === focus, disabled: !action.enabled, danger: action.destructive === true, focusId: `busy:${index}` })),
         meter: progress !== undefined,
         share: share ?? 0,
         sweep: progress !== undefined && share === undefined,
@@ -308,7 +321,7 @@ function bandMarks(band: readonly SurfaceGame[], at: number, cardFocused: boolea
   const marks = new Array<Record<string, unknown>>(band.length)
   for (let index = 0; index < band.length; index++) {
     marks[index] = Math.abs(index - at) <= reach
-      ? { label: band[index]!.title, focused: index === at && cardFocused, focusRegion: "band" }
+      ? { label: band[index]!.title, focused: index === at && cardFocused, focusRegion: "band", focusId: `card:${index}` }
       : OFF_MARK
   }
   return marks
@@ -390,7 +403,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     optsRows = actions.length === 0 ? [row({ kind: "word", label: "Loading" })] : actions.flatMap((action, index) => {
       const focused = index === nav.opts.row && nav.opts.asking === undefined
       return [
-        row({ kind: "item", label: action.label, value: "Run", focused, disabled: !action.enabled, danger: action.destructive === true, choice: true }),
+        row({ kind: "item", label: action.label, value: "Run", focused, disabled: !action.enabled, danger: action.destructive === true, choice: true, focusId: `opt:${index}` }),
         ...(action.description !== undefined && (focused || !action.enabled) ? [row({ kind: "note", label: action.description, labelFact: true })] : []),
       ]
     })
@@ -492,7 +505,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
           kicker: get.kicker,
           detail: progress === undefined ? (get.detail ?? "") : "",
           game: "",
-          buttons: get.actions.map(action => btn(action.label, { focused: true, lit: true, disabled: !action.enabled })),
+          buttons: get.actions.map((action, index) => btn(action.label, { focused: true, lit: true, disabled: !action.enabled, focusId: `busy:${index}` })),
           meter: progress !== undefined,
           share: share ?? 0,
           sweep: progress !== undefined && share === undefined,
@@ -579,8 +592,8 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     pips: page === "onboarding" ? ZONE_ONBOARDING_STEPS.length : 0,
     pip: ZONE_ONBOARDING_STEPS.indexOf(state.onboarding.step),
     // The tabs hold the cursor unless a keyboard or a modal question covers them (GAMES' catalog error leaves them reachable).
-    tabs: ZONE_TABS.map(tab => ({ label: TAB_WORDS[tab], active: tab === nav.tab, focused: tabbed && nav.zone === "tabs" && tab === nav.tabCursor && (!onGames || layer === "none") && !keyboard.shown && (!dialog.shown || (onGames && catalog._tag === "Error" && !status.dialog.shown)) })),
-    hints: { back: "Back", confirm: "Confirm" },
+    tabs: ZONE_TABS.map(tab => ({ label: TAB_WORDS[tab], active: tab === nav.tab, focusId: `tab:${tab}`, focused: tabbed && nav.zone === "tabs" && tab === nav.tabCursor && (!onGames || layer === "none") && !keyboard.shown && (!dialog.shown || (onGames && catalog._tag === "Error" && !status.dialog.shown)) })),
+    hints: HINTS,
     foot: {
       shown: page !== "onboarding" && page !== "paused",
       timeLabel: "Time",
@@ -604,12 +617,12 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     firstIndex: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.firstIndex : 0,
     total: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.total : band.length,
     facts,
-    actions: game === undefined ? [] : actionWords.map((label, index) => btn(label, { lit: index === lit, focused: index === focusedAction })),
+    actions: game === undefined ? [] : actionWords.map((label, index) => btn(label, { lit: index === lit, focused: index === focusedAction, focusId: `action:${index}` })),
     findShown: catalog._tag === "Ready",
-    find: btn(catalog._tag === "Ready" ? "Find" : "", { focused: onGames && layer === "none" && (nav.zone === "find" || (nav.zone === "cards" && band.length === 0 && catalog._tag === "Ready")) }),
+    find: btn(catalog._tag === "Ready" ? "Find" : "", { focusId: "find", focused: onGames && layer === "none" && (nav.zone === "find" || (nav.zone === "cards" && band.length === 0 && catalog._tag === "Ready")) }),
     kept: nav.find.draft === "" ? "" : nav.find.draft,
     getShown: korri.store !== undefined && catalog._tag !== "Error",
-    get: btn(korri.store !== undefined && catalog._tag !== "Error" ? "Get games" : "", { focused: onGames && layer === "none" && (nav.zone === "get" || (nav.zone === "cards" && band.length === 0 && catalog._tag !== "Ready" && korri.store !== undefined)) }),
+    get: btn(korri.store !== undefined && catalog._tag !== "Error" ? "Get games" : "", { focusId: "get", focused: onGames && layer === "none" && (nav.zone === "get" || (nav.zone === "cards" && band.length === 0 && catalog._tag !== "Ready" && korri.store !== undefined)) }),
     typing: onGames && layer === "keyboard",
     // Zone's idle layer (navigation.ts), opened by the shell's Tick: the attract
     // shows the game at idleCard (in catalog order) and moves on with each IdleTicked.
@@ -624,7 +637,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     rows,
     well,
     // SAVE DATA
-    saveCards: save.cards.map((entry, index) => ({ ...entry, focused: save.marked && index === save.focus && state.identity.flow._tag !== "retired" })),
+    saveCards: save.cards.map((entry, index) => ({ ...entry, focusId: `save:${index}`, focused: save.marked && index === save.focus && state.identity.flow._tag !== "retired" })),
     saveFocus: save.focus,
     saveMarked: save.marked,
     // The cursor is on a retired key's buttons: its card stays marked.
@@ -633,7 +646,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     qrShown: save.qr !== undefined,
     ...(save.qr === undefined ? {} : { qr: { $image: save.qr } }),
     secret: save.secret,
-    slab: btn(save.qr === undefined ? "" : "secret", { focused: save.slab && nav.zone !== "tabs" }),
+    slab: btn(save.qr === undefined ? "" : "secret", { focusId: "secret", focused: save.slab && nav.zone !== "tabs" }),
     // First boot
     seats: boarding.seats,
     seatName: boarding.seatName,
@@ -670,9 +683,9 @@ function saveView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boolean) 
         ...identity.retiredPublicKeys.map(key => ({ header: "Retired", word: shortKey(key), emblem: "retired", foot: "", footKind: "" })),
       ]
   const retired = flow._tag === "retired"
-    ? [btn("Back up", { focused: flow.action === "backup", lit: true }), btn("Delete", { focused: flow.action === "delete", danger: true })]
+    ? [btn("Back up", { focused: flow.action === "backup", lit: true, focusId: "retired:backup" }), btn("Delete", { focused: flow.action === "delete", danger: true, focusId: "retired:delete" })]
     : model.card >= IDENTITY_FIXED_CARDS && identity !== undefined && model.card < identityCardCount(identity)
-      ? [btn("Back up", { lit: true }), btn("Delete")]
+      ? [btn("Back up", { lit: true, focusId: "retired:backup" }), btn("Delete", { focusId: "retired:delete" })]
       : []
   let keyboard: ReturnType<typeof keyboardView> | undefined
   let dialog: ReturnType<typeof dialogView> | undefined
@@ -740,7 +753,7 @@ function onboardingRows(state: ZoneSurfaceState, korri: SurfaceModel): Row[] {
       const setting = deviceNameSetting(korri)
       return [
         row({ kind: "title", label: "Device" }),
-        row({ kind: "item", label: "Name", value: setting?.value ?? "", valueFact: true, focused: focused(TARGET.name), disabled: setting?.interaction?.kind !== "text" }),
+        row({ kind: "item", label: "Name", value: setting?.value ?? "", valueFact: true, focused: focused(TARGET.name), focusId: `target:${TARGET.name}`, disabled: setting?.interaction?.kind !== "text" }),
         ...(setting?.description === undefined || !focused(TARGET.name) ? [] : [row({ kind: "note", label: setting.description, labelFact: true })]),
       ]
     }
@@ -756,6 +769,7 @@ function onboardingRows(state: ZoneSurfaceState, korri: SurfaceModel): Row[] {
           value: connection._tag === "Wifi" ? connection.ssid : connection._tag === "Wired" ? "Wired" : "Offline",
           valueFact: connection._tag === "Wifi",
           focused: focused(TARGET.connection),
+          focusId: `target:${TARGET.connection}`,
           bars: connection._tag === "Wifi" ? barsOf(connection.strengthPercent) : connection._tag === "Wired" ? 4 : 0,
         }))
       }
@@ -767,12 +781,13 @@ function onboardingRows(state: ZoneSurfaceState, korri: SurfaceModel): Row[] {
             labelFact: true,
             value: `${item.strengthPercent}% ${item.secured ? "Locked" : "Open"}${item.known ? " Saved" : ""}`,
             focused: focused(`net:${item.id}`),
+            focusId: `target:net:${item.id}`,
             saving: wifi.attempt._tag === "Connecting" && wifi.attempt.ssid === item.ssid,
           }))
         }
-        rows.push(row({ kind: "item", label: "Networks", value: wifi.scanning ? "Scanning…" : "Scan", focused: focused(TARGET.scan) }))
+        rows.push(row({ kind: "item", label: "Networks", value: wifi.scanning ? "Scanning…" : "Scan", focused: focused(TARGET.scan), focusId: `target:${TARGET.scan}` }))
       }
-      rows.push(row({ kind: "item", label: "Skip", value: "Later", focused: focused(TARGET.skip) }))
+      rows.push(row({ kind: "item", label: "Skip", value: "Later", focused: focused(TARGET.skip), focusId: `target:${TARGET.skip}` }))
       return rows
     }
   }
@@ -787,7 +802,7 @@ function onboardingView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boo
     name: controller.name,
     heard: controller.heard,
     // Only a heard controller's seat takes the cursor.
-    ...(controller.heard ? { focused: model.entry === undefined && model.focus === seatTarget(controller.id) } : {}),
+    ...(controller.heard ? { focused: model.entry === undefined && model.focus === seatTarget(controller.id), focusId: `target:${seatTarget(controller.id)}` } : { focusId: "" }),
   }))
   const focusedSeat = controllers.find(controller => model.focus === seatTarget(controller.id))
   const targets = onboardingTargets(model, korri)
@@ -798,9 +813,9 @@ function onboardingView(state: ZoneSurfaceState, korri: SurfaceModel, shown: boo
     seatName: focusedSeat?.name ?? "",
     versus: controllers.length === 2 && heard.length === 2,
     next: shown
-      ? btn(model.step === "identity" ? "Finish" : "Next", { focused: model.entry === undefined && model.focus === nextTarget, lit: canGo, disabled: !canGo })
+      ? btn(model.step === "identity" ? "Finish" : "Next", { focused: model.entry === undefined && model.focus === nextTarget, lit: canGo, disabled: !canGo, focusId: `target:${nextTarget}` })
       : btn(""),
-    save: { shown: shown && model.step === "identity", focused: model.focus === TARGET.save, started: model.started },
+    save: { shown: shown && model.step === "identity", focused: model.focus === TARGET.save, focusId: `target:${TARGET.save}`, started: model.started },
   }
 }
 
@@ -839,7 +854,7 @@ export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel, screen
 
 function pausedView(state: ZoneSurfaceState, korri: SurfaceModel) {
   const overlay = korri.presentation
-  const empty = { look: state.look, heading: "Paused", korriHeading: false, hasArt: false, rows: [] as Row[], focusAt: 0, dialog: EMPTY_DIALOG, busy: EMPTY_BUSY, hints: { back: "Back", confirm: "Confirm" }, strip: ZONE_NO_STRIP }
+  const empty = { look: state.look, heading: "Paused", korriHeading: false, hasArt: false, rows: [] as Row[], focusAt: 0, dialog: EMPTY_DIALOG, busy: EMPTY_BUSY, hints: HINTS, strip: ZONE_NO_STRIP }
   if (overlay.kind !== "gameplay-overlay") return empty
   const model = state.overlay
   const rows: Row[] = []
@@ -858,6 +873,7 @@ function pausedView(state: ZoneSurfaceState, korri: SurfaceModel) {
         value,
         valueFact: true,
         focused,
+        focusId: `control:${control.id}`,
         disabled: !control.enabled,
         danger: control.destructive,
         choice: interaction.kind !== "command",
@@ -890,7 +906,7 @@ function pausedView(state: ZoneSurfaceState, korri: SurfaceModel) {
     focusAt: Math.max(0, rows.findIndex(entry => entry.focused)),
     dialog,
     busy: status.busy,
-    hints: { back: "Back", confirm: "Confirm" },
+    hints: HINTS,
     // The status strip (#378): read-only facts, no focus target.
     strip: zoneStatusStrip(overlayViewerFacts(korri) ?? {}),
   }

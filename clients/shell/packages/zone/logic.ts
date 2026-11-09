@@ -26,6 +26,13 @@
  *                  both read
  *     Pressed back by backRoute (contract 7.2): Korri's declineActionId as
  *                  RunAction; an unmarked Busy swallows it; else Zone's Back
+ *     Activated    a tap on a drawn target (ADR 0055): the fact its arrival
+ *                  would report (src/press.ts focusOn), then Confirm there; an
+ *                  id no target drawn now carries does nothing; a hint runs its
+ *                  button; on the attract or the tally, only the one press
+ *     Dragged      a finger dragged the band or the save band `by` cards: that
+ *                  many d-pad presses along it (src/press.ts dragOn)
+ *     Activated and Dragged hide the focus highlight until the next Pressed
  *
  *   Zone's requests → SurfaceRequests
  *     RememberLook   RememberPreference { key: "zone.look" }
@@ -47,6 +54,7 @@
  */
 import type {
   CatalogQuery,
+  SurfaceButton,
   SurfaceStatus,
   SurfaceMessage as Message,
   SurfaceModel as Model,
@@ -54,14 +62,14 @@ import type {
 } from "../../../../contracts/generated/surface"
 import { isZoneLook, ZONE_DEFAULT_LOOK } from "./src/plan/look"
 import { zoneScreen, ZONE_DEFAULT_SIZE, type ZoneScreen } from "./src/plan/screen"
-import { press } from "./src/press"
-import { bandGames, cardCount, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS, ZONE_TALLY_CLOSE_MS } from "./src/state/navigation"
+import { dragOn, focusOn, press } from "./src/press"
+import { bandGames, cardCount, topLayer, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS, ZONE_TALLY_CLOSE_MS } from "./src/state/navigation"
 import { zoneTallyCountMs } from "./src/plan/motion"
 import { zoneTallyRows } from "./src/plan/tally"
 import type { ZoneTally } from "./src/state/tally"
 import type { ZoneRequest } from "./src/state/requests"
 import { update as zoneUpdate, zoneShown, zoneSurfaceStart, type ZoneSurfaceMessage, type ZoneSurfaceState } from "./src/state/surface"
-import { attractStep, overlayView, view as zoneView } from "./src/view"
+import { attractStep, overlayView, view as zoneView, ZONE_HINT_BACK, ZONE_HINT_CONFIRM } from "./src/view"
 
 export interface State {
   readonly zone: ZoneSurfaceState
@@ -75,6 +83,9 @@ export interface State {
   readonly size: { readonly width: number; readonly height: number }
   /** The results tally's clock while it shows (`tallyClock`). */
   readonly tally?: TallyClock
+  /** A tap or a drag came last, not a button (ADR 0055): the focus highlight
+   * hides until the next Pressed. The cursor stays where it is. */
+  readonly touched?: boolean
 }
 
 /** How long the tally has shown, from the shell's Ticks: `idle` is the last Tick's idleMs. */
@@ -191,6 +202,7 @@ export function update(state: State, message: Message, model: Model): { state: S
   let idleTurns = state.idleTurns
   let size = state.size
   let tally = state.tally
+  let touched = state.touched === true
   switch (message._tag) {
     case "Resized":
       size = { width: Math.max(0, message.width), height: Math.max(0, message.height) }
@@ -239,18 +251,48 @@ export function update(state: State, message: Message, model: Model): { state: S
       break
     case "Pressed": {
       idleTurns = 0
-      if (message.button === "back") {
-        const route = backRoute(model.status)
-        if (route._tag === "Decline") {
-          out.push({ _tag: "RunAction", actionId: route.actionId })
-          break
-        }
-        if (route._tag === "Swallow") break
+      touched = false
+      zone = pressed(zone, message.button, model, screenOf(state), out)
+      break
+    }
+    case "Activated": {
+      const id = message.target
+      const screen = screenOf(state)
+      const overlaid = model.presentation.kind === "gameplay-overlay"
+      if (id === ZONE_HINT_BACK || id === ZONE_HINT_CONFIRM) {
+        zone = pressed(zone, id === ZONE_HINT_BACK ? "back" : "confirm", model, screen, out)
+      } else if (!overlaid && (holdsEveryPress(zone, model) || topLayer(zone.nav) === "idle")) {
+        // The attract, or the results tally: the tap is one press, nothing more.
+        zone = pressed(zone, "confirm", model, screen, out)
+      } else {
+        // Only a target drawn now: a stale id, or one from a layer that went, does nothing.
+        const drawn = overlaid ? overlay(state, model) : view(state, model)
+        if (!drawnTargets(drawn).has(id)) return { state, requests: [] }
+        const range = overlaid && message.at !== undefined && id.startsWith("control:") ? id.slice("control:".length) : undefined
+        focusOn(zone, id, model, screen, inner => {
+          zone = run(zone, inner, model, out)
+        })
+        zone = range === undefined
+          ? pressed(zone, "confirm", model, screen, out)
+          : run(zone, { _tag: "Paused", message: { _tag: "SetRange", controlId: range, at: message.at! } }, model, out)
       }
-      const before = zone
-      press(before, message.button, model, screenOf(state), inner => {
+      idleTurns = 0
+      touched = true
+      break
+    }
+    case "Dragged": {
+      const screen = screenOf(state)
+      if (!Number.isInteger(message.by) || message.by === 0) return { state, requests: [] }
+      if (topLayer(zone.nav) === "idle" && model.presentation.kind === "catalog") {
+        // The first drag on the attract only wakes it.
+        zone = pressed(zone, "confirm", model, screen, out)
+      } else if (!dragOn(zone, message.region, message.by, model, screen, inner => {
         zone = run(zone, inner, model, out)
-      })
+      }, () => zone)) {
+        return { state, requests: [] }
+      }
+      idleTurns = 0
+      touched = true
       break
     }
   }
@@ -278,7 +320,47 @@ export function update(state: State, message: Message, model: Model): { state: S
   }
   // The clock lives while the tally does.
   if (zone.nav.tally === undefined || zone.nav.tally.leaving) tally = undefined
-  return { state: { zone, reported: focused, moving, idleTurns, size, ...(tally === undefined ? {} : { tally }) }, requests: out }
+  return { state: { zone, reported: focused, moving, idleTurns, size, ...(tally === undefined ? {} : { tally }), ...(touched ? { touched } : {}) }, requests: out }
+}
+
+/** A button press, as Pressed delivers it: Back by backRoute (contract 7.2), the rest by src/press.ts. */
+function pressed(zone: ZoneSurfaceState, button: SurfaceButton, model: Model, screen: ZoneScreen, out: Request[]): ZoneSurfaceState {
+  if (button === "back") {
+    const route = backRoute(model.status)
+    if (route._tag === "Decline") {
+      out.push({ _tag: "RunAction", actionId: route.actionId })
+      return zone
+    }
+    if (route._tag === "Swallow") return zone
+  }
+  let next = zone
+  press(next, button, model, screen, inner => {
+    next = run(next, inner, model, out)
+  })
+  return next
+}
+
+/** The results tally holds every press while it shows (navigation's rule). */
+function holdsEveryPress(zone: ZoneSurfaceState, model: Model): boolean {
+  return zone.nav.tally !== undefined && !zone.nav.tally.leaving && zoneShown(zone, model) === "games"
+}
+
+/** The focus targets a view draws: every entry with a focus region and a focusId. */
+function drawnTargets(drawn: unknown): Set<string> {
+  const ids = new Set<string>()
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item)
+      return
+    }
+    if (value === null || typeof value !== "object") return
+    const entry = value as Record<string, unknown>
+    if ("$image" in entry) return
+    if (typeof entry.focusId === "string" && entry.focusId !== "" && typeof entry.focusRegion === "string" && "focused" in entry) ids.add(entry.focusId)
+    for (const key in entry) if (key !== "focusPlan") walk(entry[key])
+  }
+  walk(drawn)
+  return ids
 }
 
 // The view is a pure function of (state, model): the same two give the last view back.
@@ -291,11 +373,18 @@ export function view(state: State, model: Model) {
   // last view with that game (and its card) put in, not a whole new view.
   const last = lastView
   if (last !== undefined && last.model === model && last.state.size === state.size && onlyAttractMoved(last.state.zone, state.zone)) {
-    lastView = { state, model, view: attractStep(last.view, state.zone, model, screenOf(state)) }
+    lastView = { state, model, view: touching(attractStep(last.view, state.zone, model, screenOf(state)), state) }
     return lastView.view
   }
-  lastView = { state, model, view: zoneView(state.zone, model, screenOf(state)) }
+  lastView = { state, model, view: touching(zoneView(state.zone, model, screenOf(state)), state) }
   return lastView.view
+}
+
+/** The view with `touching`: a tap or a drag came last, so the focus highlight hides (ADR 0055). */
+function touching<V extends object>(drawn: V, state: State): V & { touching: boolean } {
+  const out = drawn as V & { touching: boolean }
+  out.touching = state.touched === true
+  return out
 }
 
 /** Two states that differ only in the attract's game (navigation's idleCard). */
@@ -312,7 +401,7 @@ function onlyAttractMoved(before: ZoneSurfaceState, after: ZoneSurfaceState): bo
 
 export function overlay(state: State, model: Model) {
   if (lastOverlay?.state === state && lastOverlay.model === model) return lastOverlay.view
-  lastOverlay = { state, model, view: overlayView(state.zone, model, screenOf(state)) }
+  lastOverlay = { state, model, view: touching(overlayView(state.zone, model, screenOf(state)), state) }
   return lastOverlay.view
 }
 

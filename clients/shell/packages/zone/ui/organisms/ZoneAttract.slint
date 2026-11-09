@@ -1,6 +1,7 @@
 // ZoneAttract: Zone's idle layer.
 
 import { Tokens } from "../../ui/tokens.slint";
+import { ZoneTap } from "../atoms/ZoneTap.slint";
 import { ZoneCaps } from "../atoms/ZoneCaps.slint";
 import { ZoneCoverWell } from "../atoms/ZoneCoverWell.slint";
 import { ZoneTitleCard } from "../molecules/ZoneTitleCard.slint";
@@ -11,6 +12,7 @@ import { Card } from "../types.slint";
 // 6 s): its title card, then its stage (its cover, panning). Only the turn's
 // motion runs on the view's clock, from the moment this game showed.
 export component ZoneAttract {
+    callback activated(target: string, at: float, released: bool);
     property <length> a: Tokens.a;
     in property <[Card]> cards;
     in property <int> index;
@@ -61,4 +63,6 @@ export component ZoneAttract {
             face: "korri";
         }
     }
+    // A tap anywhere on it wakes the screen and does nothing else (ADR 0055).
+    ZoneTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: "attract"; }
 }
