@@ -1455,6 +1455,19 @@ pub enum SurfaceMessage {
     /// The surface window's size in logical pixels. Sent once after init,
     /// before the first view, and on every size or scale change.
     Resized { width: f32, height: f32 },
+    /// The person touched (or clicked) a target the surface drew (ADR 0055).
+    /// `target` is the surface's own focus-target id, reported by its view.
+    /// The surface moves focus there and does what Confirm does there.
+    /// `at` is the position from 0 to 1 along a range control's track, set
+    /// only for range targets. `released` is set on the message sent when the
+    /// finger lifts.
+    Activated {
+        target: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        released: Option<bool>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -1764,6 +1777,31 @@ mod tests {
             })
             .unwrap(),
             json!({"_tag": "Pressed", "button": "up"})
+        );
+        assert_eq!(
+            serde_json::to_value(SurfaceMessage::Activated {
+                target: "row:play".into(),
+                at: None,
+                released: None
+            })
+            .unwrap(),
+            json!({"_tag": "Activated", "target": "row:play"})
+        );
+        let slid: SurfaceMessage = serde_json::from_value(
+            json!({"_tag": "Activated", "target": "control:volume", "at": 0.5, "released": true}),
+        )
+        .unwrap();
+        assert_eq!(
+            slid,
+            SurfaceMessage::Activated {
+                target: "control:volume".into(),
+                at: Some(0.5),
+                released: Some(true)
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&slid).unwrap(),
+            json!({"_tag": "Activated", "target": "control:volume", "at": 0.5, "released": true})
         );
         assert_eq!(
             serde_json::to_value(SurfaceMessage::Tick { idle_ms: 31000 }).unwrap(),
