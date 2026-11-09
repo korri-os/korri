@@ -6,6 +6,7 @@ export struct Button { label: string, focused: bool, focus-id: string }
 export struct Choice { label: string, value: string, focused: bool, focus-id: string }
 export component Surface inherits Window {
     callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
     in property <string> header;
     in property <[Button]> first;
     in property <[Button]> second;

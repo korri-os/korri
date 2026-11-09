@@ -35,7 +35,7 @@ use std::{
 };
 
 /// Changes whenever the checks change; older summaries are re-derived.
-pub const VERIFIER: &str = "korri-shell-verify-4";
+pub const VERIFIER: &str = "korri-shell-verify-5";
 pub const SLINT: &str = "1.18.1";
 pub const FIXTURE_GAMES: [usize; 3] = [0, 12, 10_000];
 pub const SEEDED_PRESSES: usize = 500;
@@ -479,8 +479,10 @@ pub fn verify(package: &Package, limits: Limits) -> Summary {
         let views = package::compile(package)?;
         summary.diagnostics = views.diagnostics.clone();
         view::check_activated(&views.surface, "Surface")?;
+        view::check_dragged(&views.surface, "Surface")?;
         if let Some(overlay) = &views.overlay {
             view::check_activated(overlay, "Overlay")?;
+            view::check_dragged(overlay, "Overlay")?;
         }
         let surface = view::declared(&views.surface);
         let overlay = views.overlay.as_ref().map(view::declared);
@@ -711,7 +713,7 @@ mod tests {
         Package::at(dir).unwrap()
     }
 
-    const VIEW: &str = "export struct Row { label: string } export component Surface inherits Window { callback activated(string, float, bool); in property <int> count; in property <[Row]> rows; in property <image> art; }";
+    const VIEW: &str = "export struct Row { label: string } export component Surface inherits Window { callback activated(string, float, bool); callback dragged(string, int); in property <int> count; in property <[Row]> rows; in property <image> art; }";
 
     fn logic(view: &str) -> String {
         format!(
@@ -737,12 +739,32 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         for missing in ["Surface", "Overlay"] {
             let source = format!("export component Surface inherits Window {{ {} }} export component Overlay inherits Window {{ {} }}",
-                if missing == "Surface" { "" } else { "callback activated(string, float, bool);" },
-                if missing == "Overlay" { "" } else { "callback activated(string, float, bool);" });
+                if missing == "Surface" { "" } else { "callback activated(string, float, bool); callback dragged(string, int);" },
+                if missing == "Overlay" { "" } else { "callback activated(string, float, bool); callback dragged(string, int);" });
             let package = planted(&root.path().join("demo"), &source, &logic("return {}"));
             let summary = verify(&package, Limits::default());
             assert!(!summary.pass);
             assert!(summary.reasons.join(" ").contains(&format!("{missing} must declare callback activated(target: string, at: float, released: bool)")), "{:?}", summary.reasons);
+        }
+    }
+
+    #[test]
+    fn rejects_each_root_without_the_drag_callback() {
+        let root = tempfile::tempdir().unwrap();
+        for missing in ["Surface", "Overlay"] {
+            let source = format!("export component Surface inherits Window {{ callback activated(string, float, bool); {} }} export component Overlay inherits Window {{ callback activated(string, float, bool); {} }}",
+                if missing == "Surface" { "" } else { "callback dragged(string, int);" },
+                if missing == "Overlay" { "" } else { "callback dragged(string, int);" });
+            let package = planted(&root.path().join("demo"), &source, &logic("return {}"));
+            let summary = verify(&package, Limits::default());
+            assert!(!summary.pass);
+            assert!(
+                summary.reasons.join(" ").contains(&format!(
+                    "{missing} must declare callback dragged(region: string, by: int)"
+                )),
+                "{:?}",
+                summary.reasons
+            );
         }
     }
 

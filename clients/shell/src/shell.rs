@@ -58,8 +58,8 @@ pub enum Event {
         window: u8,
         event: HostEvent,
     },
-    /// A package root's generic callback, queued just like host button events.
-    Activated {
+    /// A package root's generic input callback, queued just like host button events.
+    SurfaceInput {
         generation: u64,
         window: u8,
         message: Value,
@@ -411,7 +411,7 @@ impl Shell {
                 window,
                 event,
             } => self.host(generation, window, event),
-            Event::Activated {
+            Event::SurfaceInput {
                 generation,
                 window,
                 message,
@@ -813,7 +813,7 @@ impl Shell {
         let generation = self.next_generation;
         let mut images = ImageCache::new(&package.dir);
         let surface = views.surface.create()?;
-        self.bind_activated(&surface, generation, 0)?;
+        self.bind_input(&surface, generation, 0)?;
         let mut surface_binder = Binder::new(&views.surface);
         let drawn = Rc::new(Cell::new(false));
         self.attach(surface.window(), generation, 0);
@@ -956,15 +956,18 @@ impl Shell {
         }
     }
 
-    fn bind_activated(
-        &self,
-        component: &ComponentInstance,
-        generation: u64,
-        window: u8,
-    ) -> Result<()> {
+    fn bind_input(&self, component: &ComponentInstance, generation: u64, window: u8) -> Result<()> {
         let post = self.post.clone();
         crate::view::bind_activated(component, move |message| {
-            post.post(Event::Activated {
+            post.post(Event::SurfaceInput {
+                generation,
+                window,
+                message,
+            });
+        })?;
+        let post = self.post.clone();
+        crate::view::bind_dragged(component, move |message| {
+            post.post(Event::SurfaceInput {
                 generation,
                 window,
                 message,
@@ -1027,7 +1030,7 @@ impl Shell {
         if created {
             let definition = loaded.overlay_definition.as_ref().expect("checked");
             let component = self.backend.create_overlay(definition)?;
-            self.bind_activated(&component, loaded.generation, 1)?;
+            self.bind_input(&component, loaded.generation, 1)?;
             self.attach(component.window(), loaded.generation, 1);
             self.backend
                 .place(component.window(), self.options.placement);

@@ -4,6 +4,7 @@ import "fonts/tiny5.ttf";
 export struct Card { label: string, focused: bool, focus-id: string }
 export component Surface inherits Window {
     callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
     in property <[Card]> cards;
     in property <int> current;
     preferred-width: 640px;

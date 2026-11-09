@@ -3,6 +3,7 @@ import "fonts/tiny5.ttf";
 export struct Target { label: string, focused: bool, focus-id: string }
 export component Surface inherits Window {
     callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
     in property <[Target]> tabs;
     in property <[Target]> cells;
     in property <int> columns: 3;

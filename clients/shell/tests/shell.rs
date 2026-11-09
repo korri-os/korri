@@ -846,7 +846,12 @@ fn native_pointer_events_reset_idle_without_cursor_presses() {
         rig.shell.handle(Event::Idle);
         rig.settle();
         assert!(rig.int("idle-ms") < 250.0, "{}", rig.int("idle-ms"));
-        assert_eq!(rig.int("count"), 0.0, "a drag must not synthesize Pressed");
+        assert_eq!(
+            rig.int("presses"),
+            0.0,
+            "a drag must not synthesize any Pressed, including up/down"
+        );
+        assert_eq!(rig.int("count"), 0.0);
     }
 }
 
@@ -895,4 +900,42 @@ fn touch_outside_the_overlay_panel_and_cancel_activate_nothing() {
         assert!(rig.shell.overlay_shown());
         assert_eq!(rig.int("count"), 0.0);
     }
+}
+
+#[test]
+fn package_row_drags_on_both_roots_reach_logic_without_pressed() {
+    use i_slint_core::input::TouchPhase;
+    let mut rig = rig(&["probe"], 12, Behaviour::default());
+    let drag = |rig: &mut Rig| {
+        Headless::touch(
+            0,
+            slint::LogicalPosition::new(240.0, 60.0),
+            TouchPhase::Started,
+        );
+        Headless::touch(
+            0,
+            slint::LogicalPosition::new(220.0, 60.0),
+            TouchPhase::Moved,
+        );
+        Headless::touch(
+            0,
+            slint::LogicalPosition::new(220.0, 60.0),
+            TouchPhase::Ended,
+        );
+        rig.settle();
+    };
+    drag(&mut rig);
+    assert_eq!(
+        serde_json::from_str::<Value>(&rig.string("drag")).unwrap(),
+        json!({"_tag": "Dragged", "region": "surface-shelf", "by": -2})
+    );
+    rig.fixture.set_overlay(true);
+    rig.until("overlay", |r| r.shell.overlay_shown());
+    drag(&mut rig);
+    assert!(
+        matches!(rig.shell.overlay_property("drag"), Some(SlintValue::String(s))
+        if serde_json::from_str::<Value>(&s).unwrap() == json!({"_tag": "Dragged", "region": "overlay-shelf", "by": -2}))
+    );
+    assert_eq!(rig.int("presses"), 0.0);
+    assert_eq!(rig.int("count"), 0.0);
 }

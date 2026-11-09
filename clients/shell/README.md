@@ -141,11 +141,18 @@ Every package root (`Surface`, and `Overlay` when exported) declares:
 
 ```slint
 callback activated(target: string, at: float, released: bool);
+callback dragged(region: string, by: int);
 ```
 
-The verifier rejects a missing callback or a different signature. The shell
-binds it by name and sends `Activated` to logic, not a synthetic `Pressed`.
+The verifier rejects either missing callback or a different signature. The
+shell binds both by name and sends `Activated` or `Dragged` to logic, never
+a synthetic `Pressed`.
 A negative `at` omits the position; false `released` omits the release flag.
+`Dragged` names the package's existing focus region and signed whole-item
+movement. Zero movement is ignored. The view owns the slide and fling; the
+logic moves focus only in these focus-paged rows. The shell keeps no focus
+model.
+
 Each tappable entry keeps its existing `focusId` in the view and binds it to
 Slint. The view alone decides which target the finger hit.
 

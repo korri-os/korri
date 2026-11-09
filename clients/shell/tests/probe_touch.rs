@@ -34,6 +34,7 @@ fn every_drawn_target_is_tapped_at_every_contract_size_and_wrong_hits_fail() {
         export struct Target { focused: bool, focus-id: string }
         export component Surface inherits Window {
             callback activated(target: string, at: float, released: bool);
+            callback dragged(region: string, by: int);
             in property <[Target]> targets;
             background: #102030;
             for target[i] in root.targets: Rectangle {

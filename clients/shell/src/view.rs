@@ -144,7 +144,7 @@ pub fn declared(definition: &ComponentDefinition) -> BTreeMap<String, Type> {
         .collect()
 }
 
-/// ADR 0055: every package root has this one generic callback, never per-control callbacks.
+/// ADR 0055: every package root has generic input callbacks, never per-control callbacks.
 pub fn check_activated(definition: &ComponentDefinition, root: &str) -> Result<()> {
     let valid = definition
         .properties_and_callbacks()
@@ -157,6 +157,36 @@ pub fn check_activated(definition: &ComponentDefinition, root: &str) -> Result<(
     if !valid {
         bail!("{root} must declare callback activated(target: string, at: float, released: bool)");
     }
+    Ok(())
+}
+
+/// The focus-paged row reports whole-item movement, not pixels or buttons.
+pub fn check_dragged(definition: &ComponentDefinition, root: &str) -> Result<()> {
+    let valid = definition
+        .properties_and_callbacks()
+        .any(|(name, (ty, _))| {
+            name == "dragged"
+                && matches!(ty, Type::Callback(callback)
+            if callback.args == [Type::String, Type::Int32] && callback.return_type == Type::Void)
+        });
+    if !valid {
+        bail!("{root} must declare callback dragged(region: string, by: int)");
+    }
+    Ok(())
+}
+
+pub fn bind_dragged(instance: &ComponentInstance, send: impl Fn(Json) + 'static) -> Result<()> {
+    instance
+        .set_callback("dragged", move |args| {
+            if let [Value::String(region), Value::Number(by)] = args {
+                let by = *by as i32;
+                if by != 0 {
+                    send(crate::messages::dragged(region.as_str(), by));
+                }
+            }
+            Value::Void
+        })
+        .context("bind dragged(region: string, by: int)")?;
     Ok(())
 }
 
@@ -636,6 +666,34 @@ mod tests {
             in property <image> art;
             in property <bool> lit;
         }"#;
+
+    #[test]
+    fn bound_drag_uses_whole_items_and_ignores_zero() -> Result<()> {
+        crate::backend::headless::Headless::install();
+        let definition = compile(
+            r#"export component Surface inherits Window {
+            callback dragged(region: string, by: int);
+        }"#,
+        );
+        let instance = definition.create()?;
+        let received = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = received.clone();
+        bind_dragged(&instance, move |message| sink.borrow_mut().push(message))?;
+        for by in [-2, 0, 3] {
+            instance.invoke(
+                "dragged",
+                &[Value::String("shelf".into()), Value::Number(by as f64)],
+            )?;
+        }
+        assert_eq!(
+            *received.borrow(),
+            vec![
+                json!({"_tag": "Dragged", "region": "shelf", "by": -2}),
+                json!({"_tag": "Dragged", "region": "shelf", "by": 3}),
+            ]
+        );
+        Ok(())
+    }
 
     #[test]
     fn bound_activation_uses_the_treaty_and_omits_both_sentinels() -> Result<()> {

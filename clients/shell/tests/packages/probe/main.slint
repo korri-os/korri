@@ -2,9 +2,12 @@
 import "fonts/tiny5.ttf";
 export component Surface inherits Window {
     callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
     in property <string> activation;
+    in property <string> drag;
     in property <string> word;
     in property <int> count;
+    in property <int> presses;
     in property <int> total;
     in property <bool> stored;
     in property <string> focused-game;
@@ -17,6 +20,10 @@ export component Surface inherits Window {
     TouchArea {
         x: 40px; y: 40px; width: 80px; height: 40px;
         clicked => { root.activated("probe:tap", -1, false); }
+    }
+    TouchArea {
+        x: 200px; y: 40px; width: 80px; height: 40px;
+        moved => { if self.pressed { root.dragged("surface-shelf", -2); } }
     }
     preferred-width: 640px;
     preferred-height: 480px;
@@ -31,12 +38,18 @@ export component Surface inherits Window {
 
 export component Overlay inherits Window {
     callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
     in property <string> activation;
+    in property <string> drag;
     in property <string> heading;
     in property <int> controls;
     TouchArea {
         x: 40px; y: 40px; width: 80px; height: 40px;
         clicked => { root.activated("probe:overlay", -1, false); }
+    }
+    TouchArea {
+        x: 200px; y: 40px; width: 80px; height: 40px;
+        moved => { if self.pressed { root.dragged("overlay-shelf", -2); } }
     }
     preferred-width: 640px;
     preferred-height: 480px;
