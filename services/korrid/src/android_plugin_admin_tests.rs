@@ -119,3 +119,57 @@ fn a_rebound_namespace_key_is_refused() {
     trust(&a.key).unwrap();
     assert_eq!(trust(&b.key).unwrap_err().code, CODE_PUBLISHER_KEY_CHANGED);
 }
+
+/// End to end over HTTPS against a real served catalog (aka's tailnet test
+/// catalog). Set KORRI_ANDROID_TEST_CATALOG and KORRI_ANDROID_TEST_KEY.
+#[test]
+fn installs_from_a_real_https_catalog_when_given() {
+    let (Ok(url), Ok(key)) = (
+        std::env::var("KORRI_ANDROID_TEST_CATALOG"),
+        std::env::var("KORRI_ANDROID_TEST_KEY"),
+    ) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let store: &'static AndroidPluginStore = Box::leak(Box::new(AndroidPluginStore::new(dir.path())));
+    let admin = AndroidPluginAdmin::new(dir.path(), store, Some(url.clone()), Box::new(https_fetch));
+    admin
+        .handle(PluginAdminRequest::TrustPublisher(PluginTrustPublisherRequest {
+            namespace: "@korri".into(),
+            public_key: key,
+        }))
+        .unwrap();
+    for id in ["@korri:android-app", "@korri:homebrewhub"] {
+        let PluginAdminResponse::Inspection(inspection) = admin
+            .handle(PluginAdminRequest::Inspect(PluginInspectRequest {
+                url: url.clone(),
+                plugin_id: id.into(),
+                release_version: "android-test-1".into(),
+            }))
+            .unwrap()
+        else {
+            panic!("wrong response")
+        };
+        admin
+            .handle(PluginAdminRequest::Install(PluginInstallRequest {
+                url: url.clone(),
+                plugin_id: id.into(),
+                release_version: "android-test-1".into(),
+                approval: inspection.approval,
+            }))
+            .unwrap();
+    }
+    let enabled = store.read().unwrap();
+    assert_eq!(enabled.len(), 2);
+    // The installed packages load as a registry on an Android device.
+    for package in &enabled {
+        let source = crate::script::source::SourceSnapshot::package_plugin(
+            &package.package,
+            &package.entry,
+            &package.sources,
+        )
+        .unwrap();
+        let json = crate::script::eval_plugin_snapshot(&source).unwrap();
+        crate::plugin::decode_plugin_declaration_on("@korri", &json, "aarch64-android").unwrap();
+    }
+}
