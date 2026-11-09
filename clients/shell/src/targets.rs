@@ -22,6 +22,7 @@ use crate::{
 use anyhow::{bail, Result};
 use i_slint_backend_testing::ElementRoot;
 use serde_json::Value;
+use slint::ComponentHandle;
 use slint_interpreter::ComponentInstance;
 
 /// One element that draws a focus target, in item-tree (drawing) order.
@@ -76,6 +77,29 @@ pub fn elements(instance: &ComponentInstance) -> Vec<Element> {
 /// the tap probe must wait for the focus walk to reveal that centre instead.
 /// This reads Slint's existing item geometry; it adds no package convention.
 pub fn selected_center_is_visible(instance: &ComponentInstance, x: f32, y: f32) -> bool {
+    selected_clips_contain(instance, |clip| clip.contains((x, y).into()))
+}
+
+/// The entire selected target is inside the window and every ancestor clip.
+/// A sliver of a virtual row does not make it eligible for tap coverage yet.
+pub fn selected_rect_is_visible(instance: &ComponentInstance, element: &Element) -> bool {
+    let size = instance
+        .window()
+        .size()
+        .to_logical(instance.window().scale_factor());
+    let bounds = i_slint_core::lengths::LogicalRect::new(
+        (element.x, element.y).into(),
+        (element.w, element.h).into(),
+    );
+    let window = i_slint_core::lengths::LogicalRect::from_size((size.width, size.height).into());
+    window.contains_rect(&bounds)
+        && selected_clips_contain(instance, |clip| clip.contains_rect(&bounds))
+}
+
+fn selected_clips_contain(
+    instance: &ComponentInstance,
+    contains: impl Fn(i_slint_core::lengths::LogicalRect) -> bool,
+) -> bool {
     use i_slint_core::{
         accessibility::AccessibleStringProperty,
         item_tree::{ItemRc, ParentItemTraversalMode},
@@ -96,7 +120,7 @@ pub fn selected_center_is_visible(instance: &ComponentInstance, x: f32, y: f32) 
                 let rect = ancestor
                     .transform_to_item_tree(&tree)
                     .outer_transformed_rect(&ancestor.geometry().cast());
-                if !rect.contains((x, y).into()) {
+                if !contains(rect.cast()) {
                     return ControlFlow::Break(false);
                 }
             }
@@ -187,6 +211,9 @@ pub struct Target {
     /// The element when it is drawn: not on a hidden layer, with a size. It may be clipped
     /// out of view (`Element::visible` false).
     pub element: Option<Element>,
+    /// Fully inside the window and every ancestor clip in this walked view,
+    /// before the tap probe changes focus to reveal other entries.
+    pub fully_visible: bool,
     /// `region#k`: the k-th of its region's entries in the view.
     pub identity: String,
     /// k.
@@ -238,6 +265,9 @@ pub fn drawn(
             identity: format!("{}#{}", entry.region, index),
             index: *index,
             entry: entry.clone(),
+            fully_visible: element
+                .as_ref()
+                .is_some_and(|e| selected_rect_is_visible(instance, e)),
             element,
         });
         *index += 1;

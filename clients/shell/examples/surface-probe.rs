@@ -687,6 +687,15 @@ fn walk(
             binder.apply(&instance, &view, &mut images)?;
             match korri_shell::targets::drawn(&instance, &mut binder, &view, &mut images) {
                 Ok(drawn) => {
+                    // A clipped/off-window virtual entry is proved only when
+                    // the walk reaches a state where its whole target is visible.
+                    for target in &drawn {
+                        if target.fully_visible {
+                            if let Some(id) = &target.entry.id {
+                                tap_seen.insert(id.clone());
+                            }
+                        }
+                    }
                     for (id, result) in taps(
                         &instance,
                         &mut binder,
@@ -695,7 +704,6 @@ fn walk(
                         &drawn,
                         &activations,
                     )? {
-                        tap_seen.insert(id.clone());
                         match result {
                             Some(Ok(())) => {
                                 tap_proven.insert(id);
@@ -756,7 +764,7 @@ fn walk(
     instance.hide()?;
     for id in tap_seen.difference(&tap_proven) {
         failures.push(format!(
-            "{} at {}x{}: target {id:?} was drawn but no walked state made its centre tappable",
+            "{} at {}x{}: target {id:?} was fully visible but no walked state made its centre tappable",
             model_file.display(),
             size.0,
             size.1
@@ -801,12 +809,10 @@ fn taps(
             &korri_shell::targets::lit(view, &entries, Some(n)),
             images,
         )?;
-        // Let the package's reveal timers and any animations settle, without
-        // rendering twenty full frames just to read geometry.
-        for _ in 0..20 {
-            Headless::advance(std::time::Duration::from_millis(25));
-            slint::platform::update_timers_and_animations();
-        }
+        // Reveal depends on rendered layout, not just elapsed timer time.
+        // Use the same frame settlement as every other probe render.
+        let size = instance.window().size();
+        render(instance, (size.width, size.height));
         let selected = korri_shell::targets::elements(instance)
             .into_iter()
             .find(|e| e.selected && !e.hidden && e.visible);
@@ -1143,5 +1149,76 @@ fn main() -> Result<()> {
             overlay(&dir, &model, &backdrops, &presses, &sizes, &out)
         }
         _ => bail!("usage: surface-probe previews DIR --sizes … --out OUT | walk PACKAGE --model FILE --sizes … [--max N] [--still] [--out OUT] | overlay PACKAGE --model FILE --backdrops IMG,… --sizes … [--press B,…] [--out OUT]"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use korri_shell::backend::{Backend, FrameCounter};
+
+    #[test]
+    fn tap_settling_renders_frames_for_layout_and_reveal() -> Result<()> {
+        let backend = Headless::install();
+        Headless::manual_clock();
+        let result = pollster::block_on(
+            slint_interpreter::Compiler::default().build_from_source(
+                r#"export struct Row { focused: bool, focus-id: string }
+            export component Surface inherits Window {
+                callback activated(string, float, bool);
+                in property <Row> entry;
+                Rectangle {
+                    x: 4px; y: 4px; width: 40px; height: 32px;
+                    accessible-role: button;
+                    accessible-item-selectable: true;
+                    accessible-item-selected: root.entry.focused;
+                    background: root.entry.focused ? #f0c040 : #304050;
+                    TouchArea { clicked => { root.activated(root.entry.focus-id, -1, false); } }
+                }
+            }"#
+                .into(),
+                "tap.slint".into(),
+            ),
+        );
+        assert!(
+            !result.has_errors(),
+            "{:?}",
+            result.diagnostics().collect::<Vec<_>>()
+        );
+        let definition = result.component("Surface").context("Surface")?;
+        let instance = definition.create()?;
+        let frames = FrameCounter::default();
+        backend.attach(instance.window(), Rc::new(|_| {}), frames.clone());
+        instance.show()?;
+        let root = tempfile::tempdir()?;
+        let mut images = ImageCache::new(root.path());
+        let mut binder = Binder::new(&definition);
+        let view = json!({"entry": {"focused": true, "focusId": "row", "focusRegion": "row"}});
+        binder.apply(&instance, &view, &mut images)?;
+        render(&instance, (64, 48));
+        let drawn = korri_shell::targets::drawn(&instance, &mut binder, &view, &mut images)?;
+        let activations = Rc::new(RefCell::new(Vec::new()));
+        let received = activations.clone();
+        view::bind_activated(&instance, move |message| {
+            received.borrow_mut().push(message)
+        })?;
+        let before = frames.get();
+        let results = taps(
+            &instance,
+            &mut binder,
+            &view,
+            &mut images,
+            &drawn,
+            &activations,
+        )?;
+        assert!(results
+            .iter()
+            .all(|(_, result)| matches!(result, Some(Ok(())))));
+        assert!(
+            frames.get() >= before + 20,
+            "reveal settlement advanced timers but rendered no frames"
+        );
+        instance.hide()?;
+        Ok(())
     }
 }
