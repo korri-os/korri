@@ -94,6 +94,25 @@ async fn android_selected_launch(
     request: game_routes::SelectedGameLaunchRequest,
     authorization: &authorization::AuthorizationContext,
 ) -> Result<game_routes::SelectedGameLaunch, RpcFailure> {
+    android_launch(
+        brain,
+        sessions,
+        request.game_id,
+        Some(request.runner_id),
+        None,
+        authorization,
+    )
+    .await
+}
+
+async fn android_launch(
+    brain: &BrainRuntime,
+    sessions: &'static Arc<android_local::AndroidLocalSessions>,
+    game_id: String,
+    runner_id: Option<String>,
+    launch_id: Option<String>,
+    authorization: &authorization::AuthorizationContext,
+) -> Result<game_routes::SelectedGameLaunch, RpcFailure> {
     let person = authorization
         .person_public_key(brain.local_owner_public_key())
         .map(str::to_owned)
@@ -116,12 +135,13 @@ async fn android_selected_launch(
             &root,
             &snapshot,
             &registry,
-            &request.game_id,
-            Some(&request.runner_id),
+            &game_id,
+            runner_id.as_deref(),
         )
         .map_err(|error| route_diagnostic_failure(&error))?;
         acquisition::require_ready(&root, &registry, &route)?;
-        let session = sessions.launch(&root, &snapshot, &registry, &route, &person)?;
+        let session =
+            sessions.launch_as(&root, &snapshot, &registry, &route, &person, launch_id)?;
         Ok(game_routes::SelectedGameLaunch {
             session: SessionPrepared {
                 game_id: session.game_id,
@@ -3458,6 +3478,55 @@ async fn dispatch(
                 },
             };
             RpcResponse::MoonlightCertificateRevoke(outcome)
+        }
+        RpcRequest::SessionReserve(request)
+            if matches!(state.mode, ServerMode::Brain(_)) && android_local_sessions().is_some() =>
+        {
+            let sessions = android_local_sessions().expect("checked");
+            let launch_id = sessions.reserve(&request.game_id);
+            RpcResponse::SessionReserve(SessionReserveOutcome::Ok(SessionPrepared {
+                game_id: request.game_id,
+                launch_id,
+                display: None,
+            }))
+        }
+        RpcRequest::SessionStart(request)
+            if matches!(state.mode, ServerMode::Brain(_)) && android_local_sessions().is_some() =>
+        {
+            let ServerMode::Brain(brain) = &state.mode else {
+                unreachable!("checked Brain mode")
+            };
+            let sessions = android_local_sessions().expect("checked");
+            let outcome = match sessions
+                .take_reservation(&request.game_id, &request.expected_launch_id)
+            {
+                Ok(()) => {
+                    android_launch(
+                        brain,
+                        sessions,
+                        request.game_id,
+                        request.runner_id,
+                        Some(request.expected_launch_id),
+                        authorization,
+                    )
+                    .await
+                }
+                Err(failure) => Err(failure),
+            };
+            RpcResponse::SessionStart(
+                outcome
+                    .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                    .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
+            )
+        }
+        RpcRequest::SessionCancel(request)
+            if matches!(state.mode, ServerMode::Brain(_))
+                && android_local_sessions()
+                    .is_some_and(|s| s.cancel(&request.expected_launch_id)) =>
+        {
+            RpcResponse::SessionCancel(SessionEndOutcome::Ok(SessionEndResult {
+                phase: SessionEndPhase::Ended,
+            }))
         }
         RpcRequest::SessionReserve(request) => {
             let outcome = match (local_launch_caller(state, authorization), &state.mode) {

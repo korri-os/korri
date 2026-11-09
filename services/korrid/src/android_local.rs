@@ -62,6 +62,8 @@ pub struct LocalSession {
 pub struct AndroidLocalSessions {
     launcher: Arc<dyn AppLauncher>,
     active: Mutex<Option<LocalSession>>,
+    /// A launch the shell reserved (SessionReserve) and has not started yet.
+    pending: Mutex<Option<(String, String)>>,
 }
 
 fn failure(code: &str, message: impl Into<String>) -> RpcFailure {
@@ -76,11 +78,43 @@ impl AndroidLocalSessions {
         Self {
             launcher,
             active: Mutex::new(None),
+            pending: Mutex::new(None),
         }
     }
 
     pub fn active(&self) -> Option<LocalSession> {
         self.active.lock().expect("android session lock").clone()
+    }
+
+    /// The shell's two-step launch: reserve an exact launch ID first.
+    pub fn reserve(&self, game_id: &str) -> String {
+        let launch_id = new_launch_id();
+        *self.pending.lock().expect("android pending lock") =
+            Some((game_id.to_owned(), launch_id.clone()));
+        launch_id
+    }
+
+    /// Drop a reservation. True when it was the reserved launch.
+    pub fn cancel(&self, launch_id: &str) -> bool {
+        let mut pending = self.pending.lock().expect("android pending lock");
+        if pending.as_ref().is_some_and(|(_, id)| id == launch_id) {
+            *pending = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Take the reservation for this exact game and launch.
+    pub fn take_reservation(&self, game_id: &str, launch_id: &str) -> Result<(), RpcFailure> {
+        let mut pending = self.pending.lock().expect("android pending lock");
+        match pending.as_ref() {
+            Some((game, id)) if game == game_id && id == launch_id => {
+                *pending = None;
+                Ok(())
+            }
+            _ => Err(failure("SessionMismatch", "That launch is no longer reserved.")),
+        }
     }
 
     /// Prepare and start one Android route. Refuses while another live
@@ -92,6 +126,18 @@ impl AndroidLocalSessions {
         registry: &PluginRegistry,
         route: &ResolvedRoute,
         person: &str,
+    ) -> Result<LocalSession, RpcFailure> {
+        self.launch_as(root, snapshot, registry, route, person, None)
+    }
+
+    pub fn launch_as(
+        &self,
+        root: &Path,
+        snapshot: &ConfigSnapshot,
+        registry: &PluginRegistry,
+        route: &ResolvedRoute,
+        person: &str,
+        launch_id: Option<String>,
     ) -> Result<LocalSession, RpcFailure> {
         let mut active = self.active.lock().expect("android session lock");
         if active.is_some() {
@@ -106,7 +152,7 @@ impl AndroidLocalSessions {
             .start(&plan, content_path.as_deref())
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
         let session = LocalSession {
-            launch_id: new_launch_id(),
+            launch_id: launch_id.unwrap_or_else(new_launch_id),
             game_id: route.playable_id.clone(),
             title: route.title.clone(),
             package: plan.android.package.clone(),
