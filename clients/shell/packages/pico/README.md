@@ -45,10 +45,10 @@ imports.
   `Activated`, and `update` moves the cursor there as a d-pad move would, then
   does what Confirm does. An id the screen shown does not list (stale, or a
   disabled control) does nothing; on attract the first tap only wakes. The
-  hints (`hint:a`, `hint:b`, `hint:lr`) are targets in their own `hints`
-  region that the cursor never walks onto: A runs Confirm, B runs Back, and
-  ◀▶ ADJUST is two targets (`hint:left`, `hint:right`), one per half. A hint
-  not drawn now is stale. A range in the
+  hints (`hint:a`, `hint:b`, `hint:left`, `hint:right`) are targets in their
+  own `hints` region that the cursor never walks onto: A runs Confirm, B runs
+  Back, and ◀▶ ADJUST is two targets, `hint:left` and `hint:right`, one per
+  half. A hint not drawn now is stale. A range in the
   pause menu takes the finger's place on its cells (`at`), snapped to Korri's
   step and sent when that value changes. `Touched` (the shell sends it as any
   finger goes down) hides the focus highlight (`touching`, read as
