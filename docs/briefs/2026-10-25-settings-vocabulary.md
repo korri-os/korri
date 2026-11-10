@@ -70,15 +70,39 @@ each runner are checked against source before a runner maps a row.
 | `video.render-scale` | number, multiplier of the original picture size (1 = original) | the runner's own default | decided (q18) | WiiCompiled `resolution_multiplier`; PCSX2 `upscale_multiplier`; Dolphin `InternalResolution` |
 | `video.aspect-ratio` | `original` (game's ratio, bars), `fill-view` (the game shows more view to fill the screen shape; falls back to `original`), `stretch`, `4:3`, `16:9` | the runner's own default | decided (q19) | RetroArch `video.aspect-ratio` above; legacy preferences `video.aspect-ratio`; WiiCompiled `force_aspect` + dynamic canvas |
 | `locale.language` | language tag (BCP 47), such as `en-US`, `pt-BR`, `ja`; a runner that knows only base languages maps to the base | the runner's own default | decided (q20, q27) | 12 of 14 surveyed runners |
-| `locale.region` | named region choice | the runner's own default | decided (q20); values open | 12 of 14 surveyed runners |
+| `locale.region` | `japan`, `north-america`, `europe`, `australia`, `korea`, `china`, `taiwan`, `asia`; runners map to TV standards or publisher codes | the runner's own default | decided (q20, q32) | DuckStation `[Console] Region`; Ryubing `system_region`; RPCS3 `System: License Area`; Dolphin `FallbackRegion` |
 | `video.window-mode` | `windowed`, `borderless`, `exclusive` | the runner's own default | decided (q24, q25) | WiiCompiled `display_mode`; RetroArch `video.fullscreen` + `video.windowed-fullscreen` above |
 | `video.vsync` | boolean | the runner's own default | decided (q25) | RetroArch `video.vsync` above |
-| `video.fps-limit` | integer, 0 = none | the runner's own default | existing shared term | Shared terms above |
+| `video.fps-limit` | integer, 0 = none | the runner's own default | decided (q30); most emulators skip it with a warning | RPCS3 `Video: Frame limit`; Shared terms above |
 | `video.renderer` | `vulkan`, `opengl`, `software`, program names otherwise (R1) | the runner's own default | decided (q25) | legacy RPCS3 `video.renderer`; RetroArch `drivers.video` above |
 | `audio.volume-percent` | 0 to 100 | the runner's own default | decided (q25) | legacy preferences `audio.volume` (0 to 100); R3 |
 | `audio.music.volume-percent`, `audio.effects.volume-percent`, `audio.voice.volume-percent` | 0 to 100; UI sounds stay in `plugin` | the runner's own default | shape decided (q23) | WiiCompiled `music_volume`, `sound_effects_volume`, `voices_volume` |
-| `input.rumble` | boolean | the runner's own default | decided (q25) | 12 of 14 surveyed runners |
+| `input.rumble` | boolean; `false` means strength 0 where a runner has no switch | the runner's own default | decided (q25, q31) | WiiCompiled `rumble`; Ryubing `enable_rumble` |
+| `input.rumble-strength-percent` | 0 to 100 | the runner's own default | decided (q31) | RetroArch `input_rumble_gain`; PCSX2 `LargeMotorScale`; RPCS3 motor multipliers |
 | `input.deadzone-percent` | 0 to 100 | the runner's own default | decided (q25) | 12 of 14 surveyed runners; R3 |
+
+### Tier 2 (decided, q33 to q36)
+
+Native keys: `/tmp/korri-native-keys.md` (2026-11-10, pinned commits),
+to be moved into this brief with each runner's mapping.
+
+| Path | Values | Grounding |
+|---|---|---|
+| `video.texture-filter` | `nearest`, `linear` | PPSSPP `TextureFiltering`; Dolphin `ForceTextureFiltering`; PCSX2 `filter`; DuckStation `TextureFilter` |
+| `video.scaling.filter` | `nearest`, `linear`, `sharp-linear` | RetroArch `video_smooth`; PPSSPP `BufferFiltering`; Dolphin `OutputResampling`; PCSX2 `linear_present_mode`; DuckStation `Scaling`; Ryubing `scaling_filter`; RPCS3 `Output Scaling Mode` |
+| `video.scaling.scaler` | `fit`, `integer` | ADR 0037; RetroArch `video_scale_integer`; PPSSPP `DisplayIntegerScale`; PCSX2 `IntegerScaling`; DuckStation `*Integer` scaling values |
+| `video.anisotropic-filtering` | `off`, `2x`, `4x`, `8x`, `16x` | PPSSPP and Dolphin (log2), PCSX2 (literal), Ryubing (float), RPCS3 (0 to 16) |
+| `video.msaa` | `off`, `2x`, `4x`, `8x`; FXAA and SMAA stay in `plugin` | Dolphin `MSAA`; DuckStation `Multisamples`; PPSSPP `MultiSampleLevel` |
+| `video.rotation-degrees` | 0, 90, 180, 270 | Shared terms above; RetroArch `video_rotation`; DuckStation `Rotation` |
+| `rewind.enable` | boolean; the step stays in `plugin` (frames in RetroArch, seconds in PPSSPP and DuckStation) | RetroArch `rewind_enable`; DuckStation `RewindEnable`; PPSSPP `RewindSnapshotInterval` |
+| `speed.fast-forward-multiplier` | number, 0 = unlimited | RetroArch `fastforward_ratio`; PCSX2 `TurboScalar`; DuckStation `FastForwardSpeed`; PPSSPP `AltSpeedPercent` |
+| `saves.auto-save-state`, `saves.auto-load-state` | boolean | RetroArch `savestate_auto_save`/`_load`; PPSSPP `AutoLoadSaveState`; PCSX2 `SaveStateOnShutdown`; DuckStation `SaveStateOnExit` |
+| `cheats.enable` | boolean | PPSSPP, Dolphin, PCSX2 `EnableCheats`; DuckStation per-game only |
+| `achievements.enable`, `achievements.hardcore` | boolean | RetroArch `cheevos_*`; PPSSPP `AchievementsEnable`/`ChallengeMode`; Dolphin, PCSX2, DuckStation `Enabled`/hardcore |
+
+Not shared: post-process shaders stay in `plugin` (q34); texture packs are
+Add-ons, and an applied texture-pack Add-on makes the runner turn on its own
+loading switch, with no setting (q35).
 
 Sizes that follow the display when unset (ADR 0056) are window and output
 sizes such as `video.resolution`. `video.render-scale` is not one of them.
