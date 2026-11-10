@@ -415,6 +415,7 @@ impl Korrid {
         game_id: String,
         expected_launch_id: String,
         runner_id: Option<String>,
+        launch: Option<crate::launch_settings::LaunchOverride>,
     ) -> SelectedGameLaunchOutcome {
         call!(
             self,
@@ -424,7 +425,7 @@ impl Korrid {
                 game_id,
                 expected_launch_id,
                 runner_id,
-                launch: None
+                launch,
             },
             SelectedGameLaunchOutcome
         )

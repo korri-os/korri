@@ -3,7 +3,7 @@
 //! A runner declares supported shared paths and its plugin-only schema.
 //! `settings.validate` reports translation limits and rounding. The host skips
 //! invalid or unsupported values without rewriting authored records. Modifiers
-//! and launch services keep their distinct schemas (ADR 0057).
+//! and launch services keep distinct values inside the same plugin bucket.
 use super::plugin_launch::{
     PluginSettingsDescribeInput, PluginSettingsDescribeOutput, PluginSettingsDiagnosticSeverity,
     PluginSettingsRenderInput, PluginSettingsRenderOutput, PluginSettingsValidateInput,
@@ -95,9 +95,12 @@ fn validate_with_description(
         });
     }
     *settings = nested;
-    if runner {
-        for (path, value) in crate::config::cascade::leaves(settings).0 {
-            let reason = match korri_settings_treaty::SharedSetting::from_path(&path) {
+    for (path, value) in crate::config::cascade::leaves(settings).0 {
+        let reason = if !runner {
+            (!path.starts_with("plugin."))
+                .then(|| "plugin-only settings belong under plugin".to_owned())
+        } else {
+            match korri_settings_treaty::SharedSetting::from_path(&path) {
                 Some(setting) if !description.shared.contains(&setting) => {
                     Some(format!("not supported by {id}"))
                 }
@@ -110,17 +113,17 @@ fn validate_with_description(
                 None => {
                     Some("unknown shared setting; runner-only settings belong under plugin".into())
                 }
-            };
-            if let Some(message) = reason {
-                crate::config::cascade::set_leaf(settings, &path, None);
-                check.skipped.push((path.clone(), message.clone()));
-                check.warnings.push(LaunchWarning {
-                    setting: path,
-                    runner_id: id.into(),
-                    build: build.into(),
-                    message,
-                });
             }
+        };
+        if let Some(message) = reason {
+            crate::config::cascade::set_leaf(settings, &path, None);
+            check.skipped.push((path.clone(), message.clone()));
+            check.warnings.push(LaunchWarning {
+                setting: path,
+                runner_id: id.into(),
+                build: build.into(),
+                message,
+            });
         }
     }
     let input = serde_json::to_string(&PluginSettingsValidateInput {
@@ -202,8 +205,20 @@ pub struct SettingsDescription {
     pub scopes: HashMap<String, SettingScope>,
     pub diagnostics: Vec<LaunchWarning>,
 }
-/// Retain the marks for future settings consumers; plugins own their schema.
+/// A modifier or launch service keeps its own vocabulary under plugin.
 pub fn describe(
+    snapshot: &script::source::SourceSnapshot,
+    id: &str,
+    build: &str,
+) -> Result<SettingsDescription, String> {
+    let mut description = describe_native(snapshot, id, build)?;
+    description.schema = serde_json::json!({"type":"object", "properties":{"plugin":korri_settings_treaty::plugin_object(description.schema)}});
+    description.include_paths(&[], id, build);
+    Ok(description)
+}
+
+/// Read the native schema before the host adds its namespace and shared fields.
+fn describe_native(
     snapshot: &script::source::SourceSnapshot,
     runner_id: &str,
     build: &str,
@@ -249,13 +264,13 @@ pub fn describe(
 }
 
 /// Runner settings have authoritative shared definitions and a plugin bucket.
-/// Modifier/service schemas keep their own distinct settings vocabulary.
+/// Modifiers and services receive only their plugin bucket, without shared paths.
 pub fn describe_runner(
     snapshot: &script::source::SourceSnapshot,
     id: &str,
     build: &str,
 ) -> Result<SettingsDescription, String> {
-    let mut description = describe(snapshot, id, build)?;
+    let mut description = describe_native(snapshot, id, build)?;
     description.schema = korri_settings_treaty::schema(&description.shared, description.schema);
     description.schema_available = true;
     fn annotate(node: &mut serde_json::Value, id: &str) {

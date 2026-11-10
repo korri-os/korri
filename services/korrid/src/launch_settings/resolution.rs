@@ -73,7 +73,7 @@ fn checked_settings(
         &package.sources,
     )
     .map_err(SettingsError::Invalid)?;
-    let validate = if prefix == "settings" {
+    let validate = if prefix == "settings" && registry.runners().get(id).is_some_and(choosable) {
         crate::launcher::typed_settings::validate_runner
     } else {
         crate::launcher::typed_settings::validate
@@ -384,11 +384,12 @@ pub fn snapshot_for_person(
                     &package.entry,
                     &package.sources,
                 )?;
-                crate::launcher::typed_settings::describe_runner(
-                    &source,
-                    &id,
-                    &package.package.display().to_string(),
-                )
+                let describe = if choosable(declaration) {
+                    crate::launcher::typed_settings::describe_runner
+                } else {
+                    crate::launcher::typed_settings::describe
+                };
+                describe(&source, &id, &package.package.display().to_string())
             })();
             let prepare = (|| -> Result<LaunchPrepareFacts, String> {
                 let candidate = candidates

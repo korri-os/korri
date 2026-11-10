@@ -96,10 +96,13 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
 /// says and adds the identity facts that are its own.
 #[test]
 fn the_runner_reports_unsupported_settings_and_korrid_names_the_build() {
-    use korrid::{launcher::typed_settings::validate, script::source::SourceSnapshot};
+    use korrid::{
+        launcher::typed_settings::validate_runner as validate, script::source::SourceSnapshot,
+    };
     let mut settings =
-        serde_json::from_value(serde_json::json!({"supported":true,"wrong":false})).unwrap();
-    let source = "export const name = 'core'; export const handlers = {'settings.validate': (input) => ({valid: true, diagnostics: [{code: 'settings-revision', severity: 'info', message: 'chosen for another build'}, ...Object.keys(input.values).filter((key) => key !== 'supported').map((key) => ({code: 'setting-unverified', severity: 'warning', path: [key], message: `1.22.2 does not accept ${key}`}))]})}";
+        serde_json::from_value(serde_json::json!({"plugin":{"supported":true,"wrong":false}}))
+            .unwrap();
+    let source = "export const name = 'core'; export const handlers = {'settings.validate': (input) => ({valid: true, diagnostics: [{code: 'settings-revision', severity: 'info', message: 'chosen for another build'}, ...Object.keys(input.values.plugin).filter((key) => key !== 'supported').map((key) => ({code: 'setting-unverified', severity: 'warning', path: ['plugin', key], message: `1.22.2 does not accept ${key}`}))]})}";
     let warnings = validate(
         &SourceSnapshot::plugin(source).unwrap(),
         &mut settings,
@@ -111,7 +114,7 @@ fn the_runner_reports_unsupported_settings_and_korrid_names_the_build() {
     // One warning, because the runner accepted the other key. The info-level
     // diagnostic is not a warning and is not shown as one.
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].setting, "wrong");
+    assert_eq!(warnings[0].setting, "plugin.wrong");
     assert_eq!(warnings[0].runner_id, "@korri:mgba/mgba");
     assert_eq!(warnings[0].build, "/nix/store/exact-build");
     assert!(warnings[0].message.contains("does not accept wrong"));

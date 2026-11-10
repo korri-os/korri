@@ -2451,6 +2451,7 @@ dependencies = [
 name = "korri-settings-treaty"
 version = "0.0.0"
 dependencies = [
+ "language-tags",
  "serde",
  "serde_json",
  "typeshare",
@@ -2528,6 +2529,7 @@ dependencies = [
  "tower-http",
  "typeshare",
  "url",
+ "xattr",
  "zbus",
  "zeroize",
  "zip",
@@ -2552,6 +2554,12 @@ dependencies = [
  "bitflags 2.13.1",
  "libc",
 ]
+
+[[package]]
+name = "language-tags"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4345964bb142484797b161f473a503a434de77149dd8c7427788c6e13379388"
 
 [[package]]
 name = "lazy_static"

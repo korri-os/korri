@@ -5,7 +5,7 @@
 //!     Every exported component of every *.preview.slint under DIR, at each
 //!     size: OUT/<file>.<Component>.<W>x<H>.png. Fails a preview that does not
 //!     compile or draws nothing but its background.
-//! surface-probe walk PACKAGE --model FILE --sizes 640x480,… [--max N] [--out OUT]
+//! surface-probe walk PACKAGE --model FILE --sizes 640x480,… [--max N] [--out OUT] [--capture] [--press down,confirm,…]
 //!     Run the package's logic on FILE (a SurfaceModel; a Ready catalog's
 //!     `games` are the games), answer MoveCatalog and FocusGame as korrid does,
 //!     and press every button from every state reached, up to N states. At
@@ -484,14 +484,21 @@ fn large_displays() -> Value {
     ])
 }
 
+struct WalkOptions {
+    max: usize,
+    still: bool,
+    capture: bool,
+    initial: String,
+}
+
 fn walk(
     dir: &Path,
     model_file: &Path,
     size: (u32, u32),
-    max: usize,
     out: &Path,
-    still: bool,
+    options: &WalkOptions,
 ) -> Result<(usize, Vec<String>)> {
+    let (max, still, capture) = (options.max, options.still, options.capture);
     let package = Package::at(dir)?;
     let views = package::compile(&package)?;
     let source = package.logic_source()?;
@@ -538,8 +545,20 @@ fn walk(
         "up", "down", "left", "right", "confirm", "back", "menu", "options",
     ];
     // (path, parent state, direction pressed from it)
+    let initial = options
+        .initial
+        .split(',')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            presses
+                .iter()
+                .copied()
+                .find(|button| *button == part)
+                .context("unknown semantic button in --press")
+        })
+        .collect::<Result<Vec<_>>>()?;
     let mut queue: VecDeque<(Vec<&'static str>, Option<usize>, &'static str)> =
-        VecDeque::from([(vec![], None, "")]);
+        VecDeque::from([(initial, None, "")]);
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut walked: Vec<State> = Vec::new();
     let mut edges: Vec<(usize, &'static str, usize)> = Vec::new();
@@ -642,6 +661,15 @@ fn walk(
         if has_focus(&view) {
             binder.apply(&instance, &view, &mut images)?;
             let a = render(&instance, size);
+            if capture {
+                std::fs::create_dir_all(out)?;
+                let name = format!("frame-{}x{}-{}", size.0, size.1, walked.len());
+                save(&a, size, &out.join(format!("{name}.png")))?;
+                std::fs::write(
+                    out.join(format!("{name}.json")),
+                    serde_json::to_vec_pretty(&path)?,
+                )?;
+            }
             if still {
                 // The same view applied again and drawn later: nothing may change.
                 binder.apply(&instance, &view, &mut images)?;
@@ -1115,10 +1143,11 @@ fn main() -> Result<()> {
             let max = flag("--max").and_then(|m| m.parse().ok()).unwrap_or(300);
             // --still: also fail a state whose unchanged view, applied again, changes pixels.
             let still = args.iter().any(|a| a == "--still");
+            let options = WalkOptions { max, still, capture: args.iter().any(|a| a == "--capture"), initial: flag("--press").unwrap_or_default() };
             let mut all = Vec::new();
             for model in flag("--model").context("--model FILE[,FILE…]")?.split(',') {
                 for &size in &sizes {
-                    let (states, failures) = walk(&dir, Path::new(model), size, max, &out, still)?;
+                    let (states, failures) = walk(&dir, Path::new(model), size, &out, &options)?;
                     println!("{model} {}x{}: {states} states, {} failures", size.0, size.1, failures.len());
                     all.extend(failures);
                 }

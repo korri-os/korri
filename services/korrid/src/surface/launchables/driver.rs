@@ -96,6 +96,9 @@ type Changer = Box<dyn Fn(&str, &str) -> bool + Send + Sync>;
 
 /// The parts of the portal the launchables brain calls back into.
 pub struct LaunchablesHooks {
+    pub launch_overrides:
+        Box<dyn Fn(&str) -> (u64, Option<crate::launch_settings::LaunchOverride>) + Send + Sync>,
+    pub launch_overrides_complete: Box<dyn Fn(u64, bool) + Send + Sync>,
     /// A prepared launch korrid started with launch warnings.
     pub launch_warnings: Box<dyn Fn(String, Vec<LaunchWarning>) + Send + Sync>,
     /// Plugin repository rows: refresh, actions and changes. Each answers
@@ -1326,10 +1329,20 @@ impl Launchables {
             self.cancel_owned_startup(token).await;
             return None;
         }
+        let (settings_ticket, launch) = (self.hooks.launch_overrides)(game_id);
         let outcome = self
             .korrid
-            .session_start(game_id.to_owned(), reserved.launch_id.clone(), runner_id)
+            .session_start(
+                game_id.to_owned(),
+                reserved.launch_id.clone(),
+                runner_id,
+                launch,
+            )
             .await;
+        (self.hooks.launch_overrides_complete)(
+            settings_ticket,
+            matches!(&outcome, SelectedGameLaunchOutcome::Ok(_)),
+        );
         let (owned_now, cancelled) = {
             let inner = self.lock();
             let owned = inner

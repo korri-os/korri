@@ -26,6 +26,18 @@ class MigrationTests(unittest.TestCase):
         _, count = migration.migrate(data, set(), {'ra'})
         self.assertEqual(count, 3)
 
+    def test_modifiers_and_services_move_only_when_explicitly_selected(self):
+        original = b'host: {modifiers: {gamescope: {enabled: true, settings: {video: {fps-limit: 40}}}}, services: {sunshine: {settings: {video: {max-bitrate-kbps: 3000}}}}}\n'
+        unchanged, count = migration.migrate(original, set(), set())
+        self.assertEqual((unchanged, count), (original, 0))
+        output, count = migration.migrate(original, set(), set(), {'gamescope'}, {'sunshine'})
+        self.assertEqual(count, 2)
+        host = migration.yaml.safe_load(output)['host']
+        self.assertTrue(host['modifiers']['gamescope']['enabled'])
+        self.assertEqual(host['modifiers']['gamescope']['settings'], {'plugin': {'video': {'fps-limit': 40}}})
+        self.assertEqual(host['services']['sunshine']['settings'], {'plugin': {'video': {'max-bitrate-kbps': 3000}}})
+        self.assertEqual(migration.migrate(output, set(), set(), {'gamescope'}, {'sunshine'}), (output, 0))
+
     def test_rejects_ambiguous_or_duplicate_settings(self):
         for data in [b'host: {runners: {a: {settings: {plugin: {}, video: {vsync: true}}}}}', b'host: {}\nhost: {}\n']:
             with self.assertRaises(ValueError):

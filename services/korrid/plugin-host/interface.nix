@@ -15,6 +15,11 @@ in
     path = ../../../contracts/generated/surface.ts;
     name = "surface.ts";
   };
+  # The shared setting identifiers are a separate generated treaty too.
+  pluginSettingsContract = builtins.path {
+    path = ../../../contracts/generated/settings.ts;
+    name = "settings.ts";
+  };
   pluginBuilderCheck =
     { pkgs }:
     import ./builder-check.nix {

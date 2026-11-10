@@ -87,6 +87,29 @@ fn shared_settings_fold_at_any_runner_scope_and_launch_wins() {
 }
 
 #[test]
+fn native_values_and_clears_in_any_runner_files_never_leak_into_a_runner() {
+    let device = json!({"host":{
+        "settings":{"video":{"render-scale":2}},
+        "runners":{RUNNER:{"settings":{"plugin":{"quality":1}}}},
+        "modifiers":{"@test:modifier/main":{"settings":{"plugin":{"quality":2}}}}
+    },"systems":{"gba":{"settings":{"plugin":{"quality":null,"extra":3}}}}});
+    let snapshot = decode_config_documents(&device.to_string(), LIBRARY).unwrap();
+    let resolved = resolve_launch(&snapshot, &route(), None, None).unwrap();
+    let settings = serde_json::to_value(&resolved.runner.settings).unwrap();
+    assert_eq!(
+        settings,
+        json!({"video":{"render-scale":2},"plugin":{"quality":1}})
+    );
+    assert_eq!(
+        serde_json::to_value(&resolved.modifiers["@test:modifier/main"].settings).unwrap(),
+        json!({"plugin":{"quality":2}})
+    );
+    assert_eq!(resolved.notices.iter().filter(|notice| matches!(notice,
+        LaunchNotice::SettingSkipped { message, .. } if message == "plugin settings need a runner or family scope"
+    )).count(), 2);
+}
+
+#[test]
 fn shared_setting_can_be_authored_without_any_installed_runner() {
     let root = root();
     let private = tempfile::tempdir().unwrap();

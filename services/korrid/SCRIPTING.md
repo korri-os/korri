@@ -243,24 +243,78 @@ Output
 preserves legacy `command`, `args`, `env`, `envUnset`, and `cwd`, plus the
 existing directory and provisioned-file declarations.
 
-`settings.describe` returns the runner's own schema fragment and the revision
-it is valid for. `settings.validate` reports what this build cannot apply.
-`launcher/typed_settings.rs` calls the second one before a launch starts and
-turns its diagnostics into the existing `LaunchWarning` wire type, adding the
-runner id and build, which are korrid's facts and not the plugin's to claim.
-korrid keeps no key table and reads no settings metadata file: a runner that
-implements neither operation says nothing, which is silence and not an error,
-and authored values are never rewritten or deleted.
+For a runner, `settings.describe.shared` lists the supported paths from
+`contracts/settings`. Korri owns their types, ranges and device marks. The
+returned `schema` describes only that runner's own settings. The host puts
+that schema under `plugin` in the editor. Both `launch.prepare` and
+`settings.validate` receive the shared tree and the `plugin` tree together.
+There is no fallback for the former root-level native setting paths.
+Modifiers and launch services use the same `plugin` bucket, without the shared
+runner tree. Their callbacks read `settings.plugin` or `values.plugin`, and
+validation paths start with `plugin`. Their native schema stays unwrapped in
+`settings.describe`; the host adds the namespace.
+
+`settings.validate` reports translation limits and rounding. An error removes
+that path from the effective input. A warning retains the value so the runner
+can apply its reported approximation. `launcher/typed_settings.rs` also skips
+unsupported shared paths, creates path-specific `LaunchWarning` values, and
+adds the runner ID and build. Authored records remain unchanged. Modifiers
+and launch services retain distinct values. A Gamescope frame limit is not a
+shared game frame limit, even though both have a typed editor.
 
 The `default` on each `settings.describe.schema.properties` entry is the
 plugin's display-only base value. korrid passes only authored settings to
-`launch.prepare` and `launch.compose`. Settings are shared unless their property
-marks `x-korri-scope: device`; other marks produce a diagnostic. The snapshot
+`launch.prepare` and `launch.compose`. Runner-only settings are shared unless
+their property marks `x-korri-scope: device`; other marks produce a diagnostic.
+Korri assigns this mark to shared settings. The snapshot
 carries the schema and revision so the editor can show titles, descriptions,
 enums and numeric bounds. Setting writes must satisfy the installed runner's
 schema (any installed member for a family place). Installed modifiers also
 appear before any place enables them. Their optional settings schema follows
 the same rule; a modifier with no describe handler has no schema.
+
+Runners receive `display` during `launch.prepare`, using the same compositor
+size as the modifiers. Unset window dimensions follow this size. Unset render
+scale still uses the runner's default.
+
+A runner that must update an existing native TOML file returns `tomlUpdates`
+in its launch plan. Each entry uses the existing file declaration's `path`
+and `content` fields. `content` is a TOML fragment containing tables and scalar
+assignments, not a second configuration language. korrid merges the fragment
+only during unprivileged execution, not during preview. Updates must stay
+inside `accountRoot`, including after resolving symlinks. Parse errors never
+include existing file contents. It preserves unrelated values and comments
+and writes a backup before atomic replacement. The existing regular file must
+belong to the runtime user and fit within 1 MiB. Both the replacement and backup
+retain its group, mode and readable extended attributes, including POSIX ACLs.
+A new inherited ACL cannot grant extra access. If metadata cannot be preserved,
+the update refuses rather than replacing the original. Attributes hidden from
+the runtime user, such as privileged `trusted.*` attributes, cannot be copied;
+these are ordinary account-owned game config files, not privileged system files.
+An invalid document or a symlink file also refuses the update. These checks do
+not claim confinement against hostile code already running as the same UID.
+The plugin still performs no filesystem effects itself.
+
+For a one-launch override, korrid evaluates the same effect-free preparation
+with and without that layer. Native TOML targets must stay stable, even when
+their fragment is empty. The host applies permanent values first, then the
+temporary difference. It records the actual before/after native documents as
+private `ProvisionedFile` receipts under the account's `.korri-native-config`
+directory. Receipt names derive from the canonical target path, and file
+leases prevent recovery while a launch still uses that configuration.
+
+The existing private-PID-namespace supervisor restores temporary values after
+the game and its workers exit. A later menu value wins if it differs from the
+applied value. If SIGKILL or power loss interrupts cleanup, the next managed
+launch recovers outstanding receipts before starting its program, even when
+it supplies no settings. A missing file is not recreated; its recovery data
+is retained as a backup. Corrupt recovery data refuses the launch rather than
+being discarded. Temporary native configuration must stay outside `saveRoot`
+so an interrupted write cannot become a synchronized save.
+
+This applies to patches of program-owned native files. Whole-file declarations
+remain launcher-owned generated artifacts. No game data is read during the
+counterfactual preparation.
 
 ADRs 0028 and 0029 define one place cascade for runner settings, modifiers,
 limits, environment, arguments, working directory and hooks. The plugin's

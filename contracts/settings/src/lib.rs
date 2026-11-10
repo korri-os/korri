@@ -150,8 +150,10 @@ impl SharedSetting {
             Rotation => json!({"type":"integer", "enum":[0,90,180,270]}),
             // A runner can have its own API identifier. Language tags are not
             // enumerated: each runner reports the languages it can represent.
-            Renderer | Language => json!({"type":"string", "minLength":1}),
-            _ => json!({"type":"boolean"}),
+            Renderer => json!({"type":"string", "minLength":1}),
+            Language => json!({"type":"string", "minLength":1, "format":"bcp47"}),
+            Vsync | Rumble | Rewind | AutoSaveState | AutoLoadState | Cheats | Achievements
+            | Hardcore => json!({"type":"boolean"}),
         };
         if self.device_only() {
             property["x-korri-scope"] = json!("device");
@@ -184,13 +186,57 @@ pub fn schema(supported: &[SharedSetting], plugin: Value) -> Value {
             property,
         );
     }
-    root["properties"]["plugin"] = plugin;
+    root["properties"]["plugin"] = plugin_object(plugin);
     root
+}
+
+/// The bucket is an object even when a native schema infers it from properties.
+pub fn plugin_object(mut schema: Value) -> Value {
+    if !schema.is_object() {
+        schema = json!({});
+    }
+    schema["type"] = json!("object");
+    schema
+}
+
+/// Shared semantic formats used by both the editor write boundary and CLI.
+/// LanguageTag implements RFC 5646, including grandfathered/private-use tags.
+pub fn validate_format(property: &Value, value: &Value) -> Result<(), String> {
+    if property.get("format").and_then(Value::as_str) == Some("bcp47") {
+        let valid = value
+            .as_str()
+            .and_then(|text| language_tags::LanguageTag::parse(text).ok())
+            .is_some_and(|tag| tag.validate().is_ok());
+        if !valid {
+            return Err("Use a BCP 47 language tag, such as en-US, pt-BR or ja.".into());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_values_use_bcp47_including_regional_and_private_tags() {
+        let property = SharedSetting::Language.property();
+        for tag in [
+            "en-US",
+            "pt-BR",
+            "ja",
+            "zh-Hant-TW",
+            "de-CH-1901",
+            "en-US-u-ca-gregory",
+            "i-klingon",
+            "x-user",
+        ] {
+            assert!(validate_format(&property, &json!(tag)).is_ok(), "{tag}");
+        }
+        for tag in ["", "en_US", "English", "en--US", "en-", "zz-ZZ"] {
+            assert!(validate_format(&property, &json!(tag)).is_err(), "{tag}");
+        }
+    }
 
     #[test]
     fn all_paths_are_unique_and_round_trip() {

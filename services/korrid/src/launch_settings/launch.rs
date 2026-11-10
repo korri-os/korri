@@ -356,6 +356,17 @@ fn fold_settings(
         });
     }
     for (key, value) in leaves {
+        if prefix == "settings"
+            && matches!(place.scope, LaunchRunnerScope::Any)
+            && (key == "plugin" || key.starts_with("plugin."))
+        {
+            notices.push(LaunchNotice::SettingSkipped {
+                runner_id: None,
+                path: path(key),
+                message: "plugin settings need a runner or family scope".into(),
+            });
+            continue;
+        }
         let name = format!("{prefix}.{key}");
         if matches!(value, LaunchSettingValue::Invalid(_)) {
             notices.push(LaunchNotice::SettingSkipped {

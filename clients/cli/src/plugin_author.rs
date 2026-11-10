@@ -14,6 +14,7 @@ use std::{
 const CONTRACT: &str = include_str!("../../../contracts/generated/korrid.ts");
 /// korrid.ts imports the surface treaty's types from `./surface`.
 const SURFACE_CONTRACT: &str = include_str!("../../../contracts/generated/surface.ts");
+const SETTINGS_CONTRACT: &str = include_str!("../../../contracts/generated/settings.ts");
 
 pub fn commands() -> Vec<Command> {
     vec![
@@ -252,6 +253,7 @@ export const runners = {{
         ("flake.nix", flake.as_str()),
         ("korrid.ts", CONTRACT),
         ("surface.ts", SURFACE_CONTRACT),
+        ("settings.ts", SETTINGS_CONTRACT),
     ] {
         fs::write(root.join(file), content).map_err(|_| file_error("write the plugin files"))?;
     }

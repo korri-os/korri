@@ -2388,6 +2388,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "clap_complete",
+ "korri-settings-treaty",
  "korrid",
  "libc",
  "reqwest 0.12.28",
@@ -2411,6 +2412,16 @@ name = "korri-input-trace"
 version = "0.0.0"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "korri-settings-treaty"
+version = "0.0.0"
+dependencies = [
+ "language-tags",
+ "serde",
+ "serde_json",
+ "typeshare",
 ]
 
 [[package]]
@@ -2444,6 +2455,7 @@ dependencies = [
  "jni 0.22.4",
  "korri-input-contract",
  "korri-input-trace",
+ "korri-settings-treaty",
  "korri-surface-treaty",
  "libc",
  "log",
@@ -2477,9 +2489,11 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.27.0",
  "toml 0.8.23",
+ "toml_edit 0.22.27",
  "tower-http",
  "typeshare",
  "url",
+ "xattr",
  "zbus",
  "zeroize",
  "zip",
@@ -2504,6 +2518,12 @@ dependencies = [
  "bitflags 2.13.1",
  "libc",
 ]
+
+[[package]]
+name = "language-tags"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4345964bb142484797b161f473a503a434de77149dd8c7427788c6e13379388"
 
 [[package]]
 name = "lazy_static"

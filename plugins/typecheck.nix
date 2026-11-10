@@ -7,6 +7,7 @@ let
       ../contracts/generated/korrid.ts
       # korrid.ts imports the surface treaty's types from ./surface.
       ../contracts/generated/surface.ts
+      ../contracts/generated/settings.ts
       (pkgs.lib.fileset.fileFilter (file: file.hasExt "ts") ../services/korrid/tests/fixtures/first-party)
       ../services/korrid/tests/fixtures/first-party/SHA256SUMS
     ];

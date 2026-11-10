@@ -1,7 +1,7 @@
 use super::{
     plugin_launch::{
-        LaunchComposition, PluginDisplay, PluginLaunchInput, PluginLaunchOverrides,
-        ResolvedLaunchModifier,
+        LaunchComposition, PersistentPreparation, PluginDisplay, PluginLaunchInput,
+        PluginLaunchOverrides, ResolvedLaunchModifier,
     },
     LaunchError,
 };
@@ -288,38 +288,63 @@ fn inspect_route(
         cwd: resolved.cwd.clone(),
         ..Default::default()
     };
-    for (id, record) in resolved.modifiers.iter_mut() {
-        if record.enabled != Some(true) {
-            continue;
+    let resolve_modifiers = |records: &mut crate::config::modifiers::ModifierConfigs,
+                             warnings: &mut Vec<super::typed_settings::LaunchWarning>|
+     -> Result<Vec<ResolvedLaunchModifier>, LaunchError> {
+        let mut modifiers = Vec::new();
+        for (id, record) in records.iter_mut() {
+            if record.enabled != Some(true) {
+                continue;
+            }
+            registry
+                .enabled_modifier(id)
+                .map_err(|cause| error(cause.to_string()))?;
+            let modifier_package = registry
+                .installed_package(id)
+                .map_err(|cause| error(cause.to_string()))?;
+            let modifier_source = crate::script::source::SourceSnapshot::package_plugin(
+                &modifier_package.package,
+                &modifier_package.entry,
+                &modifier_package.sources,
+            )
+            .map_err(error)?;
+            warnings.extend(
+                super::typed_settings::validate(
+                    &modifier_source,
+                    &mut record.settings,
+                    id,
+                    &modifier_package.package.display().to_string(),
+                )
+                .map_err(error)?
+                .warnings,
+            );
+            modifiers.push(ResolvedLaunchModifier {
+                modifier_id: id.clone(),
+                manifest: modifier_package.package.join("manifest.json"),
+                entry: modifier_package.entry.clone(),
+                settings: record.settings.clone(),
+                config: record.config.clone().unwrap_or_default(),
+            });
         }
-        registry
-            .enabled_modifier(id)
-            .map_err(|cause| error(cause.to_string()))?;
-        let modifier_package = registry
-            .installed_package(id)
-            .map_err(|cause| error(cause.to_string()))?;
-        let modifier_source = crate::script::source::SourceSnapshot::package_plugin(
-            &modifier_package.package,
-            &modifier_package.entry,
-            &modifier_package.sources,
+        Ok(modifiers)
+    };
+    composition.modifiers = resolve_modifiers(&mut resolved.modifiers, &mut warnings)?;
+    if launch
+        .as_ref()
+        .is_some_and(|value| value.settings.is_some() || !value.modifiers.is_empty())
+    {
+        let mut persistent = crate::launch_settings::resolve_launch(snapshot, route, None, None)
+            .map_err(|e| error(e.to_string()))?;
+        super::typed_settings::validate_runner(
+            &source,
+            &mut persistent.runner.settings,
+            &route.runner_id,
+            &build,
         )
         .map_err(error)?;
-        warnings.extend(
-            super::typed_settings::validate(
-                &modifier_source,
-                &mut record.settings,
-                id,
-                &modifier_package.package.display().to_string(),
-            )
-            .map_err(error)?
-            .warnings,
-        );
-        composition.modifiers.push(ResolvedLaunchModifier {
-            modifier_id: id.clone(),
-            manifest: modifier_package.package.join("manifest.json"),
-            entry: modifier_package.entry.clone(),
-            settings: record.settings.clone(),
-            config: record.config.clone().unwrap_or_default(),
+        composition.persistent = Some(PersistentPreparation {
+            settings: persistent.runner.settings,
+            modifiers: resolve_modifiers(&mut persistent.modifiers, &mut Vec::new())?,
         });
     }
     let service_id = crate::launch_settings::resolution::SUNSHINE;

@@ -1,4 +1,5 @@
 pub mod linux_plugin;
+mod native_config_transaction;
 mod native_toml;
 pub mod plugin_launch;
 pub(crate) mod redaction;

@@ -141,7 +141,7 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
                 "gameId":game_id,"expectedLaunchId":launch_id,"runnerId":runner,
                 "launch":{"settings":{
                     "scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},
-                    "values":{"video_vsync":false,"absent_key":1}
+                    "values":{"plugin":{"video_vsync":false,"absent_key":1}}
                 }}
             }),
         )
@@ -153,7 +153,7 @@ async fn reserved_selected_and_stored_routes_keep_exact_identity_overrides_and_w
         );
         assert_eq!(
             launch["outcome"]["payload"]["warnings"][0]["setting"],
-            "absent_key"
+            "plugin.absent_key"
         );
         assert_eq!(
             launch["outcome"]["payload"]["warnings"][0]["runnerId"],

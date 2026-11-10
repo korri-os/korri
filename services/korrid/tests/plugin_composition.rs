@@ -33,14 +33,14 @@ export const handlers = {'launch.compose': compose};
 const COMPOSE: &str = r#"
 export function compose(input) {
  if (input.modifierId !== '@test:wrapper/main' || input.runnerId !== '@korri:mgba/mgba') throw new Error('wrong selection');
- if (input.settings.requireDisplay && (input.display?.width !== 1240 || input.display?.height !== 1080)) throw Object.assign(new Error('missing logical display'), {code:'display-unavailable',retryable:false});
- if (input.settings.sharpness > 20) throw Object.assign(new Error('setting sharpness must be an integer 0..20'), {code:'setting-range',retryable:false});
- if (input.settings.invalid) throw new Error('width must be a positive integer');
- if (input.settings.fail) throw new Error('compose refused');
- if (input.settings.invalidOutput) return {...input.plan, [input.config.append.split(' ').join('')]: true};
- if (input.settings.invalidPlan) return {...input.plan, command: ''};
- if (input.settings.nativeFailure) return {...input.plan, command:'/bin/sh',args:['-c', 'printf "native startup failure $PASSWORD $INHERITED_SECRET\n" >&2; exit 1']};
- if (input.settings.logPlan) return {...input.plan, command:'/bin/sh',args:['-c','exit 0','wrapper','--backend','wayland','--sharpness','20','--raw','private value','--',input.plan.command,...input.plan.args]};
+ if (input.settings.plugin?.requireDisplay && (input.display?.width !== 1240 || input.display?.height !== 1080)) throw Object.assign(new Error('missing logical display'), {code:'display-unavailable',retryable:false});
+ if (input.settings.plugin?.sharpness > 20) throw Object.assign(new Error('setting sharpness must be an integer 0..20'), {code:'setting-range',retryable:false});
+ if (input.settings.plugin?.invalid) throw new Error('width must be a positive integer');
+ if (input.settings.plugin?.fail) throw new Error('compose refused');
+ if (input.settings.plugin?.invalidOutput) return {...input.plan, [input.config.append.split(' ').join('')]: true};
+ if (input.settings.plugin?.invalidPlan) return {...input.plan, command: ''};
+ if (input.settings.plugin?.nativeFailure) return {...input.plan, command:'/bin/sh',args:['-c', 'printf "native startup failure $PASSWORD $INHERITED_SECRET\n" >&2; exit 1']};
+ if (input.settings.plugin?.logPlan) return {...input.plan, command:'/bin/sh',args:['-c','exit 0','wrapper','--backend','wayland','--sharpness','20','--raw','private value','--',input.plan.command,...input.plan.args]};
  if (input.config.append) throw new Error('append rejected: ' + input.config.append);
  return {...input.plan, command: input.files.program, args:['-c','printf wrapped > wrapped; exec "$@"','wrapper',input.plan.command,...input.plan.args]};
 }
@@ -97,6 +97,11 @@ fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchCo
         Some(("compose.ts", COMPOSE)),
     );
     let registry = PluginRegistry::from_installed(vec![runner, modifier]).unwrap();
+    // Test callers name native values; the actual record uses the plugin bucket.
+    let mut record: serde_json::Value = serde_yaml::from_str(record).unwrap();
+    if let Some(settings) = record.get_mut("settings") {
+        *settings = serde_json::json!({"plugin":std::mem::take(settings)});
+    }
     let device = format!(
         "{}\nhost: {{modifiers: {{'@test:wrapper/main': {record}}}}}",
         readable::gba_locations("roms", "wl4.gba", false)
@@ -822,13 +827,14 @@ fn snapshot_lists_installed_modifiers_without_authored_values_and_validates_opti
         Some("modifier-rev-1")
     );
     assert_eq!(
-        snapshot.modifiers[0].schema.as_ref().unwrap()["properties"]["width"]["maximum"],
+        snapshot.modifiers[0].schema.as_ref().unwrap()["properties"]["plugin"]["properties"]
+            ["width"]["maximum"],
         100
     );
     assert!(snapshot.modifiers[1].schema.is_none());
     assert!(snapshot.modifiers[1].revision.is_none());
     assert!(matches!(
-        snapshot.resolved.values["modifiers.@test:described/main.settings.width"].source,
+        snapshot.resolved.values["modifiers.@test:described/main.settings.plugin.width"].source,
         Some(LaunchSource::PluginDefault {ref plugin_id}) if plugin_id=="@test:described"
     ));
     assert!(snapshot
@@ -863,7 +869,7 @@ fn snapshot_lists_installed_modifiers_without_authored_values_and_validates_opti
     request.expected_revision = revisions.games;
     request.path = LaunchPath::ModifierSetting {
         id: "@test:described/main".into(),
-        key: "width".into(),
+        key: "plugin.width".into(),
     };
     request.value = Some(serde_json::json!(101));
     let before = fs::read(root.path().join("catalog/library.yaml")).unwrap();
@@ -893,7 +899,7 @@ fn snapshot_lists_installed_modifiers_without_authored_values_and_validates_opti
     request.expected_revision = revisions.games;
     request.path = LaunchPath::ModifierSetting {
         id: "@test:plain/main".into(),
-        key: "pluginOwnedKey".into(),
+        key: "plugin.pluginOwnedKey".into(),
     };
     request.value = Some(serde_json::json!("native"));
     ls::set_with_registry(
@@ -922,14 +928,13 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
     let root = tempfile::tempdir().unwrap();
     let sunshine = "@korri:sunshine/sunshine";
     let moonlight = "@korri:moonlight/moonlight";
-    readable::install(root.path(), &json!({"host":{"services":{sunshine:{"settings":{"video":{"max-bitrate-kbps":3000}}}},"runners":{moonlight:{"settings":{"video":{"fps":30}}}}}}).to_string(), &readable::gba_library());
+    readable::install(root.path(), &json!({"host":{"services":{sunshine:{"settings":{"plugin":{"video":{"max-bitrate-kbps":3000}}}}},"runners":{moonlight:{"settings":{"plugin":{"video":{"fps":30}}}}}}}).to_string(), &readable::gba_library());
     let library_path = root.path().join("catalog/library.yaml");
     let mut library: serde_json::Value =
         serde_yaml::from_str(&fs::read_to_string(&library_path).unwrap()).unwrap();
     library["library"][readable::GBA_ID]["runners"] =
-        json!({moonlight:{"settings":{"video":{"fps":45}}}});
-    library["library"][readable::GBA_ID]["profiles"] =
-        json!({"quiet":{"title":"Quiet","runners":{moonlight:{"settings":{"video":{"fps":90}}}}}});
+        json!({moonlight:{"settings":{"plugin":{"video":{"fps":45}}}}});
+    library["library"][readable::GBA_ID]["profiles"] = json!({"quiet":{"title":"Quiet","runners":{moonlight:{"settings":{"plugin":{"video":{"fps":90}}}}}}});
     library["library"][readable::GBA_ID]["profile"] = json!("quiet");
     fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
     let mut document: serde_json::Value =
@@ -950,7 +955,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
         root.path(),
         "@korri:sunshine",
         &format!(
-            r#"export const name='sunshine'; export const title='Sunshine';export const handlers={{'settings.describe':input=>{{if(input.id !== '@korri:sunshine/sunshine')throw Error('wrong id');return {{schema:{schema},revision:'sun-v1'}};}},'settings.validate':input=>({{valid:true,diagnostics:[]}}),'settings.render':input=>({{args:['max_bitrate='+input.settings.video['max-bitrate-kbps']]}})}};"#
+            r#"export const name='sunshine'; export const title='Sunshine';export const handlers={{'settings.describe':input=>{{if(input.id !== '@korri:sunshine/sunshine')throw Error('wrong id');return {{schema:{schema},revision:'sun-v1'}};}},'settings.validate':input=>({{valid:true,diagnostics:[]}}),'settings.render':input=>({{args:['max_bitrate='+input.settings.plugin?.video['max-bitrate-kbps']]}})}};"#
         ),
         None,
     );
@@ -958,7 +963,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
         root.path(),
         "@korri:moonlight",
         &format!(
-            r#"export const name='moonlight';export const runners={{moonlight:{{program:'program'}}}};export const handlers={{'settings.describe':()=>({{schema:{schema},revision:'moon-v1'}}),'settings.validate':input=>({{valid:input.values.video?.fps!==999,diagnostics:input.values.video?.fps===999?[{{severity:'error',code:'fps',path:['video','fps'],message:'unsupported fps'}}]:[]}}),'settings.render':input=>({{args:['-fps',String(input.settings.video.fps),'-width',String(input.display.width)]}})}};"#
+            r#"export const name='moonlight';export const runners={{moonlight:{{program:'program'}}}};export const handlers={{'settings.describe':()=>({{schema:{schema},revision:'moon-v1'}}),'settings.validate':input=>({{valid:input.values.plugin?.video?.fps!==999,diagnostics:input.values.plugin?.video?.fps===999?[{{severity:'error',code:'fps',path:['plugin','video','fps'],message:'unsupported fps'}}]:[]}}),'settings.render':input=>({{args:['-fps',String(input.settings.plugin?.video.fps),'-width',String(input.display.width)]}})}};"#
         ),
         None,
     );
@@ -983,13 +988,16 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
             .find(|r| r.runner_id == moonlight)
             .unwrap();
         assert_eq!(
-            projection.values["settings.video.fps"].value,
+            projection.values["settings.plugin.video.fps"].value,
             if game.is_some() { 90 } else { 30 }
         );
         assert!(
-            matches!(projection.values["settings.video.codec"].source,Some(LaunchSource::PluginDefault {ref plugin_id}) if plugin_id=="@korri:moonlight")
+            matches!(projection.values["settings.plugin.video.codec"].source,Some(LaunchSource::PluginDefault {ref plugin_id}) if plugin_id=="@korri:moonlight")
         );
-        assert!(!snapshot.resolved.values.contains_key("settings.video.fps"));
+        assert!(!snapshot
+            .resolved
+            .values
+            .contains_key("settings.plugin.video.fps"));
         assert_eq!(snapshot.services.len(), 1);
         assert_eq!(snapshot.services[0].id, sunshine);
         assert_eq!(snapshot.services[0].revision.as_deref(), Some("sun-v1"));
@@ -1002,12 +1010,13 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
             .iter()
             .any(|p| matches!(&p.place.scope,LaunchRunnerScope::Runner(id) if id==moonlight)));
         assert!(matches!(
-            snapshot.resolved.values[&format!("services.{sunshine}.settings.video.codec")].source,
+            snapshot.resolved.values[&format!("services.{sunshine}.settings.plugin.video.codec")]
+                .source,
             Some(LaunchSource::PluginDefault { .. })
         ));
         assert_eq!(
             snapshot.resolved.values
-                [&format!("services.{sunshine}.settings.video.max-bitrate-kbps")]
+                [&format!("services.{sunshine}.settings.plugin.video.max-bitrate-kbps")]
                 .value,
             3000
         );
@@ -1039,7 +1048,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
     .contains("cannot be chosen"));
     request.path = LaunchPath::ServiceSetting {
         id: sunshine.into(),
-        key: "video.max-bitrate-kbps".into(),
+        key: "plugin.video.max-bitrate-kbps".into(),
     };
     request.value = Some(json!(5000));
     let revisions = ls::set_with_registry(
@@ -1096,7 +1105,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
     )
     .unwrap();
     assert!(!snapshot.resolved.values.contains_key(&format!(
-        "services.{sunshine}.settings.video.max-bitrate-kbps"
+        "services.{sunshine}.settings.plugin.video.max-bitrate-kbps"
     )));
     request.clear = false;
     ls::set_with_registry(
@@ -1116,7 +1125,8 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
     )
     .unwrap();
     assert_eq!(
-        snapshot.resolved.values[&format!("services.{sunshine}.settings.video.max-bitrate-kbps")]
+        snapshot.resolved.values
+            [&format!("services.{sunshine}.settings.plugin.video.max-bitrate-kbps")]
             .value,
         3000
     );
@@ -1132,7 +1142,7 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
     let mut library: serde_json::Value =
         serde_yaml::from_str(&fs::read_to_string(&library_path).unwrap()).unwrap();
     library["library"][readable::GBA_ID]["profiles"]["quiet"]["runners"][moonlight]["settings"]
-        ["video"]["fps"] = json!(999);
+        ["plugin"]["video"]["fps"] = json!(999);
     fs::write(library_path, serde_yaml::to_string(&library).unwrap()).unwrap();
     let snapshot = ls::snapshot(
         root.path(),
@@ -1146,8 +1156,8 @@ fn nested_services_and_nonchoosable_runner_snapshots_use_plugin_schemas_and_rend
         .iter()
         .find(|r| r.runner_id == moonlight)
         .unwrap();
-    assert!(!projection.values.contains_key("settings.video.fps"));
-    assert!(snapshot.notices.iter().any(|n|matches!(n,ls::LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),message} if id==moonlight && key=="video.fps" && message=="unsupported fps")));
+    assert!(!projection.values.contains_key("settings.plugin.video.fps"));
+    assert!(snapshot.notices.iter().any(|n|matches!(n,ls::LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),message} if id==moonlight && key=="plugin.video.fps" && message=="unsupported fps")));
 }
 
 #[test]
@@ -1157,14 +1167,14 @@ fn compose_validation_drops_error_paths_but_keeps_other_nested_leaves() {
     let modifier = package(
         root.path(),
         "@test:nested",
-        r#"export const name='nested';export const modifiers={main:{id:'@test:nested/main'}};export const handlers={'settings.describe':()=>({revision:'one',schema:{}}),'settings.validate':input=>({valid:false,diagnostics:[{severity:'error',code:'bad',path:['video','fps'],message:'bad fps'}]}),'launch.compose':input=>({...input.plan,args:[JSON.stringify(input.settings)]})};"#,
+        r#"export const name='nested';export const modifiers={main:{id:'@test:nested/main'}};export const handlers={'settings.describe':()=>({revision:'one',schema:{}}),'settings.validate':input=>({valid:false,diagnostics:[{severity:'error',code:'bad',path:['plugin','video','fps'],message:'bad fps'}]}),'launch.compose':input=>({...input.plan,args:[JSON.stringify(input.settings)]})};"#,
         None,
     );
     let input:PluginLaunchInput=serde_json::from_value(serde_json::json!({"runnerId":"@korri:mgba/mgba","program":"/bin/sh","accountRoot":"/account","saveRoot":"/account/saves/game","cacheRoot":"/cache","files":{},"artifacts":{}})).unwrap();
-    let composition:LaunchComposition=serde_json::from_value(serde_json::json!({"modifiers":[{"modifierId":"@test:nested/main","manifest":modifier.package.join("manifest.json"),"entry":"plugin.ts","settings":{"video":{"fps":999,"codec":"h264"}},"config":{}}]})).unwrap();
+    let composition:LaunchComposition=serde_json::from_value(serde_json::json!({"modifiers":[{"modifierId":"@test:nested/main","manifest":modifier.package.join("manifest.json"),"entry":"plugin.ts","settings":{"plugin":{"video":{"fps":999,"codec":"h264"}}},"config":{}}]})).unwrap();
     let plan = prepare(&runner.package.join("plugin.ts"), &input, &composition).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&plan.args[0]).unwrap(),
-        serde_json::json!({"video":{"codec":"h264"}})
+        serde_json::json!({"plugin":{"video":{"codec":"h264"}}})
     );
 }

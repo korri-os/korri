@@ -29,6 +29,16 @@ impl Module for Play {
                     .value_name("KEY=VALUE"),
             )
             .arg(
+                Arg::new("keep")
+                    .long("keep")
+                    .num_args(0..=1)
+                    .require_equals(true)
+                    .default_missing_value("game")
+                    .requires("set")
+                    .value_name("PLACE")
+                    .help("Keep --set values only after launch succeeds; default game, or device/system:ID/release:ID/profile:ID"),
+            )
+            .arg(
                 Arg::new("runner")
                     .long("runner")
                     .help("Exact installed runner ID; never a device or streaming route"),
@@ -96,6 +106,14 @@ impl Module for Play {
                 &assignments,
             )?)
         };
+        let keep_at = args.get_one::<String>("keep");
+        let keep_requests = match (keep_at, launch.as_ref()) {
+            (Some(place), Some(launch)) => {
+                crate::keep_launch::requests(snapshot, &game_id, launch, place)?
+            }
+            _ => Vec::new(),
+        };
+        let mut keep_revisions = snapshot.revisions.clone();
         let check_request = RpcRequest::SavesCheck(SaveCheckRequest {
             game_id: game_id.clone(),
             runner_id: Some(runner_id.clone()),
@@ -153,6 +171,48 @@ impl Module for Play {
             Err(error) => korrid::cli::failure_response(&request, error.failure)
                 .map_err(|_| CliError::usage("Could not encode the failed launch result."))?,
         };
+        let mut kept = Vec::new();
+        if matches!(
+            &response,
+            RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(_))
+        ) {
+            for mut write in keep_requests {
+                write.expected_revision = if matches!(
+                    write.place.layer,
+                    korrid::launch_settings::LaunchLayer::Device
+                        | korrid::launch_settings::LaunchLayer::System(_)
+                ) {
+                    keep_revisions.device.clone()
+                } else {
+                    keep_revisions.games.clone()
+                };
+                let request = RpcRequest::LaunchSettingsSet(write);
+                let result = match context.rpc(&request) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        korrid::cli::failure_response(&request, error.failure).map_err(|_| {
+                            CliError::usage(
+                                "Launch succeeded, but the keep result could not be decoded.",
+                            )
+                        })?
+                    }
+                };
+                match &result {
+                    RpcResponse::LaunchSettingsSet(
+                        korrid::launch_settings::LaunchSettingsWriteOutcome::Ok(revisions),
+                    ) => keep_revisions = revisions.clone(),
+                    _ => {
+                        warnings.push(format!(
+                            "Launch succeeded, but keeping values stopped: {}",
+                            output::unknown("Keep", &result)
+                        ));
+                        kept.push(result);
+                        break;
+                    }
+                }
+                kept.push(result);
+            }
+        }
         let human = match &response {
             RpcResponse::SelectedGameLaunch(SelectedGameLaunchOutcome::Ok(result)) => {
                 let mut lines = vec![format!(
@@ -183,7 +243,26 @@ impl Module for Play {
             )
             .collect::<Vec<_>>()
             .join("\n");
-        Ok(Output::many(vec![check, response], human))
+        let human = if !kept.is_empty()
+            && kept.iter().all(|result| {
+                matches!(
+                    result,
+                    RpcResponse::LaunchSettingsSet(
+                        korrid::launch_settings::LaunchSettingsWriteOutcome::Ok(_)
+                    )
+                )
+            }) {
+            format!(
+                "{human}\nKept {} one-launch values at {}.",
+                kept.len(),
+                output::text(keep_at.map(String::as_str).unwrap_or("game"))
+            )
+        } else {
+            human
+        };
+        let mut responses = vec![check, response];
+        responses.extend(kept);
+        Ok(Output::many(responses, human))
     }
 }
 fn preflight(response: RpcResponse) -> Output {

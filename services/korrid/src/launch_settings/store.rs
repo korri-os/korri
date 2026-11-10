@@ -430,11 +430,13 @@ fn validate_setting(
                 &package.entry,
                 &package.sources,
             )?;
-            let description = crate::launcher::typed_settings::describe_runner(
-                &source,
-                &runner.id,
-                &package.package.display().to_string(),
-            )?;
+            let describe = if super::resolution::choosable(runner) {
+                crate::launcher::typed_settings::describe_runner
+            } else {
+                crate::launcher::typed_settings::describe
+            };
+            let description =
+                describe(&source, &runner.id, &package.package.display().to_string())?;
             let property = schema::cascade::schema_leaf(&description.schema, key)
                 .ok_or_else(|| format!("unknown setting {key}"))?;
             if value.is_null() {
@@ -506,7 +508,7 @@ pub(crate) fn validate_property(
             return Err("setting text is too short".into());
         }
     }
-    Ok(())
+    korri_settings_treaty::validate_format(property, value)
 }
 pub fn save_profile(
     root: &Path,

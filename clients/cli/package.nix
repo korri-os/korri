@@ -32,6 +32,7 @@ let
         "contracts/generated/korrid.ts"
         # korrid.ts imports the surface treaty's types from ./surface.
         "contracts/generated/surface.ts"
+        "contracts/generated/settings.ts"
       ]
       || (
         (

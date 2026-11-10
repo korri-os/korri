@@ -847,7 +847,7 @@ mod tests {
         // korrid carries that report to the shell without owning the table.
         assert_eq!(
             launch["outcome"]["payload"]["warnings"][0]["setting"],
-            "absent_key"
+            "plugin.absent_key"
         );
         assert_eq!(
             launch["outcome"]["payload"]["warnings"][1]["setting"],

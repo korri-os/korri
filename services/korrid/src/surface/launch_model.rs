@@ -218,6 +218,9 @@ pub fn revision_of(layer: &Value) -> &'static str {
 }
 
 fn file_of(layer: &Value) -> &'static str {
+    if tag(layer) == "Launch" {
+        return "this launch only";
+    }
     if revision_of(layer) == "device" {
         "device.yaml"
     } else {
@@ -336,11 +339,7 @@ pub fn ordered_places(snapshot: &Value) -> Vec<Value> {
             },
         ]
     };
-    let mut all: Vec<(usize, &Value)> = array(snapshot, "places")
-        .iter()
-        .filter(|place| tag(field(field(place, "place"), "layer")) != "Launch")
-        .enumerate()
-        .collect();
+    let mut all: Vec<(usize, &Value)> = array(snapshot, "places").iter().enumerate().collect();
     all.sort_by(|(a_index, a), (b_index, b)| {
         rank(field(a, "place"))
             .cmp(&rank(field(b, "place")))
@@ -1357,7 +1356,7 @@ const ACRONYMS: [&str; 15] = [
 ];
 
 /// A key as words, when its schema gives no title.
-fn humanize(key: &str) -> String {
+pub(super) fn humanize(key: &str) -> String {
     let words: Vec<String> = key
         .split(['-', '_'])
         .filter(|word| !word.is_empty())

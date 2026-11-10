@@ -20,8 +20,8 @@ use serde_json::Value;
 use super::{
     korrid::{ask, Korrid},
     launch_model::{
-        active_profile_of, device_launch_from, launch_editor_from, launch_id, profile_from_pick,
-        revision_of, DeviceLaunch, LaunchEditor, LaunchWrite, PendingSetting,
+        active_profile_of, device_launch_from, launch_id, profile_from_pick, revision_of,
+        DeviceLaunch, LaunchEditor, LaunchWrite, PendingSetting,
     },
     Notify,
 };
@@ -110,6 +110,8 @@ struct Inner {
     open_runners: Option<OpenRunners>,
     snapshot: Option<Value>,
     editor_rows: Option<LaunchEditor>,
+    drafts: super::one_launch::OneLaunch,
+    keeps: HashMap<String, super::one_launch_model::Keep>,
     device_snapshot: Option<Value>,
     device: Option<DeviceLaunch>,
     device_pending: HashMap<String, Vec<PendingSetting>>,
@@ -147,10 +149,17 @@ impl Inner {
     }
 
     fn build(&mut self) {
-        self.editor_rows = self
-            .snapshot
-            .as_ref()
-            .map(|snapshot| launch_editor_from(snapshot, self.game_id.as_deref(), &self.pending));
+        self.keeps.clear();
+        self.editor_rows = self.snapshot.as_ref().map(|snapshot| {
+            let (editor, keeps) = super::one_launch_model::editor(
+                snapshot,
+                self.game_id.as_deref(),
+                &self.pending,
+                &self.drafts,
+            );
+            self.keeps = keeps;
+            editor
+        });
         self.pending = self
             .editor_rows
             .as_ref()
@@ -488,6 +497,63 @@ impl LaunchSettings {
     /// One write from the editor. Saving shows on the row; the snapshot is
     /// read again after.
     fn write(self: &Arc<Self>, setting_id: String, send: Write) {
+        if let Write::Set {
+            target,
+            value,
+            clear,
+        } = &send
+        {
+            if target.place["layer"]["_tag"] == "Launch" {
+                let mut inner = self.lock();
+                if inner.busy || inner.editor_tag() != "Ready" {
+                    return;
+                }
+                let result = (|| -> Result<(), String> {
+                    let game = inner.game_id.clone().ok_or("No game is selected")?;
+                    let path: crate::launch_settings::LaunchPath =
+                        serde_json::from_value(target.path.clone()).map_err(|e| e.to_string())?;
+                    let crate::launch_settings::LaunchPath::Setting { key } = path else {
+                        return Err("Only settings can be edited in this draft".into());
+                    };
+                    let scope = serde_json::from_value(target.place["scope"].clone())
+                        .map_err(|e| e.to_string())?;
+                    let value = if *clear {
+                        Some(Value::Null)
+                    } else {
+                        value.clone()
+                    };
+                    if let Some(value) = value.as_ref().filter(|v| !v.is_null()) {
+                        if let Some(shared) = korri_settings_treaty::SharedSetting::from_path(&key)
+                        {
+                            crate::launch_settings::store::validate_property(
+                                &shared.property(),
+                                value,
+                            )?;
+                        }
+                    }
+                    let value = value
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .map_err(|e| e.to_string())?;
+                    inner.drafts.set(&game, scope, &key, value)
+                })();
+                match result {
+                    Ok(()) => {
+                        inner.status = None;
+                        inner.ready();
+                    }
+                    Err(message) => {
+                        inner.status = Some(SurfaceSettingsStatus::Problem {
+                            setting_id,
+                            message,
+                        })
+                    }
+                }
+                drop(inner);
+                self.changed();
+                return;
+            }
+        }
         let (snapshot, operation) = {
             let mut inner = self.lock();
             let Some(snapshot) = inner.snapshot.clone() else {
@@ -733,8 +799,43 @@ impl LaunchSettings {
         true
     }
 
+    pub(crate) fn submit_one_launch(
+        &self,
+        game: &str,
+    ) -> (u64, Option<crate::launch_settings::LaunchOverride>) {
+        self.lock().drafts.submit(game)
+    }
+
+    pub(crate) fn complete_one_launch(&self, ticket: u64, success: bool) {
+        let mut inner = self.lock();
+        inner.drafts.complete(ticket, success);
+        if inner.editor_tag() == "Ready" {
+            inner.ready();
+        }
+        drop(inner);
+        self.changed();
+    }
+
     /// Changes to a launch row. False: not a launch row.
     pub fn change(self: &Arc<Self>, setting_id: &str, value: &str) -> bool {
+        let keep = self.lock().keeps.get(setting_id).cloned();
+        if let Some(keep) = keep {
+            if let Some(place) = keep.targets.get(value) {
+                self.write(
+                    setting_id.into(),
+                    Write::Set {
+                        target: LaunchWrite {
+                            place: place.clone(),
+                            path: serde_json::json!({"_tag":"Setting","payload":{"key":keep.path}}),
+                            encoder: super::launch_model::Encoder::Text,
+                        },
+                        clear: keep.value.is_null(),
+                        value: (!keep.value.is_null()).then_some(keep.value),
+                    },
+                );
+            }
+            return true;
+        }
         if setting_id.starts_with("launch-device:") {
             self.change_device(setting_id, value);
             return true;

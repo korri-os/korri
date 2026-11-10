@@ -3,7 +3,7 @@
 """One-off ADR 0057 migration. Run on a build host against staged config files.
 
 The two paths and place shapes come from config/snapshot.rs, config/place.rs
-and launch_settings/store.rs. Select only runners/families whose old settings
+and launch_settings/store.rs. Select only contributions whose old settings
 are plugin-native. This is not a runtime migration or a fallback reader.
 No raw config values are printed. Dry-run by default; backups are exclusive.
 """
@@ -44,7 +44,7 @@ def places(document):
         yield from game.get('profiles', {}).values()
 
 
-def migrate(data, runners, families):
+def migrate(data, runners, families, modifiers=frozenset(), services=frozenset()):
     try:
         document = yaml.load(data, Loader=UniqueLoader)
     except yaml.YAMLError:
@@ -55,7 +55,7 @@ def migrate(data, runners, families):
     for place in places(document):
         if not isinstance(place, dict):
             raise ValueError('place must be an object')
-        for section, selected in [('runners', runners), ('families', families)]:
+        for section, selected in [('runners', runners), ('families', families), ('modifiers', modifiers), ('services', services)]:
             for key, record in place.get(section, {}).items():
                 if key not in selected or 'settings' not in record:
                     continue
@@ -89,14 +89,14 @@ def atomic_write(path, data, metadata):
             os.unlink(name)
 
 
-def run(root, runners, families, apply=False):
+def run(root, runners, families, apply=False, modifiers=frozenset(), services=frozenset()):
     candidates = []
     for relative in ['device.yaml', 'catalog/library.yaml']:
         path = root / relative
         if path.is_symlink() or not path.is_file():
             raise ValueError(f'{relative} must be a regular file')
         original = path.read_bytes()
-        updated, count = migrate(original, runners, families)
+        updated, count = migrate(original, runners, families, modifiers, services)
         candidates.append((path, path.stat(), original, updated, count))
     report = [{'file': str(p.relative_to(root)), 'places': count,
                'beforeSha256': hashlib.sha256(before).hexdigest(),
@@ -139,11 +139,14 @@ def main():
     parser.add_argument('--root', type=Path, required=True, help='staged readable config root on the build host')
     parser.add_argument('--runner', action='append', default=[])
     parser.add_argument('--family', action='append', default=[])
+    parser.add_argument('--modifier', action='append', default=[])
+    parser.add_argument('--service', action='append', default=[])
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args()
-    if not args.runner and not args.family:
-        parser.error('select at least one runner or family explicitly')
-    print(json.dumps(run(args.root, set(args.runner), set(args.family), args.apply), indent=2))
+    if not any([args.runner, args.family, args.modifier, args.service]):
+        parser.error('select at least one runner, family, modifier or service explicitly')
+    print(json.dumps(run(args.root, set(args.runner), set(args.family), args.apply,
+                         set(args.modifier), set(args.service)), indent=2))
 
 
 if __name__ == '__main__':

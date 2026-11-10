@@ -510,6 +510,123 @@ fn play_library_one_launch_overrides_use_runner_schema_and_never_write_settings(
         .any(|r| matches!(r, RpcRequest::LaunchSettingsSet(_))));
 }
 #[test]
+fn play_keep_saves_shared_values_only_after_success_and_chains_revisions() {
+    use game_routes::*;
+    use launch_settings::*;
+    use saves::types::*;
+    for succeeds in [true, false] {
+        let mut snapshot = test_snapshot();
+        snapshot.places.push(LaunchPlaceSnapshot {
+            place: LaunchPlace {
+                layer: LaunchLayer::Game("game".into()),
+                scope: LaunchRunnerScope::Any,
+            },
+            title: "Game".into(),
+            body: serde_json::json!({}),
+            editable_kinds: vec!["settings".into()],
+        });
+        let routes = RpcResponse::GameRoutes(GameRoutesOutcome::Ok(GameRoutes {
+            game_id: "game".into(),
+            routes: vec![GameRoute {
+                runner_id: "@test/runner".into(),
+                family_id: None,
+                system_id: "sys".into(),
+                runner_build: "build".into(),
+                program: "program".into(),
+                warnings: vec![],
+            }],
+            selection: GameRouteSelection::Selected("@test/runner".into()),
+            game_runner: None,
+            system_runners: Default::default(),
+            revisions: snapshot.revisions.clone(),
+        }));
+        let launched = if succeeds {
+            SelectedGameLaunchOutcome::Ok(SelectedGameLaunch {
+                session: SessionPrepared {
+                    display: None,
+                    game_id: "game".into(),
+                    launch_id: "new-launch".into(),
+                },
+                warnings: vec![],
+            })
+        } else {
+            SelectedGameLaunchOutcome::Err(RpcFailure {
+                code: "Refused".into(),
+                message: "Not started".into(),
+            })
+        };
+        let mut responses = vec![
+            games(),
+            routes,
+            snapshot_response(snapshot),
+            RpcResponse::SavesCheck(SaveCheckOutcome::Ok(SaveCheck {
+                warnings: vec![],
+                status: SaveMark::Synced,
+                in_use: vec![],
+            })),
+            RpcResponse::SelectedGameLaunch(launched),
+        ];
+        if succeeds {
+            for revision in ["kept-1", "kept-2"] {
+                responses.push(RpcResponse::LaunchSettingsSet(
+                    LaunchSettingsWriteOutcome::Ok(
+                        korrid::config::settings::RunnerChoiceRevisions {
+                            device: "device-revision".into(),
+                            games: revision.into(),
+                        },
+                    ),
+                ));
+            }
+        }
+        let server = Server::start(responses);
+        let output = server.run(&[
+            "play",
+            "a game",
+            "--set",
+            "video.render-scale=4",
+            "--set",
+            "video.vsync=false",
+            "--keep",
+            "--json",
+        ]);
+        assert_eq!(
+            output.status.success(),
+            succeeds,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let calls = server.calls.lock().unwrap();
+        let RpcRequest::SelectedGameLaunch(start) = &calls[4] else {
+            panic!("launch precedes keep")
+        };
+        let nested = serde_json::to_value(start.launch.as_ref().unwrap()).unwrap();
+        assert_eq!(nested["settings"]["values"]["video"]["render-scale"], 4);
+        assert!(nested["settings"]["values"]
+            .get("video.render-scale")
+            .is_none());
+        let writes: Vec<_> = calls
+            .iter()
+            .filter_map(|r| {
+                if let RpcRequest::LaunchSettingsSet(r) = r {
+                    Some(r)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(writes.len(), if succeeds { 2 } else { 0 });
+        if succeeds {
+            assert_eq!(writes[0].expected_revision, "games-revision");
+            assert_eq!(writes[1].expected_revision, "kept-1");
+            assert!(writes
+                .iter()
+                .all(|w| w.place.scope == LaunchRunnerScope::Any
+                    && w.place.layer == LaunchLayer::Game("game".into())));
+        }
+    }
+}
+
+#[test]
 fn play_library_failed_jobs_artifacts_and_partial_games_keep_ok_json_but_exit_one() {
     use acquisition::*;
     let error = RpcFailure {

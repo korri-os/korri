@@ -439,12 +439,19 @@ fn scalar(schema: &Value, input: &str) -> Result<Value, CliError> {
         || value.as_f64().is_some_and(|n| {
             schema["minimum"].as_f64().is_some_and(|m| n < m)
                 || schema["maximum"].as_f64().is_some_and(|m| n > m)
+                || schema["exclusiveMinimum"].as_f64().is_some_and(|m| n <= m)
+        })
+        || value.as_str().is_some_and(|text| {
+            schema["minLength"]
+                .as_u64()
+                .is_some_and(|n| text.chars().count() < n as usize)
         })
     {
         return Err(CliError::usage(
             "Value does not match the plugin setting schema.",
         ));
     }
+    korri_settings_treaty::validate_format(schema, &value).map_err(CliError::usage)?;
     Ok(value)
 }
 pub(crate) fn setting(
@@ -675,20 +682,26 @@ pub(crate) fn overrides(
                     scope: place.scope.clone(),
                     values: HashMap::new(),
                 });
-                settings.values.insert(
-                    key,
-                    serde_json::from_value(value)
-                        .map_err(|_| CliError::usage("Setting must be scalar."))?,
+                korrid::config::cascade::set_leaf(
+                    &mut settings.values,
+                    &key,
+                    Some(
+                        serde_json::from_value(value)
+                            .map_err(|_| CliError::usage("Setting must be scalar."))?,
+                    ),
                 );
             }
             LaunchPath::ModifierEnabled { id } => {
                 launch.modifiers.entry(id).or_default().enabled = value.as_bool()
             }
             LaunchPath::ModifierSetting { id, key } => {
-                launch.modifiers.entry(id).or_default().settings.insert(
-                    key,
-                    serde_json::from_value(value)
-                        .map_err(|_| CliError::usage("Setting must be scalar."))?,
+                korrid::config::cascade::set_leaf(
+                    &mut launch.modifiers.entry(id).or_default().settings,
+                    &key,
+                    Some(
+                        serde_json::from_value(value)
+                            .map_err(|_| CliError::usage("Setting must be scalar."))?,
+                    ),
                 );
             }
             _ => {

@@ -377,9 +377,9 @@ fn plugin_settings_scope_mark_defaults_shared_and_only_accepts_device() {
     use korrid::launcher::typed_settings::{describe, SettingScope};
     let source = SourceSnapshot::plugin("export const name = 'scope'; export const handlers = {'settings.describe': () => ({revision:'scope-v1',schema:{properties:{video:{type:'string'}, clock:{type:'number','x-korri-scope':'device'},bad:{'x-korri-scope':'shared'},number:{'x-korri-scope':1},nil:{'x-korri-scope':null}}}})};").unwrap();
     let result = describe(&source, "@test:runner/main", "build").unwrap();
-    assert_eq!(result.scopes["video"], SettingScope::Shared);
-    assert_eq!(result.scopes["clock"], SettingScope::Device);
-    assert!(!result.scopes.contains_key("bad"));
+    assert_eq!(result.scopes["plugin.video"], SettingScope::Shared);
+    assert_eq!(result.scopes["plugin.clock"], SettingScope::Device);
+    assert!(!result.scopes.contains_key("plugin.bad"));
     assert_eq!(result.diagnostics.len(), 3);
     assert!(result
         .diagnostics
@@ -405,11 +405,14 @@ fn schema_defaults_are_display_only_and_keep_the_runner_revision() {
     assert_eq!(description.revision, "runner-build-123");
     assert_eq!(
         serde_json::to_value(&description.defaults).unwrap(),
-        serde_json::json!({"scale":2,"clock":50})
+        serde_json::json!({"plugin.scale":2,"plugin.clock":50})
     );
-    assert_eq!(description.scopes["scale"], SettingScope::Shared);
-    assert_eq!(description.scopes["clock"], SettingScope::Device);
-    assert_eq!(description.schema["properties"]["scale"]["default"], 2);
+    assert_eq!(description.scopes["plugin.scale"], SettingScope::Shared);
+    assert_eq!(description.scopes["plugin.clock"], SettingScope::Device);
+    assert_eq!(
+        description.schema["properties"]["plugin"]["properties"]["scale"]["default"],
+        2
+    );
 }
 
 #[test]
@@ -428,27 +431,27 @@ fn patterned_setting_defaults_use_concrete_paths_and_literal_properties_win() {
         "a pattern does not invent a port number"
     );
     assert_eq!(
-        description.defaults["input.ports.2.joypad-index"],
+        description.defaults["plugin.input.ports.2.joypad-index"],
         serde_json::from_value(json!(7)).unwrap()
     );
     description.include_paths(
         &[
-            "input.ports.2.joypad-index".into(),
-            "input.ports.12.joypad-index".into(),
+            "plugin.input.ports.2.joypad-index".into(),
+            "plugin.input.ports.12.joypad-index".into(),
         ],
         "@test:runner/main",
         "build",
     );
     assert_eq!(
         serde_json::to_value(&description.defaults).unwrap(),
-        json!({"input.ports.2.joypad-index":7,"input.ports.12.joypad-index":0,"input.ports.12.analog-dpad-mode":"none"})
+        json!({"plugin.input.ports.2.joypad-index":7,"plugin.input.ports.12.joypad-index":0,"plugin.input.ports.12.analog-dpad-mode":"none"})
     );
     assert_eq!(
-        description.scopes["input.ports.2.joypad-index"],
+        description.scopes["plugin.input.ports.2.joypad-index"],
         SettingScope::Shared
     );
     assert_eq!(
-        description.scopes["input.ports.12.joypad-index"],
+        description.scopes["plugin.input.ports.12.joypad-index"],
         SettingScope::Device
     );
     assert_eq!(
@@ -476,7 +479,8 @@ fn settings_operation_treaties_keep_named_inputs_outputs_and_nested_values() {
         PluginSettingsValidateInput, PluginSettingsValidateOutput,
     };
     use serde_json::{from_value, json, to_value};
-    let settings = from_value(json!({"input":{"ports":{"2":{"joypad-index":1}}}})).unwrap();
+    let settings =
+        from_value(json!({"plugin":{"input":{"ports":{"2":{"joypad-index":1}}}}})).unwrap();
     let input = PluginSettingsRenderInput {
         id: "@korri:retroarch/runner".into(),
         settings,
@@ -484,7 +488,7 @@ fn settings_operation_treaties_keep_named_inputs_outputs_and_nested_values() {
     };
     assert_eq!(
         to_value(&input).unwrap(),
-        json!({"id":"@korri:retroarch/runner","settings":{"input":{"ports":{"2":{"joypad-index":1}}}}})
+        json!({"id":"@korri:retroarch/runner","settings":{"plugin":{"input":{"ports":{"2":{"joypad-index":1}}}}}})
     );
     assert_eq!(
         to_value(PluginSettingsRenderOutput {
@@ -512,7 +516,7 @@ fn settings_operation_treaties_keep_named_inputs_outputs_and_nested_values() {
         revision: description.revision,
     };
     assert_eq!(
-        to_value(validation).unwrap()["values"]["input"]["ports"]["2"]["joypad-index"],
+        to_value(validation).unwrap()["values"]["plugin"]["input"]["ports"]["2"]["joypad-index"],
         1
     );
     let output = PluginSettingsValidateOutput {
@@ -522,6 +526,7 @@ fn settings_operation_treaties_keep_named_inputs_outputs_and_nested_values() {
             severity: PluginSettingsDiagnosticSeverity::Error,
             message: "bad index".into(),
             path: vec![
+                "plugin".into(),
                 "input".into(),
                 "ports".into(),
                 "2".into(),
@@ -531,6 +536,6 @@ fn settings_operation_treaties_keep_named_inputs_outputs_and_nested_values() {
     };
     assert_eq!(
         to_value(output).unwrap()["diagnostics"][0],
-        json!({"code":"index","severity":"error","message":"bad index","path":["input","ports","2","joypad-index"]})
+        json!({"code":"index","severity":"error","message":"bad index","path":["plugin","input","ports","2","joypad-index"]})
     );
 }

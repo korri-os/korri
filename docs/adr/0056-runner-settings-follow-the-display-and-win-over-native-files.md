@@ -34,6 +34,21 @@ only from that file, which its in-game F10 menu also rewrites.
 - **Settings apply at launch.** Korri does not change a running game's
   settings. The game's own menu stays the way to change a value mid-session.
 
+## Temporary native values
+
+**Owner decision, 2026-11-10 (q38).** One-launch values must not remain in a
+program's native config after that launch. Restore the previous values after
+the game ends, but preserve unrelated settings and later menu edits. Keep
+permanent game and system settings as direct writes. Track temporary writes
+so an interrupted launch can be recovered before another launch uses them.
+
+A test with the real WiiCompiled callback and korrid showed the conflict:
+starting at 1x, a one-launch 4x write left 4x in Config.toml on a second launch
+with no override. Consuming the in-memory override was not sufficient.
+Leaving those native writes sticky was considered and rejected. A direct
+write is still permitted; restoration is the additional obligation for a
+one-launch value.
+
 ## Considered options
 
 - A symbolic `auto` value on size settings. Rejected: a magic value in every

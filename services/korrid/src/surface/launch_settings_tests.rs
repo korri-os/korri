@@ -508,6 +508,83 @@ async fn opened(
     (launch, script)
 }
 
+#[tokio::test]
+async fn one_launch_editor_is_ephemeral_and_keep_writes_only_the_chosen_value() {
+    let mut fixture = wario();
+    fixture.runners[0].schema = korri_settings_treaty::schema(
+        &[korri_settings_treaty::SharedSetting::RenderScale],
+        json!({"type":"object","properties":{}}),
+    );
+    let (launch, script) = opened(&fixture, None).await;
+    let editor = content(&launch.editor());
+    let one = editor
+        .places
+        .iter()
+        .find(|p| p.layer.id == "launch")
+        .expect("one-launch place");
+    assert_eq!(
+        one.scope.kind,
+        korri_surface_treaty::SurfaceLaunchSettingsScopeKind::Any
+    );
+    let add = one
+        .groups
+        .iter()
+        .flat_map(|g| &g.items)
+        .find(|i| i.id.ends_with("add-setting:video"))
+        .unwrap()
+        .id
+        .clone();
+    assert!(launch.change(&add, "video.render-scale"));
+    let id = launch_id::set(&one.id, "setting:video.render-scale");
+    assert!(launch.change(&id, "4"));
+    assert!(
+        calls(&script, SET).is_empty(),
+        "a draft must not reach the persisted setter"
+    );
+    if let Some(path) = std::env::var_os("KORRI_ONE_LAUNCH_PROOF") {
+        std::fs::write(path, serde_json::to_vec_pretty(&launch.editor()).unwrap()).unwrap();
+    }
+    let (ticket, request) = launch.submit_one_launch("wario");
+    assert_eq!(
+        serde_json::to_value(request.unwrap()).unwrap()["settings"]["values"]["video"]
+            ["render-scale"],
+        4
+    );
+    launch.complete_one_launch(ticket, true);
+    let kept_editor = content(&launch.editor());
+    let keep = kept_editor
+        .places
+        .iter()
+        .flat_map(|place| &place.groups)
+        .flat_map(|group| &group.items)
+        .find(|item| item.id == "launch:keep:video.render-scale")
+        .unwrap();
+    assert_eq!(keep.label, "Keep Render scale");
+    assert_eq!(
+        keep.description.as_deref(),
+        Some("Render scale: 4x. Choose where to keep it.")
+    );
+    assert!(
+        launch.submit_one_launch("wario").1.is_none(),
+        "the next launch must not replay it"
+    );
+    push(&script, SNAPSHOT, ok_snapshot(fixture.snapshot()));
+    push(&script, SNAPSHOT, ok_snapshot(fixture.snapshot()));
+    assert!(launch.change("launch:keep:video.render-scale", "game:wario/any"));
+    settle().await;
+    let writes = calls(&script, SET);
+    assert_eq!(writes.len(), 1);
+    assert_eq!(
+        writes[0]["place"],
+        json!({"layer":{"_tag":"Game","id":"wario"},"scope":{"_tag":"Any"}})
+    );
+    assert_eq!(
+        writes[0]["path"],
+        json!({"_tag":"Setting","payload":{"key":"video.render-scale"}})
+    );
+    assert_eq!(writes[0]["value"], 4);
+}
+
 // --- clock steps ------------------------------------------------------------------
 
 #[test]
@@ -745,6 +822,10 @@ async fn editor_opens_loading_then_ready_with_a_place_per_layer_and_runner_scope
             "Release usa | family Family retroarch",
             "Release usa | runner mGBA",
             "Release usa | runner gpSP",
+            "This launch | any Any runner",
+            "This launch | family Family retroarch",
+            "This launch | runner mGBA",
+            "This launch | runner gpSP",
         ]
     );
     let ids: std::collections::HashSet<&String> = places.iter().map(|place| &place.id).collect();
@@ -1323,7 +1404,13 @@ async fn editor_creates_picks_renames_and_deletes_a_profile_and_remembers_the_pi
     let editor = launch.editor();
     assert_eq!(content(&editor).profiles[0].title, "Speedrun");
     assert_eq!(
-        content(&editor).places.last().unwrap().layer.title,
+        content(&editor)
+            .places
+            .iter()
+            .rfind(|place| place.layer.id.starts_with("profile:"))
+            .unwrap()
+            .layer
+            .title,
         "Profile Speedrun"
     );
     assert_eq!(launch.active_profiles().get("wario"), Some(&None));
@@ -1503,7 +1590,7 @@ async fn editor_without_a_runner_choice_says_what_is_missing_and_offers_the_choo
             layers.push(place.layer.title);
         }
     }
-    assert_eq!(layers, ["Device", "Game"]);
+    assert_eq!(layers, ["Device", "Game", "This launch"]);
     assert_eq!(content(&editor).notes, ["System and release settings appear once you choose a runner. Values in force leave them out."]);
     assert_eq!(
         action_ids(&editor),

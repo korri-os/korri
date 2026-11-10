@@ -4,6 +4,7 @@ pub mod controllers;
 pub mod devices;
 pub mod error;
 pub mod identity;
+mod keep_launch;
 pub mod launch_settings;
 pub mod library;
 pub mod metadata;

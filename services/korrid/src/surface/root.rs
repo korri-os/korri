@@ -418,6 +418,21 @@ impl Root {
                     korrid.clone(),
                     notify.clone(),
                     LaunchablesHooks {
+                        launch_overrides: {
+                            let root = this.clone();
+                            Box::new(move |game| {
+                                root.upgrade()
+                                    .map_or((0, None), |root| root.launch.submit_one_launch(game))
+                            })
+                        },
+                        launch_overrides_complete: {
+                            let root = this.clone();
+                            Box::new(move |ticket, success| {
+                                if let Some(root) = root.upgrade() {
+                                    root.launch.complete_one_launch(ticket, success);
+                                }
+                            })
+                        },
                         launch_warnings: {
                             // Prepare-path warnings show in the chooser's Warnings panel.
                             let runner = Arc::clone(&runner);

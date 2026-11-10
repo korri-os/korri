@@ -258,6 +258,85 @@ fn prepared_plan_environment_never_reads_the_korrid_process_environment() {
 }
 
 #[test]
+fn one_launch_native_effects_are_compared_with_the_real_persistent_cascade() {
+    use serde_json::json;
+    let game = DiscoveredGame::new();
+    let package = game
+        .registry
+        .installed_package(&game.route.runner_id)
+        .unwrap();
+    let source = include_str!("../../examples/libretro-core.plugin.ts").replace("export { handlers } from \"./retroarch\"", r#"export const handlers = {
+      'settings.describe': () => ({ shared:['video.render-scale'], revision:'1', schema:{type:'object',properties:{}} }),
+      'launch.prepare': input => ({ command:input.program,args:[],tomlUpdates:[{path:input.accountRoot+'/Config.toml',content:'[video]\nresolution_multiplier = '+(input.overrides.settings.video?.['render-scale'] ?? 1)+'\n'}] })
+    }"#);
+    fs::write(package.package.join("plugin.ts"), &source).unwrap();
+    let mut snapshot = game.snapshot.clone();
+    let host = snapshot.host.get_or_insert_with(Default::default);
+    host.place.settings = serde_json::from_value(json!({"video":{"render-scale":2}})).unwrap();
+    let launch = serde_json::from_value(
+        json!({"settings":{"scope":{"_tag":"Any"},"values":{"video":{"render-scale":4}}}}),
+    )
+    .unwrap();
+    let spec = launch_route(
+        game.root.path(),
+        &snapshot,
+        &game.registry,
+        &game.route,
+        Some(launch),
+        None,
+        None,
+        "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+    )
+    .unwrap();
+    let command = crate::launcher::plugin_launch::prepare_command(&spec.command).unwrap();
+    let prepared: serde_json::Value = serde_json::from_str(&command[5]).unwrap();
+    assert!(prepared["plan"]["tomlUpdates"][0]["content"]
+        .as_str()
+        .unwrap()
+        .contains("= 2"));
+    assert!(prepared["temporaryToml"][0]["effective"]["content"]
+        .as_str()
+        .unwrap()
+        .contains("= 4"));
+    assert!(prepared["temporaryToml"][0]["persistent"]["content"]
+        .as_str()
+        .unwrap()
+        .contains("= 2"));
+    assert!(
+        !game.root.path().join("users").exists(),
+        "preparation must not materialize native files or receipts"
+    );
+    fs::write(
+        package.package.join("plugin.ts"),
+        source.replace(
+            "args:[],tomlUpdates:",
+            "args:[],files:[{path:input.accountRoot+'/Config.toml',content:''}],tomlUpdates:",
+        ),
+    )
+    .unwrap();
+    assert!(
+        crate::launcher::plugin_launch::prepare_command(&spec.command)
+            .unwrap_err()
+            .contains("whole-file replacements")
+    );
+    // Even an entirely empty effective effect list must be checked against the
+    // persistent plan. Otherwise a plugin can bypass the stable-target rule.
+    fs::write(
+        package.package.join("plugin.ts"),
+        source.replace(
+            "tomlUpdates:[",
+            "tomlUpdates:input.overrides.settings.video?.['render-scale'] === 4 ? [] : [",
+        ),
+    )
+    .unwrap();
+    assert!(
+        crate::launcher::plugin_launch::prepare_command(&spec.command)
+            .unwrap_err()
+            .contains("retain their file targets")
+    );
+}
+
+#[test]
 fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_validates_schema() {
     use crate::launch_settings::{
         self as ls, LaunchLayer, LaunchPath, LaunchPlace, LaunchRunnerFacts, LaunchRunnerScope,

@@ -310,6 +310,9 @@ pub struct ResolvedLaunchModifier {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaunchComposition {
+    /// The same route without the one-launch layer, for native-file rollback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistent: Option<PersistentPreparation>,
     /// Private native credential source; never passed to a plugin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub netplay_config_source: Option<std::path::PathBuf>,
@@ -326,6 +329,13 @@ pub struct LaunchComposition {
     pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<PluginDisplay>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PersistentPreparation {
+    pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    pub modifiers: Vec<ResolvedLaunchModifier>,
 }
 
 pub fn evaluate(source: &str, input: &PluginLaunchInput) -> Result<PluginLaunchOutput, String> {
@@ -360,6 +370,7 @@ pub fn evaluate_snapshot(
     .map_err(|failure| failure.to_string())?;
     let plan: PluginLaunchOutput =
         serde_json::from_str(&result).map_err(|e| format!("invalid launch result: {e}"))?;
+    validate_plan(&plan, &input.account_root)?;
     validate_save_locations(&input.save_root, &plan.save_locations)?;
     Ok(plan)
 }
@@ -464,6 +475,8 @@ pub fn prepare(
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PreparedLaunch {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) temporary_toml: Vec<super::native_config_transaction::TemporaryToml>,
     pub(crate) plan: PluginLaunchOutput,
     runner_argv: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -522,7 +535,7 @@ pub fn runner_prepare_plan(command: &[String]) -> Result<PluginLaunchOutput, Str
     let (snapshot, _) = package_snapshot(&package.join("manifest.json"), entry)?;
     let input: PluginLaunchInput = serde_json::from_str(&command[3]).map_err(|e| e.to_string())?;
     let plan = evaluate_snapshot(&snapshot, &input)?;
-    validate_plan(&plan)?;
+    validate_plan(&plan, &input.account_root)?;
     Ok(plan)
 }
 
@@ -573,7 +586,7 @@ pub(crate) fn declared_saves(
     }
     let input: PluginLaunchInput = serde_json::from_str(&command[3]).map_err(|e| e.to_string())?;
     let prepared: PreparedLaunch = serde_json::from_str(&command[5]).map_err(|e| e.to_string())?;
-    validate_plan(&prepared.plan)?;
+    validate_plan(&prepared.plan, &input.account_root)?;
     validate_save_locations(&input.save_root, &prepared.plan.save_locations)?;
     Ok(Some((input, prepared)))
 }
@@ -596,7 +609,7 @@ fn prepare_with_diagnostics(
     input.display = composition.display.clone();
     let mut plan = evaluate_snapshot(&snapshot, &input)?;
     merge_place_values(&mut plan, composition);
-    validate_plan(&plan)?;
+    validate_plan(&plan, &input.account_root)?;
     redaction.add_env(plan.env.values().cloned());
     let runner_argv = std::iter::once(plan.command.clone())
         .chain(plan.args.clone())
@@ -640,7 +653,7 @@ fn prepare_with_diagnostics(
                     300,
                 )
             })?;
-            validate_plan(&output)?;
+            validate_plan(&output, &input.account_root)?;
             validate_save_locations(&input.save_root, &output.save_locations)?;
             Ok(output)
         };
@@ -653,7 +666,32 @@ fn prepare_with_diagnostics(
         })?;
     }
     redaction.add_env(plan.env.values().cloned());
+    let temporary_toml = if let Some(persistent) = composition.persistent.as_ref() {
+        let mut baseline_input = input.clone();
+        baseline_input
+            .overrides
+            .get_or_insert_with(Default::default)
+            .settings = persistent.settings.clone();
+        let mut baseline_composition = composition.clone();
+        baseline_composition.persistent = None;
+        baseline_composition.modifiers = persistent.modifiers.clone();
+        let baseline = prepare_with_diagnostics(source, &baseline_input, &baseline_composition)?;
+        let changes = super::native_config_transaction::changes(
+            &baseline.plan.toml_updates,
+            &plan.toml_updates,
+        )?;
+        for change in &changes {
+            if Path::new(&change.effective.path).starts_with(&input.save_root) {
+                return Err("temporary native configuration must be outside saveRoot".into());
+            }
+        }
+        plan.toml_updates = baseline.plan.toml_updates;
+        changes
+    } else {
+        Vec::new()
+    };
     Ok(PreparedLaunch {
+        temporary_toml,
         plan,
         runner_argv,
         release_id: None,
@@ -719,9 +757,19 @@ pub fn validate_save_locations(
     Ok(())
 }
 
-fn validate_plan(plan: &PluginLaunchOutput) -> Result<(), String> {
+fn validate_plan(plan: &PluginLaunchOutput, account_root: &str) -> Result<(), String> {
     for update in &plan.toml_updates {
         super::native_toml::validate(update)?;
+        super::native_toml::validate_location(Path::new(account_root), update)?;
+        if plan
+            .files
+            .iter()
+            .any(|file| Path::new(&file.path) == Path::new(&update.path))
+        {
+            return Err(
+                "native TOML updates cannot share a target with whole-file replacements".into(),
+            );
+        }
     }
     if plan.command.is_empty() || plan.command.contains('\0') {
         return Err("launch command must be non-empty and contain no NUL".into());
@@ -772,9 +820,10 @@ pub fn execute(
     let PreparedLaunch {
         plan: output,
         runner_argv,
+        temporary_toml,
         ..
     } = serde_json::from_str::<PreparedLaunch>(prepared).map_err(|e| e.to_string())?;
-    validate_plan(&output)?;
+    validate_plan(&output, &input.account_root)?;
     validate_save_locations(&input.save_root, &output.save_locations)?;
     let mut redaction = LaunchRedaction::from_composition(&composition)?;
     redaction.add_env(output.env.values().cloned());
@@ -796,9 +845,52 @@ pub fn execute(
             "envUnset": output.env_unset, "cwd": output.cwd,
         })
     );
-    for update in &output.toml_updates {
-        super::native_toml::apply(update)?;
+    if !temporary_toml.is_empty() && unsafe { libc::getpid() } != 1 {
+        return Err(
+            "temporary native settings require the managed game's private PID namespace".into(),
+        );
     }
+    if !temporary_toml.is_empty() {
+        match Path::new(&input.save_root).canonicalize() {
+            Ok(save_root) => {
+                for change in &temporary_toml {
+                    let target = Path::new(&change.effective.path)
+                        .canonicalize()
+                        .map_err(|e| e.to_string())?;
+                    if target.starts_with(&save_root) {
+                        return Err("temporary native configuration must not be included in synchronized saves".into());
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    for update in output
+        .toml_updates
+        .iter()
+        .chain(temporary_toml.iter().map(|change| &change.effective))
+    {
+        for file in &output.files {
+            let same = Path::new(&file.path) == Path::new(&update.path)
+                || Path::new(&file.path)
+                    .canonicalize()
+                    .ok()
+                    .is_some_and(|target| {
+                        Path::new(&update.path).canonicalize().ok().as_ref() == Some(&target)
+                    });
+            if same {
+                return Err(
+                    "native TOML updates cannot share a target with whole-file replacements".into(),
+                );
+            }
+        }
+    }
+    let native_transaction = super::native_config_transaction::Transaction::begin(
+        Path::new(&input.account_root),
+        &output.toml_updates,
+        &temporary_toml,
+    )?;
     for directory in &output.directories {
         fs::create_dir_all(directory).map_err(|e| e.to_string())?;
     }
@@ -844,11 +936,31 @@ pub fn execute(
     // handler ignores systemd's stop until the stop timeout and SIGKILL.
     if unsafe { libc::getpid() } == 1 {
         let status = run_as_namespace_init(command)?;
+        if !temporary_toml.is_empty() {
+            // PID 1's exit would kill these orphans anyway. Reap them before
+            // restoring files so no surviving game worker can rewrite them.
+            unsafe {
+                libc::kill(-1, libc::SIGKILL);
+            }
+            loop {
+                let waited = unsafe { libc::waitpid(-1, std::ptr::null_mut(), 0) };
+                if waited >= 0 {
+                    continue;
+                }
+                if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                    break;
+                }
+            }
+        }
+        native_transaction.finish().map_err(|error| {
+            format!("game exited with {status}; native configuration recovery pending: {error}")
+        })?;
         if let Err(error) = crate::host::launch_diagnostics::write_exit_status(status) {
             eprintln!("korrid plugin-launch exit diagnostics: {error}");
         }
         std::process::exit(status);
     }
+    native_transaction.finish()?;
     Err(format!("cannot exec composed launch: {}", command.exec()))
 }
 

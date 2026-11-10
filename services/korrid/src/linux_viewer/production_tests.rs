@@ -490,7 +490,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
     std::fs::create_dir(&package).unwrap();
     let source = r#"export const name='moonlight';export const runners={moonlight:{program:'program'}};export const handlers={
       'settings.describe':()=>({revision:'v1',schema:{}}),
-      'settings.validate': input=>({valid:false,diagnostics:input.values.video?.codec==='bad'?[{severity:'error',code:'codec',path:['video','codec'],message:'unsupported codec'}]:[]}),
+      'settings.validate': input=>({valid:false,diagnostics:input.values.plugin?.video?.codec==='bad'?[{severity:'error',code:'codec',path:['plugin','video','codec'],message:'unsupported codec'}]:[]}),
       'settings.render':input=>({args:[JSON.stringify(input.settings),String(input.display.width)]})
     };"#;
     std::fs::write(package.join("plugin.ts"), source).unwrap();
@@ -506,8 +506,8 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
         },
     ])
     .unwrap();
-    let device = json!({"host":{"runners":{ID:{"settings":{"video":{"fps":30,"codec":"h264"}}}}},"systems":{"gba":{"runners":{ID:{"settings":{"video":{"fps":45}}}}}}});
-    let library = json!({"library":{"game":{"releases":[{"id":"one","system":"gba","identity":{"kind":"provider","value":"@korri:content/one"},"runners":{ID:{"settings":{"video":{"fps":5}}}}}],"runners":{ID:{"settings":{"video":{"codec":"h265"}}}},"profiles":{"quiet":{"title":"Quiet","runners":{ID:{"settings":{"video":{"fps":90}}}}},"unselected":{"title":"Unselected","runners":{ID:{"settings":{"video":{"fps":120}}}}}},"profile":"quiet"}}});
+    let device = json!({"host":{"runners":{ID:{"settings":{"plugin":{"video":{"fps":30,"codec":"h264"}}}}}},"systems":{"gba":{"runners":{ID:{"settings":{"plugin":{"video":{"fps":45}}}}}}}});
+    let library = json!({"library":{"game":{"releases":[{"id":"one","system":"gba","identity":{"kind":"provider","value":"@korri:content/one"},"runners":{ID:{"settings":{"plugin":{"video":{"fps":5}}}}}}],"runners":{ID:{"settings":{"plugin":{"video":{"codec":"h265"}}}}},"profiles":{"quiet":{"title":"Quiet","runners":{ID:{"settings":{"plugin":{"video":{"fps":90}}}}}},"unselected":{"title":"Unselected","runners":{ID:{"settings":{"plugin":{"video":{"fps":120}}}}}}},"profile":"quiet"}}});
     std::fs::create_dir(root.path().join("catalog")).unwrap();
     std::fs::write(root.path().join("device.yaml"), device.to_string()).unwrap();
     std::fs::write(
@@ -522,7 +522,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
     let args = render_settings(root.path(), &registry, Some("game"), display.clone()).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&args[0]).unwrap(),
-        json!({"video":{"fps":90,"codec":"h265"}})
+        json!({"plugin":{"video":{"fps":90,"codec":"h265"}}})
     );
     assert_eq!(args[1], "854");
     let args = render_settings(
@@ -534,18 +534,19 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
     .unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&args[0]).unwrap(),
-        json!({"video":{"fps":30,"codec":"h264"}})
+        json!({"plugin":{"video":{"fps":30,"codec":"h264"}}})
     );
     let snapshot = crate::script::source::SourceSnapshot::plugin(source).unwrap();
-    let settings = serde_json::from_value(json!({"video":{"fps":60,"codec":"bad"}})).unwrap();
+    let settings =
+        serde_json::from_value(json!({"plugin":{"video":{"fps":60,"codec":"bad"}}})).unwrap();
     let (args, warnings) =
         crate::launcher::typed_settings::render(&snapshot, ID, &settings, Some(display), "build")
             .unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&args[0]).unwrap(),
-        json!({"video":{"fps":60}})
+        json!({"plugin":{"video":{"fps":60}}})
     );
-    assert_eq!(warnings[0].setting, "video.codec");
+    assert_eq!(warnings[0].setting, "plugin.video.codec");
 }
 
 #[test]
