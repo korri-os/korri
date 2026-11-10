@@ -350,7 +350,11 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
         // Keep the existing CPU-path factor and allowance unchanged.
         let ms = |n: u64| device_ms(n) / 2.0;
         let limit = limit_ms(what);
-        if ms(median) > limit {
+        // The collector lands in whichever call crosses its threshold.
+        // With one or two calls this median is also the worst call, so it
+        // cannot absorb a collection. Judge those only with the existing
+        // collector allowance; larger samples must satisfy both checks.
+        if sorted.len() >= 3 && ms(median) > limit {
             over.push(format!(
                 "{what}: median about {:.1} ms, over {limit} ms",
                 ms(median)
