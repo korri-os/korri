@@ -55,10 +55,9 @@ impl Units {
             return results;
         }
         if let Err(error) = self.checked(["daemon-reload"]) {
-            for (index, units) in &staged {
+            for (index, _) in &staged {
                 let report = reports[*index];
-                let error = self.discard_after(report, units, error.clone());
-                results[*index] = Err(self.cleanup_failed(report, error));
+                results[*index] = Err(self.cleanup_failed(report, error.clone()));
             }
             return results;
         }
@@ -136,6 +135,11 @@ impl Units {
             return Ok(false);
         }
         for unit in &units {
+            if fs::read_link(self.uphold(&unit.name)).ok()
+                != Some(PathBuf::from(format!("../{}", unit.name)))
+            {
+                return Ok(false);
+            }
             match fs::read_to_string(self.unit_path(&unit.name)) {
                 Ok(source) if source == unit.native.source => {}
                 Ok(_) => return Ok(false),
@@ -210,6 +214,12 @@ impl Units {
             self.require_loaded_fragment(&connection, object.as_str(), unit)?;
             objects.push((unit, object));
         }
+        // Withdraw continuous start authority before stopping. Otherwise an
+        // active korrid would immediately start a disabled or replaced unit.
+        for unit in &units {
+            self.remove_uphold(unit)?;
+        }
+        self.checked(["daemon-reload"])?;
         let mut stop = vec!["stop".to_owned()];
         stop.extend(units.iter().cloned());
         self.checked(stop)?;
@@ -290,7 +300,8 @@ impl Units {
         storage::directory(&self.ownership_directory)?;
         for unit in units {
             let runtime_present = path_present(&self.unit_path(&unit.name))?
-                || path_present(&self.drop_in(&unit.name))?;
+                || path_present(&self.drop_in(&unit.name))?
+                || path_present(&self.uphold(&unit.name))?;
             if runtime_present {
                 self.require_owned_unit(&report.id, &unit.name)
                     .map_err(|_| {
@@ -326,6 +337,7 @@ impl Units {
             // Plugin packages cannot ship drop-ins into this directory.
             storage::write_atomic(&drop_in, hardening_for(&report.id, unit.native).as_bytes())?;
             storage::write_atomic(&self.unit_path(&unit.name), unit.native.source.as_bytes())?;
+            self.write_uphold(&unit.name)?;
         }
         Ok(())
     }
@@ -334,6 +346,9 @@ impl Units {
         let mut errors = Vec::new();
         for unit in units {
             if self.owner_matches(id, &unit.name) {
+                if let Err(error) = self.remove_uphold(&unit.name) {
+                    errors.push(error);
+                }
                 if let Err(error) = storage::remove(&self.unit_path(&unit.name)) {
                     errors.push(error);
                 }
@@ -390,6 +405,51 @@ impl Units {
 
     fn unit_path(&self, unit: &str) -> PathBuf {
         self.unit_directory.join(unit)
+    }
+
+    // systemd's native .upholds directory expresses Enabled intent without
+    // modifying either the approved unit source or korrid's NixOS fragment.
+    fn uphold(&self, unit: &str) -> PathBuf {
+        self.unit_directory
+            .join("korrid.service.upholds")
+            .join(unit)
+    }
+
+    fn write_uphold(&self, unit: &str) -> Result<(), String> {
+        let path = self.uphold(unit);
+        let parent = path.parent().ok_or("invalid uphold path")?;
+        match fs::create_dir(parent) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                if !fs::symlink_metadata(parent).is_ok_and(|metadata| metadata.is_dir()) {
+                    return Err("plugin uphold directory must be a real directory".into());
+                }
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+        let target = PathBuf::from(format!("../{unit}"));
+        if path_present(&path)? {
+            if fs::read_link(&path).ok().as_ref() != Some(&target) {
+                return Err(format!(
+                    "plugin uphold relation for {unit} conflicts with a host entry"
+                ));
+            }
+            return Ok(());
+        }
+        storage::root_link(&path, &target)
+    }
+
+    fn remove_uphold(&self, unit: &str) -> Result<(), String> {
+        let path = self.uphold(unit);
+        if !path_present(&path)? {
+            return Ok(());
+        }
+        if fs::read_link(&path).ok() != Some(PathBuf::from(format!("../{unit}"))) {
+            return Err(format!(
+                "plugin uphold relation for {unit} conflicts with a host entry"
+            ));
+        }
+        storage::remove(&path)
     }
 
     fn drop_in(&self, unit: &str) -> PathBuf {
@@ -605,5 +665,98 @@ fn runtime_directory_policy(
                 .unwrap_or_else(|| "0755".into()),
         ),
         None => (host_name.into(), "0700".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn units(root: &std::path::Path) -> Units {
+        Units {
+            systemctl: "/bin/false".into(),
+            unit_directory: root.join("systemd"),
+            ownership_directory: root.join("ownership"),
+            firewall: crate::firewall::Firewall {
+                ipv4: "/bin/false".into(),
+                ipv6: "/bin/false".into(),
+            },
+        }
+    }
+
+    fn report() -> Report {
+        let source = "[Service]\nType=exec\nExecStart=/nix/store/00000000000000000000000000000000-coreutils/bin/sleep infinity\n";
+        Report {
+            publisher: None,
+            id: "@korri:sunshine".into(),
+            package: "/nix/store/00000000000000000000000000000000-plugin".into(),
+            provenance: crate::provenance::Provenance::RawCache {
+                cache_url: "file:///cache".into(),
+            },
+            approval: String::new(),
+            policy: package::BASE_POLICY,
+            warning: String::new(),
+            unit: Some("korri-sunshine.service".into()),
+            state_directory: String::new(),
+            runtime_directory: String::new(),
+            unit_configuration: String::new(),
+            declaration: crate::declaration::Declaration::evaluate(
+                "@korri",
+                "export const name = 'sunshine'; export const services = ['korri-sunshine'];",
+            )
+            .unwrap(),
+            native_units: std::collections::BTreeMap::from([(
+                "korri-sunshine".into(),
+                crate::native_unit::NativeUnit::parse(source).unwrap(),
+            )]),
+            ports: Default::default(),
+            hosts: Vec::new(),
+            packages: Default::default(),
+            files: Default::default(),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
+            requires: Vec::new(),
+            brings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn managed_unit_write_restores_its_uphold_relation_and_discard_withdraws_it() {
+        let root = tempfile::tempdir().unwrap();
+        let units = units(root.path());
+        fs::create_dir(&units.unit_directory).unwrap();
+        let name = "korri-sunshine.service";
+        let report = report();
+        let managed = managed_units(&report).unwrap();
+        // An owned runtime unit with a lost relation must be repaired on
+        // restore, without depending on the machine's systemd or D-Bus.
+        fs::write(units.unit_path(name), &managed[0].native.source).unwrap();
+        storage::directory(units.drop_in(name).parent().unwrap()).unwrap();
+        fs::write(units.drop_in(name), owner_marker(&report.id)).unwrap();
+        units.write(&report, &managed).unwrap();
+        assert_eq!(
+            fs::read_link(units.uphold(name)).unwrap(),
+            PathBuf::from("../korri-sunshine.service")
+        );
+        // A restore does not create a second relation or replace a peer's file.
+        units.write(&report, &managed).unwrap();
+        units.discard_written(&report.id, &managed).unwrap();
+        assert!(!path_present(&units.uphold(name)).unwrap());
+        units.remove_uphold(name).unwrap();
+    }
+
+    #[test]
+    fn lifecycle_relation_does_not_replace_an_unowned_link_or_file() {
+        let root = tempfile::tempdir().unwrap();
+        let units = units(root.path());
+        fs::create_dir(&units.unit_directory).unwrap();
+        fs::create_dir(units.uphold("daemon.service").parent().unwrap()).unwrap();
+        fs::write(units.uphold("daemon.service"), "host-owned").unwrap();
+        assert!(units.write_uphold("daemon.service").is_err());
+        assert!(units.remove_uphold("daemon.service").is_err());
+        assert_eq!(
+            fs::read_to_string(units.uphold("daemon.service")).unwrap(),
+            "host-owned"
+        );
     }
 }

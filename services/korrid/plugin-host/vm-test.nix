@@ -1521,9 +1521,10 @@ pkgs.testers.runNixOSTest {
     assert machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip() == dependent_pid
     machine.succeed("systemctl is-active " + unit)
     # Interrupted recovery must wait until every receipt can disclose its
-    # graph. It must not restart a stopped selection against unknown edges.
+    # graph. Simulate an interrupted stage with no loaded uphold relation;
+    # restore must not restart that selection against unknown edges.
     clock_root = "/nix/var/nix/gcroots/korri-plugin-host/" + managed_name(clock)
-    machine.succeed("ln -s ${alternate} " + clock_root + "/pending; systemctl stop " + clock["unit"])
+    machine.succeed("ln -s ${alternate} " + clock_root + "/pending; rm /run/systemd/system/korrid.service.upholds/" + clock["unit"] + "; systemctl daemon-reload; systemctl stop " + clock["unit"])
     assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
     machine.fail("systemctl is-active " + clock["unit"])
     machine.succeed("test -L " + clock_root + "/pending")

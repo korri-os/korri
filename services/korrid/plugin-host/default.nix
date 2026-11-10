@@ -62,6 +62,9 @@ in
         mkPlugin
         ;
     };
+    korri-streaming-plugin-lifecycle = import ./streaming-lifecycle-vm-test.nix {
+      inherit pkgs hostModule hostPackage;
+    };
     korri-runtime-plugin-host = import ./vm-test.nix {
       inherit
         pkgs
