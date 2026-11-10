@@ -6,5 +6,5 @@ import { ZoneSlide } from "./ZoneSlide.slint";
 
 export component Default inherits ZonePreview {
     slide := ZoneSlide { region: "band"; pitch: 60 * Tokens.a; rest: 0; least: 0; most: 600 * Tokens.a; }
-    Rectangle { x: 20 * Tokens.a - (slide.active ? slide.place : 0px); y: 20 * Tokens.a; width: 50 * Tokens.a; height: 70 * Tokens.a; background: Tokens.black; }
+    Rectangle { x: 20 * Tokens.a - (slide.active ? slide.place : 0 * Tokens.a); y: 20 * Tokens.a; width: 50 * Tokens.a; height: 70 * Tokens.a; background: Tokens.black; }
 }
