@@ -130,8 +130,12 @@ impl Run {
     fn publish(&mut self, label: &str, change: impl FnOnce(&mut Value)) {
         change(&mut self.korri.model);
         let published = self.korri.published();
+        self.publish_snapshot(label, &published);
+    }
+    /// Repeat a publish with identical model bytes, independent of responses.
+    fn publish_snapshot(&mut self, label: &str, published: &str) {
         self.count(format!("setModel {label}"), |e| {
-            e.set_model(&published).unwrap()
+            e.set_model(published).unwrap()
         });
         self.deliver(label, json!({"_tag": "KorriPublished"}));
     }
@@ -145,24 +149,8 @@ impl Run {
     }
 }
 
-/// Pico's calls are cheap enough for the 50 ms call budget on the RG353M at
-/// 408 MHz (an idle clock), over 10,000 games (a 50-game window) at 640x480:
-/// every update, view and overlay the shell makes as the library arrives,
-/// along the shelf past the window's edge both ways, while Pico idles (the
-/// shell's Tick each second, attract, the clock's minute, a status), on a
-/// game's own screen, MENU, Find, Settings, the grid and the hero, a resize,
-/// and the pause menu. Each kind of call stays under its limit on the device
-/// (`limit_ms`; the median, as Zone's test; a collection of garbage may add
-/// `GARBAGE_MS` to one), estimated from thread CPU time with the existing workstation/device
-/// factor and allowance. Instruction counts are diagnostic only (#368).
-#[test]
-fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
-    let source = std::fs::read_to_string(
-        std::env::var("PICO_LOGIC")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| package().join("logic.js")),
-    )
-    .unwrap();
+/// One execution of the original scenario in a fresh engine and model.
+fn slow_clock_samples(source: &str) -> Run {
     let (model, mut examples) = korri_shell::verify::fixture();
     // As korrid publishes games today: no cover art (services/korrid/src/surface).
     // PICO_TIMING_ART=1 keeps the fixture's inline art.
@@ -173,7 +161,7 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
     }
     let korri = Korri::new(model, catalog::games(&examples, 10_000));
     let mut engine = engine::Engine::load(
-        &source,
+        source,
         engine::Limits {
             call: std::time::Duration::from_secs(5),
             clock: korri_shell::budget_clock::BudgetClock::ThreadCpu,
@@ -319,15 +307,55 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
         "Pressed down (pause menu)",
         json!({"_tag": "Pressed", "button": "down"}),
     );
-    run.publish("catalog again after the game", move |m| {
-        m["presentation"] = catalog_presentation
-    });
+    // Repeat the identical publish: setModel still parses the same model,
+    // without changing the work measured by the preceding transitions.
+    run.korri.model["presentation"] = catalog_presentation;
+    let published = run.korri.published();
+    for _ in 0..3 {
+        run.publish_snapshot("catalog again after the game", &published);
+    }
     // The same view again: only its JSON, both ways.
     for _ in 0..5 {
         run.count("view again (JSON only)".into(), |e| e.view().unwrap());
     }
+    run
+}
+
+/// Pico's calls are cheap enough for the 50 ms call budget on the RG353M at
+/// 408 MHz (an idle clock), over 10,000 games (a 50-game window) at 640x480:
+/// every update, view and overlay the shell makes as the library arrives,
+/// along the shelf past the window's edge both ways, while Pico idles (the
+/// shell's Tick each second, attract, the clock's minute, a status), on a
+/// game's own screen, MENU, Find, Settings, the grid and the hero, a resize,
+/// and the pause menu. Each kind of call stays under its limit on the device
+/// (`limit_ms`; the median, as Zone's test; a collection of garbage may add
+/// `GARBAGE_MS` to one), estimated from thread CPU time with the existing workstation/device
+/// factor and allowance. Instruction counts are diagnostic only (#368).
+#[test]
+fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
+    let source = std::fs::read_to_string(
+        std::env::var("PICO_LOGIC")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| package().join("logic.js")),
+    )
+    .unwrap();
+    let mut costs: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+    let mut instructions: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+    // The collector lands in whichever call crosses its threshold. With
+    // one call (or the upper median of two), the median is the worst call
+    // and cannot absorb it. Fresh runs independently sample each transition
+    // without changing what the other steps measure or relaxing either guard.
+    for _ in 0..3 {
+        let run = slow_clock_samples(&source);
+        for (what, samples) in run.costs {
+            costs.entry(what).or_default().extend(samples);
+        }
+        for (what, samples) in run.instructions {
+            instructions.entry(what).or_default().extend(samples);
+        }
+    }
     let device_ms = |n: u64| n as f64 * PICO_SLOW_FACTOR / 1_000_000.0;
-    for (what, list) in &run.instructions {
+    for (what, list) in &instructions {
         let mut sorted = list.clone();
         sorted.sort();
         eprintln!(
@@ -337,7 +365,8 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
         );
     }
     let mut over = Vec::new();
-    for (what, list) in &run.costs {
+    for (what, list) in &costs {
+        assert!(list.len() >= 3, "{what}: needs at least three samples");
         let mut sorted = list.clone();
         sorted.sort();
         let median = sorted[sorted.len() / 2];
@@ -350,11 +379,9 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
         // Keep the existing CPU-path factor and allowance unchanged.
         let ms = |n: u64| device_ms(n) / 2.0;
         let limit = limit_ms(what);
-        // The collector lands in whichever call crosses its threshold.
-        // With one or two calls this median is also the worst call, so it
-        // cannot absorb a collection. Judge those only with the existing
-        // collector allowance; larger samples must satisfy both checks.
-        if sorted.len() >= 3 && ms(median) > limit {
+        // Every kind's median must meet its limit. Only the worst call
+        // gets the collector allowance, regardless of the sample count.
+        if ms(median) > limit {
             over.push(format!(
                 "{what}: median about {:.1} ms, over {limit} ms",
                 ms(median)
