@@ -257,21 +257,7 @@ struct ArtifactBuild {
 /// `aarch64-android` example elaborates to `aarch64-linux`), set by Korri's
 /// tooling for Android releases.
 const ARTIFACT_PLATFORMS: [&str; 3] = ["x86_64-linux", "aarch64-linux", "aarch64-android"];
-/// A runner without `platforms` runs on these, as before ADR 0054.
-const LINUX_PLATFORMS: [&str; 2] = ["x86_64-linux", "aarch64-linux"];
-
-/// This device's platform. Other targets match no `platforms` entry.
-pub(crate) fn host_platform() -> &'static str {
-    if cfg!(target_os = "android") {
-        "aarch64-android"
-    } else if cfg!(target_arch = "x86_64") {
-        "x86_64-linux"
-    } else if cfg!(target_arch = "aarch64") {
-        "aarch64-linux"
-    } else {
-        "unsupported"
-    }
-}
+pub(crate) use crate::runner_platform::{host_platform, platforms_include};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -1769,14 +1755,6 @@ impl RunnerRecord {
 
 fn runner_runs_on(runner: &RunnerRecord, platform: &str) -> bool {
     platforms_include(runner.platforms.as_deref(), platform)
-}
-
-/// ADR 0054: a runner's `platforms`, where omitted means every Linux platform.
-pub(crate) fn platforms_include(platforms: Option<&[String]>, platform: &str) -> bool {
-    match platforms {
-        Some(platforms) => platforms.iter().any(|p| p == platform),
-        None => LINUX_PLATFORMS.contains(&platform),
-    }
 }
 
 /// Validates `platforms` and `androidPackages`; true for an Android runner.

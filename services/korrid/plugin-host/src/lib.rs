@@ -30,6 +30,8 @@ pub mod plugin_admin;
 pub mod plugin_installation;
 #[path = "../../src/plugin_references.rs"]
 pub mod plugin_references;
+#[path = "../../src/runner_platform.rs"]
+pub(crate) mod runner_platform;
 
 #[path = "../../src/script.rs"]
 pub mod script;

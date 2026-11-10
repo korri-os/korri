@@ -140,7 +140,7 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_start(
         }
     }
     // ADR 0054: plugins live in app storage; korrid installs them itself.
-    crate::plugin_installation::use_android_store(std::path::Path::new(&private_state_root));
+    crate::nixfree_install::use_android_store(std::path::Path::new(&private_state_root));
     crate::use_android_plugin_admin(
         std::path::Path::new(&private_state_root),
         ANDROID_OFFICIAL_CATALOG.map(str::to_owned),

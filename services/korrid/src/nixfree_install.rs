@@ -567,6 +567,24 @@ impl NarReader<'_> {
 }
 
 /// Where the Android app keeps installed plugins and its enabled list.
+static ANDROID_STORE: std::sync::OnceLock<AndroidPluginStore> = std::sync::OnceLock::new();
+
+/// Called once by the Android edge with the app's private state root. From
+/// then on `plugin_installation::read` reads this store.
+pub fn use_android_store(private_root: &Path) {
+    let _ = ANDROID_STORE.set(AndroidPluginStore::new(private_root));
+    crate::plugin_installation::override_read(|| {
+        ANDROID_STORE
+            .get()
+            .expect("Android plugin store set before its reader")
+            .read()
+    });
+}
+
+pub fn android_store() -> Option<&'static AndroidPluginStore> {
+    ANDROID_STORE.get()
+}
+
 pub struct AndroidPluginStore {
     root: PathBuf,
 }

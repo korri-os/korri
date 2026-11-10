@@ -39,25 +39,22 @@ pub fn encode(selections: &[EnabledPackage]) -> Result<Vec<u8>, String> {
 
 pub fn read() -> Result<Vec<EnabledPackage>, String> {
     // ADR 0054: the Android app has no root plugin host. korrid installs
-    // releases itself into app storage and keeps the enabled list there.
-    if let Some(store) = ANDROID_STORE.get() {
-        return store.read();
+    // releases itself into app storage and keeps the enabled list there
+    // (nixfree_install::use_android_store sets this reader).
+    if let Some(read) = READ_OVERRIDE.get() {
+        return read();
     }
     read_owned(Path::new(REGISTRY_PATH), 0, Path::new("/"))
 }
 
-static ANDROID_STORE: std::sync::OnceLock<crate::nixfree_install::AndroidPluginStore> =
+static READ_OVERRIDE: std::sync::OnceLock<fn() -> Result<Vec<EnabledPackage>, String>> =
     std::sync::OnceLock::new();
 
-/// Called once by the Android edge with the app's private state root.
-pub fn use_android_store(private_root: &Path) {
-    let _ = ANDROID_STORE.set(crate::nixfree_install::AndroidPluginStore::new(
-        private_root,
-    ));
-}
-
-pub fn android_store() -> Option<&'static crate::nixfree_install::AndroidPluginStore> {
-    ANDROID_STORE.get()
+/// Replace the root registry read for this process, once. The plugin host
+/// shares this file and never calls it.
+#[allow(dead_code)]
+pub(crate) fn override_read(read: fn() -> Result<Vec<EnabledPackage>, String>) {
+    let _ = READ_OVERRIDE.set(read);
 }
 
 fn read_owned(path: &Path, owner: u32, anchor: &Path) -> Result<Vec<EnabledPackage>, String> {

@@ -4692,7 +4692,7 @@ fn android_plugin_admin() -> Option<&'static android_plugin_admin::AndroidPlugin
 
 /// Called once by the Android edge after `use_android_store`.
 pub fn use_android_plugin_admin(private_root: &std::path::Path, official: Option<String>) {
-    if let Some(store) = plugin_installation::android_store() {
+    if let Some(store) = nixfree_install::android_store() {
         let _ = ANDROID_PLUGIN_ADMIN.set(android_plugin_admin::AndroidPluginAdmin::new(
             private_root,
             store,
@@ -5880,7 +5880,7 @@ enum EmbeddedOrigin<'a> {
 fn embedded_registry_source() -> plugin_policy::RegistrySource {
     // ADR 0054: the Android app installs plugins into its own storage and
     // reads them from there (plugin_installation::read).
-    if plugin_installation::android_store().is_some() {
+    if nixfree_install::android_store().is_some() {
         return plugin_policy::RegistrySource::Installed;
     }
     // Other embedded entrypoints use an explicit empty selection, never the
@@ -6265,6 +6265,7 @@ mod plugin_repositories_tests;
 /// Real plugin declarations used as test data. Shipped with the library so
 /// that integration tests can build the same registry a unit test builds.
 pub mod plugin_test_fixtures;
+mod runner_platform;
 pub mod script;
 #[cfg(test)]
 mod settings_secrets_tests;
