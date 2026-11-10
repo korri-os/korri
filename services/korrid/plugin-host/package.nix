@@ -44,6 +44,7 @@ let
     cp ${../src/plugin_admin.rs} "$out/src/plugin_admin.rs"
     cp ${../src/plugin_installation.rs} "$out/src/plugin_installation.rs"
     cp ${../src/plugin_references.rs} "$out/src/plugin_references.rs"
+    cp ${../src/runner_platform.rs} "$out/src/runner_platform.rs"
     cp ${../src/plugin_discovery.rs} "$out/src/plugin_discovery.rs"
     cp ${../examples/catalog.plugin.ts} "$out/examples/catalog.plugin.ts"
     rm -f "$out/plugin-host/tests/fixtures/ppsspp.plugin.ts"
