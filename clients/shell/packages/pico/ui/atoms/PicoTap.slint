@@ -50,12 +50,17 @@ export component PicoTap inherits TouchArea {
     property <length> finger-x;
     // The press started on the range's control.
     property <bool> on-control;
+    // This area took the press: a lift it did not see begin (a finger that
+    // went down elsewhere and came up here) completes nothing.
+    property <bool> armed;
     enabled: target != "" || slides;
     pure function along(x: length) -> float {
         return track-end <= track-start ? 0 : Math.clamp((x - track-start) / (track-end - track-start), 0, 1);
     }
     function finish(lifted: bool) {
-        if (!lifted) {
+        if (!armed) {
+            // Not this area's gesture.
+        } else if (!lifted) {
             // Cancelled: nothing completes.
             if (sliding) {
                 root.holding(false);
@@ -77,6 +82,7 @@ export component PicoTap inherits TouchArea {
                 root.activated(target, -1, false);
             }
         }
+        armed = false;
         dragged = false;
         sliding = false;
         rowing = false;
@@ -87,6 +93,7 @@ export component PicoTap inherits TouchArea {
             return;
         }
         if (event.kind == PointerEventKind.down) {
+            armed = true;
             dragged = false;
             sliding = false;
             rowing = false;
@@ -98,6 +105,9 @@ export component PicoTap inherits TouchArea {
         }
     }
     moved => {
+        if (!armed) {
+            return;
+        }
         if (!dragged && (Math.abs(self.mouse-x - self.pressed-x) > Tokens.drag-start || Math.abs(self.mouse-y - self.pressed-y) > Tokens.drag-start)) {
             dragged = true;
             let sideways = Math.abs(self.mouse-x - self.pressed-x) > Math.abs(self.mouse-y - self.pressed-y);

@@ -113,6 +113,13 @@ describe("the gesture rules", () => {
     expect(read("ui/atoms/ZoneSlide.slint")).toMatch(/public function release\(fling: bool\) \{\s*held = false;\s*if \(!fling \|\|/)
   })
 
+  test("a lift this area did not see begin completes nothing (a finger that went down elsewhere)", () => {
+    expect(tap).toMatch(/event\.kind == PointerEventKind\.down\) \{\s*armed = true;/)
+    expect(finish).toMatch(/^function finish\(lifted: bool\) \{\s*if \(!armed\) \{/)
+    expect(finish).toMatch(/armed = false;/)
+    expect(tap).toMatch(/moved => \{\s*if \(!armed\) \{\s*return;/)
+  })
+
   test("the attract's cover wakes on any lift, a tap or a drag", () => {
     expect(finish).toMatch(/\} else if \(wakes\) \{\s*root\.activated\(target, -1, false\);/)
     expect(read("ui/organisms/ZoneAttract.slint")).toMatch(/wakes: true;/)
