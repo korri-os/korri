@@ -180,10 +180,14 @@ fn inspect_route(
         )
         .map_err(error)?;
     }
-    let mut warnings =
-        super::typed_settings::validate(&source, &mut folded.settings, &route.runner_id, &build)
-            .map_err(error)?
-            .warnings;
+    let mut warnings = super::typed_settings::validate_runner(
+        &source,
+        &mut folded.settings,
+        &route.runner_id,
+        &build,
+    )
+    .map_err(error)?
+    .warnings;
     warnings.extend(resolved.notices.iter().filter_map(|notice| match notice {
         crate::launch_settings::LaunchNotice::SettingSkipped { path, message, .. } => {
             let (setting, id) = match path {
@@ -348,6 +352,7 @@ fn inspect_route(
     let account_root = crate::saves::account_root(root, person).map_err(error)?;
     let settings = folded.settings.clone();
     let input = PluginLaunchInput {
+        display: composition.display.clone(),
         netplay: None,
         layout: placement.and_then(|p| p.layout),
         runner_id: route.runner_id.clone(),

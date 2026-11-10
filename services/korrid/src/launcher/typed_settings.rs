@@ -1,15 +1,9 @@
-//! Settings validation belongs to the runner, not to korrid.
+//! Korri owns shared definitions; runners own native settings and translation.
 //!
-//! korrid used to read a `<program key>-settings` JSON file out of the
-//! installed package and compare every authored key and type against it. That
-//! made the host the owner of one emulator's option table: a runner could not
-//! change what it accepts without changing korrid, and a runner korrid had
-//! never heard of could say nothing about its own settings at all.
-//!
-//! Now korrid asks. `settings.validate` reports what this build cannot apply,
-//! and the runner keeps the schema that answers it. The host still owns the
-//! result: it surfaces the diagnostics as launch warnings and never rewrites
-//! or deletes what a person authored.
+//! A runner declares supported shared paths and its plugin-only schema.
+//! `settings.validate` reports translation limits and rounding. The host skips
+//! invalid or unsupported values without rewriting authored records. Modifiers
+//! and launch services keep their distinct schemas (ADR 0057).
 use super::plugin_launch::{
     PluginSettingsDescribeInput, PluginSettingsDescribeOutput, PluginSettingsDiagnosticSeverity,
     PluginSettingsRenderInput, PluginSettingsRenderOutput, PluginSettingsValidateInput,
@@ -42,7 +36,24 @@ pub fn validate(
     id: &str,
     build: &str,
 ) -> Result<SettingsCheck, String> {
-    let mut description = describe(snapshot, id, build)?;
+    validate_with_description(
+        snapshot,
+        settings,
+        id,
+        build,
+        describe(snapshot, id, build)?,
+        false,
+    )
+}
+
+fn validate_with_description(
+    snapshot: &script::source::SourceSnapshot,
+    settings: &mut HashMap<String, LaunchSettingValue>,
+    id: &str,
+    build: &str,
+    mut description: SettingsDescription,
+    runner: bool,
+) -> Result<SettingsCheck, String> {
     let paths = crate::config::cascade::leaves(settings)
         .0
         .into_iter()
@@ -84,6 +95,34 @@ pub fn validate(
         });
     }
     *settings = nested;
+    if runner {
+        for (path, value) in crate::config::cascade::leaves(settings).0 {
+            let reason = match korri_settings_treaty::SharedSetting::from_path(&path) {
+                Some(setting) if !description.shared.contains(&setting) => {
+                    Some(format!("not supported by {id}"))
+                }
+                Some(setting) => crate::launch_settings::store::validate_property(
+                    &setting.property(),
+                    &serde_json::to_value(&value).map_err(|e| e.to_string())?,
+                )
+                .err(),
+                None if path.starts_with("plugin.") => None,
+                None => {
+                    Some("unknown shared setting; runner-only settings belong under plugin".into())
+                }
+            };
+            if let Some(message) = reason {
+                crate::config::cascade::set_leaf(settings, &path, None);
+                check.skipped.push((path.clone(), message.clone()));
+                check.warnings.push(LaunchWarning {
+                    setting: path,
+                    runner_id: id.into(),
+                    build: build.into(),
+                    message,
+                });
+            }
+        }
+    }
     let input = serde_json::to_string(&PluginSettingsValidateInput {
         values: settings.clone(),
         revision: description.revision,
@@ -155,6 +194,7 @@ pub enum SettingScope {
 }
 #[derive(Debug)]
 pub struct SettingsDescription {
+    pub shared: Vec<korri_settings_treaty::SharedSetting>,
     pub schema_available: bool,
     pub schema: serde_json::Value,
     pub revision: String,
@@ -177,6 +217,7 @@ pub fn describe(
             Ok(result) => result,
             Err(failure) if failure.is_unimplemented() => {
                 return Ok(SettingsDescription {
+                    shared: Vec::new(),
                     schema_available: false,
                     schema: serde_json::json!({}),
                     revision: String::new(),
@@ -195,6 +236,7 @@ pub fn describe(
     let scopes = HashMap::new();
     let diagnostics = Vec::new();
     let mut description = SettingsDescription {
+        shared: value.shared,
         schema_available: true,
         schema,
         revision,
@@ -204,6 +246,56 @@ pub fn describe(
     };
     description.include_paths(&[], runner_id, build);
     Ok(description)
+}
+
+/// Runner settings have authoritative shared definitions and a plugin bucket.
+/// Modifier/service schemas keep their own distinct settings vocabulary.
+pub fn describe_runner(
+    snapshot: &script::source::SourceSnapshot,
+    id: &str,
+    build: &str,
+) -> Result<SettingsDescription, String> {
+    let mut description = describe(snapshot, id, build)?;
+    description.schema = korri_settings_treaty::schema(&description.shared, description.schema);
+    description.schema_available = true;
+    fn annotate(node: &mut serde_json::Value, id: &str) {
+        if node
+            .get("x-korri-supported")
+            .and_then(serde_json::Value::as_bool)
+            == Some(false)
+        {
+            node["description"] = serde_json::json!(format!(
+                "Not supported by {id}. This value remains available for other runners."
+            ));
+        }
+        if let Some(properties) = node
+            .get_mut("properties")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            for property in properties.values_mut() {
+                annotate(property, id);
+            }
+        }
+    }
+    annotate(&mut description.schema, id);
+    description.include_paths(&[], id, build);
+    Ok(description)
+}
+
+pub fn validate_runner(
+    snapshot: &script::source::SourceSnapshot,
+    settings: &mut HashMap<String, LaunchSettingValue>,
+    id: &str,
+    build: &str,
+) -> Result<SettingsCheck, String> {
+    validate_with_description(
+        snapshot,
+        settings,
+        id,
+        build,
+        describe_runner(snapshot, id, build)?,
+        true,
+    )
 }
 
 impl SettingsDescription {

@@ -495,6 +495,7 @@ fn settings_operation_treaties_keep_named_inputs_outputs_and_nested_values() {
         json!({"id":input.id})
     );
     let description = PluginSettingsDescribeOutput {
+        shared: Vec::new(),
         schema: json!({"type":"object","additionalProperties":false}),
         revision: "one".into(),
     };

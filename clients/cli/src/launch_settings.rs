@@ -477,7 +477,14 @@ pub(crate) fn setting(
     // Runner keys are setting paths (`video.fps`, ADR 0037). Modifier and
     // service keys are the whole plugin ID, a dot, then the setting path; a
     // plugin ID is matched whole and never split on its own dots.
-    for runner in runners(snapshot, &place.scope) {
+    let shared = korri_settings_treaty::SharedSetting::from_path(key);
+    if let Some(setting) = shared.filter(|_| authorized("settings")) {
+        options.push((LaunchPath::Setting { key: key.into() }, setting.property()));
+    }
+    for runner in runners(snapshot, &place.scope)
+        .into_iter()
+        .filter(|_| shared.is_none())
+    {
         if let Some(property) = schema_leaf(&runner.schema, key) {
             if authorized("settings") {
                 options.push((LaunchPath::Setting { key: key.into() }, property.clone()));

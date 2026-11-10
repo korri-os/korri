@@ -34,6 +34,7 @@ pub(crate) struct Cell<'a> {
     pub place: LaunchPlace,
     pub values: &'a PlaceValues,
     pub settings: Option<&'a RunnerConfig>,
+    pub any_settings: Option<&'a HashMap<String, crate::config::cascade::LaunchSettingValue>>,
     pub runner: Option<&'a str>,
 }
 fn cell<'a>(layer: LaunchLayer, body: &'a PlaceBody) -> Cell<'a> {
@@ -44,6 +45,7 @@ fn cell<'a>(layer: LaunchLayer, body: &'a PlaceBody) -> Cell<'a> {
         },
         values: &body.values,
         settings: None,
+        any_settings: Some(&body.settings),
         runner: body.runner.as_ref().map(|v| v.0.as_str()),
     }
 }
@@ -61,6 +63,7 @@ fn scoped<'a>(layer: LaunchLayer, body: &'a PlaceBody, route: &ResolvedRoute) ->
             },
             values: &v.values,
             settings: Some(v),
+            any_settings: None,
             runner: None,
         });
     }
@@ -72,6 +75,7 @@ fn scoped<'a>(layer: LaunchLayer, body: &'a PlaceBody, route: &ResolvedRoute) ->
             },
             values: &v.values,
             settings: Some(v),
+            any_settings: None,
             runner: None,
         });
     }
@@ -186,7 +190,10 @@ pub(crate) fn override_body(
                 body.families.insert(id.clone(), record);
             }
             LaunchRunnerScope::Any => {
-                return Err(invalid("settings need a runner or family scope"))
+                if settings.values.contains_key("plugin") {
+                    return Err(invalid("plugin settings need a runner or family scope"));
+                }
+                body.settings = settings.values.clone();
             }
         }
     }
@@ -412,6 +419,17 @@ pub fn resolve_launch(
                 LaunchValuePath::Editable(LaunchPath::Runner),
                 id,
                 p,
+            );
+        }
+        if let Some(settings) = cell.any_settings {
+            fold_settings(
+                &mut runner.settings,
+                settings,
+                "settings",
+                &mut values,
+                p,
+                &mut notices,
+                |key| LaunchPath::Setting { key },
             );
         }
         if let Some(v) = cell.settings {

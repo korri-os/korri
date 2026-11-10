@@ -1673,7 +1673,16 @@ fn section_key_of(path: &str) -> &str {
 
 fn schema_for(context: &Context, scope: &Value) -> Vec<Section> {
     if tag(scope) == "Any" {
-        return Vec::new();
+        let schema = context
+            .selected
+            .map(|runner| field(runner, "schema").clone())
+            .unwrap_or_else(|| {
+                korri_settings_treaty::schema(&[], json!({"type":"object","properties":{}}))
+            });
+        return sections_of(&schema)
+            .into_iter()
+            .filter(|section| section.key != "plugin")
+            .collect();
     }
     let runners = array(context.snapshot, "runners").iter().filter(|runner| {
         if tag(scope) == "Runner" {
@@ -2251,7 +2260,11 @@ fn setting_groups(context: &Context, rows: &mut Rows, owner: &Owner) -> Vec<Surf
             continue;
         }
         groups.push(SurfaceSettingGroup {
-            title: if section.key.is_empty() {
+            title: if matches!(owner.kind, OwnerKind::Runner) && section.key == "plugin" {
+                format!("{} only", owner.title)
+            } else if matches!(owner.kind, OwnerKind::Runner) && !section.key.is_empty() {
+                section.title.clone()
+            } else if section.key.is_empty() {
                 owner.title.clone()
             } else {
                 format!("{} · {}", owner.title, section.title)

@@ -71,6 +71,11 @@ fn edit(
     })
 }
 pub(crate) fn requires_registry(request: &LaunchSetRequest) -> bool {
+    if let LaunchPath::Setting { key } = &request.path {
+        if korri_settings_treaty::SharedSetting::from_path(key).is_some() {
+            return false;
+        }
+    }
     matches!(
         request.path,
         LaunchPath::Runner
@@ -132,8 +137,10 @@ pub fn set_with_registry(
     if matches!(request.path, LaunchPath::Runner) && !any {
         return Err(invalid("runner choice belongs to an any-runner place"));
     }
-    if matches!(request.path, LaunchPath::Setting { .. }) && any {
-        return Err(invalid("settings need a runner or family scope"));
+    if let LaunchPath::Setting { key } = &request.path {
+        if any && korri_settings_treaty::SharedSetting::from_path(key).is_none() {
+            return Err(invalid("only shared settings belong to any-runner scope"));
+        }
     }
     if matches!(request.path, LaunchPath::CpuGovernor) && !host {
         return Err(invalid("CPU governor belongs only to device-any"));
@@ -235,12 +242,7 @@ pub fn set_with_registry(
                 {
                     return Err(invalid("setting must be a scalar"));
                 }
-                validate_setting(
-                    registry.ok_or_else(|| invalid("installed runner registry is unavailable"))?,
-                    &request.place.scope,
-                    key,
-                    value,
-                )?;
+                validate_setting(registry, &request.place.scope, key, value)?;
             }
         }
     }
@@ -400,11 +402,19 @@ fn write_leaf(parent: &mut Mapping, path: &[&str], value: Option<Value>) -> Resu
 }
 
 fn validate_setting(
-    registry: &crate::plugin::PluginRegistry,
+    registry: Option<&crate::plugin::PluginRegistry>,
     scope: &LaunchRunnerScope,
     key: &str,
     value: &serde_json::Value,
 ) -> Result<()> {
+    if let Some(setting) = korri_settings_treaty::SharedSetting::from_path(key) {
+        return if value.is_null() {
+            Ok(())
+        } else {
+            validate_property(&setting.property(), value).map_err(invalid)
+        };
+    }
+    let registry = registry.ok_or_else(|| invalid("installed runner registry is unavailable"))?;
     let mut errors = Vec::new();
     for runner in registry.runners().values().filter(|v| match scope {
         LaunchRunnerScope::Runner(id) => &v.id == id,
@@ -420,7 +430,7 @@ fn validate_setting(
                 &package.entry,
                 &package.sources,
             )?;
-            let description = crate::launcher::typed_settings::describe(
+            let description = crate::launcher::typed_settings::describe_runner(
                 &source,
                 &runner.id,
                 &package.package.display().to_string(),
@@ -478,6 +488,22 @@ pub(crate) fn validate_property(
                 .is_some_and(|v| n > v)
         {
             return Err("setting is outside its allowed range".into());
+        }
+        if property
+            .get("exclusiveMinimum")
+            .and_then(J::as_f64)
+            .is_some_and(|v| n <= v)
+        {
+            return Err("setting is outside its allowed range".into());
+        }
+    }
+    if let Some(text) = value.as_str() {
+        if property
+            .get("minLength")
+            .and_then(J::as_u64)
+            .is_some_and(|n| text.chars().count() < n as usize)
+        {
+            return Err("setting text is too short".into());
         }
     }
     Ok(())

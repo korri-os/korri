@@ -301,6 +301,7 @@ pub fn prepare(
     };
     let account_root = crate::saves::account_root(root, person).map_err(unavailable)?;
     let input = PluginLaunchInput {
+        display: None,
         netplay: None,
         layout: None,
         runner_id: route.runner_id.clone(),

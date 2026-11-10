@@ -138,6 +138,12 @@ pub fn validate(
         host: bool,
         snapshot: &crate::config::ConfigSnapshot,
     ) -> Result<(), ConfigSchemaError> {
+        if v.settings.contains_key("plugin") {
+            return Err(ConfigSchemaError::Invalid {
+                path: path.into(),
+                message: "plugin settings need a runner or family scope".into(),
+            });
+        }
         check(v, path, host)?;
         for (kind, records) in [("families", &v.families), ("runners", &v.runners)] {
             for (id, v) in records {

@@ -49,6 +49,8 @@ pub struct PlaceValues {
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub struct PlaceBody {
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub settings: std::collections::HashMap<String, super::cascade::LaunchSettingValue>,
     #[serde(flatten)]
     pub values: PlaceValues,
     #[serde(
@@ -97,7 +99,7 @@ pub(crate) fn validate_document_shape(yaml: &str) -> Result<(), String> {
             "args",
             "hooks",
         ];
-        const ANY: &[&str] = &["runner", "families", "runners"];
+        const ANY: &[&str] = &["runner", "families", "runners", "settings"];
         for key in map.keys() {
             let key = key.as_str().ok_or("record keys must be strings")?;
             if !VALUES.contains(&key)

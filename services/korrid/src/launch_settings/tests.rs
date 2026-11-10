@@ -60,6 +60,75 @@ fn any(layer: LaunchLayer) -> LaunchPlace {
 }
 
 #[test]
+fn shared_settings_fold_at_any_runner_scope_and_launch_wins() {
+    let snapshot = decode_config_documents(
+        "host: {settings: {video: {render-scale: 2}}}\nsystems: {gba: {settings: {video: {render-scale: 4}}}}\n",
+        LIBRARY,
+    ).unwrap();
+    let resolved = resolve_launch(&snapshot, &route(), None, None).unwrap();
+    assert_eq!(
+        serde_json::to_value(&resolved.runner.settings).unwrap()["video"]["render-scale"],
+        4
+    );
+    let one: LaunchOverride = serde_json::from_value(
+        json!({"settings": {"scope": {"_tag": "Any"}, "values": {"video": {"render-scale": 3}}}}),
+    )
+    .unwrap();
+    let resolved = resolve_launch(&snapshot, &route(), Some(&one), None).unwrap();
+    assert_eq!(
+        serde_json::to_value(&resolved.runner.settings).unwrap()["video"]["render-scale"],
+        3
+    );
+    let clear: LaunchOverride = serde_json::from_value(json!({"settings": {"scope": {"_tag": "Any"}, "values": {"video": {"render-scale": null}}}})).unwrap();
+    let resolved = resolve_launch(&snapshot, &route(), Some(&clear), None).unwrap();
+    assert!(
+        crate::config::cascade::leaf(&resolved.runner.settings, "video.render-scale").is_none()
+    );
+}
+
+#[test]
+fn shared_setting_can_be_authored_without_any_installed_runner() {
+    let root = root();
+    let private = tempfile::tempdir().unwrap();
+    let revision =
+        settings::revision(&fs::read_to_string(root.path().join("device.yaml")).unwrap());
+    let request = req(
+        any(LaunchLayer::System("gba".into())),
+        LaunchPath::Setting {
+            key: "video.render-scale".into(),
+        },
+        Some(json!(4)),
+        revision,
+    );
+    assert!(!store::requires_registry(&request));
+    set_with_registry(
+        root.path(),
+        private.path(),
+        &Mutex::new(()),
+        &request,
+        &unavailable(root.path()),
+        None,
+    )
+    .unwrap();
+    let saved: serde_json::Value =
+        serde_yaml::from_str(&fs::read_to_string(root.path().join("device.yaml")).unwrap())
+            .unwrap();
+    assert_eq!(
+        saved["systems"]["gba"]["settings"]["video"]["render-scale"],
+        4
+    );
+}
+
+#[test]
+fn one_launch_rejects_plugin_settings_without_runner_scope() {
+    let one: LaunchOverride = serde_json::from_value(
+        json!({"settings": {"scope": {"_tag": "Any"}, "values": {"plugin": {"custom": true}}}}),
+    )
+    .unwrap();
+    assert!(launch::override_body(&one).is_err());
+}
+
+#[test]
 fn one_order_table_covers_every_place_for_every_kind() {
     fn body(n: u8) -> serde_json::Value {
         json!({"cpu":{"min":n},"gpu":{"min":n},"env":{"ORDER":n.to_string()},"args":{"prepend":[n.to_string()],"append":[n.to_string()]},"hooks":{"before":[{"run":n.to_string()}],"after":[{"run":n.to_string()}]},"modifiers":{"@korri:test.foo/wrapper":{"enabled":true,"settings":{"order":n}}}})

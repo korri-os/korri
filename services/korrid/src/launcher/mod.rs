@@ -1,7 +1,10 @@
 pub mod linux_plugin;
+mod native_toml;
 pub mod plugin_launch;
 pub(crate) mod redaction;
 pub mod runtime;
+#[cfg(test)]
+mod shared_settings_tests;
 pub mod typed_settings;
 mod types;
 

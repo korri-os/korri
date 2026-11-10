@@ -37,6 +37,8 @@ pub struct PluginLaunchOverrides {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginLaunchInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<PluginDisplay>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub netplay: Option<crate::netplay::PluginLaunchNetplay>,
     pub runner_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -188,6 +190,9 @@ pub struct PluginLaunchOutput {
     pub directories: Vec<String>,
     #[serde(default)]
     pub files: Vec<ProvisionedFile>,
+    /// Native TOML fragments merged at execution, preserving unrelated keys.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub toml_updates: Vec<ProvisionedFile>,
     /// Whole folders under saveRoot, identified by stable runner-declared keys.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub save_locations: Vec<crate::saves::types::SaveLocation>,
@@ -231,6 +236,9 @@ pub struct PluginSettingsDescribeInput {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginSettingsDescribeOutput {
+    /// Supported Korri-owned paths. schema describes only plugin-owned settings.
+    #[serde(default)]
+    pub shared: Vec<korri_settings_treaty::SharedSetting>,
     #[typeshare(serialized_as = "LaunchJsonValue")]
     pub schema: serde_json::Value,
     pub revision: String,
@@ -336,7 +344,12 @@ pub fn evaluate_snapshot(
     }
     let mut input = input.clone();
     if let Some(overrides) = &mut input.overrides {
-        super::typed_settings::validate(source, &mut overrides.settings, &input.runner_id, "")?;
+        super::typed_settings::validate_runner(
+            source,
+            &mut overrides.settings,
+            &input.runner_id,
+            "",
+        )?;
     }
     let encoded = serde_json::to_string(&input).map_err(|e| e.to_string())?;
     let result = crate::script::call_plugin_operation_snapshot(
@@ -398,6 +411,7 @@ fn default_launch(input: &PluginLaunchInput) -> Result<PluginLaunchOutput, Strin
         cwd: None,
         directories: Vec::new(),
         files: Vec::new(),
+        toml_updates: Vec::new(),
         save_locations: Vec::new(),
     })
 }
@@ -578,7 +592,9 @@ fn prepare_with_diagnostics(
         .and_then(|name| name.to_str())
         .ok_or("invalid plugin entry")?;
     let (snapshot, _) = package_snapshot(&package.join("manifest.json"), entry)?;
-    let mut plan = evaluate_snapshot(&snapshot, input)?;
+    let mut input = input.clone();
+    input.display = composition.display.clone();
+    let mut plan = evaluate_snapshot(&snapshot, &input)?;
     merge_place_values(&mut plan, composition);
     validate_plan(&plan)?;
     redaction.add_env(plan.env.values().cloned());
@@ -704,6 +720,9 @@ pub fn validate_save_locations(
 }
 
 fn validate_plan(plan: &PluginLaunchOutput) -> Result<(), String> {
+    for update in &plan.toml_updates {
+        super::native_toml::validate(update)?;
+    }
     if plan.command.is_empty() || plan.command.contains('\0') {
         return Err("launch command must be non-empty and contain no NUL".into());
     }
@@ -777,6 +796,9 @@ pub fn execute(
             "envUnset": output.env_unset, "cwd": output.cwd,
         })
     );
+    for update in &output.toml_updates {
+        super::native_toml::apply(update)?;
+    }
     for directory in &output.directories {
         fs::create_dir_all(directory).map_err(|e| e.to_string())?;
     }

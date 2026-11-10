@@ -28,4 +28,5 @@ generate() {
   rm -f "$generated"
 }
 generate "$ROOT/services/korrid" "$ROOT/contracts/generated/korrid.ts"
+generate "$ROOT/contracts/settings" "$ROOT/contracts/generated/settings.ts"
 generate "$ROOT/contracts/surface" "$ROOT/contracts/generated/surface.ts"

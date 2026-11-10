@@ -31,7 +31,9 @@ fn authored_paths(
     let mut paths = BTreeSet::new();
     for cell in super::launch::cells(config, route, None) {
         let settings = match &owner {
-            SettingsOwner::Runner => cell.settings.map(|record| &record.settings),
+            SettingsOwner::Runner => cell
+                .any_settings
+                .or_else(|| cell.settings.map(|record| &record.settings)),
             SettingsOwner::Modifier(id) => cell
                 .values
                 .modifiers
@@ -71,7 +73,12 @@ fn checked_settings(
         &package.sources,
     )
     .map_err(SettingsError::Invalid)?;
-    let check = crate::launcher::typed_settings::validate(
+    let validate = if prefix == "settings" {
+        crate::launcher::typed_settings::validate_runner
+    } else {
+        crate::launcher::typed_settings::validate
+    };
+    let check = validate(
         &source,
         settings,
         id,
@@ -377,7 +384,7 @@ pub fn snapshot_for_person(
                     &package.entry,
                     &package.sources,
                 )?;
-                crate::launcher::typed_settings::describe(
+                crate::launcher::typed_settings::describe_runner(
                     &source,
                     &id,
                     &package.package.display().to_string(),
@@ -598,9 +605,8 @@ pub fn snapshot_for_person(
             ];
             if matches!(scope, LaunchRunnerScope::Any) {
                 kinds.push("runner".into());
-            } else {
-                kinds.push("settings".into());
             }
+            kinds.push("settings".into());
             places.push(LaunchPlaceSnapshot {
                 place: LaunchPlace {
                     layer: layer.clone(),

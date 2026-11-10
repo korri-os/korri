@@ -2448,6 +2448,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "korri-settings-treaty"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "typeshare",
+]
+
+[[package]]
 name = "korri-surface-treaty"
 version = "0.0.0"
 dependencies = [
@@ -2479,6 +2488,7 @@ dependencies = [
  "korri-input-contract",
  "korri-input-trace",
  "korri-inputd",
+ "korri-settings-treaty",
  "korri-surface-treaty",
  "libc",
  "log",
@@ -2513,6 +2523,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.27.0",
  "toml 0.8.23",
+ "toml_edit 0.22.27",
  "tower",
  "tower-http",
  "typeshare",

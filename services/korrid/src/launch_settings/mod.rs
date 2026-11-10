@@ -6,7 +6,7 @@ pub mod config;
 pub mod helper;
 pub(crate) mod resolution;
 pub mod session;
-mod store;
+pub(crate) mod store;
 pub mod wire;
 pub use wire::*;
 pub(crate) mod launch;

@@ -101,6 +101,7 @@ mod tests {
 
     fn input() -> PluginLaunchInput {
         PluginLaunchInput {
+            display: None,
             netplay: None,
             layout: None,
             runner_id: "@test:runtime/runner".into(),

@@ -33,6 +33,8 @@ libc = "0.2"
 netlink-packet-core = "0.9"
 netlink-packet-route = "0.33"
 netlink-sys = "0.9"
+korri-settings-treaty = { path = "../../contracts/settings" }
+toml_edit = "0.22"
 korri-input-contract = { path = "../../contracts/input" }
 korri-surface-treaty = { path = "../../contracts/surface" }
 # Tungstenite logs complete messages/close frames at trace/debug. A surface host

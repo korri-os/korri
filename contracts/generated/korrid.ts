@@ -1257,6 +1257,8 @@ export interface PluginLaunchOutput {
 	cwd?: string;
 	directories?: string[];
 	files?: ProvisionedFile[];
+	/** Native TOML fragments merged at execution, preserving unrelated keys. */
+	tomlUpdates?: ProvisionedFile[];
 	/** Whole folders under saveRoot, identified by stable runner-declared keys. */
 	saveLocations?: SaveLocation[];
 }
@@ -1358,6 +1360,7 @@ export interface PluginLaunchOverrides {
 
 /** Selected runner facts and named files for launch preparation. */
 export interface PluginLaunchInput {
+	display?: PluginDisplay;
 	netplay?: PluginLaunchNetplay;
 	runnerId: string;
 	layout?: string;
@@ -1481,6 +1484,8 @@ export interface PluginSettingsDescribeInput {
 }
 
 export interface PluginSettingsDescribeOutput {
+	/** Supported Korri-owned paths. schema describes only plugin-owned settings. */
+	shared?: import("./settings").SharedSetting[];
 	schema: LaunchJsonValue;
 	revision: string;
 }
