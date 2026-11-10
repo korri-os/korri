@@ -25,8 +25,9 @@ shared setting from a runner-only one by its name.
   any-runner cells of the device, system, game, release, profile and one
   launch. Whichever runner is chosen translates them.
 - **Settings only one runner has live in one bucket whose name is the same for
-  every runner.** Legacy called it `settings.plugin`; the name on main is
-  still open. The bucket is runner-scoped and is never translated. This
+  every runner.** It is `plugin`, kept from legacy's `settings.plugin`, and it
+  serves modifiers and launch services as well as runners. The bucket is
+  limited to one plugin by the cell it sits in and is never translated. This
   replaces R2's own sections named for the concept. A concept that later
   becomes shared moves out of the bucket into a shared path by a one-off
   migration.
@@ -36,6 +37,14 @@ shared setting from a runner-only one by its name.
 - **A runner whose program takes a different or finer shape maps to its
   nearest supported value** and warns when it had to round, for example a
   shared 4x render scale on a runner that takes a percent or only some steps.
+- **Shared settings use human units**: volume as a percent, render scale as a
+  multiplier, aspect and modes as named choices. Each runner converts to its
+  program's unit.
+- **A modifier's way of doing the same thing stays a separate setting.** A
+  runner's frame-rate cap or scaling changes the game itself; Gamescope's
+  changes only what is presented. The shared setting is the runner's; the
+  modifier keeps its own settings in its own cell, and the editor says which
+  one does what.
 
 ## Considered options
 
@@ -50,5 +59,8 @@ shared setting from a runner-only one by its name.
 - Skip silently (legacy) or refuse the launch. Rejected: silence hides why a
   value did nothing; refusal lets one broad system value block every game
   whose runner lacks it.
+- One shared setting for the outcome, with Korri choosing whether the runner
+  or a modifier carries it out. Rejected: the two behave differently, and
+  Korri would be choosing between them for the person.
 - Exact match or skip. Rejected: broad values would do nothing on many
   runners.
