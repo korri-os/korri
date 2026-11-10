@@ -104,13 +104,80 @@ export interface PicoOverlayView {
   readonly streamPlayers?: readonly string[]
 }
 
+/**
+ * One fact of the status strip as Pico states it: the number bright, the
+ * words and units round it quiet. A fact Korri did not give keeps its words
+ * and shows `--` in place of the number, never a zero or a guess.
+ */
+export interface PicoStripFact {
+  readonly before: string
+  readonly value: string
+  readonly after: string
+  readonly known: boolean
+  /** The battery's cells lit of five; -1 when Korri has no reading; -2 on any other fact. */
+  readonly battery: number
+}
+
+/** The status strip: this device's facts, then its stream's. It takes no input. */
+export interface PicoStripView {
+  readonly shown: boolean
+  readonly device: readonly PicoStripFact[]
+  readonly stream: readonly PicoStripFact[]
+}
+
+export const PICO_NO_STRIP: PicoStripView = { shown: false, device: [], stream: [] }
+
+/** What a missing number shows. */
+export const PICO_UNKNOWN = "--"
+
+const measured = (n: number | undefined): n is number => n !== undefined && Number.isFinite(n) && n >= 0
+const fact = (value: string | undefined, words: { before?: string; after?: string } = {}, battery = -2): PicoStripFact => ({
+  before: words.before ?? "",
+  value: value ?? PICO_UNKNOWN,
+  after: words.after ?? "",
+  known: value !== undefined,
+  battery,
+})
+
+/** Video kb/s as the strip states it: Mb/s to one place from 1000 kb/s, whole kb/s under. */
+export function picoBitrate(kbps: number): { readonly value: string; readonly unit: string } {
+  return kbps >= 1000 ? { value: (kbps / 1000).toFixed(1), unit: "Mb/s" } : { value: String(Math.round(kbps)), unit: "kb/s" }
+}
+
+/**
+ * The strip from Korri's facts: the time and the battery, then the stream's
+ * round trip, video bitrate and dropped frames. A measured 0 is a real 0.
+ */
+export function picoStatusStrip(view: Pick<PicoOverlayView, "clockLabel" | "batteryPercent" | "streamHealth">): PicoStripView {
+  const clock = view.clockLabel === undefined || view.clockLabel === "" ? undefined : view.clockLabel
+  const battery = measured(view.batteryPercent) ? Math.min(100, Math.round(view.batteryPercent)) : undefined
+  const health = view.streamHealth
+  const rtt = measured(health?.rttMs) ? String(Math.round(health.rttMs)) : undefined
+  const kbps = health?.deliveredBitrateKbps
+  const bitrate = measured(kbps) ? picoBitrate(kbps) : undefined
+  const dropped = measured(health?.framesDropped) ? String(Math.round(health.framesDropped)) : undefined
+  return {
+    shown: true,
+    device: [
+      clock === undefined ? { ...fact(undefined), value: "--:--" } : fact(clock),
+      fact(battery === undefined ? undefined : `${battery}%`, {}, battery === undefined ? -1 : Math.round(battery / 20)),
+    ],
+    stream: [
+      fact(rtt, { before: "RTT", after: "ms" }),
+      fact(bitrate?.value, { after: bitrate?.unit ?? "Mb/s" }),
+      fact(dropped, { after: "DROPPED" }),
+    ],
+  }
+}
+
 export function picoOverlayViewFrom(
   presentation: SurfaceGameplayOverlayPresentation,
   status: SurfaceStatus,
   clockLabel?: string,
 ): PicoOverlayView {
   return {
-    title: presentation.title ?? "PLAYING",
+    // A game Korri did not name shows the unknown mark, not a word that reads as a name.
+    title: presentation.title ?? PICO_UNKNOWN,
     ...(clockLabel === undefined ? {} : { clockLabel }),
     ...(presentation.batteryPercent === undefined ? {} : { batteryPercent: presentation.batteryPercent }),
     ...(presentation.streamHealth === undefined ? {} : { streamHealth: presentation.streamHealth }),

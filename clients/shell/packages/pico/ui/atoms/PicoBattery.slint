@@ -1,0 +1,24 @@
+import { P8 } from "../palette.slint";
+import { Tokens } from "../tokens.slint";
+
+// The device's battery as PICO-8 would draw it: a case and its nub, the
+// charge as cells lit of five inside it. With no reading the case is quiet
+// and empty.
+export component PicoBattery {
+    in property <int> cells;
+    in property <bool> known: true;
+    property <color> ink: known ? P8.ink : P8.ink-quiet;
+    property <length> top: Tokens.snap((root.height - 6 * Tokens.p) / 2);
+    width: 10 * Tokens.p;
+    min-height: 6 * Tokens.p;
+    Rectangle { x: 0; y: root.top; width: 9 * Tokens.p; height: 6 * Tokens.p; background: root.ink; }
+    Rectangle { x: 9 * Tokens.p; y: root.top + 2 * Tokens.p; width: Tokens.p; height: 2 * Tokens.p; background: root.ink; }
+    Rectangle { x: Tokens.p; y: root.top + Tokens.p; width: 7 * Tokens.p; height: 4 * Tokens.p; background: P8.bg; }
+    Rectangle {
+        x: 2 * Tokens.p;
+        y: root.top + 2 * Tokens.p;
+        width: (root.known ? max(0, min(5, root.cells)) : 0) * Tokens.p;
+        height: 2 * Tokens.p;
+        background: root.ink;
+    }
+}

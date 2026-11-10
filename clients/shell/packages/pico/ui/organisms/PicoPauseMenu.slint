@@ -42,7 +42,12 @@ export component PicoPauseMenu inherits VerticalLayout {
             arrows: item.arrows;
         }
         if item.kind == "note" || item.kind == "text" : PicoLine { text: item.label; color: P8.shell-tell-note; }
-        if item.kind == "section" : PicoLine { text: item.label; color: P8.shell-tell-kicker; }
+        // A group stands apart from what is above it: Korri's controls, each
+        // plugin's, the stream's (#379).
+        if item.kind == "section" : VerticalLayout {
+            padding-top: Tokens.u;
+            PicoLine { text: item.label; color: P8.shell-tell-kicker; }
+        }
         if item.kind == "heading" : PicoLine { text: item.label; font-size: Tokens.lg; color: P8.shell-tell-ink; }
         if item.kind == "fact" : HorizontalLayout {
             spacing: 2 * Tokens.p;

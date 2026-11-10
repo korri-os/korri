@@ -5,7 +5,7 @@
  */
 import type { SurfaceRunnerChoice } from "../model"
 import type { PicoOverlayControlView, PicoOverlayView } from "../pico-overlay-view"
-import { picoRangeLabel } from "../pico-overlay-view"
+import { picoRangeLabel, picoStatusStrip } from "../pico-overlay-view"
 import type { PicoOverlayState } from "../state/overlay"
 import { rangeValue } from "../state/overlay"
 import type { Target } from "./focus"
@@ -68,6 +68,8 @@ type OverlayDispatch = { readonly to: "overlay"; readonly message: import("../st
 const overlay = (message: OverlayDispatch["message"]): OverlayDispatch => ({ to: "overlay", message })
 
 export function overlayScreen(view: PicoOverlayView, state: PicoOverlayState, focused: string | undefined): Screen {
+  // The status strip stands with every state of the overlay; it is no focus target.
+  const strip = picoStatusStrip(view)
   if (state.asking !== undefined) {
     const control = state.asking
     const placed = cardTargets(
@@ -86,7 +88,7 @@ export function overlayScreen(view: PicoOverlayView, state: PicoOverlayState, fo
       key: `overlay:ask:${control.id}`,
       targets: placed.targets,
       fallback: "cancel",
-      view: { card: placed.card, sheet: emptySheet([A("SELECT"), B("BACK")]) },
+      view: { card: placed.card, sheet: emptySheet([A("SELECT"), B("BACK")]), strip },
     }
   }
   if (view.problem !== undefined) {
@@ -97,7 +99,7 @@ export function overlayScreen(view: PicoOverlayView, state: PicoOverlayState, fo
       problem.canRetry ? [[overlay({ _tag: "PressedRetry" })], [overlay({ _tag: "PressedBack" })]] : [[overlay({ _tag: "PressedBack" })]],
       focused,
     )
-    return { key: "overlay:problem", targets: placed.targets, view: { card: placed.card, sheet: emptySheet([A("SELECT"), B("RESUME")]) } }
+    return { key: "overlay:problem", targets: placed.targets, view: { card: placed.card, sheet: emptySheet([A("SELECT"), B("RESUME")]), strip } }
   }
   const items: SheetItem[] = []
   const ids: (string | undefined)[] = []
@@ -152,6 +154,7 @@ export function overlayScreen(view: PicoOverlayView, state: PicoOverlayState, fo
         ...done,
         hints: [...(ranging ? [{ key: "lr" as const, label: "ADJUST" }] : []), A("SELECT"), B("RESUME")],
       },
+      strip,
     },
   }
 }

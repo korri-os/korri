@@ -6,8 +6,15 @@ import { Tokens } from "../tokens.slint";
 // focused control to `show`. What it holds is laid out
 // at its natural height, never less than the region's; a control outside
 // what the region holds never scrolls it.
+//
+// With `marks`, a region that holds more than it shows draws a bar down its
+// right edge: the track in `track-ink`, the part in sight in `mark-ink`, so
+// the list says that more stands above or below the cursor and where.
 export component PicoScroll inherits Rectangle {
     in property <length> margin: Tokens.u;
+    in property <bool> marks;
+    in property <color> mark-ink: P8.ink-dark;
+    in property <color> track-ink: P8.cast-near;
     // The height of what it holds: a region that hugs its list asks for this.
     out property <length> natural: content.min-height;
     property <length> scroll: 0;
@@ -41,11 +48,32 @@ export component PicoScroll inherits Rectangle {
         }
     }
     clip: true;
+    // The bar's room is kept whenever it may be drawn, so a row is as wide
+    // whether its list scrolls or not.
+    property <length> bar: marks ? 4 * Tokens.p : 0;
+    property <bool> scrolls: marks && content.min-height > root.height;
     content := VerticalLayout {
         x: 0;
         y: -min(scroll, limit);
-        width: root.width;
+        width: root.width - root.bar;
         height: max(root.height, self.min-height);
         @children
+    }
+    // The track a hair wide, the part in sight twice that, so the two read
+    // apart by their width as well as their ink.
+    if root.scrolls : Rectangle {
+        x: root.width - 2 * Tokens.p;
+        y: 0;
+        width: 2 * Tokens.p;
+        height: root.height;
+        Rectangle { x: Tokens.p; y: 0; width: Tokens.p; height: parent.height; background: root.track-ink; }
+        Rectangle {
+            property <length> thumb: max(4 * Tokens.p, Tokens.snap(root.height * root.height / max(Tokens.p, content.height)));
+            x: 0;
+            y: Tokens.snap((root.height - self.thumb) * min(root.scroll, root.limit) / max(Tokens.p, root.limit));
+            width: parent.width;
+            height: self.thumb;
+            background: root.mark-ink;
+        }
     }
 }

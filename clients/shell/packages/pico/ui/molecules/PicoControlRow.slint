@@ -32,8 +32,18 @@ export component PicoControlRow {
     Rectangle { x: 0; y: 0; width: root.width; height: row-h; background: focused ? P8.pick : P8.ink-dark; }
     property <color> ink: disabled ? P8.ink-quiet : warn ? P8.warn : focused ? P8.pick-ink : P8.ink;
     // The label shares the row with a value; alone it takes the whole row.
-    Text { x: 3 * Tokens.p; y: (row-h - Tokens.md) / 2; width: range || arrows || value != "" ? root.width / 2 : root.width - 6 * Tokens.p; text: label; font-size: Tokens.md; color: ink; overflow: elide; }
-    if range : PicoSlider {
+    // A value never takes more than its share: past half the row (or what the
+    // label leaves, when that is more) it ends in an ellipsis, so a long
+    // choice such as a mouse mode never draws over its label.
+    property <length> inner: root.width - 6 * Tokens.p;
+    property <length> gap: 4 * Tokens.p;
+    property <bool> shares: range || arrows || value != "";
+    property <length> label-natural: label-text.preferred-width;
+    property <length> side-natural: range ? slider.preferred-width : side.preferred-width;
+    property <length> side-w: !shares ? 0 : range ? side-natural : min(side-natural, max(inner / 2, inner - label-natural - gap));
+    label-text := Text { x: 3 * Tokens.p; y: (row-h - Tokens.md) / 2; width: shares ? max(0, inner - side-w - gap) : inner; text: label; font-size: Tokens.md; color: ink; overflow: elide; }
+    slider := PicoSlider {
+        visible: range;
         x: root.width - 3 * Tokens.p - self.width;
         y: (row-h - Tokens.md) / 2;
         width: self.preferred-width;
@@ -42,15 +52,16 @@ export component PicoControlRow {
         value: value;
         value-ink: focused ? P8.pick-mark : P8.ink-quiet;
     }
-    if !range : HorizontalLayout {
+    side := HorizontalLayout {
+        visible: !range;
         x: root.width - 3 * Tokens.p - self.width;
         y: (row-h - Tokens.md) / 2;
-        width: self.preferred-width;
+        width: root.side-w;
         height: Tokens.md;
         spacing: 2 * Tokens.p;
-        if arrows : Text { text: "◀"; font-size: Tokens.md; color: P8.ink-quiet; }
-        if value != "" : Text { text: value; font-size: Tokens.md; color: focused ? P8.pick-mark : P8.ink-quiet; }
-        if arrows : Text { text: "▶"; font-size: Tokens.md; color: P8.ink-quiet; }
+        if arrows : Text { text: "◀"; font-size: Tokens.md; color: P8.ink-quiet; horizontal-stretch: 0; min-width: self.preferred-width; }
+        if value != "" : Text { text: value; font-size: Tokens.md; color: focused ? P8.pick-mark : P8.ink-quiet; overflow: elide; horizontal-stretch: 1; horizontal-alignment: right; min-width: 0; }
+        if arrows : Text { text: "▶"; font-size: Tokens.md; color: P8.ink-quiet; horizontal-stretch: 0; min-width: self.preferred-width; }
     }
     if note != "" : PicoLine { x: 0; y: row-h; width: root.width; text: note; color: P8.note(tone); }
     PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: 0; y: 0; width: root.width; height: root.height; focused: focused; }

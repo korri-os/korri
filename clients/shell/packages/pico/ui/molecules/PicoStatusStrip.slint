@@ -1,0 +1,129 @@
+import { P8 } from "../palette.slint";
+import { Tokens } from "../tokens.slint";
+import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoBattery } from "../atoms/PicoBattery.slint";
+
+// One fact: the number bright, its words and units quiet; `--` and quiet
+// when Korri has none. `battery` is the cells lit of five (-1: no reading;
+// -2: not the battery).
+export struct StripFact { before: string, value: string, after: string, known: bool, battery: int }
+// The device's facts (the time, the battery), then the stream's (round trip,
+// video bitrate, dropped frames).
+export struct StripView { shown: bool, device: [StripFact], stream: [StripFact] }
+
+// The gameplay overlay's status strip (#378): Korri's facts on a black plate,
+// as the hints stand on theirs, so they read over any frame. It takes no
+// input and is no focus target.
+//
+// It takes the widest arrangement that fits `room`: one line, the device's
+// facts over the stream's, or one fact a line. `right` aligns its lines to
+// its right edge (beside the card), else to its left (at the foot).
+export component PicoStatusStrip {
+    in property <StripView> strip;
+    in property <length> room;
+    in property <bool> right: true;
+    property <length> pad-x: Tokens.u;
+    property <length> pad-y: 2 * Tokens.p;
+    property <length> gap: Tokens.snap(Tokens.u * 1.5);
+    // 0: one line, 1: two lines, 2: one fact a line.
+    out property <int> mode: row.preferred-width + 2 * pad-x <= room ? 0 : pair.preferred-width + 2 * pad-x <= room ? 1 : 2;
+    // What the chosen arrangement takes, plate included.
+    out property <length> needs-w: (mode == 0 ? row.preferred-width : mode == 1 ? pair.preferred-width : column.preferred-width) + 2 * pad-x;
+    out property <length> needs-h: (mode == 0 ? row.preferred-height : mode == 1 ? pair.preferred-height : column.preferred-height) + 2 * pad-y;
+    // The narrowest it can be: one fact a line.
+    out property <length> least-w: column.preferred-width + 2 * pad-x;
+    width: needs-w;
+    height: needs-h;
+    Rectangle { x: 0; y: 0; width: root.width; height: root.height; background: P8.bg; }
+    row := HorizontalLayout {
+        x: root.pad-x;
+        y: root.pad-y;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        visible: root.mode == 0;
+        spacing: root.gap;
+        for f in root.strip.device : HorizontalLayout {
+            spacing: 2 * Tokens.p;
+            if f.battery >= -1 : PicoBattery { cells: f.battery; known: f.known; }
+            if f.before != "" : PicoLine { text: f.before; color: P8.ink-quiet; overflow: clip; }
+            PicoLine { text: f.value; color: f.known ? P8.ink : P8.ink-quiet; overflow: clip; }
+            if f.after != "" : PicoLine { text: f.after; color: P8.ink-quiet; overflow: clip; }
+        }
+        for f in root.strip.stream : HorizontalLayout {
+            spacing: 2 * Tokens.p;
+            if f.before != "" : PicoLine { text: f.before; color: P8.ink-quiet; overflow: clip; }
+            PicoLine { text: f.value; color: f.known ? P8.ink : P8.ink-quiet; overflow: clip; }
+            if f.after != "" : PicoLine { text: f.after; color: P8.ink-quiet; overflow: clip; }
+        }
+    }
+    pair := VerticalLayout {
+        x: root.pad-x;
+        y: root.pad-y;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        visible: root.mode == 1;
+        Rectangle {
+            preferred-width: device-line.preferred-width;
+            height: device-line.preferred-height;
+            device-line := HorizontalLayout {
+                x: root.right ? parent.width - self.preferred-width : 0;
+                width: self.preferred-width;
+                spacing: root.gap;
+                for f in root.strip.device : HorizontalLayout {
+                    spacing: 2 * Tokens.p;
+                    if f.battery >= -1 : PicoBattery { cells: f.battery; known: f.known; }
+                    if f.before != "" : PicoLine { text: f.before; color: P8.ink-quiet; overflow: clip; }
+                    PicoLine { text: f.value; color: f.known ? P8.ink : P8.ink-quiet; overflow: clip; }
+                    if f.after != "" : PicoLine { text: f.after; color: P8.ink-quiet; overflow: clip; }
+                }
+            }
+        }
+        Rectangle {
+            preferred-width: stream-line.preferred-width;
+            height: stream-line.preferred-height;
+            stream-line := HorizontalLayout {
+                x: root.right ? parent.width - self.preferred-width : 0;
+                width: self.preferred-width;
+                spacing: root.gap;
+                for f in root.strip.stream : HorizontalLayout {
+                    spacing: 2 * Tokens.p;
+                    if f.before != "" : PicoLine { text: f.before; color: P8.ink-quiet; overflow: clip; }
+                    PicoLine { text: f.value; color: f.known ? P8.ink : P8.ink-quiet; overflow: clip; }
+                    if f.after != "" : PicoLine { text: f.after; color: P8.ink-quiet; overflow: clip; }
+                }
+            }
+        }
+    }
+    column := VerticalLayout {
+        x: root.pad-x;
+        y: root.pad-y;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        visible: root.mode == 2;
+        for f in root.strip.device : Rectangle {
+            preferred-width: device-fact.preferred-width;
+            height: device-fact.preferred-height;
+            device-fact := HorizontalLayout {
+                x: root.right ? parent.width - self.preferred-width : 0;
+                width: self.preferred-width;
+                spacing: 2 * Tokens.p;
+                if f.battery >= -1 : PicoBattery { cells: f.battery; known: f.known; }
+                if f.before != "" : PicoLine { text: f.before; color: P8.ink-quiet; overflow: clip; }
+                PicoLine { text: f.value; color: f.known ? P8.ink : P8.ink-quiet; overflow: clip; }
+                if f.after != "" : PicoLine { text: f.after; color: P8.ink-quiet; overflow: clip; }
+            }
+        }
+        for f in root.strip.stream : Rectangle {
+            preferred-width: stream-fact.preferred-width;
+            height: stream-fact.preferred-height;
+            stream-fact := HorizontalLayout {
+                x: root.right ? parent.width - self.preferred-width : 0;
+                width: self.preferred-width;
+                spacing: 2 * Tokens.p;
+                if f.before != "" : PicoLine { text: f.before; color: P8.ink-quiet; overflow: clip; }
+                PicoLine { text: f.value; color: f.known ? P8.ink : P8.ink-quiet; overflow: clip; }
+                if f.after != "" : PicoLine { text: f.after; color: P8.ink-quiet; overflow: clip; }
+            }
+        }
+    }
+}

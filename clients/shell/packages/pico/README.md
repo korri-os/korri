@@ -70,6 +70,15 @@ imports.
   target, `focusActive` on a region's active one (the chosen cart, the open
   tab, the chosen order), and `focusPlan`. An entry that is no target drops
   `focused`. The shell strips these keys before Slint.
+- **Status strip (#378).** Over a running game the overlay shows Korri's
+  facts on a black plate top right, beside the card: the time, the battery
+  (PicoBattery, cells of five), round trip, video bitrate and dropped frames
+  (`picoStatusStrip` in `src/pico-overlay-view.ts`). It takes one line, two,
+  or one fact a line, whichever fits; when the card takes the whole width it
+  goes to the foot. A fact Korri does not give shows `--`, quiet; a measured
+  0 is 0. It is no focus target. The viewer's "Stream controls" group (#379)
+  is drawn as any other group; the list shows a scroll bar when it holds
+  more than it shows, and a long value ends in "…" before its label.
 - **Cover art.** `{"$image": url, "pico8": "vivid"}`.
 - **Time.** The shell sends `Tick { idleMs }` once a second (contract A1,
   7.1); attract starts when `idleMs` reaches 45 s (`pico-attract.ts`), and

@@ -38,6 +38,7 @@ import { AttractView, PicoAttract } from "ui/organisms/PicoAttract.slint";
 import { NoticeView, PicoInviteNotices } from "ui/organisms/PicoInviteNotices.slint";
 import { FrameView } from "ui/templates/PicoScreenShell.slint";
 import { SheetView } from "ui/templates/PicoGameOverlay.slint";
+import { StripView, StripFact } from "ui/molecules/PicoStatusStrip.slint";
 import { SplitView, PicoDisplays } from "ui/templates/PicoDisplays.slint";
 import { HomeView, StageView, HeroView } from "ui/templates/PicoHomeLayout.slint";
 import { PicoMenu } from "ui/organisms/PicoMenu.slint";
@@ -56,7 +57,7 @@ import { PicoShowcase } from "pages/PicoShowcase.slint";
 export {
     HintView, ButtonView, ChipView, BarView, KeyView, SegmentView, StepView, CartView, CardView, LineView, RowView,
     InviteView, SetupView, PackView, GridSectionView, ResumeView, LaunchStageView, DetailView, FindView, ResultView,
-    EditorView, IdentityView, StoreResultView, StoreEntryView, SheetItem, AttractView, NoticeView, FrameView, SheetView,
+    EditorView, IdentityView, StoreResultView, StoreEntryView, SheetItem, AttractView, NoticeView, FrameView, SheetView, StripView, StripFact,
     SplitView, HomeView, StageView, HeroView, PanelView, StoreView,
 }
 
@@ -150,6 +151,7 @@ export component Overlay inherits Window {
     in property <int> font-rows: 7;
     in property <CardView> card;
     in property <SheetView> sheet;
+    in property <StripView> strip;
 
     title: "Pico overlay";
     // See-through: the running game shows round the card (ADR 0053). A
@@ -168,5 +170,5 @@ export component Overlay inherits Window {
     changed height => { Tokens.fit(self.width, self.height); }
     changed font-rows => { Tokens.rows = font-rows; }
 
-    PicoOverlay { sheet: sheet; card: card; }
+    PicoOverlay { sheet: sheet; card: card; strip: strip; }
 }

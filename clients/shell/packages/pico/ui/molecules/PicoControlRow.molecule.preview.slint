@@ -15,6 +15,6 @@ export component Default inherits Window {
         padding: 2 * Tokens.u;
         spacing: Tokens.u;
         alignment: start;
-        Rectangle { height: 80 * Tokens.p; background: P8.shell-tell; VerticalLayout { padding: 4 * Tokens.p; spacing: 2 * Tokens.p; PicoControlRow { label: "Load state"; disabled: true; note: "No save yet"; } PicoControlRow { label: "Fast forward"; value: "OFF"; arrows: true; focused: true; } PicoControlRow { label: "Volume"; range: true; cells: 8; value: "80"; } } }
+        Rectangle { height: 100 * Tokens.p; background: P8.shell-tell; VerticalLayout { padding: 4 * Tokens.p; spacing: 2 * Tokens.p; PicoControlRow { label: "Load state"; disabled: true; note: "No save yet"; } PicoControlRow { label: "Fast forward"; value: "OFF"; arrows: true; focused: true; } PicoControlRow { label: "Volume"; range: true; cells: 8; value: "80"; } PicoControlRow { label: "Mouse mode"; value: "TRACK PAD(NATURAL/DOUBLE TAP TO DRAG)"; arrows: true; } } }
     }
 }

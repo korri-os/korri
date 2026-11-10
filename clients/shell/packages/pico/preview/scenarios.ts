@@ -12,7 +12,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { SurfaceModel } from "../src/model"
-import { fixtureGameActions, fixtureModel, fixtureOverlay } from "../test/fixtures/fixture-host"
+import { fixtureGameActions, fixtureModel, fixtureOverlay, fixtureOverlayStream } from "../test/fixtures/fixture-host"
 import { launchSettingsFixtures, withLaunchSettings } from "../test/fixtures/launch-settings"
 import {
   failedSettingsModel,
@@ -178,6 +178,7 @@ export const SCENARIOS: readonly Scenario[] = [
   // The gameplay overlay
   { name: "overlay-default", ref: "PicoOverlay.page/default", model: { ...base, presentation: fixtureOverlay } },
   { name: "overlay-confirm-quit", ref: "PicoOverlay.page/ConfirmQuit", model: { ...base, presentation: fixtureOverlay }, keys: ["Down", "Return"] },
+  { name: "overlay-stream", ref: "PicoOverlay.page/default", model: { ...base, presentation: fixtureOverlayStream, clockLabel: "3:42 PM" } },
   // Two displays: the showcase on the main one
   { name: "showcase", ref: "PicoDisplays.template/Shelf", model: base, displays: rgdsDisplays },
   // Attract: the shell's Tick reaches 45 s with no press (wait 46 s)

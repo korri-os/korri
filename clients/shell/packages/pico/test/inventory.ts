@@ -65,4 +65,6 @@ export const ADDED: Readonly<Record<string, { readonly layer: Layer; readonly wh
   PicoReveal: { layer: "atoms", why: "Says where the cursor's control stands once laid out; the DOM's focus() did this." },
   PicoRail: { layer: "atoms", why: "A row that slides to keep the cursor's item in sight: the host's scrollIntoView did this for the DOM." },
   PicoScroll: { layer: "atoms", why: "A region that keeps the cursor's control in sight: the host's scrollIntoView did this for the DOM." },
+  PicoStatusStrip: { layer: "molecules", why: "The gameplay overlay's status strip (#378): the web Pico had no overlay facts to show." },
+  PicoBattery: { layer: "atoms", why: "The device's battery in the status strip (#378): the web Pico showed no battery." },
 }

@@ -5,6 +5,7 @@ import { PicoPara } from "../atoms/PicoPara.slint";
 import { PicoHint, HintView } from "../atoms/PicoHint.slint";
 import { PicoScroll } from "../atoms/PicoScroll.slint";
 import { PicoCard } from "../molecules/PicoCard.slint";
+import { PicoStatusStrip, StripView } from "../molecules/PicoStatusStrip.slint";
 import { SheetItem } from "../organisms/PicoPauseMenu.slint";
 
 // A tall blue card over everything, with its own list (the pause menu, the
@@ -18,17 +19,32 @@ export struct SheetView { kicker: string, title: string, items: [SheetItem], foc
 // ADR 0053) the game stays in sight: the card hugs its list, top left, and
 // takes 45% of the width (never under 200 virtual pixels; the whole width
 // when less than 64 would be left beside it), and wears its outline; the
-// hints stand on a black plate.
+// hints stand on a black plate. A list longer than the card shows a scroll
+// bar down its right edge (#379: the stream controls make it long).
+//
+// The status strip (#378), when shown, stands top right beside the card, its
+// right edge on the hints' plate's: in one line, two or one fact a line,
+// whichever fits the room the card leaves. When the card takes the whole
+// width the strip goes to the foot, beside the hints when both fit, else on
+// its own line above them, and the card gives up that height.
 export component PicoGameOverlay inherits Rectangle {
     in property <string> kicker;
     in property <string> title;
     in property <[HintView]> hints;
     in property <bool> over-game;
+    in property <StripView> strip;
     property <length> foot: Tokens.snap(Tokens.sm * 1.5) + 2 * Tokens.u;
     property <length> full-w: root.width - 4 * Tokens.u - 5 * Tokens.p;
-    property <length> full-h: root.height - 2 * Tokens.u - foot - 5 * Tokens.p;
     property <length> side-w: max(200 * Tokens.p, Tokens.snap(root.width * 45%));
     property <length> card-w: over-game && full-w - side-w >= 64 * Tokens.p ? side-w : full-w;
+    // The room right of the card, its shadow and outline, to the plates' edge.
+    property <length> beside-room: root.width - Tokens.u - (2 * Tokens.u + card-w + 5 * Tokens.p + Tokens.edge + 2 * Tokens.u);
+    property <bool> strip-beside: strip.shown && card-w < full-w && facts.least-w <= beside-room;
+    property <bool> strip-foot: strip.shown && !strip-beside;
+    property <length> hints-w: hint-row.width + 2 * Tokens.u;
+    property <bool> strip-inline: strip-foot && facts.needs-w + Tokens.u + hints-w <= root.width - 2 * Tokens.u;
+    property <length> strip-above: strip-foot && !strip-inline ? facts.needs-h + Tokens.u : 0;
+    property <length> full-h: root.height - 2 * Tokens.u - foot - 5 * Tokens.p - strip-above;
     // What the list holds reports its focused control here.
     public function show(left: length, top: length, wide: length, tall: length) {
         list.show(left, top, wide, tall);
@@ -42,7 +58,7 @@ export component PicoGameOverlay inherits Rectangle {
         outline: root.over-game;
         if kicker != "" : PicoLine { text: kicker; color: P8.shell-tell-kicker; }
         if title != "" : PicoPara { text: title; font-size: Tokens.short ? Tokens.md : Tokens.lg; color: P8.shell-tell-ink; }
-        list := PicoScroll { vertical-stretch: 1; preferred-height: self.natural; @children }
+        list := PicoScroll { vertical-stretch: 1; preferred-height: self.natural; marks: root.over-game; track-ink: P8.cast-near; mark-ink: P8.ink-dark; @children }
     }
     Rectangle {
         x: hint-row.x - Tokens.u;
@@ -50,6 +66,16 @@ export component PicoGameOverlay inherits Rectangle {
         width: hint-row.width + 2 * Tokens.u;
         height: hint-row.height + 4 * Tokens.p;
         background: P8.bg;
+    }
+    facts := PicoStatusStrip {
+        visible: root.strip.shown;
+        strip: root.strip;
+        room: root.strip-beside ? root.beside-room : root.width - 2 * Tokens.u;
+        right: root.strip-beside;
+        x: root.strip-beside ? root.width - Tokens.u - self.width : Tokens.u;
+        y: root.strip-beside ? 2 * Tokens.u - Tokens.edge
+            : root.strip-inline ? hint-row.y - 2 * Tokens.p
+            : hint-row.y - 2 * Tokens.p - Tokens.u - self.height;
     }
     hint-row := HorizontalLayout {
         x: root.width - 2 * Tokens.u - self.preferred-width;

@@ -7,6 +7,7 @@
  * the fixture — has to change.
  */
 import type {
+  SurfaceGameplayControl,
   SurfaceGameplayOverlayPresentation,
   SurfaceAction,
   SurfaceModel,
@@ -121,6 +122,57 @@ export const fixtureOverlay: SurfaceGameplayOverlayPresentation = {
           dismissOnSuccess: false,
           interaction: { kind: "range", value: 80, min: 0, max: 100, step: 10 },
         },
+      ],
+    },
+  ],
+}
+
+/**
+ * The overlay over a stream on a touch phone (#378, #379): korrid's own
+ * controls, a plugin's group, and the viewer's "Stream controls" group with
+ * every control the Android viewer declares there (KorriViewerControls), the
+ * mouse mode's longest label among them, and every status-strip fact.
+ */
+const viewerToggle = (id: string, label: string, value: boolean): SurfaceGameplayControl =>
+  ({ id: `viewer:l:1:1:${id}`, label, enabled: true, destructive: false, dismissOnSuccess: false, interaction: { kind: "toggle", value, trueLabel: "On", falseLabel: "Off" } })
+const viewerCommand = (id: string, label: string): SurfaceGameplayControl =>
+  ({ id: `viewer:l:1:1:${id}`, label, enabled: true, destructive: false, dismissOnSuccess: true, interaction: { kind: "command" } })
+const viewerRange = (id: string, label: string, value: number, min: number, max: number): SurfaceGameplayControl =>
+  ({ id: `viewer:l:1:1:${id}`, label, enabled: true, destructive: false, dismissOnSuccess: false, interaction: { kind: "range", value, min, max, step: 1 } })
+export const fixtureOverlayStream: SurfaceGameplayOverlayPresentation = {
+  ...fixtureOverlay,
+  batteryPercent: 82,
+  streamHealth: { rttMs: 3, deliveredBitrateKbps: 20140, framesDropped: 0 },
+  groups: [
+    ...fixtureOverlay.groups,
+    {
+      id: "viewer:l:1:1:group",
+      label: "Stream controls",
+      controls: [
+        viewerToggle("fill", "Crop to fill", false),
+        viewerCommand("keyboard", "Toggle keyboard"),
+        viewerCommand("full-keyboard", "Full keyboard"),
+        viewerToggle("zoom", "Pan & zoom", false),
+        {
+          id: "viewer:l:1:1:mouse", label: "Mouse mode", enabled: true, destructive: false, dismissOnSuccess: false,
+          interaction: {
+            kind: "choice", value: "2",
+            options: [
+              { value: "0", label: "Multi touch" }, { value: "1", label: "Absolute touch" },
+              { value: "2", label: "Track pad(Natural/Double tap to drag)" }, { value: "3", label: "Track pad(Gaming/Long press to drag)" },
+              { value: "4", label: "Disabled" }, { value: "5", label: "Absolute touch (left/right click swapped)" },
+            ],
+          },
+        },
+        viewerCommand("cursor", "Toggle local cursor"),
+        viewerCommand("rotate", "Rotate screen"),
+        viewerCommand("keyboard-controller", "Keyboard as controller"),
+        viewerCommand("touch", "Touch sensitivity"),
+        viewerRange("sgsr-sharpness", "SGSR sharpness", 20, 0, 50),
+        viewerRange("sgsr-edge", "SGSR edge threshold", 8, 1, 32),
+        viewerToggle("flip", "Flip A/B and X/Y", false),
+        viewerToggle("rumble", "Rumble", true),
+        viewerToggle("pip", "Picture-in-picture", false),
       ],
     },
   ],

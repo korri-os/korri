@@ -4,20 +4,30 @@ import { CardView } from "../ui/molecules/PicoNotice.slint";
 import { PicoPauseMenu } from "../ui/organisms/PicoPauseMenu.slint";
 import { PicoModal } from "../ui/organisms/PicoModal.slint";
 import { PicoGameOverlay, SheetView } from "../ui/templates/PicoGameOverlay.slint";
+import { PicoStatusStrip, StripView } from "../ui/molecules/PicoStatusStrip.slint";
 
 // The pause menu over a running game, and its question before a destructive
-// control. The game keeps running under both (ADR 0053) and stays in sight:
-// nothing here paints the whole box.
+// control, each with the status strip (#378). The game keeps running under
+// both (ADR 0053) and stays in sight: nothing here paints the whole box.
 export component PicoOverlay inherits Rectangle {
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <SheetView> sheet;
     in property <CardView> card;
+    in property <StripView> strip;
     if !card.shown : overlay := PicoGameOverlay {
         kicker: sheet.kicker;
         title: sheet.title;
         hints: sheet.hints;
         over-game: true;
+        strip: root.strip;
         PicoPauseMenu { reveal(left, top, wide, tall) => { overlay.show(left, top, wide, tall); }  items: sheet.items; }
+    }
+    // Over a question or a problem the strip stays top right, under the card.
+    if card.shown && strip.shown : PicoStatusStrip {
+        strip: root.strip;
+        room: root.width - 2 * Tokens.u;
+        x: root.width - Tokens.u - self.width;
+        y: Tokens.u;
     }
     if card.shown : PicoModal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  card: card; over-game: true; }
 }
