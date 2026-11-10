@@ -14,3 +14,13 @@ export component Question inherits ZonePreview {
     ground: "paused";
     ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1, holds: true }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: "Back", confirm: "Confirm" }; dialog: { shown: true, headline: "Restart", buttons: [{ label: "No", focused: true }, { label: "Yes" }] }; }
 }
+
+export component Strip inherits ZonePreview {
+    ground: "paused";
+    ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; heading: "Wario Land 4"; korri-heading: true; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1, holds: true }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: "Back", confirm: "Confirm" }; strip: { shown: true, device: [{ label: "Time", value: "3:42 PM", known: true }, { label: "Battery", value: "82%", known: true }], stream: [{ label: "RTT", value: "3 ms", known: true }, { label: "Video", value: "20.1 Mb/s", known: true }, { label: "Dropped", value: "0", known: true }] }; }
+}
+
+export component StripUnknown inherits ZonePreview {
+    ground: "paused";
+    ZonePaused { x: 0; y: 0; width: parent.width; height: parent.height; rows: [{ kind: "item", label: "Continue", focused: true, bars: -1, holds: true }, { kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, choice: true, bars: -1 }, { kind: "title", label: "Sound" }, { kind: "range", label: "Volume", value: "60", value-fact: true, choice: true, bars: 60 }, { kind: "item", label: "Exit", danger: true, bars: -1 }]; hints: { back: "Back", confirm: "Confirm" }; strip: { shown: true, device: [{ label: "Time", value: "--" }, { label: "Battery", value: "--" }], stream: [{ label: "RTT", value: "--" }, { label: "Video", value: "--" }, { label: "Dropped", value: "--" }] }; }
+}

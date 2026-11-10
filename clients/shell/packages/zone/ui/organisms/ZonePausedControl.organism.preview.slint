@@ -14,3 +14,8 @@ export component Range inherits ZonePreview {
     ground: "paused";
     ZonePausedControl { x: 40 * Tokens.a; y: (parent.height - self.height) / 2; width: parent.width - 60 * Tokens.a; height: 34 * Tokens.a; it: { kind: "range", label: "Volume", value: "85", value-fact: true, focused: true, choice: true, saving: true, bars: 85, holds: true }; }
 }
+
+export component LongChoice inherits ZonePreview {
+    ground: "paused";
+    ZonePausedControl { x: 40 * Tokens.a; y: (parent.height - self.height) / 2; width: parent.width - 60 * Tokens.a; height: 34 * Tokens.a; it: { kind: "item", label: "Mouse mode", value: "Track pad(Natural/Double tap to drag)", value-fact: true, focused: true, choice: true, bars: -1 }; }
+}

@@ -21,7 +21,9 @@ export component ZoneFactLine {
             : i == 3 ? l3.natural + v3.natural : l4.natural + v4.natural) + 3 * a;
     }
     property <length> run: span(0) + span(1) + span(2) + span(3) + span(4) + between * Math.max(0, count - 1);
-    property <length> panel-w: Math.min(root.width, run + 2 * (lean + 2 * a));
+    // The whole line's width, slants included: a parent that hugs it asks for this.
+    out property <length> natural: run + 2 * (lean + 2 * a);
+    property <length> panel-w: Math.min(root.width, natural);
     property <length> left: (root.width - panel-w) / 2 + lean + 2 * a;
     pure function at(i: int) -> length {
         return left + (i > 0 ? span(0) + between : 0) + (i > 1 ? span(1) + between : 0) + (i > 2 ? span(2) + between : 0) + (i > 3 ? span(3) + between : 0);

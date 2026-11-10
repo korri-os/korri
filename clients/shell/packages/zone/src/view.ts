@@ -19,7 +19,8 @@ import { launchChoices, playtime, ZONE_FIND_MAX, type ZoneFindLayer, type ZoneLa
 import { IDENTITY_FIXED_CARDS, identityCardCount } from "./state/identity"
 import { bandGames, topLayer, ZONE_TABS, type ZoneTab } from "./state/navigation"
 import { deviceNameSetting, onboardingTargets, seatTarget, TARGET, ZONE_ONBOARDING_STEPS } from "./state/onboarding"
-import { overlayControls, shownRangeValue } from "./state/overlay"
+import { overlayControls, overlayViewerFacts, shownRangeValue } from "./state/overlay"
+import { ZONE_NO_STRIP, zoneStatusStrip } from "./plan/status-strip"
 import { problemButtons } from "./state/status"
 import { withLook, zoneShown, type ZoneShown, type ZoneSurfaceState } from "./state/surface"
 import { focusView, targetRows } from "./focus"
@@ -838,7 +839,7 @@ export function overlayView(state: ZoneSurfaceState, korri: SurfaceModel, screen
 
 function pausedView(state: ZoneSurfaceState, korri: SurfaceModel) {
   const overlay = korri.presentation
-  const empty = { look: state.look, heading: "Paused", korriHeading: false, hasArt: false, rows: [] as Row[], focusAt: 0, dialog: EMPTY_DIALOG, busy: EMPTY_BUSY, hints: { back: "Back", confirm: "Confirm" } }
+  const empty = { look: state.look, heading: "Paused", korriHeading: false, hasArt: false, rows: [] as Row[], focusAt: 0, dialog: EMPTY_DIALOG, busy: EMPTY_BUSY, hints: { back: "Back", confirm: "Confirm" }, strip: ZONE_NO_STRIP }
   if (overlay.kind !== "gameplay-overlay") return empty
   const model = state.overlay
   const rows: Row[] = []
@@ -890,6 +891,8 @@ function pausedView(state: ZoneSurfaceState, korri: SurfaceModel) {
     dialog,
     busy: status.busy,
     hints: { back: "Back", confirm: "Confirm" },
+    // The status strip (#378): read-only facts, no focus target.
+    strip: zoneStatusStrip(overlayViewerFacts(korri) ?? {}),
   }
 }
 

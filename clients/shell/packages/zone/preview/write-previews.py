@@ -55,6 +55,11 @@ def centred(w, h):
     return f"x: (parent.width - {w}) / 2; y: (parent.height - {h}) / 2;"
 
 A = "Tokens.a"
+# PAUSED's status strip (#378), every fact known, then none.
+STRIP = ('{ shown: true, device: [{ label: "Time", value: "3:42 PM", known: true }, { label: "Battery", value: "82%", known: true }], '
+         'stream: [{ label: "RTT", value: "3 ms", known: true }, { label: "Video", value: "20.1 Mb/s", known: true }, { label: "Dropped", value: "0", known: true }] }')
+STRIP_UNKNOWN = ('{ shown: true, device: [{ label: "Time", value: "--" }, { label: "Battery", value: "--" }], '
+                 'stream: [{ label: "RTT", value: "--" }, { label: "Video", value: "--" }, { label: "Dropped", value: "--" }] }')
 STATES = {
     # atoms
     "atoms/ZoneShape": [("Default", f'{centred(f"120 * {A}", f"40 * {A}")} width: 120 * {A}; height: 40 * {A}; ink: Tokens.black; commands: "M 0 0 L " + Tokens.pt(120 * {A}, 0) + " L " + Tokens.pt(100 * {A}, 40 * {A}) + " L 0 " + (40 * {A} / Tokens.unit) + " Z";', "")],
@@ -137,7 +142,8 @@ STATES = {
     "organisms/ZoneLaunchCard": [("Default", f'{FILL} card: {{ shown: true, title: "Hollow Knight", system: "Switch", act: 8 }};', 'ground: "titlecard";')],
     "organisms/ZoneOptionsEntry": [("Default", f'{FILL} board: {BOARD};', 'ground: "options";')],
     "organisms/ZonePausedControl": [("Choice", f'x: 40 * {A}; y: (parent.height - self.height) / 2; width: parent.width - 60 * {A}; height: 34 * {A}; it: {{ kind: "item", label: "Screen filter", value: "Sharp", value-fact: true, focused: true, choice: true, bars: -1 }};', 'ground: "paused";'),
-                                    ("Range", f'x: 40 * {A}; y: (parent.height - self.height) / 2; width: parent.width - 60 * {A}; height: 34 * {A}; it: {{ kind: "range", label: "Volume", value: "85", value-fact: true, focused: true, choice: true, saving: true, bars: 85 }};', 'ground: "paused";')],
+                                    ("Range", f'x: 40 * {A}; y: (parent.height - self.height) / 2; width: parent.width - 60 * {A}; height: 34 * {A}; it: {{ kind: "range", label: "Volume", value: "85", value-fact: true, focused: true, choice: true, saving: true, bars: 85 }};', 'ground: "paused";'),
+                                    ("LongChoice", f'x: 40 * {A}; y: (parent.height - self.height) / 2; width: parent.width - 60 * {A}; height: 34 * {A}; it: {{ kind: "item", label: "Mouse mode", value: "Track pad(Natural/Double tap to drag)", value-fact: true, focused: true, choice: true, bars: -1 }};', 'ground: "paused";')],
     "organisms/ZoneRowList": [("Options", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; height: parent.height - 16 * {A}; rows: {ROWS};', 'ground: "options";')],
     "organisms/ZoneRunWithRoute": [("Saved", f'x: 8 * {A}; y: 8 * {A}; width: parent.width - 16 * {A}; route: {{ kind: "route", label: "RetroArch mGBA", value: "/nix/store/8n1x2-retroarch-1.19.1", value-fact: true, focused: true, tags: [{{ label: "Saved", kind: "here" }}, {{ label: "This game", kind: "system", korri: true }}] }};', 'ground: "options";')],
     "organisms/ZoneSaveBand": [("Default", f'{FILL} cards: {SAVE_CARDS}; at: 0; marked: true;', 'ground: "savedata";'),
@@ -173,7 +179,9 @@ PAGES = {
     "ZoneOnboarding": [("Controllers", f'{FILL} hints: {HINTS}; banner: "Controllers"; pip: 0; seats: [{{ seat: "1P", name: "Xbox Wireless Controller", heard: true, focused: true }}, {{ seat: "2P", name: "8BitDo Pro 2", heard: true }}]; versus: true; seat-name: "Xbox Wireless Controller"; next: {{ label: "Next", lit: true }};', ""),
                        ("Identity", f'{FILL} hints: {HINTS}; banner: "Identity"; pip: 3; new-save: {{ shown: true, focused: true }}; next: {{ label: "Finish", disabled: true }};', "")],
     "ZonePaused": [("Default", f'{FILL} rows: {PAUSED_ROWS}; hints: {HINTS};', 'ground: "paused";'),
-                   ("Question", f'{FILL} rows: {PAUSED_ROWS}; hints: {HINTS}; dialog: {{ shown: true, headline: "Restart", buttons: [{{ label: "No", focused: true }}, {{ label: "Yes" }}] }};', 'ground: "paused";')],
+                   ("Question", f'{FILL} rows: {PAUSED_ROWS}; hints: {HINTS}; dialog: {{ shown: true, headline: "Restart", buttons: [{{ label: "No", focused: true }}, {{ label: "Yes" }}] }};', 'ground: "paused";'),
+                   ("Strip", f'{FILL} heading: "Wario Land 4"; korri-heading: true; rows: {PAUSED_ROWS}; hints: {HINTS}; strip: {STRIP};', 'ground: "paused";'),
+                   ("StripUnknown", f'{FILL} rows: {PAUSED_ROWS}; hints: {HINTS}; strip: {STRIP_UNKNOWN};', 'ground: "paused";')],
 }
 
 SUFFIX = {"atoms": "atom", "molecules": "molecule", "organisms": "organism", "templates": "template", "pages": "page"}

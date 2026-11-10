@@ -6,6 +6,13 @@
 // bottom-right corner, Korri's controls then its groups stepping down-left
 // along it (one cap a step, at most four, resting at the foot, clear of
 // B BACK when the column reaches over it), Korri's status over it.
+//
+// The status strip (#378) stands in the band's top right, over the title, as
+// two facts lines stepping down-left like the rows: the device's (TIME,
+// BATTERY) over the stream's (RTT, VIDEO, DROPPED). The band grows by what
+// the strip needs beyond its own share; the band is opaque, so the facts read
+// over any frame. A red mark at the list's top or foot says more rows stand
+// there.
 
 import { Tokens } from "../ui/tokens.slint";
 import { ZoneShape } from "../ui/atoms/ZoneShape.slint";
@@ -14,7 +21,8 @@ import { ZoneCaps } from "../ui/atoms/ZoneCaps.slint";
 import { ZoneKeycap } from "../ui/atoms/ZoneKeycap.slint";
 import { ZonePausedControl } from "../ui/organisms/ZonePausedControl.slint";
 import { ZoneStatusLayer } from "../ui/organisms/ZoneStatusLayer.slint";
-import { Row, Dialog, Busy, Hints } from "../ui/types.slint";
+import { ZoneFactLine } from "../ui/molecules/ZoneFactLine.slint";
+import { Row, Dialog, Busy, Hints, Strip } from "../ui/types.slint";
 
 export component ZonePaused {
     in property <string> heading: "Paused";
@@ -23,9 +31,16 @@ export component ZonePaused {
     in property <Dialog> dialog;
     in property <Busy> busy;
     in property <Hints> hints;
+    in property <Strip> strip;
     property <length> a: Tokens.a;
     property <length> c1: Tokens.c1;
-    property <length> band-h: Math.clamp(Math.round(Tokens.h-art * Tokens.paused-band-share), Tokens.paused-band-least, Tokens.paused-band-most) * a;
+    // Caps-3 while the title fits the band (about 16 art px a letter at caps-3), else caps-2.
+    property <length> title-cap: root.heading.character-count * 16 * root.a > root.width - 120 * root.a ? Tokens.c2 : Tokens.c3;
+    // The strip's two lines, and the band that holds them over the title.
+    property <length> line-h: 15 * a;
+    property <length> strip-h: strip.shown ? 2 * line-h + a : 0;
+    property <length> band-own: Math.clamp(Math.round(Tokens.h-art * Tokens.paused-band-share), Tokens.paused-band-least, Tokens.paused-band-most) * a;
+    property <length> band-h: Math.max(band-own, strip.shown ? 2 * a + strip-h + 3 * a + title-cap + 4 * a + 4 * a : 0);
     property <length> wedge: Math.max(1, Tokens.h-art - Tokens.paused-wedge-top) * a;
     property <length> rows-left: Math.max(0, Math.min(Math.max(0, Tokens.w-art - wedge / a) + 8, Tokens.w-art - Math.min(Tokens.w-art, Tokens.paused-rows-least))) * a;
     property <length> rows-foot: rows-left < 80 * a ? 25 * a : 0;
@@ -53,23 +68,37 @@ export component ZonePaused {
             height: root.band-h;
             background: Tokens.paused-band;
         }
-        // Caps-3 while the title fits the band (about 16 art px a letter at caps-3), else caps-2.
-        property <length> title-cap: root.heading.character-count * 16 * root.a > root.width - 120 * root.a ? Tokens.c2 : Tokens.c3;
+        // The strip: each line hugs its facts at the band's right, the
+        // stream's (the longer) under the device's, so they step down-left.
+        if root.strip.shown: device-line := ZoneFactLine {
+            width: Math.min(self.natural, root.width - 8 * root.a);
+            x: root.width - 4 * root.a - self.width;
+            y: 2 * root.a;
+            height: root.line-h;
+            facts: root.strip.device;
+        }
+        if root.strip.shown: ZoneFactLine {
+            width: Math.min(self.natural, root.width - 8 * root.a);
+            x: root.width - 4 * root.a - self.width;
+            y: 2 * root.a + root.line-h + root.a;
+            height: root.line-h;
+            facts: root.strip.stream;
+        }
         ZonePanel {
             x: 8 * root.a;
             y: root.band-h - self.height - 4 * root.a;
-            width: Math.min(root.width - 16 * root.a, title-word.natural + 2 * parent.title-cap + 24 * root.a);
-            height: parent.title-cap + 4 * root.a;
-            run: parent.title-cap;
+            width: Math.min(root.width - 16 * root.a, title-word.natural + 2 * root.title-cap + 24 * root.a);
+            height: root.title-cap + 4 * root.a;
+            run: root.title-cap;
             ink: Tokens.black;
         }
         title-word := ZoneCaps {
-            x: 16 * root.a + parent.title-cap;
-            y: root.band-h - 8 * root.a - parent.title-cap;
-            box: Math.min(self.natural, root.width - 24 * root.a - 2 * parent.title-cap);
+            x: 16 * root.a + root.title-cap;
+            y: root.band-h - 8 * root.a - root.title-cap;
+            box: Math.min(self.natural, root.width - 24 * root.a - 2 * root.title-cap);
             elide: true;
             text: root.heading;
-            cap: parent.title-cap;
+            cap: root.title-cap;
             face: root.korri-heading ? "korri" : "caps";
         }
         ZoneKeycap {
@@ -110,6 +139,26 @@ export component ZonePaused {
             it: r;
             cap: root.cap;
         }
+    }
+    // More rows above or below what the list shows: a red mark pointing the
+    // way, in the margin right of the rows, level with the list's top or foot.
+    property <length> list-top: root.height - root.rows-foot - 8 * root.a - root.shown-h;
+    property <length> mark: 6 * root.a;
+    if root.scroll > 0: ZoneShape {
+        x: root.width - 7 * root.a;
+        y: root.list-top;
+        width: root.mark;
+        height: root.mark;
+        ink: Tokens.red;
+        commands: "M 0 " + (self.height / Tokens.unit) + " L " + Tokens.pt(self.width, self.height) + " L " + Tokens.pt(self.width / 2, 0) + " Z";
+    }
+    if root.scroll < root.list-h - root.room-h: ZoneShape {
+        x: root.width - 7 * root.a;
+        y: root.height - root.rows-foot - 8 * root.a - root.mark;
+        width: root.mark;
+        height: root.mark;
+        ink: Tokens.red;
+        commands: "M 0 0 L " + Tokens.pt(self.width, 0) + " L " + Tokens.pt(self.width / 2, self.height) + " Z";
     }
     ZoneStatusLayer {
         x: 0;

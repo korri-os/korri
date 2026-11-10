@@ -36,6 +36,13 @@ fixtures' words and look are Zone's.
   band and the wedge. A note that reaches past the wedge stands on a slab of
   the wedge's yellow. A window without alpha (the shell on Linux) shows black
   there.
+- PAUSED's status strip (#378) stands in the band over the title: two facts
+  lines like GAMES', TIME and BATTERY over RTT, VIDEO and DROPPED
+  (`src/plan/status-strip.ts`). A fact Korri does not give is Zone's dashes;
+  a measured 0 is 0. The band grows by what the strip needs past its own
+  share. The strip is no focus target. The viewer's "Stream controls" group
+  (#379) is drawn as any other group; a red mark at the list's top or foot
+  says more rows stand there, and a long value ends in "…" before its label.
 
 ## Checks
 

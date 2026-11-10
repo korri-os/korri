@@ -165,6 +165,13 @@ export struct Fact {
     known: bool,
 }
 
+// PAUSED's status strip (#378): the device's facts, then the stream's.
+export struct Strip {
+    shown: bool,
+    device: [Fact],
+    stream: [Fact],
+}
+
 export struct Act {
     label: string,
     lit: bool,

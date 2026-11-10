@@ -89,10 +89,10 @@ export component ZonePausedControl {
             run: root.cap;
             ink: Tokens.black;
         }
-        ZoneCaps {
+        label := ZoneCaps {
             x: root.cap + 4 * root.a;
             y: 0;
-            box: Math.max(Tokens.unit, root.width * 0.6);
+            box: Math.max(Tokens.unit, parent.value-x - 6 * root.a - self.x);
             elide: true;
             text: root.it.label;
             cap: root.cap;
@@ -101,6 +101,12 @@ export component ZonePausedControl {
         }
         property <length> right-end: root.width - root.cap - 6 * root.a;
         property <length> meter-w: root.it.kind == "range" ? 3.5 * root.c1 : 0;
+        // The value takes what the label leaves, at least 40% of the row's
+        // words, and ends in "…" past that: a long choice (a mouse mode)
+        // never runs over its label or past the panel.
+        property <length> words: self.right-end - self.meter-w - (self.meter-w > 0 ? 4 * root.a : 0) - (root.cap + 4 * root.a);
+        property <length> value-w: Math.min(value.natural, Math.max(self.words * 0.4, self.words - label.natural - 6 * root.a));
+        property <length> value-x: self.right-end - self.meter-w - (self.meter-w > 0 ? 4 * root.a : 0) - self.value-w;
         if root.it.kind == "range": Rectangle {
             x: parent.right-end - parent.meter-w;
             y: 4 * root.a + (root.cap + 4 * root.a) / 2 - 3 * root.a;
@@ -116,8 +122,10 @@ export component ZonePausedControl {
             }
         }
         value := ZoneCaps {
-            x: parent.right-end - parent.meter-w - (parent.meter-w > 0 ? 4 * root.a : 0) - self.natural;
+            x: parent.value-x;
             y: 4 * root.a + (root.cap + 4 * root.a - root.c1) / 2;
+            box: parent.value-w < self.natural ? parent.value-w : 0;
+            elide: true;
             text: root.it.value;
             ink: root.it.saving ? "hud" : "white";
             face: "fact";
