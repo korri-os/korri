@@ -98,6 +98,21 @@ impl LocalInputViewer {
     }
 }
 impl LinuxStreamViewer for LocalInputViewer {
+    fn snapshot<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<'a, Result<Option<crate::linux_viewer::ViewerSnapshot>, LinuxViewerError>> {
+        self.viewer.snapshot(launch)
+    }
+    fn apply<'a>(
+        &'a self,
+        launch: &'a str,
+        control: &'a str,
+        value: Option<korri_surface_treaty::SurfaceGameplayControlValue>,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        self.viewer.apply(launch, control, value)
+    }
+
     fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
         self.viewer.display()
     }

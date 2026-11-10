@@ -17,6 +17,37 @@ struct AndroidViewer {
 }
 
 impl AndroidViewer {
+    fn local(&self, method: &str, arguments: &[String]) -> Result<String, LinuxViewerError> {
+        let failure = || LinuxViewerError::new("Android local viewer effect failed");
+        let mut env = self.vm.attach_current_thread().map_err(|_| failure())?;
+        let result = env.with_local_frame(12, |env| -> Result<String, jni::errors::Error> {
+            let class: &JClass<'_> = self.class.as_obj().into();
+            let strings = arguments
+                .iter()
+                .map(|value| env.new_string(value))
+                .collect::<Result<Vec<_>, _>>()?;
+            let values = strings
+                .iter()
+                .map(|value| JValue::Object(value.as_ref()))
+                .collect::<Vec<_>>();
+            let signature = if arguments.len() == 1 {
+                CONTROL
+            } else {
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
+            };
+            let result = env
+                .call_static_method(class, method, signature, &values)?
+                .l()?;
+            let result = jni::objects::JString::from(result);
+            let value = String::from(env.get_string(&result)?);
+            Ok(value)
+        });
+        if result.is_err() && env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
+        result.map_err(|_| failure())
+    }
+
     fn invoke(
         &self,
         method: &str,
@@ -107,6 +138,65 @@ impl Adapter {
 }
 
 impl LinuxStreamViewer for Adapter {
+    fn snapshot<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> BoxFuture<'a, Result<Option<crate::linux_viewer::ViewerSnapshot>, LinuxViewerError>> {
+        let viewer = self.0.clone();
+        let arguments = vec![launch.to_owned()];
+        Box::pin(async move {
+            let json =
+                tokio::task::spawn_blocking(move || viewer.local("viewerSnapshot", &arguments))
+                    .await
+                    .map_err(|_| LinuxViewerError::new("Viewer worker failed"))??;
+            let mut snapshot: crate::linux_viewer::ViewerSnapshot = serde_json::from_str(&json)
+                .map_err(|_| LinuxViewerError::new("Invalid viewer observation"))?;
+            // SystemClock.uptimeMillis and Rust's Android Instant both use CLOCK_MONOTONIC.
+            // Carry the producer's age across JNI; receiving an old sample is not a new sample.
+            let mut time = libc::timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            };
+            // SAFETY: clock_gettime writes only into this owned, initialized timespec.
+            let clock_ok = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } == 0;
+            let now_ms = time.tv_sec as f64 * 1000.0 + time.tv_nsec as f64 / 1e6;
+            let age = snapshot
+                .sampled_at_ms
+                .filter(|at| clock_ok && at.is_finite() && *at >= 0.0 && *at <= now_ms)
+                .and_then(|at| std::time::Duration::try_from_secs_f64((now_ms - at) / 1000.0).ok());
+            snapshot.sampled_at = age.and_then(|age| std::time::Instant::now().checked_sub(age));
+            if snapshot.sampled_at.is_none() {
+                snapshot.stream_health = None;
+            }
+            Ok(Some(snapshot))
+        })
+    }
+
+    fn apply<'a>(
+        &'a self,
+        launch: &'a str,
+        control: &'a str,
+        value: Option<korri_surface_treaty::SurfaceGameplayControlValue>,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        let viewer = self.0.clone();
+        let arguments = vec![
+            launch.to_owned(),
+            control.to_owned(),
+            serde_json::to_string(&value).expect("finite validated control value"),
+        ];
+        Box::pin(async move {
+            let result =
+                tokio::task::spawn_blocking(move || viewer.local("viewerApply", &arguments))
+                    .await
+                    .map_err(|_| LinuxViewerError::new("Viewer worker failed"))??;
+            if result == "Applied" {
+                Ok(())
+            } else {
+                Err(LinuxViewerError::new("Viewer did not confirm control"))
+            }
+        })
+    }
+
     fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
         let mut env = self.0.vm.attach_current_thread().ok()?;
         let result = env.with_local_frame(4, |env| -> Result<String, jni::errors::Error> {
@@ -179,6 +269,12 @@ pub(super) fn adapter(
     class: &JClass<'_>,
 ) -> Result<Arc<dyn LinuxStreamViewer>, jni::errors::Error> {
     env.get_static_method_id(class, "viewerDisplay", DISPLAY)?;
+    env.get_static_method_id(class, "viewerSnapshot", CONTROL)?;
+    env.get_static_method_id(
+        class,
+        "viewerApply",
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+    )?;
     env.get_static_method_id(class, "viewerStart", START)?;
     for method in [
         "viewerStatus",

@@ -93,6 +93,9 @@ export interface PicoOverlayGroupView {
 
 export interface PicoOverlayView {
   readonly title: string
+  readonly clockLabel?: string
+  readonly batteryPercent?: SurfaceGameplayOverlayPresentation["batteryPercent"]
+  readonly streamHealth?: SurfaceGameplayOverlayPresentation["streamHealth"]
   /** Korri's own controls: always first. */
   readonly controls: readonly PicoOverlayControlView[]
   readonly groups: readonly PicoOverlayGroupView[]
@@ -104,9 +107,13 @@ export interface PicoOverlayView {
 export function picoOverlayViewFrom(
   presentation: SurfaceGameplayOverlayPresentation,
   status: SurfaceStatus,
+  clockLabel?: string,
 ): PicoOverlayView {
   return {
     title: presentation.title ?? "PLAYING",
+    ...(clockLabel === undefined ? {} : { clockLabel }),
+    ...(presentation.batteryPercent === undefined ? {} : { batteryPercent: presentation.batteryPercent }),
+    ...(presentation.streamHealth === undefined ? {} : { streamHealth: presentation.streamHealth }),
     controls: presentation.controls.map(controlView),
     groups: presentation.groups.map((group) => ({
       id: group.id,

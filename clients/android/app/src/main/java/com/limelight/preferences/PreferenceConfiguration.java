@@ -225,7 +225,8 @@ public class PreferenceConfiguration {
     public boolean enforceDisplayMode, enableSops, playHostAudio, disableWarnings, fullScreen;
     public ScaleMode videoScaleMode;
     public int renderMode;
-    public boolean smallIconMode, multiController, usbDriver, flipFaceButtons;
+    public boolean smallIconMode, multiController, usbDriver;
+    public volatile boolean flipFaceButtons;
     public boolean enableBatteryReport;
     public boolean forceQwerty;
     public boolean backAsMeta;
@@ -332,7 +333,7 @@ public class PreferenceConfiguration {
     public boolean gamepadTouchpadAsMouse;
     public boolean gamepadMotionSensorsFallbackToDevice;
     public boolean forceMotionSensorsFallbackToDevice;
-    public boolean enableRumble;
+    public volatile boolean enableRumble;
     public boolean preventPacketLoss;
 
     public boolean rememberZoomPan;

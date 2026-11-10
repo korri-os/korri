@@ -813,6 +813,15 @@ impl Root {
         *self.presentation.lock().expect("presentation poisoned") =
             Presentation::Overlay(Arc::clone(&controller));
         (self.notify)();
+        let local = Arc::clone(&controller);
+        tokio::spawn(async move {
+            loop {
+                if !local.refresh_viewer().await {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
         tokio::spawn(async move { controller.refresh().await });
     }
 
@@ -998,6 +1007,11 @@ impl Root {
             let downloads = Arc::clone(&self.downloads);
             tokio::spawn(async move { downloads.refresh(Some(ids)).await });
         }
+    }
+
+    /// The same local clock used by the catalog, also available over gameplay.
+    pub fn clock(&self) -> String {
+        self.clock.lock().expect("clock poisoned").clone()
     }
 
     /// The model without the catalog window and focused game, and the whole

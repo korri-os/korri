@@ -243,6 +243,28 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         return range;
     }
 
+    public void stopRumble() {
+        for (short seat = 0; seat < MAX_GAMEPADS; seat++) {
+            handleRumble(seat, (short) 0, (short) 0);
+            handleRumbleTriggers(seat, (short) 0, (short) 0);
+        }
+    }
+
+    /** The same concrete endpoints handleRumble uses; no guessed device model. */
+    public boolean hasRumble() {
+        if (stopped) return false;
+        for (int i = 0; i < inputDeviceContexts.size(); i++) {
+            InputDeviceContext device = inputDeviceContexts.valueAt(i);
+            if (device.vibrator != null || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && device.vibratorManager != null)
+                    || sceManager.isRecognizedDevice(device.inputDevice)) return true;
+        }
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            if ((usbDeviceContexts.valueAt(i).device.getCapabilities() & (MoonBridge.LI_CCAP_RUMBLE | MoonBridge.LI_CCAP_TRIGGER_RUMBLE)) != 0) return true;
+        }
+        return prefConfig.vibrateFallbackToDevice && hasGameController
+                && deviceVibrator != null && deviceVibrator.hasVibrator();
+    }
+
     public boolean hasController() {
         return hasGameController;
     }

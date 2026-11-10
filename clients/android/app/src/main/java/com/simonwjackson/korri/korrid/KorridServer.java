@@ -55,6 +55,12 @@ public final class KorridServer {
     }
 
     /** Exact native effects called by Rust, never exposed to a WebView. */
+    public static String viewerSnapshot(String launchId) throws Exception {
+        return com.limelight.KorriStreamViewer.snapshot(launchId);
+    }
+    public static String viewerApply(String launchId, String control, String value) throws Exception {
+        return com.limelight.KorriStreamViewer.apply(launchId, control, value);
+    }
     public static String viewerDisplay() {
         return com.limelight.KorriStreamViewer.viewerDisplay();
     }

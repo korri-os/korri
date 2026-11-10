@@ -16,6 +16,9 @@ public final class KorriGuideService extends AccessibilityService {
         if (event.getKeyCode() != KeyEvent.KEYCODE_BUTTON_MODE) {
             return false;
         }
+        // A focused stream keeps the see-through surface inside Game (#376).
+        // Native/external apps retain ADR 0054's existing show-Korri behavior.
+        if (com.limelight.KorriStreamViewer.forwardGuide(event)) return true;
         if (event.getAction() == KeyEvent.ACTION_UP) {
             // Korri's shell opens its gameplay overlay for the live session.
             // A see-through window over the game is a later step (ADR 0053).

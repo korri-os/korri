@@ -1681,6 +1681,10 @@ mod overlay {
                 if matches!(model.presentation, SurfacePresentation::GameplayOverlay(_))
                     && model.status == SurfaceStatus::Browsing
                 {
+                    assert_eq!(
+                        model.clock_label.as_deref(),
+                        Some(hub.root().clock().as_str())
+                    );
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;

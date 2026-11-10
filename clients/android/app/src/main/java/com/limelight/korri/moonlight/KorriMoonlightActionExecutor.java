@@ -204,6 +204,13 @@ public final class KorriMoonlightActionExecutor {
         this.ui = ui;
     }
 
+    /** V.Session already holds the exact lease on the UI thread; no publication authority. */
+    public Outcome executeLocal(Request request) {
+        if (!ui.isUiThread() || request == null || request.effect == null
+                || isRuntimeEffect(request.effect) || !valid(request)) return Outcome.INVALID_VALUE;
+        return apply(request);
+    }
+
     public Outcome execute(Request request) {
         return execute(request, () -> true);
     }

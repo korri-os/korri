@@ -153,6 +153,8 @@ pub fn gameplay_overlay_presentation_from(
 ) -> SurfaceGameplayOverlayPresentation {
     SurfaceGameplayOverlayPresentation {
         kind: SurfaceGameplayOverlayKind,
+        battery_percent: None,
+        stream_health: None,
         title: controls.title.clone(),
         controls: core_controls(),
         groups: controls
@@ -260,6 +262,8 @@ struct Inner {
     refresh_generation: u64,
     retry: Option<Retry>,
     sticky: bool,
+    viewer: Option<(std::time::Instant, crate::linux_viewer::ViewerSnapshot)>,
+    viewer_generation: u64,
 }
 
 /// One live overlay for one exact launch.
@@ -269,6 +273,7 @@ pub struct OverlayController {
     inner: Mutex<Inner>,
     notify: Notify,
     exit: Box<dyn Fn(OverlayExit) + Send + Sync>,
+    viewer_operation: tokio::sync::Mutex<()>,
 }
 
 impl OverlayController {
@@ -287,9 +292,12 @@ impl OverlayController {
                 refresh_generation: 0,
                 retry: None,
                 sticky: false,
+                viewer: None,
+                viewer_generation: 0,
             }),
             launch_id,
             korrid,
+            viewer_operation: tokio::sync::Mutex::new(()),
             notify,
             exit,
         })
@@ -304,7 +312,49 @@ impl OverlayController {
     }
 
     pub fn model(&self) -> SurfaceModel {
-        self.lock().current.clone()
+        let inner = self.lock();
+        let mut model = inner.current.clone();
+        if let SurfacePresentation::GameplayOverlay(presentation) = &mut model.presentation {
+            super::viewer::project(
+                presentation,
+                inner.viewer.as_ref(),
+                std::time::Instant::now(),
+            );
+        }
+        model
+    }
+
+    /// Local observations never wait for far plugin discovery or mutate far authority.
+    pub async fn refresh_viewer(&self) -> bool {
+        let generation = {
+            let mut inner = self.lock();
+            if inner.destroyed {
+                return false;
+            }
+            inner.viewer_generation += 1;
+            inner.viewer_generation
+        };
+        let snapshot = match &self.korrid.viewer {
+            Some(viewer) => {
+                tokio::time::timeout(Duration::from_secs(1), viewer.snapshot(&self.launch_id))
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .flatten()
+            }
+            None => None,
+        };
+        let mut inner = self.lock();
+        if inner.destroyed {
+            return false;
+        }
+        if generation != inner.viewer_generation {
+            return true;
+        }
+        inner.viewer = snapshot.map(|snapshot| (std::time::Instant::now(), snapshot));
+        drop(inner);
+        (self.notify)();
+        true
     }
 
     fn publish(&self, change: impl FnOnce(&mut SurfaceModel), expected_epoch: Option<u64>) {
@@ -669,6 +719,10 @@ impl OverlayController {
         if self.lock().destroyed {
             return;
         }
+        if control_id.starts_with("viewer:") {
+            self.invoke_viewer(control_id, value).await;
+            return;
+        }
         match control_id.as_str() {
             OVERLAY_RESUME_CONTROL_ID => self.resume_game().await,
             OVERLAY_END_CONTROL_ID => self.end_session().await,
@@ -682,6 +736,66 @@ impl OverlayController {
             }
             OVERLAY_OPEN_KORRI_CONTROL_ID => (self.exit)(OverlayExit::OpenKorri),
             _ => self.invoke_plugin(control_id, value).await,
+        }
+    }
+
+    async fn invoke_viewer(&self, control_id: String, value: Option<SurfaceGameplayControlValue>) {
+        let _operation = self.viewer_operation.lock().await;
+        if self.lock().destroyed {
+            return;
+        }
+        let control = match self.model().presentation {
+            SurfacePresentation::GameplayOverlay(presentation) => presentation
+                .groups
+                .into_iter()
+                .filter(|group| group.id == super::viewer::GROUP_ID)
+                .flat_map(|group| group.controls)
+                .find(|control| control.id == control_id),
+            _ => None,
+        };
+        let Some(control) = control.filter(|control| {
+            control.enabled && super::viewer::valid(&control.interaction, &value)
+        }) else {
+            self.lock().sticky = true;
+            self.problem(
+                "Control unavailable",
+                "That stream control changed. Reopen the overlay and try again.".into(),
+                None,
+            );
+            return;
+        };
+        let Some(viewer) = &self.korrid.viewer else {
+            return;
+        };
+        let epoch = self.begin();
+        if control.dismiss_on_success {
+            if let SessionTransitionOutcome::Err(failure) =
+                self.korrid.session_resume(self.launch_id.clone()).await
+            {
+                self.problem("Could not resume", failure.message, Some(Retry::Resume));
+                return;
+            }
+        }
+        if !self.current(epoch) {
+            return;
+        }
+        let result = viewer.apply(&self.launch_id, &control_id, value).await;
+        if !self.current(epoch) {
+            return;
+        }
+        match result {
+            Ok(()) if control.dismiss_on_success => (self.exit)(OverlayExit::Resumed),
+            Ok(()) => {
+                self.refresh_viewer().await;
+            }
+            Err(_) => {
+                self.lock().sticky = true;
+                self.problem(
+                    "Stream control refused",
+                    "The local viewer could not apply that stream control.".into(),
+                    None,
+                )
+            }
         }
     }
 
@@ -744,6 +858,79 @@ pub async fn focused_overlay_session(
 #[cfg(test)]
 mod live_overlay_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn viewer_controls_apply_locally_read_back_and_never_invoke_far_session() {
+        use crate::linux_viewer::{
+            test_backend::TestLinuxStreamViewer, LinuxViewerStatus, ViewerSnapshot,
+        };
+        let viewer = Arc::new(TestLinuxStreamViewer::default());
+        viewer.seed("launch", LinuxViewerStatus::Running);
+        viewer.set_snapshot(Some(ViewerSnapshot {
+            controls: vec![SurfaceGameplayControl {
+                id: "viewer:launch:1:1:fill".into(),
+                label: "Crop to fill".into(),
+                description: None,
+                enabled: true,
+                disabled_reason: None,
+                destructive: false,
+                dismiss_on_success: false,
+                interaction: SurfaceGameplayControlInteraction::Toggle {
+                    value: false,
+                    true_label: "On".into(),
+                    false_label: "Off".into(),
+                },
+            }],
+            ..Default::default()
+        }));
+        let korrid = Korrid::new(Arc::new(|_| {
+            panic!("a local viewer operation must never invoke far RPC")
+        }))
+        .with_viewer(Some(viewer.clone()));
+        let overlay = OverlayController::new(
+            "launch".into(),
+            Some("Game".into()),
+            korrid,
+            Arc::new(|| {}),
+            Box::new(|_| panic!("toggle must stay open")),
+        );
+        overlay.refresh_viewer().await;
+        overlay
+            .invoke(
+                "viewer:launch:1:1:fill".into(),
+                Some(SurfaceGameplayControlValue::Toggle { value: true }),
+            )
+            .await;
+        assert_eq!(
+            viewer.applications(),
+            vec![("launch".into(), "viewer:launch:1:1:fill".into())]
+        );
+        let SurfacePresentation::GameplayOverlay(presentation) = overlay.model().presentation
+        else {
+            panic!()
+        };
+        assert!(matches!(
+            presentation.groups[0].controls[0].interaction,
+            SurfaceGameplayControlInteraction::Toggle { value: true, .. }
+        ));
+        overlay.invoke("viewer:old:1:1:fill".into(), None).await;
+        overlay
+            .invoke(
+                "viewer:launch:1:1:fill".into(),
+                Some(SurfaceGameplayControlValue::Range { value: 2.0 }),
+            )
+            .await;
+        assert_eq!(viewer.applications().len(), 1);
+        viewer.set_snapshot(None);
+        overlay.refresh_viewer().await;
+        let SurfacePresentation::GameplayOverlay(presentation) = overlay.model().presentation
+        else {
+            panic!()
+        };
+        assert!(presentation.groups.is_empty() && presentation.stream_health.is_none());
+        overlay.destroy();
+        assert!(!overlay.refresh_viewer().await);
+    }
 
     #[test]
     fn android_stream_overlay_offers_disconnect_without_platform_instructions() {

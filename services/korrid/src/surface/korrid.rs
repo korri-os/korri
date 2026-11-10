@@ -48,6 +48,7 @@ pub(crate) type LaunchStepsResolver = Arc<
 pub struct Korrid {
     send: Send_,
     launch_steps: Option<LaunchStepsResolver>,
+    pub(crate) viewer: Option<Arc<dyn crate::linux_viewer::LinuxStreamViewer>>,
 }
 
 /// How a refusal reads for one method, as the portal client mapped it.
@@ -125,7 +126,16 @@ impl Korrid {
         Self {
             send,
             launch_steps: None,
+            viewer: None,
         }
+    }
+
+    pub(crate) fn with_viewer(
+        mut self,
+        viewer: Option<Arc<dyn crate::linux_viewer::LinuxStreamViewer>>,
+    ) -> Self {
+        self.viewer = viewer;
+        self
     }
 
     pub(crate) fn with_launch_steps(mut self, resolve: LaunchStepsResolver) -> Self {

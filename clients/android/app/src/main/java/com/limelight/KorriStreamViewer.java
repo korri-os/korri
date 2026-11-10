@@ -10,6 +10,7 @@ import android.os.Build;
 import android.view.Display;
 
 import com.limelight.preferences.PreferenceConfiguration;
+import com.limelight.korri.moonlight.KorriMoonlightActionExecutor.Effect;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -52,6 +53,7 @@ public final class KorriStreamViewer {
 
     private static final class Session {
         final KorriStreamViewerState state;
+        final KorriStreamControlState controls = new KorriStreamControlState();
         final Map<Long, Game> activities = new HashMap<>();
         Intent intent;
         final AtomicBoolean leavePending = new AtomicBoolean();
@@ -67,6 +69,22 @@ public final class KorriStreamViewer {
 
     public static synchronized void initialize(Context context) {
         if (instance == null) instance = new KorriStreamViewer(context);
+    }
+
+    /** ADR 0054's global Guide service must preserve Game's in-place overlay path. */
+    public static boolean forwardGuide(android.view.KeyEvent event) {
+        if (event.getKeyCode() != android.view.KeyEvent.KEYCODE_BUTTON_MODE) return false;
+        KorriStreamViewer host = instance;
+        Session current = host == null ? null : host.session;
+        if (current == null) return false;
+        synchronized (current.state) {
+            long lease = current.state.activityLease();
+            if (host.session != current || current.retired || !current.state.canPresent(lease)
+                    || current.state.phase() != Phase.RUNNING) return false;
+            Game game;
+            synchronized (current.activities) { game = current.activities.get(lease); }
+            return game != null && game.dispatchKeyEvent(event);
+        }
     }
 
     public static void shutdown() {
@@ -157,6 +175,47 @@ public final class KorriStreamViewer {
                 throw failure();
             }
         }
+    }
+
+    /** Exact worker-to-UI read/apply seam; no viewer state is published by Java. */
+    private static String withGame(String launchId, String control, String value) throws Exception {
+        requireWorker();
+        KorriStreamViewer host = host();
+        Session current = host.requireExact(launchId);
+        java.util.concurrent.FutureTask<String> task = new java.util.concurrent.FutureTask<>(() -> {
+            synchronized (current.state) {
+                long lease = current.state.activityLease();
+                Phase phase = current.state.phase();
+                if (host.session != current || current.retired || !current.state.canPresent(lease)
+                        || (phase != Phase.RUNNING && phase != Phase.BACKGROUNDED)) throw failure();
+                Game game;
+                synchronized (current.activities) { game = current.activities.get(lease); }
+                if (game == null) throw failure();
+                String prefix = KorriViewerControls.prefix(launchId, current.state.generation, lease);
+                if (control == null) return KorriViewerControls.snapshot(game, prefix);
+                if (!KorriViewerControls.apply(game, launchId, prefix, control, value, current.controls)) {
+                    // Rust resumed first for stream-input commands. Restore the overlay
+                    // on a refused effect so its error is visible, without retargeting a lease.
+                    if (control.startsWith(prefix)) {
+                        Effect effect = Effect.fromWire(control.substring(prefix.length()));
+                        if (effect != null && KorriViewerControls.dismiss(effect)) game.showGameMenu();
+                    }
+                    throw failure();
+                }
+                return "Applied";
+            }
+        });
+        host.main.post(task);
+        try { return task.get(5, java.util.concurrent.TimeUnit.SECONDS); }
+        finally { task.cancel(false); }
+    }
+
+    public static String snapshot(String launchId) throws Exception {
+        return withGame(launchId, null, null);
+    }
+
+    public static String apply(String launchId, String control, String value) throws Exception {
+        return withGame(launchId, control, value);
     }
 
     public static String status(String launchId) {
@@ -419,7 +478,12 @@ public final class KorriStreamViewer {
     static void connected(Game game, long lease) {
         KorriStreamViewer host = instance;
         Session current = host == null ? null : host.source(game);
-        if (current != null) current.state.connected(lease);
+        if (current != null) synchronized (current.state) {
+            if (host.session != current || !current.state.canPresent(lease)) return;
+            KorriViewerControls.restore(game, current.controls);
+            game.restoreViewerZoomPan(current.controls);
+            current.state.connected(lease);
+        }
     }
     static void focus(Game game, long lease, boolean focused) {
         KorriStreamViewer host = instance;
@@ -440,7 +504,10 @@ public final class KorriStreamViewer {
         KorriStreamViewer host = instance;
         Session current = host == null ? null : host.source(game);
         if (current == null) return;
-        synchronized (current.activities) { current.activities.remove(lease); }
-        current.state.destroyed(lease, game.isChangingConfigurations());
+        synchronized (current.state) {
+            if (current.state.isCurrent(lease)) game.captureViewerZoomPan(current.controls);
+            synchronized (current.activities) { current.activities.remove(lease); }
+            current.state.destroyed(lease, game.isChangingConfigurations());
+        }
     }
 }

@@ -22,6 +22,7 @@
  * Problem instead of closing the overlay under it.
  */
 import type {
+  SurfaceModel,
   SurfaceGameplayControl,
   SurfaceGameplayControlValue,
   SurfaceGameplayOverlayPresentation,
@@ -65,6 +66,18 @@ export type ZoneOverlayMessage =
   | { readonly _tag: "FocusedAnswer"; readonly index: 0 | 1 }
   /** A on NO or YES. */
   | { readonly _tag: "ChoseAnswer"; readonly yes: boolean }
+
+/** Read-only strip facts for the package's view; never part of its focus state. */
+export function overlayViewerFacts(model: SurfaceModel) {
+  const overlay = model.presentation
+  if (overlay.kind !== "gameplay-overlay") return undefined
+  return {
+    clockLabel: model.clockLabel,
+    title: overlay.title,
+    batteryPercent: overlay.batteryPercent,
+    streamHealth: overlay.streamHealth,
+  }
+}
 
 /** Every control in the overlay, flat ones first, then each group's. */
 export function overlayControls(overlay: SurfaceGameplayOverlayPresentation): readonly SurfaceGameplayControl[] {

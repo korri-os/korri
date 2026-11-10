@@ -36,6 +36,7 @@ pub mod starter_pack;
 pub mod store;
 #[cfg(test)]
 mod tests;
+pub(crate) mod viewer;
 pub mod watch;
 
 use std::{
@@ -305,6 +306,7 @@ impl SurfaceHub {
         if let Some(overlay) = root.overlay() {
             let mut model = overlay.model();
             model.displays = root.display_facts();
+            model.clock_label = Some(root.clock());
             return Ok(model);
         }
         let host_revision = self.host_revision.load(Ordering::SeqCst);

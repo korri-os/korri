@@ -363,6 +363,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
+        if (korriViewerRequested) {
+            // Korri's surface owns the strip and overlay. These old native affordances
+            // are not part of the declared first cut, even with saved Moonlight prefs.
+            prefConfig.enablePerfOverlay = false;
+            prefConfig.enableFloatingButton = false;
+        }
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
 
         // Override resolution if both width and height are provided via intent (one-time, not persisted)
@@ -1841,7 +1847,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         // Save zoom/pan before other cleanup
-        if (prefConfig != null && prefConfig.rememberZoomPan && panZoomHandler != null) {
+        if (!korriViewerRequested && prefConfig != null && prefConfig.rememberZoomPan && panZoomHandler != null) {
             SharedPreferences basePrefs = PreferenceManager.getDefaultSharedPreferences(this);
             basePrefs.edit()
                     .putFloat("number_zoom_scale", panZoomHandler.getScaleFactor())
@@ -3783,7 +3789,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     @Override
-    public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
+    public synchronized void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
         if (prefConfig.enableRumble) {
             LimeLog.info(String.format((Locale)null, "Rumble on gamepad %d: %04x %04x", controllerNumber, lowFreqMotor, highFreqMotor));
             controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);
@@ -3791,7 +3797,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     @Override
-    public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {
+    public synchronized void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {
+        if (!prefConfig.enableRumble) return;
         LimeLog.info(String.format((Locale)null, "Rumble on gamepad triggers %d: %04x %04x", controllerNumber, leftTrigger, rightTrigger));
 
         controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);
@@ -4371,6 +4378,38 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (korriOverlay != null) korriOverlay.hide();
     }
 
+    void captureViewerZoomPan(KorriStreamControlState state) {
+        if (panZoomHandler != null) state.captureZoomPan(panZoomHandler);
+    }
+    void restoreViewerZoomPan(KorriStreamControlState state) {
+        if (panZoomHandler != null) state.restoreZoomPan(panZoomHandler);
+    }
+    PreferenceConfiguration.ScaleMode viewerScaleMode() { return prefConfig.videoScaleMode; }
+    void viewerRestoreScaleMode(PreferenceConfiguration.ScaleMode mode) {
+        prefConfig.videoScaleMode = mode;
+        streamContainer.setDesiredAspectRatio(mode == PreferenceConfiguration.ScaleMode.STRETCH ? 0
+                : (double) displayWidth / (double) displayHeight);
+        streamContainer.setFillDisplay(mode == PreferenceConfiguration.ScaleMode.FILL);
+    }
+    boolean viewerSgsrActive() { return prefConfig.renderMode == 3; }
+    boolean viewerKeyboardControllerVisible() { return keyBoardController != null && keyBoardController.shown; }
+    boolean viewerTouchSensitivity() { return prefConfig.enableTouchSensitivity; }
+    int viewerOrientation() { return currentOrientation; }
+    boolean viewerHasPointer() {
+        if (prefConfig.mouseEmulation && controllerHandler != null && controllerHandler.hasController()) return true;
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice device = InputDevice.getDevice(id);
+            if (device != null && (device.supportsSource(InputDevice.SOURCE_MOUSE)
+                    || device.supportsSource(InputDevice.SOURCE_TOUCHPAD))) return true;
+        }
+        return false;
+    }
+    boolean viewerHasRumble() { return controllerHandler != null && controllerHandler.hasRumble(); }
+    org.json.JSONObject viewerHealth() throws org.json.JSONException {
+        if (decoderRenderer == null || !connected) return null;
+        return decoderRenderer.viewerHealth();
+    }
+
     @Override
     public boolean available(KorriMoonlightActionExecutor.Effect effect) {
         switch (effect) {
@@ -4422,12 +4461,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public int sgsrSharpness() {
+        if (korriViewerRequested) return Math.round(prefConfig.sgsrSharpness * 10f);
         return PreferenceManager.getDefaultSharedPreferences(this)
                 .getInt("seekbar_sgsr_sharpness", 20);
     }
 
     @Override
     public void setSgsrSharpness(int value) {
+        if (korriViewerRequested) {
+            prefConfig.sgsrSharpness = value / 10f;
+            streamContainer.updateSgsrParams(prefConfig.sgsrSharpness, prefConfig.sgsrEdgeThreshold);
+            return;
+        }
         KorriSettingsBridge.applySetting(
                 this, "seekbar_sgsr_sharpness", String.valueOf(value));
         applyLivePrefs();
@@ -4435,12 +4480,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public int sgsrEdgeThreshold() {
+        if (korriViewerRequested) return Math.round(prefConfig.sgsrEdgeThreshold * 255f);
         return PreferenceManager.getDefaultSharedPreferences(this)
                 .getInt("seekbar_sgsr_edge_threshold", 8);
     }
 
     @Override
     public void setSgsrEdgeThreshold(int value) {
+        if (korriViewerRequested) {
+            prefConfig.sgsrEdgeThreshold = value / 255f;
+            streamContainer.updateSgsrParams(prefConfig.sgsrSharpness, prefConfig.sgsrEdgeThreshold);
+            return;
+        }
         KorriSettingsBridge.applySetting(
                 this, "seekbar_sgsr_edge_threshold", String.valueOf(value));
         applyLivePrefs();
@@ -4453,6 +4504,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void setFaceButtonFlip(boolean value) {
+        if (korriViewerRequested) { prefConfig.flipFaceButtons = value; return; }
         KorriSettingsBridge.applySetting(
                 this, "checkbox_flip_face_buttons", String.valueOf(value));
         applyLivePrefs();
@@ -4464,7 +4516,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     @Override
-    public void setRumble(boolean value) {
+    public synchronized void setRumble(boolean value) {
+        if (korriViewerRequested) {
+            prefConfig.enableRumble = value;
+            if (!value && controllerHandler != null) {
+                controllerHandler.stopRumble();
+            }
+            return;
+        }
         KorriSettingsBridge.applySetting(
                 this, "checkbox_enable_rumble", String.valueOf(value));
         applyLivePrefs();
@@ -4477,6 +4536,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void setPictureInPicture(boolean value) {
+        if (korriViewerRequested) { prefConfig.enablePip = value; updatePipAutoEnter(); return; }
         KorriSettingsBridge.applySetting(
                 this, "checkbox_enable_pip", String.valueOf(value));
         applyLivePrefs();
@@ -4558,7 +4618,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return;
         }
         applyMouseMode(index);
-        if (prefConfig.rememberMouseMode) {
+        if (!korriViewerRequested && prefConfig.rememberMouseMode) {
             PreferenceManager.getDefaultSharedPreferences(this)
                     .edit()
                     .putString("mouse_mode_list", String.valueOf(index))
@@ -4572,6 +4632,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * apply immediately without a stream restart.
      */
     public void applyLivePrefs() {
+        // The exact viewer owns a stream-local config; settings writes are not its state.
+        if (korriViewerRequested) return;
         android.content.SharedPreferences prefs =
                 android.preference.PreferenceManager.getDefaultSharedPreferences(this);
         float sharpness = prefs.getInt("seekbar_sgsr_sharpness", 20) / 10f;

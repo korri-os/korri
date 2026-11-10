@@ -5079,7 +5079,15 @@ fn surface_hub_for(
         })
     });
     surface::SurfaceHub::new(
-        surface::korrid::Korrid::new(send).with_launch_steps(steps),
+        surface::korrid::Korrid::new(send)
+            .with_launch_steps(steps)
+            .with_viewer(match &surface_host.mode {
+                ServerMode::Brain(brain) => Some(brain.upstream.local_viewer()),
+                ServerMode::Host(_) => surface_host
+                    .remote
+                    .as_ref()
+                    .map(|remote| remote.local_viewer()),
+            }),
         surface_host.private_state_root().to_path_buf(),
         surface_host.overlay_intent.subscribe(),
         controllers,

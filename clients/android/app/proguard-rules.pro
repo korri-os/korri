@@ -45,6 +45,8 @@
     public static java.lang.String networkSnapshot(android.content.Context);
     public static java.lang.String viewerStart(java.lang.String, java.lang.String, int, int);
     public static java.lang.String viewerDisplay();
+    public static java.lang.String viewerSnapshot(java.lang.String);
+    public static java.lang.String viewerApply(java.lang.String, java.lang.String, java.lang.String);
     public static java.lang.String viewerStatus(java.lang.String);
     public static java.lang.String viewerBackground(java.lang.String);
     public static java.lang.String viewerResume(java.lang.String);

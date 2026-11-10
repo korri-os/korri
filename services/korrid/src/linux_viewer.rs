@@ -30,11 +30,40 @@ impl LinuxViewerError {
     }
 }
 
+/// Observations extracted from Game's current runtime and Android battery.
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ViewerSnapshot {
+    /// Legacy StreamHealthSample.sampledAtMs: local monotonic sample time, not surface data.
+    pub sampled_at_ms: Option<f64>,
+    /// The adapter converts the producer clock to a deadline without resetting sample age.
+    #[serde(skip)]
+    pub sampled_at: Option<std::time::Instant>,
+    pub battery_percent: Option<f64>,
+    pub stream_health: Option<korri_surface_treaty::SurfaceStreamHealth>,
+    pub controls: Vec<korri_surface_treaty::SurfaceGameplayControl>,
+}
+
 /// Controls a viewer by the same exact launch ID used by the far korrid.
 /// Implementations must never select a viewer by process name, address, or
 /// "most recent" state when an exact launch ID is supplied. Every successful
 /// mutation must return only after the requested runtime state is confirmed.
 pub trait LinuxStreamViewer: Send + Sync {
+    fn snapshot<'a>(
+        &'a self,
+        _launch: &'a str,
+    ) -> BoxFuture<'a, Result<Option<ViewerSnapshot>, LinuxViewerError>> {
+        Box::pin(async { Ok(None) })
+    }
+    fn apply<'a>(
+        &'a self,
+        _launch: &'a str,
+        _control: &'a str,
+        _value: Option<korri_surface_treaty::SurfaceGameplayControlValue>,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        Box::pin(async { Err(LinuxViewerError::new("Local viewer control unavailable")) })
+    }
+
     fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
         None
     }
@@ -160,9 +189,17 @@ pub(crate) mod test_backend {
         calls: Vec<LinuxViewerCall>,
         failures: VecDeque<(LinuxViewerAction, String)>,
         status_block: Option<(Arc<Semaphore>, Arc<Semaphore>)>,
+        snapshot: Option<ViewerSnapshot>,
+        applications: Vec<(String, String)>,
     }
 
     impl TestLinuxStreamViewer {
+        pub fn set_snapshot(&self, snapshot: Option<ViewerSnapshot>) {
+            self.inner.lock().unwrap().snapshot = snapshot;
+        }
+        pub fn applications(&self) -> Vec<(String, String)> {
+            self.inner.lock().unwrap().applications.clone()
+        }
         pub fn set_display(&self, display: crate::launcher::plugin_launch::PluginDisplay) {
             self.inner.lock().expect("test viewer poisoned").display = Some(display);
         }
@@ -225,6 +262,50 @@ pub(crate) mod test_backend {
     }
 
     impl LinuxStreamViewer for TestLinuxStreamViewer {
+        fn snapshot<'a>(
+            &'a self,
+            launch: &'a str,
+        ) -> BoxFuture<'a, Result<Option<ViewerSnapshot>, LinuxViewerError>> {
+            Box::pin(async move {
+                let state = self.inner.lock().unwrap();
+                if state.statuses.get(launch) != Some(&LinuxViewerStatus::Running) {
+                    return Err(LinuxViewerError::new("Viewer is not running"));
+                }
+                Ok(state.snapshot.clone())
+            })
+        }
+        fn apply<'a>(
+            &'a self,
+            launch: &'a str,
+            id: &'a str,
+            value: Option<korri_surface_treaty::SurfaceGameplayControlValue>,
+        ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+            Box::pin(async move {
+                use korri_surface_treaty::{
+                    SurfaceGameplayControlInteraction as I, SurfaceGameplayControlValue as V,
+                };
+                let mut state = self.inner.lock().unwrap();
+                if state.statuses.get(launch) != Some(&LinuxViewerStatus::Running) {
+                    return Err(LinuxViewerError::new("Viewer is not running"));
+                }
+                let control = state
+                    .snapshot
+                    .as_mut()
+                    .and_then(|s| s.controls.iter_mut().find(|c| c.id == id))
+                    .ok_or_else(|| LinuxViewerError::new("Unknown control"))?;
+                if !crate::surface::viewer::valid(&control.interaction, &value) {
+                    return Err(LinuxViewerError::new("Invalid value"));
+                }
+                match (&mut control.interaction, value) {
+                    (I::Toggle { value: old, .. }, Some(V::Toggle { value })) => *old = value,
+                    (I::Choice { value: old, .. }, Some(V::Choice { value })) => *old = value,
+                    (I::Range { value: old, .. }, Some(V::Range { value })) => *old = value,
+                    _ => {}
+                }
+                state.applications.push((launch.into(), id.into()));
+                Ok(())
+            })
+        }
         fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
             self.inner
                 .lock()

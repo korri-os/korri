@@ -485,6 +485,10 @@ impl UpstreamRegistry {
         Self::build(configs, Some(credentials))
     }
 
+    pub(crate) fn local_viewer(&self) -> Arc<dyn LinuxStreamViewer> {
+        self.viewer.clone()
+    }
+
     pub fn with_linux_viewer(mut self, viewer: Arc<dyn LinuxStreamViewer>) -> Self {
         self.viewer = viewer;
         self

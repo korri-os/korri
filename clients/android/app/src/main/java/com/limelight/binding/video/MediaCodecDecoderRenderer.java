@@ -1122,7 +1122,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 } catch (IllegalStateException ignored) {
                     try {
                         // Try to avoid leaking the output buffer by releasing it without rendering
-                        videoDecoder.releaseOutputBuffer(nextOutputBuffer, false);
+                        discardOutputBuffer(nextOutputBuffer);
                     } catch (IllegalStateException e) {
                         // This will leak nextOutputBuffer, but there's really nothing else we can do
                         e.printStackTrace();
@@ -1228,7 +1228,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             // Drain non-blocking; keep only the newest buffer
                             while (__idx >= 0) {
                                 if (__last >= 0) {
-                                    try { videoDecoder.releaseOutputBuffer(__last, false); } catch (Throwable ignored) {}
+                                    try { discardOutputBuffer(__last); } catch (Throwable ignored) {}
                                 }
                                 __last = __idx;
                                 __lastPtsUs = __tmpInfo.presentationTimeUs;
@@ -1292,7 +1292,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
                                 // Get the last output buffer in the queue
                                 while ((outIndex = videoDecoder.dequeueOutputBuffer(info, getOutputDequeueTimeoutUs())) >= 0) {
-                                    videoDecoder.releaseOutputBuffer(lastIndex, false);
+                                    discardOutputBuffer(lastIndex);
                                     frameDropped = true; // we're discarding the oldest one
 
                                     numFramesOut++;
@@ -1319,7 +1319,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                                 // ULL: present at next VSYNC (no scheduling)
                                                 releaseWithPolicy(lastIndex, System.nanoTime());} else {
                                                 // Smooth/Balanced: keep timestamp scheduling
-                                                videoDecoder.releaseOutputBuffer(lastIndex, /* render */ false);
+                                                discardOutputBuffer(lastIndex);
                                             }
 
                                             frameDropped = true;
@@ -1349,7 +1349,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                             if (android.os.Build.VERSION.SDK_INT >= 21) {
                                                 long __ts = System.nanoTime();
                                                 releaseWithPolicy(lastIndex, System.nanoTime());} else {
-                                                videoDecoder.releaseOutputBuffer(lastIndex, false);
+                                                discardOutputBuffer(lastIndex);
                                             }
                                         }
 
@@ -1392,7 +1392,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                                 // ULL: present at next VSYNC (no scheduling)
                                                 releaseWithPolicy(lastIndex, System.nanoTime());} else {
                                                 // Smooth/Balanced: keep timestamp scheduling
-                                                videoDecoder.releaseOutputBuffer(lastIndex, /* render */ false);
+                                                discardOutputBuffer(lastIndex);
                                             }
 
                                             frameDropped = true;
@@ -1423,7 +1423,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                             if (android.os.Build.VERSION.SDK_INT >= 21) {
                                                 long __ts = System.nanoTime();
                                                 releaseWithPolicy(lastIndex, System.nanoTime());} else {
-                                                videoDecoder.releaseOutputBuffer(lastIndex, false);
+                                                discardOutputBuffer(lastIndex);
                                             }
                                         }
 
@@ -1446,7 +1446,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 // refresh rate).
                                 if (outputBufferQueue.size() == OUTPUT_BUFFER_QUEUE_LIMIT) {
                                     try {
-                                        videoDecoder.releaseOutputBuffer(outputBufferQueue.take(), false);
+                                        discardOutputBuffer(outputBufferQueue.take());
                                         frameDropped = true;
                                     } catch (InterruptedException e) {
                                         return;
@@ -1748,6 +1748,26 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
     }
 
+    private final ViewerVideoStats viewerVideoStats = new ViewerVideoStats();
+
+    /** Count only a buffer actually discarded, not a pacing flag that may still render. */
+    private void discardOutputBuffer(int index) {
+        videoDecoder.releaseOutputBuffer(index, false);
+        viewerVideoStats.displayDropped();
+    }
+
+    public org.json.JSONObject viewerHealth() throws org.json.JSONException {
+        ViewerVideoStats.Sample sample = viewerVideoStats.snapshot(SystemClock.uptimeMillis());
+        if (sample == null || stopping) return null;
+        org.json.JSONObject result = new org.json.JSONObject()
+                .put("sampledAtMs", sample.atMs)
+                .put("deliveredBitrateKbps", sample.deliveredBitrateKbps)
+                .put("framesDropped", sample.framesDropped);
+        long packed = MoonBridge.getEstimatedRttInfo();
+        if (packed != -1) result.put("rttMs", packed >>> 32);
+        return result;
+    }
+
     @SuppressWarnings("deprecation")
     @Override
     public int submitDecodeUnit(byte[] decodeUnitData, int decodeUnitLength, int decodeUnitType,
@@ -1758,6 +1778,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return MoonBridge.DR_OK;
         }
 
+        viewerVideoStats.encodedBytes(decodeUnitLength, SystemClock.uptimeMillis());
         if (lastFrameNumber == 0) {
             activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
         } else if (frameNumber != lastFrameNumber && frameNumber != lastFrameNumber + 1) {
