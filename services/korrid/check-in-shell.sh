@@ -27,6 +27,7 @@ fi
 # `cargo check` would only repeat that work.
 (cd "$CRATE/tests/fixtures/first-party" && sha256sum -c SHA256SUMS)
 KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
+"$CRATE/deploy/test-migrate-plugin-settings.py"
 cargo test --manifest-path "$ROOT/contracts/settings/Cargo.toml"
 cargo test
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"

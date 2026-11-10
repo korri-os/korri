@@ -15,6 +15,15 @@ interface Diagnostic {
 
 const jsonType = { Boolean: "boolean", Number: "number", String: "string" }
 
+function nativeValues(value: unknown): Record<string, SettingValue> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {}
+  const result: Record<string, SettingValue> = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === "string" || typeof item === "boolean" || typeof item === "number") result[key] = item
+  }
+  return result
+}
+
 function actualType(value: SettingValue): string {
   return typeof value === "boolean"
     ? "boolean"
@@ -125,7 +134,7 @@ function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
   // Booleans stay quoted and numbers bare; strings use native, not JSON, syntax.
   // A key this build does not accept was already reported by settings.validate,
   // so it is left out here rather than reported a second time.
-  const typed = Object.entries(input.overrides?.settings ?? {})
+  const typed = Object.entries(nativeValues(input.overrides?.settings?.plugin))
     .filter(([key, value]) => unsupported(key, value) === undefined)
     .map(([key, value]) => {
       const serialized = typeof value === "number"
@@ -253,5 +262,9 @@ function validateSettings(input: {
 export const handlers = {
   "launch.prepare": prepareLaunch,
   "settings.describe": describeSettings,
-  "settings.validate": validateSettings,
+  "settings.validate": (input: { values?: { plugin?: unknown }; revision?: string }) => {
+    const result = validateSettings({ ...input, values: nativeValues(input.values?.plugin) })
+    return { ...result, diagnostics: result.diagnostics.map(item => item.path
+      ? { ...item, path: ["plugin", ...item.path] } : item) }
+  },
 }

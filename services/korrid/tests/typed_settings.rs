@@ -8,7 +8,7 @@ use korrid::{
     launcher::{
         linux_plugin::launch_route,
         plugin_launch::{evaluate_snapshot, PluginLaunchInput},
-        typed_settings::validate,
+        typed_settings::validate_runner as validate,
     },
     plugin::PluginRegistry,
     plugin_installation::EnabledPackage,
@@ -113,7 +113,7 @@ fn input(settings: serde_json::Value) -> PluginLaunchInput {
         "artifacts": {},
         "cacheRoot": "/cache",
         "files": {"autoconfig":"/autoconfig"},
-        "overrides": {"settings":settings},
+        "overrides": {"settings":{"plugin":settings}},
     }))
     .unwrap()
 }
@@ -217,11 +217,11 @@ fn the_runner_describes_its_own_schema_and_validates_against_it() {
         .is_none());
 
     let settings: std::collections::HashMap<String, korrid::config::cascade::LaunchSettingValue> =
-        serde_json::from_value(serde_json::json!({
+        serde_json::from_value(serde_json::json!({"plugin": {
             "video_vsync": false,
             "video_driver": 7,
             "absent_key": true,
-        }))
+        }}))
         .unwrap();
     let warnings = validate(
         &source,
@@ -235,7 +235,7 @@ fn the_runner_describes_its_own_schema_and_validates_against_it() {
         .iter()
         .map(|warning| warning.setting.as_str())
         .collect();
-    assert_eq!(reported, vec!["absent_key", "video_driver"]);
+    assert_eq!(reported, vec!["plugin.absent_key", "plugin.video_driver"]);
     assert!(warnings
         .iter()
         .all(|warning| warning.message.contains("1.22.2")
@@ -263,7 +263,7 @@ fn an_unsupported_setting_is_reported_once_and_never_reaches_the_native_config()
     runner
         .files
         .insert("autoconfig".into(), "/autoconfig".into());
-    let overrides: korrid::launch_settings::LaunchOverride = serde_json::from_value(serde_json::json!({"settings":{"scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},"values":{"audio_volume":-3,"video_vsync":false,"absent_key":1}}})).unwrap();
+    let overrides: korrid::launch_settings::LaunchOverride = serde_json::from_value(serde_json::json!({"settings":{"scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},"values":{"plugin":{"audio_volume":-3,"video_vsync":false,"absent_key":1}}}})).unwrap();
     let registry = PluginRegistry::from_installed(vec![runner.clone()]).unwrap();
     let route = resolve_linux_route(
         root.path(),
@@ -287,9 +287,15 @@ fn an_unsupported_setting_is_reported_once_and_never_reaches_the_native_config()
     // korrid hands the runner exactly what the person authored, and reports
     // the one key this build cannot apply.
     let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
-    assert_eq!(input.overrides.as_ref().unwrap().settings.len(), 3);
+    assert_eq!(
+        serde_json::to_value(&input.overrides.as_ref().unwrap().settings).unwrap()["plugin"]
+            .as_object()
+            .unwrap()
+            .len(),
+        3
+    );
     assert_eq!(spec.warnings.len(), 1);
-    assert_eq!(spec.warnings[0].setting, "absent_key");
+    assert_eq!(spec.warnings[0].setting, "plugin.absent_key");
     assert_eq!(spec.warnings[0].runner_id, "@korri:mgba/mgba");
     assert_eq!(spec.warnings[0].build, runner.package.display().to_string());
 

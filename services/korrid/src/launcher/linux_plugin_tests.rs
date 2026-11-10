@@ -270,7 +270,7 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
         .unwrap();
     let source=include_str!("../../examples/libretro-core.plugin.ts").replace("export { handlers } from \"./retroarch\"",r#"export const handlers = {
       'settings.describe': () => ({revision:'schema-rev-1',schema:{properties:{scale:{type:'integer',minimum:1,maximum:4,default:2,title:'Scale',description:'Pixel scale'}}}}),
-      'launch.prepare': input => ({command:input.program,args:[input.overrides?.settings.scale === undefined ? 'default-not-passed' : 'authored'],env:{PLUGIN:'default',REMOVE:'plugin'},cwd:'/plugin'})
+      'launch.prepare': input => ({command:input.program,args:[input.overrides?.settings.plugin?.scale === undefined ? 'default-not-passed' : 'authored'],env:{PLUGIN:'default',REMOVE:'plugin'},cwd:'/plugin'})
     }"#);
     fs::write(package.package.join("plugin.ts"), source).unwrap();
     let device_path = game.root.path().join("device.yaml");
@@ -299,9 +299,9 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
     assert_eq!(facts.env["REMOVE"], "plugin");
     assert!(!facts.env.contains_key("LAYER"));
     assert_eq!(facts.cwd.as_deref(), Some("/plugin"));
-    assert_eq!(snapshot.resolved.values["settings.scale"].value, 2);
+    assert_eq!(snapshot.resolved.values["settings.plugin.scale"].value, 2);
     assert!(matches!(
-        snapshot.resolved.values["settings.scale"].source,
+        snapshot.resolved.values["settings.plugin.scale"].source,
         Some(LaunchSource::PluginDefault {ref plugin_id}) if plugin_id=="@korri:mgba"
     ));
     assert_eq!(
@@ -343,7 +343,7 @@ fn snapshot_dry_run_and_schema_defaults_do_not_change_launch_input_and_set_valid
             scope: LaunchRunnerScope::Family("@korri:retroarch".into()),
         },
         path: LaunchPath::Setting {
-            key: "scale".into(),
+            key: "plugin.scale".into(),
         },
         value: Some(serde_json::json!(9)),
         expected_revision: snapshot.revisions.games,
@@ -383,16 +383,16 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         .unwrap();
     let source = include_str!("../../examples/libretro-core.plugin.ts").replace("export { handlers } from \"./retroarch\"", r#"export const handlers = {
         'settings.describe': input => { if (input.id !== '@korri:mgba/mgba') throw Error('id expected'); return {revision:'nested-v1',schema:{type:'object',additionalProperties:false,properties:{video:{type:'object',additionalProperties:false,properties:{fps:{type:'integer',default:60},codec:{type:'string',default:'h264'},'no-default':{type:'boolean'}}}}}}; },
-        'settings.validate': input => { if(input.revision !== 'nested-v1') throw Error('revision expected'); return {valid: input.values.video?.fps !== 999,diagnostics:input.values.video?.fps===999 ? [{code:'bad-fps',severity:'error',path:['video','fps'],message:'fps is not supported'}] : []}; },
-        'launch.prepare': input => ({command:input.program,args:[JSON.stringify(input.overrides.settings)],env:{}})
+        'settings.validate': input => { if(input.revision !== 'nested-v1') throw Error('revision expected'); return {valid: input.values.plugin?.video?.fps !== 999,diagnostics:input.values.plugin?.video?.fps===999 ? [{code:'bad-fps',severity:'error',path:['plugin','video','fps'],message:'fps is not supported'}] : []}; },
+        'launch.prepare': input => ({command:input.program,args:[JSON.stringify(input.overrides.settings.plugin)],env:{}})
     }"#);
     fs::write(package.package.join("plugin.ts"), source).unwrap();
     let path = game.root.path().join("device.yaml");
     let mut device: serde_json::Value =
         serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    device["host"] = json!({"families":{"@korri:retroarch":{"settings":{"video":{"fps":30,"codec":"h265","no-default":true}}}}});
+    device["host"] = json!({"families":{"@korri:retroarch":{"settings":{"plugin":{"video":{"fps":30,"codec":"h265","no-default":true}}}}}});
     fs::write(&path, serde_yaml::to_string(&device).unwrap()).unwrap();
-    device["host"]["families"]["@korri:retroarch"]["settings"]["video"]["array-leaf"] =
+    device["host"]["families"]["@korri:retroarch"]["settings"]["plugin"]["video"]["array-leaf"] =
         json!([1, 2]);
     fs::write(&path, serde_yaml::to_string(&device).unwrap()).unwrap();
     let array_config = crate::config::settings::runner_choice_snapshot(game.root.path())
@@ -412,7 +412,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
     assert!(array_launch
         .warnings
         .iter()
-        .any(|w| w.setting == "video.array-leaf"));
+        .any(|w| w.setting == "plugin.video.array-leaf"));
     let array_plan = crate::launcher::plugin_launch::prepared_plan(&array_launch.command).unwrap();
     assert!(
         serde_json::from_str::<serde_json::Value>(&array_plan.args[0]).unwrap()["video"]
@@ -431,7 +431,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
             scope: LaunchRunnerScope::Runner(game.route.runner_id.clone()),
         },
         path: LaunchPath::Setting {
-            key: "video.fps".into(),
+            key: "plugin.video.fps".into(),
         },
         value: Some(json!(45)),
         expected_revision: crate::config::settings::runner_choice_revisions(game.root.path())
@@ -457,12 +457,12 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
     .unwrap();
     assert_eq!(
         document["library"][&game.route.playable_id]["runners"][&game.route.runner_id]["settings"]
-            ["video"]["fps"],
+            ["plugin"]["video"]["fps"],
         45
     );
     assert!(
         document["library"][&game.route.playable_id]["runners"][&game.route.runner_id]["settings"]
-            .get("video.fps")
+            .get("plugin.video.fps")
             .is_none()
     );
     request.clear = true;
@@ -475,14 +475,17 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         &client,
     )
     .unwrap();
-    assert!(snapshot.notices.iter().any(|n|matches!(n,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),..} if key=="video.array-leaf" && id==&game.route.runner_id)));
-    assert_eq!(snapshot.resolved.values["settings.video.fps"].value, 60);
+    assert!(snapshot.notices.iter().any(|n|matches!(n,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),..} if key=="plugin.video.array-leaf" && id==&game.route.runner_id)));
+    assert_eq!(
+        snapshot.resolved.values["settings.plugin.video.fps"].value,
+        60
+    );
     assert!(matches!(
-        snapshot.resolved.values["settings.video.fps"].source,
+        snapshot.resolved.values["settings.plugin.video.fps"].source,
         Some(LaunchSource::PluginDefault { .. })
     ));
     request.path = LaunchPath::Setting {
-        key: "video.no-default".into(),
+        key: "plugin.video.no-default".into(),
     };
     write(&mut request);
     let snapshot = ls::snapshot(
@@ -495,9 +498,9 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
     assert!(!snapshot
         .resolved
         .values
-        .contains_key("settings.video.no-default"));
+        .contains_key("settings.plugin.video.no-default"));
     request.path = LaunchPath::Setting {
-        key: "video.fps".into(),
+        key: "plugin.video.fps".into(),
     };
     request.clear = false;
     write(&mut request);
@@ -508,7 +511,10 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         &client,
     )
     .unwrap();
-    assert_eq!(snapshot.resolved.values["settings.video.fps"].value, 30);
+    assert_eq!(
+        snapshot.resolved.values["settings.plugin.video.fps"].value,
+        30
+    );
     request.value = Some(json!(999));
     write(&mut request);
     let snapshot = ls::snapshot(
@@ -518,7 +524,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         &client,
     )
     .unwrap();
-    assert!(snapshot.notices.iter().any(|n|matches!(n,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},message,runner_id:Some(id)} if key=="video.fps" && message=="fps is not supported" && id==&game.route.runner_id)));
+    assert!(snapshot.notices.iter().any(|n|matches!(n,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},message,runner_id:Some(id)} if key=="plugin.video.fps" && message=="fps is not supported" && id==&game.route.runner_id)));
     let config = crate::config::settings::runner_choice_snapshot(game.root.path())
         .unwrap()
         .0;
@@ -533,7 +539,10 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
         "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
     )
     .unwrap();
-    assert!(spec.warnings.iter().any(|w| w.setting == "video.fps"));
+    assert!(spec
+        .warnings
+        .iter()
+        .any(|w| w.setting == "plugin.video.fps"));
     let plan = crate::launcher::plugin_launch::prepared_plan(&spec.command).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&plan.args[0]).unwrap(),
@@ -564,7 +573,7 @@ fn nested_settings_store_clear_remove_defaults_and_warn_skip_use_real_plugin_ope
     .is_err());
     request.clear = false;
     request.path = LaunchPath::Setting {
-        key: "video.fps".into(),
+        key: "plugin.video.fps".into(),
     };
     request.value = Some(json!([1, 2]));
     assert!(ls::set_with_registry(
@@ -596,8 +605,8 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
     let handlers = format!(
         r#"export const handlers = {{
       'settings.describe':()=>({{schema:{schema},revision:'ports-v1'}}),
-      'settings.validate':input=>({{valid:true,diagnostics:input.values.input?.ports?.['2']?.['joypad-index']===-1?[{{code:'port-index',severity:'error',path:['input','ports','2','joypad-index'],message:'invalid joypad index'}}]:[]}}),
-      'launch.prepare':input=>({{command:input.program,args:[JSON.stringify(input.overrides.settings)],env:{{}}}})
+      'settings.validate':input=>({{valid:true,diagnostics:input.values.plugin?.input?.ports?.['2']?.['joypad-index']===-1?[{{code:'port-index',severity:'error',path:['plugin','input','ports','2','joypad-index'],message:'invalid joypad index'}}]:[]}}),
+      'launch.prepare':input=>({{command:input.program,args:[JSON.stringify(input.overrides.settings.plugin)],env:{{}}}})
     }}"#
     );
     let source = include_str!("../../examples/libretro-core.plugin.ts")
@@ -630,7 +639,7 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
             ("2", "joypad-index", json!(0)),
             ("12", "analog-dpad-mode", json!("left-analog")),
         ] {
-            let key = format!("input.ports.{port}.{leaf}");
+            let key = format!("plugin.input.ports.{port}.{leaf}");
             request.path = LaunchPath::Setting { key };
             request.clear = false;
             request.value = Some(value.clone());
@@ -654,8 +663,8 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
                 _ => unreachable!(),
             };
             assert_eq!(
-                document["library"][&game.route.playable_id][kind][id]["settings"]["input"]
-                    ["ports"][port][leaf],
+                document["library"][&game.route.playable_id][kind][id]["settings"]["plugin"]
+                    ["input"]["ports"][port][leaf],
                 value
             );
             request.clear = true;
@@ -675,8 +684,8 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
             )
             .unwrap();
             assert!(
-                document["library"][&game.route.playable_id][kind][id]["settings"]["input"]
-                    ["ports"][port][leaf]
+                document["library"][&game.route.playable_id][kind][id]["settings"]["plugin"]
+                    ["input"]["ports"][port][leaf]
                     .is_null()
             );
             request.clear = false;
@@ -694,9 +703,9 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
     }
     request.clear = false;
     for key in [
-        "input.ports.0.joypad-index",
-        "input.ports.invalid.joypad-index",
-        "input.ports.2.unknown",
+        "plugin.input.ports.0.joypad-index",
+        "plugin.input.ports.invalid.joypad-index",
+        "plugin.input.ports.2.unknown",
     ] {
         request.path = LaunchPath::Setting { key: key.into() };
         request.value = Some(json!(0));
@@ -717,7 +726,7 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
     let path = game.root.path().join("device.yaml");
     let mut device: serde_json::Value =
         serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    device["host"] = json!({"runners":{game.route.runner_id.clone():{"settings":{"input":{"ports":{"2":{"joypad-index":-1,"libretro-device":1}}}}}}});
+    device["host"] = json!({"runners":{game.route.runner_id.clone():{"settings":{"plugin":{"input":{"ports":{"2":{"joypad-index":-1,"libretro-device":1}}}}}}}});
     fs::write(&path, serde_yaml::to_string(&device).unwrap()).unwrap();
     let snapshot = ls::snapshot(
         game.root.path(),
@@ -726,15 +735,15 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
         &client,
     )
     .unwrap();
-    assert!(snapshot.notices.iter().any(|notice|matches!(notice,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),..} if key=="input.ports.2.joypad-index" && id==&game.route.runner_id)));
+    assert!(snapshot.notices.iter().any(|notice|matches!(notice,LaunchNotice::SettingSkipped {path:LaunchPath::Setting {key},runner_id:Some(id),..} if key=="plugin.input.ports.2.joypad-index" && id==&game.route.runner_id)));
     assert_eq!(
-        snapshot.resolved.values["settings.input.ports.2.libretro-device"].value,
+        snapshot.resolved.values["settings.plugin.input.ports.2.libretro-device"].value,
         1
     );
     assert!(!snapshot
         .resolved
         .values
-        .contains_key("settings.input.ports.2.joypad-index"));
+        .contains_key("settings.plugin.input.ports.2.joypad-index"));
     // A pattern default applies only after an authored key instantiates the
     // pattern, even if that key's only authored leaf is cleared.
     let mut default_schema = schema.clone();
@@ -746,7 +755,7 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
     fs::write(package.package.join("plugin.ts"), source).unwrap();
     request.place.scope = LaunchRunnerScope::Runner(game.route.runner_id.clone());
     request.path = LaunchPath::Setting {
-        key: "input.ports.3.joypad-index".into(),
+        key: "plugin.input.ports.3.joypad-index".into(),
     };
     request.clear = true;
     request.value = None;
@@ -766,7 +775,7 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
         &client,
     )
     .unwrap();
-    let value = &snapshot.resolved.values["settings.input.ports.3.joypad-index"];
+    let value = &snapshot.resolved.values["settings.plugin.input.ports.3.joypad-index"];
     assert_eq!(value.value, 0);
     assert!(matches!(
         value.source,
@@ -775,7 +784,7 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
     assert!(!snapshot
         .resolved
         .values
-        .contains_key("settings.input.ports.4.joypad-index"));
+        .contains_key("settings.plugin.input.ports.4.joypad-index"));
 }
 
 #[test]

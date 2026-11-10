@@ -2262,8 +2262,6 @@ fn setting_groups(context: &Context, rows: &mut Rows, owner: &Owner) -> Vec<Surf
         groups.push(SurfaceSettingGroup {
             title: if matches!(owner.kind, OwnerKind::Runner) && section.key == "plugin" {
                 format!("{} only", owner.title)
-            } else if matches!(owner.kind, OwnerKind::Runner) && !section.key.is_empty() {
-                section.title.clone()
             } else if section.key.is_empty() {
                 owner.title.clone()
             } else {

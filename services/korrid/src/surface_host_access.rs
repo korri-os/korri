@@ -711,7 +711,7 @@ mod tests {
             list["outcome"]["payload"]["gameRunner"],
             "@missing:build/core"
         );
-        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","launch":{"settings":{"scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},"values":{"video_vsync":false,"absent_key":1}}}})).await;
+        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","launch":{"settings":{"scope":{"_tag":"Runner","id":"@korri:mgba/mgba"},"values":{"plugin":{"video_vsync":false,"absent_key":1}}}}})).await;
         assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
         assert_eq!(launch["outcome"]["payload"]["session"]["gameId"], game_id);
         let launch_id = launch["outcome"]["payload"]["session"]["launchId"]
