@@ -107,13 +107,8 @@ assert !c.services.korriLinuxHost.compositor.localInput.enable;
 # The shared product admits only reviewed plugin-created virtual inputs, even
 # while this device has no physical input mapping.
 assert
-  c.services.korriLinuxHost.compositor.allowedInputIdentifiers == [
-    "48879:57005:Mouse_passthrough"
-    "48879:57005:Mouse_passthrough_(absolute)"
-    "48879:57005:Keyboard_passthrough"
-    "48879:57005:Touch_passthrough"
-    "48879:57005:Pen_passthrough"
-  ];
+  c.services.korriLinuxHost.compositor.allowedInputIdentifiers
+  == import ../../product/sunshine-input-identifiers.nix;
 assert compositor.environment.WLR_BACKENDS == "drm,libinput";
 assert !(c.systemd.services ? sunshine);
 assert !(c.systemd.sockets ? korri-certificate-control);

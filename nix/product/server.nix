@@ -114,13 +114,7 @@ in
       # device modules cannot carry an app-id-specific exclusion.
       # The product admits the reviewed Sunshine virtual-device identities.
       # The removable plugin still owns whether those devices can exist.
-      compositor.allowedInputIdentifiers = [
-        "48879:57005:Mouse_passthrough"
-        "48879:57005:Mouse_passthrough_(absolute)"
-        "48879:57005:Keyboard_passthrough"
-        "48879:57005:Touch_passthrough"
-        "48879:57005:Pen_passthrough"
-      ];
+      compositor.allowedInputIdentifiers = import ./sunshine-input-identifiers.nix;
     };
 
     services.korridLinuxDevice = {
