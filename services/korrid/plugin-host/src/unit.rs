@@ -135,9 +135,7 @@ impl Units {
             return Ok(false);
         }
         for unit in &units {
-            if fs::read_link(self.uphold(&unit.name)).ok()
-                != Some(PathBuf::from(format!("../{}", unit.name)))
-            {
+            if fs::read_link(self.uphold(&unit.name)).ok() != Some(uphold_target(&unit.name)) {
                 return Ok(false);
             }
             match fs::read_to_string(self.unit_path(&unit.name)) {
@@ -214,9 +212,11 @@ impl Units {
             self.require_loaded_fragment(&connection, object.as_str(), unit)?;
             objects.push((unit, object));
         }
-        // Withdraw continuous start authority before stopping. Otherwise an
-        // active korrid would immediately start a disabled or replaced unit.
+        // Block concurrent settings-change restarts as well as automatic
+        // starts. The barrier stays loaded until the stopped unit is removed;
+        // enabled staging replaces the policy and clears it.
         for unit in &units {
+            self.refuse_manual_start(unit)?;
             self.remove_uphold(unit)?;
         }
         self.checked(["daemon-reload"])?;
@@ -427,7 +427,7 @@ impl Units {
             }
             Err(error) => return Err(error.to_string()),
         }
-        let target = PathBuf::from(format!("../{unit}"));
+        let target = uphold_target(unit);
         if path_present(&path)? {
             if fs::read_link(&path).ok().as_ref() != Some(&target) {
                 return Err(format!(
@@ -444,12 +444,23 @@ impl Units {
         if !path_present(&path)? {
             return Ok(());
         }
-        if fs::read_link(&path).ok() != Some(PathBuf::from(format!("../{unit}"))) {
+        if fs::read_link(&path).ok() != Some(uphold_target(unit)) {
             return Err(format!(
                 "plugin uphold relation for {unit} conflicts with a host entry"
             ));
         }
         storage::remove(&path)
+    }
+
+    fn refuse_manual_start(&self, unit: &str) -> Result<(), String> {
+        const BARRIER: &str = "\n[Unit]\nRefuseManualStart=yes\n";
+        let path = self.drop_in(unit);
+        let mut policy = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+        if !policy.ends_with(BARRIER) {
+            policy.push_str(BARRIER);
+            storage::write_atomic(&path, policy.as_bytes())?;
+        }
+        Ok(())
     }
 
     fn drop_in(&self, unit: &str) -> PathBuf {
@@ -539,6 +550,10 @@ fn valid_owned_unit_name(unit: &str) -> bool {
         unit.strip_suffix(suffix)
             .is_some_and(crate::declaration::valid_name)
     })
+}
+
+fn uphold_target(unit: &str) -> PathBuf {
+    PathBuf::from("..").join(unit)
 }
 
 fn owner_marker(id: &str) -> String {
@@ -738,8 +753,26 @@ mod tests {
             fs::read_link(units.uphold(name)).unwrap(),
             PathBuf::from("../korri-sunshine.service")
         );
-        // A restore does not create a second relation or replace a peer's file.
+        let enabled_policy = fs::read_to_string(units.drop_in(name)).unwrap();
+        units.refuse_manual_start(name).unwrap();
+        let stopping_policy = fs::read_to_string(units.drop_in(name)).unwrap();
+        assert_eq!(
+            stopping_policy,
+            format!("{enabled_policy}\n[Unit]\nRefuseManualStart=yes\n")
+        );
+        assert!(units.owner_matches(&report.id, name));
+        units.refuse_manual_start(name).unwrap();
+        assert_eq!(
+            fs::read_to_string(units.drop_in(name)).unwrap(),
+            stopping_policy
+        );
+        // Enabled staging clears the transient stop barrier and does not
+        // create a second relation or replace a peer's file.
         units.write(&report, &managed).unwrap();
+        assert_eq!(
+            fs::read_to_string(units.drop_in(name)).unwrap(),
+            enabled_policy
+        );
         units.discard_written(&report.id, &managed).unwrap();
         assert!(!path_present(&units.uphold(name)).unwrap());
         units.remove_uphold(name).unwrap();

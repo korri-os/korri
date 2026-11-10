@@ -19,7 +19,9 @@ The plugin host separately owns Enabled lifecycle (#397, #400 part 1).
 It writes runtime `korrid.service.upholds/` links for approved Enabled native
 units. systemd keeps Sunshine running after a korrid or compositor restart,
 a NixOS switch, or a plugin bundle replacement. Disable and replacement
-withdraw these links and reload systemd before stopping the old units.
+set `RefuseManualStart=yes` in the host policy drop-in, withdraw these links,
+and reload systemd before stopping the old units. This barrier also refuses a
+concurrent settings-change restart. Enabled staging clears the barrier.
 Disabled plugins have no runtime unit or uphold link. This does not change
 the settings-change restart above, and needs no korrid startup reconcile.
 

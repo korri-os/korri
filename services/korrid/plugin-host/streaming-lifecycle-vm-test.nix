@@ -51,6 +51,18 @@ let
     '';
   receipt = receiptFor plugin;
   replacementReceipt = receiptFor replacement;
+  # Use the real manager for every call. Only interleave korrid's exact
+  # settings restart immediately after the host's stop has completed.
+  restartAfterStop = pkgs.writeShellScriptBin "restart-sunshine-after-stop" ''
+    ${pkgs.systemd}/bin/systemctl "$@"
+    result=$?
+    if [ "$result" -eq 0 ] && [ "''${1:-}" = stop ] && [ "''${2:-}" = korri-sunshine.service ]; then
+      ${pkgs.systemd}/bin/systemctl show --property=RefuseManualStart --value korri-sunshine.service > /run/disable-refusal
+      ${pkgs.systemd}/bin/systemctl --no-ask-password restart korri-sunshine.service > /run/disable-restart.log 2>&1
+      printf '%s\n' "$?" > /run/disable-restart.status
+    fi
+    exit "$result"
+  '';
 in
 pkgs.testers.runNixOSTest {
   name = "korri-streaming-plugin-lifecycle";
@@ -90,6 +102,8 @@ pkgs.testers.runNixOSTest {
     specialisation.next.configuration.environment.etc."lifecycle-generation".text = "next";
   };
   testScript = ''
+    import json
+
     machine.start()
     machine.wait_for_unit("korrid.service")
     unit = "korri-sunshine.service"
@@ -117,12 +131,23 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -F 'sleep 86400' /run/systemd/system/" + unit)
     machine.succeed("systemctl restart korri-compositor.service")
     machine.wait_for_unit(unit)
-    machine.succeed("korri-plugin disable @korri:sunshine")
+    machine.succeed("env KORRI_PLUGIN_NIX=${pkgs.nix}/bin/nix KORRI_PLUGIN_SYSTEMCTL=${restartAfterStop}/bin/restart-sunshine-after-stop KORRI_PLUGIN_IPTABLES=${pkgs.iptables}/bin/iptables KORRI_PLUGIN_IP6TABLES=${pkgs.iptables}/bin/ip6tables KORRI_PLUGIN_CURL=${pkgs.curl}/bin/curl ${host}/bin/.korri-plugin-wrapped disable @korri:sunshine")
+    # A concurrent settings restart must not outlive successful disable.
+    assert machine.succeed("cat /run/disable-restart.status").strip() != "0"
+    assert machine.succeed("cat /run/disable-refusal").strip() == "yes"
+    machine.fail("systemctl is-active " + unit)
+    assert json.loads(machine.succeed("korri-plugin status @korri:sunshine"))["desired"] == {"state": "Disabled"}
+    machine.fail("test -e /run/systemd/system/" + unit)
+    machine.fail("test -e /run/systemd/system/" + unit + ".d/zzzz-korri-policy.conf")
+    machine.fail("systemctl --no-ask-password restart " + unit)
+    machine.fail("systemctl is-active " + unit)
     machine.fail("test -e " + relation)
     for parent in ["korrid.service", "korri-compositor.service"]:
         machine.succeed("systemctl restart " + parent)
         machine.fail("systemctl is-active " + unit)
     machine.succeed("korri-plugin enable @korri:sunshine")
+    machine.wait_for_unit(unit)
+    machine.succeed("systemctl --no-ask-password restart " + unit)
     machine.wait_for_unit(unit)
     machine.succeed("korri-plugin disable @korri:sunshine; korri-plugin restore-all")
     machine.fail("systemctl is-active " + unit)
