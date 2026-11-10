@@ -251,13 +251,25 @@ _Avoid_: DLC, extension, mod (alone)
 The values that shape how a game runs, such as its runner, the runner's settings, CPU limits and hooks. Any value can be set on the device, a system, a game, a release, a profile or one launch, and each of these can limit it to one runner or runner family. For each value, the most specific place that sets it wins. They hold for one session and end with it.
 _Avoid_: config, policy, cascade
 
+**One-launch value**:
+A launch setting that a person sets for one launch only. It ends with that session unless the person keeps it, which moves it to the device, a system, a game, a release or a profile.
+_Avoid_: ephemeral setting, temporary override, session setting
+
 **Runner scope**:
 Which runners a launch setting applies to: any runner, one runner family, or one runner.
 _Avoid_: runner layer, runner override
 
 **Setting section**:
-A named group of a plugin's settings, such as `video` or `input`. A shared section means the same thing in every plugin; a plugin has its own section only for something no other plugin has.
+A named group of settings, such as `video` or `input`. Every section outside the runner-only bucket is shared and means the same thing for every plugin.
 _Avoid_: category, group, namespace
+
+**Shared setting**:
+A setting whose path, shape and meaning Korri defines once for every runner. It can be set for any runner, and the chosen runner translates it into its program's own settings, or skips it with a warning.
+_Avoid_: general preference, common setting, global setting
+
+**Runner-only setting**:
+A setting that only one runner has. It lives in the one bucket that every runner uses for this, is never translated, and applies only where a place limits it to that runner.
+_Avoid_: native setting, custom setting, extra setting
 
 **Setting path**:
 The dotted name of one setting value inside its sections, such as `video.fps`. The most specific place that sets a path wins for that path alone.
