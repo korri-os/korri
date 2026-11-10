@@ -71,14 +71,14 @@ each runner are checked against source before a runner maps a row.
 | `video.aspect-ratio` | `original` (game's ratio, bars), `fill-view` (the game shows more view to fill the screen shape; falls back to `original`), `stretch`, `4:3`, `16:9` | the runner's own default | decided (q19) | RetroArch `video.aspect-ratio` above; legacy preferences `video.aspect-ratio`; WiiCompiled `force_aspect` + dynamic canvas |
 | `locale.language` | language tag | the runner's own default | decided (q20); value form draft | 12 of 14 surveyed runners |
 | `locale.region` | named region choice | the runner's own default | decided (q20); values open | 12 of 14 surveyed runners |
-| `video.window-mode` | `windowed`, `borderless`, `exclusive` | the runner's own default | values decided (q24); row draft | WiiCompiled `display_mode`; RetroArch `video.fullscreen` + `video.windowed-fullscreen` above |
-| `video.vsync` | boolean | the runner's own default | draft | RetroArch `video.vsync` above |
+| `video.window-mode` | `windowed`, `borderless`, `exclusive` | the runner's own default | decided (q24, q25) | WiiCompiled `display_mode`; RetroArch `video.fullscreen` + `video.windowed-fullscreen` above |
+| `video.vsync` | boolean | the runner's own default | decided (q25) | RetroArch `video.vsync` above |
 | `video.fps-limit` | integer, 0 = none | the runner's own default | existing shared term | Shared terms above |
-| `video.renderer` | `vulkan`, `opengl`, `software`, program names otherwise (R1) | the runner's own default | draft | legacy RPCS3 `video.renderer`; RetroArch `drivers.video` above |
-| `audio.volume-percent` | 0 to 100 | the runner's own default | draft | legacy preferences `audio.volume` (0 to 100); R3 |
+| `video.renderer` | `vulkan`, `opengl`, `software`, program names otherwise (R1) | the runner's own default | decided (q25) | legacy RPCS3 `video.renderer`; RetroArch `drivers.video` above |
+| `audio.volume-percent` | 0 to 100 | the runner's own default | decided (q25) | legacy preferences `audio.volume` (0 to 100); R3 |
 | `audio.music.volume-percent`, `audio.effects.volume-percent`, `audio.voice.volume-percent` | 0 to 100; UI sounds stay in `plugin` | the runner's own default | shape decided (q23) | WiiCompiled `music_volume`, `sound_effects_volume`, `voices_volume` |
-| `input.rumble` | boolean | the runner's own default | draft | 12 of 14 surveyed runners |
-| `input.deadzone-percent` | 0 to 100 | the runner's own default | draft | 12 of 14 surveyed runners; R3 |
+| `input.rumble` | boolean | the runner's own default | decided (q25) | 12 of 14 surveyed runners |
+| `input.deadzone-percent` | 0 to 100 | the runner's own default | decided (q25) | 12 of 14 surveyed runners; R3 |
 
 Sizes that follow the display when unset (ADR 0056) are window and output
 sizes such as `video.resolution`. `video.render-scale` is not one of them.
