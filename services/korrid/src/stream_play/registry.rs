@@ -226,7 +226,10 @@ impl UpstreamRegistry {
                 game_id: game_id.clone(),
                 game_title: game_title.clone(),
                 device_label: device_label.clone(),
-                cause: if result.is_err() {
+                cause: if result
+                    .as_ref()
+                    .is_err_and(|error| error.code() != "HostLaunchFailed")
+                {
                     StreamPlayEndCause::DeviceUnreachable
                 } else {
                     StreamPlayEndCause::SessionEnded

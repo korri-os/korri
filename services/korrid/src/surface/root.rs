@@ -794,6 +794,11 @@ impl Root {
         (self.notify)();
     }
 
+    pub(crate) fn session_failed(&self, message: String) {
+        self.launchables.session_failed(message);
+        self.show_catalog(None);
+    }
+
     fn show_overlay(self: &Arc<Self>, active: crate::ActiveSession) {
         let weak = Arc::downgrade(self);
         let launch_id = active.launch_id.clone();
@@ -806,6 +811,7 @@ impl Root {
                 let Some(root) = weak.upgrade() else { return };
                 match exit {
                     OverlayExit::SessionEnded | OverlayExit::Resumed => root.show_catalog(None),
+                    OverlayExit::SessionFailed(message) => root.session_failed(message),
                     OverlayExit::OpenKorri => root.show_catalog(Some(launch_id.clone())),
                 }
             }),
@@ -838,6 +844,13 @@ impl Root {
                 focused_overlay_session(&self.korrid, false, Some(launch_id), 1).await
             }
             None => focused_overlay_session(&self.korrid, true, None, 4).await,
+        };
+        let found = match found {
+            Ok(found) => found,
+            Err(failure) => {
+                self.session_failed(failure.message);
+                return;
+            }
         };
         let found = found.filter(|active| {
             // Android's new Home intent can reopen the same running launch.

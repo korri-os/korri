@@ -140,7 +140,7 @@ async fn far_session_watch_retires_disconnected_starter_and_stream_player() {
             }
             viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
             far.end_with(code);
-            let watch = crate::stream_play::device::spawn_watch(registry.clone());
+            let watch = crate::stream_play::device::spawn_watch(registry.clone(), |_| {});
             let retired = tokio::time::timeout(Duration::from_secs(3), async {
                 while registry.has_selected_session() {
                     tokio::time::sleep(Duration::from_millis(10)).await;

@@ -1722,6 +1722,81 @@ mod overlay {
     }
 
     #[tokio::test]
+    async fn failed_far_overlay_returns_to_catalog_with_one_dismissible_launch_notice() {
+        for path in ["status", "resume", "watch"] {
+            let mut outcomes = idle_outcomes(2);
+            let frozen = json!({"launchId":"L1", "gameId":"g00001", "phase":"frozen"});
+            outcomes.insert(
+                "app.session.status".into(),
+                json!({"_tag":"Ok", "payload":{"active":frozen, "overlay":frozen}}),
+            );
+            outcomes.insert(
+                "app.session.controls".into(),
+                json!({"_tag":"Ok", "payload":{"launchId":"L1", "groups":[]}}),
+            );
+            outcomes.insert("app.session.resume".into(),
+                json!({"_tag":"Err", "payload":{"code":"HostLaunchFailed", "message":"game unit failed: [redacted]"}}));
+            let (hub, outcomes, _directory) = hub_with(outcomes);
+            settled(&hub, "pico").await;
+            home_intent("L1");
+            let overlay = tokio::time::timeout(Duration::from_secs(4), async {
+                loop {
+                    if let Some(overlay) = hub.root().overlay() {
+                        if overlay.model().status == SurfaceStatus::Browsing {
+                            break overlay;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            if path == "resume" || path == "watch" {
+                outcomes.lock().unwrap().insert(
+                    "app.session.status".into(),
+                    json!({"_tag":"Ok", "payload":{}}),
+                );
+                if path == "watch" {
+                    hub.session_failed("game unit failed: [redacted]".into());
+                } else {
+                    overlay.resume_game().await;
+                }
+            } else {
+                outcomes.lock().unwrap().insert("app.session.status".into(),
+                    json!({"_tag":"Err", "payload":{"code":"HostLaunchFailed", "message":"game unit failed: [redacted]"}}));
+                overlay.refresh().await;
+                outcomes.lock().unwrap().insert(
+                    "app.session.status".into(),
+                    json!({"_tag":"Ok", "payload":{}}),
+                );
+            }
+            let model = hub.model("pico").unwrap();
+            assert!(matches!(
+                model.presentation,
+                SurfacePresentation::Catalog(_)
+            ));
+            assert!(
+                matches!(model.status, SurfaceStatus::Problem { ref reason, .. }
+                if reason == "HostLaunchFailed: game unit failed: [redacted]"),
+                "{model:?}"
+            );
+            assert!(hub.root().launchables.state().is_ready());
+            assert!(hub
+                .root()
+                .launchables
+                .state()
+                .entries()
+                .iter()
+                .all(|entry| entry.session().is_none()));
+            hub.root().launchables.dismiss_notice();
+            for _ in 0..3 {
+                hub.root().launchables.refresh().await;
+                assert_eq!(hub.model("pico").unwrap().status, SurfaceStatus::Browsing);
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn an_absent_session_exits_the_overlay_without_a_problem() {
         use crate::surface::overlay::{OverlayController, OverlayExit};
         let (korrid, script) = super::acquisition_gate::scripted();
@@ -1751,6 +1826,37 @@ mod overlay {
     }
 
     #[tokio::test]
+    async fn failed_status_exits_the_overlay_with_the_failure_for_the_catalog_notice() {
+        use crate::surface::overlay::{OverlayController, OverlayExit};
+        let (korrid, script) = super::acquisition_gate::scripted();
+        super::acquisition_gate::push(
+            &script,
+            "app.session.status",
+            json!({"_tag":"Err", "payload":{"code":"HostLaunchFailed", "message":"game unit failed: [redacted]"}}),
+        );
+        let exits = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = exits.clone();
+        let overlay = OverlayController::new(
+            "L1".into(),
+            None,
+            korrid,
+            Arc::new(|| {}),
+            Box::new(move |exit| observed.lock().unwrap().push(exit)),
+        );
+        overlay.refresh().await;
+        assert_eq!(
+            *exits.lock().unwrap(),
+            vec![OverlayExit::SessionFailed(
+                "game unit failed: [redacted]".into()
+            )]
+        );
+        assert!(!matches!(
+            overlay.model().status,
+            SurfaceStatus::Problem { .. }
+        ));
+    }
+
+    #[tokio::test]
     async fn terminal_resume_exits_the_overlay_without_a_problem() {
         use crate::surface::overlay::{OverlayController, OverlayExit};
         for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
@@ -1772,7 +1878,11 @@ mod overlay {
             overlay.resume_game().await;
             assert_eq!(
                 *exits.lock().unwrap(),
-                vec![OverlayExit::SessionEnded],
+                vec![if code == "HostLaunchFailed" {
+                    OverlayExit::SessionFailed("far launch ended".into())
+                } else {
+                    OverlayExit::SessionEnded
+                }],
                 "{code}"
             );
             assert!(

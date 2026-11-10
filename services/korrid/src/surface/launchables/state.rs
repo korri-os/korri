@@ -626,6 +626,13 @@ impl LaunchablesState {
         let failure = status_failure(status).cloned();
         let payload = match status {
             SessionStatusOutcome::Err(error) => {
+                if error.code == "HostLaunchFailed" && !has_local_catalog(&state.entries) {
+                    state.notice = Some(LaunchNotice::launch(format!(
+                        "{}: {}",
+                        error.code, error.message
+                    )));
+                    return ready(state);
+                }
                 return if !is_authoritative_session_status(status)
                     && has_local_catalog(&state.entries)
                 {
@@ -1042,13 +1049,19 @@ impl LaunchablesState {
     /// Resume locks the list as Launching, so a refusal folds from that case.
     pub fn with_resume_outcome(self, failure: Option<&RpcFailure>) -> LaunchablesState {
         match self {
-            LaunchablesState::Loaded(loaded) if matches!(loaded.phase, Phase::Launching { .. }) => {
+            LaunchablesState::Loaded(mut loaded)
+                if matches!(loaded.phase, Phase::Launching { .. }) =>
+            {
                 match failure {
+                    Some(failure) if failure.code == "HostLaunchFailed" => {
+                        loaded.content.entries = without_sessions(&loaded.content.entries);
+                        ready_from(loaded, format!("{}: {}", failure.code, failure.message))
+                    }
                     None => LaunchablesState::Loaded(loaded),
                     Some(failure)
                         if matches!(
                             failure.code.as_str(),
-                            "SessionCompleted" | "NoActiveSession" | "HostLaunchFailed"
+                            "SessionCompleted" | "NoActiveSession"
                         ) =>
                     {
                         ready(Content::with_entries(
@@ -1130,6 +1143,16 @@ impl LaunchablesState {
         let LaunchablesState::Loaded(mut loaded) = self else {
             return LaunchablesState::Loading;
         };
+        if let SessionStatusOutcome::Err(failure) = status {
+            // A returned far launch is terminal, not an unavailable read.
+            // Local startup failures keep their existing exact-cleanup flow.
+            if failure.code == "HostLaunchFailed"
+                && matches!(loaded.phase, Phase::Ready | Phase::Launching { .. })
+            {
+                loaded.content.entries = without_sessions(&loaded.content.entries);
+                return ready_from(loaded, format!("{}: {}", failure.code, failure.message));
+            }
+        }
         if let SessionStatusOutcome::Ok(payload) = status {
             update_stream_play(&mut loaded.content, payload);
         }

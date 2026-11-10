@@ -1184,7 +1184,15 @@ impl UpstreamRegistry {
     async fn ensure_remote_prepare_available(&self) -> Result<(), UpstreamError> {
         if let Some(selected) = self.selected() {
             if !self.retire_selected_if_revoked(&selected)? {
-                match self.selected_status(&selected).await? {
+                let status = match self.selected_status(&selected).await {
+                    // A failed far launch is terminal too. Prepare retires it
+                    // without turning its diagnostic into a new launch refusal.
+                    Err(UpstreamError::Tagged { code, .. }) if code == "HostLaunchFailed" => {
+                        UpstreamSessionStatus::SessionStatus { active: None }
+                    }
+                    other => other?,
+                };
+                match status {
                     UpstreamSessionStatus::SessionStatus {
                         active: Some(active),
                     } => {
@@ -1268,7 +1276,15 @@ impl UpstreamRegistry {
             if matches!(selected.participation, Participation::StreamPlayer { .. }) {
                 return self.observe_stream_player(&selected).await;
             }
-            let status = self.selected_status(&selected).await?;
+            let status = match self.selected_status(&selected).await {
+                Err(error) if error.code() == "HostLaunchFailed" => {
+                    // Return this diagnostic only to the observation that
+                    // retires the selection. Later polls stay silent.
+                    self.retire_ended_selection(&selected).await?;
+                    return Err(error);
+                }
+                other => other?,
+            };
             match &status {
                 UpstreamSessionStatus::SessionStatus {
                     active: Some(active),
@@ -1672,14 +1688,18 @@ impl UpstreamRegistry {
                     }
                 }
             }
-            Err(UpstreamError::Tagged { code, .. })
+            Err(UpstreamError::Tagged { code, message })
                 if matches!(
                     code.as_str(),
                     "SessionCompleted" | "NoActiveSession" | "HostLaunchFailed"
                 ) =>
             {
                 self.retire_ended_selection(&selected).await?;
-                Err(UpstreamError::NoActiveSession)
+                if code == "HostLaunchFailed" {
+                    Err(UpstreamError::Tagged { code, message })
+                } else {
+                    Err(UpstreamError::NoActiveSession)
+                }
             }
             Err(UpstreamError::Tagged { code, .. })
                 if matches!(
@@ -3495,12 +3515,27 @@ command = ["native-game"]
             viewer.fail_next(LinuxViewerAction::Start, "disconnected");
             assert!(registry.session_status().await.is_err());
             far.end_with(code);
+            let outcome = registry.session_status().await;
+            if code == "HostLaunchFailed" {
+                assert!(
+                    matches!(outcome, Err(UpstreamError::Tagged { code, message })
+                    if code == "HostLaunchFailed" && message == "far launch ended")
+                );
+            } else {
+                assert!(
+                    matches!(
+                        outcome,
+                        Ok(UpstreamSessionStatus::SessionStatus { active: None })
+                    ),
+                    "{code}"
+                );
+            }
             assert!(
                 matches!(
-                    registry.session_status().await.unwrap(),
-                    UpstreamSessionStatus::SessionStatus { active: None }
+                    registry.session_status().await,
+                    Ok(UpstreamSessionStatus::SessionStatus { active: None })
                 ),
-                "{code}"
+                "terminal failure must only be returned once"
             );
             assert!(!registry.has_selected_session(), "{code}");
         }
@@ -3516,13 +3551,26 @@ command = ["native-game"]
             registry.prepare_stream("game", None).await.unwrap();
             viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
             far.end_with(code);
-            assert!(
-                matches!(
-                    registry.session_thaw(Some(&far.launch_id)).await,
-                    Err(UpstreamError::NoActiveSession)
-                ),
-                "{code}"
-            );
+            let outcome = registry.session_thaw(Some(&far.launch_id)).await;
+            if code == "HostLaunchFailed" {
+                assert!(
+                    matches!(outcome, Err(UpstreamError::Tagged { code, message })
+                    if code == "HostLaunchFailed" && message == "far launch ended")
+                );
+            } else {
+                assert!(
+                    matches!(outcome, Err(UpstreamError::NoActiveSession)),
+                    "{code}"
+                );
+            }
+            assert!(matches!(
+                registry.session_status().await,
+                Ok(UpstreamSessionStatus::SessionStatus { active: None })
+            ));
+            assert!(matches!(
+                registry.session_thaw(Some(&far.launch_id)).await,
+                Err(UpstreamError::NoActiveSession)
+            ));
             assert!(!registry.has_selected_session(), "{code}");
             assert_eq!(
                 viewer
@@ -3532,6 +3580,41 @@ command = ["native-game"]
                     .count(),
                 1
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn terminal_far_watch_delivers_only_failure_once_and_allows_prepare() {
+        for code in ["HostLaunchFailed", "SessionCompleted", "NoActiveSession"] {
+            let (url, far) = exact_native_server(false).await;
+            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+                .with_linux_viewer(Arc::new(TestLinuxStreamViewer::default()));
+            registry.prepare_stream("game", None).await.unwrap();
+            far.end_with(code);
+            let notices = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let observed = notices.clone();
+            let watch = crate::stream_play::device::spawn_watch(registry.clone(), move |message| {
+                observed.lock().unwrap().push(message);
+            });
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while registry.has_selected_session() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            tokio::time::sleep(Duration::from_millis(1100)).await;
+            watch.abort();
+            let notices = notices.lock().unwrap().clone();
+            if code == "HostLaunchFailed" {
+                assert_eq!(
+                    notices,
+                    ["upstream returned HostLaunchFailed: far launch ended"]
+                );
+            } else {
+                assert!(notices.is_empty(), "{code}");
+            }
+            registry.prepare_stream("game", None).await.unwrap();
         }
     }
 

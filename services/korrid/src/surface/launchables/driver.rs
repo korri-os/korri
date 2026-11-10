@@ -1643,6 +1643,27 @@ impl Launchables {
         self.changed();
     }
 
+    /// Carry an overlay's terminal failure through the catalog's launch notice.
+    pub fn session_failed(&self, message: String) {
+        let mut inner = self.lock();
+        let next = inner
+            .take_state()
+            .with_session_status(&SessionStatusOutcome::Err(RpcFailure {
+                code: "HostLaunchFailed".into(),
+                message,
+            }));
+        // A newer preparation owns its lock; do not invalidate its reply.
+        if !next.is_ready() {
+            return;
+        }
+        // Older resume or catalog replies must not erase the watch's notice.
+        inner.action_seq += 1;
+        inner.load_seq += 1;
+        inner.publish(next);
+        drop(inner);
+        self.changed();
+    }
+
     pub fn resume_catalog_session(self: &Arc<Self>, session: ActiveSession) {
         let current = self.state();
         let Some(loaded) = current.loaded().filter(|_| current.is_ready()) else {

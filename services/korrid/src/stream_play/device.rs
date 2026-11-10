@@ -78,14 +78,21 @@ pub(crate) fn registry(
 }
 
 /// Polls the selected far session so its end stops this device's viewer.
-pub(crate) fn spawn_watch(peers: upstreams::UpstreamRegistry) -> tokio::task::JoinHandle<()> {
+pub(crate) fn spawn_watch(
+    peers: upstreams::UpstreamRegistry,
+    on_failure: impl Fn(String) + Send + 'static,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticks = tokio::time::interval(std::time::Duration::from_secs(1));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             ticks.tick().await;
             if peers.has_selected_session() {
-                let _ = peers.session_status().await;
+                if let Err(error) = peers.session_status().await {
+                    if error.code() == "HostLaunchFailed" {
+                        on_failure(error.to_string());
+                    }
+                }
             }
         }
     })

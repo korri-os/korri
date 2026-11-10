@@ -229,6 +229,13 @@ impl SurfaceHub {
         })
     }
 
+    /// The selected-session watch can finish while the viewer covers the shell.
+    pub(crate) fn session_failed(&self, message: String) {
+        if let Some(root) = self.root.get() {
+            root.session_failed(message);
+        }
+    }
+
     fn bump(&self) {
         self.revision.send_modify(|revision| *revision += 1);
     }

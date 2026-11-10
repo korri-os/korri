@@ -236,10 +236,12 @@ fn action_failure(reason: SessionControlFailureReason, message: &str) -> String 
 }
 
 /// What the presentation switch should do after an overlay operation.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum OverlayExit {
     /// Show the catalog: the session ended.
     SessionEnded,
+    /// Show the catalog with the existing launch notice.
+    SessionFailed(String),
     /// The live Android viewer has resumed and released its Surface.
     Resumed,
     /// Show the catalog while watching the exact launch's return.
@@ -458,6 +460,9 @@ impl OverlayController {
             SessionStatusOutcome::Err(failure) => {
                 if is_stale_session_code(&failure.code) {
                     self.stale();
+                } else if failure.code == "HostLaunchFailed" {
+                    self.lock().sticky = false;
+                    (self.exit)(OverlayExit::SessionFailed(failure.message));
                 } else if failure.code == "SessionCompleted" || failure.code == "NoActiveSession" {
                     self.lock().sticky = false;
                     (self.exit)(OverlayExit::SessionEnded);
@@ -581,9 +586,12 @@ impl OverlayController {
         };
         if failure.code == "HostFocusFailed" {
             self.could_not_resume();
+        } else if failure.code == "HostLaunchFailed" {
+            self.lock().sticky = false;
+            (self.exit)(OverlayExit::SessionFailed(failure.message));
         } else if matches!(
             failure.code.as_str(),
-            "SessionCompleted" | "NoActiveSession" | "HostLaunchFailed"
+            "SessionCompleted" | "NoActiveSession"
         ) {
             self.lock().sticky = false;
             (self.exit)(OverlayExit::SessionEnded);
@@ -832,18 +840,21 @@ pub async fn focused_overlay_session(
     allow_frozen: bool,
     expected_launch_id: Option<&str>,
     attempts: usize,
-) -> Option<ActiveSession> {
+) -> Result<Option<ActiveSession>, crate::RpcFailure> {
     for attempt in 0..attempts.max(1) {
         match korrid.session_status(Some(STATUS_TIMEOUT)).await {
             SessionStatusOutcome::Ok(status) => {
-                return status.overlay.filter(|active| {
+                return Ok(status.overlay.filter(|active| {
                     expected_launch_id.is_none_or(|expected| active.launch_id == expected)
                         && ((allow_frozen && matches!(active.phase.as_deref(), Some("frozen"))
                             || (allow_frozen
                                 && cfg!(target_os = "android")
                                 && active.phase.as_deref() == Some("running")))
                             || active.phase.as_deref() == Some("focus-failed"))
-                });
+                }));
+            }
+            SessionStatusOutcome::Err(failure) if failure.code == "HostLaunchFailed" => {
+                return Err(failure);
             }
             SessionStatusOutcome::Err(_) => {
                 if attempt + 1 < attempts {
@@ -852,7 +863,7 @@ pub async fn focused_overlay_session(
             }
         }
     }
-    None
+    Ok(None)
 }
 
 #[cfg(test)]

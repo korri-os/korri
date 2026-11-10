@@ -1070,7 +1070,7 @@ mod manual_pending_launch_choices {
 }
 
 #[test]
-fn terminal_resume_returns_to_library_without_continue_or_error() {
+fn terminal_resume_returns_to_library_with_only_failure_noticed() {
     for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
         let running = ready().with_session_status(&status(json!({"_tag":"Ok", "payload": {
             "active": {"launchId":"exact", "gameId":"skate3", "phase":"running"}
@@ -1089,6 +1089,67 @@ fn terminal_resume_returns_to_library_without_continue_or_error() {
                 .all(|entry| entry.session().is_none()),
             "{code}"
         );
-        assert!(notice(&ended).is_none(), "{code}");
+        if code == "HostLaunchFailed" {
+            assert_eq!(
+                notice(&ended).unwrap().message(),
+                "HostLaunchFailed: far launch ended"
+            );
+        } else {
+            assert!(notice(&ended).is_none(), "{code}");
+        }
     }
+}
+
+#[test]
+fn terminal_far_status_returns_to_library_with_only_failure_noticed() {
+    for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
+        let running = ready().with_session_status(&status(json!({"_tag":"Ok", "payload": {
+            "active": {"launchId":"exact", "gameId":"skate3", "phase":"running"}
+        }})));
+        let failure = status(json!({"_tag":"Err", "payload": {
+            "code": code, "message": "game unit failed: [redacted]"
+        }}));
+        let ended = running.with_session_status(&failure);
+        assert_eq!(tag(&ended), "Ready", "{code}");
+        assert!(
+            ended
+                .entries()
+                .iter()
+                .all(|entry| entry.session().is_none()),
+            "{code}"
+        );
+        assert!(
+            content(&ended).unavailable_session_status.is_none(),
+            "{code}"
+        );
+        if code == "HostLaunchFailed" {
+            assert_eq!(
+                notice(&ended).unwrap().message(),
+                "HostLaunchFailed: game unit failed: [redacted]"
+            );
+        } else {
+            assert!(notice(&ended).is_none(), "{code}");
+        }
+        let mut dismissed = content(&ended).clone();
+        dismissed.notice = None;
+        let polled = LaunchablesState::Loaded(Loaded {
+            phase: Phase::Ready,
+            content: dismissed,
+        })
+        .with_session_status(&status(json!({"_tag":"Ok", "payload": {}})));
+        assert!(notice(&polled).is_none(), "{code}");
+    }
+}
+
+#[test]
+fn catalog_refresh_keeps_a_terminal_far_failure_as_a_launch_notice() {
+    let failure = status(json!({"_tag":"Err", "payload": {
+        "code":"HostLaunchFailed", "message":"game unit failed: [redacted]"
+    }}));
+    let loaded = LaunchablesState::from_sources(&games_ok(), Some(&failure), None, &[], None);
+    assert_eq!(tag(&loaded), "Ready");
+    assert!(
+        matches!(notice(&loaded), Some(LaunchNotice::Launch { message, .. })
+        if message == "HostLaunchFailed: game unit failed: [redacted]")
+    );
 }

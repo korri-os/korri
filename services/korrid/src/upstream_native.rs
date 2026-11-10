@@ -395,7 +395,7 @@ impl NativeClient {
             RpcResponse::SessionStatus(SessionStatusOutcome::Err(failure))
                 if matches!(
                     failure.code.as_str(),
-                    "SessionCompleted" | "NoActiveSession" | "HostLaunchFailed"
+                    "SessionCompleted" | "NoActiveSession"
                 ) =>
             {
                 Ok(UpstreamSessionStatus::SessionStatus { active: None })
