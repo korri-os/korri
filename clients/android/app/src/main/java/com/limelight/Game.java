@@ -605,21 +605,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         setPreferredOrientationForActivity();
 
 
-        if (
-                prefConfig.videoScaleMode == PreferenceConfiguration.ScaleMode.STRETCH ||
-                        shouldIgnoreInsetsForResolution(displayWidth, displayHeight)
-        ) {
-            // Allow the activity to layout under notches if the fill-screen option
-            // was turned on by the user or it's a full-screen native resolution
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                getWindow().getAttributes().layoutInDisplayCutoutMode =
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
-            }
-            else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                getWindow().getAttributes().layoutInDisplayCutoutMode =
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-            }
-        }
+        // #388: the window always reaches through the camera cutout. The scale
+        // mode alone decides how the picture fits that window.
+        KorriStreamCutout.drawThroughCutout(getWindow());
 
         //光标是否显示
         cursorVisible = prefConfig.enableMouseLocalCursor;
@@ -1534,26 +1522,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private boolean isRefreshRateGoodMatch(float refreshRate) {
         return refreshRate >= prefConfig.fps &&
                 Math.round(refreshRate) % prefConfig.fps <= 3;
-    }
-
-    private boolean shouldIgnoreInsetsForResolution(int width, int height) {
-        // Never ignore insets for non-native resolutions
-        if (!PreferenceConfiguration.isNativeResolution(width, height)) {
-            return false;
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Display display = getWindowManager().getDefaultDisplay();
-            for (Display.Mode candidate : display.getSupportedModes()) {
-                // Ignore insets if this is an exact match for the display resolution
-                if ((width == candidate.getPhysicalWidth() && height == candidate.getPhysicalHeight()) ||
-                        (height == candidate.getPhysicalWidth() && width == candidate.getPhysicalHeight())) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     private boolean mayReduceRefreshRate() {
@@ -4312,8 +4280,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 if (surfaceOverlayAttachment == attachment) surfaceOverlayAttachment = null;
             }
         });
-        addContentView(view, new android.view.ViewGroup.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        addContentView(view, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        KorriStreamCutout.keepOutOfCutout(view);
     }
 
     private final KorriOverlayHomeKey overlayHomeKey = new KorriOverlayHomeKey();

@@ -104,6 +104,15 @@ Leave and Resume do not call the far freezer. Linux retains its freeze under
 ADR 0053. Opaque model controls offer Resume, End, Disconnect and Open Korri;
 packages send the same `InvokeGameplayControl` request for each.
 
+Game's window draws through the camera cutout on every stream (#388), with the
+shell's mode: ALWAYS on API 30+, SHORT_EDGES on API 28–29. No setting turns it
+off. The scale mode (fit, fill, stretch) alone decides how the picture fits that
+window, so part of the picture can sit under the camera hole. The hosted overlay
+Surface lays out inside the cutout's safe area and follows it on rotation and
+folding, so its controls stay out of the hole. The treaty carries no inset: the
+package only sees a smaller window. The shell does not do this; Pico there
+still reaches the edge.
+
 `KorriSurfaceHost` passes any Android `Surface` to the Rust backend. The vendored
 `SurfaceWindow` owns its EGL surface and ANativeWindow, not an Activity or Game.
 It requires an alpha EGL config. A host must wait in `surfaceDestroyed` until
