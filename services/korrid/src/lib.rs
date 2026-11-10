@@ -170,15 +170,18 @@ fn android_session_status(session: android_local::LocalSession) -> SessionStatus
             netplay: None,
             person_public_key: None,
             stream_players: Vec::new(),
-            initial_handoff: None,
+            // Android started the game's app: the game has the screen.
+            initial_handoff: Some(InitialHandoff::Observed),
             focus_ownership: None,
             launch_id: session.launch_id,
             host: None,
             game_id: Some(session.game_id),
             title: session.title,
+            // The same phase words the Linux host reports, so surfaces treat
+            // an Android game like any other live session.
             phase: Some(match session.phase {
-                android_local::Phase::Playing => "playing".into(),
-                android_local::Phase::Left => "left".into(),
+                android_local::Phase::Playing => "running".into(),
+                android_local::Phase::Left => "frozen".into(),
             }),
         }),
         overlay: None,
