@@ -77,13 +77,36 @@ puts it back when the shell takes the display again.
 
 ## Not in scope
 
-- Changing shape while a game runs. A game fixes its picture size when its
-  graphics start; every launch starts fresh at the client's shape.
+- The original slice changed shape only at launch. Live shape is now approved
+  as a separate implementation below; some games can refit during play.
 - The Hookshot patch for screens narrower than 16:9 (separate work, after
   this).
 - Watched displays and dual-pane placements.
 - Known limit: composition, including the limits helper, runs under the session
   lock, as before this change.
+
+## Live shape
+
+**Approved 2026-11-10; not yet implemented.** See ADR 0058.
+
+The first connected viewer owns the shape. Folding or unfolding its screen
+changes the running session's display without reconnecting. Joiners do not
+change shape. When the owner leaves, the longest-connected remaining viewer
+takes ownership and supplies the new shape.
+
+Rotation alone does not reshape. Landscape is the default. The owner can select
+Portrait in the gameplay overlay for this session. A per-game portrait default
+is deferred to the cascading settings work in #395.
+
+korrid changes and confirms Sway's mode, then runs the gamescope modifier's
+packaged display-change hook as the game's user. The hook uses that game's
+nested display, not the outer compositor's X root. The viewer follows the
+confirmed size through the existing runtime-resolution control.
+
+On failure, restore the previous shape and show one "Couldn't reshape" notice.
+Do not put gamescope-specific property names in korrid. No runner opt-in and
+no compatibility path for old gamescope packages are part of this change.
+Games that cannot refit can still show bars inside their resized window.
 
 ## Hardware gate
 
