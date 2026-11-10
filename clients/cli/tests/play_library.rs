@@ -147,6 +147,36 @@ fn play_library_session_end_uses_observed_id_and_keeps_pending_outcome() {
     );
 }
 #[test]
+fn play_library_end_resolves_failed_or_blocked_host_through_existing_end() {
+    for code in ["HostLaunchFailed", "HostRecoveryBlocked"] {
+        let server = Server::start(vec![
+            RpcResponse::SessionStatus(SessionStatusOutcome::Err(RpcFailure {
+                code: code.into(), message: "host launch aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa requires korri end".into(),
+            })),
+            RpcResponse::SessionEnd(SessionEndOutcome::Ok(SessionEndResult { phase: SessionEndPhase::Ended })),
+        ]);
+        let output = server.run(&["end", "--yes"]);
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        assert!(matches!(&server.calls.lock().unwrap()[1], RpcRequest::SessionEnd(r) if r.expected_launch_id.is_none() && r.force != Some(true)));
+    }
+}
+#[test]
+fn play_library_end_recovery_requires_consent_and_preserves_refusal_reason() {
+    let failed = || RpcResponse::SessionStatus(SessionStatusOutcome::Err(RpcFailure {
+        code: "HostRecoveryBlocked".into(), message: "host launch aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa requires korri end".into(),
+    }));
+    let server = Server::start(vec![failed()]);
+    assert_eq!(server.run(&["end"]).status.code(), Some(2));
+    assert_eq!(server.calls.lock().unwrap().len(), 1);
+    let server = Server::start(vec![failed(), RpcResponse::SessionEnd(SessionEndOutcome::Err(RpcFailure {
+        code: "HostRecoveryBlocked".into(), message: "exact unit may still be live; absence cannot be proven".into(),
+    }))]);
+    let output = server.run(&["end", "--yes"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("absence cannot be proven"));
+}
+#[test]
 fn play_library_observation_failure_never_controls_session() {
     let server = Server::start(vec![active(Some(RpcFailure {
         code: "ObservationFailed".into(),

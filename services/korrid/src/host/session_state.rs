@@ -3951,6 +3951,102 @@ mod tests {
     use super::*;
 
     #[test]
+    fn completed_journal_recovers_after_receiver_lost_reservations_without_restart() {
+        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
+        use korri_input_contract::SeatRequest;
+        let root = tempfile::tempdir().unwrap();
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        persist_test_record(root.path(), id);
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.insert(id, LaunchUnitState::Frozen);
+        let (coordinator, receiver) = test_support::coordinator(move |request| {
+            let mut reply = test_support::reply();
+            if let SeatRequest::ApplyCount { count } = request {
+                reply.count = count;
+            }
+            reply
+        });
+        let manager = Arc::new(UnixInputSeatManager::new("unused".into(), Ok(coordinator.clone())));
+        let control = HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone());
+        assert!(control.initialize_input(6).is_err());
+        assert!(manager.is_fenced());
+        backend.insert(id, LaunchUnitState::Completed);
+        for _ in 0..3 { control.status(); }
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        assert!(read_active(&root.path().join("host-session")).unwrap().is_none());
+        assert_eq!(stats(&control, "recovered").play_count, 1);
+        assert!(!manager.is_fenced());
+        assert!(manager.ready().is_ok());
+        assert_eq!(coordinator.snapshot().unwrap().count, 6);
+        drop(control); drop(manager); drop(coordinator); receiver.join().unwrap();
+    }
+
+    #[test]
+    fn exact_end_of_blocked_record_completes_only_after_absence_is_proven() {
+        use super::super::input_seat::RecordingInputPool;
+        let root = tempfile::tempdir().unwrap();
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        persist_test_record(root.path(), id);
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.insert(id, LaunchUnitState::Running);
+        let pool = Arc::new(RecordingInputPool::default());
+        *pool.session.lock().unwrap() = Some(id.into());
+        pool.fence();
+        let control = HostSessionControl::with_input_seats(root.path(), backend.clone(), pool);
+        *control.state.lock().unwrap() = ActiveState::RecoveryBlocked;
+        assert_eq!(control.stop(id), HostSessionStop::RecoveryBlocked);
+        assert!(read_active(&control.identity_root).unwrap().is_some());
+        backend.state.lock().unwrap().state_unavailable = true;
+        assert_eq!(control.stop(id), HostSessionStop::RecoveryBlocked);
+        backend.state.lock().unwrap().state_unavailable = false;
+        backend.insert(id, LaunchUnitState::Completed);
+        assert_eq!(control.stop(id), HostSessionStop::Completed { launch_id: id.into() });
+        assert!(read_active(&control.identity_root).unwrap().is_none());
+        assert_eq!(stats(&control, "recovered").play_count, 1);
+    }
+
+    #[test]
+    fn completed_unit_limits_restore_is_attempted_once_while_completion_retries() {
+        use std::{io::{BufRead, BufReader, Write}, os::unix::net::UnixListener};
+        use super::super::input_seat::UnixInputSeatManager;
+        let root = tempfile::tempdir().unwrap();
+        let socket = root.path().join("limits.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let done = Arc::new(AtomicBool::new(false));
+        let finished = done.clone();
+        let server = thread::spawn(move || {
+            let mut calls = Vec::new();
+            while !finished.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut line = String::new();
+                        BufReader::new(stream.try_clone().unwrap()).read_line(&mut line).unwrap();
+                        calls.push(serde_json::from_str::<serde_json::Value>(&line).unwrap());
+                        stream.write_all(b"{\"_tag\":\"Err\",\"payload\":{\"message\":\"unit does not name the active session\"}}\n").unwrap();
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(1)),
+                    Err(error) => panic!("{error}"),
+                }
+            }
+            calls
+        });
+        let backend = Arc::new(DeterministicBackend::default());
+        let seats = Arc::new(UnixInputSeatManager::new("unused".into(), Err("transport lost".into())));
+        let mut control = HostSessionControl::with_input_seats(root.path(), backend, seats);
+        control.limits_client = crate::launch_settings::helper::Client { socket };
+        for id in ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"] {
+            persist_test_record(root.path(), id);
+            for _ in 0..3 { assert!(matches!(control.recover(), ActiveState::RecoveryBlocked)); }
+            clear_active(&control.identity_root).unwrap();
+        }
+        done.store(true, Ordering::SeqCst);
+        let calls = server.join().unwrap();
+        assert_eq!(calls.len(), 2, "one terminal restore attempt per launch, not one per status poll");
+        assert!(calls.iter().all(|call| call["_tag"] == "EndSession"));
+    }
+
+    #[test]
     fn handoff_line_names_the_launch_and_the_time_to_its_window() {
         assert_eq!(
             handoff_line("launch-1", std::time::Duration::from_millis(6830)),
