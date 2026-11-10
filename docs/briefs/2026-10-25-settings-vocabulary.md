@@ -58,6 +58,31 @@ names change only where a rule below says so.
 | `network.*` | section | links between devices | | | `remote`, `packetsize` | Network section |
 | `logging.level` | choice | `none`, `fatal`, `error`, `warning`, `info`, `debug`, `verbose`; each plugin accepts its subset | see open item 3 | | `-verbose`, `-debug` | `min_log_level` |
 
+## Shared settings, first cut (ADR 0057, 2026-11-09)
+
+Korri owns these definitions (ADR 0057). Runner-only settings go in the
+`plugin` bucket. Status per row: **decided** means the owner chose the name
+and values; **draft** means proposed and not yet approved. Native keys for
+each runner are checked against source before a runner maps a row.
+
+| Path | Values | Unset means | Status | Grounding |
+|---|---|---|---|---|
+| `video.render-scale` | number, multiplier of the original picture size (1 = original) | the runner's own default | decided (q18) | WiiCompiled `resolution_multiplier`; PCSX2 `upscale_multiplier`; Dolphin `InternalResolution` |
+| `video.aspect-ratio` | `original` (game's ratio, bars), `fill-view` (the game shows more view to fill the screen shape; falls back to `original`), `stretch`, `4:3`, `16:9` | the runner's own default | decided (q19) | RetroArch `video.aspect-ratio` above; legacy preferences `video.aspect-ratio`; WiiCompiled `force_aspect` + dynamic canvas |
+| `locale.language` | language tag | the runner's own default | decided (q20); value form draft | 12 of 14 surveyed runners |
+| `locale.region` | named region choice | the runner's own default | decided (q20); values open | 12 of 14 surveyed runners |
+| `video.window-mode` | `windowed`, `borderless`, `exclusive` | the runner's own default | values decided (q24); row draft | WiiCompiled `display_mode`; RetroArch `video.fullscreen` + `video.windowed-fullscreen` above |
+| `video.vsync` | boolean | the runner's own default | draft | RetroArch `video.vsync` above |
+| `video.fps-limit` | integer, 0 = none | the runner's own default | existing shared term | Shared terms above |
+| `video.renderer` | `vulkan`, `opengl`, `software`, program names otherwise (R1) | the runner's own default | draft | legacy RPCS3 `video.renderer`; RetroArch `drivers.video` above |
+| `audio.volume-percent` | 0 to 100 | the runner's own default | draft | legacy preferences `audio.volume` (0 to 100); R3 |
+| `audio.music.volume-percent`, `audio.effects.volume-percent`, `audio.voice.volume-percent` | 0 to 100; UI sounds stay in `plugin` | the runner's own default | shape decided (q23) | WiiCompiled `music_volume`, `sound_effects_volume`, `voices_volume` |
+| `input.rumble` | boolean | the runner's own default | draft | 12 of 14 surveyed runners |
+| `input.deadzone-percent` | 0 to 100 | the runner's own default | draft | 12 of 14 surveyed runners; R3 |
+
+Sizes that follow the display when unset (ADR 0056) are window and output
+sizes such as `video.resolution`. `video.render-scale` is not one of them.
+
 ## RetroArch (`host.runners.<core runner id>.settings`, family `@korri:retroarch`)
 
 Every key of `policy.ts`, renamed only where a rule applies. `# was` names
