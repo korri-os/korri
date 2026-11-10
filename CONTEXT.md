@@ -252,7 +252,7 @@ The values that shape how a game runs, such as its runner, the runner's settings
 _Avoid_: config, policy, cascade
 
 **One-launch value**:
-A launch setting that a person sets for one launch only. It ends with that session unless the person keeps it, which moves it to the device, a system, a game, a release or a profile.
+A launch setting that a person sets for one launch only. It ends with that session unless the person keeps it, which moves it to the game, or on request to the device, a system, a release or a profile.
 _Avoid_: ephemeral setting, temporary override, session setting
 
 **Runner scope**:

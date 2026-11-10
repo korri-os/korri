@@ -21,6 +21,11 @@ shared setting from a runner-only one by its name.
 - **Korri owns every shared setting**: its path, value shape, range and
   meaning. A plugin declares which shared paths it supports and translates
   them into its program's own settings. It does not redeclare them.
+- **Korri also decides which shared settings stay with each device**
+  (`x-korri-scope: device`, ADR 0018), because only Korri knows a shared
+  setting's meaning. Settings that depend on the device's GPU or display,
+  such as render scale, stay device-only, so a value chosen on a desktop
+  never reaches a handheld.
 - **Shared settings may be set at any runner scope**, including the
   any-runner cells of the device, system, game, release, profile and one
   launch. Whichever runner is chosen translates them.

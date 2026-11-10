@@ -69,7 +69,7 @@ each runner are checked against source before a runner maps a row.
 |---|---|---|---|---|
 | `video.render-scale` | number, multiplier of the original picture size (1 = original) | the runner's own default | decided (q18) | WiiCompiled `resolution_multiplier`; PCSX2 `upscale_multiplier`; Dolphin `InternalResolution` |
 | `video.aspect-ratio` | `original` (game's ratio, bars), `fill-view` (the game shows more view to fill the screen shape; falls back to `original`), `stretch`, `4:3`, `16:9` | the runner's own default | decided (q19) | RetroArch `video.aspect-ratio` above; legacy preferences `video.aspect-ratio`; WiiCompiled `force_aspect` + dynamic canvas |
-| `locale.language` | language tag | the runner's own default | decided (q20); value form draft | 12 of 14 surveyed runners |
+| `locale.language` | language tag (BCP 47), such as `en-US`, `pt-BR`, `ja`; a runner that knows only base languages maps to the base | the runner's own default | decided (q20, q27) | 12 of 14 surveyed runners |
 | `locale.region` | named region choice | the runner's own default | decided (q20); values open | 12 of 14 surveyed runners |
 | `video.window-mode` | `windowed`, `borderless`, `exclusive` | the runner's own default | decided (q24, q25) | WiiCompiled `display_mode`; RetroArch `video.fullscreen` + `video.windowed-fullscreen` above |
 | `video.vsync` | boolean | the runner's own default | decided (q25) | RetroArch `video.vsync` above |
@@ -82,6 +82,16 @@ each runner are checked against source before a runner maps a row.
 
 Sizes that follow the display when unset (ADR 0056) are window and output
 sizes such as `video.resolution`. `video.render-scale` is not one of them.
+
+Device-only (q26, `x-korri-scope: device`, set by Korri for shared settings):
+`video.render-scale`, `video.renderer`, `video.window-mode`, `video.vsync`,
+`video.fps-limit`. Every other shared setting follows the person between
+devices (ADR 0018).
+
+Editors (q29) group shared settings by section (Video, Audio, Input, Locale),
+then show one group per runner for its `plugin` settings, such as
+"WiiCompiled only". A value that the chosen runner cannot honour shows "not
+supported by" that runner.
 
 ## RetroArch (`host.runners.<core runner id>.settings`, family `@korri:retroarch`)
 
