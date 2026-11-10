@@ -130,12 +130,8 @@ impl Run {
     fn publish(&mut self, label: &str, change: impl FnOnce(&mut Value)) {
         change(&mut self.korri.model);
         let published = self.korri.published();
-        self.publish_snapshot(label, &published);
-    }
-    /// Repeat a publish with identical model bytes, independent of responses.
-    fn publish_snapshot(&mut self, label: &str, published: &str) {
         self.count(format!("setModel {label}"), |e| {
-            e.set_model(published).unwrap()
+            e.set_model(&published).unwrap()
         });
         self.deliver(label, json!({"_tag": "KorriPublished"}));
     }
@@ -307,13 +303,11 @@ fn slow_clock_samples(source: &str) -> Run {
         "Pressed down (pause menu)",
         json!({"_tag": "Pressed", "button": "down"}),
     );
-    // Repeat the identical publish: setModel still parses the same model,
-    // without changing the work measured by the preceding transitions.
-    run.korri.model["presentation"] = catalog_presentation;
-    let published = run.korri.published();
-    for _ in 0..3 {
-        run.publish_snapshot("catalog again after the game", &published);
-    }
+    // Each fresh run measures the real transition once, without mixing in
+    // cheaper unchanged-model publishes.
+    run.publish("catalog again after the game", move |m| {
+        m["presentation"] = catalog_presentation
+    });
     // The same view again: only its JSON, both ways.
     for _ in 0..5 {
         run.count("view again (JSON only)".into(), |e| e.view().unwrap());
