@@ -268,7 +268,7 @@ A setting whose path, shape and meaning Korri defines once for every runner. It 
 _Avoid_: general preference, common setting, global setting
 
 **Runner-only setting**:
-A setting that only one runner has. It lives in the one bucket that every runner uses for this, is never translated, and applies only where a place limits it to that runner.
+A setting that only one runner has. It lives in the `plugin` bucket, which every runner, modifier and launch service uses for this, is never translated, and applies only where a place limits it to that runner.
 _Avoid_: native setting, custom setting, extra setting
 
 **Setting path**:

@@ -30,9 +30,7 @@ only from that file, which its in-game F10 menu also rewrites.
 - **Values derived from the display count as values set in Korri.** A runner
   that can follow the display only by writing a size into the native file,
   such as WiiCompiled's `window_width` and `window_height`, writes it at every
-  launch. On Linux, a launch-scoped file overlay that keeps these writes out
-  of the person's own file is to be explored, above all for programs that
-  cannot be pointed at another config file.
+  launch.
 - **Settings apply at launch.** Korri does not change a running game's
   settings. The game's own menu stays the way to change a value mid-session.
 
@@ -46,5 +44,9 @@ only from that file, which its in-game F10 menu also rewrites.
   what runs, and a per-game value could not override a value the menu wrote.
 - Write only a separate per-launch config file. Rejected: WiiCompiled and
   every program without a config-path option could not take settings at all.
+- A launch-scoped overlay of the native file inside the launch's bubblewrap
+  namespace (ADR 0015). Rejected for now: discarding the overlay loses every
+  change made in the game's menu, and copying changes back means korrid must
+  parse each program's config format.
 - Live changes to a running game. Deferred: they need a runtime channel to a
   running runner, which the effect-free `launch.prepare` model does not have.
