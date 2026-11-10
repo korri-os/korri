@@ -11,10 +11,10 @@ export component Default inherits Window {
     init => { Tokens.fit(self.width, self.height); }
     changed width => { Tokens.fit(self.width, self.height); }
     changed height => { Tokens.fit(self.width, self.height); }
-    slide := PicoSlide { region: "shelf"; pitch: 40 * Tokens.p; rest: 0; }
+    slide := PicoSlide { region: "shelf"; pitch: 40 * Tokens.p; rest: 0; least: 0; most: 400 * Tokens.p; }
     VerticalLayout {
         padding: 2 * Tokens.u;
         alignment: start;
-        Rectangle { height: 20 * Tokens.p; Rectangle { x: slide.offset; width: 30 * Tokens.p; background: P8.navy; } }
+        Rectangle { height: 20 * Tokens.p; Rectangle { x: -(slide.active ? slide.place : 0px); width: 30 * Tokens.p; background: P8.navy; } }
     }
 }

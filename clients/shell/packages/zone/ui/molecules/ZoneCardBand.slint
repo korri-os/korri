@@ -56,19 +56,26 @@ export component ZoneCardBand {
     property <length> side-h: card-h * Tokens.side-share;
     property <length> side-w: side-h * Tokens.card-aspect;
     property <length> cy: root.height / 2;
-    property <float> f: focus-index;
-    animate f {
+    // The band's place, in cards: the focus, snapping to it in 220 ms with
+    // one overshoot (a d-pad move); while a finger drags or flings it, the
+    // finger's place exactly, with no animation (ZoneSlide, ADR 0055).
+    property <float> f-focus: focus-index;
+    animate f-focus {
         duration: 220ms;
         easing: cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    property <float> lin: focus-index;
-    animate lin {
+    property <float> lin-focus: focus-index;
+    animate lin-focus {
         duration: 220ms;
         easing: linear;
     }
+    property <length> pitch: side-w + gap;
+    slide := ZoneSlide { dragged(region, by) => { root.dragged(region, by); }  region: "band"; pitch: root.pitch; rest: root.focus-index * root.pitch; least: 0; most: Math.max(0, root.total - 1) * root.pitch; }
+    property <float> f: slide.active && root.pitch > 0 ? slide.place / root.pitch : f-focus;
+    property <float> lin: slide.active && root.pitch > 0 ? slide.place / root.pitch : lin-focus;
     property <int> dir: lin < focus-index - 0.0001 ? 1 : lin > focus-index + 0.0001 ? -1 : 0;
     property <float> p: 1 - (focus-index - f) * dir;
-    property <bool> adjacent: dir != 0 && p >= 0;
+    property <bool> adjacent: !slide.active && dir != 0 && p >= 0;
     pure function share(i: int) -> float {
         return adjacent ? (i == focus-index ? p : i == focus-index - dir ? 1 - p : 0) : Math.max(0, 1 - Math.abs(i - f));
     }
@@ -79,10 +86,7 @@ export component ZoneCardBand {
     }
     // Modern travels to a layout unit (1/64 px); the pixel looks to whole art px.
     property <length> raw-x: root.width / 2 - (f * (side-w + gap) + room + focus-w / 2);
-    property <length> rest-x: Tokens.modern ? Math.round(raw-x / Tokens.unit * 64) / 64 * Tokens.unit : Math.round(raw-x / a) * a;
-    // A sideways drag slides the band a card at a time; focus follows (ADR 0055).
-    slide := ZoneSlide { dragged(region, by) => { root.dragged(region, by); }  region: "band"; pitch: root.side-w + root.gap; rest: -root.rest-x; first: root.focused-card <= 0; last: root.focused-card >= root.cards.length - 1; }
-    property <length> track-x: rest-x + slide.offset;
+    property <length> track-x: Tokens.modern ? Math.round(raw-x / Tokens.unit * 64) / 64 * Tokens.unit : Math.round(raw-x / a) * a;
     pure function card-w(i: int) -> length {
         return side-w + share(i) * (focus-w - side-w);
     }

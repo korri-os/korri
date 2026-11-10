@@ -131,3 +131,27 @@ describe("the gesture rules", () => {
     expect(sends.filter(at => at !== "-1")).toEqual(["along(self.mouse-x)", "along(self.mouse-x)"])
   })
 })
+
+describe("a rack under a finger", () => {
+  const read = (file: string) => code(readFileSync(join(ROOT, file), "utf8"))
+  const slide = read("ui/atoms/ZoneSlide.slint")
+
+  test("follows the finger exactly: the row stands at the finger's place, not its focus binding plus an offset", () => {
+    // Where the finger puts the row: where it stood when the finger came down
+    // plus the finger's travel, inside the row's ends. The focus binding
+    // (`rest`) is read only when the finger comes down and while settling.
+    const follow = slide.slice(slide.indexOf("function follow()"), slide.indexOf("public function move"))
+    expect(follow).toMatch(/place = Math\.clamp\(start \+ travel,/)
+    expect(follow).not.toMatch(/rest/)
+    expect(slide).toMatch(/start = active \? place : rest;/)
+    expect(slide).not.toMatch(/offset|changed rest/)
+    // Whole items, counted from the travel alone: no step waits for logic.js.
+    expect(follow).toMatch(/let whole = Math\.round\(travel \/ pitch\);/)
+  })
+
+  test("each rack draws at the slide's place while it is active, with no animation in between", () => {
+    expect(read("ui/molecules/ZoneCardBand.slint")).toMatch(/property <float> f: slide\.active && root\.pitch > 0 \? slide\.place \/ root\.pitch : f-focus;/)
+    expect(read("ui/molecules/ZoneCardBand.slint")).toMatch(/property <bool> adjacent: !slide\.active && /)
+    expect(read("ui/organisms/ZoneSaveBand.slint")).toMatch(/property <length> shift: slide\.active \? -slide\.place : rest-shift;/)
+  })
+})

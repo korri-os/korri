@@ -1,18 +1,22 @@
 import { Tokens } from "../../ui/tokens.slint";
 
 // How a rack that moves by focus follows a finger (ADR 0055): the band and
-// the save band. Draws nothing. The rack adds `offset` to its row's place;
-// its cards' ZoneTaps report a sideways drag through `move` and the lift
-// through `release` (with `fling` false when the system cancelled it).
+// the save band. Draws nothing. Its cards' ZoneTaps report a sideways drag
+// through `move` and the lift through `release` (with `fling` false when the
+// system cancelled it).
 //
-// The row stays under the finger between whole items: `offset` follows the
-// finger, held to one item either side of the place focus gives the row
-// (`rest`). Each time the finger has crossed a whole item (`pitch`), it
-// sends `dragged(region, ±n)` (by is never 0) and logic.js moves focus that
-// far; when the row's place follows the new focus, `offset` takes up the
-// difference, so the row does not jump. A lift with speed runs the fling
-// here, frame by frame, sending a step at each whole item as it slows, then
-// the row settles onto its place. Logic runs only on whole-item steps.
+// While a finger drags the row, the row stands exactly where the finger puts
+// it: the rack draws at `place` (when `active`) instead of its focus binding
+// (`rest`), with no animation, so the two never fight. `place` is where the
+// row stood when the finger came down plus the finger's travel, held inside
+// the row's ends (`least`, `most`) with a quarter item to give. Each time the
+// finger has carried the row a whole item further (`pitch`, counted to the
+// nearest), it sends `dragged(region, ±n)` (by is never 0) and logic.js
+// moves focus that far: the row does not wait for it.
+//
+// A lift with speed runs the fling here, frame by frame, the same way, until
+// it slows or meets an end. Then the row eases onto its focus binding and
+// hands back to it. Logic runs only on whole-item steps, never per frame.
 //
 // The one place a drag on a rack is handled: the racks only wire it.
 export component ZoneSlide {
@@ -21,55 +25,49 @@ export component ZoneSlide {
     // One item's step along the row.
     in property <length> pitch;
     // The row's place from focus alone (the larger, the further left the row
-    // stands); the rack's own binding.
+    // stands): the rack's own binding.
     in property <length> rest;
-    // Focus stands at the row's first or last item: the row gives only a
-    // little that way, and a fling stops.
-    in property <bool> first;
-    in property <bool> last;
-    // What the rack adds to its row's x.
-    out property <length> offset;
+    // The row's ends: the least and the most `place` it draws at.
+    in property <length> least;
+    in property <length> most;
+    // While a finger or a fling moves the row, or it settles: draw at `place`.
+    out property <bool> active: held || flinging || settling;
+    out property <length> place;
     callback dragged(region: string, by: int);
-    // The finger is down, a fling runs, or the row settles.
+    // The finger lifted (or a fling ended) at `at`: the rack may take it as
+    // its own place (the shelf keeps the row where the finger left it).
+    callback lifted(at: length);
     property <bool> held;
     property <bool> flinging;
     property <bool> settling;
-    property <bool> active: held || flinging || settling;
-    // The finger's travel since the last whole step.
-    property <length> carry;
+    // Where the row stood when the finger came down, and the finger's travel since.
+    property <length> start;
+    property <length> travel;
+    // Whole items sent since the finger came down.
+    property <int> sent;
     // The finger's speed, in logical px a millisecond (right is positive).
     property <float> speed;
     property <duration> stamp;
-    property <length> seen-rest: rest;
-    // The row's place followed a step: keep the row where the finger has it.
-    changed rest => {
-        if (active) {
-            offset = bound(offset + (rest - seen-rest));
-        }
-        seen-rest = rest;
-    }
-    pure function bound(value: length) -> length {
-        return Math.clamp(value, last ? -pitch / 4 : -pitch, first ? pitch / 4 : pitch);
-    }
-    function push(dx: length) {
-        offset = bound(offset + dx);
-        carry += dx;
-        if (pitch > 0 && carry >= pitch) {
-            let steps = Math.floor(carry / pitch);
-            carry -= steps * pitch;
-            root.dragged(region, -steps);
-        } else if (pitch > 0 && carry <= -pitch) {
-            let steps = Math.floor(-carry / pitch);
-            carry += steps * pitch;
-            root.dragged(region, steps);
+    function follow() {
+        place = Math.clamp(start + travel, least - pitch / 4, Math.max(least, most) + pitch / 4);
+        if (pitch > 0) {
+            let whole = Math.round(travel / pitch);
+            if (whole != sent) {
+                root.dragged(region, whole - sent);
+                sent = whole;
+            }
         }
     }
-    // The finger moved `dx` along the row.
+    // The finger moved `dx` along the row (right is positive).
     public function move(dx: length) {
         let now = animation-tick();
         let dt = (now - stamp) / 1ms;
         stamp = now;
         if (!held) {
+            // A finger on a settling or flinging row takes it where it is.
+            start = active ? place : rest;
+            travel = 0;
+            sent = 0;
             held = true;
             flinging = false;
             settling = false;
@@ -77,7 +75,8 @@ export component ZoneSlide {
         } else if (dt > 0 && dt < 100) {
             speed = 0.6 * speed + 0.4 * (dx / Tokens.unit) / dt;
         }
-        push(dx);
+        travel -= dx;
+        follow();
     }
     // The finger lifted: a fling when it was moving, else the row settles.
     // A cancelled gesture (`fling` false) settles at once, with no fling.
@@ -88,24 +87,28 @@ export component ZoneSlide {
         }
         flinging = Math.abs(speed) > 0.3;
         settling = !flinging;
+        if (settling) {
+            root.lifted(place);
+        }
     }
     Timer {
         interval: 16ms;
         running: root.flinging || root.settling;
         triggered => {
             if (root.flinging) {
-                root.push(root.speed * 16 * Tokens.unit);
+                root.travel -= root.speed * 16 * Tokens.unit;
+                root.follow();
                 root.speed = root.speed * 0.95;
-                if (Math.abs(root.speed) < 0.05 || (root.first && root.speed > 0) || (root.last && root.speed < 0)) {
+                if (Math.abs(root.speed) < 0.05 || root.place <= root.least || root.place >= root.most) {
                     root.flinging = false;
                     root.settling = true;
+                    root.lifted(root.place);
                 }
+            } else if (Math.abs(root.rest - root.place) < Tokens.unit) {
+                root.settling = false;
             } else {
-                root.offset = Math.abs(root.offset) < Tokens.unit ? 0 : root.offset * 0.75;
-                if (root.offset == 0) {
-                    root.settling = false;
-                    root.carry = 0;
-                }
+                // Ease onto the focus binding, which logic may still be moving.
+                root.place = root.place + (root.rest - root.place) * 0.3;
             }
         }
     }

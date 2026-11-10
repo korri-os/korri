@@ -49,14 +49,14 @@ export component PicoResumeList inherits VerticalLayout {
                     clip: true;
                     property <length> scroll: max(0, min(count * (slot-w + gap) - gap - self.width, (focused + 1) * (slot-w + gap) - gap - self.width));
                     // A sideways drag slides the rack a cart at a time; focus follows (ADR 0055).
-                    slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "resume"; pitch: root.slot-w + root.gap; rest: rack.scroll; first: root.focused <= 0; last: root.focused >= root.count - 1; }
+                    slide := PicoSlide { dragged(region, by) => { root.dragged(region, by); }  region: "resume"; pitch: root.slot-w + root.gap; rest: rack.scroll; least: 0; most: max(0, root.count * (root.slot-w + root.gap) - root.gap - rack.width); }
                     PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  slides: true;  slide(dx) => { slide.move(dx); }  slid(fling) => { slide.release(fling); }  x: 0; y: 0; width: parent.width; height: parent.height; }
                     // The cart, its shadow and its target read the row through the list
                     // by index: after the shell updates a row in place, the row's own
                     // copy can lag a render (seen when the probe reads elements between
                     // renders), which left the cursor's shadow and scroll behind.
                     for game[i] in games : VerticalLayout {
-                        x: (root.first + i) * (slot-w + gap) - rack.scroll + slide.offset;
+                        x: (root.first + i) * (slot-w + gap) - (slide.active ? slide.place : rack.scroll);
                         y: rack.above;
                         width: slot-w;
                         height: rack.height - rack.above;

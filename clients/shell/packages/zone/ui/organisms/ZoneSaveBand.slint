@@ -29,10 +29,11 @@ export component ZoneSaveBand {
     property <length> card-w: Math.floor(card-h * 0.7 / a) * a;
     property <length> gap: 8 * a;
     property <length> track: root.width / 2 - at * (card-w + gap) - card-w / 2;
-    property <length> rest-shift: Math.max(Math.min(track, 20 * a), Math.min(20 * a, root.width - cards.length * (card-w + gap) - 20 * a + gap));
-    // A sideways drag slides the band a card at a time; focus follows (ADR 0055).
-    slide := ZoneSlide { dragged(region, by) => { root.dragged(region, by); }  region: "saves"; pitch: root.card-w + root.gap; rest: -root.rest-shift; first: root.at <= 0; last: root.at >= root.cards.length - 1; }
-    property <length> shift: rest-shift + slide.offset;
+    property <length> lowest: Math.min(20 * a, root.width - cards.length * (card-w + gap) - 20 * a + gap);
+    property <length> rest-shift: Math.max(Math.min(track, 20 * a), lowest);
+    // A sideways drag slides the band under the finger, a card at a time for focus (ADR 0055).
+    slide := ZoneSlide { dragged(region, by) => { root.dragged(region, by); }  region: "saves"; pitch: root.card-w + root.gap; rest: -root.rest-shift; least: -20 * root.a; most: -root.lowest; }
+    property <length> shift: slide.active ? -slide.place : rest-shift;
     Rectangle {
         x: 0;
         y: 0;
