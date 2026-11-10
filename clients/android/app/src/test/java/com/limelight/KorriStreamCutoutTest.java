@@ -1,6 +1,11 @@
 package com.limelight;
 
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.media.MediaCodecInfo;
+import android.media.MediaFormat;
+import android.os.Binder;
 import android.view.WindowManager;
 
 import org.junit.Test;
@@ -9,8 +14,11 @@ import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.Shadows;
+import org.robolectric.shadows.MediaCodecInfoBuilder;
+import org.robolectric.shadows.ShadowMediaCodecList;
+import org.robolectric.util.ReflectionHelpers;
 
 import static org.junit.Assert.*;
 
@@ -118,22 +126,94 @@ public class KorriStreamCutoutTest {
                 new int[] {params.leftMargin, params.topMargin, params.rightMargin, params.bottomMargin});
     }
 
-    /** Game cannot start under Robolectric (native decoder), so guard its source. */
-    @Test public void game_applies_it_for_every_scale_mode_and_resolution() throws Exception {
-        String game = new String(Files.readAllBytes(
-                Paths.get("src/main/java/com/limelight/Game.java")));
-        assertEquals(1, game.split("KorriStreamCutout.drawThroughCutout\\(getWindow\\(\\)\\);", -1).length - 1);
-        assertFalse(game.contains("shouldIgnoreInsetsForResolution"));
-        assertFalse(game.contains("layoutInDisplayCutoutMode"));
-        // The hosted gameplay overlay is kept out of the cutout.
-        String overlay = game.substring(game.indexOf("private void showSurfaceOverlay()"));
-        overlay = overlay.substring(0, overlay.indexOf("\n    }\n"));
-        assertTrue(overlay.contains("KorriStreamCutout.keepOutOfCutout(view);"));
-        // The call sits at onCreate's top level, not under a scale-mode or resolution branch.
-        String before = game.substring(0, game.indexOf("KorriStreamCutout.drawThroughCutout("));
-        String line = before.substring(before.lastIndexOf('\n') + 1);
-        assertEquals("        ", line);
-        assertTrue(before.lastIndexOf("setPreferredOrientationForActivity();")
-                > before.lastIndexOf("{"));
+    /**
+     * The real Game, created as a Korri viewer for one selected launch and
+     * shown on a 1972x1248 window (the folded Fold in landscape). For every
+     * scale mode and for a stream that is not the screen's native size, the
+     * window draws through the cutout. Under a 104 px left cutout the stream
+     * keeps the whole window and its scale mode's shape, and the gameplay
+     * overlay that Game opens lays out beside the cutout.
+     */
+    @Config(sdk = 33, shadows = {
+            com.limelight.shadows.ShadowMoonBridge.class,
+            com.limelight.shadows.ShadowGameManager.class})
+    @Test public void game_draws_through_the_cutout_and_keeps_its_overlay_out_of_it() throws Exception {
+        String[] modes = {"fit", "fill", "stretch"};
+        int[][] expected = {{1972, 1109}, {2218, 1248}, {1972, 1248}};
+        for (int i = 0; i < modes.length; i++) {
+            org.robolectric.android.controller.ActivityController<Game> controller = startViewer(modes[i]);
+            try {
+                Game game = controller.get();
+                assertEquals(modes[i], WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS,
+                        game.getWindow().getAttributes().layoutInDisplayCutoutMode);
+
+                game.showGameMenu();
+                android.view.ViewGroup content = game.findViewById(android.R.id.content);
+                android.view.View overlay = content.getChildAt(content.getChildCount() - 1);
+                assertTrue(modes[i], overlay instanceof android.view.SurfaceView);
+                android.view.View decor = game.getWindow().getDecorView();
+                androidx.core.view.ViewCompat.dispatchApplyWindowInsets(decor,
+                        new androidx.core.view.WindowInsetsCompat.Builder()
+                                .setInsets(androidx.core.view.WindowInsetsCompat.Type.displayCutout(),
+                                        androidx.core.graphics.Insets.of(104, 0, 0, 0))
+                                .build());
+                decor.measure(android.view.View.MeasureSpec.makeMeasureSpec(1972, android.view.View.MeasureSpec.EXACTLY),
+                        android.view.View.MeasureSpec.makeMeasureSpec(1248, android.view.View.MeasureSpec.EXACTLY));
+                decor.layout(0, 0, 1972, 1248);
+
+                assertArrayEquals(modes[i], new int[] {0, 0, 1972, 1248}, boundsInWindow(content));
+                android.view.View stream = game.findViewById(R.id.streamContainer);
+                assertArrayEquals(modes[i], expected[i], new int[] {stream.getWidth(), stream.getHeight()});
+                assertArrayEquals(modes[i], new int[] {104, 0, 1868, 1248}, boundsInWindow(overlay));
+            } finally {
+                ReflectionHelpers.setField(ReflectionHelpers.getStaticField(KorriStreamViewer.class, "instance"),
+                        "session", null);
+            }
+        }
+    }
+
+    private static int[] boundsInWindow(android.view.View view) {
+        int[] location = new int[2];
+        view.getLocationInWindow(location);
+        return new int[] {location[0], location[1], view.getWidth(), view.getHeight()};
+    }
+
+    /**
+     * Game as KorriStreamViewer opens it for a selected far launch: a
+     * 1920x1080 stream, which is not this screen's native size.
+     */
+    private static org.robolectric.android.controller.ActivityController<Game> startViewer(String scaleMode)
+            throws Exception {
+        android.app.Application app = RuntimeEnvironment.getApplication();
+        // Robolectric has no hardware decoder; Game refuses to stream without AVC.
+        ShadowMediaCodecList.addCodec(MediaCodecInfoBuilder.newBuilder()
+                .setName("OMX.qcom.video.decoder.avc").setIsEncoder(false)
+                .setCapabilities(MediaCodecInfoBuilder.CodecCapabilitiesBuilder.newBuilder()
+                        .setMediaFormat(MediaFormat.createVideoFormat("video/avc", 1920, 1080))
+                        .setColorFormats(new int[] {MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible})
+                        .build())
+                .build());
+        // The controller-extension service Game binds needs a binder to answer.
+        Shadows.shadowOf(app).setComponentNameAndServiceForBindService(
+                new ComponentName("test", "test"), new Binder());
+        // The launch korrid selected: KorriStreamViewer keeps it as its session.
+        KorriStreamViewer.initialize(app);
+        Object viewer = ReflectionHelpers.getStaticField(KorriStreamViewer.class, "instance");
+        Object session = ReflectionHelpers.callConstructor(
+                Class.forName("com.limelight.KorriStreamViewer$Session"),
+                ReflectionHelpers.ClassParameter.from(String.class, "388388388388388388388388388388aa"));
+        ReflectionHelpers.setField(viewer, "session", session);
+        KorriStreamViewerState state = ReflectionHelpers.getField(session, "state");
+        Intent intent = new Intent(app, Game.class)
+                .putExtra(Game.EXTRA_HOST, "127.0.0.1")
+                .putExtra(Game.EXTRA_PORT, 47989)
+                .putExtra(Game.EXTRA_APP_ID, 1)
+                .putExtra(Game.EXTRA_UNIQUEID, "0123456789ABCDEF")
+                .putExtra(Game.EXTRA_WIDTH, 1920)
+                .putExtra(Game.EXTRA_HEIGHT, 1080)
+                .putExtra(Game.EXTRA_VIDEO_SCALE_MODE, scaleMode)
+                .putExtra(Game.EXTRA_KORRI_LAUNCH_ID, state.launchId)
+                .putExtra(KorriStreamViewer.EXTRA_GENERATION, state.generation);
+        return Robolectric.buildActivity(Game.class, intent).create().visible();
     }
 }
