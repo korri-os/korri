@@ -40,6 +40,25 @@ pub(crate) fn configured_shell() -> Option<Arc<dyn ShellUnit>> {
     }
 }
 
+/// Per-launch behaviour resolved by the selected runner. Borrowed only while
+/// preparation holds admission; this does not change the session journal.
+#[derive(Clone, Copy, Default)]
+pub struct LaunchOptions<'a> {
+    pub limits: Option<&'a crate::launch_settings::session::SessionLimits>,
+    pub hooks: Option<&'a super::hooks::LaunchHooks>,
+    pub steps: Option<&'a [crate::plugin::RunnerStep]>,
+}
+
+impl<'a> From<&'a super::HostLaunchCommand> for LaunchOptions<'a> {
+    fn from(launch: &'a super::HostLaunchCommand) -> Self {
+        Self {
+            limits: launch.limits.as_ref(),
+            hooks: launch.hooks.as_ref(),
+            steps: launch.steps.as_deref(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct HostLauncher {
     games: Arc<HashMap<String, HostGame>>,
@@ -168,9 +187,7 @@ impl HostLauncher {
         runner_id: &str,
         person_public_key: Option<&str>,
         configured_command: Result<&[String], RpcFailure>,
-        limits: Option<&crate::launch_settings::session::SessionLimits>,
-        hooks: Option<&super::hooks::LaunchHooks>,
-        steps: Option<&[crate::plugin::RunnerStep]>,
+        options: LaunchOptions<'_>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         self.control.prepare_fresh_route(
             game_id,
@@ -178,9 +195,7 @@ impl HostLauncher {
             person_public_key,
             configured_command,
             &self.environment,
-            limits,
-            hooks,
-            steps,
+            options,
         )
     }
 
@@ -189,18 +204,14 @@ impl HostLauncher {
         reservation: &super::launch_reservation::LaunchReservation,
         runner_id: Option<&str>,
         configured_command: Result<&[String], RpcFailure>,
-        limits: Option<&crate::launch_settings::session::SessionLimits>,
-        hooks: Option<&super::hooks::LaunchHooks>,
-        steps: Option<&[crate::plugin::RunnerStep]>,
+        options: LaunchOptions<'_>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         self.control.prepare_reserved(
             reservation,
             runner_id,
             configured_command,
             &self.environment,
-            limits,
-            hooks,
-            steps,
+            options,
         )
     }
 

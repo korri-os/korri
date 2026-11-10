@@ -1383,15 +1383,11 @@ impl HostRuntime {
                     reservation,
                     runner_id,
                     command,
-                    launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
                     launch
                         .as_ref()
                         .ok()
-                        .and_then(|launch| launch.hooks.as_ref()),
-                    launch
-                        .as_ref()
-                        .ok()
-                        .and_then(|launch| launch.steps.as_deref()),
+                        .map(prepare::LaunchOptions::from)
+                        .unwrap_or_default(),
                 )
             })?;
         let session = prepared.session;
@@ -1462,15 +1458,11 @@ impl HostRuntime {
                                 .as_ref()
                                 .map(|launch| launch.command.as_slice())
                                 .map_err(Clone::clone),
-                            launch.as_ref().ok().and_then(|l| l.limits.as_ref()),
                             launch
                                 .as_ref()
                                 .ok()
-                                .and_then(|launch| launch.hooks.as_ref()),
-                            launch
-                                .as_ref()
-                                .ok()
-                                .and_then(|launch| launch.steps.as_deref()),
+                                .map(prepare::LaunchOptions::from)
+                                .unwrap_or_default(),
                         )
                     },
                 )?;

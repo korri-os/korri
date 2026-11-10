@@ -201,9 +201,7 @@ enum ActiveState {
 enum LaunchPreparation<'a> {
     Ready {
         command: Result<&'a [String], RpcFailure>,
-        limits: Option<&'a crate::launch_settings::session::SessionLimits>,
-        hooks: Option<&'a super::hooks::LaunchHooks>,
-        steps: Option<&'a [crate::plugin::RunnerStep]>,
+        options: super::prepare::LaunchOptions<'a>,
     },
     Compose(Box<dyn FnOnce() -> Result<super::HostLaunchCommand, RpcFailure> + 'a>),
 }
@@ -2014,9 +2012,11 @@ impl HostSessionControl {
             person_public_key,
             LaunchPreparation::Ready {
                 command: configured_command,
-                limits,
-                hooks,
-                steps,
+                options: super::prepare::LaunchOptions {
+                    limits,
+                    hooks,
+                    steps,
+                },
             },
             environment,
             true,
@@ -2040,9 +2040,7 @@ impl HostSessionControl {
             person_public_key,
             LaunchPreparation::Ready {
                 command: configured_command,
-                limits: None,
-                hooks: None,
-                steps: None,
+                options: Default::default(),
             },
             environment,
             true,
@@ -2062,9 +2060,7 @@ impl HostSessionControl {
         person_public_key: Option<&str>,
         configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
-        limits: Option<&crate::launch_settings::session::SessionLimits>,
-        hooks: Option<&super::hooks::LaunchHooks>,
-        steps: Option<&[crate::plugin::RunnerStep]>,
+        options: super::prepare::LaunchOptions<'_>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let mut warnings = Vec::new();
         let session = self.prepare_inner(
@@ -2072,9 +2068,7 @@ impl HostSessionControl {
             person_public_key,
             LaunchPreparation::Ready {
                 command: configured_command,
-                limits,
-                hooks,
-                steps,
+                options,
             },
             environment,
             false,
@@ -2091,9 +2085,7 @@ impl HostSessionControl {
         runner_id: Option<&str>,
         configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
-        limits: Option<&crate::launch_settings::session::SessionLimits>,
-        hooks: Option<&super::hooks::LaunchHooks>,
-        steps: Option<&[crate::plugin::RunnerStep]>,
+        options: super::prepare::LaunchOptions<'_>,
     ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
         let mut warnings = Vec::new();
         let session = self.prepare_inner(
@@ -2101,9 +2093,7 @@ impl HostSessionControl {
             reservation.person.as_deref(),
             LaunchPreparation::Ready {
                 command: configured_command,
-                limits,
-                hooks,
-                steps,
+                options,
             },
             environment,
             false,
@@ -2209,12 +2199,13 @@ impl HostSessionControl {
         // Resolve failures only after resume and conflicts under the same lock.
         let composed;
         let (configured_command, limits, hooks, steps, runner_id) = match preparation {
-            LaunchPreparation::Ready {
+            LaunchPreparation::Ready { command, options } => (
                 command,
-                limits,
-                hooks,
-                steps,
-            } => (command, limits, hooks, steps, runner_id),
+                options.limits,
+                options.hooks,
+                options.steps,
+                runner_id,
+            ),
             LaunchPreparation::Compose(compose) => {
                 // Invalidate before composition: a mode command can succeed and
                 // any subsequent plugin/runtime/hook check can still refuse.

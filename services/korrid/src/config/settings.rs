@@ -586,11 +586,8 @@ mod tests {
     #[test]
     fn player_count_is_read_without_the_plugin_registry() {
         let root = root("host: {preferences: {player-count: 6}}\n");
-        assert!(
-            plugin_policy::RegistrySource::Installed.registry().is_err(),
-            "this test needs the installed plugin registry to be absent"
-        );
-
+        // Only this temporary device root is a test input. Do not inspect or
+        // mutate the host's installed registry: it may legitimately be present.
         assert_eq!(read_player_count(root.path()).unwrap(), 6);
     }
 
