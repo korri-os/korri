@@ -17,6 +17,7 @@ struct Fixture {
     http: JoinHandle<()>,
     status_delay_ms: Arc<AtomicU64>,
     status_fails: Arc<AtomicBool>,
+    holder_failed: Arc<AtomicBool>,
     _roots: [tempfile::TempDir; 2],
     _route: federation::reach::tests::NetplayRoute,
 }
@@ -124,14 +125,24 @@ impl Fixture {
         };
         let (holder_state, _) = app_states(holder.clone());
         let reply = prepared.clone();
+        let holder_failed = Arc::new(AtomicBool::new(false));
+        let failed = holder_failed.clone();
         let router = axum::Router::new().route(
             "/rpc",
             axum::routing::post(move |axum::Json(request): axum::Json<RpcRequest>| {
                 let state = holder_state.clone();
                 let reply = reply.clone();
+                let failed = failed.clone();
                 async move {
                     // The holder's prepared seat and credential stay the same on rejoin.
-                    let response = if matches!(request, RpcRequest::SessionNetplay(_)) {
+                    let response = if matches!(request, RpcRequest::SessionStatus(_))
+                        && failed.load(Ordering::SeqCst)
+                    {
+                        RpcResponse::SessionStatus(SessionStatusOutcome::Err(RpcFailure {
+                            code: "HostLaunchFailed".into(),
+                            message: "game unit failed: [redacted]".into(),
+                        }))
+                    } else if matches!(request, RpcRequest::SessionNetplay(_)) {
                         RpcResponse::SessionNetplay(SessionNetplayOutcome::Ok(reply))
                     } else {
                         crate::dispatch(
@@ -219,6 +230,7 @@ impl Fixture {
             http,
             status_delay_ms,
             status_fails,
+            holder_failed,
             _roots: roots,
             _route: route,
         }
@@ -813,4 +825,31 @@ async fn netplay_receiver_exact_end_refuses_missing_or_stale_launch_identity() {
     assert!(fixture.state.netplay_receiver.busy());
     assert_eq!(fixture.backend.launch_count(), 1);
     fixture.holder_ends_and_copy_follows().await;
+}
+
+#[tokio::test]
+async fn review_netplay_holder_launch_failure_finishes_the_receiving_copy() {
+    let fixture = Fixture::new().await;
+    let _client = fixture.connected_client().await;
+    fixture.holder_failed.store(true, Ordering::SeqCst);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !fixture.monitor.is_finished() {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("HostLaunchFailed is terminal, not uncertain transport loss");
+    assert_eq!(
+        fixture.backend.state(&fixture.launch).unwrap(),
+        LaunchUnitState::Completed
+    );
+    assert_eq!(fixture.backend.launch_count(), 1);
+    assert!(!fixture.state.netplay_receiver.busy());
+    let status = fixture.status().await;
+    assert!(status.active.is_none());
+    assert!(status.netplay.is_none());
+    assert!(matches!(
+        status.stream_play_ended.unwrap().cause,
+        stream_play::StreamPlayEndCause::SessionEnded
+    ));
 }

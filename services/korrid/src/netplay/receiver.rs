@@ -584,6 +584,14 @@ async fn monitor(
                 }
                 continue;
             }
+            Some(Ok(Err(upstreams::UpstreamError::Tagged { code, .. })))
+                if code == "HostLaunchFailed" =>
+            {
+                if finish(&state, &invite, &copy, false).await {
+                    return;
+                }
+                continue;
+            }
             // A timeout or RPC failure says nothing about the game connection.
             // Keep the last observed holder phase until a successful reply.
             _ => {}

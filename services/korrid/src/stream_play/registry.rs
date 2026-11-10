@@ -212,6 +212,14 @@ impl UpstreamRegistry {
             .stop(&selected.launch_id)
             .await
             .map_err(|error| viewer_error("ViewerControlFailed", error.to_string()))?;
+        if let Err(error) = &result {
+            if error.code() == "HostLaunchFailed" {
+                // The launch notice owns this failure. Do not also publish a
+                // generic SessionEnded record that would cover it on refresh.
+                self.clear_selected_if(selected);
+                return Err(error.clone());
+            }
+        }
         if let Participation::StreamPlayer {
             game_id,
             game_title,
@@ -226,10 +234,7 @@ impl UpstreamRegistry {
                 game_id: game_id.clone(),
                 game_title: game_title.clone(),
                 device_label: device_label.clone(),
-                cause: if result
-                    .as_ref()
-                    .is_err_and(|error| error.code() != "HostLaunchFailed")
-                {
+                cause: if result.is_err() {
                     StreamPlayEndCause::DeviceUnreachable
                 } else {
                     StreamPlayEndCause::SessionEnded

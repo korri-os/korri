@@ -1725,7 +1725,12 @@ mod overlay {
     async fn failed_far_overlay_returns_to_catalog_with_one_dismissible_launch_notice() {
         for path in ["status", "resume", "watch"] {
             let mut outcomes = idle_outcomes(2);
-            let frozen = json!({"launchId":"L1", "gameId":"g00001", "phase":"frozen"});
+            outcomes.get_mut("app.catalog.snapshot").unwrap()["payload"]["games"][1]["source"] =
+                source("aka");
+            outcomes.get_mut("app.catalog.snapshot").unwrap()["payload"]["games"][1]["host"] =
+                json!("aka");
+            let frozen =
+                json!({"launchId":"L1", "gameId":"g00001", "host":"aka", "phase":"frozen"});
             outcomes.insert(
                 "app.session.status".into(),
                 json!({"_tag":"Ok", "payload":{"active":frozen, "overlay":frozen}}),

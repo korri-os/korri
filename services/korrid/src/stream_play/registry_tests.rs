@@ -107,7 +107,7 @@ async fn stream_play_prepare_rejects_unknown_device_labels_and_invalid_peer_orig
 }
 
 #[tokio::test]
-async fn stream_player_terminal_failure_is_session_ended_not_device_unreachable() {
+async fn stream_player_terminal_failure_returns_once_after_viewer_cleanup() {
     let (url, far) = exact_native_server(false).await;
     let config = UpstreamHostConfig::native("far", url);
     let key = config.device_public_key.clone().unwrap();
@@ -117,10 +117,11 @@ async fn stream_player_terminal_failure_is_session_ended_not_device_unreachable(
     registry.stream_play(&key, &far.launch_id, "Phone").await.unwrap();
     viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
     far.end_with("HostLaunchFailed");
-    registry.session_status().await.unwrap();
+    assert!(matches!(registry.session_status().await,
+        Err(UpstreamError::Tagged { code, message }) if code == "HostLaunchFailed" && message == "far launch ended"));
     assert!(!registry.has_selected_session());
-    assert!(matches!(registry.stream_play_ended().unwrap().cause,
-        crate::stream_play::StreamPlayEndCause::SessionEnded));
+    assert!(matches!(registry.session_status().await.unwrap(), UpstreamSessionStatus::SessionStatus { active: None }));
+    assert!(registry.stream_play_ended().is_none(), "a generic end screen must not mask the failure notice");
 }
 
 #[tokio::test]
@@ -140,7 +141,11 @@ async fn far_session_watch_retires_disconnected_starter_and_stream_player() {
             }
             viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
             far.end_with(code);
-            let watch = crate::stream_play::device::spawn_watch(registry.clone(), |_| {});
+            let notices = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let observed = notices.clone();
+            let watch = crate::stream_play::device::spawn_watch(registry.clone(), move |message| {
+                observed.lock().unwrap().push(message);
+            });
             let retired = tokio::time::timeout(Duration::from_secs(3), async {
                 while registry.has_selected_session() {
                     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -148,6 +153,11 @@ async fn far_session_watch_retires_disconnected_starter_and_stream_player() {
             }).await;
             watch.abort();
             retired.expect(code);
+            if code == "HostLaunchFailed" {
+                assert_eq!(*notices.lock().unwrap(), ["upstream returned HostLaunchFailed: far launch ended"]);
+            } else {
+                assert!(notices.lock().unwrap().is_empty());
+            }
             assert!(matches!(registry.session_status().await.unwrap(), UpstreamSessionStatus::SessionStatus { active: None }));
             assert_eq!(viewer.calls().iter().filter(|call| call.action == LinuxViewerAction::Start).count(), 1);
         }

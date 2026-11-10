@@ -1073,7 +1073,7 @@ mod manual_pending_launch_choices {
 fn terminal_resume_returns_to_library_with_only_failure_noticed() {
     for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
         let running = ready().with_session_status(&status(json!({"_tag":"Ok", "payload": {
-            "active": {"launchId":"exact", "gameId":"skate3", "phase":"running"}
+            "active": {"launchId":"exact", "gameId":"skate3", "host":"aka", "phase":"running"}
         }})));
         let session = running.entries()[0].session().unwrap();
         let resuming = LaunchablesState::begin_return(content(&running).clone(), session);
@@ -1104,7 +1104,7 @@ fn terminal_resume_returns_to_library_with_only_failure_noticed() {
 fn terminal_far_status_returns_to_library_with_only_failure_noticed() {
     for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
         let running = ready().with_session_status(&status(json!({"_tag":"Ok", "payload": {
-            "active": {"launchId":"exact", "gameId":"skate3", "phase":"running"}
+            "active": {"launchId":"exact", "gameId":"skate3", "host":"aka", "phase":"running"}
         }})));
         let failure = status(json!({"_tag":"Err", "payload": {
             "code": code, "message": "game unit failed: [redacted]"
@@ -1146,10 +1146,134 @@ fn catalog_refresh_keeps_a_terminal_far_failure_as_a_launch_notice() {
     let failure = status(json!({"_tag":"Err", "payload": {
         "code":"HostLaunchFailed", "message":"game unit failed: [redacted]"
     }}));
-    let loaded = LaunchablesState::from_sources(&games_ok(), Some(&failure), None, &[], None);
+    let running = ready().with_session_status(&status(json!({"_tag":"Ok", "payload": {
+        "active":{"launchId":"exact", "gameId":"skate3", "host":"aka", "phase":"running"}
+    }})));
+    let loaded =
+        LaunchablesState::from_sources(&games_ok(), Some(&failure), None, running.entries(), None);
     assert_eq!(tag(&loaded), "Ready");
     assert!(
         matches!(notice(&loaded), Some(LaunchNotice::Launch { message, .. })
         if message == "HostLaunchFailed: game unit failed: [redacted]")
     );
+}
+
+mod terminal_far_review {
+    use super::*;
+
+    fn catalog() -> CatalogSnapshotOutcome {
+        catalog_of(vec![
+            json!({"id":"local", "title":"Local", "host":"this", "supportsRunnerSelection":false,
+                "source":{"label":"this", "isLocal":true}}),
+            json!({"id":"remote", "title":"Remote", "host":"aka", "supportsRunnerSelection":false,
+                "source":source("aka")}),
+        ])
+    }
+    fn running(local: bool) -> LaunchablesState {
+        LaunchablesState::from_sources(
+            &catalog(),
+            Some(&status(json!({"_tag":"Ok", "payload":{
+                "active":{"launchId":"exact", "gameId":if local {"local"} else {"remote"},
+                    "host":if local {"this"} else {"aka"}, "phase":"running"}
+            }}))),
+            None,
+            &[],
+            None,
+        )
+    }
+    fn failed() -> SessionStatusOutcome {
+        status(
+            json!({"_tag":"Err", "payload":{"code":"HostLaunchFailed", "message":"game unit failed: [redacted]"}}),
+        )
+    }
+    fn timeout() -> SessionStatusOutcome {
+        status(json!({"_tag":"Err", "payload":{"code":"StatusTimeout", "message":"timeout"}}))
+    }
+    #[test]
+    fn mixed_catalog_retires_only_the_known_far_failure() {
+        let remote = running(false);
+        let loaded = LaunchablesState::from_sources(
+            &catalog(),
+            Some(&failed()),
+            None,
+            remote.entries(),
+            None,
+        );
+        assert!(
+            loaded.is_ready(),
+            "a local game must not turn a far failure into Recovery"
+        );
+        assert!(loaded
+            .entries()
+            .iter()
+            .all(|entry| entry.session().is_none()));
+        assert!(content(&loaded).unavailable_session_status.is_none());
+        assert_eq!(
+            notice(&loaded).unwrap().message(),
+            "HostLaunchFailed: game unit failed: [redacted]"
+        );
+        assert_eq!(tag(&loaded.begin_preparing("Remote", None)), "Preparing");
+        let local = running(true);
+        let loaded = LaunchablesState::from_sources(
+            &catalog(),
+            Some(&failed()),
+            None,
+            local.entries(),
+            None,
+        );
+        assert!(loaded.entries().iter().any(Entry::is_now_playing));
+        assert!(content(&loaded).unavailable_session_status.is_some());
+        let unknown = LaunchablesState::from_sources(&catalog(), Some(&failed()), None, &[], None);
+        assert_eq!(
+            tag(&unknown),
+            "Recovery",
+            "unknown local cleanup must stay guarded"
+        );
+    }
+    #[test]
+    fn local_failure_after_timeout_keeps_exact_recovery_identity() {
+        let unknown = running(true).with_session_status(&timeout());
+        assert!(content(&unknown).unavailable_session_status.is_some());
+        let failed = unknown.with_session_status(&failed());
+        assert!(failed.entries().iter().any(|entry| entry
+            .session()
+            .is_some_and(|session| session.launch_id == "exact")));
+        assert!(content(&failed).unavailable_session_status.is_some());
+        let session = now_playing(&failed).session().unwrap().clone();
+        let resumed = LaunchablesState::begin_return(content(&failed).clone(), &session)
+            .with_resume_outcome(Some(&crate::RpcFailure {
+                code: "HostLaunchFailed".into(),
+                message: "unit failed".into(),
+            }));
+        assert!(resumed.entries().iter().any(Entry::is_now_playing));
+        assert!(content(&resumed).unavailable_session_status.is_some());
+    }
+    #[test]
+    fn far_failure_clears_a_stale_observation_fence_for_status_and_resume() {
+        let mut loaded = running(false).loaded().unwrap().clone();
+        loaded.content.unavailable_session_status = Some(timeout());
+        let fenced = LaunchablesState::Loaded(loaded);
+        let session = now_playing(&fenced).session().unwrap().clone();
+        let resuming = LaunchablesState::begin_return(content(&fenced).clone(), &session);
+        let recovering = running(false).with_session_status(&timeout());
+        assert_eq!(tag(&recovering), "Recovery");
+        for ended in [
+            fenced.with_session_status(&failed()),
+            recovering.with_session_status(&failed()),
+            resuming.with_resume_outcome(Some(&crate::RpcFailure {
+                code: "HostLaunchFailed".into(),
+                message: "unit failed".into(),
+            })),
+        ] {
+            assert!(ended.is_ready());
+            assert!(ended
+                .entries()
+                .iter()
+                .all(|entry| entry.session().is_none()));
+            assert!(
+                content(&ended).unavailable_session_status.is_none(),
+                "terminal far failure must remove the prepare fence"
+            );
+        }
+    }
 }
