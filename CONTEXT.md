@@ -185,6 +185,12 @@ _Avoid_: layout, display setup, topology
 The display that shows content with a single pane, the portal and Korri's own notices when nothing says otherwise. A device declares it; a device with one display has it as its main display.
 _Avoid_: primary screen, default output
 
+**Shape owner**:
+The connected device whose screen determines a streamed session's display shape.
+The first connected viewer owns the shape. When it leaves, the longest-connected
+remaining viewer takes ownership. Other viewers do not change the shared shape.
+_Avoid_: primary client, master viewer
+
 **Unwatched display**:
 A display that no person looks at, such as a dummy plug that exists only so a device's picture can be streamed. Being unwatched is a hardware fact of the device. Korri never powers an unwatched display off for idleness.
 _Avoid_: headless display, dummy display, virtual screen
