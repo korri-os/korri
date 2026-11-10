@@ -191,11 +191,41 @@ fn preflight(response: RpcResponse) -> Output {
     Output::many(vec![response], human)
 }
 fn control(context: &Context, action: &str) -> Result<Output, CliError> {
-    // Pin the observation before asking for consent. A replacement during the
-    // prompt is a stale-identity refusal, never a reason to observe and retarget.
+    // Pin live control to its observed ID before consent. Failed/blocked
+    // administration below can only retire an identity proven no longer live.
     let response = context.rpc(&RpcRequest::SessionStatus(SessionStatusRequest {}))?;
-    if output::failure(&response).is_some() {
-        return Ok(library::finish(response));
+    if let Some(failure) = output::failure(&response) {
+        if action != "end"
+            || !matches!(
+                failure.code.as_str(),
+                "HostLaunchFailed" | "HostRecoveryBlocked"
+            )
+        {
+            return Ok(library::finish(response));
+        }
+        // There is no live identity in this status outcome. The local-only
+        // recovery branch can select only a failed state or an absent journal
+        // unit under host authority; it cannot target a live replacement.
+        prompt::confirm(
+            &format!(
+                "Resolve the failed or blocked host session? Observed: {}",
+                output::text(&failure.message)
+            ),
+            context.yes,
+        )?;
+        let response = context.rpc(&RpcRequest::SessionEnd(SessionEndRequest {
+            expected_launch_id: None,
+            force: None,
+        }))?;
+        let human = match &response {
+            RpcResponse::SessionEnd(SessionEndOutcome::Ok(result)) if matches!(result.phase, SessionEndPhase::Ended) =>
+                "Cleared the failed or blocked host session. See journalctl -u korrid for the exact launch ID.".into(),
+            _ => match output::failure(&response) {
+                Some(failure) => format!("Host session not cleared: {}: {}", output::text(&failure.code), output::text(&failure.message)),
+                None => output::unknown("Host session end", &response),
+            },
+        };
+        return Ok(Output::one(response, human));
     }
     let RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) = &response else {
         return Ok(library::finish(response));
@@ -264,7 +294,8 @@ impl Module for Resume {
 }
 impl Module for End {
     fn command(&self) -> Command {
-        Command::new("end").about("End the exact observed live session; unsaved progress is lost")
+        Command::new("end")
+            .about("End a live session or resolve an ended failed or blocked host session")
     }
     fn run(&self, _: &ArgMatches, c: &Context) -> Result<Output, CliError> {
         control(c, "end")

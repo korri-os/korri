@@ -53,6 +53,12 @@ korri resume
 korri end --yes
 ```
 
+On the host, `korri end` also clears a failed session or a blocked session whose
+exact unit is proven gone. Recovery without an observed live ID is local-only;
+it never stops a live or unverified unit. korrid logs the resolved launch ID in
+`journalctl -u korrid`. A terminal input transport failure still needs a korrid
+restart before recovery and input can resume.
+
 Human-readable output is the default. `--json` emits unchanged native Rust
 `RpcResponse` values, not a second CLI schema. Ordinary commands return one
 response object. `status` and `devices list` return arrays. `play` always

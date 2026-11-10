@@ -2483,7 +2483,7 @@ fn host_session_status_outcome(
         }),
         Ok(HostSessionStatus::RecoveryBlocked) => SessionStatusOutcome::Err(RpcFailure {
             code: "HostRecoveryBlocked".into(),
-            message: "host recovery identity requires administrator resolution".into(),
+            message: "host recovery is blocked; run korri end to resolve an ended exact unit; live or unverified units stay protected".into(),
         }),
         Err(failure) => SessionStatusOutcome::Err(failure),
     }
@@ -2510,7 +2510,7 @@ fn host_session_stop_outcome(
         }),
         Ok(HostSessionStop::RecoveryBlocked) => SessionEndOutcome::Err(RpcFailure {
             code: "HostRecoveryBlocked".into(),
-            message: "host recovery identity requires administrator resolution".into(),
+            message: "host recovery is blocked; run korri end to resolve an ended exact unit; live or unverified units stay protected".into(),
         }),
         Err(failure) => SessionEndOutcome::Err(failure),
     }
@@ -2566,7 +2566,7 @@ fn host_session_freeze_outcome(
         }
         Ok(HostSessionFreezeChange::RecoveryBlocked) => SessionTransitionOutcome::Err(RpcFailure {
             code: "HostRecoveryBlocked".into(),
-            message: "host recovery identity requires administrator resolution".into(),
+            message: "host recovery is blocked; run korri end to resolve an ended exact unit; live or unverified units stay protected".into(),
         }),
         Err(failure) => SessionTransitionOutcome::Err(failure),
     }
@@ -3797,6 +3797,26 @@ async fn dispatch(
                 ),
                 (ServerMode::Host(host), RpcSurface::Lan)
                 | (ServerMode::Host(host), RpcSurface::LocalControl) => {
+                    if request.expected_launch_id.is_none()
+                        && state.rpc_surface == RpcSurface::LocalControl
+                    {
+                        let result = host.resolve_ended_session().await;
+                        let resolved_id = match &result {
+                            Ok(host::control::HostSessionStop::Completed { launch_id }) => {
+                                Some(launch_id.clone())
+                            }
+                            _ => None,
+                        };
+                        let outcome = host_session_stop_outcome(result);
+                        if let Some(launch_id) = resolved_id {
+                            reconcile_stop_overlay_intent(
+                                &state.overlay_intent,
+                                Some(&launch_id),
+                                &outcome,
+                            );
+                        }
+                        return Ok(RpcResponse::SessionEnd(outcome));
+                    }
                     let outcome = request
                         .expected_launch_id
                         .as_deref()
@@ -8246,6 +8266,79 @@ command = ["game-one"]
         assert_eq!(gone["outcome"]["payload"]["code"], "NoActiveSession");
         lan_server.abort();
         local_server.abort();
+    }
+
+    #[tokio::test]
+    async fn local_end_resolves_only_failed_or_absent_blocked_journal_units() {
+        for failed in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let config = root.path().join("host.toml");
+            std::fs::write(&config, "label = \"zao\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game-one\"]\n").unwrap();
+            let backend = Arc::new(host::control::InMemoryLaunchUnitBackend::default());
+            let runtime = host::HostRuntime::from_paths_with_backend(
+                &config,
+                None,
+                root.path().join("private"),
+                backend.clone(),
+            );
+            runtime.claim_save_owner();
+            let (lan, local) = plain_host_routers(runtime);
+            let launch = rpc_body(
+                lan.clone(),
+                r#"{"_tag":"app.session.prepare","payload":{"gameId":"one"}}"#,
+            )
+            .await;
+            let id = launch["outcome"]["payload"]["session"]["launchId"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            if failed {
+                backend.fail_live(1);
+            } else {
+                backend.set_state_unavailable(true);
+            }
+            let status = rpc_body(
+                local.clone(),
+                r#"{"_tag":"app.session.status","payload":{}}"#,
+            )
+            .await;
+            assert_eq!(
+                status["outcome"]["payload"]["code"],
+                if failed {
+                    "HostLaunchFailed"
+                } else {
+                    "HostRecoveryBlocked"
+                }
+            );
+            assert!(status["outcome"]["payload"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(&id));
+            let lan_end = rpc_body(lan.clone(), r#"{"_tag":"app.session.end","payload":{}}"#).await;
+            assert_eq!(
+                lan_end["outcome"]["payload"]["code"],
+                "ExpectedLaunchIdRequired"
+            );
+            if !failed {
+                let refused =
+                    rpc_body(local.clone(), r#"{"_tag":"app.session.end","payload":{}}"#).await;
+                assert_eq!(refused["outcome"]["payload"]["code"], "HostRecoveryBlocked");
+                assert!(refused["outcome"]["payload"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("absence cannot be proven"));
+                backend.set_state_unavailable(false);
+                let live_refused =
+                    rpc_body(local.clone(), r#"{"_tag":"app.session.end","payload":{}}"#).await;
+                assert_eq!(
+                    live_refused["outcome"]["payload"]["code"],
+                    "HostRecoveryBlocked"
+                );
+                backend.complete_live();
+            }
+            let ended = rpc_body(local, r#"{"_tag":"app.session.end","payload":{}}"#).await;
+            assert_eq!(ended["outcome"]["payload"]["phase"], "ended", "{ended}");
+        }
     }
 
     #[tokio::test]

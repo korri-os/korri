@@ -31,7 +31,7 @@ pub trait InputSeatManager: Send + Sync {
     fn end_session(&self, launch_id: &str) -> Result<(), String>;
     fn route(&self, launch_id: Option<&str>) -> Result<(), String>;
     fn ready(&self) -> Result<(), String>;
-    /// Terminal coordination loss, not an ordinary refused route request.
+    /// Lost input authority, not an ordinary refused route request.
     /// Permits unit-only recovery; it never grants input or launch authority.
     fn is_fenced(&self) -> bool;
     fn fence(&self);
@@ -91,6 +91,9 @@ pub struct UnixInputSeatManager {
     path: PathBuf,
     coordinator: Result<std::sync::Arc<super::input_coordination::SeatCoordinator>, String>,
     initialized: std::sync::atomic::AtomicBool,
+    // A healthy receiver lost this journal's reservations. Keep its transport
+    // alive so exact unit completion can end the session and reconcile count.
+    reservation_recovery: std::sync::Mutex<Option<(String, u8)>>,
     route: std::sync::Mutex<Option<Option<String>>>,
 }
 impl UnixInputSeatManager {
@@ -102,6 +105,7 @@ impl UnixInputSeatManager {
             path,
             coordinator,
             initialized: std::sync::atomic::AtomicBool::new(false),
+            reservation_recovery: std::sync::Mutex::new(None),
             route: std::sync::Mutex::new(None),
         }
     }
@@ -115,9 +119,12 @@ impl InputSeatManager for UnixInputSeatManager {
         let coordinator = self.coordinator()?;
         let observed = coordinator.snapshot()?;
         match (session, observed.session.as_deref()) {
-            (Some(_), None) => {
-                self.fence();
-                return Err("receiver lost live session reservations; stop the exact session before restarting input coordination".into());
+            (Some(active), None) => {
+                *self
+                    .reservation_recovery
+                    .lock()
+                    .map_err(|_| "input recovery poisoned")? = Some((active.into(), count));
+                return Err("receiver lost live session reservations; run korri end after the exact unit has ended".into());
             }
             (None, Some(retained)) => {
                 coordinator.request(SeatRequest::EndSession {
@@ -172,15 +179,30 @@ impl InputSeatManager for UnixInputSeatManager {
     }
     fn end_session(&self, launch_id: &str) -> Result<(), String> {
         let coordinator = self.coordinator()?;
-        if coordinator.snapshot()?.session.is_none() {
-            return Ok(());
+        let mut recovery = self
+            .reservation_recovery
+            .lock()
+            .map_err(|_| "input recovery poisoned")?;
+        if recovery
+            .as_ref()
+            .is_some_and(|(active, _)| active != launch_id)
+        {
+            return Err("input recovery belongs to a different exact session".into());
         }
-        let reply = coordinator.request(korri_input_contract::SeatRequest::EndSession {
-            launch_id: launch_id.into(),
-        })?;
-        if reply.session.is_some() {
-            self.fence();
-            return Err("receiver did not end exact session".into());
+        if coordinator.snapshot()?.session.is_some() {
+            let reply = coordinator.request(korri_input_contract::SeatRequest::EndSession {
+                launch_id: launch_id.into(),
+            })?;
+            if reply.session.is_some() {
+                self.fence();
+                return Err("receiver did not end exact session".into());
+            }
+        }
+        if let Some((_, count)) = recovery.as_ref() {
+            self.apply_count(*count)?;
+            self.initialized
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            *recovery = None;
         }
         *self.route.lock().map_err(|_| "input route poisoned")? = None;
         Ok(())
@@ -199,6 +221,14 @@ impl InputSeatManager for UnixInputSeatManager {
         Ok(())
     }
     fn ready(&self) -> Result<(), String> {
+        if self
+            .reservation_recovery
+            .lock()
+            .map_err(|_| "input recovery poisoned")?
+            .is_some()
+        {
+            return Err("receiver lost live session reservations; run korri end after the exact unit has ended".into());
+        }
         if !self.initialized.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("input pool is not reconciled; resolve any exact active session, then restart korrid".into());
         }
@@ -209,6 +239,13 @@ impl InputSeatManager for UnixInputSeatManager {
         Ok(())
     }
     fn is_fenced(&self) -> bool {
+        if self
+            .reservation_recovery
+            .lock()
+            .map_or(true, |recovery| recovery.is_some())
+        {
+            return true;
+        }
         match &self.coordinator {
             Ok(coordinator) => coordinator.ready().is_err(),
             Err(_) => true,

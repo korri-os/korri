@@ -348,6 +348,7 @@ pub struct HostSessionControl {
     peer_selection: viewer_input::PeerSelection,
     backend: Arc<dyn LaunchUnitBackend>,
     limits_client: crate::launch_settings::helper::Client,
+    limits_ended: Arc<Mutex<Option<String>>>,
     input_seats: Arc<dyn InputSeatManager>,
     pub(super) identity_root: PathBuf,
     boot_identity: Result<String, String>,
@@ -428,6 +429,7 @@ impl HostSessionControl {
             peer_selection: viewer_input::PeerSelection::default(),
             backend,
             limits_client: crate::launch_settings::helper::Client::default(),
+            limits_ended: Arc::new(Mutex::new(None)),
             input_seats,
             identity_root,
             boot_identity: super::hooks::boot_id(),
@@ -486,14 +488,22 @@ impl HostSessionControl {
             }
             _ => return Err("host session authority is unresolved".into()),
         };
-        self.input_seats.initialize(count, session)
+        let result = self.input_seats.initialize(count, session);
+        if result.is_err() && self.input_seats.is_fenced() {
+            *state = ActiveState::RecoveryBlocked;
+        }
+        result
     }
 
     pub(crate) fn apply_input_count(&self, count: u8) -> Result<(), String> {
         self.input_seats.apply_count(count)
     }
     pub(crate) fn fence_input(&self) {
-        self.input_seats.fence();
+        // Startup also calls this after a recoverable reservation mismatch.
+        // Preserve that exact-session fence instead of killing its transport.
+        if !self.input_seats.is_fenced() {
+            self.input_seats.fence();
+        }
     }
     fn retire_native(&self) -> Result<(), String> {
         if let Some((source, runtime)) = &self.native_input {
@@ -583,11 +593,10 @@ impl HostSessionControl {
         Ok(())
     }
 
-    /// Terminal coordinator loss retires controller delivery permanently for
-    /// this runtime. Thaw only the UI unit so keyboard/mouse recovery remains
-    /// possible. Keep the journal/reservations and launch fence untouched.
+    /// Thaw only the UI unit so keyboard/mouse recovery remains possible.
+    /// Both callers already proved input fenced. Preserve that fence: a
+    /// reservation mismatch must not become a terminal transport failure.
     fn emergency_thaw_shell(&self) -> Result<(), String> {
-        self.input_seats.fence();
         if let Some((source, _)) = &self.native_input {
             source.reset();
         }
@@ -636,7 +645,7 @@ impl HostSessionControl {
     ) -> Result<(), String> {
         if self.input_seats.is_fenced() {
             self.emergency_thaw_shell()?;
-            return Err("input coordination is fenced; restart korrid after resolving the exact active session".into());
+            return Err("input coordination is fenced; run korri end after the exact unit ends; restart korrid if the input transport was lost".into());
         }
         let freeze = matches!(state, ActiveState::Running { .. })
             && ownership == Some(FocusOwnership::Launch);
@@ -1542,12 +1551,23 @@ impl HostSessionControl {
         self.complete_active_snapshot(self.shutting_down.load(std::sync::atomic::Ordering::SeqCst))
     }
 
+    // Completion may retry its durable journal after input, hook or disk errors.
+    // The exact unit is already gone; do not restore its limits on every poll.
+    fn end_limits(&self, launch_id: &str) {
+        let mut ended = self.limits_ended.lock().expect("ended limits poisoned");
+        if ended.as_deref() != Some(launch_id) {
+            *ended = Some(launch_id.into());
+            crate::launch_settings::session::end(&self.limits_client, launch_id);
+        }
+    }
+
     fn complete_active_snapshot(&self, interrupted: bool) -> Result<(), String> {
         use crate::saves::{store::NativeSaveStore, types::SnapshotRecord, SaveRepository};
         let Some(mut record) = read_active(&self.identity_root)? else {
             return Ok(());
         };
-        crate::launch_settings::session::end(&self.limits_client, record.launch_id());
+        self.end_limits(record.launch_id());
+        self.stop_completed_seats(record.launch_id())?;
         self.input_seats.end_session(record.launch_id())?;
         self.finish_after_hooks(&mut record)?;
         let store = NativeSaveStore::new(
@@ -1823,6 +1843,22 @@ impl HostSessionControl {
             return Err("input-seat lease belongs to a different launch".into());
         }
         self.input_seats.route(None)?;
+        match current.take() {
+            Some((_, lease)) => lease.stop(launch_id),
+            None => Ok(()),
+        }
+    }
+
+    fn stop_completed_seats(&self, launch_id: &str) -> Result<(), String> {
+        // EndSession retires routing too. Do not require a live route/ready
+        // acknowledgement for a unit already proven gone, including startup.
+        let mut current = self.seat_lease.lock().expect("input-seat mutex poisoned");
+        if current
+            .as_ref()
+            .is_some_and(|(active, _)| active != launch_id)
+        {
+            return Err("input-seat lease belongs to a different launch".into());
+        }
         match current.take() {
             Some((_, lease)) => lease.stop(launch_id),
             None => Ok(()),
@@ -2834,7 +2870,7 @@ impl HostSessionControl {
                     };
                 }
                 Ok(LaunchUnitState::Completed) => {
-                    if self.stop_seats(&launch_id).is_ok() && self.complete_active().is_ok() {
+                    if self.complete_active().is_ok() {
                         *state = ActiveState::Completed {
                             launch_id: launch_id.clone(),
                         };
@@ -2874,7 +2910,6 @@ impl HostSessionControl {
         if self
             .mark_hook_result(super::hooks::SessionResult::Failed)
             .is_err()
-            || self.stop_seats(&launch_id).is_err()
             || self.clear_failed_unit(&launch_id).is_err()
             || self.complete_active_snapshot(true).is_err()
         {
@@ -2918,7 +2953,7 @@ impl HostSessionControl {
     fn discard_active(&self) -> Result<(), String> {
         if let Some(mut record) = read_active(&self.identity_root)? {
             self.remove_netplay_credential(&record);
-            crate::launch_settings::session::end(&self.limits_client, record.launch_id());
+            self.end_limits(record.launch_id());
             self.input_seats.end_session(record.launch_id())?;
             if let ActiveSession::Running {
                 after_hooks: Some(hooks),
@@ -3293,7 +3328,7 @@ impl HostSessionControl {
                     return HostSessionFreezeChange::Stopping { launch_id };
                 }
                 LaunchUnitState::Completed => {
-                    if self.stop_seats(&launch_id).is_ok() && self.complete_active().is_ok() {
+                    if self.complete_active().is_ok() {
                         *state = ActiveState::Completed {
                             launch_id: launch_id.clone(),
                         };
@@ -3561,6 +3596,74 @@ impl HostSessionControl {
         result
     }
 
+    pub(crate) fn recovery_failure(&self) -> RpcFailure {
+        let identity = read_active(&self.identity_root)
+            .ok()
+            .flatten()
+            .map(|record| format!(" for launch {}", record.launch_id()))
+            .unwrap_or_default();
+        failure("HostRecoveryBlocked", format!("host recovery blocked{identity}; run korri end to resolve an ended exact unit; a live or unverified unit remains protected"))
+    }
+
+    /// Local administration without a supplied ID can only retire a failed or
+    /// blocked exact identity. It never selects a live or starting session.
+    /// A different dead failure may replace the observation; log the chosen ID.
+    pub(crate) fn resolve_ended_session(&self) -> Result<HostSessionStop, RpcFailure> {
+        let mut state = self.lock_state();
+        self.resolve_ended_locked(&mut state)
+    }
+
+    fn resolve_ended_locked(&self, state: &mut ActiveState) -> Result<HostSessionStop, RpcFailure> {
+        let recovering = matches!(
+            &*state,
+            ActiveState::RecoveryPending | ActiveState::RecoveryBlocked
+        );
+        let record = read_active(&self.identity_root).map_err(|_| self.recovery_failure())?;
+        let launch_id = match &*state {
+            ActiveState::Failed { launch_id, .. } => {
+                if record.as_ref().is_some_and(|record| record.launch_id() != launch_id) {
+                    return Err(self.recovery_failure());
+                }
+                launch_id.clone()
+            }
+            ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => record
+                .as_ref().ok_or_else(|| self.recovery_failure())?.launch_id().to_owned(),
+            _ => return Err(failure("ExpectedLaunchIdRequired", "expectedLaunchId is required for a live host session; local recovery cannot select it")),
+        };
+        let refuse = || {
+            failure("HostRecoveryBlocked", format!("host launch {launch_id} may still be live, or its absence cannot be proven; preserve the unit and retry korri end after it ends"))
+        };
+        let live = self.backend.live_launch_ids().map_err(|_| refuse())?;
+        if live.iter().any(|id| id != &launch_id) {
+            return Err(refuse());
+        }
+        match self.backend.state(&launch_id) {
+            Ok(LaunchUnitState::Completed) => {}
+            Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                self.mark_hook_result(super::hooks::SessionResult::Failed)
+                    .map_err(|_| self.recovery_failure())?;
+                self.clear_failed_unit(&launch_id).map_err(|_| refuse())?;
+                if !matches!(
+                    self.backend.state(&launch_id),
+                    Ok(LaunchUnitState::Completed)
+                ) {
+                    return Err(refuse());
+                }
+            }
+            _ => return Err(refuse()),
+        }
+        self.complete_active_snapshot(true).map_err(|message| failure("HostRecoveryBlocked", format!("host launch {launch_id} is gone but completion failed: {message}; retry korri end")))?;
+        *state = if recovering {
+            ActiveState::NoActive
+        } else {
+            ActiveState::Completed {
+                launch_id: launch_id.clone(),
+            }
+        };
+        eprintln!("korrid: resolved ended host launch {launch_id}");
+        Ok(HostSessionStop::Completed { launch_id })
+    }
+
     pub fn stop(&self, expected_launch_id: &str) -> HostSessionStop {
         self.observe_stop(expected_launch_id, |outcome| outcome)
     }
@@ -3572,6 +3675,22 @@ impl HostSessionControl {
     ) -> T {
         let (launch_id, seat_stop_failed) = {
             let mut state = self.lock_state();
+            if matches!(
+                &*state,
+                ActiveState::RecoveryPending | ActiveState::RecoveryBlocked
+            ) {
+                if let Ok(Some(record)) = read_active(&self.identity_root) {
+                    if record.launch_id() != expected_launch_id {
+                        return observe(HostSessionStop::StaleIdentity {
+                            active_launch_id: Some(record.launch_id().into()),
+                        });
+                    }
+                    return observe(
+                        self.resolve_ended_locked(&mut state)
+                            .unwrap_or(HostSessionStop::RecoveryBlocked),
+                    );
+                }
+            }
             self.refresh_recovery(&mut state);
             let initial = match &*state {
                 ActiveState::Running { launch_id, game_id }
@@ -3618,16 +3737,16 @@ impl HostSessionControl {
                 ActiveState::Stopping { launch_id, .. } => Err(HostSessionStop::StaleIdentity {
                     active_launch_id: Some(launch_id.clone()),
                 }),
-                ActiveState::Completed { launch_id } | ActiveState::Failed { launch_id, .. }
-                    if launch_id == expected_launch_id =>
-                {
-                    let launch_id = launch_id.clone();
-                    // Failed already proved native and journal cleanup. Exact
-                    // End dismisses that retained failure, not any replacement.
-                    *state = ActiveState::Completed {
+                ActiveState::Failed { launch_id, .. } if launch_id == expected_launch_id => {
+                    return observe(
+                        self.resolve_ended_locked(&mut state)
+                            .unwrap_or(HostSessionStop::RecoveryBlocked),
+                    );
+                }
+                ActiveState::Completed { launch_id } if launch_id == expected_launch_id => {
+                    Err(HostSessionStop::Completed {
                         launch_id: launch_id.clone(),
-                    };
-                    Err(HostSessionStop::Completed { launch_id })
+                    })
                 }
                 ActiveState::Completed { .. }
                 | ActiveState::Failed { .. }
@@ -3880,6 +3999,12 @@ impl HostSessionControl {
                     && live.first().map(String::as_str) == Some(record.launch_id()) =>
             {
                 match backend.state(record.launch_id()) {
+                    Ok(observed)
+                        if self.input_seats.is_fenced()
+                            && observed != LaunchUnitState::Completed =>
+                    {
+                        ActiveState::RecoveryBlocked
+                    }
                     Ok(LaunchUnitState::Running) => self.recovered_running_state(
                         record.launch_id().to_owned(),
                         Some(record.game_id().to_owned()),
@@ -3909,6 +4034,12 @@ impl HostSessionControl {
             }
             Ok(Some(record @ ActiveSession::Running { .. })) if live.is_empty() => {
                 match backend.state(record.launch_id()) {
+                    Ok(observed)
+                        if self.input_seats.is_fenced()
+                            && observed != LaunchUnitState::Completed =>
+                    {
+                        ActiveState::RecoveryBlocked
+                    }
                     Ok(LaunchUnitState::Completed)
                         if self.complete_active_snapshot(true).is_ok() =>
                     {
@@ -3942,7 +4073,7 @@ fn failure(code: &str, message: impl Into<String>) -> RpcFailure {
 fn recovery_blocked_failure() -> RpcFailure {
     failure(
         "HostRecoveryBlocked",
-        "host recovery identity is missing, tampered, or ambiguous; preserve all game units and require administrator resolution",
+        "host recovery identity is missing, tampered, or ambiguous; run korri end to resolve an ended exact unit; preserve live or unverified game units",
     )
 }
 
@@ -3959,26 +4090,46 @@ mod tests {
         persist_test_record(root.path(), id);
         let backend = Arc::new(DeterministicBackend::default());
         backend.insert(id, LaunchUnitState::Frozen);
+        let mut reply = test_support::reply();
         let (coordinator, receiver) = test_support::coordinator(move |request| {
-            let mut reply = test_support::reply();
             if let SeatRequest::ApplyCount { count } = request {
                 reply.count = count;
             }
-            reply
+            reply.clone()
         });
-        let manager = Arc::new(UnixInputSeatManager::new("unused".into(), Ok(coordinator.clone())));
-        let control = HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone());
+        let manager = Arc::new(UnixInputSeatManager::new(
+            "unused".into(),
+            Ok(coordinator.clone()),
+        ));
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone());
         assert!(control.initialize_input(6).is_err());
+        control.fence_input(); // Production startup's reconciliation error path.
         assert!(manager.is_fenced());
+        assert!(manager
+            .end_session("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+            .is_err());
+        assert!(
+            manager.is_fenced(),
+            "another session cannot clear the exact recovery fence"
+        );
+        assert_eq!(control.status(), HostSessionStatus::RecoveryBlocked);
         backend.insert(id, LaunchUnitState::Completed);
-        for _ in 0..3 { control.status(); }
+        for _ in 0..3 {
+            control.status();
+        }
         assert_eq!(control.status(), HostSessionStatus::NoActive);
-        assert!(read_active(&root.path().join("host-session")).unwrap().is_none());
+        assert!(read_active(&root.path().join("host-session"))
+            .unwrap()
+            .is_none());
         assert_eq!(stats(&control, "recovered").play_count, 1);
         assert!(!manager.is_fenced());
         assert!(manager.ready().is_ok());
         assert_eq!(coordinator.snapshot().unwrap().count, 6);
-        drop(control); drop(manager); drop(coordinator); receiver.join().unwrap();
+        drop(control);
+        drop(manager);
+        drop(coordinator);
+        receiver.join().unwrap();
     }
 
     #[test]
@@ -4000,15 +4151,24 @@ mod tests {
         assert_eq!(control.stop(id), HostSessionStop::RecoveryBlocked);
         backend.state.lock().unwrap().state_unavailable = false;
         backend.insert(id, LaunchUnitState::Completed);
-        assert_eq!(control.stop(id), HostSessionStop::Completed { launch_id: id.into() });
+        assert_eq!(
+            control.stop(id),
+            HostSessionStop::Completed {
+                launch_id: id.into()
+            }
+        );
         assert!(read_active(&control.identity_root).unwrap().is_none());
         assert_eq!(stats(&control, "recovered").play_count, 1);
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
     }
 
     #[test]
     fn completed_unit_limits_restore_is_attempted_once_while_completion_retries() {
-        use std::{io::{BufRead, BufReader, Write}, os::unix::net::UnixListener};
         use super::super::input_seat::UnixInputSeatManager;
+        use std::{
+            io::{BufRead, BufReader, Write},
+            os::unix::net::UnixListener,
+        };
         let root = tempfile::tempdir().unwrap();
         let socket = root.path().join("limits.sock");
         let listener = UnixListener::bind(&socket).unwrap();
@@ -4021,29 +4181,255 @@ mod tests {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         let mut line = String::new();
-                        BufReader::new(stream.try_clone().unwrap()).read_line(&mut line).unwrap();
+                        BufReader::new(stream.try_clone().unwrap())
+                            .read_line(&mut line)
+                            .unwrap();
                         calls.push(serde_json::from_str::<serde_json::Value>(&line).unwrap());
                         stream.write_all(b"{\"_tag\":\"Err\",\"payload\":{\"message\":\"unit does not name the active session\"}}\n").unwrap();
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(1)),
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(1))
+                    }
                     Err(error) => panic!("{error}"),
                 }
             }
             calls
         });
         let backend = Arc::new(DeterministicBackend::default());
-        let seats = Arc::new(UnixInputSeatManager::new("unused".into(), Err("transport lost".into())));
+        let seats = Arc::new(UnixInputSeatManager::new(
+            "unused".into(),
+            Err("transport lost".into()),
+        ));
         let mut control = HostSessionControl::with_input_seats(root.path(), backend, seats);
         control.limits_client = crate::launch_settings::helper::Client { socket };
-        for id in ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"] {
+        for id in [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ] {
             persist_test_record(root.path(), id);
-            for _ in 0..3 { assert!(matches!(control.recover(), ActiveState::RecoveryBlocked)); }
+            for _ in 0..3 {
+                assert!(matches!(control.recover(), ActiveState::RecoveryBlocked));
+            }
             clear_active(&control.identity_root).unwrap();
         }
         done.store(true, Ordering::SeqCst);
         let calls = server.join().unwrap();
-        assert_eq!(calls.len(), 2, "one terminal restore attempt per launch, not one per status poll");
+        assert_eq!(
+            calls.len(),
+            2,
+            "one terminal restore attempt per launch, not one per status poll"
+        );
         assert!(calls.iter().all(|call| call["_tag"] == "EndSession"));
+    }
+
+    #[test]
+    fn local_end_resolves_failed_identity_but_never_a_live_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        backend
+            .state
+            .lock()
+            .unwrap()
+            .failed_units
+            .insert(id.into(), "runner exited".into());
+        *control.state.lock().unwrap() = ActiveState::Failed {
+            launch_id: id.into(),
+            message: "runner exited".into(),
+        };
+        assert_eq!(
+            control.resolve_ended_session().unwrap(),
+            HostSessionStop::Completed {
+                launch_id: id.into()
+            }
+        );
+        assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Completed);
+        backend.insert(id, LaunchUnitState::Running);
+        *control.state.lock().unwrap() = ActiveState::Running {
+            launch_id: id.into(),
+            game_id: None,
+        };
+        assert_eq!(
+            control.resolve_ended_session().unwrap_err().code,
+            "ExpectedLaunchIdRequired"
+        );
+        assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Running);
+        // A startup reservation has no native phase/record yet. Recovery-only
+        // End must not consume it or dispatch a stop while preparation runs.
+        *control.state.lock().unwrap() = ActiveState::NoActive;
+        assert_eq!(
+            control.resolve_ended_session().unwrap_err().code,
+            "ExpectedLaunchIdRequired"
+        );
+        assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Running);
+    }
+
+    #[test]
+    fn restart_completes_absent_journal_and_retained_reservation_with_save_snapshot_once() {
+        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
+        use crate::saves::{
+            store::NativeSaveStore,
+            types::{SaveKind, SaveLocation},
+            SaveRepository,
+        };
+        use korri_input_contract::SeatRequest;
+        for retained in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            let saves = root.path().join("game-saves");
+            fs::create_dir(&saves).unwrap();
+            fs::write(saves.join("game.srm"), b"interrupted progress").unwrap();
+            let mut record = ActiveSession::running(
+                id.into(),
+                "recovered".into(),
+                Some(PERSON.into()),
+                1_700_000_000,
+            );
+            if let ActiveSession::Running {
+                runner_id,
+                save_locations,
+                ..
+            } = &mut record
+            {
+                *runner_id = Some("mgba".into());
+                *save_locations = Some(vec![SaveLocation {
+                    key: "saves".into(),
+                    kind: SaveKind::Save,
+                    path: saves.to_str().unwrap().into(),
+                }]);
+            }
+            persist_active(&root.path().join("host-session"), &record).unwrap();
+            let mut reply = test_support::reply();
+            reply.session = retained.then(|| id.into());
+            let (coordinator, receiver) = test_support::coordinator(move |request| {
+                match request {
+                    SeatRequest::EndSession { launch_id } => {
+                        assert_eq!(launch_id, id);
+                        reply.session = None;
+                    }
+                    SeatRequest::ApplyCount { count } => {
+                        reply.count = count;
+                    }
+                    SeatRequest::BeginSession { .. } => {
+                        panic!("must not recreate an absent session")
+                    }
+                    _ => {}
+                }
+                reply.clone()
+            });
+            let backend = Arc::new(DeterministicBackend::default()); // Missing unit is Completed, as with systemd not-found.
+            let manager = Arc::new(UnixInputSeatManager::new(
+                "unused".into(),
+                Ok(coordinator.clone()),
+            ));
+            let control = HostSessionControl::with_clock(
+                root.path(),
+                backend,
+                manager.clone(),
+                TestClock::at(1_700_000_120),
+            );
+            control.initialize_input(6).unwrap();
+            assert_eq!(control.status(), HostSessionStatus::NoActive);
+            assert_eq!(stats(&control, "recovered").play_count, 1);
+            let history = NativeSaveStore::new(root.path())
+                .records(PERSON, "recovered")
+                .unwrap();
+            assert_eq!(history.len(), 1);
+            assert!(history[0].interrupted);
+            assert_eq!(history[0].locations[0].files[0].bytes, 20);
+            assert!(manager.ready().is_ok());
+            assert!(!manager.is_fenced());
+            assert!(coordinator.snapshot().unwrap().session.is_none());
+            drop(control);
+            drop(manager);
+            drop(coordinator);
+            receiver.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn local_end_blocked_identity_refuses_live_unknown_and_stale_units() {
+        let root = tempfile::tempdir().unwrap();
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        persist_test_record(root.path(), id);
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.insert(id, LaunchUnitState::Running);
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        for unavailable in [false, true] {
+            *control.state.lock().unwrap() = ActiveState::RecoveryBlocked;
+            backend.state.lock().unwrap().state_unavailable = unavailable;
+            let failure = control.resolve_ended_session().unwrap_err();
+            assert_eq!(failure.code, "HostRecoveryBlocked");
+            assert!(failure.message.contains("absence cannot be proven"));
+            assert!(read_active(&control.identity_root).unwrap().is_some());
+        }
+        backend.state.lock().unwrap().state_unavailable = false;
+        backend.insert(id, LaunchUnitState::Completed);
+        assert!(matches!(
+            control.stop("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            HostSessionStop::StaleIdentity { .. }
+        ));
+        assert!(matches!(
+            control.resolve_ended_session().unwrap(),
+            HostSessionStop::Completed { .. }
+        ));
+        assert_eq!(stats(&control, "recovered").play_count, 1);
+        assert!(
+            backend.state.lock().unwrap().stopped.is_empty(),
+            "absent recovery must not stop a possibly live game"
+        );
+    }
+
+    #[test]
+    fn local_end_after_observation_swap_clears_only_a_dead_session() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        let first = control
+            .prepare("first", None, Ok(&["game".into()]), &BTreeMap::new())
+            .unwrap();
+        backend
+            .state
+            .lock()
+            .unwrap()
+            .failed_units
+            .insert(first.launch_id.clone(), "first failed".into());
+        assert!(
+            matches!(control.status(), HostSessionStatus::Failed { launch_id, .. } if launch_id == first.launch_id)
+        );
+        // Another administrator dismisses A and B fails while CLI consent waits.
+        assert!(matches!(
+            control.stop(&first.launch_id),
+            HostSessionStop::Completed { .. }
+        ));
+        let second = control
+            .prepare("second", None, Ok(&["game".into()]), &BTreeMap::new())
+            .unwrap();
+        backend
+            .state
+            .lock()
+            .unwrap()
+            .failed_units
+            .insert(second.launch_id.clone(), "second failed".into());
+        assert!(matches!(control.status(), HostSessionStatus::Failed { .. }));
+        assert_eq!(
+            control.resolve_ended_session().unwrap(),
+            HostSessionStop::Completed {
+                launch_id: second.launch_id
+            }
+        );
+        let live = control
+            .prepare("third", None, Ok(&["game".into()]), &BTreeMap::new())
+            .unwrap();
+        assert_eq!(
+            control.resolve_ended_session().unwrap_err().code,
+            "ExpectedLaunchIdRequired"
+        );
+        assert_eq!(
+            backend.state(&live.launch_id).unwrap(),
+            LaunchUnitState::Running
+        );
     }
 
     #[test]
@@ -7003,7 +7389,7 @@ printf '[{{"success":true}}]'
         assert!(manager.ready().is_err());
         assert!(matches!(
             control.thaw(id),
-            HostSessionFreezeChange::HelperFailed { .. }
+            HostSessionFreezeChange::RecoveryBlocked
         ));
         assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Frozen);
         assert!(backend.state.lock().unwrap().thawed.is_empty());

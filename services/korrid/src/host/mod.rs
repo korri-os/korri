@@ -1527,7 +1527,11 @@ impl HostRuntime {
     pub(crate) async fn session_control_status(&self) -> Result<HostSessionStatus, RpcFailure> {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
-            let status = runtime.control()?.control_status();
+            let control = runtime.control()?;
+            let status = control.control_status();
+            if matches!(status, HostSessionStatus::RecoveryBlocked) {
+                return Err(control.recovery_failure());
+            }
             if let HostSessionStatus::Completed { launch_id }
             | HostSessionStatus::Failed { launch_id, .. } = &status
             {
@@ -1668,6 +1672,13 @@ impl HostRuntime {
         })
         .await
         .map_err(host_worker_failure)?
+    }
+
+    pub(crate) async fn resolve_ended_session(&self) -> Result<HostSessionStop, RpcFailure> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || runtime.control()?.resolve_ended_session())
+            .await
+            .map_err(host_worker_failure)?
     }
 
     pub(crate) async fn observe_session_stop<T: Send + 'static>(
@@ -2055,7 +2066,7 @@ fn exact_live_session(
         | Ok(HostSessionStatus::Failed { .. })
         | Ok(HostSessionStatus::NoActive) => Err(stale_controls()),
         Ok(HostSessionStatus::RecoveryBlocked) => Err(unavailable_controls(
-            "Host recovery identity requires administrator resolution.",
+            "Run korri end to resolve an ended exact host session. Live or unverified units stay protected.",
         )),
         Err(failure) => Err(unavailable_controls(&failure.message)),
     }
