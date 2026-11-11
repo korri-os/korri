@@ -805,7 +805,93 @@ static void testExpectedEpochRejectsReplacementRace(void) {
     assert(state.lastIssuedRequestId == 0);
 }
 
+static void testLiveScreenShapeChange(void) {
+    SS_RUNTIME_SETTINGS_STATE state;
+    uint8_t request[SS_RUNTIME_SETTINGS_MAX_REQUEST_BYTES];
+    uint8_t ack[20];
+    size_t requestLength;
+
+    SsRuntimeSettingsInitialize(&state);
+    beginActive(&state, 1);
+    establishCapabilities(&state, 1);
+    // The stream launched at 1920x1080. Unfolding changes both size and
+    // aspect, without replacing the stream epoch or reconnecting.
+    assert(SsRuntimeSettingsPrepareRequest(&state, state.snapshot.sessionEpoch, 0, 2,
+                                           SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION,
+                                           2448, 1848, request, &requestLength) == 0);
+    resolutionAck(ack, 2, SS_RUNTIME_SETTINGS_STATUS_APPLIED,
+                  2448, 1848, SS_RUNTIME_SETTINGS_REASON_NONE);
+    assert(SsRuntimeSettingsProcessAck(&state, ack, sizeof(ack)) == 0);
+    assert(state.snapshot.currentWidth == 2448);
+    assert(state.snapshot.currentHeight == 1848);
+    assert(state.snapshot.sessionEpoch == 1);
+}
+
+static void testLiveScreenShapeBounds(void) {
+    const uint32_t invalid[][2] = {
+        {0, 1848}, {2448, 0}, {2449, 1848}, {2448, 1849},
+        {4098, 1848}, {2448, 4098}, {UINT32_MAX, UINT32_MAX}
+    };
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        SS_RUNTIME_SETTINGS_STATE state;
+        uint8_t request[SS_RUNTIME_SETTINGS_MAX_REQUEST_BYTES];
+        uint8_t ack[20];
+        size_t length;
+        SsRuntimeSettingsInitialize(&state);
+        beginActive(&state, 1);
+        establishCapabilities(&state, 1);
+        assert(SsRuntimeSettingsPrepareRequest(&state, 1, 0, 2,
+            SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION,
+            invalid[i][0], invalid[i][1], request, &length) != 0);
+        assert(SsRuntimeSettingsPrepareRequest(&state, 1, 0, 3,
+            SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION,
+            1848, 2448, request, &length) == 0);
+        resolutionAck(ack, 3, SS_RUNTIME_SETTINGS_STATUS_APPLIED,
+                      invalid[i][0], invalid[i][1], SS_RUNTIME_SETTINGS_REASON_NONE);
+        assert(SsRuntimeSettingsProcessAck(&state, ack, sizeof(ack)) ==
+               LI_RUNTIME_SETTINGS_ERROR_MALFORMED_ACK);
+        assert(state.snapshot.currentWidth == 1920);
+        assert(state.snapshot.currentHeight == 1080);
+    }
+}
+
+static void testLiveScreenShapeCanReturnToLaunchSize(void) {
+    SS_RUNTIME_SETTINGS_STATE state;
+    uint8_t request[SS_RUNTIME_SETTINGS_MAX_REQUEST_BYTES];
+    uint8_t ack[20];
+    uint8_t queryAck[64];
+    size_t length;
+    SsRuntimeSettingsInitialize(&state);
+    beginActive(&state, 1);
+    establishCapabilities(&state, 1);
+    assert(SsRuntimeSettingsPrepareRequest(&state, 1, 0, 2,
+        SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION,
+        1848, 2448, request, &length) == 0);
+    resolutionAck(ack, 2, SS_RUNTIME_SETTINGS_STATUS_APPLIED,
+                  1848, 2448, SS_RUNTIME_SETTINGS_REASON_NONE);
+    assert(SsRuntimeSettingsProcessAck(&state, ack, sizeof(ack)) == 0);
+    prepareQuery(&state, 1, 3);
+    capabilityAck(queryAck, 3, SS_RUNTIME_SETTINGS_STATUS_APPLIED,
+                  SS_RUNTIME_SETTINGS_REASON_NONE, 0x0E, 0,
+                  20000, 60, 1848, 2448);
+    assert(SsRuntimeSettingsProcessAck(&state, queryAck, sizeof(queryAck)) == 0);
+    assert(state.snapshot.currentWidth == 1848);
+    assert(state.snapshot.launchWidth == 1920);
+    assert(SsRuntimeSettingsPrepareRequest(&state, 1, 2, 4,
+        SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION,
+        1920, 1080, request, &length) == 0);
+    resolutionAck(ack, 4, SS_RUNTIME_SETTINGS_STATUS_APPLIED,
+                  1920, 1080, SS_RUNTIME_SETTINGS_REASON_NONE);
+    assert(SsRuntimeSettingsProcessAck(&state, ack, sizeof(ack)) == 0);
+    assert(state.snapshot.currentWidth == 1920);
+    assert(state.snapshot.currentHeight == 1080);
+    assert(state.snapshot.sessionEpoch == 1);
+}
+
 int main(void) {
+    testLiveScreenShapeChange();
+    testLiveScreenShapeBounds();
+    testLiveScreenShapeCanReturnToLaunchSize();
     testExpectedEpochRejectsReplacementRace();
     testEpochGenerationAndEncoding();
     testCapabilityStatusAndMasks();
