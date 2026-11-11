@@ -29,7 +29,8 @@ def window_total(name: str) -> Callable[[dict], Value]:
 
 
 def measured(name: str) -> Callable[[dict], Value]:
-    return lambda record: record["viewer"][name]
+    # A result from before a metric existed has no value for it.
+    return lambda record: record["viewer"].get(name)
 
 
 # The six numbers of ADR 0062, in order. A number can have several metrics.
@@ -42,6 +43,7 @@ METRICS: list[tuple[str, str, Callable[[dict], Value]]] = [
     ("2 smoothness", "late_frames", window_total("late_frames")),
     ("2 smoothness", "torn_frames", window_total("torn_frames")),
     ("2 smoothness", "unreadable_frames", window_total("undecodable_frames")),
+    ("2 smoothness", "output_repeats", measured("output_repeats")),
     ("3 CPU and battery", "cpu_seconds_per_second", measured("cpu_seconds_per_second")),
     ("3 CPU and battery", "battery_mw", measured("battery_mw")),
     ("4 startup", "startup_ms", measured("startup_ms")),

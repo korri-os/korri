@@ -24,7 +24,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from bar import BITS, Location, Unreadable, decode_rows, search
+from bar import BITS, Location, decode_rows, frame_ids, search
 from decode import decode
 from discovery import session_log
 from score import (
@@ -34,6 +34,7 @@ from score import (
     capture_gaps,
     cpu_rate,
     display_records,
+    feedback,
     score,
     stamps,
 )
@@ -842,17 +843,6 @@ def view_case(
         # The capture writes the samples of a frame before its time record.
         cells = values[: len(times) * 2 * BITS].reshape(-1, 2, BITS)
         frames = [decode_rows(cells[i]) for i in range(len(cells))]
-        first = next(
-            (
-                i
-                for i, frame in enumerate(frames)
-                if not isinstance(frame, Unreadable)
-                and times[i]["display_ns"] >= started["start_ns"]
-            ),
-            None,
-        )
-        if first is None:
-            raise Refusal("The measured viewer start showed no readable ID; read viewer.log")
         if same_clock:
             to_sender = to_seat = lambda ns: ns
             facts["bridge_uncertainty_ms"] = 0.0
@@ -860,10 +850,29 @@ def view_case(
             to_sender, sender_error = bridge(before, after)
             to_seat, seat_error = bridge(seat_before, seat_after)
             facts["bridge_uncertainty_ms"] = sender_error + seat_error
+        # The first frame of the measured start is a frame that the sender
+        # presented after that start. A picture left on the display by the
+        # locating start is older and does not count.
+        presented = feedback(motion_log)[0]
+        launched = to_seat(started["start_ns"])
+        first = next(
+            (
+                i
+                for i, frame in enumerate(frames)
+                if any(
+                    ident in presented
+                    and to_sender(presented[ident]["present_ns"]) >= launched
+                    for ident in frame_ids(frame)
+                )
+            ),
+            None,
+        )
+        if first is None:
+            raise Refusal("The measured viewer start showed no readable ID; read viewer.log")
         origin = times[first]["display_ns"]
         scored = (origin + args.warmup * 1e9, origin + (args.warmup + duration) * 1e9)
         period = 1e9 / viewer_refresh
-        gaps = capture_gaps(
+        gaps, repeats = capture_gaps(
             [row for row in times if scored[0] <= row["display_ns"] <= scored[1]], period
         )
         record["viewer"] = {
@@ -876,6 +885,7 @@ def view_case(
             "viewer_exits": 0,
             "capture_frames": len(times),
             "capture_gaps": gaps,
+            "output_repeats": repeats,
             "packet_to_display_ms": None,
             "input_ms": None,
             "not_measured": {
@@ -959,7 +969,8 @@ def view_case(
             print(
                 f"{record['label']} viewer: startup_ms={measured['startup_ms']:.1f} "
                 f"cpu={measured['cpu_seconds_per_second']} stalls={measured['stream_stalls']} "
-                f"capture_gaps={measured['capture_gaps']}/{measured['capture_frames']}",
+                f"capture_gaps={measured['capture_gaps']}/{measured['capture_frames']} "
+                f"output_repeats={measured['output_repeats']}",
                 flush=True,
             )
         if not restored:

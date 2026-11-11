@@ -95,11 +95,24 @@ def display_records(text: str) -> list[dict[str, int]]:
     return rows
 
 
-def capture_gaps(rows: list[dict[str, int]], period_ns: float) -> int:
-    """Output frames that the capture did not read: the proof needs zero."""
-    return sum(
-        b["display_ns"] - a["display_ns"] > 1.5 * period_ns for a, b in zip(rows, rows[1:])
-    )
+def capture_gaps(rows: list[dict[str, int]], period_ns: float) -> tuple[int, int]:
+    """Gaps in the display record: frames the capture missed, and output repeats.
+
+    A gap is an interval above 1.5 refresh periods between two records. The
+    compositor copies a frame at its first commit after the capture's request.
+    A request sent more than 0.75 period after the previous frame can arrive
+    after the next commit, so that gap is a missed frame and the proof needs
+    zero of them. After a timely request, a gap means that the compositor
+    committed no frame: the display repeated its picture.
+    """
+    missed = repeats = 0
+    for a, b in zip(rows, rows[1:]):
+        if b["display_ns"] - a["display_ns"] > 1.5 * period_ns:
+            if b["copy_ns"] - a["display_ns"] > 0.75 * period_ns:
+                missed += 1
+            else:
+                repeats += 1
+    return missed, repeats
 
 
 def cpu_rate(

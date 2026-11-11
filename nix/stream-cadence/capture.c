@@ -3,6 +3,8 @@
  * A wlr-screencopy client. `probe` writes one whole output frame as a PGM so
  * the host can find the bar. `rows` samples the 36 cells of both bar rows on
  * every output frame and stamps the frame with the compositor's commit time.
+ * It also records when it asked for each frame, so a gap in the record can be
+ * told apart: the compositor showed no new frame, or this client asked too late.
  * bar.py decodes the samples; this file never interprets an ID.
  */
 #define _GNU_SOURCE
@@ -13,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
 #include "frame-bar.h"
@@ -20,6 +23,7 @@
 
 #define Y_INVERT 1u
 
+static struct wl_display *display;
 static struct wl_shm *shm;
 static struct wl_output *output;
 static struct zwlr_screencopy_manager_v1 *manager;
@@ -30,7 +34,7 @@ static uint8_t *pixels;
 static size_t mapped;
 static uint32_t format, width, height, stride, flags;
 static int have_buffer, done, failed;
-static uint64_t ready_ns;
+static uint64_t ready_ns, copy_ns;
 static volatile sig_atomic_t stop;
 
 static void die(const char *message) {
@@ -70,6 +74,11 @@ static void copy(struct zwlr_screencopy_frame_v1 *frame) {
         close(fd);
     }
     zwlr_screencopy_frame_v1_copy(frame, buffer);
+    /* The compositor copies at its next commit after this request arrives. */
+    wl_display_flush(display);
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now)) die("cannot read the monotonic clock");
+    copy_ns = (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
 }
 
 static void frame_buffer_done(void *data, struct zwlr_screencopy_frame_v1 *frame) {
@@ -134,7 +143,7 @@ static void global_remove(void *data, struct wl_registry *registry, uint32_t nam
 static const struct wl_registry_listener registry_listener = {global, global_remove};
 
 /* Returns 0 when a frame was copied, 1 when a stop signal ended the wait. */
-static int capture(struct wl_display *display, int region, int y, int w, int h) {
+static int capture(int region, int y, int w, int h) {
     struct zwlr_screencopy_frame_v1 *frame = region
         ? zwlr_screencopy_manager_v1_capture_output_region(manager, 0, output, 0, y, w, h)
         : zwlr_screencopy_manager_v1_capture_output(manager, 0, output);
@@ -157,8 +166,8 @@ static const uint8_t *row(uint32_t index) {
     return pixels + (size_t)stride * ((flags & Y_INVERT) ? height - 1 - index : index);
 }
 
-static int probe(struct wl_display *display, const char *path) {
-    if (capture(display, 0, 0, 0, 0)) return 1;
+static int probe(const char *path) {
+    if (capture(0, 0, 0, 0)) return 1;
     FILE *file = fopen(path, "wb");
     if (!file) die("cannot write probe frame");
     fprintf(file, "P5\n%" PRIu32 " %" PRIu32 "\n255\n", width, height);
@@ -169,16 +178,16 @@ static int probe(struct wl_display *display, const char *path) {
     return 0;
 }
 
-static int rows(struct wl_display *display, char **args) {
+static int rows(char **args) {
     int output_width = atoi(args[0]), upper = atoi(args[1]), lower = atoi(args[2]);
     double x = atof(args[3]), cell = atof(args[4]);
     if (output_width <= 0 || upper < 0 || lower <= upper || cell < 2)
         die("invalid bar geometry");
     FILE *times = fopen(args[5], "w"), *samples = fopen(args[6], "wb");
     if (!times || !samples) die("cannot write capture records");
-    fprintf(times, "index,display_ns\n");
+    fprintf(times, "index,display_ns,copy_ns\n");
     uint64_t count = 0;
-    while (!stop && !capture(display, 1, upper, output_width, lower - upper + 1)) {
+    while (!stop && !capture(1, upper, output_width, lower - upper + 1)) {
         uint8_t values[2 * BAR_BITS];
         for (int line = 0; line < 2; line++)
             for (int bit = 0; bit < BAR_BITS; bit++) {
@@ -188,7 +197,7 @@ static int rows(struct wl_display *display, char **args) {
                 values[line * BAR_BITS + bit] = row(line ? height - 1 : 0)[column * 4 + 1];
             }
         if (fwrite(values, 1, sizeof values, samples) != sizeof values ||
-            fprintf(times, "%" PRIu64 ",%" PRIu64 "\n", count++, ready_ns) < 0 ||
+            fprintf(times, "%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n", count++, ready_ns, copy_ns) < 0 ||
             fflush(samples) || fflush(times))
             die("cannot write capture records");
     }
@@ -209,11 +218,11 @@ int main(int argc, char **argv) {
     struct sigaction action = {.sa_handler = on_signal};
     sigaction(SIGINT, &action, NULL);
     sigaction(SIGTERM, &action, NULL);
-    struct wl_display *display = wl_display_connect(NULL);
+    display = wl_display_connect(NULL);
     if (!display) die("cannot connect to the compositor");
     struct wl_registry *registry = wl_display_get_registry(display);
     wl_registry_add_listener(registry, &registry_listener, NULL);
     if (wl_display_roundtrip(display) < 0) die("compositor connection lost");
     if (!shm || !output || !manager) die("compositor lacks wl_shm, an output or wlr-screencopy");
-    return is_probe ? probe(display, argv[2]) : rows(display, argv + 2);
+    return is_probe ? probe(argv[2]) : rows(argv + 2);
 }

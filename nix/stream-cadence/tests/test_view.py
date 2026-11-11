@@ -74,10 +74,28 @@ class DisplayRecord(unittest.TestCase):
         with self.assertRaises(ValueError):
             display_records("index,display_ns\n0,10\n1,10\n")
 
-    def test_capture_gap_counts_an_output_frame_that_was_not_read(self):
-        rows = [{"index": n, "display_ns": int(n * PERIOD)} for n in (0, 1, 2, 4, 5)]
-        self.assertEqual(capture_gaps(rows, PERIOD), 1)
-        self.assertEqual(capture_gaps(rows[:3], PERIOD), 0)
+    def test_gap_after_a_late_request_is_a_missed_frame(self):
+        # Each request follows the previous frame by a tenth of a period,
+        # except the request for output frame 4, which is a whole period late.
+        rows = [
+            {
+                "index": n,
+                "display_ns": int(n * PERIOD),
+                "copy_ns": int((n - (0.0 if n == 4 else 0.9)) * PERIOD),
+            }
+            for n in (0, 1, 2, 4, 5)
+        ]
+        self.assertEqual(capture_gaps(rows, PERIOD), (1, 0))
+        self.assertEqual(capture_gaps(rows[:3], PERIOD), (0, 0))
+
+    def test_gap_after_a_timely_request_is_an_output_repeat(self):
+        rows = [
+            {"index": n, "display_ns": int(n * PERIOD), "copy_ns": int((n - 0.9) * PERIOD)}
+            for n in (0, 1, 2, 4, 5)
+        ]
+        # The request for frame 4 went out a tenth of a period after frame 2.
+        rows[3]["copy_ns"] = int(2.1 * PERIOD)
+        self.assertEqual(capture_gaps(rows, PERIOD), (0, 1))
 
 
 class DisplayScore(unittest.TestCase):
@@ -178,6 +196,7 @@ def run(latency: float, startup: float, valid: bool = True) -> dict:
             "startup_ms": startup,
             "input_ms": None,
             "stream_stalls": 0,
+            "output_repeats": 0,
             "viewer_exits": 0,
         },
     }
@@ -210,10 +229,17 @@ class Verdict(unittest.TestCase):
         new[4]["discovered"]["sunshine_version"] = "2"
         with self.assertRaisesRegex(ValueError, "display, sunshine_version"):
             judge(old, new, 5)
-        self.assertEqual(len(judge(old, new, 5, allow_different_conditions=True)), 14)
+        self.assertEqual(len(judge(old, new, 5, allow_different_conditions=True)), 15)
         # The power state of the sender's display is not a condition.
         old[0]["discovered"]["display"]["power"] = False
-        self.assertEqual(len(judge(old, old, 5)), 14)
+        self.assertEqual(len(judge(old, old, 5)), 15)
+
+    def test_result_from_before_a_metric_existed_is_not_measured(self):
+        old = [run(20 + n, 900) for n in range(5)]
+        for record in old:
+            del record["viewer"]["output_repeats"]
+        rows = {row["metric"]: row for row in judge(old, [run(20, 900) for _ in range(5)], 5)}
+        self.assertEqual(rows["output_repeats"]["verdict"], "not measured")
 
 
 if __name__ == "__main__":
