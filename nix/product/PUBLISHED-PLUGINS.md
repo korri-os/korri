@@ -6,19 +6,19 @@ raw-cache fallback, receipt migration, or outside repository is in this lane.
 
 ## Published input
 
-- Plugins source: `72627749471e4cd8089c292dc2f0f0245cd50481`.
-- Immutable tag: `build-72627749471e-plugin-direction`.
-- Publication dry run: `41000811619`; live publication: `41011369204`.
-- Catalog: <https://github.com/korri-os/plugins/releases/download/build-72627749471e-plugin-direction/catalog.json>.
-- Actual catalog SHA-256: `e9a642a2271c78dc9aa4c32ec7d5ad6c9c24dcb6fa5cdb9be1bac079bba9075b`.
-- SRI: `sha256-6aZCoicceNyapMMux9WtbJwk3Lb6XNub4brAebupB1s=`.
+- Plugins source: `9363f21d62b528b115355ccc0e372a361edfc412`.
+- Immutable tag: `build-9363f21d62b5-haku-settings`.
+- Publication dry run: `43099162672`; live publication: `43115818061`.
+- Catalog: <https://github.com/korri-os/plugins/releases/download/build-9363f21d62b5-haku-settings/catalog.json>.
+- Actual catalog SHA-256: `774574dc273a0b2e2c138bb3dfb4d2d2f164e65ca6477bd35cba988aee003186`.
+- SRI: `sha256-d0V03Cc6Cy4sE4uz37TS0vFk5lymR3vTXLqYiu4AMYY=`.
 - 33 plugin IDs, 63 records. Homebrew Hub, PICO-8 and RetroBrews use `any`.
 - Bound key remains
   `korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
 
-These identify the actual live bytes. They do not establish dry/live payload
-reproducibility. The Pages catalog is a moving discovery address, not an image
-pin.
+These identify the actual live bytes. Publication verifies the dry-run artifact
+digests and requires its catalog byte for byte before uploading those artifacts.
+The Pages catalog is a moving discovery address, not an image pin.
 
 ## Build and recovery path
 
