@@ -22,8 +22,9 @@ the `legacy` branch apply here unless this file says so.
   subset of Korri's features. Start from the trimmed Artemis stack at
   `android-final`; reuse its decoder, input and stream work instead of trimming
   upstream again. Rebuild its integration against the current korrid, one slice
-  at a time. Artemis's Game activity is korrid's Android stream viewer, not a
-  second Java-driven launch path. Issue #300 tracks the epics.
+  at a time. Artemis's Game activity is korrid's Android viewer until the
+  stages of issue #391 replace it. It is not a second Java-driven launch path.
+  Issue #300 tracks the epics.
 - Read before you touch. Do exactly what was asked. No bonus refactors.
 - Backlog work lives in GitHub issues on `korri-os/korri`, not in
   `work/items/` (moved 2026-10-07; `work/items/.archive/` is history). Label
@@ -237,6 +238,12 @@ repositories, and no Korri client ships an outside repository address.
 - Peer korrids speak the native tagged `/rpc` wire. The Effect-RPC envelope
   client in `services/korrid/src/upstream.rs` exists only for aka until it is
   migrated; it dies at switchover. Do not grow abstractions around it.
+- One viewer that Korri owns replaces Moonlight Embedded and Artemis in
+  measured stages (issue #391, ADRs 0059 to 0064). A part moves to Rust only
+  when its replacement measures equal or better, and agents prove each stage
+  on aka and the device bench with no person in the loop. Build a new viewer
+  feature in the new viewer. In Moonlight Embedded and Artemis, fix only
+  `priority: high` bugs.
 
 ## Agent skills
 
