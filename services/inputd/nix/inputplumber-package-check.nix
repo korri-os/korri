@@ -62,7 +62,6 @@ pkgs.runCommand "inputplumber-korri-package-check"
     inputplumber_bin="${inputplumberKorri}/bin/inputplumber"
     inputplumber_root="${inputplumberKorri}/share/inputplumber"
     inputplumber_manager="${inputplumberRuntime.upstream.src}/src/input/manager.rs"
-    selected_device="$inputplumber_root/devices/${data.selectedDeviceProfile}"
     default_profile="$inputplumber_root/profiles/default.yaml"
     resolved_profile="$inputplumber_root/profiles/${data.resolvedProfile}"
 
@@ -89,34 +88,46 @@ pkgs.runCommand "inputplumber-korri-package-check"
     test "$(xmllint --xpath "count($action)" "$policy")" = 1
     test "$(xmllint --xpath "count($action/defaults/*[text()='no'])" "$policy")" = 3
 
-    test -f "$selected_device" || {
-      echo "selected upstream profile ${data.selectedDeviceProfile} is missing" >&2
+    # Regression for #437: both the Sunshine Xbox One and wired Xbox 360
+    # profiles must adopt their physical controllers without ManageAllDevices.
+    for selected in 60-xbox_one_gamepad.yaml 60-xbox_360_gamepad.yaml; do
+      selected_device="$inputplumber_root/devices/$selected"
+      test -f "$selected_device"
+      test "$(yq eval '.version' "$selected_device")" = 1 \
+        && test "$(yq eval '.kind' "$selected_device")" = CompositeDevice
+      test "$(yq eval '.options.auto_manage' "$selected_device")" = true || {
+        echo "$selected must auto-manage its supported physical controllers" >&2
+        exit 1
+      }
+      test "$(yq eval '.options.persist' "$selected_device")" = true || {
+        echo "$selected must preserve its normalized target across source reconnects" >&2
+        exit 1
+      }
+      test "$(yq eval -o=json -I=0 '.target_devices' "$selected_device")" = '["xb360","mouse","keyboard"]' || {
+        echo "$selected must target xb360, mouse and keyboard with only the automatic DBus target" >&2
+        exit 1
+      }
+      # Device matching must remain upstream-owned, including third-party pads.
+      cmp <(yq eval -o=json '.source_devices' "$selected_device") \
+        <(yq eval -o=json '.source_devices' "${inputplumberRuntime}/share/inputplumber/devices/$selected")
+    done
+    test "$(yq eval '[.source_devices[].evdev | select(.vendor_id == "045e" and (.product_id | contains("02ea")))] | length' "$inputplumber_root/devices/60-xbox_one_gamepad.yaml")" = 1 || {
+      echo "Xbox One profile must match Sunshine's exact virtual Xbox One identity" >&2
       exit 1
     }
-    test "$(yq eval '.options.auto_manage' "$selected_device")" = true || {
-      echo "selected device profile must auto-manage its supported physical controllers" >&2
+    test "$(yq eval '[.source_devices[].evdev | select(.vendor_id == "045e" and (.product_id | contains("028e")))] | length' "$inputplumber_root/devices/60-xbox_360_gamepad.yaml")" = 1 || {
+      echo "Xbox 360 profile must match the wired Microsoft 045e:028e pad" >&2
       exit 1
     }
-    test "$(yq eval '.options.persist' "$selected_device")" = true || {
-      echo "selected device profile must preserve its normalized target across source reconnects" >&2
-      exit 1
-    }
-    test "$(yq eval '[.source_devices[].evdev | select(.vendor_id == "045e" and (.product_id | contains("02ea")))] | length' "$selected_device")" = 1 || {
-      echo "selected device profile must match Sunshine's exact virtual Xbox One identity" >&2
-      exit 1
-    }
-    test "$(yq eval '[.target_devices[] | select(. == "xb360")] | length' "$selected_device")" = 1 || {
-      echo "selected device profile must target xb360 exactly once" >&2
-      exit 1
-    }
-    test "$(yq eval '[.target_devices[] | select(. == "dbus")] | length' "$selected_device")" = 0 || {
-      echo "selected device profile must use only InputPlumber's one automatic composite DBus target" >&2
-      exit 1
-    }
-    test "$(yq eval '[.target_devices[] | select(. == "xbox-series")] | length' "$selected_device")" = 0 || {
-      echo "selected device profile still contains superseded xbox-series target" >&2
-      exit 1
-    }
+    for device in "$inputplumber_root"/devices/*.yaml; do
+      case "$(basename "$device")" in
+        60-xbox_one_gamepad.yaml|60-xbox_360_gamepad.yaml) continue ;;
+      esac
+      cmp "${inputplumberRuntime}/share/inputplumber/devices/$(basename "$device")" "$device" || {
+        echo "unselected device profile $device must remain unchanged" >&2
+        exit 1
+      }
+    done
 
     cmp "${inputplumberRuntime}/share/inputplumber/profiles/default.yaml" "$default_profile" || {
       echo "the shared upstream default profile must remain unchanged" >&2
@@ -180,28 +191,30 @@ pkgs.runCommand "inputplumber-korri-package-check"
       exit 1
     }
 
-    drift_root="$TMPDIR/schema-drift/share/inputplumber"
-    mkdir -p "$drift_root/devices" "$drift_root/profiles"
-    cp "${inputplumberRuntime}/share/inputplumber/devices/${data.selectedDeviceProfile}" \
-      "$drift_root/devices/${data.selectedDeviceProfile}"
-    cp "${inputplumberRuntime}/share/inputplumber/profiles/default.yaml" \
-      "$drift_root/profiles/default.yaml"
-    yq eval -i '.target_devices[0] = "renamed-upstream-target"' \
-      "$drift_root/devices/${data.selectedDeviceProfile}"
-    if (
-      ${data.transformSelectedProfile { inputplumberRoot = "$drift_root"; }}
-    ); then
-      echo "changed selected-profile schema unexpectedly passed composition" >&2
-      exit 1
-    fi
-
-    rm "$drift_root/devices/${data.selectedDeviceProfile}"
-    if (
-      ${data.transformSelectedProfile { inputplumberRoot = "$drift_root"; }}
-    ); then
-      echo "missing selected profile unexpectedly passed composition" >&2
-      exit 1
-    fi
+    for selected in 60-xbox_one_gamepad.yaml 60-xbox_360_gamepad.yaml; do
+      for mutation in '.version = 2' '.kind = "DeviceProfile"' '.name = "renamed"' \
+        '.options.auto_manage = true' '.options.persist = true' \
+        '.target_devices[0] = "renamed-upstream-target"' missing; do
+        drift_root="$TMPDIR/schema-drift/$selected/$mutation/share/inputplumber"
+        mkdir -p "$drift_root/devices" "$drift_root/profiles"
+        cp "${inputplumberRuntime}/share/inputplumber/devices/60-xbox_one_gamepad.yaml" \
+          "${inputplumberRuntime}/share/inputplumber/devices/60-xbox_360_gamepad.yaml" \
+          "$drift_root/devices/"
+        cp "${inputplumberRuntime}/share/inputplumber/profiles/default.yaml" \
+          "$drift_root/profiles/default.yaml"
+        if test "$mutation" = missing; then
+          rm "$drift_root/devices/$selected"
+        else
+          yq eval -i "$mutation" "$drift_root/devices/$selected"
+        fi
+        if (
+          ${data.transformSelectedProfiles { inputplumberRoot = "$drift_root"; }}
+        ); then
+          echo "$selected with $mutation unexpectedly passed composition" >&2
+          exit 1
+        fi
+      done
+    done
 
     touch "$out"
   ''

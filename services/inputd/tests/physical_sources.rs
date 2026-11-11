@@ -298,6 +298,31 @@ fn one_composite() -> Composite {
 }
 
 #[tokio::test]
+async fn wired_xbox_360_source_is_adopted_without_a_composite_name() {
+    let bus = PrivateBus::start().await;
+    let _server = bus
+        .serve(
+            &[one_composite()],
+            &[(TARGET0, Target::new(&["/dev/input/event10"]))],
+        )
+        .await;
+    let mut devices = descriptors();
+    let raw = &mut devices[2];
+    // The 045e:028e source reported in #437 has the same name and USB IDs
+    // as the normalized target, but physical sysfs/phys provenance differs.
+    raw.name = "Microsoft X-Box 360 pad".into();
+    raw.input_id.product = 0x028e;
+    let discovered = bus.discover(&devices).await.unwrap();
+    let identities =
+        korri_inputd::physical_sources::identify_sources(&discovered, &devices, &bus.classifier)
+            .unwrap();
+    assert_eq!(identities.len(), 1);
+    assert_eq!(identities[0].raw, devices[2]);
+    assert_eq!(identities[0].source.descriptor, devices[0]);
+    assert_eq!(identities[0].device_id, "usb-0000:01:00.0-1/input0");
+}
+
+#[tokio::test]
 async fn identical_controllers_resolve_independently_without_dbus0_or_get_all() {
     let bus = PrivateBus::start().await;
     let first = Target::new(&["/dev/input/event10"]);
@@ -356,7 +381,7 @@ async fn shipped_xb360_mouse_keyboard_profile_never_reads_auxiliary_device_paths
     let keyboard = "/org/shadowblip/InputPlumber/devices/target/keyboard0";
     let mouse = "/org/shadowblip/InputPlumber/devices/target/mouse0";
     let dbus = "/org/shadowblip/InputPlumber/devices/target/dbus5";
-    // The built 60-xbox_one_gamepad.yaml declares xb360, mouse and keyboard.
+    // Both selected Xbox profiles declare xb360, mouse and keyboard.
     // Its patched provider errors on mouse/keyboard DevicePaths. The existing
     // DBus target is auxiliary too; its DevicePaths must not be needed either.
     let keyboard_target = Target::auxiliary("keyboard");

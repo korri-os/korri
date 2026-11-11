@@ -733,6 +733,23 @@ mod tests {
         check_readiness(&client, &classifier, ProfileStatus::Applied).await;
         check_readiness(&client, &classifier, ProfileStatus::Ready).await;
 
+        // Production capture loads the same immutable mapping profile for a
+        // single-source Xbox 360 composite. No composite Name is required.
+        let profile =
+            "/nix/store/fixture/share/inputplumber/profiles/korri-60-xbox_one_gamepad.yaml";
+        state.lock().unwrap().sources = vec!["/dev/input/event4".into()];
+        state.lock().unwrap().profile = "/profiles/default.yaml".into();
+        for expected in [ProfileStatus::Applied, ProfileStatus::Ready] {
+            assert_eq!(
+                super::ensure_capture_profiles_unbounded(&client, profile, &classifier)
+                    .await
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(state.lock().unwrap().profile, profile);
+        }
+        state.lock().unwrap().sources = mini_sources.clone();
+
         write_capabilities(root.path(), "event7", "1000000000000 0 0 0 0", "0");
         state
             .lock()
