@@ -637,6 +637,25 @@ fn layer_changes_and_unsets_do_not_change_the_game_sandbox_for_hooks_or_restart(
                     .collect::<Vec<_>>()
             };
             assert_eq!(properties(&game), properties(&hook));
+            // A live hook must see the running game's processes. It keeps every
+            // other part of the game's sandbox.
+            let live = unit
+                .live_hook_arguments(
+                    &launch.launch_id,
+                    &command,
+                    "true",
+                    Duration::from_secs(30),
+                    environment,
+                    hook_sandbox,
+                )
+                .unwrap();
+            let private_pids = String::from("--property=PrivatePIDs=yes");
+            assert!(properties(&hook).contains(&private_pids));
+            assert!(!live.contains(&private_pids));
+            let mut expected = properties(&hook);
+            expected.retain(|argument| argument != &private_pids);
+            assert_eq!(properties(&live), expected);
+            assert!(live.contains(&String::from("--pipe")));
         }
     }
 }

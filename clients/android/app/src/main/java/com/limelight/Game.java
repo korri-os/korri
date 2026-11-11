@@ -1014,17 +1014,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         //streamContainer.getHolder().addCallback(this);
 
         streamContainer.setOnSurfaceAvailable(() -> {
-            if (korriViewerRequested && connected && attemptedConnection) {
-                if (!KorriStreamViewer.canPresent(Game.this, korriViewerLease)) return;
-                if (!decoderRenderer.rebindLiveSurface(streamContainer.getSurface())) {
-                    displayTransientMessage("Could not restore the video surface");
-                    stopConnection();
-                } else {
-                    observeLiveDisplay();
-                    com.simonwjackson.korri.korrid.KorridServer.viewerDisplayChanged();
-                }
-                return;
-            }
             if (!attemptedConnection) {
                 LimeLog.info("Surface is available, starting connection...");
                 if (korriViewerRequested && !KorriStreamViewer.opening(Game.this, korriViewerLease)) {
@@ -3865,10 +3854,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             throw new IllegalStateException("Surface destroyed before creation!");
         }
 
-        if (korriViewerRequested && connected && !isFinishing() && decoderRenderer.parkLiveSurface()) {
-            surfaceCreated = false;
-            return;
-        }
         if (attemptedConnection) {
             // Let the decoder know immediately that the surface is gone
             decoderRenderer.prepareForStop();

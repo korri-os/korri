@@ -76,7 +76,15 @@ impl HostSessionControl {
                 &env,
                 &context.sandbox,
             )
-            .map_err(|e| e.message)
+            .map_err(|e| {
+                // The viewer sees only "Couldn't reshape". Keep the hook's own
+                // reason for the operator; it named the cause on 2026-11-11.
+                eprintln!(
+                    "korrid: display hook failed: launch={launch} hook={index} request={args}: {}",
+                    e.message
+                );
+                e.message
+            })
     }
     fn display_hook_sizes(
         &self,

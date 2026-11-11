@@ -263,15 +263,14 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     }
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        // Detach the decoder before releasing an SGSR input surface. A live
-        // configuration change parks video without ending the connection.
-        game.surfaceDestroyed(holder);
         if (renderMode == StreamMode.MODE_2D) {
             isSurfaceReady = false;
             mCurrentSurface = null;
         } else if (mSgsrRenderer != null) {
             mSgsrRenderer.onSurfaceDestroyed();
         }
+
+        game.surfaceDestroyed(holder);
 
     }
 

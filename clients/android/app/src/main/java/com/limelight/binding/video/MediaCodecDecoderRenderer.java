@@ -383,35 +383,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         return decoderInfo;
     }
 
-    private android.graphics.SurfaceTexture parkedTexture;
-    private Surface parkedSurface;
-
-    public synchronized boolean parkLiveSurface() {
-        if (!liveResolutionEnabled || stopping || videoDecoder == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false;
-        try {
-            if (parkedSurface == null) {
-                parkedTexture = new android.graphics.SurfaceTexture(false);
-                parkedSurface = new Surface(parkedTexture);
-            }
-            videoDecoder.setOutputSurface(parkedSurface);
-            renderTarget = parkedSurface;
-            return true;
-        } catch (RuntimeException refused) { return false; }
-    }
-
-    public synchronized boolean rebindLiveSurface(Surface surface) {
-        if (!liveResolutionEnabled || stopping || videoDecoder == null || surface == null || !surface.isValid()) return false;
-        if (surface == renderTarget) return true;
-        try {
-            videoDecoder.setOutputSurface(surface);
-            renderTarget = surface;
-            if (parkedSurface != null) { parkedSurface.release(); parkedSurface = null; }
-            if (parkedTexture != null) { parkedTexture.release(); parkedTexture = null; }
-            MoonBridge.requestIdrFrame();
-            return true;
-        } catch (RuntimeException refused) { return false; }
-    }
-
     public void setRenderTarget(Surface renderTarget) {
         this.renderTarget = renderTarget;
     }
@@ -1723,8 +1694,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     @Override
     public synchronized void cleanup() {
         videoDecoder.release();
-        if (parkedSurface != null) { parkedSurface.release(); parkedSurface = null; }
-        if (parkedTexture != null) { parkedTexture.release(); parkedTexture = null; }
     }
 
     @Override

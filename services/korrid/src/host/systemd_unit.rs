@@ -1911,6 +1911,35 @@ impl SystemdLaunchUnitBackend {
         Ok(arguments)
     }
 
+    /// A live hook acts on the running game, so it must see the game's
+    /// processes. `PrivatePIDs=yes` on a new unit makes a fresh PID namespace,
+    /// not the game's: the hook then finds no game process and every reshape
+    /// is refused (aka, 2026-11-11). Identity, mounts, capabilities and the
+    /// rest of the game's sandbox stay. Before/after hooks keep the namespace.
+    pub(super) fn live_hook_arguments(
+        &self,
+        launch_id: &str,
+        game_command: &[String],
+        run: &str,
+        timeout: Duration,
+        environment: &BTreeMap<String, String>,
+        sandbox: &LaunchSandbox,
+    ) -> Result<Vec<String>, LaunchUnitError> {
+        let mut arguments = self.hook_arguments_in_sandbox(
+            launch_id,
+            0,
+            game_command,
+            run,
+            timeout,
+            environment,
+            sandbox,
+        )?;
+        arguments.retain(|argument| argument != "--property=PrivatePIDs=yes");
+        // The hook reports its observed size on stdout.
+        arguments.insert(1, "--pipe".into());
+        Ok(arguments)
+    }
+
     pub(super) fn stop_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
         Self::unit_verb_arguments("stop", launch_id)
     }
@@ -2286,16 +2315,8 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
                 "game is not running",
             ));
         }
-        let mut args = self.hook_arguments_in_sandbox(
-            launch_id,
-            0,
-            command,
-            run,
-            timeout,
-            environment,
-            sandbox,
-        )?;
-        args.insert(1, "--pipe".into());
+        let args =
+            self.live_hook_arguments(launch_id, command, run, timeout, environment, sandbox)?;
         self.collect_previous_hook_attempt(launch_id, 0)?;
         let mut helper = self.clone();
         helper.helper_timeout = timeout.saturating_add(Duration::from_secs(15));
