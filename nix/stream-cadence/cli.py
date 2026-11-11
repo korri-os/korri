@@ -312,11 +312,14 @@ def app_name(host: str, info: ET.Element, keydir: Path, server_certificate: str)
         )
     apps = xml_request(f"https://{host}:{int(https_port)}/applist", context)
     names = [row.findtext("AppTitle") for row in apps.findall("App")]
-    if "Desktop" not in names:
-        raise Refusal(
-            "Installed Sunshine does not advertise Desktop. Configure its native Desktop application before testing."
-        )
-    return "Desktop"
+    # Both names stream the display with no command. The plugin's apps.json
+    # names it Korri Stream, as korrid's linux_viewer does; older plugins said Desktop.
+    for name in ("Korri Stream", "Desktop"):
+        if name in names:
+            return name
+    raise Refusal(
+        "Installed Sunshine advertises neither Korri Stream nor Desktop. Repair the installed plugin's application list before testing."
+    )
 
 
 def sender_stream(

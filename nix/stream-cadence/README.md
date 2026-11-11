@@ -75,7 +75,7 @@ plugin version: `plugin_version` is then null, not an invented version.
 
 Sunshine's own listening TCP sockets supply candidate ports. The client probes
 `serverinfo`, obtains the host UUID and HTTPS port, and requires a reachable
-Desktop application. The fresh session journal supplies the encoder and capture
+Korri Stream or Desktop application. The fresh session journal supplies the encoder and capture
 backend. Their names are recorded, never asserted. Live thread samples include
 newly discovered TIDs, names, policies and priorities; no TID crosses sessions.
 
