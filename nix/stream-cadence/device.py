@@ -488,6 +488,8 @@ class Session:
             )
             return {"run_folder": str(self.root), "source_pid": self.source.pid}
         if operation == "sample":
+            # A game that starts during a measure ends the measure: the person wins.
+            games()
             if time.monotonic() - self.last_heartbeat >= 60:
                 wake(self.facts)
                 self.last_heartbeat = time.monotonic()

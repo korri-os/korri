@@ -330,6 +330,7 @@ class Session:
                 threading.Thread(target=self.focus, args=(process.pid,), daemon=True).start()
             return {"pid": process.pid, "start_ns": start}
         if operation == "sample":
+            games()
             if not self.fixture and time.monotonic() - self.last_wake >= 30:
                 # Seat activity keeps a real panel from idling off under the measure.
                 wake(self.shell)
