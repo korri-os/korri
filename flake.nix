@@ -384,6 +384,7 @@
             korrid-game-stop = import ./services/korrid/game-stop-vm-test.nix {
               inherit pkgs;
               korrid = self.packages.${system}.korrid;
+              module = nixosModules.korrid-linux-device;
             };
             korri-boot-splash = import ./brand/plymouth/module-check.nix {
               inherit pkgs nixpkgs;
