@@ -79,25 +79,45 @@ impl Korri {
     }
 }
 
+/// Where QuickJS's cycle collector runs in a run of the scenario.
+#[derive(Clone, Copy, PartialEq)]
+enum Collector {
+    /// As in the shell: inside whichever call crosses its threshold.
+    InCalls,
+    /// Before every counted call, outside it, so no call holds a collection.
+    BetweenCalls,
+}
+
 /// The shell's calls as it makes them, each counted: `update` with the
 /// message, then, when Korri answered a request, `setModel` and
 /// `update(KorriPublished)`; then `view` and `overlay` when the state moved.
 struct Run {
     engine: engine::Engine,
     korri: Korri,
+    collector: Collector,
     counter: Option<Instructions>,
     costs: BTreeMap<String, Vec<u64>>,
     instructions: BTreeMap<String, Vec<u64>>,
+    /// How many calls of each kind held a collection of garbage.
+    collected: BTreeMap<String, usize>,
     /// The last view drawn, to tell where the presses led.
     drawn: Value,
 }
 
 impl Run {
     fn count<T>(&mut self, what: String, call: impl FnOnce(&mut engine::Engine) -> T) -> T {
+        if self.collector == Collector::BetweenCalls {
+            self.engine.collect_garbage();
+        }
+        let threshold = self.engine.gc_threshold();
         let instructions = self.counter.as_ref().map(Instructions::read);
         let started = BudgetClock::ThreadCpu.start();
         let out = call(&mut self.engine);
         let cost = started.elapsed().as_nanos() as u64;
+        // QuickJS moves its threshold only when it collects.
+        if self.engine.gc_threshold() != threshold {
+            *self.collected.entry(what.clone()).or_default() += 1;
+        }
         if let Some(before) = instructions {
             let cost = self.counter.as_ref().unwrap().read() - before;
             self.instructions
@@ -146,7 +166,7 @@ impl Run {
 }
 
 /// One execution of the original scenario in a fresh engine and model.
-fn slow_clock_samples(source: &str) -> Run {
+fn slow_clock_samples(source: &str, collector: Collector) -> Run {
     let (model, mut examples) = korri_shell::verify::fixture();
     // As korrid publishes games today: no cover art (services/korrid/src/surface).
     // PICO_TIMING_ART=1 keeps the fixture's inline art.
@@ -171,9 +191,11 @@ fn slow_clock_samples(source: &str) -> Run {
     let mut run = Run {
         engine,
         korri,
+        collector,
         counter: Instructions::open(),
         costs: BTreeMap::new(),
         instructions: BTreeMap::new(),
+        collected: BTreeMap::new(),
         drawn: json!({}),
     };
     // Boot: korrid is still reading the library; the shell sends the window.
@@ -322,7 +344,8 @@ fn slow_clock_samples(source: &str) -> Run {
 /// shell's Tick each second, attract, the clock's minute, a status), on a
 /// game's own screen, MENU, Find, Settings, the grid and the hero, a resize,
 /// and the pause menu. Each kind of call stays under its limit on the device
-/// (`limit_ms`; the median, as Zone's test; a collection of garbage may add
+/// (`limit_ms`; the median, as Zone's test, of three runs, of which two run
+/// the collector between calls; a collection of garbage may add
 /// `GARBAGE_MS` to one), estimated from thread CPU time with the existing workstation/device
 /// factor and allowance. Instruction counts are diagnostic only (#368).
 #[test]
@@ -335,17 +358,28 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
     .unwrap();
     let mut costs: BTreeMap<String, Vec<u64>> = BTreeMap::new();
     let mut instructions: BTreeMap<String, Vec<u64>> = BTreeMap::new();
-    // The collector lands in whichever call crosses its threshold. With
-    // one call (or the upper median of two), the median is the worst call
-    // and cannot absorb it. Fresh runs independently sample each transition
-    // without changing what the other steps measure or relaxing either guard.
-    for _ in 0..3 {
-        let run = slow_clock_samples(&source);
+    let mut collected: BTreeMap<String, usize> = BTreeMap::new();
+    // The collector lands in whichever call crosses its threshold, and the
+    // same call in every fresh run: the scenario is deterministic. A call
+    // made once per run would then hold a collection in each of its three
+    // samples, and its median would be the collection, not the call (#426).
+    // So the first run collects as the shell does, inside calls, and is
+    // judged by the worst call and `GARBAGE_MS`; the other two collect
+    // between calls, so the median is each call's own cost.
+    for collector in [
+        Collector::InCalls,
+        Collector::BetweenCalls,
+        Collector::BetweenCalls,
+    ] {
+        let run = slow_clock_samples(&source, collector);
         for (what, samples) in run.costs {
             costs.entry(what).or_default().extend(samples);
         }
         for (what, samples) in run.instructions {
             instructions.entry(what).or_default().extend(samples);
+        }
+        for (what, count) in run.collected {
+            *collected.entry(what).or_default() += count;
         }
     }
     let device_ms = |n: u64| n as f64 * PICO_SLOW_FACTOR / 1_000_000.0;
@@ -361,6 +395,18 @@ fn calls_stay_well_inside_the_budget_on_a_slow_clock() {
     let mut over = Vec::new();
     for (what, list) in &costs {
         assert!(list.len() >= 3, "{what}: needs at least three samples");
+        // The runs must place the collector apart: fewer than half of a
+        // kind's calls may hold a collection, so its median is a call
+        // without one.
+        let held = collected.get(what).copied().unwrap_or(0);
+        assert!(
+            held * 2 < list.len(),
+            "{what}: {held} of {} calls held a collection of garbage, so the median would be one",
+            list.len()
+        );
+        if held > 0 {
+            eprintln!("{what}: {held} of {} calls held a collection", list.len());
+        }
         let mut sorted = list.clone();
         sorted.sort();
         let median = sorted[sorted.len() / 2];

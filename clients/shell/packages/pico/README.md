@@ -166,7 +166,11 @@ are optional diagnostics, not pass marks:
 
 QuickJS collects its garbage inside whichever call crosses its threshold,
 which may add up to about 9 ms to that call; the test allows 10 ms more for
-the worst call of each kind. `long_lists_keep_the_cursor_in_sight` (same
+the worst call of each kind. The scenario is deterministic, so the
+collection lands in the same call in every run: the test runs it three
+times, once collecting inside calls as the shell does and twice collecting
+between calls, and fails when half or more of a kind's calls held a
+collection. The median is then each call's own cost (#426). `long_lists_keep_the_cursor_in_sight` (same
 file) walks the shelf, the hero's RESUME list, the grid and Find's results
 far past their first screen and fails a press whose control is out of sight.
 Find's results at 320x240 stay out of sight (on main too) and are not walked

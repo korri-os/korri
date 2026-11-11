@@ -330,6 +330,29 @@ impl Engine {
         self.runtime.memory_usage().memory_used_size.max(0) as usize
     }
 
+    /// Run QuickJS's cycle collector now, between calls, and set its next
+    /// threshold as QuickJS does after a collection it starts itself: half as
+    /// much again as the heap left (quickjs.c, `js_trigger_gc`).
+    pub fn collect_garbage(&self) {
+        self.runtime.run_gc();
+        let left = self.runtime.memory_usage().malloc_size.max(0) as usize;
+        self.runtime.set_gc_threshold(left + left / 2);
+    }
+
+    /// The heap size, in bytes, at which QuickJS next collects garbage. QuickJS
+    /// moves it only when it collects, so a call that changes it collected.
+    pub fn gc_threshold(&self) -> usize {
+        self.context.with(|ctx| {
+            // SAFETY: the context is alive for this closure, and so is the
+            // runtime it belongs to; JS_GetGCThreshold only reads a field.
+            unsafe {
+                rquickjs::qjs::JS_GetGCThreshold(rquickjs::qjs::JS_GetRuntime(
+                    ctx.as_raw().as_ptr(),
+                )) as usize
+            }
+        })
+    }
+
     pub fn limits(&self) -> Limits {
         self.limits
     }
@@ -674,6 +697,27 @@ mod tests {
             elapsed >= Duration::from_millis(200) && elapsed < Duration::from_millis(700),
             "{elapsed:?}"
         );
+    }
+
+    #[test]
+    fn a_collection_between_calls_moves_the_threshold_as_quickjs_does() {
+        // Each update keeps 64 objects that refer to themselves: only the
+        // cycle collector frees them once the next update drops them.
+        let source = "globalThis.surface = { init: () => [], update: (s) => { const kept = []; for (let i = 0; i < 64; i++) { const o = {}; o.self = o; kept.push(o); } return { state: kept, requests: [] }; }, view: () => ({}) };";
+        let mut engine = Engine::load(source, cpu_limits()).expect("load");
+        engine.set_model("{}").expect("model");
+        engine.init(&BTreeMap::new()).expect("init");
+        let before = engine.gc_threshold();
+        engine.collect_garbage();
+        let left = engine.runtime.memory_usage().malloc_size as usize;
+        assert_eq!(engine.gc_threshold(), left + left / 2);
+        assert_ne!(engine.gc_threshold(), before);
+        // A call that crosses no threshold leaves it where it was.
+        let threshold = engine.gc_threshold();
+        engine
+            .update(&json!({"_tag": "KorriPublished"}))
+            .expect("update");
+        assert_eq!(engine.gc_threshold(), threshold);
     }
 
     #[test]
