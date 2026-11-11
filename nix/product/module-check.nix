@@ -6,6 +6,7 @@
 }:
 let
   inherit (pkgs) lib;
+  displayIdleCheck = import ./display-idle-check.nix { inherit pkgs; };
   defaultSystem = pkgs.stdenv.hostPlatform.system;
   # Share the independent reference evaluations across the hostile cases.
   # These are the two platforms exercised below, not candidate package sets.
@@ -912,7 +913,7 @@ assert builtins.elem productPluginPublicKey productConfig.nix.settings.trusted-p
 assert
   productConfig.systemd.services.korri-display-idle.serviceConfig.ExecStart
   == withUnwatchedDisplay.config.systemd.services.korri-display-idle.serviceConfig.ExecStart;
-assert lib.hasInfix "korri-display-power-idle" (
+assert lib.hasInfix "korri-display-idle-timeout" (
   builtins.readFile productConfig.systemd.services.korri-display-idle.serviceConfig.ExecStart
 );
 assert
@@ -1127,6 +1128,7 @@ assert lib.all (rule: !(lib.hasInfix "/users/default" rule)) rg353m.systemd.tmpf
 assert builtins.elem "systemd-tmpfiles-setup.service" rg353m.systemd.services.korrid.after;
 assert builtins.elem "systemd-tmpfiles-setup.service" rg353m.systemd.services.korrid.requires;
 pkgs.runCommand "korri-product-module-check" { } ''
+  test -e ${displayIdleCheck}
   test -x ${sameNameFailingPackage}/${sameNameRelativeExecutable}
   touch "$out"
 ''

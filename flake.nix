@@ -288,6 +288,7 @@
               inherit pkgs;
               korri = self;
             };
+            korri-display-idle = import ./nix/product/display-idle-check.nix { inherit pkgs; };
             korri-product-module = import ./nix/product/module-check.nix {
               inherit pkgs nixpkgs;
               korri = self;
