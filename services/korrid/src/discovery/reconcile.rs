@@ -859,6 +859,7 @@ fn write_atomically(
             return Err(DiscoveryError::Conflict);
         }
         fs::rename(&temporary, path).map_err(|error| DiscoveryError::Storage(error.to_string()))?;
+        crate::file_changes::committed(path);
         fs::File::open(parent)
             .and_then(|directory| directory.sync_all())
             .map_err(|error| DiscoveryError::Storage(error.to_string()))?;
@@ -937,6 +938,7 @@ fn write_json_atomically<T: Serialize>(path: &Path, value: &T) -> Result<(), Dis
         file.sync_all()
             .map_err(|error| DiscoveryError::Storage(error.to_string()))?;
         fs::rename(&temporary, path).map_err(|error| DiscoveryError::Storage(error.to_string()))?;
+        crate::file_changes::committed(path);
         fs::File::open(parent)
             .and_then(|directory| directory.sync_all())
             .map_err(|error| DiscoveryError::Storage(error.to_string()))?;

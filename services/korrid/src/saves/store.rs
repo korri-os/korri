@@ -203,6 +203,7 @@ fn publish(path: &Path, input: &mut dyn Read, expected: Option<&str>) -> Result<
         }
         file.sync_all().map_err(io)?;
         fs::rename(&temp, path).map_err(io)?;
+        crate::file_changes::committed(path);
         File::open(parent).and_then(|f| f.sync_all()).map_err(io)
     })();
     if result.is_err() {
@@ -244,6 +245,20 @@ pub struct NativeSaveStore {
     root: PathBuf,
 }
 impl NativeSaveStore {
+    pub(crate) fn affects_status(relative: &Path) -> bool {
+        let Some(name) = relative.file_name().and_then(|name| name.to_str()) else {
+            return true;
+        };
+        // Advisory liveness and unpublished temporary files are not inputs to
+        // reconciliation, save support, heads, or remote confirmation marks.
+        name != "in-use.json" && !name.starts_with(".save-")
+    }
+
+    /// Existing record/object tree whose mutations invalidate displayed marks.
+    pub(crate) fn status_input_root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn new(private_state_root: &Path) -> Self {
         Self {
             root: private_state_root.join("saves"),
@@ -760,7 +775,10 @@ impl NativeSaveStore {
         for hash in candidates {
             let path = self.object_path(&hash, false)?;
             match regular(&path) {
-                Ok(_) => fs::remove_file(path).map_err(io)?,
+                Ok(_) => {
+                    fs::remove_file(&path).map_err(io)?;
+                    crate::file_changes::committed(&path);
+                }
                 Err(SaveError::Missing) => {}
                 Err(e) => return Err(e),
             }
@@ -1142,6 +1160,7 @@ impl SaveRepository for NativeSaveStore {
         if let Err(SaveError::Missing) = self.authorize_object(person, hash) {
             if regular(&path).is_ok() {
                 fs::remove_file(&path).map_err(io)?;
+                crate::file_changes::committed(&path);
             }
         }
         Ok(())

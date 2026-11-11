@@ -5141,6 +5141,19 @@ fn surface_hub_for(
     });
     surface::SurfaceHub::new(
         surface::korrid::Korrid::new(send)
+            .with_save_changes(match &surface_host.mode {
+                ServerMode::Host(host) => match host.save_status_changes() {
+                    Ok(changes) => Some(changes),
+                    Err(error) => {
+                        eprintln!(
+                            "korrid: save status observation unavailable: {}",
+                            error.message
+                        );
+                        None
+                    }
+                },
+                ServerMode::Brain(_) => None,
+            })
             .with_launch_steps(steps)
             .with_viewer(match &surface_host.mode {
                 ServerMode::Brain(brain) => Some(brain.upstream.local_viewer()),
@@ -6333,6 +6346,7 @@ pub mod android_local;
 pub mod android_plugin_admin;
 #[cfg(test)]
 mod controller_count_tests;
+mod file_changes;
 pub mod host;
 pub mod launcher;
 pub mod nixfree_install;

@@ -340,37 +340,91 @@ impl HostRuntime {
         }
         None
     }
+    fn save_status_projection(
+        &self,
+    ) -> Result<Arc<super::save_status_projection::SaveStatusProjection>, RpcFailure> {
+        self.save_projection
+            .get_or_init(|| {
+                use crate::file_changes::InputPath;
+                let mut inputs = vec![
+                    InputPath {
+                        path: self.save_store().status_input_root().to_owned(),
+                        recursive: true,
+                        filter: Some(NativeSaveStore::affects_status),
+                    },
+                    InputPath {
+                        path: self
+                            .private_state_root
+                            .join(crate::identity::IDENTITY_DIRECTORY),
+                        recursive: true,
+                        filter: None,
+                    },
+                ];
+                if let Ok(root) = self.route_root() {
+                    inputs.extend(crate::config::snapshot::FILE_NAMES.iter().map(|name| {
+                        InputPath {
+                            path: root.join(name),
+                            recursive: false,
+                            filter: None,
+                        }
+                    }));
+                }
+                if matches!(self.dynamic, Some(DynamicHostSource::Installed(_))) {
+                    inputs.push(InputPath {
+                        path: crate::plugin_installation::REGISTRY_PATH.into(),
+                        recursive: false,
+                        filter: None,
+                    });
+                }
+                super::save_status_projection::SaveStatusProjection::new(inputs).map(Arc::new)
+            })
+            .clone()
+    }
+
+    pub(crate) fn save_status_changes(
+        &self,
+    ) -> Result<tokio::sync::watch::Receiver<crate::file_changes::InputState>, RpcFailure> {
+        Ok(self.save_status_projection()?.subscribe())
+    }
+
     pub(crate) async fn save_status(&self) -> Result<SaveStatus, RpcFailure> {
+        let projection = self.save_status_projection()?;
+        projection.ready().await?;
         let host = self.clone();
         tokio::task::spawn_blocking(move || {
+            // A reset or owner switch must not reuse the previous person's
+            // marks, even before an external filesystem notification arrives.
             let person = &host.launch_person()?;
-            let store = host.save_store();
-            let routes = host.save_routes();
-            let mut games: std::collections::BTreeSet<String> = store
-                .heads(person)
-                .map_err(failure)?
-                .games
-                .into_iter()
-                .map(|g| g.game_id)
-                .collect();
-            if let Ok(catalog) = host.catalog_snapshot_blocking(Some(person)) {
-                games.extend(catalog.games.into_iter().map(|g| g.id));
-            }
-            let mut statuses = Vec::new();
-            for game in games {
-                // The mark reconciles this game first, and that may change its
-                // heads, so its heads are read after the mark.
-                let status = host.save_mark_in(&routes, &game)?;
-                let heads =
-                    crate::saves::store::head_ids(&store.records(person, &game).map_err(failure)?)
-                        .map_err(failure)?;
-                statuses.push(GameSaveStatus {
-                    game_id: game,
-                    status,
-                    heads,
-                });
-            }
-            Ok(SaveStatus { games: statuses })
+            projection.read(person, || {
+                let store = host.save_store();
+                let routes = host.save_routes();
+                let mut games: std::collections::BTreeSet<String> = store
+                    .heads(person)
+                    .map_err(failure)?
+                    .games
+                    .into_iter()
+                    .map(|g| g.game_id)
+                    .collect();
+                if let Ok(catalog) = host.catalog_snapshot_blocking(Some(person)) {
+                    games.extend(catalog.games.into_iter().map(|g| g.id));
+                }
+                let mut statuses = Vec::new();
+                for game in games {
+                    // The mark reconciles this game first, and that may change its
+                    // heads, so its heads are read after the mark.
+                    let status = host.save_mark_in(&routes, &game)?;
+                    let heads = crate::saves::store::head_ids(
+                        &store.records(person, &game).map_err(failure)?,
+                    )
+                    .map_err(failure)?;
+                    statuses.push(GameSaveStatus {
+                        game_id: game,
+                        status,
+                        heads,
+                    });
+                }
+                Ok(SaveStatus { games: statuses })
+            })
         })
         .await
         .map_err(host_worker_failure)?

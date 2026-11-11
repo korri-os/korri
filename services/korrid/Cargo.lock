@@ -2498,6 +2498,7 @@ dependencies = [
  "netlink-packet-route 0.33.0",
  "netlink-sys 0.9.0",
  "nostr",
+ "notify",
  "oxc",
  "proseql-engine",
  "proseql-formats",

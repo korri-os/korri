@@ -2705,6 +2705,74 @@ mod save_sync {
     const HERE: &str = "here-key";
     const ZAO: &str = "zao-key";
 
+    #[tokio::test(start_paused = true)]
+    async fn save_marks_refresh_on_changes_not_time_and_peer_renames_do_not_reload_marks() {
+        let (client, script) = scripted();
+        let (changes, receiver) =
+            tokio::sync::watch::channel(crate::file_changes::InputState::Ready(0));
+        let client = client.with_save_changes(Some(receiver));
+        push(
+            &script,
+            "app.saves.status",
+            json!({"_tag":"Ok","payload":{"games":[]}}),
+        );
+        push(
+            &script,
+            "app.peer.list",
+            json!({"_tag":"Ok","payload":{"peers":[
+                {"devicePublicKey":ZAO,"label":"zao","state":"ready","updatedAt":1}
+            ]}}),
+        );
+        let sync = SaveSync::new(
+            client.clone(),
+            Arc::new(|| {}),
+            Arc::new(|| [HERE.to_owned()].into()),
+            Duration::from_millis(200),
+        );
+        sync.start();
+        settle().await;
+        let reads = || {
+            script
+                .lock()
+                .unwrap()
+                .calls
+                .iter()
+                .filter(|(tag, _)| tag == "app.saves.status")
+                .count()
+        };
+        assert_eq!(reads(), 1);
+        tokio::time::advance(Duration::from_secs(60)).await;
+        settle().await;
+        assert_eq!(reads(), 1, "elapsed time triggered a save-status read");
+        changes.send_replace(crate::file_changes::InputState::Ready(1));
+        settle().await;
+        assert_eq!(reads(), 2);
+        push(
+            &script,
+            "app.saves.history",
+            json!({"_tag":"Ok","payload":{"current":"a","records":[
+                entry("a", ZAO, "2026-10-01T00:00:00.000Z", &[])
+            ]}}),
+        );
+        sync.open_history(game());
+        settle().await;
+        let before_rename = reads();
+        push(
+            &script,
+            "app.peer.list",
+            json!({"_tag":"Ok","payload":{"peers":[
+                {"devicePublicKey":ZAO,"label":"renamed device","state":"ready","updatedAt":2}
+            ]}}),
+        );
+        client.peer_list().await;
+        settle().await;
+        assert_eq!(reads(), before_rename);
+        let Some(SurfaceSaveHistory::Ready { entries, .. }) = sync.history() else {
+            panic!("history unavailable")
+        };
+        assert_eq!(entries[0].device, "renamed device");
+    }
+
     fn entry(id: &str, device: &str, ended: &str, parents: &[&str]) -> Value {
         json!({ "snapshotId": id, "record": { "parents": parents, "gameId": "wl4", "runnerId": "r", "device": device,
             "endedAt": ended, "durationSeconds": 60, "interrupted": false, "locations": [] } })

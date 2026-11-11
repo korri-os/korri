@@ -47,6 +47,8 @@ pub(crate) type LaunchStepsResolver = Arc<
 #[derive(Clone)]
 pub struct Korrid {
     send: Send_,
+    peer_labels: tokio::sync::watch::Sender<std::collections::HashMap<String, String>>,
+    pub(crate) save_changes: Option<tokio::sync::watch::Receiver<crate::file_changes::InputState>>,
     launch_steps: Option<LaunchStepsResolver>,
     pub(crate) viewer: Option<Arc<dyn crate::linux_viewer::LinuxStreamViewer>>,
 }
@@ -122,9 +124,19 @@ macro_rules! ask {
 pub(crate) use ask;
 
 impl Korrid {
+    pub(crate) fn with_save_changes(
+        mut self,
+        changes: Option<tokio::sync::watch::Receiver<crate::file_changes::InputState>>,
+    ) -> Self {
+        self.save_changes = changes;
+        self
+    }
+
     pub fn new(send: Send_) -> Self {
         Self {
             send,
+            peer_labels: tokio::sync::watch::channel(std::collections::HashMap::new()).0,
+            save_changes: None,
             launch_steps: None,
             viewer: None,
         }
@@ -165,14 +177,35 @@ impl Korrid {
             .map_err(|refusal| failure(mapping, refusal))
     }
 
+    pub(crate) fn peer_labels(
+        &self,
+    ) -> tokio::sync::watch::Receiver<std::collections::HashMap<String, String>> {
+        self.peer_labels.subscribe()
+    }
+
     pub async fn peer_list(&self) -> PeerListOutcome {
-        call!(
+        let outcome = call!(
             self,
             Mapping::Unreachable,
             PeerList,
             crate::PeerListRequest {},
             PeerListOutcome
-        )
+        );
+        if let PeerListOutcome::Ok(list) = &outcome {
+            let labels = list
+                .peers
+                .iter()
+                .map(|peer| (peer.device_public_key.clone(), peer.label.clone()))
+                .collect();
+            self.peer_labels.send_if_modified(|current| {
+                if *current == labels {
+                    return false;
+                }
+                *current = labels;
+                true
+            });
+        }
+        outcome
     }
     pub async fn catalog_snapshot(&self) -> CatalogSnapshotOutcome {
         call!(

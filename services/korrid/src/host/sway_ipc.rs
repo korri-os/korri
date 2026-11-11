@@ -36,33 +36,6 @@ impl SwayIpc {
         })
     }
 
-    /// Subscribe before reading the initial snapshot, so changes during that
-    /// read remain queued. Events never share the command connection.
-    pub(super) fn subscribe(&self) -> io::Result<SwaySubscription> {
-        let deadline = Instant::now() + self.timeout;
-        let mut stream = self.connect(deadline)?;
-        let response = exchange(
-            &mut stream,
-            deadline,
-            2,
-            br#"["window","workspace","output","shutdown"]"#,
-        )?;
-        #[derive(serde::Deserialize)]
-        struct Accepted {
-            success: bool,
-        }
-        let accepted: Accepted = serde_json::from_str(&response)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        if !accepted.success {
-            return Err(io::Error::other("Sway refused the subscription"));
-        }
-        stream.set_read_timeout(None)?;
-        Ok(SwaySubscription {
-            stream,
-            timeout: self.timeout,
-        })
-    }
-
     fn connect(&self, deadline: Instant) -> io::Result<UnixStream> {
         let socket = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)?;
         socket.connect_timeout(
@@ -97,41 +70,6 @@ impl SwayIpc {
             *connection = None;
         }
         result
-    }
-}
-
-/// Blocks without periodic wakeups while Sway has no events. The owner shuts
-/// down a cloned socket when it stops the worker. EOF invalidates cached facts.
-#[derive(Debug)]
-pub(super) struct SwaySubscription {
-    stream: UnixStream,
-    timeout: Duration,
-}
-
-impl SwaySubscription {
-    pub(super) fn cancellation_socket(&self) -> io::Result<UnixStream> {
-        self.stream.try_clone()
-    }
-
-    pub(super) fn next_event(&mut self) -> io::Result<()> {
-        let mut header = [0; 14];
-        self.stream.set_read_timeout(None)?;
-        self.stream.read_exact(&mut header[..1])?;
-        let deadline = Instant::now() + self.timeout;
-        read_exact(&mut self.stream, &mut header[1..], deadline)?;
-        let length = u32::from_le_bytes(header[6..10].try_into().expect("length field")) as usize;
-        let kind = u32::from_le_bytes(header[10..14].try_into().expect("type field"));
-        if &header[..6] != MAGIC || length > MAX_PAYLOAD || kind & (1 << 31) == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid Sway event frame",
-            ));
-        }
-        let mut payload = vec![0; length];
-        read_exact(&mut self.stream, &mut payload, deadline)?;
-        serde_json::from_slice::<serde_json::Value>(&payload)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        Ok(())
     }
 }
 
@@ -319,59 +257,6 @@ mod tests {
             "{}"
         );
         task.join().unwrap();
-    }
-
-    #[test]
-    fn subscription_receives_changes_and_shutdown_cancels_an_idle_reader() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("sway.sock");
-        let listener = UnixListener::bind(&path).unwrap();
-        let (release, hold) = std::sync::mpsc::channel();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            reply(&mut stream, 2, br#"{"success":true}"#);
-            stream.write_all(MAGIC).unwrap();
-            stream.write_all(&2u32.to_le_bytes()).unwrap();
-            stream.write_all(&((1u32 << 31) | 3).to_le_bytes()).unwrap();
-            stream.write_all(b"{}").unwrap();
-            hold.recv().unwrap();
-        });
-        let control = SwayIpc::new(path, Duration::from_secs(1)).unwrap();
-        let mut subscription = control.subscribe().unwrap();
-        subscription.next_event().unwrap();
-        let cancel = subscription.cancellation_socket().unwrap();
-        let reader = thread::spawn(move || subscription.next_event());
-        cancel.shutdown(std::net::Shutdown::Both).unwrap();
-        assert!(reader.join().unwrap().is_err());
-        release.send(()).unwrap();
-        server.join().unwrap();
-    }
-
-    #[test]
-    fn a_refused_subscription_is_not_an_observation_feed() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("sway.sock");
-        let listener = UnixListener::bind(&path).unwrap();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            reply(&mut stream, 2, br#"{"success":false}"#);
-        });
-        let control = SwayIpc::new(path, Duration::from_secs(1)).unwrap();
-        assert!(control.subscribe().is_err());
-        server.join().unwrap();
-    }
-
-    #[test]
-    fn a_partial_event_has_a_deadline() {
-        let (client, mut server) = UnixStream::pair().unwrap();
-        server.write_all(b"i").unwrap();
-        let mut subscription = SwaySubscription {
-            stream: client,
-            timeout: Duration::from_millis(30),
-        };
-        let started = Instant::now();
-        assert!(subscription.next_event().is_err());
-        assert!(started.elapsed() < Duration::from_secs(1));
     }
 
     #[test]

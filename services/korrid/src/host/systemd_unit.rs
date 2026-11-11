@@ -346,44 +346,26 @@ impl ShellUnit for SystemdShellUnit {
         self.freezer_enabled
     }
     fn window_pids(&self) -> Result<BTreeSet<i32>, LaunchUnitError> {
-        // ControlGroup and MainPID come from the same exact service already
-        // used for shell freeze/thaw. A window app_id is not stable identity.
-        let output = self.helper.require_success(
-            &self.helper.systemctl,
-            &[
-                "--system".into(),
-                "--no-ask-password".into(),
-                "show".into(),
-                self.unit.clone(),
-                "--property=ControlGroup".into(),
-                "--property=MainPID".into(),
-            ],
-        )?;
+        // The service names its cgroup; the kernel supplies current members.
+        // A cached MainPID can outlive a restart and must not authorize a PID
+        // that the kernel has since assigned to an unrelated process.
+        let snapshot = self.helper.unit_properties(&self.unit, &["ControlGroup"])?;
+        if snapshot.values.get("LoadState").map(String::as_str) == Some("not-found") {
+            return Ok(BTreeSet::new());
+        }
         let malformed = || {
             LaunchUnitError::new(
                 LaunchUnitErrorKind::Protocol,
                 "invalid shell unit process properties",
             )
         };
-        let text = std::str::from_utf8(&output.stdout).map_err(|_| malformed())?;
-        let mut properties = BTreeMap::new();
-        for line in text.trim().lines() {
-            let (key, value) = line.split_once('=').ok_or_else(malformed)?;
-            if properties.insert(key, value).is_some() {
-                return Err(malformed());
-            }
-        }
-        if properties.len() != 2 {
-            return Err(malformed());
-        }
+        let properties: BTreeMap<&str, &str> = snapshot
+            .values
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
         let group = *properties.get("ControlGroup").ok_or_else(malformed)?;
-        let main = properties
-            .get("MainPID")
-            .ok_or_else(malformed)?
-            .parse::<u32>()
-            .map_err(|_| malformed())?;
-        let main = i32::try_from(main).map_err(|_| malformed())?;
-        let mut pids = if group.is_empty() {
+        let pids = if group.is_empty() {
             BTreeSet::new()
         } else {
             let relative = std::path::Path::new(group)
@@ -401,9 +383,6 @@ impl ShellUnit for SystemdShellUnit {
                 relative.to_str().ok_or_else(malformed)?,
             )?
         };
-        if main > 0 {
-            pids.insert(main);
-        }
         Ok(pids)
     }
 
@@ -421,15 +400,19 @@ impl ShellUnit for SystemdShellUnit {
         if !self.freezer_enabled {
             return Ok(());
         }
-        let state = self.helper.observe_state(&[
-            "--system".into(),
-            "--no-ask-password".into(),
-            "show".into(),
-            self.unit.clone(),
-            "--property=LoadState".into(),
-            "--property=ActiveState".into(),
-            "--property=FreezerState".into(),
-        ])?;
+        self.helper.invalidate_observations()?;
+        let snapshot = self
+            .helper
+            .unit_properties(&self.unit, &["LoadState", "ActiveState", "FreezerState"])?;
+        if snapshot.values.get("LoadState").map(String::as_str) == Some("not-found") {
+            return Ok(());
+        }
+        let values = snapshot
+            .values
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        let state = SystemdLaunchUnitBackend::parse_unit_state(&values)?;
         if !state.needs_thaw_before_stop() {
             return Ok(());
         }
@@ -600,7 +583,17 @@ pub(super) fn read_unit_pids(root: &Path, unit: &str) -> Result<BTreeSet<i32>, L
 }
 
 #[derive(Clone, Debug)]
+enum UnitObservation {
+    Native(
+        Arc<std::sync::OnceLock<Result<Arc<super::systemd_observation::NativeUnitReader>, String>>>,
+    ),
+    #[cfg(test)]
+    Commands,
+}
+
+#[derive(Clone, Debug)]
 pub struct SystemdLaunchUnitBackend {
+    observation: UnitObservation,
     stream_viewer: bool,
     pub(super) systemd_run: PathBuf,
     pub(super) systemctl: PathBuf,
@@ -975,6 +968,97 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
 }
 
 impl SystemdLaunchUnitBackend {
+    #[cfg(test)]
+    pub(super) fn with_native_observation(
+        mut self,
+        reader: Arc<super::systemd_observation::NativeUnitReader>,
+    ) -> Self {
+        let source = std::sync::OnceLock::new();
+        source.set(Ok(reader)).unwrap();
+        self.observation = UnitObservation::Native(Arc::new(source));
+        self
+    }
+
+    fn invalidate_observations(&self) -> Result<(), LaunchUnitError> {
+        match &self.observation {
+            UnitObservation::Native(source) => {
+                if let Some(Ok(reader)) = source.get() {
+                    reader.invalidate(self.helper_timeout).map_err(|error| {
+                        LaunchUnitError::new(LaunchUnitErrorKind::Failed, error)
+                    })?;
+                }
+            }
+            #[cfg(test)]
+            UnitObservation::Commands => (),
+        }
+        Ok(())
+    }
+
+    fn unit_properties(
+        &self,
+        unit: &str,
+        _properties: &[&str],
+    ) -> Result<super::systemd_observation::UnitProperties, LaunchUnitError> {
+        use super::systemd_observation::{NativeUnitReader, UnitProperties};
+        let failed = |message| LaunchUnitError::new(LaunchUnitErrorKind::Failed, message);
+        match &self.observation {
+            UnitObservation::Native(reader) => {
+                let reader = reader
+                    .get_or_init(|| {
+                        NativeUnitReader::new()
+                            .map(Arc::new)
+                            .map_err(|error| error.to_string())
+                    })
+                    .as_ref()
+                    .map_err(|error| failed(error.clone()))?;
+                Ok(reader
+                    .read(unit, self.helper_timeout)
+                    .map_err(failed)?
+                    .unwrap_or_else(|| UnitProperties {
+                        values: BTreeMap::from([("LoadState".into(), "not-found".into())]),
+                        environment: Vec::new(),
+                    }))
+            }
+            #[cfg(test)]
+            UnitObservation::Commands => {
+                // Existing process fixtures supply controlled native facts.
+                // Production never selects this source or falls back to it.
+                let mut arguments = vec![
+                    "--system".into(),
+                    "--no-ask-password".into(),
+                    "show".into(),
+                    unit.into(),
+                ];
+                arguments.extend(_properties.iter().map(|name| format!("--property={name}")));
+                let output = self.run(&self.systemctl, &arguments)?;
+                let text = std::str::from_utf8(&output.stdout)
+                    .map_err(|error| failed(error.to_string()))?;
+                let values: BTreeMap<String, String> = text
+                    .lines()
+                    .filter_map(|line| line.split_once('='))
+                    .map(|(key, value)| (key.into(), value.into()))
+                    .collect();
+                if values.get("LoadState").map(String::as_str) != Some("not-found")
+                    && !output.status.success()
+                {
+                    return Err(failed(format!(
+                        "systemctl show failed with {}: {}",
+                        output.status,
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    )));
+                }
+                let environment = values
+                    .get("Environment")
+                    .and_then(|value| Self::parse_systemd_environment(value).ok())
+                    .unwrap_or_default();
+                Ok(UnitProperties {
+                    values,
+                    environment,
+                })
+            }
+        }
+    }
+
     /// Only the native viewer may read Moonlight's client private key.
     pub(crate) fn for_stream_viewer(mut self) -> Self {
         self.stream_viewer = true;
@@ -1033,6 +1117,10 @@ impl SystemdLaunchUnitBackend {
             },
             DEFAULT_HELPER_TIMEOUT,
         )
+        .map(|mut backend| {
+            backend.observation = UnitObservation::Commands;
+            backend
+        })
     }
 
     #[cfg(test)]
@@ -1063,6 +1151,10 @@ impl SystemdLaunchUnitBackend {
             },
             helper_timeout,
         )
+        .map(|mut backend| {
+            backend.observation = UnitObservation::Commands;
+            backend
+        })
     }
 
     fn with_timeout_and_paths(
@@ -1138,6 +1230,7 @@ impl SystemdLaunchUnitBackend {
             ));
         }
         Ok(Self {
+            observation: UnitObservation::Native(Arc::new(std::sync::OnceLock::new())),
             stream_viewer: false,
             systemd_run,
             systemctl,
@@ -1200,6 +1293,7 @@ impl SystemdLaunchUnitBackend {
             DEFAULT_HELPER_TIMEOUT,
         )
         .unwrap_or(Self {
+            observation: UnitObservation::Native(Arc::new(std::sync::OnceLock::new())),
             stream_viewer: false,
             systemd_run,
             systemctl,
@@ -2101,33 +2195,8 @@ impl SystemdLaunchUnitBackend {
         }
     }
 
-    /// Runs one `systemctl show` for ActiveState and FreezerState. A unit
-    /// systemd does not know is reported as completed.
-    fn observe_state(&self, arguments: &[String]) -> Result<LaunchUnitState, LaunchUnitError> {
-        let output = self.run(&self.systemctl, arguments)?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let values: BTreeMap<_, _> = stdout
-            .lines()
-            .filter_map(|line| line.split_once('='))
-            .collect();
-        if values.get("LoadState").copied() == Some("not-found") {
-            return Ok(LaunchUnitState::Completed);
-        }
-        if !output.status.success() {
-            return Err(LaunchUnitError::new(
-                LaunchUnitErrorKind::Failed,
-                format!(
-                    "systemctl show failed with {}: {}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ),
-            ));
-        }
-        Self::parse_unit_state(&values)
-    }
-
     // This is the diagnostic part of an already-observed UnitFailed result.
-    // Keep it separate from the systemctl subprocess so its lock-held work can
+    // Keep it separate from native observation so its lock-held work can
     // be regression-tested independently of process scheduling and IPC.
     // This remains synchronous under session control's transition guard:
     // moving the observation outside it requires revalidating the exact live
@@ -2469,13 +2538,23 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         &self,
         launch_id: &str,
     ) -> Result<(LaunchUnitState, Option<String>), LaunchUnitError> {
-        let arguments = Self::state_arguments(launch_id)?;
+        let snapshot = self.unit_properties(
+            &Self::unit_name(launch_id)?,
+            &[
+                "LoadState",
+                "ActiveState",
+                "FreezerState",
+                "ExecMainCode",
+                "ExecMainStatus",
+                "StatusText",
+                "Environment",
+            ],
+        )?;
         let directory = self.diagnostics_root.join(launch_id);
-        let output = self.run(&self.systemctl, &arguments)?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let values: BTreeMap<_, _> = stdout
-            .lines()
-            .filter_map(|line| line.split_once('='))
+        let values: BTreeMap<&str, &str> = snapshot
+            .values
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect();
         // Only the host-injected exact-unit environment marker grants access
         // to these files. It survives daemon restarts without a second cache.
@@ -2483,10 +2562,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
             "{}=/run/korri-game-{launch_id}/diagnostics",
             super::launch_diagnostics::DIRECTORY_ENV
         );
-        let captures_stderr = values
-            .get("Environment")
-            .and_then(|value| Self::parse_systemd_environment(value).ok())
-            .is_some_and(|values| values.contains(&marker));
+        let captures_stderr = snapshot.environment.contains(&marker);
         let diagnostics_available = if captures_stderr {
             // spawn_shell_watch already observes the live session every second,
             // including when the shell cannot poll. No new maintenance thread.
@@ -2502,15 +2578,6 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         };
         let state = if values.get("LoadState").copied() == Some("not-found") {
             Ok(LaunchUnitState::Completed)
-        } else if !output.status.success() {
-            return Err(LaunchUnitError::new(
-                LaunchUnitErrorKind::Failed,
-                format!(
-                    "systemctl show failed with {}: {}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ),
-            ));
         } else {
             Self::parse_unit_state(&values)
         };
@@ -2628,6 +2695,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     /// know the unit completed tolerate the `Failed` result by re-reading
     /// state, as before.
     fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        self.invalidate_observations()?;
         let (needs_thaw, failed) = match self.state(launch_id) {
             Ok(state) => (state.needs_thaw_before_stop(), false),
             Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => (false, true),
@@ -2643,6 +2711,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         }
         let arguments = Self::stop_arguments(launch_id)?;
         self.require_success(&self.systemctl, &arguments)?;
+        self.invalidate_observations()?;
         // Stop does not reset a failed service. Release its retained exit
         // metadata only after the caller captured the failure.
         if failed {
@@ -2660,14 +2729,14 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
 
     fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
         let arguments = Self::freeze_arguments(launch_id)?;
-        self.require_success(&self.systemctl, &arguments)
-            .map(|_| ())
+        self.require_success(&self.systemctl, &arguments)?;
+        self.invalidate_observations()
     }
 
     fn thaw(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
         let arguments = Self::thaw_arguments(launch_id)?;
-        self.require_success(&self.systemctl, &arguments)
-            .map(|_| ())
+        self.require_success(&self.systemctl, &arguments)?;
+        self.invalidate_observations()
     }
 
     fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError> {
@@ -2774,6 +2843,22 @@ mod tests {
             2002,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_cached_main_pid_without_kernel_membership_is_not_shell_identity() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("properties");
+        std::fs::write(
+            &helper,
+            "#!/bin/sh\nprintf 'ControlGroup=\\nMainPID=1234\\n'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = SystemdLaunchUnitBackend::new(helper.clone(), helper, 1000, 2002).unwrap();
+        let shell = SystemdShellUnit::new(backend, "korri-shell.service", false).unwrap();
+        assert!(shell.window_pids().unwrap().is_empty());
     }
 
     #[test]

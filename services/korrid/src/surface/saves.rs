@@ -33,7 +33,6 @@ use crate::{
 /// ADR 0014: the pre-launch wait for other devices is at most 3 seconds.
 pub const SAVE_CHECK_LIMIT: Duration = Duration::from_millis(3000);
 /// Marks change when sessions end and when devices meet.
-pub const SAVE_STATUS_POLL: Duration = Duration::from_secs(15);
 /// Game action that opens a game's save history.
 pub const SAVE_HISTORY_ACTION_ID: &str = "save-history";
 /// The Split mark's action: open the split choice without launching.
@@ -531,13 +530,43 @@ impl SaveSync {
         self.lock().generation == operation
     }
 
-    /// Re-read every mark and the peer names; then every 15 s.
+    /// Read once, then only when the host's save-status inputs change.
     pub fn start(self: &Arc<Self>) {
+        // Reuse the other controllers' peer observations. A device rename must
+        // update history labels without rebuilding every game's save status.
+        let labels_controller = Arc::clone(self);
+        let mut peer_labels = self.korrid.peer_labels();
+        tokio::spawn(async move {
+            while peer_labels.changed().await.is_ok() {
+                let labels = peer_labels.borrow_and_update().clone();
+                let changed = {
+                    let mut inner = labels_controller.lock();
+                    if inner.peers == labels {
+                        false
+                    } else {
+                        inner.peers = labels;
+                        true
+                    }
+                };
+                if changed {
+                    labels_controller.render();
+                }
+            }
+        });
         let this = Arc::clone(self);
+        let mut changes = self.korrid.save_changes.clone();
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(SAVE_STATUS_POLL).await;
+                if let Some(changes) = &mut changes {
+                    changes.borrow_and_update();
+                }
                 this.refresh().await;
+                let Some(changes) = &mut changes else {
+                    return;
+                };
+                if changes.changed().await.is_err() {
+                    return;
+                }
             }
         });
     }

@@ -48,6 +48,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 indexmap = { version = "2", features = ["serde"] }
 serde_yaml = "0.9"
+notify = "6.1"
 sha2 = "0.10"
 # ADR 0054: the Android app reads signed Nix file-cache archives without Nix.
 base64 = "0.22"

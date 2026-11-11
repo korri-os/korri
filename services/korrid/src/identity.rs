@@ -31,7 +31,7 @@ pub(crate) mod iroh;
 mod nearby;
 pub(crate) mod offline;
 
-const IDENTITY_DIRECTORY: &str = "identity";
+pub(crate) const IDENTITY_DIRECTORY: &str = "identity";
 const DEVICE_KEY_FILE: &str = "device.key";
 const OWNER_EVENT_FILE: &str = "owner.event.json";
 const NIP46_CLIENT_KEY_FILE: &str = "nip46-client.key";
@@ -1292,6 +1292,7 @@ fn write_private_atomically(path: &Path, content: &[u8]) -> Result<(), IdentityE
             .map_err(|_| IdentityError::Storage)?;
         file.sync_all().map_err(|_| IdentityError::Storage)?;
         fs::rename(&temporary, path).map_err(|_| IdentityError::Storage)?;
+        crate::file_changes::committed(path);
         sync_directory(parent)
     })();
     if result.is_err() {

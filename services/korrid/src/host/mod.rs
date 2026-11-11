@@ -1,10 +1,11 @@
 pub(crate) mod compositor_focus;
 pub mod display_placement;
 pub(crate) mod launch_diagnostics;
+mod save_status_projection;
 mod sway_ipc;
-mod sway_observation;
 #[cfg(test)]
 pub(crate) mod sway_test_peer;
+mod systemd_observation;
 #[cfg(test)]
 pub(crate) use compositor_focus::CompositorControl;
 #[cfg(test)]
@@ -244,6 +245,9 @@ struct HostLaunchCommand {
 #[derive(Clone)]
 pub struct HostRuntime {
     save_service: Arc<std::sync::OnceLock<Arc<crate::saves::peer::SavePeerService>>>,
+    save_projection: Arc<
+        std::sync::OnceLock<Result<Arc<save_status_projection::SaveStatusProjection>, RpcFailure>>,
+    >,
     private_state_root: PathBuf,
     route_write_lock: Arc<std::sync::Mutex<()>>,
     /// The active session's title, found once per launch. See
@@ -359,6 +363,7 @@ impl HostRuntime {
         Self {
             private_state_root,
             save_service: Arc::new(std::sync::OnceLock::new()),
+            save_projection: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             active_title: Arc::new(std::sync::Mutex::new(None)),
             title_lookup: Arc::new(std::sync::Mutex::new(())),
@@ -406,6 +411,7 @@ impl HostRuntime {
         Self {
             private_state_root,
             save_service: Arc::new(std::sync::OnceLock::new()),
+            save_projection: Arc::new(std::sync::OnceLock::new()),
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             active_title: Arc::new(std::sync::Mutex::new(None)),
             title_lookup: Arc::new(std::sync::Mutex::new(())),

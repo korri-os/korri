@@ -20,6 +20,7 @@ pkgs.mkShell {
     python3 # CLI real-terminal input tests; not a target runtime dependency.
     openssh
     systemd
+    dbus # Private bus for native systemd observation tests.
     unzip
   ];
 

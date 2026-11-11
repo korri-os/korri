@@ -513,6 +513,7 @@ pub(crate) fn write_atomically(
         }
 
         fs::rename(&temporary, path).map_err(|error| SettingsError::Storage(error.to_string()))?;
+        crate::file_changes::committed(path);
         Ok(())
     })();
     if result.is_err() {
