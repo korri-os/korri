@@ -66,6 +66,7 @@ impl LocalInputViewer {
             match action {
                 Input::Begin => {
                     control.input_seats.ready()?;
+                    control.wake_viewer_displays()?;
                     if session.is_none() {
                         control
                             .input_seats

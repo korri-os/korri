@@ -46,6 +46,9 @@ impl HostSessionControl {
                     "That launch is no longer live on this device.",
                 ));
             }
+            // The viewer may capture as soon as this reply reaches its peer.
+            self.wake_launch_displays(&active.launch_id)
+                .map_err(|message| failure("PlacementFailed", message))?;
             let mut record = read_active(&self.identity_root)
                 .map_err(|_| recovery_blocked_failure())?
                 .ok_or_else(|| failure("NoActiveSession", "This device has no live session."))?;

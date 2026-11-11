@@ -391,6 +391,19 @@ pub enum DisplayWakeOutcome {
 }
 
 #[typeshare::typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DisplayIdleRequest {}
+
+#[typeshare::typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum DisplayIdleOutcome {
+    Ok,
+    Err(crate::RpcFailure),
+}
+
+#[typeshare::typeshare]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SurfaceDisplayScope {

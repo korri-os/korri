@@ -97,3 +97,28 @@ scope. There is no portal global-fullscreen/bounding-rectangle path, distinct-
 size preparation or readiness reflow. The overlay on a free display, game-pane
 placement, dimming, exact PID/unit ownership, Home/Return and power arbitration
 are not replaced. An unused display remains off.
+
+## Amended 2026-11-11 — stream sessions keep occupied outputs powered
+
+A watched output must be powered on for Sunshine's KMS capture, even when its
+physical TV is off (#309, #237). Peer preparation wakes the declared game
+outputs before Sunshine settings or the game start. Stream-play registration
+wakes the existing game's outputs before replying. Local viewers wake their
+main output before starting. These use the power path of `app.displays.wake`;
+they do not change client shaping or the watched/unwatched device facts.
+
+The idle service calls local-only `app.displays.idle` instead of writing output
+power directly. Under the session transition lock, korrid excludes a streaming
+session's outputs from idle power-off. The existing exact-session journal
+(`starter_device_public_key`, `stream_players`) identifies holder sessions;
+the existing peer selection identifies local viewers. No persisted stream or
+inhibitor state is added. Unwatched outputs remain exempt from idle power-off.
+
+While a stream is selected, the idle handler also sends the same Sway
+`seat * idle_notify` used for controller activity. This re-arms the ordinary
+300-second timeout. After the session ends, the next timeout powers off watched
+outputs normally, without requiring local input. The cost is up to one idle
+period before power-off, and dependence on korrid for idle power transitions.
+Holder registrations last until the game session ends, not until a network
+viewer disconnects. This does not repair Sunshine that already exited at boot,
+Moonlight's retry address, or Moonlight's shutdown when an output disappears.

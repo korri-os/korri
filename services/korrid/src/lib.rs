@@ -1504,6 +1504,8 @@ pub enum PluginArchiveBeginOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "app.displays.idle")]
+    DisplayIdle(host::display_placement::DisplayIdleRequest),
     #[serde(rename = "app.displays.wake")]
     DisplayWake(host::display_placement::DisplayWakeRequest),
     #[serde(rename = "app.surface.displays")]
@@ -1718,6 +1720,8 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "app.displays.idle")]
+    DisplayIdle(host::display_placement::DisplayIdleOutcome),
     #[serde(rename = "app.displays.wake")]
     DisplayWake(host::display_placement::DisplayWakeOutcome),
     #[serde(rename = "app.surface.displays")]
@@ -4070,6 +4074,20 @@ async fn dispatch(
                     .unwrap_or_else(LocalGamesListOutcome::Err),
             ),
         },
+        RpcRequest::DisplayIdle(_) => {
+            use host::display_placement::DisplayIdleOutcome;
+            let result = match &state.mode {
+                ServerMode::Host(host) => host.idle_displays().await,
+                _ => Err("display power requires a local host".into()),
+            };
+            RpcResponse::DisplayIdle(match result {
+                Ok(()) => DisplayIdleOutcome::Ok,
+                Err(message) => DisplayIdleOutcome::Err(RpcFailure {
+                    code: "PlacementFailed".into(),
+                    message,
+                }),
+            })
+        }
         RpcRequest::DisplayWake(_) => {
             use host::display_placement::DisplayWakeOutcome;
             let result = match &state.mode {

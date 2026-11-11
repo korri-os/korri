@@ -263,7 +263,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::LaunchProfileSelect(_)
         | RpcRequest::SelectedGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::DisplayWake(_) => PeerPolicy::LocalOnly,
+        RpcRequest::DisplayWake(_) | RpcRequest::DisplayIdle(_) => PeerPolicy::LocalOnly,
         RpcRequest::SurfaceDisplays(_)
         | RpcRequest::SurfaceModel(_)
         | RpcRequest::SurfaceRequest(_)
@@ -1253,6 +1253,10 @@ mod tests {
         assert_eq!(policy_for(&wake), PeerPolicy::LocalOnly);
         assert!(authorize(&AuthorizationContext::LocalUnixControl, &wake).is_ok());
         assert!(authorize(&AuthorizationContext::TrustReconciliation, &wake).is_err());
+        let idle = RpcRequest::DisplayIdle(crate::host::display_placement::DisplayIdleRequest {});
+        assert_eq!(policy_for(&idle), PeerPolicy::LocalOnly);
+        assert!(authorize(&AuthorizationContext::LocalCli, &idle).is_ok());
+        assert!(authorize(&AuthorizationContext::TrustReconciliation, &idle).is_err());
     }
 
     #[test]

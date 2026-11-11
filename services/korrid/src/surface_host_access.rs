@@ -78,6 +78,7 @@ impl SurfaceHostPermission {
             | RpcRequest::MoonlightCertificateProvision(_)
             | RpcRequest::MoonlightCertificateRevoke(_)
             | RpcRequest::DisplayWake(_)
+            | RpcRequest::DisplayIdle(_)
             | RpcRequest::SurfaceDisplays(_)
             | RpcRequest::SessionPrepare(_)
             | RpcRequest::SessionControlInvoke(_)
