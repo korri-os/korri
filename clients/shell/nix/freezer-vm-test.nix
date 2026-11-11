@@ -314,7 +314,7 @@ pkgs.testers.runNixOSTest {
         def launch():
             reply = rpc("app.session.prepare", {"gameId": "delayed"})
             assert reply["_tag"] == "Ok", reply
-            return reply["payload"]["launchId"]
+            return reply["payload"]["session"]["launchId"]
 
         launch_id = launch()
         game = f"korri-game-{launch_id}.service"
