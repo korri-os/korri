@@ -1,6 +1,10 @@
 # Exercise the production PrivatePIDs/KillMode contract, including native
-# one-launch rollback after normal stop and recovery after a killed namespace.
-{ pkgs, korrid }:
+# one-launch rollback and a server-only holder's game freezer authority.
+{
+  pkgs,
+  korrid,
+  module,
+}:
 let
   source = pkgs.writeText "game-stop-plugin.ts" ''
     export const name = "game-stop"
@@ -24,10 +28,53 @@ let
 in
 pkgs.testers.runNixOSTest {
   name = "korrid-game-stop";
-  nodes.machine = {
-    users.users.korri = { isNormalUser = true; uid = 1000; group = "korri"; };
-    users.groups.korri.gid = 1000;
-  };
+  nodes.machine =
+    { lib, config, ... }:
+    {
+      # The real korrid module owns game authority. No client or shell freezer
+      # module is imported. Upstream PID 1 is enough for freeze and thaw; the
+      # product patch changes stopping a still-frozen unit, not these methods.
+      imports = [ module ];
+      assertions = [
+        {
+          assertion = config.systemd.package == pkgs.systemd;
+          message = "Test freeze/thaw on upstream systemd.";
+        }
+        {
+          assertion = !(config.systemd.services ? korri-shell);
+          message = "Test a server-only holder.";
+        }
+      ];
+      virtualisation.memorySize = 2048;
+      virtualisation.cores = 2;
+      services.korridLinuxDevice = {
+        enable = true;
+        uid = 976;
+        gid = 976;
+        runtimeUser = "korri";
+        runtimeUid = 1000;
+        runtimeGid = 1000;
+        inputdUid = 977;
+        controlGid = 977;
+        localSignerUid = 978;
+        localSignerGid = 978;
+        deviceConfig = pkgs.writeText "game-stop-host.toml" ''label = "game-stop"'';
+        relays = [ "ws://127.0.0.1:7447/" ];
+      };
+      users.users.korri = {
+        isNormalUser = true;
+        uid = 1000;
+        group = "korri";
+      };
+      users.groups.korri.gid = 1000;
+      security.polkit.extraConfig = lib.mkBefore ''
+        polkit.addRule(function(action, subject) {
+          if (subject.user == "korrid" && action.lookup("unit") == "korri-game-0123456789abcdef0123456789abcdef.service") {
+            polkit.log("game-freezer-test verb=" + action.lookup("verb") + " message=" + action.lookup("polkit.message"));
+          }
+        });
+      '';
+    };
   testScript = ''
     import json
     import shlex
@@ -59,6 +106,48 @@ pkgs.testers.runNixOSTest {
         return time.monotonic() - started
 
     machine.wait_for_unit("multi-user.target")
+    machine.succeed("systemctl start polkit.service")
+    machine.wait_for_unit("polkit.service")
+
+    def freezer(verb, name, user="korrid"):
+        return f"runuser -u {user} -- systemctl --no-ask-password {verb} {name}"
+
+    with subtest("server-only korrid freezes and thaws a game on upstream systemd"):
+        game = "korri-game-0123456789abcdef0123456789abcdef.service"
+        start(game, "exec ${pkgs.coreutils}/bin/sleep 1000")
+        machine.succeed(freezer("freeze", game))
+        assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "frozen"
+        machine.succeed(f"test $(cat /sys/fs/cgroup/system.slice/{game}/cgroup.freeze) = 1")
+        machine.succeed(freezer("thaw", game))
+        assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "running"
+        machine.succeed(f"test $(cat /sys/fs/cgroup/system.slice/{game}/cgroup.freeze) = 0")
+        logs = machine.succeed("journalctl -u polkit.service --no-pager")
+        message = "Authentication is required to freeze or thaw the processes of '$(unit)' unit."
+        for verb in ("stop", "start"):
+            assert f"game-freezer-test verb={verb} message={message}" in logs, logs
+        # The runtime account must not inherit korrid's authority.
+        machine.fail(freezer("freeze", game, user="korri"))
+        assert stop_seconds(game) < 4
+
+    with subtest("server freezer authority excludes the shell, other units, malformed games, hooks and acquisitions"):
+        for name in (
+            "korri-shell.service",
+            "unrelated.service",
+            "korri-game-0123456789abcdef0123456789abcde.service",
+            "korri-game-0123456789abcdef0123456789abcdef0.service",
+            "korri-game-0123456789ABCDEF0123456789ABCDEF.service",
+            "korri-game-0123456789abcdef0123456789abcdef-extra.service",
+            "korri-hook-0123456789abcdef0123456789abcdef-0.service",
+            "korri-acquire-test-content.service",
+        ):
+            machine.succeed(unit(name) + " ${pkgs.coreutils}/bin/sleep 1000")
+            machine.fail(freezer("freeze", name))
+            assert machine.succeed(f"systemctl show -P FreezerState {name}").strip() == "running"
+            machine.succeed(f"systemctl freeze {name}")
+            machine.fail(freezer("thaw", name))
+            assert machine.succeed(f"systemctl show -P FreezerState {name}").strip() == "frozen"
+            machine.succeed(f"systemctl thaw {name}; systemctl kill --signal=KILL {name}")
+
     with subtest("control: a namespace init without a signal handler waits for the timeout"):
         machine.succeed(unit("bare") + " ${pkgs.coreutils}/bin/sleep 1000")
         machine.wait_until_succeeds("systemctl is-active bare")

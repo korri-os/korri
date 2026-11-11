@@ -300,6 +300,9 @@ let
   signerSocket = enabled.config.systemd.sockets.korri-local-signer;
   socket = enabled.config.systemd.sockets.korrid-control;
   polkit = enabled.config.security.polkit.extraConfig;
+  gameFreezerPolicies = builtins.filter (
+    package: lib.getName package == "korri-game-freezer.conf"
+  ) enabled.config.services.dbus.packages;
   tmpfiles = enabled.config.systemd.tmpfiles.rules;
   customService = customPaths.config.systemd.services.korrid;
   customSocket = customPaths.config.systemd.sockets.korrid-control;
@@ -308,6 +311,11 @@ let
   bundledSignerService = bundled.config.systemd.services.korri-local-signer;
 in
 assert allAssertionsPass enabled;
+# This configuration imports only korrid and the bundle module, not the client.
+assert !(enabled.config.systemd.services ? korri-shell);
+assert !(service.environment ? KORRID_SHELL_FREEZER_ENABLED);
+assert enabled.config.systemd.package == pkgs.systemd;
+assert builtins.length gameFreezerPolicies == 1;
 assert builtins.elem 43117 enabled.config.networking.firewall.allowedTCPPorts;
 assert allAssertionsPass pluginFree;
 assert protectedEnvironmentIsValid pluginFreeService.environment;
@@ -622,6 +630,24 @@ assert evaluationRejected missingMoonlightAddress;
 assert evaluationRejected wrongPackage;
 assert evaluationRejected secretOwnerBinding;
 assert evaluationRejected secretFieldOwnerBinding;
-pkgs.runCommand "korrid-linux-device-module-check" { } ''
+pkgs.runCommand "korrid-linux-device-module-check" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+  python3 - <<'PY'
+  import xml.etree.ElementTree as ET
+
+  root = ET.parse("${builtins.head gameFreezerPolicies}/share/dbus-1/system.d/korri-game-freezer.conf").getroot()
+  assert root.tag == "busconfig"
+  assert len(root) == 1
+  policy = root[0]
+  assert policy.tag == "policy" and policy.attrib == {"user": "korrid"}
+  assert len(policy) == 2
+  assert {rule.attrib["send_member"] for rule in policy} == {"FreezeUnit", "ThawUnit"}
+  for rule in policy:
+      assert rule.tag == "allow"
+      assert rule.attrib == {
+          "send_destination": "org.freedesktop.systemd1",
+          "send_interface": "org.freedesktop.systemd1.Manager",
+          "send_member": rule.attrib["send_member"],
+      }
+  PY
   touch "$out"
 ''

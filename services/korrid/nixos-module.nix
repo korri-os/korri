@@ -16,6 +16,9 @@ let
   system = pkgs.stdenv.hostPlatform.system;
   serviceUser = "korrid";
   serviceGroup = "korrid";
+  # systemd 261 uses stop/start for FreezeUnit/ThawUnit. Only this message
+  # distinguishes freezer calls from ordinary StopUnit/StartUnit authority.
+  freezerMessage = "Authentication is required to freeze or thaw the processes of '$(unit)' unit.";
   pluginHostCfg = config.services.korri.pluginHost or { enable = false; };
   signerUser = "korri-local-signer";
   signerGroup = "korri-local-signer";
@@ -872,6 +875,25 @@ in
       };
     };
 
+    # PID 1's bus policy rejects freezer methods before polkit sees them.
+    # Every game holder needs this, including servers with no shell. Polkit
+    # below owns the unit boundary; this grants no shell freezer authority.
+    services.dbus.packages = [
+      (pkgs.writeTextDir "share/dbus-1/system.d/korri-game-freezer.conf" ''
+        <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+          "https://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+        <busconfig>
+          <policy user="korrid">
+            <allow send_destination="org.freedesktop.systemd1"
+                   send_interface="org.freedesktop.systemd1.Manager"
+                   send_member="FreezeUnit"/>
+            <allow send_destination="org.freedesktop.systemd1"
+                   send_interface="org.freedesktop.systemd1.Manager"
+                   send_member="ThawUnit"/>
+          </policy>
+        </busconfig>
+      '')
+    ];
     security.polkit.enable = true;
     security.polkit.extraConfig = ''
       // Nearby links need checkpoint rollback for crash-safe restoration.
@@ -893,11 +915,14 @@ in
           return polkit.Result.YES;
         }
       });
+      // Acquisition and hook lifecycle authority must not grant the newly
+      // reachable freezer methods. Only the game rule below grants those.
       // Acquisition units cannot be mistaken for live game sessions.
       polkit.addRule(function(action, subject) {
         var unit = action.lookup("unit");
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
             subject.user == "korrid" &&
+            action.lookup("polkit.message") != "${freezerMessage}" &&
             typeof unit == "string" && /^korri-acquire-[a-z0-9][a-z0-9._-]*-[a-z0-9][a-z0-9._-]*\.service$/.test(unit)) {
           return polkit.Result.YES;
         }
@@ -906,6 +931,7 @@ in
         var unit = action.lookup("unit");
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
             subject.user == "korrid" &&
+            action.lookup("polkit.message") != "${freezerMessage}" &&
             typeof unit == "string" && /^korri-hook-[0-9a-f]{32}-[0-9]{1,3}\.service$/.test(unit)) {
           return polkit.Result.YES;
         }
