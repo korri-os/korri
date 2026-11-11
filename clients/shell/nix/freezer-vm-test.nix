@@ -41,7 +41,20 @@ let
   '';
   shellProcess = pkgs.writeText "shell-process.py" ''
     import os
+    import pwd
     import signal
+    import subprocess
+
+    window = None
+
+    def show_window(signum, frame):
+        global window
+        if window is None or window.poll() is not None:
+            window = subprocess.Popen(
+                ["${pkgs.xterm}/bin/xterm", "-class", "FreezerShell", "-e", "${pkgs.coreutils}/bin/sleep", "infinity"],
+                user="gameplay", group="users", extra_groups=[],
+                env={**os.environ, "DISPLAY": ":0", "HOME": pwd.getpwnam("gameplay").pw_dir},
+            )
 
     def terminate(signum, frame):
         with open("/var/lib/freezer-test/terminated", "a") as marker:
@@ -51,6 +64,7 @@ let
         raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGUSR1, show_window)
     while True:
         signal.pause()
   '';
@@ -302,7 +316,9 @@ pkgs.testers.runNixOSTest {
         machine.succeed("chmod 0666 /run/freezer-compositor/sway.sock")
         # Keep an excluded shell window behind the delayed game. Production
         # game units expose only X11, not the compositor control socket.
-        machine.succeed("systemd-run --unit=freezer-shell-window --uid=gameplay --setenv=DISPLAY=:0 ${pkgs.xterm}/bin/xterm -class FreezerShell -e ${pkgs.coreutils}/bin/sleep infinity")
+        # The configured shell unit must own the window's PID. A title/class
+        # on an unrelated service is not shell identity.
+        machine.succeed("systemctl kill --kill-whom=main --signal=USR1 korri-shell.service")
         sway = "swaymsg -s /run/freezer-compositor/sway.sock"
         machine.wait_until_succeeds(sway + " -t get_tree | jq -e '.. | objects | select(.window_properties?.class == \"FreezerShell\")'")
 

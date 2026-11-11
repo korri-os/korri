@@ -5,7 +5,10 @@
 
 use std::{
     io::{self, Read, Write},
-    os::unix::net::UnixStream,
+    os::unix::{
+        fs::{FileTypeExt, MetadataExt},
+        net::UnixStream,
+    },
     path::PathBuf,
     sync::Mutex,
     time::{Duration, Instant},
@@ -14,11 +17,41 @@ use std::{
 const MAGIC: &[u8; 6] = b"i3-ipc";
 const MAX_PAYLOAD: usize = 4 * 1024 * 1024;
 
+#[derive(Debug, PartialEq, Eq)]
+struct SocketStamp {
+    device: u64,
+    inode: u64,
+    owner: u32,
+    group: u32,
+    mode: u32,
+    changed: (i64, i64),
+}
+
+impl SocketStamp {
+    fn read(path: &std::path::Path) -> io::Result<Self> {
+        let metadata = std::fs::metadata(path)?;
+        if !metadata.file_type().is_socket() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Sway path is not a socket",
+            ));
+        }
+        Ok(Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            owner: metadata.uid(),
+            group: metadata.gid(),
+            mode: metadata.mode(),
+            changed: (metadata.ctime(), metadata.ctime_nsec()),
+        })
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct SwayIpc {
     socket: PathBuf,
     timeout: Duration,
-    stream: Mutex<Option<UnixStream>>,
+    stream: Mutex<Option<(SocketStamp, UnixStream)>>,
 }
 
 impl SwayIpc {
@@ -57,11 +90,28 @@ impl SwayIpc {
             .lock()
             .map_err(|_| io::Error::other("Sway connection lock poisoned"))?;
         let deadline = Instant::now() + self.timeout;
+        // An established Unix connection survives chmod and ACL revocation.
+        // Reconnect when socket authority changes so the kernel checks the
+        // current permissions, just as it did for each former helper process.
+        let stamp = SocketStamp::read(&self.socket)?;
+        if connection
+            .as_ref()
+            .is_some_and(|(previous, _)| previous != &stamp)
+        {
+            *connection = None;
+        }
         if connection.is_none() {
-            *connection = Some(self.connect(deadline)?);
+            let stream = self.connect(deadline)?;
+            if SocketStamp::read(&self.socket)? != stamp {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Sway socket changed during connection",
+                ));
+            }
+            *connection = Some((stamp, stream));
         }
         let result = exchange(
-            connection.as_mut().expect("connected"),
+            &mut connection.as_mut().expect("connected").1,
             deadline,
             kind,
             payload,
@@ -172,6 +222,28 @@ mod tests {
         let control = SwayIpc::new(path, Duration::from_secs(1)).unwrap();
         assert_eq!(control.request(4, b"").unwrap(), "{\"nodes\":[]}");
         assert_eq!(control.request(3, b"").unwrap(), "[]");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn changed_socket_permissions_retire_an_existing_connection() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sway.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let server = thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            reply(&mut first, 4, b"{}");
+            // Keep the first connection alive; permission changes must still
+            // cause a new connection, not reuse its earlier authorization.
+            let (mut second, _) = listener.accept().unwrap();
+            reply(&mut second, 4, b"{\"new\":true}");
+        });
+        let control = SwayIpc::new(path.clone(), Duration::from_secs(1)).unwrap();
+        assert_eq!(control.request(4, b"").unwrap(), "{}");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o660)).unwrap();
+        assert_eq!(control.request(4, b"").unwrap(), "{\"new\":true}");
         server.join().unwrap();
     }
 
