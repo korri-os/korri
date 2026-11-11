@@ -357,13 +357,14 @@ pkgs.testers.runNixOSTest {
         assert freezer() == "running", "acknowledged Leave includes shell thaw"
         assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "frozen"
         machine.succeed(sway + " '[class=FreezerShell] focus'")
-        # A real compositor refusal must leave the shell active, even after
-        # the exact game has thawed. Restoring authority then permits Return.
+        # Losing all compositor authority also prevents opacity restoration.
+        # Session control must park the exact game frozen, not run it with
+        # unverifiable presentation. Restoring authority then permits Return.
         machine.succeed("chmod 0600 /run/freezer-compositor/sway.sock")
         reply = rpc("app.session.resume", {"expectedLaunchId": launch_id})
         assert reply["_tag"] == "Err", reply
-        assert reply["payload"]["code"] == "HostFocusFailed", reply
-        assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "running"
+        assert reply["payload"]["code"] == "HostRecoveryBlocked", reply
+        assert machine.succeed(f"systemctl show -P FreezerState {game}").strip() == "frozen"
         assert freezer() == "running"
         machine.succeed("chmod 0666 /run/freezer-compositor/sway.sock")
         reply = rpc("app.session.resume", {"expectedLaunchId": launch_id})
