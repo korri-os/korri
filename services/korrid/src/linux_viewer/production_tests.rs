@@ -23,6 +23,16 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
     assert!(args.windows(2).any(|v| v == ["-codec", "h264"]));
     assert!(!args.iter().any(|v| v == "-fps" || v == "-bitrate"));
     assert_eq!(args.iter().filter(|v| *v == "-input").count(), 2);
+    let request = stream_args(
+        &files,
+        Path::new("/keys"),
+        "host",
+        &[],
+        "v4l2request",
+        &seats,
+    )
+    .unwrap();
+    assert_eq!(request.iter().filter(|v| *v == "-input").count(), 2);
     // Moonlight's SDL system (what `x11` resolves to) exits on `-input`.
     let sdl = stream_args(
         &files,
@@ -52,6 +62,26 @@ fn linux_viewer_argv_uses_fixed_app_and_explicit_occupied_seats() {
     )
     .is_err());
 }
+#[test]
+fn linux_viewer_vaapi_argv_keeps_sdl_fallback_interactive() {
+    let files = MoonlightFiles {
+        executable: "/nix/store/viewer/bin/moonlight".into(),
+        mapping: "/nix/store/viewer/mapping".into(),
+        bootstrap: "/nix/store/viewer/bootstrap".into(),
+    };
+    let seats = [PathBuf::from("/dev/input/event12")];
+    let args = stream_args(&files, Path::new("/keys"), "host", &[], "x11_vaapi", &seats).unwrap();
+    assert!(args
+        .windows(2)
+        .any(|pair| pair == ["-platform", "x11_vaapi"]));
+    // VA-API uses evdev/udev auto-discovery without explicit inputs. If its
+    // init fails, platform_check returns SDL, which exits on any -input.
+    assert!(!args.iter().any(|arg| arg == "-input" || arg == "-viewonly"));
+    let watch = stream_args(&files, Path::new("/keys"), "host", &[], "x11_vaapi", &[]).unwrap();
+    assert!(watch.contains(&"-viewonly".into()));
+    assert!(!watch.contains(&"-input".into()));
+}
+
 #[test]
 fn linux_viewer_argv_unbrackets_ipv6_without_changing_the_control_url() {
     let files = MoonlightFiles {
@@ -344,14 +374,14 @@ esac
             .contains_key("KORRI_MOONLIGHT_SERVER_CERTIFICATE"));
         assert_eq!(launches[0].id, launch);
         // Occupied broker seats make the viewer interactive. Only evdev
-        // platforms name them; the SDL `x11` system reads every controller.
+        // platforms name them; X11 choices auto-discover controllers.
         assert!(!launches[0].command.iter().any(|arg| arg == "-viewonly"));
         assert_eq!(
             launches[0]
                 .command
                 .windows(2)
                 .any(|args| args == ["-input", "/dev/input/event12"]),
-            platform() != "x11"
+            !matches!(platform(), "x11" | "x11_vaapi")
         );
         assert!(launches[0]
             .command
@@ -400,17 +430,23 @@ fn linux_viewer_bootstrap_rejects_live_and_selected_unit_id_collisions() {
 fn linux_viewer_reads_sysfs_device_tree_and_reports_read_failures() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("compatible");
+    let dri = root.path().join("dri");
+    std::fs::create_dir(&dri).unwrap();
     assert_eq!(
-        platform_from_path(&path, |_| panic!("Non-DT hardware is not an error")),
+        platform_from_path(&path, "x86_64", &dri, |_| panic!(
+            "Non-DT hardware is not an error"
+        )),
         "x11"
     );
+    // A render node must not override any device-tree platform decision.
+    std::fs::write(dri.join("renderD128"), b"").unwrap();
     for compatible in [
         b"device\0qcom,sm8550\0".as_slice(),
         b"qcom,sm8250\0".as_slice(),
     ] {
         std::fs::write(&path, compatible).unwrap();
         assert_eq!(
-            platform_from_path(&path, |_| panic!("readable hardware fact")),
+            platform_from_path(&path, "x86_64", &dri, |_| panic!("readable hardware fact")),
             "v4l2m2m"
         );
     }
@@ -421,21 +457,53 @@ fn linux_viewer_reads_sysfs_device_tree_and_reports_read_failures() {
     ] {
         std::fs::write(&path, compatible).unwrap();
         assert_eq!(
-            platform_from_path(&path, |_| panic!("readable hardware fact")),
+            platform_from_path(&path, "x86_64", &dri, |_| panic!("readable hardware fact")),
             "v4l2request"
         );
     }
     std::fs::write(&path, b"other-device\0").unwrap();
     assert_eq!(
-        platform_from_path(&path, |_| panic!("readable hardware fact")),
+        platform_from_path(&path, "x86_64", &dri, |_| panic!("readable hardware fact")),
         "x11"
     );
     let mut reason = None;
     assert_eq!(
-        platform_from_path(root.path(), |error| reason = Some(error.to_string())),
+        platform_from_path(root.path(), "x86_64", &dri, |error| {
+            reason = Some(error.to_string())
+        }),
         "x11"
     );
     assert!(reason.is_some_and(|reason| !reason.is_empty()));
+}
+
+#[test]
+fn linux_viewer_uses_vaapi_only_on_non_dt_x86_with_an_existing_render_node() {
+    let root = tempfile::tempdir().unwrap();
+    let compatible = root.path().join("compatible");
+    let dri = root.path().join("dri");
+    let select = |architecture| {
+        platform_from_path(&compatible, architecture, &dri, |_| {
+            panic!("an absent device tree is normal")
+        })
+    };
+    assert_eq!(select("x86_64"), "x11", "missing DRM directory");
+    std::fs::create_dir(&dri).unwrap();
+    assert_eq!(select("x86_64"), "x11", "no render node");
+    for name in ["card0", "renderD", "renderDfoo", "renderD128extra"] {
+        std::fs::write(dri.join(name), b"").unwrap();
+    }
+    assert_eq!(select("x86_64"), "x11", "not a render node name");
+    let render = dri.join("renderD129");
+    std::os::unix::fs::symlink(root.path().join("absent-device"), &render).unwrap();
+    assert_eq!(select("x86_64"), "x11", "broken node symlink");
+    std::fs::remove_file(&render).unwrap();
+    std::fs::write(&render, b"").unwrap();
+    assert_eq!(select("x86_64"), "x11_vaapi");
+    for architecture in ["aarch64", "arm", "riscv64"] {
+        assert_eq!(select(architecture), "x11", "unchanged non-x86 fallback");
+    }
+    std::fs::write(&compatible, b"unknown-device\0").unwrap();
+    assert_eq!(select("x86_64"), "x11", "a device tree keeps its old rule");
 }
 
 #[test]

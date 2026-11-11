@@ -152,6 +152,61 @@ mod tests {
             || arg.contains("KORRI_MOONLIGHT_SERVER_CERTIFICATE=")));
     }
     #[test]
+    fn linux_viewer_sandbox_keeps_render_nodes_and_libva_drivers_visible() {
+        let backend = SystemdLaunchUnitBackend::new(
+            "/nix/store/systemd/bin/systemd-run".into(),
+            "/nix/store/systemd/bin/systemctl".into(),
+            1001,
+            1002,
+        )
+        .unwrap()
+        .for_stream_viewer();
+        let command = vec!["/nix/store/viewer/bin/moonlight".into()];
+        let environment = BTreeMap::new();
+        let sandbox = LaunchSandbox::new(&command, &environment);
+        let args = backend
+            .viewer_arguments(
+                "0123456789abcdef0123456789abcdef",
+                &command,
+                &environment,
+                &sandbox,
+                None,
+            )
+            .unwrap();
+        // The runtime user's render group grants device access. Neither a
+        // private /dev nor a device allowlist may remove it in this unit.
+        for property in [
+            "PrivateDevices=",
+            "DevicePolicy=",
+            "DeviceAllow=",
+            "RootDirectory=",
+            "RootImage=",
+            "TemporaryFileSystem=",
+            "SupplementaryGroups=",
+        ] {
+            assert!(!args
+                .iter()
+                .any(|arg| arg.starts_with(&format!("--property={property}"))));
+        }
+        for target in [
+            "/dev/dri/renderD128",
+            "/run/opengl-driver/lib/dri/iHD_drv_video.so",
+            "/nix/store",
+        ] {
+            for hidden in args
+                .iter()
+                .filter_map(|arg| arg.strip_prefix("--property=InaccessiblePaths="))
+                .flat_map(str::split_whitespace)
+            {
+                assert!(
+                    !Path::new(target).starts_with(hidden.trim_start_matches('-')),
+                    "{hidden} masks {target}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn linux_viewer_pin_argument_is_an_absolute_native_credential_path() {
         let backend = SystemdLaunchUnitBackend::new(
             "/nix/store/systemd/bin/systemd-run".into(),
