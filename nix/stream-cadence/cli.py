@@ -885,7 +885,7 @@ def view_case(
     except Exception as error:
         facts["error"] = str(error)
     finally:
-        (directory / "threads.json").write_text(json.dumps(samples, indent=2))
+        (directory / "viewer-samples.json").write_text(json.dumps(samples, indent=2))
         if latest:
             (directory / "journal.log").write_text(latest)
         failed: dict = {
@@ -997,7 +997,12 @@ def view(args: argparse.Namespace) -> int:
 
 
 def verdicts(args: argparse.Namespace) -> int:
-    rows = judge(records(args.baseline), records(args.candidate), args.min_runs)
+    rows = judge(
+        records(args.baseline),
+        records(args.candidate),
+        args.min_runs,
+        args.allow_different_conditions,
+    )
 
     def text(values: list[float | None]) -> str:
         if any(value is None for value in values):
@@ -1236,6 +1241,11 @@ def parser() -> argparse.ArgumentParser:
     ruling.add_argument("baseline", type=Path)
     ruling.add_argument("candidate", type=Path)
     ruling.add_argument("--min-runs", type=int, default=5)
+    ruling.add_argument(
+        "--allow-different-conditions",
+        action="store_true",
+        help="judge although the sender or the request differs between the results",
+    )
     diff = commands.add_parser("compare")
     diff.add_argument("old", type=Path)
     diff.add_argument("new", type=Path)

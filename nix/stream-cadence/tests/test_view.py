@@ -165,7 +165,11 @@ def run(latency: float, startup: float, valid: bool = True) -> dict:
         "undecodable_frames": 0,
     }
     return {
-        "discovered": {"valid": valid},
+        "discovered": {
+            "valid": valid,
+            "display": {"mode": {"width": 640, "height": 480}, "power": True},
+            "sunshine_version": "1",
+        },
         "source_counter": {"windows": [window, window]},
         "viewer": {
             "packet_to_display_ms": None,
@@ -198,6 +202,18 @@ class Verdict(unittest.TestCase):
         self.assertEqual(rows["latency_p50_ms"]["number"], "1 sender presentation to display")
         with self.assertRaises(ValueError):
             judge(old, slow[:4] + [run(1, 1, valid=False)], 5)
+
+    def test_judge_refuses_runs_from_different_conditions(self):
+        old = [run(20 + n, 900) for n in range(5)]
+        new = [run(20 + n, 900) for n in range(5)]
+        new[2]["discovered"]["display"] = {"mode": {"width": 800, "height": 600}}
+        new[4]["discovered"]["sunshine_version"] = "2"
+        with self.assertRaisesRegex(ValueError, "display, sunshine_version"):
+            judge(old, new, 5)
+        self.assertEqual(len(judge(old, new, 5, allow_different_conditions=True)), 14)
+        # The power state of the sender's display is not a condition.
+        old[0]["discovered"]["display"]["power"] = False
+        self.assertEqual(len(judge(old, old, 5)), 14)
 
 
 if __name__ == "__main__":

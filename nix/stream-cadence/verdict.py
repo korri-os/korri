@@ -51,6 +51,42 @@ METRICS: list[tuple[str, str, Callable[[dict], Value]]] = [
 ]
 
 
+# What the sender and the request must share for two results to compare viewers.
+CONDITIONS = (
+    "display",
+    "requested_resolution",
+    "requested_fps",
+    "requested_codec",
+    "requested_bitrate",
+    "viewer_refresh_hz",
+    "sunshine_version",
+    "encoder",
+    "capture_backend",
+)
+
+
+def conditions(record: dict) -> dict:
+    facts = record["discovered"]
+    values = {name: facts.get(name) for name in CONDITIONS}
+    # Only the mode decides the sender's work; power state and name do not.
+    if isinstance(values["display"], dict):
+        values["display"] = values["display"].get("mode")
+    return values
+
+
+def differences(baseline: list[dict], candidate: list[dict]) -> list[str]:
+    """Conditions that differ between any two runs; a verdict then judges the sender too."""
+    reference = conditions(baseline[0])
+    return sorted(
+        {
+            name
+            for record in baseline + candidate
+            for name, value in conditions(record).items()
+            if value != reference[name]
+        }
+    )
+
+
 def verdict(baseline: list[Value], candidate: list[Value]) -> str:
     if any(value is None for value in baseline + candidate):
         return "not measured"
@@ -76,8 +112,20 @@ def valid_runs(records: list[dict], minimum: int) -> list[dict]:
     return runs
 
 
-def judge(baseline: list[dict], candidate: list[dict], minimum: int) -> list[dict]:
+def judge(
+    baseline: list[dict],
+    candidate: list[dict],
+    minimum: int,
+    allow_different_conditions: bool = False,
+) -> list[dict]:
     old, new = valid_runs(baseline, minimum), valid_runs(candidate, minimum)
+    changed = differences(old, new)
+    if changed and not allow_different_conditions:
+        raise ValueError(
+            "The runs were not measured under the same conditions: "
+            + ", ".join(changed)
+            + ". Record the baseline and the candidate with the same sender and request."
+        )
     rows = []
     for number, name, extract in METRICS:
         before = [extract(record) for record in old]

@@ -1,0 +1,3172 @@
+[
+  {
+    "label": "run-1",
+    "primary_clock": "display_ns",
+    "warmup_seconds": 10,
+    "discovered": {
+      "model": "System Product Name",
+      "architecture": "x86_64",
+      "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+      "os_release": {
+        "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+        "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+        "BUILD_ID": "\"26.11.20260923.4975466\"",
+        "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+        "DEFAULT_HOSTNAME": "nixos",
+        "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+        "HOME_URL": "\"https://nixos.org/\"",
+        "ID": "nixos",
+        "LOGO": "\"nix-snowflake\"",
+        "NAME": "NixOS",
+        "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+        "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+        "VENDOR_NAME": "NixOS",
+        "VENDOR_URL": "\"https://nixos.org/\"",
+        "VERSION": "\"26.11 (Zokor)\"",
+        "VERSION_CODENAME": "zokor",
+        "VERSION_ID": "\"26.11\""
+      },
+      "korri_system_path": "/nix/store/kz5fn7csayic70l3kvbfx6cf8zx30sg3-nixos-system-aka-26.11.20260923.4975466",
+      "plugin_status": {
+        "id": "@korri:sunshine",
+        "package": "/nix/store/yvhwh153zwal3br16zvi52aqqim8xpw6-korri-plugin",
+        "provenance": {
+          "kind": "Repository",
+          "source_url": "https://github.com/korri-os/plugins/releases/download/live-stream-shape-20261111-v3/catalog.json",
+          "plugin_id": "@korri:sunshine",
+          "release_version": "live-stream-shape-20261111-v3",
+          "platform": "x86_64-linux",
+          "archive_sha256": "8b79771a9e851f5caae7ae5497b79c2eac6229f15f80e5994b8249fd6ac9f189",
+          "signed": true
+        },
+        "approval": "ba03eb314df0af4d3220519a42011e0cbce530dd10103085120ccfa934384757",
+        "desired": {
+          "state": "Enabled"
+        },
+        "previous": {
+          "package": "/nix/store/28j7b4c4d7ghgx54mlwi543blvfrr40k-korri-plugin",
+          "provenance": {
+            "kind": "Repository",
+            "source_url": "https://github.com/korri-os/plugins/releases/download/build-6a16a09421bf-shared-settings/catalog.json",
+            "plugin_id": "@korri:sunshine",
+            "release_version": "build-6a16a09421bf-shared-settings",
+            "platform": "x86_64-linux",
+            "archive_sha256": "aed361b1aa8f9afb25d5635834a6a2b281144dd986f9765ef68144d667b7384e",
+            "signed": true
+          },
+          "approval": "e82e4cb8d613d621c5bd99b167508a9700cdc8c73f61346af6f256b06ed6dafb"
+        }
+      },
+      "plugin_version": null,
+      "sunshine_version": "2026.914.233613-korri",
+      "sunshine_unit": "korri-sunshine.service",
+      "processes": {
+        "sunshine": {
+          "pid": 1489954,
+          "uid": 56774,
+          "gid": 980,
+          "user": "korri",
+          "exe": "/nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri/bin/.sunshine-wrapped",
+          "start_ticks": "16843563",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/home/korri/.config",
+            "WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "korrid": {
+          "pid": 1490091,
+          "uid": 976,
+          "gid": 976,
+          "user": "korrid",
+          "exe": "/nix/store/40vky7c0qj6wmp2ym9y0iqpkpvv756zp-korrid-0.0.0/bin/korrid",
+          "start_ticks": "16843616",
+          "environment": {
+            "HOME": "/var/empty"
+          }
+        }
+      },
+      "certificate_control": {
+        "path": "/run/korri-certificate-control/control.sock",
+        "uid": "976",
+        "gid": "976",
+        "owner_gid": 976,
+        "mode": 432,
+        "peer_uid": 0,
+        "peer_gid": 0
+      },
+      "sunshine_state_path": "/home/korri/.config/sunshine/sunshine_state.json",
+      "sunshine_state_existed": true,
+      "listening_tcp_ports": [
+        47984,
+        47989,
+        47990,
+        48010
+      ],
+      "working_encoders": [
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan",
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan"
+      ],
+      "display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "valid": true,
+      "imported_store_paths": [
+        "/nix/store/00n5q0wbi7i9sy9wb44fz16cckpnx6hf-stream-cadence-motion",
+        "/nix/store/7zc2ydla9k88d8dh5lrjisq2s70x33ci-stream-cadence-capture-1",
+        "/nix/store/a1ijv4r3cdfyba2dfb861g0k8145fwzr-source",
+        "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1"
+      ],
+      "run_index": 0,
+      "bridge_uncertainty_ms": 0.0,
+      "viewer": {
+        "architecture": "x86_64",
+        "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+        "clock_ticks_per_second": 100,
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "fixture": "headless sway from the installed binary"
+      },
+      "requested_fps": 60.0,
+      "requested_resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "requested_codec": "h264",
+      "requested_bitrate": 10000,
+      "viewer_refresh_hz": 60.0,
+      "max_capture_gaps": 0,
+      "awake_display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "sunshine_port": 47989,
+      "host_uuid": "89AAFA60-A820-9105-5608-FB072EE41D4C",
+      "stream_host": "aka",
+      "viewer_command": [
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1/bin/moonlight",
+        "stream",
+        "127.0.0.1",
+        "-port",
+        "47989",
+        "-platform",
+        "sdl",
+        "-viewonly",
+        "-width",
+        "1920",
+        "-height",
+        "1080",
+        "-fps",
+        "60",
+        "-codec",
+        "h264",
+        "-app",
+        "Korri Stream",
+        "-keydir",
+        "/tmp/korri-stream-cadence-view-icna6btf/keys",
+        "-bitrate",
+        "10000"
+      ],
+      "bar_location": {
+        "x": 317.0,
+        "y": 275.0,
+        "cell": 36.0
+      },
+      "encoder": "h264_vulkan",
+      "capture_backend": "KMS",
+      "reported_bitrate_bps": 7308000,
+      "pacing": "unmarked",
+      "markers": [],
+      "viewer_restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "compositor": true
+        },
+        "run_folder": "/tmp/korri-stream-cadence-view-icna6btf",
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      },
+      "restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "sunshine": true,
+          "compositor": true,
+          "korrid": true
+        },
+        "certificate_revoked": true,
+        "run_folder": "/tmp/korri-stream-cadence-96t_qi3x",
+        "run_folder_bytes": 1362037,
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      }
+    },
+    "viewer": {
+      "startup_ms": 402.975534,
+      "cpu_seconds_per_second": 1.2634527779610296,
+      "battery_mw": null,
+      "stream_stalls": 0,
+      "viewer_exits": 0,
+      "capture_frames": 5248,
+      "capture_gaps": 0,
+      "packet_to_display_ms": null,
+      "input_ms": null,
+      "not_measured": {
+        "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
+        "input_ms": "The press-to-packet measure is not built.",
+        "battery_mw": "No battery discharged through the whole scored time."
+      }
+    },
+    "decoded_frames": 5248,
+    "decode_errors": 0,
+    "decode_warnings": 0,
+    "source_counter": {
+      "warmup_seconds": 10,
+      "scored_seconds": 60,
+      "clock": "display_ns with monotonic presentation bridge",
+      "raw_warmup": {
+        "repeated_frames": 2,
+        "late_frames": 2,
+        "capture_misses": 1,
+        "source_misses": 0,
+        "new_frames": 598,
+        "received_frames": 600,
+        "torn_frames": 0,
+        "undecodable_frames": 0,
+        "source_discarded_submissions": 0,
+        "captured_unpresented_ids": 0,
+        "expected_new_frames": 600.0,
+        "seconds": 10,
+        "new_fps": 59.8,
+        "latency_ms": {
+          "count": 598,
+          "p50": 18.483683499999998,
+          "p95": 34.984769,
+          "max": 35.313229
+        }
+      },
+      "windows": [
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 34.987142,
+            "p95": 51.705551,
+            "max": 51.901596
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.544554500000004,
+            "p95": 51.834037,
+            "max": 52.242484
+          }
+        },
+        {
+          "repeated_frames": 2,
+          "late_frames": 2,
+          "capture_misses": 2,
+          "source_misses": 0,
+          "new_frames": 597,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.7,
+          "latency_ms": {
+            "count": 597,
+            "p50": 51.544479,
+            "p95": 51.740243,
+            "max": 52.039017
+          }
+        },
+        {
+          "repeated_frames": 0,
+          "late_frames": 0,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 599,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.9,
+          "latency_ms": {
+            "count": 599,
+            "p50": 51.555904,
+            "p95": 51.946424,
+            "max": 52.631025
+          }
+        },
+        {
+          "repeated_frames": 2,
+          "late_frames": 2,
+          "capture_misses": 2,
+          "source_misses": 0,
+          "new_frames": 597,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.7,
+          "latency_ms": {
+            "count": 597,
+            "p50": 51.52139,
+            "p95": 51.709822,
+            "max": 51.999249
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.525282,
+            "p95": 51.826192,
+            "max": 53.14393
+          }
+        }
+      ],
+      "capture_events": [
+        {
+          "id": 392,
+          "window": 0,
+          "submit_ns": 174215620941411,
+          "present_ns": 174215654160000,
+          "refresh_ns": 16680288,
+          "sequence": 291576521,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 1744,
+          "window": 2,
+          "submit_ns": 174238187596803,
+          "present_ns": 174238220799000,
+          "refresh_ns": 16680288,
+          "sequence": 291577873,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 2418,
+          "window": 3,
+          "submit_ns": 174249437554553,
+          "present_ns": 174249470732000,
+          "refresh_ns": 16680288,
+          "sequence": 291578547,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 2420,
+          "window": 3,
+          "submit_ns": 174249470948023,
+          "present_ns": 174249504117000,
+          "refresh_ns": 16680288,
+          "sequence": 291578549,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3096,
+          "window": 5,
+          "submit_ns": 174260754178234,
+          "present_ns": 174260787437000,
+          "refresh_ns": 16680288,
+          "sequence": 291579225,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3098,
+          "window": 5,
+          "submit_ns": 174260787614313,
+          "present_ns": 174260820816000,
+          "refresh_ns": 16680288,
+          "sequence": 291579227,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3770,
+          "window": 6,
+          "submit_ns": 174272004170990,
+          "present_ns": 174272037378000,
+          "refresh_ns": 16680288,
+          "sequence": 291579899,
+          "flags": 7,
+          "clock_id": 1
+        }
+      ],
+      "source_events": [],
+      "torn_events": [],
+      "unreadable_events": [
+        {
+          "index": 5202,
+          "display_ns": 174297442990553,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5203,
+          "display_ns": 174297459008484,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5204,
+          "display_ns": 174297475026755,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5205,
+          "display_ns": 174297491036611,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5206,
+          "display_ns": 174297507050344,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5207,
+          "display_ns": 174297523061862,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5208,
+          "display_ns": 174297539071948,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5209,
+          "display_ns": 174297555081734,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5210,
+          "display_ns": 174297571123289,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5211,
+          "display_ns": 174297587132082,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5212,
+          "display_ns": 174297603140625,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5213,
+          "display_ns": 174297619150010,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5214,
+          "display_ns": 174297635158233,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5215,
+          "display_ns": 174297651180782,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5216,
+          "display_ns": 174297667198993,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5217,
+          "display_ns": 174297683218647,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5218,
+          "display_ns": 174297699237529,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5219,
+          "display_ns": 174297715255310,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5220,
+          "display_ns": 174297731272259,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5221,
+          "display_ns": 174297747292113,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5222,
+          "display_ns": 174297763308200,
+          "window": null,
+          "reason": "row 0 sync failed"
+        }
+      ],
+      "torn_frames": 0,
+      "unreadable_frames": 0,
+      "max_unreadable_frames": 5248,
+      "scored_received_frames": 3594,
+      "decode_errors": 0,
+      "decoded_frames": 5223,
+      "presented_ids": 5307,
+      "capture_gate_pass": false,
+      "stream_stalls": 0,
+      "label": "run-1",
+      "bridge_uncertainty_ms": 0.0
+    }
+  },
+  {
+    "label": "run-2",
+    "primary_clock": "display_ns",
+    "warmup_seconds": 10,
+    "discovered": {
+      "model": "System Product Name",
+      "architecture": "x86_64",
+      "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+      "os_release": {
+        "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+        "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+        "BUILD_ID": "\"26.11.20260923.4975466\"",
+        "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+        "DEFAULT_HOSTNAME": "nixos",
+        "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+        "HOME_URL": "\"https://nixos.org/\"",
+        "ID": "nixos",
+        "LOGO": "\"nix-snowflake\"",
+        "NAME": "NixOS",
+        "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+        "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+        "VENDOR_NAME": "NixOS",
+        "VENDOR_URL": "\"https://nixos.org/\"",
+        "VERSION": "\"26.11 (Zokor)\"",
+        "VERSION_CODENAME": "zokor",
+        "VERSION_ID": "\"26.11\""
+      },
+      "korri_system_path": "/nix/store/kz5fn7csayic70l3kvbfx6cf8zx30sg3-nixos-system-aka-26.11.20260923.4975466",
+      "plugin_status": {
+        "id": "@korri:sunshine",
+        "package": "/nix/store/yvhwh153zwal3br16zvi52aqqim8xpw6-korri-plugin",
+        "provenance": {
+          "kind": "Repository",
+          "source_url": "https://github.com/korri-os/plugins/releases/download/live-stream-shape-20261111-v3/catalog.json",
+          "plugin_id": "@korri:sunshine",
+          "release_version": "live-stream-shape-20261111-v3",
+          "platform": "x86_64-linux",
+          "archive_sha256": "8b79771a9e851f5caae7ae5497b79c2eac6229f15f80e5994b8249fd6ac9f189",
+          "signed": true
+        },
+        "approval": "ba03eb314df0af4d3220519a42011e0cbce530dd10103085120ccfa934384757",
+        "desired": {
+          "state": "Enabled"
+        },
+        "previous": {
+          "package": "/nix/store/28j7b4c4d7ghgx54mlwi543blvfrr40k-korri-plugin",
+          "provenance": {
+            "kind": "Repository",
+            "source_url": "https://github.com/korri-os/plugins/releases/download/build-6a16a09421bf-shared-settings/catalog.json",
+            "plugin_id": "@korri:sunshine",
+            "release_version": "build-6a16a09421bf-shared-settings",
+            "platform": "x86_64-linux",
+            "archive_sha256": "aed361b1aa8f9afb25d5635834a6a2b281144dd986f9765ef68144d667b7384e",
+            "signed": true
+          },
+          "approval": "e82e4cb8d613d621c5bd99b167508a9700cdc8c73f61346af6f256b06ed6dafb"
+        }
+      },
+      "plugin_version": null,
+      "sunshine_version": "2026.914.233613-korri",
+      "sunshine_unit": "korri-sunshine.service",
+      "processes": {
+        "sunshine": {
+          "pid": 1489954,
+          "uid": 56774,
+          "gid": 980,
+          "user": "korri",
+          "exe": "/nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri/bin/.sunshine-wrapped",
+          "start_ticks": "16843563",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/home/korri/.config",
+            "WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "korrid": {
+          "pid": 1490091,
+          "uid": 976,
+          "gid": 976,
+          "user": "korrid",
+          "exe": "/nix/store/40vky7c0qj6wmp2ym9y0iqpkpvv756zp-korrid-0.0.0/bin/korrid",
+          "start_ticks": "16843616",
+          "environment": {
+            "HOME": "/var/empty"
+          }
+        }
+      },
+      "certificate_control": {
+        "path": "/run/korri-certificate-control/control.sock",
+        "uid": "976",
+        "gid": "976",
+        "owner_gid": 976,
+        "mode": 432,
+        "peer_uid": 0,
+        "peer_gid": 0
+      },
+      "sunshine_state_path": "/home/korri/.config/sunshine/sunshine_state.json",
+      "sunshine_state_existed": true,
+      "listening_tcp_ports": [
+        47984,
+        47989,
+        47990,
+        48010
+      ],
+      "working_encoders": [
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan",
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan"
+      ],
+      "display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "valid": true,
+      "imported_store_paths": [
+        "/nix/store/00n5q0wbi7i9sy9wb44fz16cckpnx6hf-stream-cadence-motion",
+        "/nix/store/7zc2ydla9k88d8dh5lrjisq2s70x33ci-stream-cadence-capture-1",
+        "/nix/store/a1ijv4r3cdfyba2dfb861g0k8145fwzr-source",
+        "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1"
+      ],
+      "run_index": 1,
+      "bridge_uncertainty_ms": 0.0,
+      "viewer": {
+        "architecture": "x86_64",
+        "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+        "clock_ticks_per_second": 100,
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "fixture": "headless sway from the installed binary"
+      },
+      "requested_fps": 60.0,
+      "requested_resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "requested_codec": "h264",
+      "requested_bitrate": 10000,
+      "viewer_refresh_hz": 60.0,
+      "max_capture_gaps": 0,
+      "awake_display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "sunshine_port": 47989,
+      "host_uuid": "89AAFA60-A820-9105-5608-FB072EE41D4C",
+      "stream_host": "aka",
+      "viewer_command": [
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1/bin/moonlight",
+        "stream",
+        "127.0.0.1",
+        "-port",
+        "47989",
+        "-platform",
+        "sdl",
+        "-viewonly",
+        "-width",
+        "1920",
+        "-height",
+        "1080",
+        "-fps",
+        "60",
+        "-codec",
+        "h264",
+        "-app",
+        "Korri Stream",
+        "-keydir",
+        "/tmp/korri-stream-cadence-view-2jimxrqi/keys",
+        "-bitrate",
+        "10000"
+      ],
+      "bar_location": {
+        "x": 317.0,
+        "y": 275.0,
+        "cell": 36.0
+      },
+      "encoder": "h264_vulkan",
+      "capture_backend": "KMS",
+      "reported_bitrate_bps": 7308000,
+      "pacing": "unmarked",
+      "markers": [],
+      "viewer_restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "compositor": true
+        },
+        "run_folder": "/tmp/korri-stream-cadence-view-2jimxrqi",
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      },
+      "restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "sunshine": true,
+          "compositor": true,
+          "korrid": true
+        },
+        "certificate_revoked": true,
+        "run_folder": "/tmp/korri-stream-cadence-ozl79_2y",
+        "run_folder_bytes": 1362037,
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      }
+    },
+    "viewer": {
+      "startup_ms": 402.54897,
+      "cpu_seconds_per_second": 1.260541413434567,
+      "battery_mw": null,
+      "stream_stalls": 0,
+      "viewer_exits": 0,
+      "capture_frames": 5249,
+      "capture_gaps": 0,
+      "packet_to_display_ms": null,
+      "input_ms": null,
+      "not_measured": {
+        "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
+        "input_ms": "The press-to-packet measure is not built.",
+        "battery_mw": "No battery discharged through the whole scored time."
+      }
+    },
+    "decoded_frames": 5249,
+    "decode_errors": 0,
+    "decode_warnings": 0,
+    "source_counter": {
+      "warmup_seconds": 10,
+      "scored_seconds": 60,
+      "clock": "display_ns with monotonic presentation bridge",
+      "raw_warmup": {
+        "repeated_frames": 1,
+        "late_frames": 1,
+        "capture_misses": 0,
+        "source_misses": 0,
+        "new_frames": 599,
+        "received_frames": 600,
+        "torn_frames": 0,
+        "undecodable_frames": 0,
+        "source_discarded_submissions": 0,
+        "captured_unpresented_ids": 0,
+        "expected_new_frames": 600.0,
+        "seconds": 10,
+        "new_fps": 59.9,
+        "latency_ms": {
+          "count": 599,
+          "p50": 1.539253,
+          "p95": 18.251145,
+          "max": 18.518192
+        }
+      },
+      "windows": [
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 18.2127895,
+            "p95": 34.860175,
+            "max": 35.057747
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 34.8817405,
+            "p95": 51.339049,
+            "max": 51.875674
+          }
+        },
+        {
+          "repeated_frames": 0,
+          "late_frames": 0,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 599,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.9,
+          "latency_ms": {
+            "count": 599,
+            "p50": 51.541682,
+            "p95": 51.68701,
+            "max": 51.894783
+          }
+        },
+        {
+          "repeated_frames": 2,
+          "late_frames": 2,
+          "capture_misses": 2,
+          "source_misses": 0,
+          "new_frames": 597,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.7,
+          "latency_ms": {
+            "count": 597,
+            "p50": 51.543939,
+            "p95": 52.308145,
+            "max": 52.709841
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.548206,
+            "p95": 51.877297,
+            "max": 52.989969
+          }
+        },
+        {
+          "repeated_frames": 2,
+          "late_frames": 2,
+          "capture_misses": 2,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 600,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.527185,
+            "p95": 51.716352,
+            "max": 52.034797
+          }
+        }
+      ],
+      "capture_events": [
+        {
+          "id": 2502,
+          "window": 4,
+          "submit_ns": 174340304974941,
+          "present_ns": 174340338212000,
+          "refresh_ns": 16680288,
+          "sequence": 291583991,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 2504,
+          "window": 4,
+          "submit_ns": 174340338364706,
+          "present_ns": 174340371592000,
+          "refresh_ns": 16680288,
+          "sequence": 291583993,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3179,
+          "window": 5,
+          "submit_ns": 174351605051550,
+          "present_ns": 174351638228000,
+          "refresh_ns": 16680288,
+          "sequence": 291584668,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3855,
+          "window": 6,
+          "submit_ns": 174362888270497,
+          "present_ns": 174362921554000,
+          "refresh_ns": 16680288,
+          "sequence": 291585344,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3857,
+          "window": 6,
+          "submit_ns": 174362921669699,
+          "present_ns": 174362954934000,
+          "refresh_ns": 16680288,
+          "sequence": 291585346,
+          "flags": 7,
+          "clock_id": 1
+        }
+      ],
+      "source_events": [],
+      "torn_events": [],
+      "unreadable_events": [
+        {
+          "index": 5204,
+          "display_ns": 174386925300115,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5205,
+          "display_ns": 174386941306786,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5206,
+          "display_ns": 174386957316812,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5207,
+          "display_ns": 174386973323683,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5208,
+          "display_ns": 174386989332147,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5209,
+          "display_ns": 174387005338827,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5210,
+          "display_ns": 174387021344906,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5211,
+          "display_ns": 174387037352839,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5212,
+          "display_ns": 174387053363327,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5213,
+          "display_ns": 174387069372642,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5214,
+          "display_ns": 174387085382088,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5215,
+          "display_ns": 174387101393056,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5216,
+          "display_ns": 174387117402121,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5217,
+          "display_ns": 174387133410284,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5218,
+          "display_ns": 174387149415973,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5219,
+          "display_ns": 174387165431750,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5220,
+          "display_ns": 174387181441055,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5221,
+          "display_ns": 174387197462033,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5222,
+          "display_ns": 174387213488049,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5223,
+          "display_ns": 174387229509908,
+          "window": null,
+          "reason": "row 0 sync failed"
+        }
+      ],
+      "torn_frames": 0,
+      "unreadable_frames": 0,
+      "max_unreadable_frames": 5249,
+      "scored_received_frames": 3595,
+      "decode_errors": 0,
+      "decoded_frames": 5224,
+      "presented_ids": 5307,
+      "capture_gate_pass": false,
+      "stream_stalls": 0,
+      "label": "run-2",
+      "bridge_uncertainty_ms": 0.0
+    }
+  },
+  {
+    "label": "run-3",
+    "primary_clock": "display_ns",
+    "warmup_seconds": 10,
+    "discovered": {
+      "model": "System Product Name",
+      "architecture": "x86_64",
+      "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+      "os_release": {
+        "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+        "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+        "BUILD_ID": "\"26.11.20260923.4975466\"",
+        "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+        "DEFAULT_HOSTNAME": "nixos",
+        "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+        "HOME_URL": "\"https://nixos.org/\"",
+        "ID": "nixos",
+        "LOGO": "\"nix-snowflake\"",
+        "NAME": "NixOS",
+        "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+        "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+        "VENDOR_NAME": "NixOS",
+        "VENDOR_URL": "\"https://nixos.org/\"",
+        "VERSION": "\"26.11 (Zokor)\"",
+        "VERSION_CODENAME": "zokor",
+        "VERSION_ID": "\"26.11\""
+      },
+      "korri_system_path": "/nix/store/kz5fn7csayic70l3kvbfx6cf8zx30sg3-nixos-system-aka-26.11.20260923.4975466",
+      "plugin_status": {
+        "id": "@korri:sunshine",
+        "package": "/nix/store/yvhwh153zwal3br16zvi52aqqim8xpw6-korri-plugin",
+        "provenance": {
+          "kind": "Repository",
+          "source_url": "https://github.com/korri-os/plugins/releases/download/live-stream-shape-20261111-v3/catalog.json",
+          "plugin_id": "@korri:sunshine",
+          "release_version": "live-stream-shape-20261111-v3",
+          "platform": "x86_64-linux",
+          "archive_sha256": "8b79771a9e851f5caae7ae5497b79c2eac6229f15f80e5994b8249fd6ac9f189",
+          "signed": true
+        },
+        "approval": "ba03eb314df0af4d3220519a42011e0cbce530dd10103085120ccfa934384757",
+        "desired": {
+          "state": "Enabled"
+        },
+        "previous": {
+          "package": "/nix/store/28j7b4c4d7ghgx54mlwi543blvfrr40k-korri-plugin",
+          "provenance": {
+            "kind": "Repository",
+            "source_url": "https://github.com/korri-os/plugins/releases/download/build-6a16a09421bf-shared-settings/catalog.json",
+            "plugin_id": "@korri:sunshine",
+            "release_version": "build-6a16a09421bf-shared-settings",
+            "platform": "x86_64-linux",
+            "archive_sha256": "aed361b1aa8f9afb25d5635834a6a2b281144dd986f9765ef68144d667b7384e",
+            "signed": true
+          },
+          "approval": "e82e4cb8d613d621c5bd99b167508a9700cdc8c73f61346af6f256b06ed6dafb"
+        }
+      },
+      "plugin_version": null,
+      "sunshine_version": "2026.914.233613-korri",
+      "sunshine_unit": "korri-sunshine.service",
+      "processes": {
+        "sunshine": {
+          "pid": 1489954,
+          "uid": 56774,
+          "gid": 980,
+          "user": "korri",
+          "exe": "/nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri/bin/.sunshine-wrapped",
+          "start_ticks": "16843563",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/home/korri/.config",
+            "WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "korrid": {
+          "pid": 1490091,
+          "uid": 976,
+          "gid": 976,
+          "user": "korrid",
+          "exe": "/nix/store/40vky7c0qj6wmp2ym9y0iqpkpvv756zp-korrid-0.0.0/bin/korrid",
+          "start_ticks": "16843616",
+          "environment": {
+            "HOME": "/var/empty"
+          }
+        }
+      },
+      "certificate_control": {
+        "path": "/run/korri-certificate-control/control.sock",
+        "uid": "976",
+        "gid": "976",
+        "owner_gid": 976,
+        "mode": 432,
+        "peer_uid": 0,
+        "peer_gid": 0
+      },
+      "sunshine_state_path": "/home/korri/.config/sunshine/sunshine_state.json",
+      "sunshine_state_existed": true,
+      "listening_tcp_ports": [
+        47984,
+        47989,
+        47990,
+        48010
+      ],
+      "working_encoders": [
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan",
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan"
+      ],
+      "display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "valid": true,
+      "imported_store_paths": [
+        "/nix/store/00n5q0wbi7i9sy9wb44fz16cckpnx6hf-stream-cadence-motion",
+        "/nix/store/7zc2ydla9k88d8dh5lrjisq2s70x33ci-stream-cadence-capture-1",
+        "/nix/store/a1ijv4r3cdfyba2dfb861g0k8145fwzr-source",
+        "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1"
+      ],
+      "run_index": 2,
+      "bridge_uncertainty_ms": 0.0,
+      "viewer": {
+        "architecture": "x86_64",
+        "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+        "clock_ticks_per_second": 100,
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "fixture": "headless sway from the installed binary"
+      },
+      "requested_fps": 60.0,
+      "requested_resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "requested_codec": "h264",
+      "requested_bitrate": 10000,
+      "viewer_refresh_hz": 60.0,
+      "max_capture_gaps": 0,
+      "awake_display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "sunshine_port": 47989,
+      "host_uuid": "89AAFA60-A820-9105-5608-FB072EE41D4C",
+      "stream_host": "aka",
+      "viewer_command": [
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1/bin/moonlight",
+        "stream",
+        "127.0.0.1",
+        "-port",
+        "47989",
+        "-platform",
+        "sdl",
+        "-viewonly",
+        "-width",
+        "1920",
+        "-height",
+        "1080",
+        "-fps",
+        "60",
+        "-codec",
+        "h264",
+        "-app",
+        "Korri Stream",
+        "-keydir",
+        "/tmp/korri-stream-cadence-view-ile53dao/keys",
+        "-bitrate",
+        "10000"
+      ],
+      "bar_location": {
+        "x": 317.5,
+        "y": 275.0,
+        "cell": 35.5
+      },
+      "encoder": "h264_vulkan",
+      "capture_backend": "KMS",
+      "reported_bitrate_bps": 7308000,
+      "pacing": "unmarked",
+      "markers": [],
+      "viewer_restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "compositor": true
+        },
+        "run_folder": "/tmp/korri-stream-cadence-view-ile53dao",
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      },
+      "restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "sunshine": true,
+          "compositor": true,
+          "korrid": true
+        },
+        "certificate_revoked": true,
+        "run_folder": "/tmp/korri-stream-cadence-d11ujo7q",
+        "run_folder_bytes": 1362808,
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      }
+    },
+    "viewer": {
+      "startup_ms": 401.34701,
+      "cpu_seconds_per_second": 1.2647073815642418,
+      "battery_mw": null,
+      "stream_stalls": 0,
+      "viewer_exits": 0,
+      "capture_frames": 5250,
+      "capture_gaps": 0,
+      "packet_to_display_ms": null,
+      "input_ms": null,
+      "not_measured": {
+        "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
+        "input_ms": "The press-to-packet measure is not built.",
+        "battery_mw": "No battery discharged through the whole scored time."
+      }
+    },
+    "decoded_frames": 5250,
+    "decode_errors": 0,
+    "decode_warnings": 0,
+    "source_counter": {
+      "warmup_seconds": 10,
+      "scored_seconds": 60,
+      "clock": "display_ns with monotonic presentation bridge",
+      "raw_warmup": {
+        "repeated_frames": 1,
+        "late_frames": 1,
+        "capture_misses": 0,
+        "source_misses": 0,
+        "new_frames": 599,
+        "received_frames": 600,
+        "torn_frames": 0,
+        "undecodable_frames": 0,
+        "source_discarded_submissions": 0,
+        "captured_unpresented_ids": 0,
+        "expected_new_frames": 600.0,
+        "seconds": 10,
+        "new_fps": 59.9,
+        "latency_ms": {
+          "count": 599,
+          "p50": 18.209612,
+          "p95": 19.750687,
+          "max": 23.66524
+        }
+      },
+      "windows": [
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 34.8412655,
+            "p95": 35.066174,
+            "max": 35.3323
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.49501,
+            "p95": 51.689829,
+            "max": 51.881441
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.534939,
+            "p95": 51.787808,
+            "max": 52.244541
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 599,
+          "received_frames": 600,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.9,
+          "latency_ms": {
+            "count": 599,
+            "p50": 51.542419,
+            "p95": 51.681937,
+            "max": 51.837282
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.552239,
+            "p95": 51.782725,
+            "max": 52.061223
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.531892,
+            "p95": 51.663632,
+            "max": 51.969537
+          }
+        }
+      ],
+      "capture_events": [
+        {
+          "id": 2102,
+          "window": 3,
+          "submit_ns": 174423027123975,
+          "present_ns": 174423060362000,
+          "refresh_ns": 16680288,
+          "sequence": 291588947,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 2787,
+          "window": 4,
+          "submit_ns": 174434460719425,
+          "present_ns": 174434493915000,
+          "refresh_ns": 16680288,
+          "sequence": 291589632,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3461,
+          "window": 5,
+          "submit_ns": 174445710703369,
+          "present_ns": 174445743858000,
+          "refresh_ns": 16680288,
+          "sequence": 291590306,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 4139,
+          "window": 6,
+          "submit_ns": 174457027348475,
+          "present_ns": 174457060576000,
+          "refresh_ns": 16680288,
+          "sequence": 291590984,
+          "flags": 7,
+          "clock_id": 1
+        }
+      ],
+      "source_events": [],
+      "torn_events": [],
+      "unreadable_events": [
+        {
+          "index": 5205,
+          "display_ns": 174476373734146,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5206,
+          "display_ns": 174476389745366,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5207,
+          "display_ns": 174476405764330,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5208,
+          "display_ns": 174476421786389,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5209,
+          "display_ns": 174476437804331,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5210,
+          "display_ns": 174476453830679,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5211,
+          "display_ns": 174476469856476,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5212,
+          "display_ns": 174476486621129,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5213,
+          "display_ns": 174476502628271,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5214,
+          "display_ns": 174476518634130,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5215,
+          "display_ns": 174476534639228,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5216,
+          "display_ns": 174476550656048,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5217,
+          "display_ns": 174476566676204,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5218,
+          "display_ns": 174476582690830,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5219,
+          "display_ns": 174476598709784,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5220,
+          "display_ns": 174476614726333,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5221,
+          "display_ns": 174476630749135,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5222,
+          "display_ns": 174476646767447,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5223,
+          "display_ns": 174476662781612,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5224,
+          "display_ns": 174476678788193,
+          "window": null,
+          "reason": "row 0 sync failed"
+        }
+      ],
+      "torn_frames": 0,
+      "unreadable_frames": 0,
+      "max_unreadable_frames": 5250,
+      "scored_received_frames": 3595,
+      "decode_errors": 0,
+      "decoded_frames": 5225,
+      "presented_ids": 5310,
+      "capture_gate_pass": false,
+      "stream_stalls": 0,
+      "label": "run-3",
+      "bridge_uncertainty_ms": 0.0
+    }
+  },
+  {
+    "label": "run-4",
+    "primary_clock": "display_ns",
+    "warmup_seconds": 10,
+    "discovered": {
+      "model": "System Product Name",
+      "architecture": "x86_64",
+      "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+      "os_release": {
+        "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+        "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+        "BUILD_ID": "\"26.11.20260923.4975466\"",
+        "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+        "DEFAULT_HOSTNAME": "nixos",
+        "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+        "HOME_URL": "\"https://nixos.org/\"",
+        "ID": "nixos",
+        "LOGO": "\"nix-snowflake\"",
+        "NAME": "NixOS",
+        "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+        "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+        "VENDOR_NAME": "NixOS",
+        "VENDOR_URL": "\"https://nixos.org/\"",
+        "VERSION": "\"26.11 (Zokor)\"",
+        "VERSION_CODENAME": "zokor",
+        "VERSION_ID": "\"26.11\""
+      },
+      "korri_system_path": "/nix/store/kz5fn7csayic70l3kvbfx6cf8zx30sg3-nixos-system-aka-26.11.20260923.4975466",
+      "plugin_status": {
+        "id": "@korri:sunshine",
+        "package": "/nix/store/yvhwh153zwal3br16zvi52aqqim8xpw6-korri-plugin",
+        "provenance": {
+          "kind": "Repository",
+          "source_url": "https://github.com/korri-os/plugins/releases/download/live-stream-shape-20261111-v3/catalog.json",
+          "plugin_id": "@korri:sunshine",
+          "release_version": "live-stream-shape-20261111-v3",
+          "platform": "x86_64-linux",
+          "archive_sha256": "8b79771a9e851f5caae7ae5497b79c2eac6229f15f80e5994b8249fd6ac9f189",
+          "signed": true
+        },
+        "approval": "ba03eb314df0af4d3220519a42011e0cbce530dd10103085120ccfa934384757",
+        "desired": {
+          "state": "Enabled"
+        },
+        "previous": {
+          "package": "/nix/store/28j7b4c4d7ghgx54mlwi543blvfrr40k-korri-plugin",
+          "provenance": {
+            "kind": "Repository",
+            "source_url": "https://github.com/korri-os/plugins/releases/download/build-6a16a09421bf-shared-settings/catalog.json",
+            "plugin_id": "@korri:sunshine",
+            "release_version": "build-6a16a09421bf-shared-settings",
+            "platform": "x86_64-linux",
+            "archive_sha256": "aed361b1aa8f9afb25d5635834a6a2b281144dd986f9765ef68144d667b7384e",
+            "signed": true
+          },
+          "approval": "e82e4cb8d613d621c5bd99b167508a9700cdc8c73f61346af6f256b06ed6dafb"
+        }
+      },
+      "plugin_version": null,
+      "sunshine_version": "2026.914.233613-korri",
+      "sunshine_unit": "korri-sunshine.service",
+      "processes": {
+        "sunshine": {
+          "pid": 1489954,
+          "uid": 56774,
+          "gid": 980,
+          "user": "korri",
+          "exe": "/nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri/bin/.sunshine-wrapped",
+          "start_ticks": "16843563",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/home/korri/.config",
+            "WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "korrid": {
+          "pid": 1490091,
+          "uid": 976,
+          "gid": 976,
+          "user": "korrid",
+          "exe": "/nix/store/40vky7c0qj6wmp2ym9y0iqpkpvv756zp-korrid-0.0.0/bin/korrid",
+          "start_ticks": "16843616",
+          "environment": {
+            "HOME": "/var/empty"
+          }
+        }
+      },
+      "certificate_control": {
+        "path": "/run/korri-certificate-control/control.sock",
+        "uid": "976",
+        "gid": "976",
+        "owner_gid": 976,
+        "mode": 432,
+        "peer_uid": 0,
+        "peer_gid": 0
+      },
+      "sunshine_state_path": "/home/korri/.config/sunshine/sunshine_state.json",
+      "sunshine_state_existed": true,
+      "listening_tcp_ports": [
+        47984,
+        47989,
+        47990,
+        48010
+      ],
+      "working_encoders": [
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan",
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan"
+      ],
+      "display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "valid": true,
+      "imported_store_paths": [
+        "/nix/store/00n5q0wbi7i9sy9wb44fz16cckpnx6hf-stream-cadence-motion",
+        "/nix/store/7zc2ydla9k88d8dh5lrjisq2s70x33ci-stream-cadence-capture-1",
+        "/nix/store/a1ijv4r3cdfyba2dfb861g0k8145fwzr-source",
+        "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1"
+      ],
+      "run_index": 3,
+      "bridge_uncertainty_ms": 0.0,
+      "viewer": {
+        "architecture": "x86_64",
+        "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+        "clock_ticks_per_second": 100,
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "fixture": "headless sway from the installed binary"
+      },
+      "requested_fps": 60.0,
+      "requested_resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "requested_codec": "h264",
+      "requested_bitrate": 10000,
+      "viewer_refresh_hz": 60.0,
+      "max_capture_gaps": 0,
+      "awake_display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "sunshine_port": 47989,
+      "host_uuid": "89AAFA60-A820-9105-5608-FB072EE41D4C",
+      "stream_host": "aka",
+      "viewer_command": [
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1/bin/moonlight",
+        "stream",
+        "127.0.0.1",
+        "-port",
+        "47989",
+        "-platform",
+        "sdl",
+        "-viewonly",
+        "-width",
+        "1920",
+        "-height",
+        "1080",
+        "-fps",
+        "60",
+        "-codec",
+        "h264",
+        "-app",
+        "Korri Stream",
+        "-keydir",
+        "/tmp/korri-stream-cadence-view-t2qnur4o/keys",
+        "-bitrate",
+        "10000"
+      ],
+      "bar_location": {
+        "x": 317.0,
+        "y": 275.0,
+        "cell": 36.0
+      },
+      "encoder": "h264_vulkan",
+      "capture_backend": "KMS",
+      "reported_bitrate_bps": 7308000,
+      "pacing": "unmarked",
+      "markers": [],
+      "viewer_restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "compositor": true
+        },
+        "run_folder": "/tmp/korri-stream-cadence-view-t2qnur4o",
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      },
+      "restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "sunshine": true,
+          "compositor": true,
+          "korrid": true
+        },
+        "certificate_revoked": true,
+        "run_folder": "/tmp/korri-stream-cadence-uul187j6",
+        "run_folder_bytes": 1361266,
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      }
+    },
+    "viewer": {
+      "startup_ms": 400.727801,
+      "cpu_seconds_per_second": 1.2675189325998353,
+      "battery_mw": null,
+      "stream_stalls": 0,
+      "viewer_exits": 0,
+      "capture_frames": 5246,
+      "capture_gaps": 0,
+      "packet_to_display_ms": null,
+      "input_ms": null,
+      "not_measured": {
+        "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
+        "input_ms": "The press-to-packet measure is not built.",
+        "battery_mw": "No battery discharged through the whole scored time."
+      }
+    },
+    "decoded_frames": 5246,
+    "decode_errors": 0,
+    "decode_warnings": 0,
+    "source_counter": {
+      "warmup_seconds": 10,
+      "scored_seconds": 60,
+      "clock": "display_ns with monotonic presentation bridge",
+      "raw_warmup": {
+        "repeated_frames": 3,
+        "late_frames": 3,
+        "capture_misses": 1,
+        "source_misses": 0,
+        "new_frames": 597,
+        "received_frames": 600,
+        "torn_frames": 0,
+        "undecodable_frames": 0,
+        "source_discarded_submissions": 0,
+        "captured_unpresented_ids": 0,
+        "expected_new_frames": 600.0,
+        "seconds": 10,
+        "new_fps": 59.7,
+        "latency_ms": {
+          "count": 597,
+          "p50": 18.241331,
+          "p95": 34.858294,
+          "max": 35.463797
+        }
+      },
+      "windows": [
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 34.906371,
+            "p95": 51.51798,
+            "max": 51.671607
+          }
+        },
+        {
+          "repeated_frames": 0,
+          "late_frames": 0,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 599,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.9,
+          "latency_ms": {
+            "count": 599,
+            "p50": 51.537462,
+            "p95": 51.734866,
+            "max": 51.964197
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.5473025,
+            "p95": 51.849255,
+            "max": 52.258277
+          }
+        },
+        {
+          "repeated_frames": 2,
+          "late_frames": 2,
+          "capture_misses": 2,
+          "source_misses": 0,
+          "new_frames": 597,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.7,
+          "latency_ms": {
+            "count": 597,
+            "p50": 51.546831,
+            "p95": 51.755141,
+            "max": 51.93602
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 599,
+          "received_frames": 600,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.9,
+          "latency_ms": {
+            "count": 599,
+            "p50": 51.562929,
+            "p95": 52.156119,
+            "max": 52.88074
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.549412000000004,
+            "p95": 51.778583,
+            "max": 52.025145
+          }
+        }
+      ],
+      "capture_events": [
+        {
+          "id": 573,
+          "window": 0,
+          "submit_ns": 174487021619303,
+          "present_ns": 174487054873000,
+          "refresh_ns": 16680288,
+          "sequence": 291592781,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 1919,
+          "window": 3,
+          "submit_ns": 174509488193953,
+          "present_ns": 174509521388000,
+          "refresh_ns": 16680288,
+          "sequence": 291594127,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 2595,
+          "window": 4,
+          "submit_ns": 174520771518429,
+          "present_ns": 174520804719000,
+          "refresh_ns": 16680288,
+          "sequence": 291594803,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 2601,
+          "window": 4,
+          "submit_ns": 174520871717565,
+          "present_ns": 174520904869000,
+          "refresh_ns": 16680288,
+          "sequence": 291594809,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3276,
+          "window": 5,
+          "submit_ns": 174532138280980,
+          "present_ns": 174532171511000,
+          "refresh_ns": 16680288,
+          "sequence": 291595484,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3954,
+          "window": 6,
+          "submit_ns": 174543455010663,
+          "present_ns": 174543488229000,
+          "refresh_ns": 16680288,
+          "sequence": 291596162,
+          "flags": 7,
+          "clock_id": 1
+        }
+      ],
+      "source_events": [],
+      "torn_events": [],
+      "unreadable_events": [
+        {
+          "index": 5200,
+          "display_ns": 174565789072149,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5201,
+          "display_ns": 174565805087296,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5202,
+          "display_ns": 174565821099698,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5203,
+          "display_ns": 174565837108874,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5204,
+          "display_ns": 174565853127187,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5205,
+          "display_ns": 174565869146573,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5206,
+          "display_ns": 174565885171909,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5207,
+          "display_ns": 174565901188389,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5208,
+          "display_ns": 174565917203065,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5209,
+          "display_ns": 174565933220346,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5210,
+          "display_ns": 174565949238680,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5211,
+          "display_ns": 174565965251042,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5212,
+          "display_ns": 174565981273633,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5213,
+          "display_ns": 174565997284403,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5214,
+          "display_ns": 174566013291695,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5215,
+          "display_ns": 174566029301342,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5216,
+          "display_ns": 174566045311851,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5217,
+          "display_ns": 174566061326758,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5218,
+          "display_ns": 174566077339190,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5219,
+          "display_ns": 174566093357353,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5220,
+          "display_ns": 174566109366820,
+          "window": null,
+          "reason": "row 0 sync failed"
+        }
+      ],
+      "torn_frames": 0,
+      "unreadable_frames": 0,
+      "max_unreadable_frames": 5246,
+      "scored_received_frames": 3595,
+      "decode_errors": 0,
+      "decoded_frames": 5221,
+      "presented_ids": 5304,
+      "capture_gate_pass": false,
+      "stream_stalls": 0,
+      "label": "run-4",
+      "bridge_uncertainty_ms": 0.0
+    }
+  },
+  {
+    "label": "run-5",
+    "primary_clock": "display_ns",
+    "warmup_seconds": 10,
+    "discovered": {
+      "model": "System Product Name",
+      "architecture": "x86_64",
+      "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+      "os_release": {
+        "ANSI_COLOR": "\"0;38;2;126;186;228\"",
+        "BUG_REPORT_URL": "\"https://github.com/NixOS/nixpkgs/issues\"",
+        "BUILD_ID": "\"26.11.20260923.4975466\"",
+        "CPE_NAME": "\"cpe:/o:nixos:nixos:26.11\"",
+        "DEFAULT_HOSTNAME": "nixos",
+        "DOCUMENTATION_URL": "\"https://nixos.org/learn.html\"",
+        "HOME_URL": "\"https://nixos.org/\"",
+        "ID": "nixos",
+        "LOGO": "\"nix-snowflake\"",
+        "NAME": "NixOS",
+        "PRETTY_NAME": "\"NixOS 26.11 (Zokor)\"",
+        "SUPPORT_URL": "\"https://nixos.org/community.html\"",
+        "VENDOR_NAME": "NixOS",
+        "VENDOR_URL": "\"https://nixos.org/\"",
+        "VERSION": "\"26.11 (Zokor)\"",
+        "VERSION_CODENAME": "zokor",
+        "VERSION_ID": "\"26.11\""
+      },
+      "korri_system_path": "/nix/store/kz5fn7csayic70l3kvbfx6cf8zx30sg3-nixos-system-aka-26.11.20260923.4975466",
+      "plugin_status": {
+        "id": "@korri:sunshine",
+        "package": "/nix/store/yvhwh153zwal3br16zvi52aqqim8xpw6-korri-plugin",
+        "provenance": {
+          "kind": "Repository",
+          "source_url": "https://github.com/korri-os/plugins/releases/download/live-stream-shape-20261111-v3/catalog.json",
+          "plugin_id": "@korri:sunshine",
+          "release_version": "live-stream-shape-20261111-v3",
+          "platform": "x86_64-linux",
+          "archive_sha256": "8b79771a9e851f5caae7ae5497b79c2eac6229f15f80e5994b8249fd6ac9f189",
+          "signed": true
+        },
+        "approval": "ba03eb314df0af4d3220519a42011e0cbce530dd10103085120ccfa934384757",
+        "desired": {
+          "state": "Enabled"
+        },
+        "previous": {
+          "package": "/nix/store/28j7b4c4d7ghgx54mlwi543blvfrr40k-korri-plugin",
+          "provenance": {
+            "kind": "Repository",
+            "source_url": "https://github.com/korri-os/plugins/releases/download/build-6a16a09421bf-shared-settings/catalog.json",
+            "plugin_id": "@korri:sunshine",
+            "release_version": "build-6a16a09421bf-shared-settings",
+            "platform": "x86_64-linux",
+            "archive_sha256": "aed361b1aa8f9afb25d5635834a6a2b281144dd986f9765ef68144d667b7384e",
+            "signed": true
+          },
+          "approval": "e82e4cb8d613d621c5bd99b167508a9700cdc8c73f61346af6f256b06ed6dafb"
+        }
+      },
+      "plugin_version": null,
+      "sunshine_version": "2026.914.233613-korri",
+      "sunshine_unit": "korri-sunshine.service",
+      "processes": {
+        "sunshine": {
+          "pid": 1489954,
+          "uid": 56774,
+          "gid": 980,
+          "user": "korri",
+          "exe": "/nix/store/bvz43ydfridi8smy1gyqvzxk5v5xd3rg-sunshine-korri-2026.914.233613-korri/bin/.sunshine-wrapped",
+          "start_ticks": "16843563",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/home/korri/.config",
+            "WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "korrid": {
+          "pid": 1490091,
+          "uid": 976,
+          "gid": 976,
+          "user": "korrid",
+          "exe": "/nix/store/40vky7c0qj6wmp2ym9y0iqpkpvv756zp-korrid-0.0.0/bin/korrid",
+          "start_ticks": "16843616",
+          "environment": {
+            "HOME": "/var/empty"
+          }
+        }
+      },
+      "certificate_control": {
+        "path": "/run/korri-certificate-control/control.sock",
+        "uid": "976",
+        "gid": "976",
+        "owner_gid": 976,
+        "mode": 432,
+        "peer_uid": 0,
+        "peer_gid": 0
+      },
+      "sunshine_state_path": "/home/korri/.config/sunshine/sunshine_state.json",
+      "sunshine_state_existed": true,
+      "listening_tcp_ports": [
+        47984,
+        47989,
+        47990,
+        48010
+      ],
+      "working_encoders": [
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan",
+        "h264_vulkan",
+        "hevc_vulkan",
+        "av1_vulkan"
+      ],
+      "display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "valid": true,
+      "imported_store_paths": [
+        "/nix/store/00n5q0wbi7i9sy9wb44fz16cckpnx6hf-stream-cadence-motion",
+        "/nix/store/7zc2ydla9k88d8dh5lrjisq2s70x33ci-stream-cadence-capture-1",
+        "/nix/store/a1ijv4r3cdfyba2dfb861g0k8145fwzr-source",
+        "/nix/store/d64q19q1xjdwfhqx6czvrjgrhq0n3lcc-python3-3.14.7",
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1"
+      ],
+      "run_index": 4,
+      "bridge_uncertainty_ms": 0.0,
+      "viewer": {
+        "architecture": "x86_64",
+        "boot_id": "6c04d35a-b6d0-48de-a773-e6d881fb90fd",
+        "clock_ticks_per_second": 100,
+        "compositor": {
+          "pid": 748122,
+          "uid": 56774,
+          "gid": 1000,
+          "user": "korri",
+          "exe": "/nix/store/zbv448cirqfydprf0s5q4jvqqzbg80bx-sway-unwrapped-1.12/bin/sway",
+          "start_ticks": "8795728",
+          "environment": {
+            "HOME": "/home/korri",
+            "XDG_RUNTIME_DIR": "/run/user/56774",
+            "XDG_CONFIG_HOME": "/run/korri-compositor/config",
+            "KORRI_WAYLAND_DISPLAY": "korri-wayland",
+            "SWAYSOCK": "/run/korri-compositor/sway-ipc.sock"
+          }
+        },
+        "fixture": "headless sway from the installed binary"
+      },
+      "requested_fps": 60.0,
+      "requested_resolution": {
+        "width": 1920,
+        "height": 1080
+      },
+      "requested_codec": "h264",
+      "requested_bitrate": 10000,
+      "viewer_refresh_hz": 60.0,
+      "max_capture_gaps": 0,
+      "awake_display": {
+        "name": "HDMI-A-1",
+        "mode": {
+          "width": 2448,
+          "height": 1848,
+          "refresh": 60000
+        },
+        "refresh_hz": 60.0,
+        "transform": "normal",
+        "power": true,
+        "scale": 1.0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 2448,
+          "height": 1848
+        }
+      },
+      "sunshine_port": 47989,
+      "host_uuid": "89AAFA60-A820-9105-5608-FB072EE41D4C",
+      "stream_host": "aka",
+      "viewer_command": [
+        "/nix/store/v97wzcd4ain1sj4r218s7kpd5dfjn9xs-moonlight-embedded-2.7.1/bin/moonlight",
+        "stream",
+        "127.0.0.1",
+        "-port",
+        "47989",
+        "-platform",
+        "sdl",
+        "-viewonly",
+        "-width",
+        "1920",
+        "-height",
+        "1080",
+        "-fps",
+        "60",
+        "-codec",
+        "h264",
+        "-app",
+        "Korri Stream",
+        "-keydir",
+        "/tmp/korri-stream-cadence-view-2pah0br3/keys",
+        "-bitrate",
+        "10000"
+      ],
+      "bar_location": {
+        "x": 317.0,
+        "y": 275.0,
+        "cell": 36.0
+      },
+      "encoder": "h264_vulkan",
+      "capture_backend": "KMS",
+      "reported_bitrate_bps": 7308000,
+      "pacing": "unmarked",
+      "markers": [],
+      "viewer_restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "compositor": true
+        },
+        "run_folder": "/tmp/korri-stream-cadence-view-2pah0br3",
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      },
+      "restore": {
+        "pass": true,
+        "pids_unchanged": {
+          "sunshine": true,
+          "compositor": true,
+          "korrid": true
+        },
+        "certificate_revoked": true,
+        "run_folder": "/tmp/korri-stream-cadence-7k3attmb",
+        "run_folder_bytes": 1363322,
+        "run_folder_removed": true,
+        "remaining_processes": [],
+        "errors": []
+      }
+    },
+    "viewer": {
+      "startup_ms": 400.804838,
+      "cpu_seconds_per_second": 1.2673755759343046,
+      "battery_mw": null,
+      "stream_stalls": 0,
+      "viewer_exits": 0,
+      "capture_frames": 5254,
+      "capture_gaps": 0,
+      "packet_to_display_ms": null,
+      "input_ms": null,
+      "not_measured": {
+        "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
+        "input_ms": "The press-to-packet measure is not built.",
+        "battery_mw": "No battery discharged through the whole scored time."
+      }
+    },
+    "decoded_frames": 5254,
+    "decode_errors": 0,
+    "decode_warnings": 0,
+    "source_counter": {
+      "warmup_seconds": 10,
+      "scored_seconds": 60,
+      "clock": "display_ns with monotonic presentation bridge",
+      "raw_warmup": {
+        "repeated_frames": 1,
+        "late_frames": 1,
+        "capture_misses": 0,
+        "source_misses": 0,
+        "new_frames": 599,
+        "received_frames": 600,
+        "torn_frames": 0,
+        "undecodable_frames": 0,
+        "source_discarded_submissions": 0,
+        "captured_unpresented_ids": 0,
+        "expected_new_frames": 600.0,
+        "seconds": 10,
+        "new_fps": 59.9,
+        "latency_ms": {
+          "count": 599,
+          "p50": 17.948963,
+          "p95": 18.346032,
+          "max": 18.867864
+        }
+      },
+      "windows": [
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 18.3962465,
+            "p95": 35.092446,
+            "max": 35.512611
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 35.0029515,
+            "p95": 51.754635,
+            "max": 52.096486
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.537946000000005,
+            "p95": 51.775948,
+            "max": 51.972264
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 599,
+          "received_frames": 600,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.9,
+          "latency_ms": {
+            "count": 599,
+            "p50": 51.538993,
+            "p95": 51.704181,
+            "max": 51.899173
+          }
+        },
+        {
+          "repeated_frames": 0,
+          "late_frames": 0,
+          "capture_misses": 0,
+          "source_misses": 0,
+          "new_frames": 599,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.9,
+          "latency_ms": {
+            "count": 599,
+            "p50": 51.525314,
+            "p95": 51.794759,
+            "max": 51.909205
+          }
+        },
+        {
+          "repeated_frames": 1,
+          "late_frames": 1,
+          "capture_misses": 1,
+          "source_misses": 0,
+          "new_frames": 598,
+          "received_frames": 599,
+          "torn_frames": 0,
+          "undecodable_frames": 0,
+          "source_discarded_submissions": 0,
+          "captured_unpresented_ids": 0,
+          "expected_new_frames": 600.0,
+          "seconds": 10,
+          "new_fps": 59.8,
+          "latency_ms": {
+            "count": 598,
+            "p50": 51.5427465,
+            "p95": 51.864936,
+            "max": 52.700721
+          }
+        }
+      ],
+      "capture_events": [
+        {
+          "id": 2378,
+          "window": 3,
+          "submit_ns": 174606548254374,
+          "present_ns": 174606581425000,
+          "refresh_ns": 16680288,
+          "sequence": 291599942,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3050,
+          "window": 4,
+          "submit_ns": 174617764773826,
+          "present_ns": 174617797998000,
+          "refresh_ns": 16680288,
+          "sequence": 291600614,
+          "flags": 7,
+          "clock_id": 1
+        },
+        {
+          "id": 3722,
+          "window": 6,
+          "submit_ns": 174628981422357,
+          "present_ns": 174629014568000,
+          "refresh_ns": 16680288,
+          "sequence": 291601286,
+          "flags": 7,
+          "clock_id": 1
+        }
+      ],
+      "source_events": [],
+      "torn_events": [],
+      "unreadable_events": [
+        {
+          "index": 5206,
+          "display_ns": 174655287988795,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5207,
+          "display_ns": 174655304004153,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5208,
+          "display_ns": 174655320022256,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5209,
+          "display_ns": 174655336033758,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5210,
+          "display_ns": 174655352041091,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5211,
+          "display_ns": 174655368051510,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5212,
+          "display_ns": 174655384066187,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5213,
+          "display_ns": 174655400075313,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5214,
+          "display_ns": 174655416084500,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5215,
+          "display_ns": 174655432097764,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5216,
+          "display_ns": 174655448109535,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5217,
+          "display_ns": 174655464121036,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5218,
+          "display_ns": 174655480130734,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5219,
+          "display_ns": 174655496141173,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5220,
+          "display_ns": 174655512154437,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5221,
+          "display_ns": 174655528176769,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5222,
+          "display_ns": 174655544197035,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5223,
+          "display_ns": 174655560206663,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5224,
+          "display_ns": 174655576218334,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5225,
+          "display_ns": 174655592235395,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5226,
+          "display_ns": 174655608249011,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5227,
+          "display_ns": 174655624259139,
+          "window": null,
+          "reason": "row 0 sync failed"
+        },
+        {
+          "index": 5228,
+          "display_ns": 174655640281019,
+          "window": null,
+          "reason": "row 0 sync failed"
+        }
+      ],
+      "torn_frames": 0,
+      "unreadable_frames": 0,
+      "max_unreadable_frames": 5254,
+      "scored_received_frames": 3595,
+      "decode_errors": 0,
+      "decoded_frames": 5229,
+      "presented_ids": 5312,
+      "capture_gate_pass": false,
+      "stream_stalls": 0,
+      "label": "run-5",
+      "bridge_uncertainty_ms": 0.0
+    }
+  }
+]

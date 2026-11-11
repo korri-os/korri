@@ -240,8 +240,24 @@ command exits non-zero when a metric is worse. With five runs each, two
 results from the same viewer separate by chance in about 0.8% of comparisons
 for each metric.
 
+`verdict` refuses two results that were not measured under the same
+conditions: the sender's display mode, Sunshine version, encoder and capture
+backend, and the requested resolution, frame rate, codec, bitrate and viewer
+refresh. A difference there would judge the sender, not the viewer. An unwatched
+display keeps the mode of the last viewer that shaped it, so check the mode
+before a candidate run. `--allow-different-conditions` overrides the refusal.
+
 Baselines live in `baselines/<device>/results.json`. They are measurement
 data and are not part of the tool's Nix source.
+
+| Baseline | Recorded | Viewer | What it proves |
+| --- | --- | --- | --- |
+| `baselines/aka` | 2026-11-11, five runs | nixpkgs `moonlight-embedded` 2.7.1, `sdl` system, in the fixture | The session part and network library on aka. Record it again with the published `@korri:moonlight` x86_64 plugin before stage 1 of #391 compares against it. |
+
+In that baseline the viewer's delay grows in steps of one refresh period
+during the first 20 seconds and then stays near 51.5 ms, about three periods
+above the first frames. The viewer queues frames and never drops one to catch
+up. This is the fixture viewer's own behaviour, not a fault of the measure.
 
 ## Pairing and cleanup
 
