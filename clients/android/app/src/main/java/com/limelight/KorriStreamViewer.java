@@ -135,19 +135,13 @@ public final class KorriStreamViewer {
         return new int[] {Math.max(width, height), Math.min(width, height)};
     }
 
-    /** The screen stream size with the portrait inversion Game applies to its request. */
+    /** Screen geometry defaults to landscape; Portrait is a session control. */
     public static String viewerDisplay() {
         KorriStreamViewer host = instance;
         if (host == null) return "";
         int[] size = screenStreamSize(host.context);
         if (size == null) return "";
-        PreferenceConfiguration config = PreferenceConfiguration.readPreferences(host.context);
-        boolean invert = config.autoOrientation && config.autoInvertVideoResolution
-                && host.context.getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_PORTRAIT;
-        int width = invert ? size[1] : size[0];
-        int height = invert ? size[0] : size[1];
-        return width + "x" + height;
+        return size[0] + "x" + size[1];
     }
 
     public static String start(String launchId, String address, int width, int height) throws Exception {
@@ -210,7 +204,54 @@ public final class KorriStreamViewer {
         finally { task.cancel(false); }
     }
 
+    public static String notice(String launchId, String message) throws Exception {
+        requireWorker();
+        KorriStreamViewer host = host();
+        Session current = host.requireExact(launchId);
+        host.main.post(() -> {
+            if (host.session == current && !current.retired) {
+                android.widget.Toast.makeText(host.context, message, android.widget.Toast.LENGTH_SHORT).show();
+            }
+        });
+        return "Queued";
+    }
+
+    public static String resize(String launchId, String connection, int width, int height) throws Exception {
+        requireWorker();
+        KorriStreamViewer host = host();
+        Session current = host.requireExact(launchId);
+        final Game game;
+        final long lease;
+        synchronized (current.state) {
+            lease = current.state.activityLease();
+            String prefix = KorriViewerControls.prefix(launchId, current.state.generation, lease);
+            if (!KorriViewerControls.connection(prefix).equals(connection) || !current.state.canPresent(lease)) throw failure();
+            synchronized (current.activities) { game = current.activities.get(lease); }
+        }
+        if (game == null) throw failure();
+        com.limelight.korri.moonlight.KorriSunshineRuntimeSettings.Authorization authority =
+            new com.limelight.korri.moonlight.KorriSunshineRuntimeSettings.Authorization() {
+                public boolean isCurrent() {
+                    synchronized (current.state) { return host.session == current && !current.retired && current.state.canPresent(lease); }
+                }
+                public <T> T commit(java.util.function.Supplier<T> action, T stale) {
+                    synchronized (current.state) { return isCurrent() ? action.get() : stale; }
+                }
+            };
+        if (!game.resizeLiveStream(width, height, authority)) throw failure();
+        return "Applied";
+    }
+
     public static String snapshot(String launchId) throws Exception {
+        KorriStreamViewer host = host();
+        Session current = host.requireExact(launchId);
+        synchronized (current.state) {
+            long lease = current.state.activityLease();
+            if (!current.state.connectedTransport() || lease == 0) {
+                return new JSONObject().put("controls", new org.json.JSONArray())
+                        .put("connected", current.state.connectedTransport()).toString();
+            }
+        }
         return withGame(launchId, null, null);
     }
 
@@ -406,7 +447,7 @@ public final class KorriStreamViewer {
     /** The far launch fixes the stream size; Game applies portrait inversion. */
     static void putStreamSize(Intent intent, Context context, int width, int height) {
         int[] size = width > 0 && height > 0
-                ? new int[] {Math.max(width, height), Math.min(width, height)}
+                ? new int[] {width, height}
                 : screenStreamSize(context);
         if (size != null) {
             intent.putExtra(Game.EXTRA_WIDTH, size[0]).putExtra(Game.EXTRA_HEIGHT, size[1]);
@@ -483,6 +524,7 @@ public final class KorriStreamViewer {
             KorriViewerControls.restore(game, current.controls);
             game.restoreViewerZoomPan(current.controls);
             current.state.connected(lease);
+            game.startLiveResolution();
         }
     }
     static void focus(Game game, long lease, boolean focused) {
@@ -496,11 +538,13 @@ public final class KorriStreamViewer {
         if (current != null) current.state.failed(lease);
     }
     static void closed(Game game, long lease) {
+        game.stopLiveResolution();
         KorriStreamViewer host = instance;
         Session current = host == null ? null : host.source(game);
         if (current != null) current.state.closed(lease);
     }
     static void destroyed(Game game, long lease) {
+        game.stopLiveResolution();
         KorriStreamViewer host = instance;
         Session current = host == null ? null : host.source(game);
         if (current == null) return;

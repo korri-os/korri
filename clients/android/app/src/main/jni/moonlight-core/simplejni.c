@@ -350,3 +350,10 @@ Java_com_limelight_nvstream_jni_MoonBridge_guessControllerHasShareButton(JNIEnv 
     // Xbox Elite and DualSense Edge controllers have paddles
     return SDL_IsJoystickXboxSeriesX(vendorId, productId);
 }
+// Surface replacement keeps the stream alive but can drop queued pictures.
+JNIEXPORT void JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_requestIdrFrame(JNIEnv* env, jclass clazz) {
+    (void)env;
+    (void)clazz;
+    LiRequestIdrFrame();
+}

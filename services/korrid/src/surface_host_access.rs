@@ -117,7 +117,8 @@ impl SurfaceHostPermission {
             | RpcRequest::PluginArchiveFinish(_)
             | RpcRequest::PluginArchiveInspect(_)
             | RpcRequest::PluginArchiveInstall(_)
-            | RpcRequest::PluginSetEnabled(_) => false,
+            | RpcRequest::PluginSetEnabled(_)
+            | RpcRequest::SessionViewerDisplay(_) => false,
         };
         match self {
             Self::Full => true,

@@ -34,6 +34,10 @@ impl LinuxViewerError {
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ViewerSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connected: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<ViewerShapeSnapshot>,
     /// Legacy StreamHealthSample.sampledAtMs: local monotonic sample time, not surface data.
     pub sampled_at_ms: Option<f64>,
     /// The adapter converts the producer clock to a deadline without resetting sample age.
@@ -44,11 +48,40 @@ pub struct ViewerSnapshot {
     pub controls: Vec<korri_surface_treaty::SurfaceGameplayControl>,
 }
 
+/// Connection identity and dimensions observed from the live viewer, not from
+/// its launch preferences. These are internal adapter facts, not surface data.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ViewerShapeSnapshot {
+    pub connection: String,
+    pub screen: crate::launcher::plugin_launch::PluginDisplay,
+    pub encoded: crate::launcher::plugin_launch::PluginDisplay,
+    pub ready: bool,
+}
+
 /// Controls a viewer by the same exact launch ID used by the far korrid.
 /// Implementations must never select a viewer by process name, address, or
 /// "most recent" state when an exact launch ID is supplied. Every successful
 /// mutation must return only after the requested runtime state is confirmed.
 pub trait LinuxStreamViewer: Send + Sync {
+    fn change_signal(&self) -> Option<std::sync::Arc<tokio::sync::Notify>> {
+        None
+    }
+    fn notice<'a>(
+        &'a self,
+        _launch: &'a str,
+        _message: &'a str,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        Box::pin(async { Err(LinuxViewerError::new("Viewer notice unavailable")) })
+    }
+    fn resize<'a>(
+        &'a self,
+        _launch: &'a str,
+        _connection: &'a str,
+        _display: crate::launcher::plugin_launch::PluginDisplay,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        Box::pin(async { Err(LinuxViewerError::new("Live resolution is unavailable")) })
+    }
     fn snapshot<'a>(
         &'a self,
         _launch: &'a str,
@@ -162,6 +195,7 @@ pub(crate) mod test_backend {
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum LinuxViewerAction {
+        Resize,
         Start,
         Status,
         Background,
@@ -262,6 +296,33 @@ pub(crate) mod test_backend {
     }
 
     impl LinuxStreamViewer for TestLinuxStreamViewer {
+        fn resize<'a>(
+            &'a self,
+            launch: &'a str,
+            connection: &'a str,
+            display: crate::launcher::plugin_launch::PluginDisplay,
+        ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+            Box::pin(async move {
+                self.record(
+                    LinuxViewerAction::Resize,
+                    launch,
+                    None,
+                    Some(display.clone()),
+                )?;
+                let mut state = self.inner.lock().unwrap();
+                if state.statuses.get(launch) != Some(&LinuxViewerStatus::Running) {
+                    return Err(LinuxViewerError::new("Viewer is not running"));
+                }
+                let shape = state
+                    .snapshot
+                    .as_mut()
+                    .and_then(|s| s.shape.as_mut())
+                    .filter(|s| s.connection == connection && s.ready)
+                    .ok_or_else(|| LinuxViewerError::new("Viewer connection changed"))?;
+                shape.encoded = display;
+                Ok(())
+            })
+        }
         fn snapshot<'a>(
             &'a self,
             launch: &'a str,

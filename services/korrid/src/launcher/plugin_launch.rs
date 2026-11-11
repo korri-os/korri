@@ -301,6 +301,8 @@ pub struct PluginSettingsRenderOutput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResolvedLaunchModifier {
     pub modifier_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_change: Option<String>,
     pub manifest: std::path::PathBuf,
     pub entry: String,
     pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
@@ -478,6 +480,9 @@ pub(crate) struct PreparedLaunch {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) temporary_toml: Vec<super::native_config_transaction::TemporaryToml>,
     pub(crate) plan: PluginLaunchOutput,
+    /// Exact packaged hooks contributed by the selected modifiers, in wrapping order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) display_change: Vec<String>,
     runner_argv: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) release_id: Option<String>,
@@ -614,8 +619,9 @@ fn prepare_with_diagnostics(
     let runner_argv = std::iter::once(plan.command.clone())
         .chain(plan.args.clone())
         .collect();
+    let mut display_change = Vec::new();
     for modifier in &composition.modifiers {
-        let compose = || -> Result<PluginLaunchOutput, String> {
+        let mut compose = || -> Result<PluginLaunchOutput, String> {
             let (snapshot, manifest) = package_snapshot(&modifier.manifest, &modifier.entry)?;
             for (key, path) in &manifest.files {
                 if !Path::new(path).is_absolute() || !Path::new(path).exists() {
@@ -623,6 +629,16 @@ fn prepare_with_diagnostics(
                         "modifier file {key} is missing or not absolute: {path}"
                     ));
                 }
+            }
+            if let Some(key) = &modifier.display_change {
+                let program = manifest
+                    .files
+                    .get(key)
+                    .ok_or_else(|| format!("displayChange file {key} is missing"))?;
+                if !Path::new(program).is_absolute() || !Path::new(program).is_file() {
+                    return Err("displayChange hook must be a packaged executable file".into());
+                }
+                display_change.push(program.clone());
             }
             let mut settings = modifier.settings.clone();
             super::typed_settings::validate(
@@ -693,6 +709,7 @@ fn prepare_with_diagnostics(
     Ok(PreparedLaunch {
         temporary_toml,
         plan,
+        display_change,
         runner_argv,
         release_id: None,
     })

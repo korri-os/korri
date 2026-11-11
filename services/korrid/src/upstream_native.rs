@@ -299,6 +299,23 @@ impl NativeClient {
         }
     }
 
+    pub(crate) async fn viewer_display_report(
+        &self,
+        request: crate::live_display::SessionViewerDisplayRequest,
+    ) -> Result<crate::live_display::SessionViewerDisplay, UpstreamError> {
+        match self.call(RpcRequest::SessionViewerDisplay(request)).await? {
+            RpcResponse::SessionViewerDisplay(
+                crate::live_display::SessionViewerDisplayOutcome::Ok(value),
+            ) => Ok(value),
+            RpcResponse::SessionViewerDisplay(
+                crate::live_display::SessionViewerDisplayOutcome::Err(error),
+            ) => Err(Self::tagged_failure(error)),
+            _ => Err(UpstreamError::Wire(
+                "unexpected viewer display response".into(),
+            )),
+        }
+    }
+
     pub async fn prepare_stream(
         &self,
         game_id: &str,

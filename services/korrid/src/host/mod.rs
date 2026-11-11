@@ -15,11 +15,14 @@ mod input_coordination;
 mod input_seat;
 mod launch_reservation;
 mod launch_services;
+mod live_shape;
+mod live_shape_effect;
 pub(crate) mod moonlight_certificate;
 mod netplay;
 mod occupied_seats;
 pub(crate) mod play_log;
 mod prepare;
+mod shape_owner;
 pub(crate) use prepare::configured_compositor;
 mod private_input;
 pub(crate) mod retroarch_control;
@@ -647,6 +650,19 @@ impl HostRuntime {
             catalog,
             stream_control,
         }
+    }
+
+    pub(crate) async fn viewer_display_report(
+        &self,
+        peer: String,
+        request: crate::live_display::SessionViewerDisplayRequest,
+    ) -> Result<crate::live_display::SessionViewerDisplay, RpcFailure> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            runtime.control()?.viewer_display_report(&peer, &request)
+        })
+        .await
+        .map_err(host_worker_failure)?
     }
 
     pub async fn prepare(

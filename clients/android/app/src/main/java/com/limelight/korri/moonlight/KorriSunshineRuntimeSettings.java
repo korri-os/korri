@@ -169,6 +169,13 @@ public final class KorriSunshineRuntimeSettings implements AutoCloseable {
         return mutate(MoonBridge.SS_RUNTIME_SETTINGS_OPERATION_SET_FPS, launch, 0, authorization);
     }
 
+    public int height() { synchronized (lock) { return checkedPositive(state.currentHeight, MAX_DIMENSION); } }
+
+    /** Explicit live shape. Unlike the quality-width control, aspect can change. */
+    public MutationResult setResolution(int width, int height, Authorization authorization) {
+        return mutate(MoonBridge.SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION, width, height, authorization);
+    }
+
     public MutationResult setWidth(int width, Authorization authorization) {
         int height;
         synchronized (lock) {
@@ -411,8 +418,8 @@ public final class KorriSunshineRuntimeSettings implements AutoCloseable {
         if (operation == MoonBridge.SS_RUNTIME_SETTINGS_OPERATION_SET_FPS) {
             return value >= 1 && value <= fpsLimitLocked(state);
         }
-        return value >= 2 && value <= checkedPositive(state.launchWidth, MAX_DIMENSION)
-                && (value & 1) == 0 && secondary > 0;
+        return value >= 2 && value <= 4096 && secondary >= 2 && secondary <= 4096
+                && (value & 1) == 0 && (secondary & 1) == 0;
     }
 
     private boolean liveFactsValidLocked(int operation, SunshineRuntimeSettingsSnapshot value) {
@@ -427,17 +434,16 @@ public final class KorriSunshineRuntimeSettings implements AutoCloseable {
             int current = checkedPositive(value.currentFps, MAX_FPS);
             return current >= 1 && current <= maximum;
         }
-        int maximum = checkedPositive(value.launchWidth, MAX_DIMENSION);
-        int current = checkedPositive(value.currentWidth, MAX_DIMENSION);
-        return maximum >= 2 && current >= 2 && current <= maximum
-                && (current & 1) == 0 && value.launchHeight > 0;
+        return value.currentWidth >= 2 && value.currentWidth <= 4096
+                && value.currentHeight >= 2 && value.currentHeight <= 4096
+                && (value.currentWidth & 1) == 0 && (value.currentHeight & 1) == 0;
     }
 
     private static boolean factsRepresentable(SunshineRuntimeSettingsSnapshot value) {
         return positive(value.launchBitrateKbps, MAX_BITRATE)
                 && positive(value.currentBitrateKbps, MAX_BITRATE)
-                && positive(value.minBitrateKbps, MAX_BITRATE)
-                && positive(value.maxBitrateKbps, MAX_BITRATE)
+                && (((value.supportedOperations & (1L << MoonBridge.SS_RUNTIME_SETTINGS_OPERATION_SET_BITRATE_KBPS)) == 0)
+                    || (positive(value.minBitrateKbps, MAX_BITRATE) && positive(value.maxBitrateKbps, MAX_BITRATE)))
                 && positive(value.launchFps, MAX_FPS)
                 && positive(value.currentFps, MAX_FPS)
                 && positive(value.maxFps, MAX_FPS)

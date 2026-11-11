@@ -365,8 +365,11 @@ fn default_viewer() -> Arc<dyn LinuxStreamViewer> {
     }
 }
 
+mod live_shape;
+
 #[derive(Clone)]
 pub struct UpstreamRegistry {
+    live_shape: Arc<Mutex<Option<live_shape::ClientShape>>>,
     last_stream_play_end: Arc<Mutex<Option<crate::stream_play::StreamPlayEnded>>>,
     hosts: Vec<RegisteredHost>,
     credentials: Option<PeerCredentials>,
@@ -478,6 +481,7 @@ impl UpstreamRegistry {
             selected_remote_session: Arc::new(Mutex::new(None)),
             remote_prepare_mutation: Arc::new(tokio::sync::Mutex::new(())),
             viewer: default_viewer(),
+            live_shape: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -486,7 +490,7 @@ impl UpstreamRegistry {
     }
 
     pub(crate) fn local_viewer(&self) -> Arc<dyn LinuxStreamViewer> {
-        self.viewer.clone()
+        Arc::new(live_shape::ShapeControls(self.clone()))
     }
 
     pub fn with_linux_viewer(mut self, viewer: Arc<dyn LinuxStreamViewer>) -> Self {
@@ -532,6 +536,7 @@ impl UpstreamRegistry {
                 selected_remote_session: Arc::new(Mutex::new(None)),
                 remote_prepare_mutation: Arc::new(tokio::sync::Mutex::new(())),
                 viewer: default_viewer(),
+                live_shape: Arc::new(Mutex::new(None)),
             },
             Err(error) => Self::invalid_file_read(path, error),
         }
@@ -639,6 +644,7 @@ impl UpstreamRegistry {
             selected_remote_session: Arc::new(Mutex::new(None)),
             remote_prepare_mutation: Arc::new(tokio::sync::Mutex::new(())),
             viewer: default_viewer(),
+            live_shape: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -667,6 +673,7 @@ impl UpstreamRegistry {
         registry.selected_remote_session = self.selected_remote_session.clone();
         registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
         registry.viewer = self.viewer.clone();
+        registry.live_shape = self.live_shape.clone();
         let mut seen = BTreeSet::new();
         let mut hosts = Vec::new();
         for mut host in registry.hosts {
@@ -748,6 +755,7 @@ impl UpstreamRegistry {
                 registry.selected_remote_session = self.selected_remote_session.clone();
                 registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
                 registry.viewer = self.viewer.clone();
+                registry.live_shape = self.live_shape.clone();
                 Cow::Borrowed(config.resolved.get_or_init(|| registry))
             }
             Ok(registry) => Cow::Owned(registry),
@@ -1274,7 +1282,14 @@ impl UpstreamRegistry {
         let _mutation = self.remote_prepare_mutation.lock().await;
         if let Some(selected) = self.selected() {
             if matches!(selected.participation, Participation::StreamPlayer { .. }) {
-                return self.observe_stream_player(&selected).await;
+                let status = self.observe_stream_player(&selected).await?;
+                if matches!(
+                    &status,
+                    UpstreamSessionStatus::SessionStatus { active: Some(_) }
+                ) {
+                    let _ = self.synchronize_shape(&selected).await;
+                }
+                return Ok(status);
             }
             let status = match self.selected_status(&selected).await {
                 Err(error) if error.code() == "HostLaunchFailed" => {
@@ -1296,6 +1311,7 @@ impl UpstreamRegistry {
                     if selected.viewer.is_some() {
                         let phase = RecoveredFarPhase::parse(active.phase.as_deref())?;
                         self.recover_viewer(&selected, phase).await?;
+                        let _ = self.synchronize_shape(&selected).await;
                     }
                     return Ok(status);
                 }
@@ -2251,6 +2267,9 @@ mod tests {
 
     #[derive(Clone)]
     struct ExactNativeState {
+        shape_requests: Arc<Mutex<Vec<crate::live_display::SessionViewerDisplayRequest>>>,
+        shape_replies:
+            Arc<Mutex<std::collections::VecDeque<crate::live_display::SessionViewerDisplay>>>,
         launch_id: String,
         active_phase: Arc<std::sync::Mutex<Option<String>>>,
         display: Arc<std::sync::Mutex<Option<crate::launcher::plugin_launch::PluginDisplay>>>,
@@ -2373,6 +2392,22 @@ mod tests {
                     overlay: None,
                 }))
             }
+            crate::RpcRequest::SessionViewerDisplay(request) => {
+                state.shape_requests.lock().unwrap().push(request);
+                crate::RpcResponse::SessionViewerDisplay(
+                    match state.shape_replies.lock().unwrap().pop_front() {
+                        Some(response) => {
+                            crate::live_display::SessionViewerDisplayOutcome::Ok(response)
+                        }
+                        None => crate::live_display::SessionViewerDisplayOutcome::Err(
+                            crate::RpcFailure {
+                                code: "UnexpectedDisplayRequest".into(),
+                                message: "no scripted reply".into(),
+                            },
+                        ),
+                    },
+                )
+            }
             crate::RpcRequest::SessionPrepare(request) => {
                 *state.terminal_error.lock().unwrap() = None;
                 *state.viewer_display.lock().unwrap() = request.viewer_display;
@@ -2483,12 +2518,110 @@ mod tests {
         Json(response)
     }
 
+    #[tokio::test]
+    async fn live_shape_reports_screen_applies_encode_and_acknowledges_exact_revision() {
+        use crate::launcher::plugin_launch::PluginDisplay;
+        use crate::linux_viewer::{ViewerShapeSnapshot, ViewerSnapshot};
+        use crate::live_display::{SessionViewerDisplay, ViewerDisplayEvent};
+        let (url, far) = exact_native_server(false).await;
+        let viewer = TestLinuxStreamViewer::default();
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+            .with_linux_viewer(Arc::new(viewer.clone()));
+        registry.prepare_stream("game", None).await.unwrap();
+        let selected = registry.selected().unwrap();
+        viewer.set_snapshot(Some(ViewerSnapshot {
+            connected: Some(true),
+            shape: Some(ViewerShapeSnapshot {
+                connection: "native-connection-one".into(),
+                screen: PluginDisplay {
+                    width: 2448,
+                    height: 1848,
+                },
+                encoded: PluginDisplay {
+                    width: 1920,
+                    height: 1080,
+                },
+                ready: false,
+            }),
+            ..Default::default()
+        }));
+        far.shape_replies.lock().unwrap().extend([
+            SessionViewerDisplay {
+                display: PluginDisplay {
+                    width: 1920,
+                    height: 1080,
+                },
+                owner: true,
+                portrait: false,
+                revision: None,
+                notice: None,
+            },
+            SessionViewerDisplay {
+                display: PluginDisplay {
+                    width: 2448,
+                    height: 1848,
+                },
+                owner: true,
+                portrait: false,
+                revision: Some("revision-one".into()),
+                notice: None,
+            },
+            SessionViewerDisplay {
+                display: PluginDisplay {
+                    width: 2448,
+                    height: 1848,
+                },
+                owner: true,
+                portrait: false,
+                revision: None,
+                notice: None,
+            },
+        ]);
+        registry.synchronize_shape(&selected).await.unwrap();
+        let mut observed = viewer.snapshot(&selected.launch_id).await.unwrap().unwrap();
+        observed.shape.as_mut().unwrap().ready = true;
+        viewer.set_snapshot(Some(observed));
+        registry.synchronize_shape(&selected).await.unwrap();
+        let requests = far.shape_requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(
+            matches!(&requests[1].event, ViewerDisplayEvent::Report{display,..} if display.width==2448 && display.height==1848)
+        );
+        assert!(
+            matches!(&requests[2].event, ViewerDisplayEvent::Applied{revision,..} if revision=="revision-one")
+        );
+        assert_eq!(
+            requests[0].event.connection(),
+            requests[1].event.connection()
+        );
+        drop(requests);
+        let snapshot = registry
+            .local_viewer()
+            .snapshot(&selected.launch_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            snapshot.shape.unwrap().encoded,
+            PluginDisplay {
+                width: 2448,
+                height: 1848
+            }
+        );
+        assert!(snapshot
+            .controls
+            .iter()
+            .any(|c| c.label == "Portrait" && c.enabled));
+    }
+
     async fn exact_native_server(stop_pending: bool) -> (String, ExactNativeState) {
         let state = ExactNativeState {
             launch_id: "11111111111111111111111111111111".into(),
             active_phase: Default::default(),
             display: Default::default(),
             viewer_display: Default::default(),
+            shape_requests: Default::default(),
+            shape_replies: Default::default(),
             steps: Default::default(),
             stop_pending,
             terminal_error: Default::default(),

@@ -127,6 +127,10 @@ final class KorriStreamViewerState {
         notifyAll();
     }
 
+    synchronized boolean connectedTransport() {
+        return connection == Connection.CONNECTED && !openConnections.isEmpty();
+    }
+
     synchronized Phase phase() {
         boolean released = activityLease == 0 && openConnections.isEmpty();
         if (target == Target.STOPPED) return released ? Phase.STOPPED : Phase.STOPPING;

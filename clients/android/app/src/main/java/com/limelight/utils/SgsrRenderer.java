@@ -161,8 +161,10 @@ public class SgsrRenderer implements GLSurfaceView.Renderer, SurfaceTexture.OnFr
 
     private final GLSurfaceView glSurfaceView;
     private final OnRenderSurfaceReadyListener onSurfaceReadyListener;
-    private final int sourceWidth;
-    private final int sourceHeight;
+    private final Object surfaceLifecycle = new Object();
+    private long contextGeneration;
+    private int sourceWidth;
+    private int sourceHeight;
     private volatile float edgeSharpness;
     private volatile float edgeThreshold;
 
@@ -210,6 +212,15 @@ public class SgsrRenderer implements GLSurfaceView.Renderer, SurfaceTexture.OnFr
 
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
+        synchronized (surfaceLifecycle) {
+            // GLSurfaceView calls this for a new EGL context. Deletion tasks
+            // from a destroyed context must never delete reused GL names.
+            contextGeneration++;
+            createVideoSurface();
+        }
+    }
+
+    private void createVideoSurface() {
         videoTextureId = createExternalOesTexture();
         videoSurfaceTexture = new SurfaceTexture(videoTextureId);
         videoSurfaceTexture.setOnFrameAvailableListener(this);
@@ -239,12 +250,20 @@ public class SgsrRenderer implements GLSurfaceView.Renderer, SurfaceTexture.OnFr
 
     @Override
     public void onSurfaceChanged(GL10 gl, int width, int height) {
-        outputWidth = width;
-        outputHeight = height;
+        synchronized (surfaceLifecycle) {
+            outputWidth = width;
+            outputHeight = height;
+            // An output surface can return without a new EGL context.
+            if (videoSurface == null) createVideoSurface();
+        }
     }
 
     @Override
     public void onDrawFrame(GL10 gl) {
+        synchronized (surfaceLifecycle) { drawVideoFrame(); }
+    }
+
+    private void drawVideoFrame() {
         if (!frameAvailable.getAndSet(false)) {
             return;
         }
@@ -283,6 +302,38 @@ public class SgsrRenderer implements GLSurfaceView.Renderer, SurfaceTexture.OnFr
         drawQuad(sgsrProgram);
     }
 
+    /** Keep the old framebuffer until its replacement is complete. */
+    public void resizeSource(int width, int height, java.util.function.BooleanSupplier current,
+                             java.util.function.Consumer<Boolean> completed) {
+        glSurfaceView.queueEvent(() -> {
+            synchronized (surfaceLifecycle) {
+            if (!current.getAsBoolean() || videoSurface == null || !videoSurface.isValid()) { completed.accept(false); return; }
+            if (sourceWidth == width && sourceHeight == height) { completed.accept(true); return; }
+            int texture = createRgbaTexture(width, height);
+            int[] framebuffer = new int[1];
+            GLES20.glGenFramebuffers(1, framebuffer, 0);
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer[0]);
+            GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0,
+                    GLES20.GL_TEXTURE_2D, texture, 0);
+            boolean valid = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE
+                    && GLES20.glGetError() == GLES20.GL_NO_ERROR && current.getAsBoolean();
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+            if (!valid) {
+                GLES20.glDeleteTextures(1, new int[] {texture}, 0);
+                GLES20.glDeleteFramebuffers(1, framebuffer, 0);
+                completed.accept(false); return;
+            }
+            int oldTexture = sourceTextureId;
+            int oldFramebuffer = sourceFboHandle;
+            sourceTextureId = texture; sourceFboHandle = framebuffer[0];
+            sourceWidth = width; sourceHeight = height;
+            GLES20.glDeleteTextures(1, new int[] {oldTexture}, 0);
+            GLES20.glDeleteFramebuffers(1, new int[] {oldFramebuffer}, 0);
+            completed.accept(true);
+            }
+        });
+    }
+
     /** Live-tunable from the in-game overlay; applied on the next frame. */
     public void updateEdgeParams(float sharpness, float threshold) {
         this.edgeSharpness = sharpness;
@@ -290,22 +341,25 @@ public class SgsrRenderer implements GLSurfaceView.Renderer, SurfaceTexture.OnFr
     }
 
     public void onSurfaceDestroyed() {
-        if (videoSurface != null) {
-            videoSurface.release();
-            videoSurface = null;
+        synchronized (surfaceLifecycle) {
+            if (videoSurface != null) { videoSurface.release(); videoSurface = null; }
+            if (videoSurfaceTexture != null) { videoSurfaceTexture.release(); videoSurfaceTexture = null; }
+            frameAvailable.set(false);
+            final long generation = contextGeneration;
+            final int oldBlit = blitProgram, oldSgsr = sgsrProgram;
+            final int[] textures = {videoTextureId, sourceTextureId};
+            final int[] fbos = {sourceFboHandle};
+            videoTextureId = sourceTextureId = sourceFboHandle = blitProgram = sgsrProgram = 0;
+            glSurfaceView.queueEvent(() -> {
+                synchronized (surfaceLifecycle) {
+                    if (generation != contextGeneration) return;
+                    GLES20.glDeleteProgram(oldBlit);
+                    GLES20.glDeleteProgram(oldSgsr);
+                    GLES20.glDeleteTextures(textures.length, textures, 0);
+                    GLES20.glDeleteFramebuffers(fbos.length, fbos, 0);
+                }
+            });
         }
-        if (videoSurfaceTexture != null) {
-            videoSurfaceTexture.release();
-            videoSurfaceTexture = null;
-        }
-        glSurfaceView.queueEvent(() -> {
-            GLES20.glDeleteProgram(blitProgram);
-            GLES20.glDeleteProgram(sgsrProgram);
-            int[] textures = {videoTextureId, sourceTextureId};
-            GLES20.glDeleteTextures(textures.length, textures, 0);
-            int[] fbos = {sourceFboHandle};
-            GLES20.glDeleteFramebuffers(fbos.length, fbos, 0);
-        });
     }
 
     private void drawQuad(int program) {

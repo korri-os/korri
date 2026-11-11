@@ -339,6 +339,9 @@ impl TransitionTrace {
     }
 }
 
+#[path = "live_shape_session.rs"]
+mod live_shape_session;
+
 #[derive(Clone)]
 pub struct HostSessionControl {
     // Authenticated call context, used only when creating a fresh journal.
@@ -374,6 +377,7 @@ pub struct HostSessionControl {
     /// return. Absence is a product-path focus failure, never implicit success.
     compositor: Option<Arc<dyn CompositorControl>>,
     placement_applied: Arc<Mutex<Option<AppliedDisplayPlacement>>>,
+    live_shape: Arc<Mutex<Option<(String, super::live_shape::LiveShape)>>>,
     display_content: Arc<Mutex<Vec<String>>>,
     /// Frozen only while a running exact launch has observed compositor focus.
     /// Absent, the shell is never touched.
@@ -445,6 +449,7 @@ impl HostSessionControl {
             handoff_since: Arc::new(Mutex::new(None)),
             compositor: None,
             placement_applied: Arc::new(Mutex::new(None)),
+            live_shape: Arc::new(Mutex::new(None)),
             display_content: Arc::new(Mutex::new(Vec::new())),
             shell: None,
             native_input: None,
@@ -2466,6 +2471,24 @@ impl HostSessionControl {
         } = &mut active
         {
             *starter_device_public_key = self.starting_device.clone();
+        }
+        if let ActiveSession::Running { display_change, .. } = &mut active {
+            if let Some((_, prepared)) =
+                prepared_plan.as_ref().filter(|_| self.compositor.is_some())
+            {
+                *display_change = Some(super::live_shape::DisplayChangeContext {
+                    boot_id: self
+                        .boot_identity
+                        .clone()
+                        .map_err(|message| failure("DisplayChangeUnavailable", message))?,
+                    command: configured_command.to_vec(),
+                    environment: game_environment.clone(),
+                    sandbox: sandbox.clone(),
+                    programs: prepared.display_change.clone(),
+                    portrait: false,
+                    pending: None,
+                });
+            }
         }
         if let ActiveSession::Running { after_hooks, .. } = &mut active {
             if let Some(hooks) = hooks.filter(|hooks| !hooks.resolved.after.is_empty()) {
@@ -6637,6 +6660,7 @@ printf '[{{"success":true}}]'
             "{}".into(),
             serde_json::to_string(&crate::launcher::plugin_launch::LaunchComposition {
                 modifiers: vec![crate::launcher::plugin_launch::ResolvedLaunchModifier {
+                    display_change: None,
                     modifier_id: "@test:wrapper/main".into(),
                     manifest: "/pkg/manifest.json".into(),
                     entry: "plugin.ts".into(),

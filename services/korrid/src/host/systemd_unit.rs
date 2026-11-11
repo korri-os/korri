@@ -167,6 +167,22 @@ pub trait LaunchUnitBackend: Send + Sync {
             "hook execution unavailable",
         ))
     }
+    /// A live hook reuses the existing game sandbox and diagnostics mounts.
+    /// It must never create or delete the active game's diagnostic files.
+    fn run_live_hook(
+        &self,
+        _launch_id: &str,
+        _command: &[String],
+        _run: &str,
+        _timeout: Duration,
+        _environment: &BTreeMap<String, String>,
+        _sandbox: &LaunchSandbox,
+    ) -> Result<String, LaunchUnitError> {
+        Err(LaunchUnitError::new(
+            LaunchUnitErrorKind::Failed,
+            "live hook execution unavailable",
+        ))
+    }
     fn exit_status(&self, _launch_id: &str) -> Result<Option<i32>, LaunchUnitError> {
         Ok(None)
     }
@@ -212,6 +228,12 @@ pub trait LaunchUnitBackend: Send + Sync {
     /// Processes of this launch, used to recognize its compositor windows.
     /// A backend that cannot see processes reports none, which makes korrid
     /// focus nothing rather than guess at another program's window.
+    fn control_group(&self, _launch_id: &str) -> Result<String, LaunchUnitError> {
+        Err(LaunchUnitError::new(
+            LaunchUnitErrorKind::Failed,
+            "exact game control group is unavailable",
+        ))
+    }
     fn window_pids(&self, _launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
         Ok(BTreeSet::new())
     }
@@ -2174,6 +2196,73 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     ) -> Result<String, LaunchUnitError> {
         self.run_viewer_bootstrap(launch, command, environment, sandbox)
     }
+    fn run_live_hook(
+        &self,
+        launch_id: &str,
+        command: &[String],
+        run: &str,
+        timeout: Duration,
+        environment: &BTreeMap<String, String>,
+        sandbox: &LaunchSandbox,
+    ) -> Result<String, LaunchUnitError> {
+        if !matches!(self.state(launch_id)?, LaunchUnitState::Running) {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                "game is not running",
+            ));
+        }
+        let mut args = self.hook_arguments_in_sandbox(
+            launch_id,
+            0,
+            command,
+            run,
+            timeout,
+            environment,
+            sandbox,
+        )?;
+        args.insert(1, "--pipe".into());
+        self.collect_previous_hook_attempt(launch_id, 0)?;
+        let mut helper = self.clone();
+        helper.helper_timeout = timeout.saturating_add(Duration::from_secs(15));
+        helper
+            .require_success(&self.systemd_run, &args)
+            .and_then(|output| {
+                String::from_utf8(output.stdout).map_err(|_| {
+                    LaunchUnitError::new(
+                        LaunchUnitErrorKind::Protocol,
+                        "live hook returned non-UTF-8 output",
+                    )
+                })
+            })
+    }
+
+    fn control_group(&self, launch_id: &str) -> Result<String, LaunchUnitError> {
+        let unit = Self::unit_name(launch_id)?;
+        let output = self.require_success(
+            &self.systemctl,
+            &[
+                "show".into(),
+                unit,
+                "--property=ControlGroup".into(),
+                "--value".into(),
+            ],
+        )?;
+        let group = String::from_utf8(output.stdout).map_err(|_| {
+            LaunchUnitError::new(LaunchUnitErrorKind::Protocol, "non-UTF-8 control group")
+        })?;
+        let group = group.trim();
+        if !group.starts_with('/')
+            || group == "/"
+            || group.contains("..")
+            || group.chars().any(char::is_whitespace)
+        {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                "invalid game control group",
+            ));
+        }
+        Ok(group.into())
+    }
     /// Reads the unit's own control group. Kernel process membership is the
     /// only honest answer to "which windows belong to this launch"; window
     /// titles and classes are set by the game itself.
@@ -3063,6 +3152,7 @@ mod startup_diagnostic_tests {
             "{}".into(),
             serde_json::to_string(&LaunchComposition {
                 modifiers: vec![ResolvedLaunchModifier {
+                    display_change: None,
                     modifier_id: "@test:wrapper/main".into(),
                     manifest: "/pkg/manifest.json".into(),
                     entry: "plugin.ts".into(),
@@ -3470,6 +3560,7 @@ mod hook_unit_tests {
             "{}".into(),
             serde_json::to_string(&LaunchComposition {
                 modifiers: vec![ResolvedLaunchModifier {
+                    display_change: None,
                     modifier_id: "@test:modifier/main".into(),
                     manifest: "/pkg/manifest.json".into(),
                     entry: "plugin.ts".into(),

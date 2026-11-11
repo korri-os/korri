@@ -46,17 +46,42 @@ Every gamescope package shipped with this change carries the hook.
   runtime-user execution boundary.
 - Android's `KorriStreamViewerState.connected` observes an actual connection.
   Selecting a route or registering a stream player is not proof of connection.
-- Android retains a runtime-resolution adapter, but current Sunshine does not
-  carry its server counterpart. Plugins commit `32dfe4415` removed that protocol
+- At the decision date, Android retained a runtime-resolution adapter, but
+  Sunshine did not carry its server counterpart. Plugins commit `32dfe4415` removed that protocol
   and its patches on 2026-10-23. The earlier research read a stale checkout.
   Live encode resizing without reconnecting therefore needs new server work.
   The Sway/gamescope demo proves live game rendering, not live encode resizing.
-  This prerequisite must be resolved before the full transaction is implemented.
+  The implementation below adds that server work rather than restoring the
+  retired patches.
 
 Connected viewers, their authenticated identities, and reconnect generations
 must be tracked per exact launch. A stale disconnect must not evict a newer
 connection. A joiner cannot claim another viewer's identity or change its size.
 The hook must address only its launch's nested display, never a global X root.
+
+## Implemented boundaries
+
+`ModifierRecord.displayChange` names a file in the package manifest. The launch
+pins that executable, its resolved environment, the game command, sandbox and
+boot identity. `host/live_shape_session.rs` runs the hook with `--query` before
+any effect. The hook writes its observed width and height to stdout. A change
+passes width and height as two arguments and succeeds only after readback.
+
+The recovery journal stores Sway's observed mode and each hook's own observed
+size before the first effect. These sizes need not match. A restarted daemon
+restores this snapshot before it accepts another shape change. It retries all
+hook restorations even when Sway already has the previous mode. The journal
+clears only after confirmed rollback or the viewer's acknowledgement.
+
+Sunshine's encrypted runtime-resolution channel now replaces a Vulkan/VAAPI
+encoder inside the existing stream. It confirms the candidate's first IDR
+before replacing the old encoder. Unsupported encoder paths do not advertise
+this operation. Hardware proof is still required before deployment is complete.
+
+Render size and encoded quality remain separate. A new shape currently selects
+full screen-sized encoding. Presence reports do not reset a lower encoded size
+at the same aspect. Adaptive bitrate and frame-rate policy remain outside this
+change.
 
 ## Trade-offs
 

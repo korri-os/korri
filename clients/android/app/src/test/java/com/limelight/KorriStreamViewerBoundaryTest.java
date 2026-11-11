@@ -27,7 +27,7 @@ public class KorriStreamViewerBoundaryTest {
 
     @Test
     @Config(shadows = com.limelight.shadows.ShadowMoonBridge.class, qualifiers = "w1088dp-h981dp-xhdpi")
-    public void viewerDisplayUsesTheScreenAndGamePortraitInversionNotTheResolutionSetting() {
+    public void viewerDisplayUsesLandscapeScreenRegardlessOfOrientationPreferences() {
         android.app.Application app = RuntimeEnvironment.getApplication();
         KorriStreamViewer.initialize(app);
         int[] screen = KorriStreamViewer.screenStreamSize(app);
@@ -47,7 +47,7 @@ public class KorriStreamViewerBoundaryTest {
         assertEquals(landscape, KorriStreamViewer.viewerDisplay());
         configuration.orientation = Configuration.ORIENTATION_PORTRAIT;
         app.getResources().updateConfiguration(configuration, app.getResources().getDisplayMetrics());
-        assertEquals(portrait, KorriStreamViewer.viewerDisplay());
+        assertEquals(landscape, KorriStreamViewer.viewerDisplay());
         PreferenceManager.getDefaultSharedPreferences(app).edit()
                 .putBoolean("checkbox_auto_orientation", false).apply();
         assertEquals(landscape, KorriStreamViewer.viewerDisplay());
@@ -64,8 +64,8 @@ public class KorriStreamViewerBoundaryTest {
         for (int[] display : new int[][] {{640, 480}, {1848, 2448}}) {
             Intent intent = new Intent();
             KorriStreamViewer.putStreamSize(intent, app, display[0], display[1]);
-            assertEquals(Math.max(display[0], display[1]), intent.getIntExtra(Game.EXTRA_WIDTH, 0));
-            assertEquals(Math.min(display[0], display[1]), intent.getIntExtra(Game.EXTRA_HEIGHT, 0));
+            assertEquals(display[0], intent.getIntExtra(Game.EXTRA_WIDTH, 0));
+            assertEquals(display[1], intent.getIntExtra(Game.EXTRA_HEIGHT, 0));
         }
         Intent fallback = new Intent();
         KorriStreamViewer.putStreamSize(fallback, app, 0, 0);

@@ -210,6 +210,13 @@ pub struct FamilyRecord {
 #[serde(deny_unknown_fields)]
 pub struct ModifierRecord {
     pub id: String,
+    /// Packaged hook file key, resolved from this modifier's manifest.files.
+    #[serde(
+        default,
+        rename = "displayChange",
+        deserialize_with = "deserialize_optional_non_null"
+    )]
+    pub display_change: Option<String>,
 }
 
 /// Pinned inputs and the plugin-owned unpack program (ADR 0012).
@@ -1314,6 +1321,17 @@ fn normalize_plugin(
     }
 
     for (local_id, modifier) in &declaration.modifiers {
+        if modifier
+            .display_change
+            .as_ref()
+            .is_some_and(|key| !is_provider_segment(key))
+        {
+            return Err(invalid_contribution(
+                "modifier",
+                local_id,
+                "displayChange must name a package file key",
+            ));
+        }
         let expected = plugin_record_id(&id, local_id);
         if !is_provider_segment(local_id) || modifier.id != expected {
             return Err(PluginError::InvalidContribution {

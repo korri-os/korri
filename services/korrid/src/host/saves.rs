@@ -1916,6 +1916,7 @@ mod tests {
             .unwrap();
         let composition = LaunchComposition {
             modifiers: vec![ResolvedLaunchModifier {
+                display_change: None,
                 modifier_id: "modifier".into(),
                 manifest: device.root.path().join("manifest.json"),
                 entry: "plugin.ts".into(),
