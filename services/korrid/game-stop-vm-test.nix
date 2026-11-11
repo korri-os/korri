@@ -67,6 +67,8 @@ pkgs.testers.runNixOSTest {
         group = "korri";
       };
       users.groups.korri.gid = 1000;
+      # NixOS defaults to --no-debug, which suppresses polkit.log in rules.
+      security.polkit.extraArgs = [ "--log-level=debug" ];
       security.polkit.extraConfig = lib.mkBefore ''
         polkit.addRule(function(action, subject) {
           if (subject.user == "korrid" && action.lookup("unit") == "korri-game-0123456789abcdef0123456789abcdef.service") {
