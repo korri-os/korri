@@ -83,7 +83,10 @@ fn equal(a: Option<&Item>, b: Option<&Item>) -> Result<bool, String> {
             let (a, b) = (semantic(a)?, semantic(b)?);
             // TOML permits nan. Matching config values must remain restorable
             // even though IEEE arithmetic says NaN is unequal to itself.
-            Ok(matches!((&a, &b), (toml::Value::Float(a), toml::Value::Float(b)) if a.is_nan() && b.is_nan()) || a == b)
+            Ok(
+                matches!((&a, &b), (toml::Value::Float(a), toml::Value::Float(b)) if a.is_nan() && b.is_nan())
+                    || a == b,
+            )
         }
         _ => Ok(false),
     }
@@ -505,7 +508,10 @@ mod tests {
     fn a_temporary_nan_restores_like_other_valid_toml_scalars() {
         let restored = restore_text("value = 1.0\n", "value = nan\n", "value = nan\n").unwrap();
         assert_eq!(restored, "value = 1.0\n");
-        assert_eq!(restore_text("value = 1.0\n", "value = nan\n", "value = 3.0\n").unwrap(), "value = 3.0\n");
+        assert_eq!(
+            restore_text("value = 1.0\n", "value = nan\n", "value = 3.0\n").unwrap(),
+            "value = 3.0\n"
+        );
     }
 
     #[test]

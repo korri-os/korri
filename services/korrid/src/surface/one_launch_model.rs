@@ -51,7 +51,7 @@ pub(crate) fn editor(
         }
     }
     let mut editor = launch_editor_from(&projected, Some(game), pending);
-    if let Some(draft) = drafts.keepable(game) {
+    if let Some((revision, draft)) = drafts.keepable(game) {
         let mut items = Vec::new();
         let mut values = leaves(&draft.values).0;
         values.sort_by(|a, b| a.0.cmp(&b.0));
@@ -74,7 +74,7 @@ pub(crate) fn editor(
                     1
                 }
             });
-            let id = format!("launch:keep:{path}");
+            let id = format!("launch:keep:{revision}:{path}");
             let choices: Vec<_> = targets
                 .iter()
                 .map(|entry| SurfaceSettingChoice {

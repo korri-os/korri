@@ -4,8 +4,7 @@ status: accepted
 
 # Runner settings follow the display, win over native files, and apply at launch
 
-**Owner decision, 2026-11-09.** Extends ADR 0028 and ADR 0037. Nothing here is
-implemented yet.
+**Owner decision, 2026-11-09.** Extends ADR 0028 and ADR 0037.
 
 On 2026-11-09 Mario Kart Wii: Retro Rewind (WiiCompiled) streamed to a
 2448×1848 phone with black bars. The game kept the 854×480 window saved in its

@@ -63,7 +63,8 @@ Human-readable output is the default. `--json` emits unchanged native Rust
 `RpcResponse` values, not a second CLI schema. Ordinary commands return one
 response object. `status` and `devices list` return arrays. `play` always
 returns an array, including failed preflights; after launch it contains the
-save-check and launch responses. Setup orchestration returns an array of its
+save-check and launch responses, followed by any `--keep` write replies.
+Setup orchestration returns an array of its
 completed operations; setup restart/finish and an initial failed status return
 one response. Sideload returns an array of observed native responses: a fresh run
 normally returns `[PluginArchiveBegin, PluginArchiveInspect]` or

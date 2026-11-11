@@ -867,7 +867,7 @@ fn retroarch_pattern_port_settings_set_clear_and_report_concrete_validation_path
 }
 
 #[test]
-fn default_launch_refuses_authored_settings_before_validation_can_discard_them() {
+fn default_launch_refuses_native_settings_before_validation_can_discard_them() {
     let mut game = DiscoveredGame::new();
     let package = game
         .registry
@@ -881,7 +881,8 @@ fn default_launch_refuses_authored_settings_before_validation_can_discard_them()
     let device_path = game.root.path().join("device.yaml");
     let mut device: serde_json::Value =
         serde_yaml::from_str(&fs::read_to_string(&device_path).unwrap()).unwrap();
-    device["host"] = serde_json::json!({"runners":{"@korri:mgba/mgba":{"settings":{"speed":2}}}});
+    device["host"] =
+        serde_json::json!({"runners":{"@korri:mgba/mgba":{"settings":{"plugin":{"speed":2}}}}});
     fs::write(&device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
     game.snapshot = (*ConfigSnapshotCoordinator::new(game.root.path())
         .reload()
@@ -894,6 +895,35 @@ fn default_launch_refuses_authored_settings_before_validation_can_discard_them()
         ),
         "{error}"
     );
+}
+
+#[test]
+fn default_launch_skips_shared_values_with_a_warning_instead_of_refusing() {
+    let mut game = DiscoveredGame::new();
+    let package = game
+        .registry
+        .installed_package(&game.route.runner_id)
+        .unwrap();
+    let source = include_str!("../../examples/libretro-core.plugin.ts")
+        .replace("export { handlers } from \"./retroarch\"", "");
+    fs::write(package.package.join("plugin.ts"), source).unwrap();
+    game.snapshot
+        .host
+        .get_or_insert_with(Default::default)
+        .place
+        .settings =
+        serde_json::from_value(serde_json::json!({"video":{"render-scale":4}})).unwrap();
+    let launch = game.launch().unwrap();
+    assert!(launch
+        .warnings
+        .iter()
+        .any(|warning| warning.setting == "video.render-scale"
+            && warning.message.contains("not supported")));
+    let input: PluginLaunchInput = serde_json::from_str(&launch.command[3]).unwrap();
+    assert!(input.overrides.as_ref().unwrap().settings.is_empty());
+    let command = crate::launcher::plugin_launch::prepare_command(&launch.command).unwrap();
+    let prepared: serde_json::Value = serde_json::from_str(&command[5]).unwrap();
+    assert_eq!(prepared["plan"]["args"], serde_json::json!([game.rom()]));
 }
 
 #[test]

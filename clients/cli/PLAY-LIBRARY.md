@@ -6,7 +6,7 @@ A refused remote operation needs SSH or local access, not another endpoint.
 
 ## Commands
 
-- `korri play <game> [--runner <exact-runner-id>] [--set key=value]`
+- `korri play <game> [--runner <exact-runner-id>] [--set key=value] [--keep[=PLACE]]`
 - `korri leave`, `korri resume`, `korri end --yes`
 - `korri library folders list|rescan`
 - `korri library folders add <path> <system>`
@@ -86,11 +86,36 @@ revision. It neither selects the profile nor replaces its settings. A conflict
 stops without retry.
 
 Editable keys follow `LaunchPath`: CPU/GPU minimum and maximum percentages,
-Device/Any CPU governor when advertised, runner setting names,
-`<modifier-id>.enabled` and `<modifier-id>.<setting-name>`. Plugin schemas supply
-setting types and choices. A key shared by a runner and modifier is refused.
+Device/Any CPU governor when advertised, shared and native setting names,
+`<modifier-id>.enabled`, `<modifier-id>.<setting-name>` and
+`<service-id>.<setting-name>`. Korri owns shared definitions such as
+`video.render-scale`. A contribution's native keys start with `plugin`, including
+modifier and service keys. Plugin schemas supply their native types and choices.
+Shared values can use Any scope without an installed runner. Unsupported shared
+values remain authored but are skipped with a path-specific launch warning.
 Hooks, environment, arguments, working directory and raw config remain read-only.
-One-launch values use `LaunchOverride`; they do not write launch settings.
+
+One-launch values use `LaunchOverride` and do not persist by default. For a game
+ID from `korri library games list`:
+
+```sh
+korri play "$GAME_ID" --set video.render-scale=4
+korri play "$GAME_ID" --set video.render-scale=4 --keep
+```
+
+`--keep` saves the explicit values after korrid accepts the launch, not after
+readiness or game exit. It defaults to Game. Use `--keep=device`,
+`--keep=system:ID`, `--keep=release:ID` or `--keep=profile:ID` for another observed
+place. Native settings retain their runner scope; shared settings use Any.
+Each write uses the latest returned revision. A conflict or other write failure
+stops further Keep writes and reports which stage failed; the accepted launch
+is not undone. JSON output appends the Keep replies to the existing response array.
+
+Settings apply at launch, not live. A one-launch native TOML value is restored
+after exit unless the game changed that value again. An interrupted launch is
+recovered before the next managed launch. Permanent native writes remain direct:
+removing a permanent Korri directive returns control to the native file, whose
+last value can remain. See ADR 0056.
 
 A library game is downloaded through the existing game download operation.
 Otherwise get selects a provider, searches, obtains details, and acquires that

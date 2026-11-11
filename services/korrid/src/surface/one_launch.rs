@@ -29,13 +29,17 @@ impl OneLaunch {
     pub fn pending(&self, game: &str) -> Option<&LaunchScopedSettings> {
         self.pending.get(game).map(|draft| &draft.settings)
     }
-    pub fn keepable(&self, game: &str) -> Option<&LaunchScopedSettings> {
-        self.pending(game).or_else(|| {
-            self.last
-                .as_ref()
-                .filter(|(_, id, _)| id == game)
-                .map(|(_, _, draft)| &draft.settings)
-        })
+    /// The revision binds Keep to the exact displayed values across edits/games.
+    pub fn keepable(&self, game: &str) -> Option<(u64, &LaunchScopedSettings)> {
+        self.pending
+            .get(game)
+            .or_else(|| {
+                self.last
+                    .as_ref()
+                    .filter(|(_, id, _)| id == game)
+                    .map(|(_, _, draft)| draft)
+            })
+            .map(|draft| (draft.version, &draft.settings))
     }
     pub fn set(
         &mut self,
@@ -134,7 +138,7 @@ mod tests {
         assert!(drafts.submit("game").1.is_none());
         assert_eq!(
             leaf(
-                &drafts.keepable("game").unwrap().values,
+                &drafts.keepable("game").unwrap().1.values,
                 "video.render-scale"
             ),
             Some(&scale(4))

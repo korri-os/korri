@@ -541,6 +541,30 @@ async fn one_launch_editor_is_ephemeral_and_keep_writes_only_the_chosen_value() 
         calls(&script, SET).is_empty(),
         "a draft must not reach the persisted setter"
     );
+    let keep_id = |launch: &LaunchSettings| {
+        content(&launch.editor())
+            .places
+            .iter()
+            .flat_map(|place| &place.groups)
+            .flat_map(|group| &group.items)
+            .find(|item| item.id.starts_with("launch:keep:"))
+            .unwrap()
+            .id
+            .clone()
+    };
+    let stale_keep = keep_id(&launch);
+    assert!(launch.change(&id, "2"));
+    assert_ne!(keep_id(&launch), stale_keep);
+    // True claims the launch namespace, not a successful write. A stale row
+    // must be consumed without reaching the persisted setter.
+    assert!(launch.change(&stale_keep, "game:wario/any"));
+    settle().await;
+    assert!(
+        calls(&script, SET).is_empty(),
+        "an old Keep must not save newer values"
+    );
+    assert!(launch.change(&id, "4"));
+    let current_keep = keep_id(&launch);
     if let Some(path) = std::env::var_os("KORRI_ONE_LAUNCH_PROOF") {
         std::fs::write(path, serde_json::to_vec_pretty(&launch.editor()).unwrap()).unwrap();
     }
@@ -557,7 +581,7 @@ async fn one_launch_editor_is_ephemeral_and_keep_writes_only_the_chosen_value() 
         .iter()
         .flat_map(|place| &place.groups)
         .flat_map(|group| &group.items)
-        .find(|item| item.id == "launch:keep:video.render-scale")
+        .find(|item| item.id == current_keep)
         .unwrap();
     assert_eq!(keep.label, "Keep Render scale");
     assert_eq!(
@@ -570,7 +594,7 @@ async fn one_launch_editor_is_ephemeral_and_keep_writes_only_the_chosen_value() 
     );
     push(&script, SNAPSHOT, ok_snapshot(fixture.snapshot()));
     push(&script, SNAPSHOT, ok_snapshot(fixture.snapshot()));
-    assert!(launch.change("launch:keep:video.render-scale", "game:wario/any"));
+    assert!(launch.change(&current_keep, "game:wario/any"));
     settle().await;
     let writes = calls(&script, SET);
     assert_eq!(writes.len(), 1);

@@ -167,14 +167,19 @@ fn inspect_route(
     if !crate::script::has_plugin_operation_snapshot(&source, crate::script::LAUNCH_PREPARE)
         .map_err(error)?
     {
-        // Refuse unsupported authored input before settings validation can drop
-        // values. Preflight and actual preparation use the same default rule.
+        // Native overrides still require a callback. Shared values can be
+        // skipped with warnings below, even by a runner with no callback.
         super::plugin_launch::validate_default_launch(
             &route.runner_id,
             content_path.as_deref(),
             provider_ref.as_deref(),
             Some(&PluginLaunchOverrides {
-                settings: folded.settings.clone(),
+                settings: folded
+                    .settings
+                    .iter()
+                    .filter(|(key, _)| key.as_str() == "plugin")
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
                 config: folded.config.clone(),
             }),
         )

@@ -5,8 +5,7 @@ status: accepted
 # Korri owns shared settings, and runner-only settings share one bucket
 
 **Owner decision, 2026-11-09.** Amends ADR 0028 (which cells take settings)
-and ADR 0037 (rule R2 and who declares shared sections). Nothing here is
-implemented yet.
+and ADR 0037 (rule R2 and who declares shared sections).
 
 ADR 0037 gave every plugin one vocabulary, but each plugin still declared the
 shared sections itself in `settings.describe`, and a plugin could add its own

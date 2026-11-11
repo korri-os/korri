@@ -20,7 +20,10 @@ let
         # The controller-lifecycle regression uses inputd's real seat runtime.
         inSeatRuntime = lib.hasPrefix "services/inputd/" relative;
         inTrace = lib.hasPrefix "packages/input-trace/" relative;
-        inTreaty = lib.hasPrefix "contracts/settings/" relative || lib.hasPrefix "contracts/input/" relative || lib.hasPrefix "contracts/surface/" relative;
+        inTreaty =
+          lib.hasPrefix "contracts/settings/" relative
+          || lib.hasPrefix "contracts/input/" relative
+          || lib.hasPrefix "contracts/surface/" relative;
       in
       toString path == sourceRootString
       || builtins.elem relative [
