@@ -123,6 +123,10 @@ _Avoid_: co-op, multiplayer, join
 Shared play in which one device runs the game and holds the live session, and other devices play on its stream. Their controllers take controller seats in that session in first-press order, as the holder's own controllers do. They can play and watch, but only the device that holds the session, or the device that started the game on it, can end it or change it. After that device disconnects, any device of the federation that can stream the game may end it or change it.
 _Avoid_: remote play, guest stream, player two
 
+**Streamed game**:
+A game that another device runs while this device plays it on that device's stream. The device that runs the game applies the launch settings.
+_Avoid_: far game, remote game, peer game
+
 **Netplay**:
 Shared play in which each device runs its own copy of the game, and the copies are kept in step. As in stream play, the device that holds the live session controls it: it hosts netplay, and only it can end it or change it. Only the holder's saves go into the save history.
 _Avoid_: online play, linked play
@@ -262,7 +266,7 @@ The values that shape how a game runs, such as its runner, the runner's settings
 _Avoid_: config, policy, cascade
 
 **One-launch value**:
-A launch setting that a person sets for one launch only. It ends with that session unless the person keeps it, which moves it to the game, or on request to the device, a system, a release or a profile.
+A launch setting that a person sets for one launch only. It ends with that session unless the person keeps it, which moves it to the game, or on request to the device, a system, a release or a profile. Hooks, environment variables and arguments cannot be one-launch values. For a streamed game, the one-launch values go with the launch to the device that runs the game, and only a device of that device's owner can send them.
 _Avoid_: ephemeral setting, temporary override, session setting
 
 **Runner scope**:
