@@ -250,6 +250,8 @@ esac
     let provisioned = Arc::new(std::sync::Mutex::new(Vec::new()));
     let record = provisioned.clone();
     let units = Arc::new(ViewerUnits::default());
+    let _sway_peer =
+        crate::host::sway_test_peer::SwayTestPeer::start(compositor, root.path().join("sway.sock"));
     let viewer = ProductionLinuxStreamViewer {
         settings: Arc::new(|display| {
             Ok(vec![
@@ -279,8 +281,10 @@ esac
             })
         }),
         units: units.clone(),
-        swaymsg: compositor,
-        sway_socket: root.path().join("sway.sock"),
+        compositor: SwayCompositorControl::new(
+            root.path().join("sway.sock"),
+            Duration::from_secs(3),
+        ),
         shell: Some(Arc::new(ViewerShell)),
         keydir: root.path().join("unreadable-identity"),
         operation: Arc::new(tokio::sync::Mutex::new(())),

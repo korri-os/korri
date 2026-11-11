@@ -4797,7 +4797,7 @@ printf '[{{"success":true}}]'
             .unwrap();
             fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
             let compositor = Arc::new(
-                super::super::compositor_focus::SwaymsgCompositorControl::new(
+                super::super::sway_test_peer::ScriptedSwayControl::new(
                     program,
                     root.path().join("socket"),
                     Duration::from_secs(1),
@@ -5247,7 +5247,7 @@ printf '[{{"success":true}}]'
         .unwrap();
         fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
         let compositor = Arc::new(
-            super::super::compositor_focus::SwaymsgCompositorControl::new(
+            super::super::sway_test_peer::ScriptedSwayControl::new(
                 program,
                 root.path().join("socket"),
                 Duration::from_secs(1),
@@ -5347,7 +5347,7 @@ printf '[{{"success":true}}]'
         .unwrap();
         fs::set_permissions(&swaymsg, fs::Permissions::from_mode(0o755)).unwrap();
         let compositor = Arc::new(
-            super::super::compositor_focus::SwaymsgCompositorControl::new(
+            super::super::sway_test_peer::ScriptedSwayControl::new(
                 swaymsg,
                 root.path().join("socket"),
                 Duration::from_secs(1),
@@ -5462,7 +5462,7 @@ printf '[{{"success":true}}]'
         .unwrap();
         fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
         let compositor = Arc::new(
-            super::super::compositor_focus::SwaymsgCompositorControl::new(
+            super::super::sway_test_peer::ScriptedSwayControl::new(
                 program,
                 root.path().join("socket"),
                 Duration::from_secs(1),

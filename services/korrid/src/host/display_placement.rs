@@ -910,7 +910,7 @@ mod tests {
     fn sway_program(
         directory: &std::path::Path,
         reply: &str,
-    ) -> super::super::compositor_focus::SwaymsgCompositorControl {
+    ) -> super::super::sway_test_peer::ScriptedSwayControl {
         use std::os::unix::fs::PermissionsExt;
         let program = directory.join("swaymsg");
         std::fs::write(directory.join("tree"),r#"{"nodes":[{"id":10,"pid":100,"app_id":"shell"},{"id":20,"pid":200,"app_id":"game"}]}"#).unwrap();
@@ -962,7 +962,7 @@ fi
         )
         .unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-        super::super::compositor_focus::SwaymsgCompositorControl::new(
+        super::super::sway_test_peer::ScriptedSwayControl::new(
             program,
             directory.join("socket"),
             std::time::Duration::from_secs(1),

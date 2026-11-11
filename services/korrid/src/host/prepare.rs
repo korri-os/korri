@@ -1,5 +1,5 @@
 use super::{
-    compositor_focus::{CompositorControl, SwaymsgCompositorControl},
+    compositor_focus::{CompositorControl, SwayCompositorControl},
     config::{HostConfig, HostGame},
     input_seat::InputSeatManager,
     session_state::HostSessionControl,
@@ -22,9 +22,8 @@ const COMPOSITOR_TIMEOUT: Duration = Duration::from_secs(5);
 /// to the front. A missing setting remains missing authority and Return fails
 /// closed in `HostSessionControl`.
 pub(crate) fn configured_compositor() -> Option<Arc<dyn CompositorControl>> {
-    let program = PathBuf::from(std::env::var_os("KORRID_SWAYMSG")?);
     let socket = PathBuf::from(std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")?);
-    let control = SwaymsgCompositorControl::new(program, socket, COMPOSITOR_TIMEOUT)?;
+    let control = SwayCompositorControl::new(socket, COMPOSITOR_TIMEOUT)?;
     Some(Arc::new(control))
 }
 

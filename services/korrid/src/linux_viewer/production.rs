@@ -2,8 +2,7 @@
 //! process lifetime and focus come from the existing exact-launch authorities.
 use super::{LinuxStreamViewer, LinuxViewerError, LinuxViewerStatus};
 use crate::host::compositor_focus::{
-    focused_ownership, select_focus_target, CompositorControl, FocusTarget,
-    SwaymsgCompositorControl,
+    focused_ownership, select_focus_target, CompositorControl, FocusTarget, SwayCompositorControl,
 };
 use crate::host::{LaunchSandbox, LaunchUnitBackend, LaunchUnitState, SystemdLaunchUnitBackend};
 use futures::future::BoxFuture;
@@ -41,12 +40,8 @@ pub fn production_viewer(
         settings,
         resolve_files: Arc::new(installed_files),
         units: Arc::new(SystemdLaunchUnitBackend::default().for_stream_viewer()),
-        swaymsg: std::env::var_os("KORRID_SWAYMSG")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/run/current-system/sw/bin/swaymsg")),
-        sway_socket: std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")
-            .map(PathBuf::from)
-            .unwrap_or_default(),
+        compositor: std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")
+            .and_then(|socket| SwayCompositorControl::new(socket.into(), Duration::from_secs(3))),
         shell: crate::host::configured_shell(),
         keydir: PathBuf::from("/home/korri/.config/moonlight"),
         operation: Arc::new(tokio::sync::Mutex::new(())),
@@ -61,8 +56,7 @@ struct ProductionLinuxStreamViewer {
     settings: ViewerSettings,
     resolve_files: Arc<dyn Fn() -> Result<MoonlightFiles, LinuxViewerError> + Send + Sync>,
     units: Arc<dyn LaunchUnitBackend>,
-    swaymsg: PathBuf,
-    sway_socket: PathBuf,
+    compositor: Option<SwayCompositorControl>,
     shell: Option<Arc<dyn crate::host::ShellUnit>>,
     keydir: PathBuf,
     operation: Arc<tokio::sync::Mutex<()>>,
@@ -431,28 +425,13 @@ impl ProductionLinuxStreamViewer {
         Ok(certificate)
     }
 
-    fn control(&self) -> Result<SwaymsgCompositorControl, LinuxViewerError> {
-        SwaymsgCompositorControl::new(
-            self.swaymsg.clone(),
-            self.sway_socket.clone(),
-            Duration::from_secs(3),
-        )
-        .ok_or_else(|| error("invalid compositor configuration"))
+    fn control(&self) -> Result<SwayCompositorControl, LinuxViewerError> {
+        self.compositor
+            .clone()
+            .ok_or_else(|| error("invalid compositor configuration"))
     }
     fn dimensions(&self) -> Result<(u64, u64), LinuxViewerError> {
-        let (ok, output) = run(
-            &self.swaymsg,
-            &[
-                "-s".into(),
-                self.sway_socket.display().to_string(),
-                "-t".into(),
-                "get_outputs".into(),
-                "-r".into(),
-            ],
-        )?;
-        if !ok {
-            return Err(error("cannot read active compositor output"));
-        }
+        let output = self.control()?.outputs().map_err(error)?;
         let outputs: Vec<serde_json::Value> = serde_json::from_str(&output).map_err(error)?;
         let output = outputs
             .iter()

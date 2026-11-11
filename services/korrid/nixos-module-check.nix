@@ -388,9 +388,7 @@ assert
   (focusEnabled.config.systemd.services.korrid.environment.KORRID_COMPOSITOR_CONTROL_SOCKET)
   == "/run/korri-test/compositor-control/sway-ipc.sock";
 assert !(focusEnabled.config.systemd.services.korrid.environment ? KORRID_NEVER_FOCUS_APP_IDS);
-assert
-  (focusEnabled.config.systemd.services.korrid.environment.KORRID_SWAYMSG)
-  == "${pkgs.sway}/bin/swaymsg";
+assert !(focusEnabled.config.systemd.services.korrid.environment ? KORRID_SWAYMSG);
 assert focusEnabled.config.systemd.services.korrid.serviceConfig.SupplementaryGroups == [ "korri" ];
 assert service.environment.KORRID_CERTIFICATE_CONTROL_DIRECTORY == "/run/korri-certificate-control";
 assert

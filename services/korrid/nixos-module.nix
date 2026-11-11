@@ -805,7 +805,6 @@ in
         KORRID_MOONLIGHT_ADDRESS = cfg.moonlightAddress;
       }
       // lib.optionalAttrs (cfg.compositorControlSocket != null) {
-        KORRID_SWAYMSG = "${pkgs.sway}/bin/swaymsg";
         KORRID_COMPOSITOR_CONTROL_SOCKET = cfg.compositorControlSocket;
       }
       // lib.optionalAttrs bundleCfg.enable {

@@ -159,7 +159,6 @@ pkgs.testers.runNixOSTest {
               KORRID_RUNTIME_GID = "100";
               KORRID_PRIVATE_STATE_ROOT = "/var/lib/korrid";
               KORRID_STREAM_PRIVATE_STATE_ROOT = "/var/lib/freezer-stream";
-              KORRID_SWAYMSG = "${pkgs.sway-unwrapped}/bin/swaymsg";
               KORRID_COMPOSITOR_CONTROL_SOCKET = "/run/freezer-compositor/sway.sock";
             };
             serviceConfig = {

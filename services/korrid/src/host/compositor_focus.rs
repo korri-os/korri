@@ -4,17 +4,7 @@
 //! unreadable compositor facts cannot authorize focus or placement.
 
 use serde::Deserialize;
-use std::{
-    collections::BTreeSet,
-    io::Read,
-    path::PathBuf,
-    process::{Command, Stdio},
-    time::Duration,
-};
-
-/// A Sway tree is large on a busy workspace but never megabytes. The cap stops
-/// a broken compositor from feeding korrid unbounded output.
-const MAX_TREE_BYTES: u64 = 4 * 1024 * 1024;
+use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
 
 /// The compositor operations korrid needs to return to a game. Keeping this
 /// behind a trait means session tests never depend on a live compositor.
@@ -32,73 +22,17 @@ pub(crate) trait CompositorControl: Send + Sync + std::fmt::Debug {
     }
 }
 
-/// Talks to Sway through the same `swaymsg -s <socket>` shape the Linux host
-/// already uses for its compositor actions.
+/// Native Sway IPC. Clones share one bounded request/reply connection.
 #[derive(Debug, Clone)]
-pub(crate) struct SwaymsgCompositorControl {
-    swaymsg: PathBuf,
-    socket: PathBuf,
-    timeout: Duration,
+pub(crate) struct SwayCompositorControl {
+    ipc: Arc<super::sway_ipc::SwayIpc>,
 }
 
-impl SwaymsgCompositorControl {
-    pub(crate) fn new(swaymsg: PathBuf, socket: PathBuf, timeout: Duration) -> Option<Self> {
-        if !swaymsg.is_absolute() || !socket.is_absolute() || timeout.is_zero() {
-            return None;
-        }
+impl SwayCompositorControl {
+    pub(crate) fn new(socket: PathBuf, timeout: Duration) -> Option<Self> {
         Some(Self {
-            swaymsg,
-            socket,
-            timeout,
+            ipc: Arc::new(super::sway_ipc::SwayIpc::new(socket, timeout).ok()?),
         })
-    }
-
-    pub(super) fn run(&self, arguments: &[&str]) -> Result<String, String> {
-        let mut child = Command::new(&self.swaymsg)
-            .arg("-s")
-            .arg(&self.socket)
-            .args(arguments)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            // korrid never reads this stream, and an unread pipe that fills
-            // would block the child until the timeout killed it.
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        // Drain the answer while the child still runs. Waiting first would
-        // deadlock as soon as a tree outgrew the pipe buffer.
-        let mut stream = child.stdout.take().ok_or("swaymsg produced no output")?;
-        let reader = std::thread::spawn(move || {
-            let mut answer = Vec::new();
-            stream
-                .by_ref()
-                .take(MAX_TREE_BYTES)
-                .read_to_end(&mut answer)
-                .map(|_| answer)
-        });
-        let deadline = std::time::Instant::now() + self.timeout;
-        let status = loop {
-            match child.try_wait().map_err(|error| error.to_string())? {
-                Some(status) => break status,
-                None if std::time::Instant::now() >= deadline => {
-                    // Killing the child also ends the read, so the drain
-                    // thread cannot outlive this call.
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = reader.join();
-                    return Err("swaymsg did not answer before its timeout".into());
-                }
-                None => std::thread::sleep(Duration::from_millis(10)),
-            }
-        };
-        let answer = reader
-            .join()
-            .map_err(|_| "swaymsg reader failed".to_string())?
-            .map_err(|error| error.to_string())?;
-        if !status.success() {
-            return Err(format!("swaymsg failed: {status}"));
-        }
-        String::from_utf8(answer).map_err(|error| error.to_string())
     }
 
     /// Focus a stream viewer and fill its output. Moonlight runs windowed,
@@ -106,20 +40,19 @@ impl SwaymsgCompositorControl {
     /// RG353M's screen for a stream. Focusing the shell later leaves
     /// fullscreen again, so each return to the viewer requests it anew.
     pub(crate) fn focus_fullscreen(&self, node_id: i64) -> Result<(), String> {
-        self.run(&[
-            "--",
-            &format!("[con_id={node_id}] focus, fullscreen enable"),
-        ])
-        .map(|_| ())
+        self.command(&format!("[con_id={node_id}] focus, fullscreen enable"))
     }
 }
 
-impl CompositorControl for SwaymsgCompositorControl {
+impl CompositorControl for SwayCompositorControl {
     fn outputs(&self) -> Result<String, String> {
-        self.run(&["-r", "-t", "get_outputs"])
+        self.ipc.request(3, b"").map_err(|error| error.to_string())
     }
     fn command(&self, command: &str) -> Result<(), String> {
-        let answer = self.run(&["-r", "--", command])?;
+        let answer = self
+            .ipc
+            .request(0, command.as_bytes())
+            .map_err(|error| error.to_string())?;
         #[derive(Deserialize)]
         struct Reply {
             success: bool,
@@ -138,14 +71,11 @@ impl CompositorControl for SwaymsgCompositorControl {
     }
 
     fn tree(&self) -> Result<String, String> {
-        // `-r` keeps the reply compact, as every other Sway call in this repo
-        // does; pretty-printed trees waste the read budget.
-        self.run(&["-r", "-t", "get_tree"])
+        self.ipc.request(4, b"").map_err(|error| error.to_string())
     }
 
     fn focus(&self, node_id: i64) -> Result<(), String> {
-        self.run(&["--", &format!("[con_id={node_id}] focus")])
-            .map(|_| ())
+        self.command(&format!("[con_id={node_id}] focus"))
     }
     fn focus_game(&self, node_id: i64) -> Result<(), String> {
         self.command(&format!(
@@ -551,25 +481,13 @@ mod tests {
     }
 
     #[test]
-    fn swaymsg_control_requires_absolute_paths_and_a_real_timeout() {
+    fn native_control_requires_an_absolute_socket_and_a_real_timeout() {
         let absolute = PathBuf::from("/run/korri-compositor/sway-ipc.sock");
-        let program = PathBuf::from("/run/current-system/sw/bin/swaymsg");
-        assert!(SwaymsgCompositorControl::new(
-            program.clone(),
-            absolute.clone(),
-            Duration::from_secs(2)
-        )
-        .is_some());
+        assert!(SwayCompositorControl::new(absolute.clone(), Duration::from_secs(2)).is_some());
+        assert!(SwayCompositorControl::new(absolute, Duration::ZERO).is_none());
         assert!(
-            SwaymsgCompositorControl::new("swaymsg".into(), absolute, Duration::from_secs(2))
-                .is_none()
+            SwayCompositorControl::new("sway-ipc.sock".into(), Duration::from_secs(2)).is_none()
         );
-        assert!(SwaymsgCompositorControl::new(
-            program,
-            "sway-ipc.sock".into(),
-            Duration::from_secs(2)
-        )
-        .is_none());
     }
 
     /// Two windows of one Sway workspace: the shell and a game.
@@ -707,12 +625,11 @@ mod tests {
 pub(crate) fn launch_display() -> Option<crate::launcher::plugin_launch::PluginDisplay> {
     // Standalone/headless korrid may have no configured compositor or output.
     // Leave the fact absent; a modifier that needs it must refuse, not guess.
-    let control = SwaymsgCompositorControl::new(
-        std::env::var_os("KORRID_SWAYMSG")?.into(),
+    let control = SwayCompositorControl::new(
         std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")?.into(),
         Duration::from_secs(1),
     )?;
-    display_from_outputs(&control.run(&["-r", "-t", "get_outputs"]).ok()?)
+    display_from_outputs(&control.outputs().ok()?)
 }
 
 pub(super) fn display_from_outputs(

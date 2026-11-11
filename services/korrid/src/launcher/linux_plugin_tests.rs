@@ -930,6 +930,12 @@ fn default_launch_skips_shared_values_with_a_warning_instead_of_refusing() {
 fn viewer_shape_reaches_launch_composition_or_becomes_a_launch_warning() {
     const CHILD: &str = "KORRI_CLIENT_SHAPE_LAUNCH_TEST";
     if let Ok(behavior) = std::env::var(CHILD) {
+        let _sway_peer = crate::host::sway_test_peer::SwayTestPeer::start(
+            std::env::var_os("KORRI_TEST_SWAY_SCRIPT").unwrap().into(),
+            std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")
+                .unwrap()
+                .into(),
+        );
         let game = DiscoveredGame::new();
         let launch = launch_route(
             game.root.path(),
@@ -994,7 +1000,7 @@ esac
             .args(["--exact", "launcher::linux_plugin::tests::viewer_shape_reaches_launch_composition_or_becomes_a_launch_warning", "--nocapture"])
             .env(CHILD, behavior)
             .env("KORRI_CLIENT_SHAPE_EVENTS", directory.path().join("events"))
-            .env("KORRID_SWAYMSG", &program)
+            .env("KORRI_TEST_SWAY_SCRIPT", &program)
             .env("KORRID_COMPOSITOR_CONTROL_SOCKET", directory.path().join("socket"))
             .env("KORRID_DISPLAYS", r#"[{"name":"HDMI-A-1","main":true,"unwatched":true,"mode":"1920x1080@60Hz","x":0,"y":0,"width":1920,"height":1080,"touch":null}]"#)
             .output().unwrap();

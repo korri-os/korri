@@ -33,6 +33,7 @@ fn isolated(name: &str) -> bool {
 }
 
 struct Fixture {
+    _sway_peer: super::sway_test_peer::SwayTestPeer,
     root: tempfile::TempDir,
     runtime: HostRuntime,
     backend: Arc<super::control::InMemoryLaunchUnitBackend>,
@@ -71,7 +72,8 @@ case "$command" in
 esac
 "#, root.path().display())).unwrap();
         fs::set_permissions(&sway, fs::Permissions::from_mode(0o700)).unwrap();
-        std::env::set_var("KORRID_SWAYMSG", &sway);
+        let sway_peer =
+            super::sway_test_peer::SwayTestPeer::start(sway, root.path().join("socket"));
         std::env::set_var(
             "KORRID_COMPOSITOR_CONTROL_SOCKET",
             root.path().join("socket"),
@@ -95,6 +97,7 @@ esac
         .with_shell_unit(Arc::new(super::control::RecordingShellUnit::identity_only()));
         runtime.claim_save_owner();
         Self {
+            _sway_peer: sway_peer,
             root,
             runtime,
             backend,

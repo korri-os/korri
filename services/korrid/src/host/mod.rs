@@ -1,6 +1,10 @@
 pub(crate) mod compositor_focus;
 pub mod display_placement;
 pub(crate) mod launch_diagnostics;
+mod sway_ipc;
+mod sway_observation;
+#[cfg(test)]
+pub(crate) mod sway_test_peer;
 #[cfg(test)]
 pub(crate) use compositor_focus::CompositorControl;
 #[cfg(test)]
