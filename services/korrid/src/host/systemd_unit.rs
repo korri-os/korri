@@ -274,9 +274,16 @@ pub struct SystemdShellUnit {
     helper: SystemdLaunchUnitBackend,
     unit: String,
     freezer_enabled: bool,
+    cgroup_root: PathBuf,
 }
 
 impl SystemdShellUnit {
+    #[cfg(test)]
+    pub(super) fn with_cgroup_root(mut self, root: PathBuf) -> Self {
+        self.cgroup_root = root;
+        self
+    }
+
     pub(super) fn new(
         helper: SystemdLaunchUnitBackend,
         unit: &str,
@@ -292,6 +299,7 @@ impl SystemdShellUnit {
             helper,
             unit: unit.to_owned(),
             freezer_enabled,
+            cgroup_root: "/sys/fs/cgroup".into(),
         })
     }
 
@@ -379,10 +387,7 @@ impl ShellUnit for SystemdShellUnit {
             {
                 return Err(malformed());
             }
-            read_unit_pids(
-                std::path::Path::new("/sys/fs/cgroup"),
-                relative.to_str().ok_or_else(malformed)?,
-            )?
+            read_unit_pids(&self.cgroup_root, relative.to_str().ok_or_else(malformed)?)?
         };
         Ok(pids)
     }

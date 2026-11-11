@@ -8,7 +8,7 @@ use korrid::surface_host_access::{SurfaceHostAccess, SurfaceHostPermission};
 async fn serve_native_shell_freezer_runtime() {
     let (router, _) = korrid::host_routers_with_storage_and_private(
         "/etc/freezer-host.toml",
-        None::<std::path::PathBuf>,
+        Some(std::path::PathBuf::from("/var/lib/korri")),
         "/var/lib/korrid",
         Some(SurfaceHostAccess::new(
             "freezer-vm-only",

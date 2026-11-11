@@ -114,6 +114,7 @@ impl Drop for NativeUnitReader {
 struct Unit {
     unit: Proxy<'static>,
     service: Proxy<'static>,
+    control_group: Option<(String, u32, String)>,
 }
 
 struct Bus {
@@ -121,6 +122,7 @@ struct Bus {
     manager: Proxy<'static>,
     owner: zbus::proxy::OwnerChangedStream<'static>,
     removed: zbus::proxy::SignalStream<'static>,
+    reloading: zbus::proxy::SignalStream<'static>,
     units: BTreeMap<String, Unit>,
 }
 
@@ -143,6 +145,7 @@ impl Bus {
         .await?;
         let owner = manager.receive_owner_changed().await?;
         let removed = manager.receive_signal("UnitRemoved").await?;
+        let reloading = manager.receive_signal("Reloading").await?;
         // systemd emits unit lifecycle signals only for subscribed bus peers.
         manager.call::<_, _, ()>("Subscribe", &()).await?;
         Ok(Self {
@@ -150,6 +153,7 @@ impl Bus {
             manager,
             owner,
             removed,
+            reloading,
             units: BTreeMap::new(),
         })
     }
@@ -179,10 +183,17 @@ impl Bus {
                 CacheProperties::Yes,
             )
             .await?;
-            self.units.insert(name.into(), Unit { unit, service });
+            self.units.insert(
+                name.into(),
+                Unit {
+                    unit,
+                    service,
+                    control_group: None,
+                },
+            );
         }
-        let entry = self.units.get(name).expect("observed unit");
-        let mut values = BTreeMap::new();
+        let entry = self.units.get_mut(name).expect("observed unit");
+        let mut values = BTreeMap::<String, String>::new();
         for property in ["LoadState", "ActiveState", "FreezerState"] {
             values.insert(
                 property.into(),
@@ -199,20 +210,35 @@ impl Bus {
                     .to_string(),
             );
         }
-        for property in ["StatusText", "ControlGroup"] {
-            values.insert(
-                property.into(),
-                entry.service.get_property::<String>(property).await?,
-            );
+        values.insert(
+            "StatusText".into(),
+            entry.service.get_property::<String>("StatusText").await?,
+        );
+        let main_pid = entry.service.get_property::<u32>("MainPID").await?;
+        let active = &values["ActiveState"];
+        // ControlGroup explicitly does not emit PropertiesChanged on systemd.
+        // Its path belongs to the service lifecycle, not a historical PID.
+        // Refresh on lifecycle change, reload, or an explicit control barrier.
+        let refresh_group = entry
+            .control_group
+            .as_ref()
+            .is_none_or(|(state, pid, group)| {
+                state != active || *pid != main_pid || (group.is_empty() && main_pid != 0)
+            });
+        if refresh_group {
+            let group = entry.service.get_property::<String>("ControlGroup").await?;
+            entry.control_group = Some((active.clone(), main_pid, group));
         }
         values.insert(
-            "MainPID".into(),
+            "ControlGroup".into(),
             entry
-                .service
-                .get_property::<u32>("MainPID")
-                .await?
-                .to_string(),
+                .control_group
+                .as_ref()
+                .expect("observed cgroup")
+                .2
+                .clone(),
         );
+        values.insert("MainPID".into(), main_pid.to_string());
         let environment = entry
             .service
             .get_property::<Vec<String>>("Environment")
@@ -227,6 +253,11 @@ impl Bus {
         tokio::select! {
             _ = self.connection.closed() => false,
             _ = self.owner.next() => false,
+            reloading = self.reloading.next() => {
+                if reloading.is_none() { return false; }
+                self.units.clear();
+                true
+            },
             removed = self.removed.next() => {
                 let Some(message) = removed else { return false; };
                 match message.body().deserialize::<(String, OwnedObjectPath)>() {
@@ -249,6 +280,7 @@ async fn proxy(
         .path(path)?
         .interface(interface)?
         .cache_properties(cache)
+        .uncached_properties(&["ControlGroup"])
         .build()
         .await
 }

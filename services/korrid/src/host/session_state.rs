@@ -5313,7 +5313,7 @@ printf '[{{"success":true}}]'
                 r#"#!/bin/sh
 printf '%s\n' "$*" >> '{}'
 case "$*" in
-  *--property=MainPID*) printf 'ControlGroup=\nMainPID=2603\n';;
+  *--property=ControlGroup*) printf 'ControlGroup=/shell\n';;
   *) printf 'LoadState=loaded\nActiveState=inactive\nFreezerState=running\n';;
 esac
 "#,
@@ -5322,12 +5322,16 @@ esac
         )
         .unwrap();
         fs::set_permissions(&systemctl, fs::Permissions::from_mode(0o755)).unwrap();
+        let cgroups = root.path().join("cgroups");
+        fs::create_dir_all(cgroups.join("shell")).unwrap();
+        fs::write(cgroups.join("shell/cgroup.procs"), "2603\n").unwrap();
         let shell = SystemdShellUnit::new(
             SystemdLaunchUnitBackend::new(systemctl.clone(), systemctl, 1000, 1000).unwrap(),
             "korri-shell.service",
             false,
         )
-        .unwrap();
+        .unwrap()
+        .with_cgroup_root(cgroups);
         let swaymsg = root.path().join("swaymsg");
         let tree = r#"{"nodes":[{"id":10,"pid":2603,"app_id":"korri-shell","fullscreen_mode":1}]}"#;
         fs::write(root.path().join("tree"), tree).unwrap();
@@ -5420,9 +5424,7 @@ printf '[{{"success":true}}]'
             after
         );
         let queries = fs::read_to_string(root.path().join("unit-queries")).unwrap();
-        assert!(
-            queries.contains("show korri-shell.service --property=ControlGroup --property=MainPID")
-        );
+        assert!(queries.contains("show korri-shell.service --property=ControlGroup"));
     }
 
     #[test]

@@ -70,7 +70,8 @@ in
     import ./nix/module-check.nix {
       inherit pkgs nixpkgs korri;
     };
-  freezerCheck = korrid: import ./nix/freezer-vm-test.nix { inherit pkgs korrid; };
+  freezerCheck =
+    korrid: inputdPackage: import ./nix/freezer-vm-test.nix { inherit pkgs korrid inputdPackage; };
 
   help = ''
 

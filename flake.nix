@@ -378,7 +378,9 @@
               inherit nixpkgs;
               korri = self;
             };
-            korri-shell-freezer = shell.freezerCheck self.packages.${system}.korrid;
+            korri-shell-freezer =
+              shell.freezerCheck self.packages.${system}.korrid
+                inputplumber.packages.korri-inputd;
             korrid-game-stop = import ./services/korrid/game-stop-vm-test.nix {
               inherit pkgs;
               korrid = self.packages.${system}.korrid;

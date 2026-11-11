@@ -3,6 +3,7 @@
 {
   pkgs,
   korrid,
+  inputdPackage,
   systemd ? pkgs.callPackage ../../../nix/product/systemd/package.nix { },
 }:
 let
@@ -104,9 +105,16 @@ pkgs.testers.runNixOSTest {
             // retry. It is installed before the production grant at runtime.
           });
         '';
-        users.groups.korrid = { };
+        users.groups.korrid.gid = 976;
+        services.udev.packages = [
+          (import ../../../services/inputd/nix/input-seat-rules.nix {
+            inherit pkgs;
+            eventGid = 100;
+          })
+        ];
         users.users.korrid = {
           isSystemUser = true;
+          uid = 976;
           group = "korrid";
         };
         users.users.visitor.isNormalUser = true;
@@ -119,12 +127,34 @@ pkgs.testers.runNixOSTest {
           "d /run/korrid-control 0755 root root -"
           "f /run/korrid-control/control.sock 0600 root root -"
           "d /var/lib/freezer-stream 0700 root root -"
+          # The production settings reader creates its existing empty files;
+          # the report is plugin_installation::encode([]), not a plugin bypass.
+          "d /var/lib/korri 0750 korrid korrid -"
+          "d /run/korri-plugin-host 0755 root root -"
+          "f /run/korri-plugin-host/enabled-packages.json 0644 root root - []"
           "d /run/korri-compositor 0700 root root -"
           "d /run/korri-certificate-control 0700 root root -"
           "d /run/user/1000 0700 gameplay users -"
           "d /dev/inputplumber/sources 0755 root root -"
         ];
         systemd.services = {
+          korri-input-seat-receiver = {
+            wantedBy = [ "multi-user.target" ];
+            after = [
+              "systemd-udevd.service"
+              "systemd-modules-load.service"
+            ];
+            serviceConfig = {
+              Type = "notify";
+              User = "root";
+              Group = "root";
+              RuntimeDirectory = "korri-input-seat";
+              RuntimeDirectoryMode = "0711";
+              ExecStart = "${inputdPackage}/bin/korri-input-seat-receiver --runtime-dir /run/korri-input-seat --control-uid 976 --control-gid 976 --sunshine-uid 1000 --sunshine-gid 980 --event-gid 100";
+              DevicePolicy = "closed";
+              DeviceAllow = [ "/dev/uinput rw" ];
+            };
+          };
           korri-shell = {
             wantedBy = [ "multi-user.target" ];
             after = [ "systemd-tmpfiles-setup.service" ];
@@ -151,13 +181,18 @@ pkgs.testers.runNixOSTest {
           };
           korrid = {
             wantedBy = [ "multi-user.target" ];
-            after = [ "dbus.service" ];
+            requires = [ "korri-input-seat-receiver.service" ];
+            after = [
+              "dbus.service"
+              "korri-input-seat-receiver.service"
+            ];
             environment = {
               KORRID_SHELL_UNIT = "korri-shell.service";
               KORRID_SYSTEMD_RUN = "${systemd}/bin/systemd-run";
               KORRID_RUNTIME_UID = "1000";
               KORRID_RUNTIME_GID = "100";
               KORRID_PRIVATE_STATE_ROOT = "/var/lib/korrid";
+              KORRID_INPUT_SEAT_CONTROL_SOCKET = "/run/korri-input-seat/control.sock";
               KORRID_STREAM_PRIVATE_STATE_ROOT = "/var/lib/freezer-stream";
               KORRID_COMPOSITOR_CONTROL_SOCKET = "/run/freezer-compositor/sway.sock";
             };

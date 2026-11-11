@@ -3,7 +3,7 @@ use std::{
     io::{BufRead, BufReader},
     process::{Child, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -73,7 +73,22 @@ impl UnitState {
     }
 }
 
-struct ServiceState;
+struct ServiceState {
+    pid: Arc<AtomicU32>,
+    group: Arc<std::sync::Mutex<String>>,
+    group_reads: Arc<AtomicUsize>,
+}
+impl Default for ServiceState {
+    fn default() -> Self {
+        Self {
+            pid: Arc::new(AtomicU32::new(1234)),
+            group: Arc::new(std::sync::Mutex::new(
+                "/korri.slice/korri-games.slice/game.service".into(),
+            )),
+            group_reads: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
 #[zbus::interface(name = "org.freedesktop.systemd1.Service")]
 impl ServiceState {
     #[zbus(property)]
@@ -88,13 +103,14 @@ impl ServiceState {
     fn status_text(&self) -> &str {
         "ready"
     }
-    #[zbus(property)]
-    fn control_group(&self) -> &str {
-        "/korri.slice/korri-games.slice/game.service"
+    #[zbus(property(emits_changed_signal = "false"))]
+    fn control_group(&self) -> String {
+        self.group_reads.fetch_add(1, Ordering::SeqCst);
+        self.group.lock().unwrap().clone()
     }
     #[zbus(property, name = "MainPID")]
     fn main_pid(&self) -> u32 {
-        1234
+        self.pid.load(Ordering::SeqCst)
     }
     #[zbus(property)]
     fn environment(&self) -> Vec<String> {
@@ -121,7 +137,7 @@ async fn repeated_reads_use_the_property_cache_and_signals_update_it() {
             },
         )
         .unwrap()
-        .serve_at(PATH, ServiceState)
+        .serve_at(PATH, ServiceState::default())
         .unwrap()
         .build()
         .await
@@ -194,6 +210,109 @@ async fn repeated_reads_use_the_property_cache_and_signals_update_it() {
     drop(reader);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_non_signalling_cgroup_refreshes_when_the_main_process_changes() {
+    let bus = PrivateBus::start();
+    let pid = Arc::new(AtomicU32::new(0));
+    let group = Arc::new(std::sync::Mutex::new(String::new()));
+    let group_reads = Arc::new(AtomicUsize::new(0));
+    let server = zbus::connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .name("org.freedesktop.systemd1")
+        .unwrap()
+        .serve_at("/org/freedesktop/systemd1", Manager)
+        .unwrap()
+        .serve_at(
+            PATH,
+            UnitState {
+                active: Arc::new(AtomicBool::new(true)),
+                reads: Arc::new(AtomicUsize::new(0)),
+            },
+        )
+        .unwrap()
+        .serve_at(
+            PATH,
+            ServiceState {
+                pid: Arc::clone(&pid),
+                group: Arc::clone(&group),
+                group_reads: Arc::clone(&group_reads),
+            },
+        )
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+    let reader = NativeUnitReader::connect_to(Some(bus.address.clone())).unwrap();
+    assert_eq!(
+        reader
+            .read("game.service", Duration::from_secs(2))
+            .unwrap()
+            .unwrap()
+            .values["ControlGroup"],
+        ""
+    );
+    let initial_reads = group_reads.load(Ordering::SeqCst);
+    for _ in 0..10 {
+        reader.read("game.service", Duration::from_secs(2)).unwrap();
+    }
+    assert_eq!(group_reads.load(Ordering::SeqCst), initial_reads);
+    *group.lock().unwrap() = "/new-service-cgroup".into();
+    pid.store(4321, Ordering::SeqCst);
+    let service = server
+        .object_server()
+        .interface::<_, ServiceState>(PATH)
+        .await
+        .unwrap();
+    service
+        .get()
+        .await
+        .main_p_i_d_changed(service.signal_emitter())
+        .await
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let snapshot = reader
+            .read("game.service", Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        if snapshot.values["MainPID"] == "4321" {
+            assert_eq!(snapshot.values["ControlGroup"], "/new-service-cgroup");
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(group_reads.load(Ordering::SeqCst), initial_reads + 1);
+    *group.lock().unwrap() = "/after-manager-reload".into();
+    server
+        .emit_signal(
+            None::<&str>,
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+            "Reloading",
+            &(false,),
+        )
+        .await
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if reader
+            .read("game.service", Duration::from_secs(2))
+            .unwrap()
+            .unwrap()
+            .values["ControlGroup"]
+            == "/after-manager-reload"
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "manager reload did not invalidate constant properties"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
 async fn serve_unit(address: &str, active: bool) -> Connection {
     zbus::connection::Builder::address(address)
         .unwrap()
@@ -209,7 +328,7 @@ async fn serve_unit(address: &str, active: bool) -> Connection {
             },
         )
         .unwrap()
-        .serve_at(PATH, ServiceState)
+        .serve_at(PATH, ServiceState::default())
         .unwrap()
         .build()
         .await
