@@ -1,28 +1,44 @@
 """Prebuilt, bounded viewer-side session for the outside measure.
 
-A fixture compositor holds the test viewer and the capture client inside one
-run directory: a second, headless sway started from the installed binary. The
-product compositor, Sunshine and korrid are read and never changed.
+Two ways to show the stream, chosen by what the device has:
 
-The private half of the test key pair crosses SSH into the run directory,
-because the viewer runs here. Cleanup removes it with the directory.
+- A device with the viewer plugin runs the plugin's own binary on the device's
+  own compositor, with the arguments and environment that korrid gives it.
+- A server-only device has no viewer. A fixture holds a copied viewer and the
+  capture client: a second, headless sway started from the installed binary.
+
+The product compositor, Sunshine and korrid are read and never changed. All
+files live in one run directory, including the private half of the test key
+pair, which crosses SSH because the viewer runs here.
 """
 
 import base64
 import gzip
+import json
 import os
 from pathlib import Path
 import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from typing import TextIO
 
-from device import deferred_termination, games, proc, serve, unit
+from device import (
+    deferred_termination,
+    games,
+    get_output,
+    proc,
+    serve,
+    sway,
+    unit,
+    wake,
+)
 
 DISPLAY = "wayland-1"
 OUTPUT = "HEADLESS-1"
+PLUGIN = "@korri:moonlight"
 
 
 def ticks(pid: int) -> int | None:
@@ -56,27 +72,66 @@ def battery() -> list[dict]:
     return rows
 
 
+def plugin() -> dict | None:
+    """The enabled viewer plugin's files, as its manifest declares them."""
+    status = subprocess.run(
+        ["korri-plugin", "status", PLUGIN], capture_output=True, text=True, timeout=20
+    )
+    if status.returncode:
+        return None
+    installed = json.loads(status.stdout)
+    if installed.get("desired", {}).get("state") != "Enabled":
+        return None
+    files = json.loads((Path(installed["package"]) / "manifest.json").read_text())["files"]
+    return {
+        "package": installed["package"],
+        "release_version": installed.get("provenance", {}).get("release_version"),
+        "moonlight": files["moonlight"],
+        "mapping": files["mapping"],
+    }
+
+
+def platform() -> str:
+    """The picture path that korrid chooses: linux_viewer/production.rs platform()."""
+    path = Path("/proc/device-tree/compatible")
+    values = path.read_bytes().split(b"\0") if path.exists() else []
+    if b"qcom,sm8550" in values or b"qcom,sm8250" in values:
+        return "v4l2m2m"
+    if b"rockchip,rk3566" in values or b"allwinner,sun50i-h700" in values:
+        return "v4l2request"
+    return "x11"
+
+
 class Session:
     def __init__(self) -> None:
         compositor = proc(int(unit("korri-compositor")["MainPID"]))
         if Path(compositor["exe"]).name != "sway":
-            raise RuntimeError(
-                "The fixture needs the installed sway binary; this compositor is not sway."
-            )
+            raise RuntimeError("The measure needs sway; this compositor is not sway.")
         self.compositor = compositor
+        # The shape that device.py's compositor helpers read.
+        self.shell = {"processes": {"compositor": compositor}}
         self.facts = {
             "architecture": os.uname().machine,
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
             "clock_ticks_per_second": os.sysconf("SC_CLK_TCK"),
             "compositor": compositor,
-            "fixture": "headless sway from the installed binary",
+            "display": get_output(self.shell),
+            "plugin": plugin(),
+            "platform": platform(),
         }
         self.root: Path | None = None
+        self.fixture = False
+        self.last_wake = 0.0
         self.processes: dict[str, subprocess.Popen] = {}
         self.logs: dict[str, TextIO] = {}
 
     def restrict(self) -> None:
-        os.setgroups([])
+        if self.fixture:
+            os.setgroups([])
+        else:
+            # The installed viewer opens the decoder's device nodes, as its unit
+            # does: it needs the compositor user's own groups.
+            os.initgroups(self.compositor["user"], self.compositor["gid"])
         os.setgid(self.compositor["gid"])
         os.setuid(self.compositor["uid"])
 
@@ -90,13 +145,37 @@ class Session:
             "PATH": os.environ.get("PATH", ""),
         }
 
-    def client_environment(self) -> dict[str, str]:
-        # The dummy audio driver keeps the fixture free of the device's sound.
+    def capture_environment(self) -> dict[str, str]:
+        if self.fixture:
+            return dict(self.environment(), WAYLAND_DISPLAY=DISPLAY)
+        shell = self.compositor["environment"]
         return dict(
             self.environment(),
-            WAYLAND_DISPLAY=DISPLAY,
-            SDL_VIDEODRIVER="wayland",
+            XDG_RUNTIME_DIR=shell["XDG_RUNTIME_DIR"],
+            WAYLAND_DISPLAY=shell.get("WAYLAND_DISPLAY", shell.get("KORRI_WAYLAND_DISPLAY", "")),
+        )
+
+    def viewer_environment(self) -> dict[str, str]:
+        assert self.root is not None
+        if self.fixture:
+            # The dummy audio driver keeps the fixture free of the device's sound.
+            return dict(
+                self.environment(),
+                WAYLAND_DISPLAY=DISPLAY,
+                SDL_VIDEODRIVER="wayland",
+                SDL_AUDIODRIVER="dummy",
+            )
+        # What korrid's linux_viewer gives the viewer unit, with two changes.
+        # HOME is the run directory, so the test writes nothing into the product's
+        # home. Sound goes to SDL's dummy driver: the unit's audio server exists
+        # only inside a korrid launch, and without one the viewer ends the stream.
+        return dict(
+            self.environment(),
+            KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT="1",
+            SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS="1",
+            DISPLAY=":0",
             SDL_AUDIODRIVER="dummy",
+            KORRI_MOONLIGHT_SERVER_CERTIFICATE=str(self.root / "server.pem"),
         )
 
     def spawn(self, name: str, args: list[str], env: dict[str, str]) -> subprocess.Popen:
@@ -138,12 +217,20 @@ class Session:
         path = self.root / f"{name}.log"
         return path.read_text(errors="replace")[-8000:] if path.exists() else ""
 
+    def focus(self, pid: int) -> None:
+        """Give the viewer the whole display, as korrid does after a launch."""
+        for _ in range(150):
+            try:
+                sway(self.shell, f"[pid={pid}] fullscreen enable, focus")
+                return
+            except Exception:
+                time.sleep(0.1)
+
     def prepare(self, request: dict) -> dict:
         games()
         if self.root is not None:
             raise RuntimeError("viewer session already prepared")
-        width, height = int(request["width"]), int(request["height"])
-        refresh = float(request["refresh_hz"])
+        self.fixture = bool(request["fixture"])
         self.root = Path(tempfile.mkdtemp(prefix="korri-stream-cadence-view-", dir="/tmp"))
         runtime, keys = self.root / "rt", self.root / "keys"
         runtime.mkdir(mode=0o700)
@@ -152,18 +239,28 @@ class Session:
         key = keys / "key.pem"
         key.touch(mode=0o600)
         key.write_text(request["key"])
-        config = self.root / "sway.conf"
-        config.write_text(
-            f"output {OUTPUT} mode {width}x{height}@{refresh:g}Hz\n"
-            "default_border none\n"
-            "xwayland disable\n"
-            'for_window [title=".*"] fullscreen enable\n'
-        )
-        for path in (self.root, runtime, keys, keys / "client.pem", key, config):
+        pin = self.root / "server.pem"
+        pin.write_text(request["server_certificate"])
+        owned = [self.root, runtime, keys, keys / "client.pem", key, pin]
+        if self.fixture:
+            config = self.root / "sway.conf"
+            config.write_text(
+                f"output {OUTPUT} mode {int(request['width'])}x{int(request['height'])}"
+                f"@{float(request['refresh_hz']):g}Hz\n"
+                "default_border none\n"
+                "xwayland disable\n"
+                'for_window [title=".*"] fullscreen enable\n'
+            )
+            owned.append(config)
+        for path in owned:
             os.chown(path, self.compositor["uid"], self.compositor["gid"])
+        if not self.fixture:
+            wake(self.shell)
+            self.last_wake = time.monotonic()
+            return {"run_folder": str(self.root), "keydir": str(keys)}
         self.spawn(
             "fixture",
-            [self.compositor["exe"], "--config", str(config)],
+            [self.compositor["exe"], "--config", str(self.root / "sway.conf")],
             dict(
                 self.environment(),
                 WLR_BACKENDS="headless",
@@ -182,7 +279,7 @@ class Session:
             raise RuntimeError("fixture compositor opened no socket: " + self.tail("fixture"))
         if self.processes["fixture"].poll() is not None:
             raise RuntimeError("fixture compositor exited: " + self.tail("fixture"))
-        return {"run_folder": str(self.root), "keydir": str(keys), "output": OUTPUT}
+        return {"run_folder": str(self.root), "keydir": str(keys)}
 
     def handle(self, request: dict) -> dict:
         operation = request["operation"]
@@ -200,7 +297,7 @@ class Session:
             frame = self.root / "probe.pgm"
             result = subprocess.run(
                 [request["capture"], "probe", str(frame)],
-                env=self.client_environment(),
+                env=self.capture_environment(),
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -223,14 +320,20 @@ class Session:
                     str(self.root / "display.csv"),
                     str(self.root / "display.rows"),
                 ],
-                self.client_environment(),
+                self.capture_environment(),
             )
             return {}
         if operation == "start":
             start = time.monotonic_ns()
-            process = self.spawn("viewer", list(request["command"]), self.client_environment())
+            process = self.spawn("viewer", list(request["command"]), self.viewer_environment())
+            if not self.fixture:
+                threading.Thread(target=self.focus, args=(process.pid,), daemon=True).start()
             return {"pid": process.pid, "start_ns": start}
         if operation == "sample":
+            if not self.fixture and time.monotonic() - self.last_wake >= 30:
+                # Seat activity keeps a real panel from idling off under the measure.
+                wake(self.shell)
+                self.last_wake = time.monotonic()
             viewer = self.processes.get("viewer")
             capture = self.processes.get("capture")
             return {

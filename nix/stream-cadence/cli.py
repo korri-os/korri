@@ -90,7 +90,7 @@ def ssh_target(
 
 
 def tools(
-    architecture: str, target: str, options: list[str], extra: tuple[str, ...] = ()
+    architecture: str, target: str, options: list[str], parts: tuple[str, ...] = ("motion",)
 ) -> tuple[str, str, list[str]]:
     if architecture not in ("aarch64", "x86_64"):
         raise Refusal(
@@ -107,7 +107,7 @@ def tools(
         + json.dumps(str(Path(__file__).with_name("default.nix")))
         + " { inherit pkgs; }; "
     )
-    selection = " ".join("tools.runtime." + name for name in ("python", "motion", *extra))
+    selection = " ".join("tools.runtime." + name for name in ("python", *parts))
     source_expression = expression + "in toString tools.runtime.source"
     expression += "in [ " + selection + " ]"
     # This Nix command runs on the client/build host. Never invoke a build over SSH.
@@ -143,7 +143,7 @@ def tools(
             + error.stderr
         ) from error
     python = next(path for path in paths if re.search(r"-python3-[\d.]", path))
-    motion = next(path for path in paths if path.endswith("-stream-cadence-motion"))
+    motion = next((path for path in paths if path.endswith("-stream-cadence-motion")), "")
     # Python is prebuilt; the two immutable agent modules are interpreted with
     # bytecode writes disabled. No native build or pyc file occurs on the device.
     agent = shlex.join([python + "/bin/python3", "-B", "-u", source + "/device.py"])
@@ -324,8 +324,11 @@ def app_name(host: str, info: ET.Element, keydir: Path, server_certificate: str)
 
 def sender_stream(
     args: argparse.Namespace, remote: Remote, facts: dict, certificate: str, motion: str
-) -> tuple[str, int, str]:
-    """Wake the sender, admit the test certificate and start the frame-ID source."""
+) -> tuple[str, int, str, str]:
+    """Wake the sender, admit the test certificate and start the frame-ID source.
+
+    Returns the stream host, Sunshine's port, the application and the server certificate.
+    """
     if not facts["working_encoders"]:
         raise Refusal(
             "Sunshine has no working encoder in its current startup journal. Wake the panel and restart the installed Sunshine service by hand, then retry. The test never restarts it."
@@ -345,7 +348,7 @@ def sender_stream(
     )
     app = app_name(url_host, info, args.keydir, result["serverCertificate"])
     remote.request("start", motion=motion)
-    return host, port, app
+    return host, port, app, result["serverCertificate"]
 
 
 def stop_client(client: subprocess.Popen | None) -> None:
@@ -410,7 +413,7 @@ def run_case(
     samples = []
     latest = ""
     try:
-        host, port, app = sender_stream(args, remote, facts, certificate, motion)
+        host, port, app, _ = sender_stream(args, remote, facts, certificate, motion)
         before = clock(remote)
         facts["clock_bridge_before"] = before
         width, height = (
@@ -708,39 +711,43 @@ def view_case(
         seat = viewer.request("discover")
         facts["viewer"] = seat
         same_clock = seat["boot_id"] == facts["boot_id"]
-        refresh = min(facts["display"]["refresh_hz"], args.viewer_refresh)
+        plugin = seat["plugin"]
+        if plugin:
+            # The installed viewer shows the stream on the device's own display.
+            mode = seat["display"]["mode"]
+            viewer_refresh = seat["display"]["refresh_hz"]
+            width, height = args.resolution or (mode["width"], mode["height"])
+        else:
+            viewer_refresh = args.viewer_refresh
+            width, height = args.resolution or (1920, 1080)
+        refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
         fps = args.fps if args.fps is not None else refresh
-        width, height = args.resolution
         facts.update(
             requested_fps=fps,
             requested_resolution={"width": width, "height": height},
             requested_codec=args.codec,
             requested_bitrate=args.bitrate,
-            viewer_refresh_hz=args.viewer_refresh,
+            viewer_refresh_hz=viewer_refresh,
             max_capture_gaps=args.max_capture_gaps,
         )
-        host, port, app = sender_stream(args, sender, facts, certificate, paths["motion"])
+        host, port, app, server_certificate = sender_stream(
+            args, sender, facts, certificate, paths["motion"]
+        )
         # A viewer on the sender's own machine reaches Sunshine on IPv4 loopback,
         # where Sunshine's wildcard listener answers.
         loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
         viewer_host = args.viewer_stream_host or (loopback if same_clock else host)
         prepared = viewer.request(
             "prepare",
+            fixture=plugin is None,
             width=width,
             height=height,
-            refresh_hz=args.viewer_refresh,
+            refresh_hz=viewer_refresh,
             certificate=certificate,
             key=(args.keydir / "key.pem").read_text(),
+            server_certificate=server_certificate,
         )
-        command = [
-            paths["viewer"] + "/bin/moonlight",
-            "stream",
-            viewer_host,
-            "-port",
-            str(port),
-            "-platform",
-            "sdl",
-            "-viewonly",
+        request = [
             "-width",
             str(width),
             "-height",
@@ -749,13 +756,46 @@ def view_case(
             str(round(fps)),
             "-codec",
             args.codec,
-            "-app",
-            app,
-            "-keydir",
-            prepared["keydir"],
         ]
         if args.bitrate:
-            command += ["-bitrate", str(args.bitrate)]
+            request += ["-bitrate", str(args.bitrate)]
+        if plugin:
+            # The arguments of korrid's linux_viewer (stream_args), with no input seat.
+            command = [
+                plugin["moonlight"],
+                "stream",
+                "-app",
+                app,
+                "-platform",
+                seat["platform"],
+                "-mapping",
+                plugin["mapping"],
+                "-keydir",
+                prepared["keydir"],
+                "-windowed",
+                "-autowindowresize",
+                "-viewonly",
+                *request,
+                "-port",
+                str(port),
+                viewer_host,
+            ]
+        else:
+            command = [
+                paths["viewer"] + "/bin/moonlight",
+                "stream",
+                viewer_host,
+                "-port",
+                str(port),
+                "-platform",
+                "sdl",
+                "-viewonly",
+                *request,
+                "-app",
+                app,
+                "-keydir",
+                prepared["keydir"],
+            ]
         facts["viewer_command"] = command
         # The first start only locates the bar. The second start is the measure,
         # with the capture already running, so startup time is observable.
@@ -822,7 +862,7 @@ def view_case(
             facts["bridge_uncertainty_ms"] = sender_error + seat_error
         origin = times[first]["display_ns"]
         scored = (origin + args.warmup * 1e9, origin + (args.warmup + duration) * 1e9)
-        period = 1e9 / args.viewer_refresh
+        period = 1e9 / viewer_refresh
         gaps = capture_gaps(
             [row for row in times if scored[0] <= row["display_ns"] <= scored[1]], period
         )
@@ -888,6 +928,14 @@ def view_case(
         (directory / "viewer-samples.json").write_text(json.dumps(samples, indent=2))
         if latest:
             (directory / "journal.log").write_text(latest)
+        if not (directory / "viewer.log").exists():
+            # A refused run still keeps the viewer's own words.
+            try:
+                shown = viewer.request("evidence")
+                for name in ("viewer_log", "capture_log", "fixture_log"):
+                    (directory / name.replace("_", ".")).write_text(shown[name])
+            except Exception:
+                pass
         failed: dict = {
             "pass": False,
             "run_folder_removed": None,
@@ -931,15 +979,26 @@ def view(args: argparse.Namespace) -> int:
         agent, _, paths = tools(architecture, target, options, extra)
         return agent, paths
 
-    sender_agent, sender_paths = deliver(sender_target, sender_options, ())
-    seat_agent, seat_paths = deliver(viewer_target, viewer_options, ("capture", "viewer"))
+    sender_agent, sender_paths = deliver(sender_target, sender_options, ("motion",))
+    # A device with the viewer plugin uses that binary. Any other device gets a copy.
+    installed = (
+        subprocess.run(
+            ["ssh", *viewer_options, viewer_target, "korri-plugin status @korri:moonlight"],
+            capture_output=True,
+            timeout=30,
+        ).returncode
+        == 0
+    )
+    seat_agent, seat_paths = deliver(
+        viewer_target, viewer_options, ("capture",) if installed else ("capture", "viewer")
+    )
     seat_agent = seat_agent.replace("/device.py", "/viewer.py")
     paths = {
         "motion": next(p for p in sender_paths if p.endswith("-stream-cadence-motion"))
         + "/bin/stream-cadence-motion",
         "capture": next(p for p in seat_paths if "-stream-cadence-capture-" in p)
         + "/bin/stream-cadence-capture",
-        "viewer": next(p for p in seat_paths if "-moonlight-embedded-" in p),
+        "viewer": next((p for p in seat_paths if "-moonlight-embedded-" in p), ""),
     }
     args.imported_store_paths = sorted(set(sender_paths + seat_paths))
     args.out = (
@@ -1217,7 +1276,11 @@ def parser() -> argparse.ArgumentParser:
         "--viewer-stream-host", help="sender address as the viewer reaches it"
     )
     watch.add_argument("--fps", type=positive)
-    watch.add_argument("--resolution", type=resolution, default=(1920, 1080))
+    watch.add_argument(
+        "--resolution",
+        type=resolution,
+        help="default: the viewer's display mode, or 1920x1080 in the fixture",
+    )
     watch.add_argument("--viewer-refresh", type=positive, default=60.0)
     watch.add_argument(
         "--codec", choices=["h264", "h265", "av1", "auto"], default="h264"
