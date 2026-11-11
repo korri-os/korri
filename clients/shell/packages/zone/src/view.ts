@@ -294,8 +294,8 @@ const RUN_TAGS = { Loading: "continue", Ready: "system", Stale: "open", Warnings
 const LAUNCH_TAGS = { Loading: "continue", Ready: "system", Conflict: "remote", Error: "remote" } as const
 
 /** The Surface's view for one window: Zone's view, then its regions, exits and the plan's decisions (src/focus.ts). */
-export function view(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen) {
-  return focusView(surfaceView(state, korri, screen), state, korri, screen)
+export function view(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen, touch: ZoneTouchView = NO_TOUCH) {
+  return focusView(surfaceView(state, korri, screen, touch), state, korri, screen)
 }
 
 /**
@@ -315,15 +315,16 @@ const OFF_MARK = Object.freeze({ focused: false, focusRegion: "band" })
 
 /**
  * The band's marks, already in their region (src/focus.ts marks only the
- * focused card's as active): the pool's with their game's words, the rest
- * OFF_MARK.
+ * centre card's as active): the pool's round `at` (the focus, or where a
+ * finger scrolled the band) with their game's words, the rest OFF_MARK; the
+ * focused card (`focusAt`) marked wherever it is in the pool.
  */
-function bandMarks(band: readonly SurfaceGame[], at: number, cardFocused: boolean, screen: ZoneScreen) {
+function bandMarks(band: readonly SurfaceGame[], at: number, focusAt: number, cardFocused: boolean, screen: ZoneScreen) {
   const reach = poolReach(screen)
   const marks = new Array<Record<string, unknown>>(band.length)
   for (let index = 0; index < band.length; index++) {
     marks[index] = Math.abs(index - at) <= reach
-      ? { label: band[index]!.title, focused: index === at && cardFocused, focusRegion: "band", focusId: `card:${index}` }
+      ? { label: band[index]!.title, focused: index === focusAt && cardFocused, focusRegion: "band", focusId: `card:${index}` }
       : OFF_MARK
   }
   return marks
@@ -355,11 +356,28 @@ function bandCards(band: readonly SurfaceGame[], at: number, screen: ZoneScreen,
  */
 const NO_CARD = {}
 
-function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen) {
+/**
+ * What touch changes in the view (ADR 0055), from logic.ts: the band's
+ * centre and the save band's where a finger scrolled them (focus does not
+ * move), and the focused game while a scrolled band paged the window away
+ * from it.
+ */
+export interface ZoneTouchView {
+  readonly bandAt?: number
+  readonly held?: SurfaceGame
+  readonly saveAt?: number
+}
+
+const NO_TOUCH: ZoneTouchView = {}
+
+function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneScreen, touch: ZoneTouchView = NO_TOUCH) {
   const page = zoneShown(state, korri)
   const nav = state.nav
   const band = bandGames(nav, korri)
-  const game = band[nav.card]
+  // The focused game: in the band, or held while the window is away from it.
+  const held = touch.held
+  const game = held ?? band[nav.card]
+  const centre = touch.bandAt ?? nav.card
   const layer = topLayer(nav)
   const onGames = page === "games"
 
@@ -578,7 +596,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
 
   const attracting = onGames && layer === "idle" && band.length > 0
   const attractAt = Math.min(nav.idleCard, Math.max(0, band.length - 1))
-  const cardFocused = onGames && nav.zone === "cards" && layer === "none" && !status.busy.shown && !dialog.shown
+  const cardFocused = onGames && nav.zone === "cards" && layer === "none" && !status.busy.shown && !dialog.shown && held === undefined
   // On the tabs (or LAUNCH SETTINGS' buttons) a page's list keeps its row as the one it enters on, unfocused.
   if (((page === "options" || page === "savedata") && nav.zone === "tabs") || (page === "launch" && state.launchAction !== undefined)) {
     rows = rows.map(entry => (entry.focused ? { ...entry, focused: false, focusActive: true } : entry))
@@ -610,11 +628,12 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     // The cards stay as they were across a move (one object per game); the marks carry the focus.
     // Only the cards drawn or about to be: ZoneCardBand's pool (the focus and
     // reach + 1 either side) and the attract's game; the rest are NO_CARD.
-    cards: bandCards(band, nav.card, screen, attractAt, attracting),
+    cards: bandCards(band, centre, screen, attractAt, attracting),
     // Every card's mark (each a focus target in its place); the pool's carry
     // their game's words, the rest only their focus, to keep the view small.
-    cardMarks: bandMarks(band, nav.card, cardFocused, screen),
-    focusedCard: nav.card,
+    cardMarks: bandMarks(band, centre, nav.card, cardFocused, screen),
+    // The band's centre: the focused card, or where a finger scrolled it.
+    focusedCard: centre,
     cardFocused,
     firstIndex: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.firstIndex : 0,
     total: catalog._tag === "Ready" && catalog.query.text.trim().toLocaleLowerCase() === nav.find.draft.trim().toLocaleLowerCase() ? catalog.total : band.length,
@@ -640,7 +659,7 @@ function surfaceView(state: ZoneSurfaceState, korri: SurfaceModel, screen: ZoneS
     well,
     // SAVE DATA
     saveCards: save.cards.map((entry, index) => ({ ...entry, focusId: `save:${index}`, focused: save.marked && index === save.focus && state.identity.flow._tag !== "retired" })),
-    saveFocus: save.focus,
+    saveFocus: touch.saveAt ?? save.focus,
     saveMarked: save.marked,
     // The cursor is on a retired key's buttons: its card stays marked.
     saveLit: save.marked && state.identity.flow._tag === "retired",

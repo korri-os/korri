@@ -56,6 +56,7 @@
 import type {
   CatalogQuery,
   SurfaceButton,
+  SurfaceGame,
   SurfaceStatus,
   SurfaceMessage as Message,
   SurfaceModel as Model,
@@ -63,14 +64,14 @@ import type {
 } from "../../../../contracts/generated/surface"
 import { isZoneLook, ZONE_DEFAULT_LOOK } from "./src/plan/look"
 import { zoneScreen, ZONE_DEFAULT_SIZE, type ZoneScreen } from "./src/plan/screen"
-import { dragOn, focusOn, press } from "./src/press"
+import { focusOn, press, scrollOn, zoneGameTarget, type ZoneScroll } from "./src/press"
 import { bandGames, cardCount, topLayer, ZONE_IDLE_AFTER_MS, ZONE_IDLE_CYCLE_MS, ZONE_TALLY_CLOSE_MS } from "./src/state/navigation"
 import { zoneTallyCountMs } from "./src/plan/motion"
 import { zoneTallyRows } from "./src/plan/tally"
 import type { ZoneTally } from "./src/state/tally"
 import type { ZoneRequest } from "./src/state/requests"
 import { update as zoneUpdate, zoneShown, zoneSurfaceStart, type ZoneSurfaceMessage, type ZoneSurfaceState } from "./src/state/surface"
-import { attractStep, overlayView, view as zoneView, ZONE_HINT_BACK, ZONE_HINT_CONFIRM } from "./src/view"
+import { attractStep, overlayView, view as zoneView, ZONE_HINT_BACK, ZONE_HINT_CONFIRM, type ZoneTouchView } from "./src/view"
 
 export interface State {
   readonly zone: ZoneSurfaceState
@@ -87,6 +88,12 @@ export interface State {
   /** A tap or a drag came last, not a button (ADR 0055): the focus highlight
    * hides until the next Pressed. The cursor stays where it is. */
   readonly touched?: boolean
+  /** Where a finger scrolled the band and the save band (ADR 0055); focus
+   * does not move with it. The next button press clears it. */
+  readonly scroll?: ZoneScroll
+  /** The band's focused game, kept while the band is scrolled, so focus stays
+   * on it even when the window pages away from it. */
+  readonly held?: SurfaceGame
 }
 
 /** How long the tally has shown, from the shell's Ticks: `idle` is the last Tick's idleMs. */
@@ -204,6 +211,8 @@ export function update(state: State, message: Message, model: Model): { state: S
   let size = state.size
   let tally = state.tally
   let touched = state.touched === true
+  let scroll = state.scroll
+  let held = state.held
   switch (message._tag) {
     case "Resized":
       size = { width: Math.max(0, message.width), height: Math.max(0, message.height) }
@@ -228,6 +237,8 @@ export function update(state: State, message: Message, model: Model): { state: S
       if (due === 0) idleTurns = 0
       if (idleTurns === 0 && due > 0) {
         zone = run(zone, { _tag: "Games", message: { _tag: "IdleElapsed" } }, model, out)
+        // The attract shows: a scrolled band comes back to its focus.
+        scroll = undefined
         idleTurns = 1
       }
       // The attract turns through the cards in a circle: a long wait costs at most one lap.
@@ -244,7 +255,12 @@ export function update(state: State, message: Message, model: Model): { state: S
       // A new window: keep the cursor on the game it was on.
       if (state.reported !== null && model.catalog._tag === "Ready") {
         const index = bandGames(zone.nav, model).findIndex(game => game.id === state.reported)
-        if (index !== -1 && index !== zone.nav.card) zone = run(zone, { _tag: "Games", message: { _tag: "FocusedCard", index } }, model, out)
+        // Off the band (a scrolled band paged the window), focus stays where it is.
+        if (index !== -1 && index !== zone.nav.card) {
+          zone = zone.nav.zone === "cards" || state.scroll === undefined
+            ? run(zone, { _tag: "Games", message: { _tag: "FocusedCard", index } }, model, out)
+            : { ...zone, nav: { ...zone.nav, card: index } }
+        }
       }
       break
     }
@@ -253,7 +269,12 @@ export function update(state: State, message: Message, model: Model): { state: S
     case "Pressed": {
       idleTurns = 0
       touched = false
-      zone = pressed(zone, message.button, model, screenOf(state), out)
+      // A button brings every scrolled rack back to focus (ADR 0055). When
+      // the window paged away from the focused game, this press only brings
+      // it back round it (the paging below).
+      const away = held !== undefined && heldAway(zone, model, held)
+      scroll = undefined
+      if (!away) zone = pressed(zone, message.button, model, screenOf(state), out)
       break
     }
     case "Activated": {
@@ -274,12 +295,19 @@ export function update(state: State, message: Message, model: Model): { state: S
           break
         }
         const range = overlaid && message.at !== undefined && id.startsWith("control:") ? id.slice("control:".length) : undefined
+        // A game in a list opens on the second tap: the first only chooses it (ADR 0055).
+        const choosing = !overlaid && zoneGameTarget(id) && focusedTarget(drawn) !== id
         focusOn(zone, id, model, screen, inner => {
           zone = run(zone, inner, model, out)
         })
-        zone = range === undefined
-          ? pressed(zone, "confirm", model, screen, out)
-          : run(zone, { _tag: "Paused", message: { _tag: "SetRange", controlId: range, at: message.at! } }, model, out)
+        if (choosing) {
+          // A game the band holds again, chosen by a tap: no longer held.
+          if (id.startsWith("card:")) held = scroll?.band === undefined ? undefined : bandGames(zone.nav, model)[zone.nav.card]
+        } else {
+          zone = range === undefined
+            ? pressed(zone, "confirm", model, screen, out)
+            : run(zone, { _tag: "Paused", message: { _tag: "SetRange", controlId: range, at: message.at! } }, model, out)
+        }
       }
       idleTurns = 0
       touched = true
@@ -297,10 +325,12 @@ export function update(state: State, message: Message, model: Model): { state: S
       if (topLayer(zone.nav) === "idle" && model.presentation.kind === "catalog") {
         // The first drag on the attract only wakes it.
         zone = pressed(zone, "confirm", model, screen, out)
-      } else if (!dragOn(zone, message.region, message.by, model, screen, inner => {
-        zone = run(zone, inner, model, out)
-      }, () => zone)) {
-        return { state, requests: [] }
+      } else {
+        // The rack scrolls; focus stays (ADR 0055).
+        const next = scrollOn(zone, scroll ?? {}, message.region, message.by, model)
+        if (next === undefined) return { state, requests: [] }
+        if (message.region === "band" && held === undefined) held = bandGames(zone.nav, model)[zone.nav.card]
+        scroll = next
       }
       idleTurns = 0
       touched = true
@@ -309,17 +339,31 @@ export function update(state: State, message: Message, model: Model): { state: S
   }
   zone = settle(zone, model, out)
 
-  // The focused game, for GAME OPTS.' actions.
-  const focused = focusedId(zone, model)
+  // The held game: kept while the band is scrolled or the window is away from it.
+  if (held !== undefined && scroll?.band === undefined && !heldAway(zone, model, held)) held = undefined
+  // The focused game, for GAME OPTS.' actions: the held one while the window is away from it.
+  const away = held !== undefined && heldAway(zone, model, held)
+  const focused = away ? held!.id : focusedId(zone, model)
   if (focused !== state.reported) out.push(focused === null ? { _tag: "FocusGame" } : { _tag: "FocusGame", gameId: focused })
 
   // The catalog: Korri filters and pages it.
   const catalog = model.catalog
+  const scrolledAt = scroll?.band === undefined ? -1 : bandGames(zone.nav, model).findIndex(game => game.id === scroll!.band)
   if (!moving && catalog._tag === "Ready" && zoneShown(zone, model) === "games") {
     const draft = zone.nav.find.draft.trim()
     const from = focused === null ? { _tag: "Start" as const } : { _tag: "Around" as const, gameId: focused }
     if (draft.toLocaleLowerCase() !== catalog.query.text.trim().toLocaleLowerCase()) {
       out.push({ _tag: "MoveCatalog", query: query(draft, model), from, count: WINDOW })
+      moving = true
+    } else if (scrolledAt !== -1) {
+      // A scrolled band pages from where the finger left it (ADR 0055), so a long fling keeps loading.
+      if ((catalog.after !== undefined && scrolledAt >= catalog.window.length - EDGE) || (catalog.before !== undefined && scrolledAt < EDGE)) {
+        out.push({ _tag: "MoveCatalog", query: catalog.query, from: { _tag: "Around", gameId: scroll!.band! }, count: WINDOW })
+        moving = true
+      }
+    } else if (away) {
+      // The band is back to its focus, which the window paged away from: bring it back round it.
+      out.push({ _tag: "MoveCatalog", query: catalog.query, from, count: WINDOW })
       moving = true
     } else if (focused !== null && zone.nav.zone === "cards") {
       const card = zone.nav.card
@@ -331,7 +375,43 @@ export function update(state: State, message: Message, model: Model): { state: S
   }
   // The clock lives while the tally does.
   if (zone.nav.tally === undefined || zone.nav.tally.leaving) tally = undefined
-  return { state: { zone, reported: focused, moving, idleTurns, size, ...(tally === undefined ? {} : { tally }), ...(touched ? { touched } : {})}, requests: out }
+  return {
+    state: {
+      zone, reported: focused, moving, idleTurns, size,
+      ...(tally === undefined ? {} : { tally }),
+      ...(touched ? { touched } : {}),
+      ...(scroll === undefined ? {} : { scroll }),
+      ...(held === undefined ? {} : { held }),
+    },
+    requests: out,
+  }
+}
+
+/** Whether the band's held game is out of the band now: the window paged away from it. */
+function heldAway(zone: ZoneSurfaceState, model: Model, held: SurfaceGame): boolean {
+  return !bandGames(zone.nav, model).some(game => game.id === held.id)
+}
+
+/** The target the view has focused, if any: what a second tap on a game opens. */
+function focusedTarget(drawn: unknown): string | undefined {
+  let found: string | undefined
+  const walk = (value: unknown): void => {
+    if (found !== undefined) return
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item)
+      return
+    }
+    if (value === null || typeof value !== "object") return
+    const entry = value as Record<string, unknown>
+    if ("$image" in entry) return
+    if (entry.focused === true && typeof entry.focusId === "string" && entry.focusId !== "") {
+      found = entry.focusId
+      return
+    }
+    for (const key in entry) if (key !== "focusPlan") walk(entry[key])
+  }
+  walk(drawn)
+  return found
 }
 
 /** A button press, as Pressed delivers it: Back by backRoute (contract 7.2), the rest by src/press.ts. */
@@ -383,13 +463,26 @@ export function view(state: State, model: Model) {
   // The attract's next game changes the attract's game and nothing else: the
   // last view with that game (and its card) put in, not a whole new view.
   const last = lastView
-  if (last !== undefined && last.model === model && last.state.size === state.size && onlyAttractMoved(last.state.zone, state.zone)) {
+  if (last !== undefined && last.model === model && last.state.size === state.size && last.state.scroll === state.scroll && last.state.held === state.held && onlyAttractMoved(last.state.zone, state.zone)) {
     lastView = { state, model, view: touching(attractStep(last.view, state.zone, model, screenOf(state)), state) }
     return lastView.view
   }
-  lastView = { state, model, view: touching(zoneView(state.zone, model, screenOf(state)), state) }
+  lastView = { state, model, view: touching(zoneView(state.zone, model, screenOf(state), touchView(state, model)), state) }
   return lastView.view
 }
+
+/** What touch changes in the view (ADR 0055): where a finger scrolled each rack, and the held game while the window is away from it. */
+function touchView(state: State, model: Model): ZoneTouchView {
+  if (state.scroll === undefined && state.held === undefined) return NO_TOUCH
+  const at = state.scroll?.band === undefined ? -1 : bandGames(state.zone.nav, model).findIndex(game => game.id === state.scroll!.band)
+  return {
+    ...(at === -1 ? {} : { bandAt: at }),
+    ...(state.held !== undefined && heldAway(state.zone, model, state.held) ? { held: state.held } : {}),
+    ...(state.scroll?.saves === undefined ? {} : { saveAt: state.scroll.saves }),
+  }
+}
+
+const NO_TOUCH: ZoneTouchView = {}
 
 /** The view with `touching`: a tap or a drag came last, so the focus highlight hides (ADR 0055). */
 function touching<V extends object>(drawn: V, state: State): V & { touching: boolean } {

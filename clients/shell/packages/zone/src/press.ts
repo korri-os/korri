@@ -909,30 +909,45 @@ function focusDialog(state: ZoneSurfaceState, index: number, korri: SurfaceModel
   }
 }
 
-/** The racks a finger drags item by item (ADR 0055), by their focus region. */
+/** The racks a finger scrolls item by item (ADR 0055), by their focus region. */
 export const ZONE_DRAG_ROWS: ReadonlySet<string> = new Set(["band", "saves"])
 
 /**
- * A finger dragged a rack across `by` whole items: the cursor walks that
- * far along it, one d-pad press at a time, entering it first when it is
- * elsewhere, and stops at its ends (each press stops there). False when the
- * rack is not on the page: nothing happens.
+ * Where a finger scrolled each rack (ADR 0055): the band by the game it keeps
+ * in sight, the save band by the card's place. Focus does not move with it.
  */
-export function dragOn(state: ZoneSurfaceState, region: string, by: number, korri: SurfaceModel, screen: ZoneScreen, send: Send, now: () => ZoneSurfaceState): boolean {
-  SCREEN = screen
-  const page = zoneShown(state, korri)
-  const layer = topLayer(state.nav)
-  if (region === "band") {
-    if (page !== "games" || layer !== "none" || bandGames(state.nav, korri).length === 0) return false
-    if (state.nav.zone !== "cards") send({ _tag: "Games", message: { _tag: "FocusedCard", index: state.nav.card } })
-  } else if (region === "saves") {
-    const flow = state.identity.flow._tag
-    if (page !== "savedata" || (flow !== "idle" && flow !== "retired") || korri.identityManagement?.status._tag === "BackupReady") return false
-    if (state.nav.zone === "tabs" || flow === "retired") send({ _tag: "SaveData", message: { _tag: "FocusedSaveCard", index: state.identity.card } })
-  } else {
-    return false
-  }
-  const button = by > 0 ? "right" : "left"
-  for (let step = 0; step < Math.abs(by); step++) press(now(), button, korri, screen, send)
-  return true
+export interface ZoneScroll {
+  readonly band?: string
+  readonly saves?: number
 }
+
+/**
+ * A finger scrolled a rack `by` whole items: the rack's scroll moves that
+ * far along it, held at its ends, from where it was or else from focus.
+ * Undefined when the rack is not on the page: nothing happens.
+ */
+export function scrollOn(state: ZoneSurfaceState, scroll: ZoneScroll, region: string, by: number, korri: SurfaceModel): ZoneScroll | undefined {
+  const page = zoneShown(state, korri)
+  const clampTo = (at: number, count: number) => clamp(at + by, 0, Math.max(0, count - 1))
+  if (region === "band") {
+    const band = bandGames(state.nav, korri)
+    if (page !== "games" || topLayer(state.nav) !== "none" || band.length === 0) return undefined
+    const from = scroll.band === undefined ? -1 : band.findIndex(game => game.id === scroll.band)
+    const to = band[clampTo(from === -1 ? state.nav.card : from, band.length)]
+    return to === undefined ? undefined : { ...scroll, band: to.id }
+  }
+  if (region === "saves") {
+    const flow = state.identity.flow._tag
+    if (page !== "savedata" || (flow !== "idle" && flow !== "retired") || korri.identityManagement?.status._tag === "BackupReady") return undefined
+    return { ...scroll, saves: clampTo(scroll.saves ?? state.identity.card, identityCardCount(korri.identityManagement)) }
+  }
+  return undefined
+}
+
+/**
+ * Whether a target is a game in a list (ADR 0055): a tap on one that does not
+ * have focus only moves focus there, a tap on the focused one opens it. The
+ * band's cards and GET GAMES' results; every other target acts on one tap.
+ * The one place this is decided.
+ */
+export const zoneGameTarget = (id: string): boolean => id.startsWith("card:") || id.startsWith("row:entry:")

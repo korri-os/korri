@@ -13,6 +13,7 @@ import { join } from "node:path"
 import type { CatalogFrom, CatalogQuery, SurfaceGame, SurfaceMessage, SurfaceModel, SurfaceRequest } from "../../../../../contracts/generated/surface"
 import { init, overlay, update, view, type State } from "../logic"
 import { rangeAt } from "../src/state/overlay"
+import { zoneGameTarget } from "../src/press"
 import { read, stripComments } from "./slint-source"
 
 const scenario = (name: string): SurfaceModel => JSON.parse(readFileSync(join(import.meta.dir, "..", "preview", "scenarios", `${name}.json`), "utf8")).models[0]
@@ -50,16 +51,30 @@ function zone(korri: SurfaceModel = games()) {
 const launches = (requests: readonly SurfaceRequest[]) => requests.filter(request => request._tag === "LaunchGame")
 
 describe("a tap on a target", () => {
-  test("moves the cursor there and does what Confirm does, as the d-pad and A would", () => {
+  test("a game in a list: the first tap chooses it as a d-pad move does, the second opens it", () => {
     const pad = zone()
     pad.press("right")
     pad.press("right")
-    pad.press("confirm")
     const touch = zone()
     touch.tap("card:2")
     expect(touch.view()["focusedCard"]).toBe(2)
     expect(touch.state().zone.nav).toEqual(pad.state().zone.nav)
+    expect(launches(touch.requests)).toEqual([])
+    pad.press("confirm")
+    touch.tap("card:2")
+    expect(touch.state().zone.nav).toEqual(pad.state().zone.nav)
+    expect(launches(touch.requests).length).toBe(1)
     expect(launches(touch.requests)).toEqual(launches(pad.requests))
+  })
+
+  test("the rule goes by the kind of target: games wait for a second tap, buttons act on one", () => {
+    expect(zoneGameTarget("card:3")).toBe(true)
+    expect(zoneGameTarget("row:entry:tide")).toBe(true)
+    for (const id of ["action:0", "tab:options", "find", "row:device-name", "key:a", "dialog:0", "save:1", "hint:back"]) expect(zoneGameTarget(id)).toBe(false)
+    // PLAY under the card: one tap launches.
+    const touch = zone()
+    touch.tap("action:0")
+    expect(launches(touch.requests).length).toBe(1)
   })
 
   test("a tab opens its page; a row there runs its Confirm", () => {
@@ -212,41 +227,84 @@ function library(size: number) {
   return { korri, send, state: () => state, view: () => view(state, korri.model()) as unknown as Record<string, unknown> }
 }
 
-describe("a drag across the band", () => {
-  test("moves the cursor by n cards and stops at the ends", () => {
+describe("a drag across the band scrolls it; focus stays (ADR 0055)", () => {
+  type Mark = { focused?: boolean; focusId?: string }
+  const marked = (view: Record<string, unknown>) => (view["cardMarks"] as Mark[]).findIndex(mark => mark.focused === true)
+
+  test("Dragged moves the band's centre by n, held at its ends; focus stays on its card, still marked", () => {
     const touch = zone()
     const count = (touch.view()["cardMarks"] as unknown[]).length
     touch.send({ _tag: "Dragged", region: "band", by: 2 })
     expect(touch.view()["focusedCard"]).toBe(2)
+    expect(touch.state().zone.nav.card).toBe(0)
+    expect(touch.state().reported).toBe(touch.state().held?.id)
     touch.send({ _tag: "Dragged", region: "band", by: -9 })
     expect(touch.view()["focusedCard"]).toBe(0)
     touch.send({ _tag: "Dragged", region: "band", by: 99 })
     expect(touch.view()["focusedCard"]).toBe(count - 1)
+    expect(touch.state().zone.nav.card).toBe(0)
+    touch.send({ _tag: "Dragged", region: "band", by: -(count - 2) })
+    expect(marked(touch.view())).toBe(0)
   })
 
-  test("asks Korri for the window as a d-pad walk does", () => {
-    const dragged = library(120)
-    const walked = library(120)
-    for (let i = 0; i < 60; i++) {
-      dragged.send({ _tag: "Dragged", region: "band", by: 1 })
-      walked.send({ _tag: "Pressed", button: "right" })
-    }
-    const paging = (korri: Library) => korri.requests.filter(request => request._tag === "MoveCatalog" || request._tag === "FocusGame")
-    expect(paging(dragged.korri).some(request => request._tag === "MoveCatalog")).toBe(true)
-    expect(paging(dragged.korri)).toEqual(paging(walked.korri))
-    expect(dragged.state().reported).toBe("g60")
+  test("a tap on a card while scrolled chooses it; the band stays where the finger left it until a button", () => {
+    const touch = zone()
+    touch.send({ _tag: "Dragged", region: "band", by: 3 })
+    touch.tap("card:2")
+    expect(touch.state().zone.nav.card).toBe(2)
+    expect(launches(touch.requests)).toEqual([])
+    expect(touch.view()["focusedCard"]).toBe(3)
+    expect(marked(touch.view())).toBe(2)
   })
 
-  test("from the tabs it enters the band at its card, and hides the highlight until a button", () => {
+  test("paging follows the scroll, so a long fling keeps loading; focus stays on its game out of the window", () => {
+    const dragged = library(200)
+    for (let i = 0; i < 80; i++) dragged.send({ _tag: "Dragged", region: "band", by: 2 })
+    const moves = dragged.korri.requests.filter(request => request._tag === "MoveCatalog") as Extract<SurfaceRequest, { _tag: "MoveCatalog" }>[]
+    expect(moves.length).toBeGreaterThan(1)
+    expect(moves.every(move => move.from._tag === "Around" && move.from.gameId !== "g0")).toBe(true)
+    expect(dragged.state().scroll?.band).toBe("g160")
+    expect(dragged.korri.requests.filter(request => request._tag === "FocusGame").every(request => (request as { gameId?: string }).gameId === "g0")).toBe(true)
+    expect(dragged.state().reported).toBe("g0")
+    // The facts still name the focused game.
+    expect(JSON.stringify(dragged.view()["facts"])).not.toBe("[]")
+  })
+
+  test("the next press clears the scroll and brings the band back to focus, even with nowhere to move", () => {
+    const dragged = library(200)
+    for (let i = 0; i < 80; i++) dragged.send({ _tag: "Dragged", region: "band", by: 2 })
+    dragged.korri.requests.length = 0
+    dragged.send({ _tag: "Pressed", button: "left" })
+    expect(dragged.state().scroll).toBeUndefined()
+    expect(dragged.korri.requests.filter(request => request._tag === "MoveCatalog").at(-1)).toMatchObject({ from: { _tag: "Around", gameId: "g0" } })
+    expect(dragged.state().reported).toBe("g0")
+    expect(dragged.state().held).toBeUndefined()
+    const view = dragged.view()
+    expect((view["cardMarks"] as Mark[])[view["focusedCard"] as number]?.focusId).toBe(`card:${dragged.state().zone.nav.card}`)
+    // Near focus, a press acts as ever after clearing the scroll.
+    dragged.send({ _tag: "Dragged", region: "band", by: 3 })
+    dragged.send({ _tag: "Pressed", button: "right" })
+    expect(dragged.state().scroll).toBeUndefined()
+    expect(dragged.state().reported).toBe("g1")
+  })
+
+  test("from the tabs it scrolls the band and focus stays on the tabs; the highlight hides until a button", () => {
     const touch = zone()
     touch.press("up")
     expect(touch.state().zone.nav.zone).toBe("tabs")
     touch.send({ _tag: "Dragged", region: "band", by: 1 })
-    expect(touch.state().zone.nav.zone).toBe("cards")
+    expect(touch.state().zone.nav.zone).toBe("tabs")
     expect(touch.view()["focusedCard"]).toBe(1)
     expect(touch.view()["touching"]).toBe(true)
     touch.press("right")
     expect(touch.view()["touching"]).toBe(false)
+    expect(touch.view()["focusedCard"]).toBe(0)
+  })
+
+  test("no drag, no scroll: the view is the view as before", () => {
+    const touch = zone()
+    expect(touch.state().scroll).toBeUndefined()
+    expect(JSON.stringify(touch.view())).not.toMatch(/"scroll"|"held"/)
   })
 
   test("on the attract the first drag only wakes it", () => {
