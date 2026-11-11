@@ -16,10 +16,13 @@ from, and what happens to a device that has none.
   device (ADR 0051).
 - A device bench proves each picture path. The bench is the RG353M (RK3566),
   one RG35XX (H700) and a Pixel 3 for Android. Bench devices stay powered and
-  reachable, and agents restart them at any time.
-- The Qualcomm devices (RP Mini V2, Odin 2 Portal) are postponed. They have no
-  bench device, and the owner has not decided to keep them. They keep the old
-  Moonlight viewer.
+  reachable, and agents restart them at any time. An Android emulator also
+  runs for every change.
+- A device with no proof is postponed and keeps the old Moonlight viewer. The
+  Qualcomm devices (RP Mini V2, Odin 2 Portal) have no bench device, and the
+  owner has not decided to keep them. The R36T Max and the RG DS use the
+  software fallback. aka proves that code but not its speed on their chips.
+  A postponed device moves after the owner docks it for a proof run.
 - The owner validates by hand once for each stage and platform, after the
   autonomous proof passes.
 
