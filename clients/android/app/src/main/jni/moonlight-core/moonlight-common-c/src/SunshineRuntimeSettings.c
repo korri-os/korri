@@ -33,26 +33,12 @@ static void changed(SS_RUNTIME_SETTINGS_STATE* state) {
     state->snapshot.generation++;
 }
 
-static bool resolutionWithinLaunch(uint32_t launchWidth,
-                                   uint32_t launchHeight,
-                                   uint32_t width,
-                                   uint32_t height) {
-    uint64_t left;
-    uint64_t right;
-    uint64_t delta;
-    uint64_t tolerance;
-
-    if (width == 0 || height == 0 || (width % 2) != 0 || (height % 2) != 0 ||
-            launchWidth == 0 || launchHeight == 0 ||
-            width > launchWidth || height > launchHeight) {
-        return false;
-    }
-
-    left = (uint64_t)width * launchHeight;
-    right = (uint64_t)height * launchWidth;
-    delta = left > right ? left - right : right - left;
-    tolerance = 2ULL * (launchWidth + launchHeight);
-    return delta <= tolerance;
+// Korri's client_shape policy caps each side at 4096. This request bound
+// does not imply encoder support: the host must advertise and confirm it.
+// Launch dimensions remain the restore baseline, not a runtime ceiling.
+static bool resolutionWithinBounds(uint32_t width, uint32_t height) {
+    return width != 0 && height != 0 && width <= 4096 && height <= 4096 &&
+           (width % 2) == 0 && (height % 2) == 0;
 }
 
 static bool requestedValueWithinBounds(const SS_RUNTIME_SETTINGS_SNAPSHOT* snapshot,
@@ -68,8 +54,7 @@ static bool requestedValueWithinBounds(const SS_RUNTIME_SETTINGS_SNAPSHOT* snaps
         return value != 0 && snapshot->maxFps != 0 && snapshot->launchFps != 0 &&
                value <= snapshot->maxFps && value <= snapshot->launchFps;
     case SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION:
-        return resolutionWithinLaunch(snapshot->launchWidth, snapshot->launchHeight,
-                                      value, secondaryValue);
+        return resolutionWithinBounds(value, secondaryValue);
     default:
         return false;
     }
@@ -96,8 +81,7 @@ static bool currentValueSane(const SS_RUNTIME_SETTINGS_SNAPSHOT* snapshot,
     case SS_RUNTIME_SETTINGS_OPERATION_SET_FPS:
         return value != 0 && snapshot->launchFps != 0 && value <= snapshot->launchFps;
     case SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION:
-        return resolutionWithinLaunch(snapshot->launchWidth, snapshot->launchHeight,
-                                      value, secondaryValue);
+        return resolutionWithinBounds(value, secondaryValue);
     default:
         return false;
     }
@@ -382,7 +366,7 @@ static bool capabilityFactsValid(const SS_RUNTIME_SETTINGS_STATE* state,
     if (launchBitrateKbps == 0 || launchFps == 0 || launchWidth == 0 || launchHeight == 0 ||
             (launchWidth % 2) != 0 || (launchHeight % 2) != 0 ||
             currentBitrateKbps == 0 || currentFps == 0 || currentFps > launchFps ||
-            !resolutionWithinLaunch(launchWidth, launchHeight, currentWidth, currentHeight)) {
+            !resolutionWithinBounds(currentWidth, currentHeight)) {
         return false;
     }
     if ((supportedOperations & (1u << SS_RUNTIME_SETTINGS_OPERATION_SET_BITRATE_KBPS)) != 0 &&
