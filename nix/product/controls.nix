@@ -26,7 +26,15 @@ let
         | ${pkgs.jq}/bin/jq --exit-status '.outcome._tag == "Ok"' >/dev/null
     '';
   displayWake = displayPower "wake";
-  displayOff = displayPower "idle";
+  displayOff = pkgs.writeShellScript "korri-display-idle-timeout" ''
+    set -euo pipefail
+    if ! ${displayPower "idle"}; then
+      # A missed one-shot timeout otherwise stays missed after korrid recovers.
+      # Re-arm the ordinary timer; never bypass stream protection with power off.
+      ${pkgs.sway-unwrapped}/bin/swaymsg 'seat * idle_notify'
+      exit 1
+    fi
+  '';
   displayIdle = pkgs.writeShellScript "korri-display-idle" ''
     exec ${pkgs.swayidle}/bin/swayidle -w \
       timeout 300 '${displayOff}' \

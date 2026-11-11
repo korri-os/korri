@@ -1177,6 +1177,22 @@ impl HostSessionControl {
         )
     }
 
+    fn wake_occupied_displays(
+        &self,
+        displays: &[super::display_placement::Display],
+        occupied: &[String],
+    ) -> Result<(), String> {
+        // Stream wake is power-on-only: Home may occupy another output, and
+        // its cached placement receipt does not issue corrective power commands.
+        // Only placement is allowed to turn an unused output off here.
+        let occupied_displays: Vec<_> = displays
+            .iter()
+            .filter(|display| occupied.contains(&display.name))
+            .cloned()
+            .collect();
+        self.power_displays(&occupied_displays, occupied)
+    }
+
     // Caller holds the session transition lock, including during registration.
     fn wake_launch_displays(&self, launch_id: &str) -> Result<(), String> {
         let displays = super::display_placement::configured_displays()?;
@@ -1184,7 +1200,7 @@ impl HostSessionControl {
             return Ok(());
         }
         let placement = self.launch_placement(launch_id, &displays)?;
-        self.power_displays(&displays, &placement.outputs)
+        self.wake_occupied_displays(&displays, &placement.outputs)
     }
 
     fn wake_viewer_displays(&self) -> Result<(), String> {
@@ -1210,7 +1226,7 @@ impl HostSessionControl {
                 .map(|d| d.name.clone())
                 .collect()
         });
-        self.power_displays(&displays, &occupied)
+        self.wake_occupied_displays(&displays, &occupied)
     }
 
     fn launch_placement(
@@ -4853,6 +4869,39 @@ printf '[{{"success":true}}]'
             let commands = fs::read_to_string(root.path().join("commands")).unwrap();
             assert!(commands
                 .ends_with("[con_id=2] move absolute position 0 px 480 px; [con_id=2] focus\n"));
+            // A joining viewer must not blank Home on the other output. Its
+            // cached overlay receipt deliberately performs no corrective power.
+            control
+                .stream_play(
+                    &prepared.launch_id,
+                    crate::stream_play::StreamPlayer {
+                        device_public_key: "33".repeat(32),
+                        label: "Phone".into(),
+                    },
+                )
+                .unwrap();
+            let joined = fs::read_to_string(root.path().join("commands")).unwrap();
+            let wake = &joined[commands.len()..];
+            assert!(wake.contains("output DSI-2 power on"), "{wake}");
+            assert!(
+                !wake.contains("power off"),
+                "stream wake must preserve the occupied overlay: {wake}"
+            );
+            assert_eq!(
+                control
+                    .surface_displays(super::super::display_placement::SurfaceDisplaysRequest {
+                        displays: super::super::display_placement::SurfaceDisplayScope::All,
+                        overlay: true,
+                        launch_id: Some(prepared.launch_id.clone()),
+                    })
+                    .unwrap(),
+                rectangles
+            );
+            assert_eq!(
+                fs::read_to_string(root.path().join("commands")).unwrap(),
+                joined
+            );
+            let commands = joined;
             // The shell maps a new overlay window in the same process for
             // the same launch: unchanged PID and launch, new compositor
             // window. The receipt was for con_id 2; con_id 7 is placed again.

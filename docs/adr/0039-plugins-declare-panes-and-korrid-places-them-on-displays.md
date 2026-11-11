@@ -104,8 +104,10 @@ A watched output must be powered on for Sunshine's KMS capture, even when its
 physical TV is off (#309, #237). Peer preparation wakes the declared game
 outputs before Sunshine settings or the game start. Stream-play registration
 wakes the existing game's outputs before replying. Local viewers wake their
-main output before starting. These use the power path of `app.displays.wake`;
-they do not change client shaping or the watched/unwatched device facts.
+main output before starting. These use the power path of `app.displays.wake`,
+but stream wakes send only power-on commands. They must not blank an overlay
+on another occupied output. Existing placement logic owns unused-output power-off.
+They do not change client shaping or the watched/unwatched device facts.
 
 The idle service calls local-only `app.displays.idle` instead of writing output
 power directly. Under the session transition lock, korrid excludes a streaming
@@ -119,6 +121,10 @@ While a stream is selected, the idle handler also sends the same Sway
 300-second timeout. After the session ends, the next timeout powers off watched
 outputs normally, without requiring local input. The cost is up to one idle
 period before power-off, and dependence on korrid for idle power transitions.
+If the idle RPC fails (including its 10-second timeout), the idle helper sends
+`seat * idle_notify` itself and reports failure. This re-arms the next ordinary
+300-second timeout without powering off a surviving stream. The cost is another
+idle period before retry after a missed transition; no unbounded retry loop runs.
 Holder registrations last until the game session ends, not until a network
 viewer disconnects. This does not repair Sunshine that already exited at boot,
 Moonlight's retry address, or Moonlight's shutdown when an output disappears.
