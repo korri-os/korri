@@ -126,6 +126,8 @@ pkgs.testers.runNixOSTest {
           "d /run/korrid 0755 root root -"
           "d /run/korrid-control 0755 root root -"
           "f /run/korrid-control/control.sock 0600 root root -"
+          "d /run/korrid-cli 0755 root root -"
+          "f /run/korrid-cli/cli.sock 0600 root root -"
           "d /var/lib/freezer-stream 0700 root root -"
           # The production settings reader creates its existing empty files;
           # the report is plugin_installation::encode([]), not a plugin bypass.

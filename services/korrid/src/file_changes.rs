@@ -40,13 +40,14 @@ impl InputPath {
 
 struct ObservedInputs {
     paths: Vec<InputPath>,
+    resolved: Mutex<Vec<InputPath>>,
     changes: watch::Sender<InputState>,
 }
 
 static OBSERVERS: Mutex<Vec<Weak<ObservedInputs>>> = Mutex::new(Vec::new());
 
-/// Call only after the new bytes or removal are committed. No cache locks or
-/// filesystem reads occur under the observer registry lock.
+/// Call after publication or removal, with the writer's logical path. This
+/// does no filesystem I/O; native watch updates refresh resolved aliases.
 pub(crate) fn committed(path: &Path) {
     let live: Vec<_> = {
         let mut observers = OBSERVERS.lock().expect("file observer registry poisoned");
@@ -54,10 +55,14 @@ pub(crate) fn committed(path: &Path) {
         observers.iter().filter_map(Weak::upgrade).collect()
     };
     for observer in live {
-        if resolved_paths(&observer.paths)
-            .iter()
-            .any(|input| input.contains(path))
-        {
+        let matches = observer.paths.iter().any(|input| input.contains(path))
+            || observer
+                .resolved
+                .lock()
+                .expect("file observer paths poisoned")
+                .iter()
+                .any(|input| input.contains(path));
+        if matches {
             observer.invalidate();
         }
     }
@@ -105,7 +110,11 @@ impl FileChanges {
             revision: 0,
             reason: "file inputs are not watched yet".into(),
         });
-        let observed = Arc::new(ObservedInputs { paths, changes });
+        let observed = Arc::new(ObservedInputs {
+            resolved: Mutex::new(paths.clone()),
+            paths,
+            changes,
+        });
         {
             let mut observers = OBSERVERS.lock().expect("file observer registry poisoned");
             observers.retain(|observer| observer.strong_count() > 0);
@@ -238,6 +247,10 @@ fn run(
                 }
             }
         };
+        *observed
+            .resolved
+            .lock()
+            .expect("file observer paths poisoned") = resolved.clone();
         observed.publish(None);
         loop {
             match messages.recv() {
