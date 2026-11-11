@@ -282,6 +282,11 @@ function shelfTarget(game: PicoShelfGame, place: number, aiming: boolean): Targe
 
 const SHELF_TARGETS = new WeakMap<object, Map<string, Target<Act>>>()
 
+/** Each library row's target ids in order, once per window (Screen `rows`). */
+const shelfRow = memo(2, (games: readonly PicoShelfGame[]) => [games], (games: readonly PicoShelfGame[]) => games.map(game => `cart:${game.id}`))
+const resumeRow = memo(2, (games: readonly PicoShelfGame[]) => [games], (games: readonly PicoShelfGame[]) => games.map(game => `resume:${game.id}`))
+const findRow = memo(2, (games: readonly SurfaceGame[]) => [games], (games: readonly SurfaceGame[]) => games.map(game => `result:${game.id}`))
+
 /** The games that resume, once per window. */
 const resumableOf = memo(2, (games: readonly PicoShelfGame[]) => [games], (games: readonly PicoShelfGame[]) => games.filter(game => game.resumable === true))
 
@@ -373,8 +378,11 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   const catalog = korri.catalog
   const firstIndex = catalog._tag === "Ready" ? catalog.firstIndex : 0
   const total = catalog._tag === "Ready" ? catalog.total : games.length
-  const chosen = chosenIndex(games, home.selectedGameId)
-  const chosenGame = games[chosen]
+  // The chosen game is out of the window while a scrolled shelf paged away
+  // from it (ADR 0055): the stage still shows it, from the held copy.
+  const held = s.held !== undefined && s.held.game.id === home.selectedGameId && indexOfGame(games, home.selectedGameId) === -1 ? s.held : undefined
+  const chosen = held !== undefined ? -1 : chosenIndex(games, home.selectedGameId)
+  const chosenGame = held?.game ?? games[chosen]
   const chosenId = chosenGame === undefined ? undefined : `cart:${chosenGame.id}`
 
   // MENU's list, while it is open: FIND, GET GAMES, SETTINGS, VIEW.
@@ -397,6 +405,9 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
   let carts: CartView[] = []
   /** The first game of the window the shelf's carts start at. */
   let shelfStart = 0
+  /** The cart the shelf keeps in sight: the chosen one, or where a finger scrolled it. */
+  let keep = chosen
+  let rows: Screen["rows"]
   let sections: GridSectionView[] = []
   let hero: HeroView = NO_HERO
   let shownCard: CardView = NO_CARD
@@ -447,15 +458,20 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     // are sent, and are targets: a view's JSON costs by its values.
     const at = focused === undefined || !focused.startsWith("cart:") ? chosen : indexOfGame(games, focused.slice("cart:".length))
     const reach = shelfReach(ctx.plan.width)
-    shelfStart = Math.max(0, Math.min(chosen, at === -1 ? chosen : at) - reach)
-    const end = Math.min(games.length, Math.max(chosen, at) + reach + 1)
+    // A finger scrolled the shelf (ADR 0055): it shows the carts round where
+    // the finger left it, wherever focus is.
+    const scrolled = indexOfPrefixed(games, "cart:", s.anchors["shelf"])
+    keep = scrolled >= 0 ? scrolled : chosen
+    shelfStart = scrolled >= 0 ? Math.max(0, scrolled - reach) : Math.max(0, Math.min(chosen, at === -1 ? chosen : at) - reach)
+    const end = scrolled >= 0 ? Math.min(games.length, scrolled + reach + 1) : Math.min(games.length, Math.max(chosen, at) + reach + 1)
     carts = games.slice(shelfStart, end).map((game, k) => {
       const i = shelfStart + k
       const id = `cart:${game.id}`
       if (!menuOpen) targets.push(shelfTarget(game, firstIndex + i, aiming))
       return cartView(game, { hero: i === chosen, focused: focused === id, focusId: id })
     })
-    if (chosenGame !== undefined) stage = stageView(chosenGame, firstIndex + chosen + 1, total)
+    if (chosenGame !== undefined) stage = stageView(chosenGame, held !== undefined ? held.place + 1 : firstIndex + chosen + 1, total)
+    rows = { shelf: shelfRow(games) }
   } else if (view._tag === "Shelf" && home.mode === "grid") {
     body = "grid"
     const columns = ctx.plan.columns
@@ -500,9 +516,12 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     const at = indexOfPrefixed(resumable, "resume:", focused)
     const back = indexOfPrefixed(resumable, "resume:", s.remembered["resume"])
     const reach = resumeReach(ctx.plan.width)
-    const anchor = Math.max(0, at)
-    const first = Math.max(0, Math.min(anchor, back === -1 ? anchor : back) - reach)
-    const end = Math.min(resumable.length, Math.max(anchor, back, reach) + 1)
+    // A finger scrolled RESUME (ADR 0055): it shows the carts round where the finger left it.
+    const scrolled = indexOfPrefixed(resumable, "resume:", s.anchors["resume"])
+    const anchor = scrolled >= 0 ? scrolled : Math.max(0, at)
+    const first = scrolled >= 0 ? Math.max(0, scrolled - reach) : Math.max(0, Math.min(anchor, back === -1 ? anchor : back) - reach)
+    const end = scrolled >= 0 ? Math.min(resumable.length, scrolled + reach + 1) : Math.min(resumable.length, Math.max(anchor, back, reach) + 1)
+    if (pick !== undefined) rows = { resume: resumeRow(resumable) }
     const sent = pick === undefined ? [] : resumable.slice(first, end)
     if (!menuOpen) sent.forEach((game, k) => targets.push(resumeTarget(game, first + k)))
     hero = pick === undefined ? hero : {
@@ -590,6 +609,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
     fallback,
     targets,
     ...(chosenId === undefined ? {} : { active: { shelf: chosenId } }),
+    ...(rows === undefined ? {} : { rows }),
     view: {
       page: "home",
       frame: homeFrame(
@@ -607,7 +627,7 @@ export function homeScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Home" }>
         body,
         mode: home.mode,
         carts,
-        selectedIndex: chosen - shelfStart,
+        selectedIndex: keep - shelfStart,
         firstIndex: firstIndex + shelfStart,
         total,
         cursorOnShelf: focused !== undefined && focused.startsWith("cart:"),
@@ -672,9 +692,11 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
   // are targets, with the one the cursor comes back to (`remembered`).
   const back = resultIndex(games, s.remembered["results"])
   const reach = resultReach(ctx.plan.width)
-  const anchor = Math.max(0, focusedResult)
-  const first = Math.max(0, Math.min(anchor, back === -1 ? anchor : back) - reach)
-  const end = Math.min(games.length, Math.max(anchor, back) + reach + 1)
+  // A finger scrolled the results (ADR 0055): they show round where the finger left them.
+  const scrolled = resultIndex(games, s.anchors["results"])
+  const anchor = scrolled >= 0 ? scrolled : Math.max(0, focusedResult)
+  const first = scrolled >= 0 ? Math.max(0, scrolled - reach) : Math.max(0, Math.min(anchor, back === -1 ? anchor : back) - reach)
+  const end = scrolled >= 0 ? Math.min(games.length, scrolled + reach + 1) : Math.min(games.length, Math.max(anchor, back) + reach + 1)
   const results = games.slice(first, end).map((game, k) => {
     const id = `result:${game.id}`
     targets.push(resultTarget(game, firstIndex + first + k))
@@ -686,6 +708,7 @@ export function findScreen(ctx: Ctx, shown: Extract<PicoShown, { _tag: "Find" }>
     fallback: "key:0:0",
     targets,
     active: { sections: `section:${search.section}`, orders: `order:${search.order}` },
+    rows: { results: findRow(games) },
     view: {
       page: "find",
       frame: findFrame(korri.clockLabel ?? ""),

@@ -93,15 +93,18 @@ export function storeScreen(ctx: Ctx, shown: PicoStoreShown, store: SurfaceStore
     const note = search._tag === "Searching" ? "Searching…"
       : search._tag === "Ready" && entries.length === 0 ? `Nothing matches “${search.query}”.`
       : search._tag === "Idle" ? "Search for a game by its name." : ""
+    // A finger scrolled the results (ADR 0055): the rack keeps that one in sight.
+    const scrolled = entries.findIndex(entry => `entry:${entry.id}` === ctx.s.anchors["results"])
     return {
       key: "store:results",
       targets,
+      rows: { results: entries.map(entry => `entry:${entry.id}`) },
       fallback: results[0] === undefined ? "search" : `entry:${entries[0]?.id ?? ""}`,
       view: {
         page: "store",
         frame: base([A("OPEN"), B("BACK")]),
         card: NO_CARD,
-        store: { ...empty, view: "results", search: searchRow, searchNote: note, results, focusedResult: Math.max(0, results.findIndex(result => result.cart.focused)), inline: NO_CARD },
+        store: { ...empty, view: "results", search: searchRow, searchNote: note, results, focusedResult: scrolled >= 0 ? scrolled : Math.max(0, results.findIndex(result => result.cart.focused)), inline: NO_CARD },
       },
     }
   }

@@ -53,14 +53,29 @@ function shell(model: KorriModel = catalogModel()) {
 }
 
 describe("a tap on a target", () => {
-  test("moves the cursor there and does what Confirm does: a cart on the shelf opens its game", () => {
+  test("a game in a list: the first tap chooses it as a d-pad move does, the second opens it", () => {
     const viaPad = shell()
-    for (const button of ["right", "right", "right", "confirm"]) viaPad.press(button)
+    for (const button of ["right", "right", "right"]) viaPad.press(button)
     const pico = shell()
     pico.tap("cart:spelunky")
+    // Chosen, with the move's `enter` (the stage shows it), not opened.
+    expect(pico.state().focus).toBe("cart:spelunky")
+    expect(pico.state().nav.detail).toBeUndefined()
+    expect(pico.state().nav.home.selectedGameId).toBe(viaPad.state().nav.home.selectedGameId)
+    expect(pico.requests.filter(request => request._tag === "FocusGame").at(-1)).toEqual({ _tag: "FocusGame", gameId: "spelunky" })
+    pico.tap("cart:spelunky")
+    viaPad.press("confirm")
     expect(pico.state().nav.detail?.gameId).toBe("spelunky")
     expect(pico.state().nav.detail?.gameId).toBe(viaPad.state().nav.detail?.gameId)
-    expect(pico.state().nav.home.selectedGameId).toBe(viaPad.state().nav.home.selectedGameId)
+  })
+
+  test("the rule goes by the kind of target: every game list waits for a second tap, a button acts on one", () => {
+    const { GAME_REGIONS } = require("../src/native/program") as { GAME_REGIONS: ReadonlySet<string> }
+    expect([...GAME_REGIONS].sort()).toEqual(["grid", "results", "resume", "shelf"])
+    // MENU's key and its lines are buttons: one tap.
+    const pico = shell()
+    pico.tap("menu")
+    expect(pico.state().nav.home.menu).toBe("Open")
   })
 
   test("a target the cursor is already on is confirmed, with no move", () => {
@@ -112,7 +127,9 @@ describe("idle", () => {
     expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(false)
     expect(pico.state().nav.detail).toBeUndefined()
     expect(pico.state().focus).toBe(focus)
-    // Awake now: the next tap activates.
+    // Awake now: the next tap chooses the game, and the one after opens it.
+    pico.tap("cart:spelunky")
+    expect(pico.state().nav.detail).toBeUndefined()
     pico.tap("cart:spelunky")
     expect(pico.state().nav.detail?.gameId).toBe("spelunky")
   })
@@ -413,34 +430,70 @@ function library(size: number) {
   return { korri, send, state: () => state, view: () => view(state, korri.model()) as Record<string, unknown> }
 }
 
-describe("a drag across a rack that moves by focus", () => {
-  test("moves the cursor by n carts in that region, through each cart's enter, and stops at the ends", () => {
+describe("a drag across a rack scrolls it; focus stays (ADR 0055)", () => {
+  type Home = { carts: { id: string; focused: boolean }[]; firstIndex: number; selectedIndex: number }
+  const home = (pico: ReturnType<typeof library>) => pico.view()["home"] as Home
+
+  test("Dragged moves the row's anchor by n, held at its ends; focus and the chosen game stay", () => {
     const pico = library(30)
     expect(pico.state().focus).toBe("cart:g0")
-    pico.send({ _tag: "Dragged", region: "shelf", by: 2 })
-    expect(pico.state().focus).toBe("cart:g2")
-    // Arriving chose the cart, as a d-pad move does.
-    expect(pico.state().nav.home.selectedGameId).toBe("g2")
-    pico.send({ _tag: "Dragged", region: "shelf", by: -5 })
+    pico.send({ _tag: "Dragged", region: "shelf", by: 12 })
+    expect(pico.state().anchors).toEqual({ shelf: "cart:g12" })
     expect(pico.state().focus).toBe("cart:g0")
+    expect(pico.state().nav.home.selectedGameId).toBe("g0")
+    // The rack keeps the anchor in sight: the carts round it, it at selectedIndex.
+    const shelf = home(pico)
+    expect(shelf.carts[shelf.selectedIndex]?.id).toBe("g12")
+    pico.send({ _tag: "Dragged", region: "shelf", by: -100 })
+    expect(pico.state().anchors).toEqual({ shelf: "cart:g0" })
     pico.send({ _tag: "Dragged", region: "shelf", by: 100 })
-    expect(pico.state().focus).toBe("cart:g29")
-    pico.send({ _tag: "Dragged", region: "shelf", by: 1 })
-    expect(pico.state().focus).toBe("cart:g29")
+    expect(pico.state().anchors).toEqual({ shelf: "cart:g29" })
+    expect(pico.state().focus).toBe("cart:g0")
   })
 
-  test("asks Korri for the window as a d-pad walk does", () => {
-    const dragged = library(120)
-    const walked = library(120)
-    for (let i = 0; i < 60; i += 1) {
-      dragged.send({ _tag: "Dragged", region: "shelf", by: 1 })
-      walked.send({ _tag: "Pressed", button: "right" })
-    }
-    const paging = (korri: Library) => korri.requests.filter(request => request._tag === "MoveCatalog" || request._tag === "FocusGame")
-    expect(dragged.state().focus).toBe("cart:g60")
-    expect(paging(dragged.korri).some(request => request._tag === "MoveCatalog")).toBe(true)
-    expect(paging(dragged.korri)).toEqual(paging(walked.korri))
-    expect(dragged.state().focus).toBe(walked.state().focus)
+  test("a tap on a game while scrolled chooses it, and the anchor stays until a button", () => {
+    const pico = library(30)
+    pico.send({ _tag: "Dragged", region: "shelf", by: 12 })
+    pico.send({ _tag: "Activated", target: "cart:g13" })
+    expect(pico.state().focus).toBe("cart:g13")
+    expect(pico.state().nav.detail).toBeUndefined()
+    expect(pico.state().anchors).toEqual({ shelf: "cart:g12" })
+    const shelf = home(pico)
+    expect(shelf.carts.find(cart => cart.id === "g13")?.focused).toBe(true)
+  })
+
+  test("paging follows the anchor, so a long fling keeps loading; focus stays on its game out of the window", () => {
+    const pico = library(200)
+    for (let i = 0; i < 80; i += 1) pico.send({ _tag: "Dragged", region: "shelf", by: 2 })
+    const moves = pico.korri.requests.filter(request => request._tag === "MoveCatalog") as Extract<SurfaceRequest, { _tag: "MoveCatalog" }>[]
+    expect(moves.length).toBeGreaterThan(1)
+    expect(moves.every(move => move.from._tag === "Around" && move.from.gameId !== "g0")).toBe(true)
+    expect(pico.state().anchors["shelf"]).toBe("cart:g160")
+    // Focus never moved: no FocusGame but the first.
+    expect(pico.korri.requests.filter(request => request._tag === "FocusGame")).toEqual([{ _tag: "FocusGame", gameId: "g0" }])
+    expect(pico.state().focus).toBe("cart:g0")
+    expect(pico.state().held?.game.id).toBe("g0")
+    // The stage still shows the chosen game.
+    expect((home(pico) as unknown as { stage: { title: string } }).stage.title).toBe("Game 000")
+  })
+
+  test("the next press clears the anchor and brings the row back to focus, even with nowhere to move", () => {
+    const pico = library(200)
+    for (let i = 0; i < 80; i += 1) pico.send({ _tag: "Dragged", region: "shelf", by: 2 })
+    pico.korri.requests.length = 0
+    // The window is far from g0: this press only brings it back round it.
+    pico.send({ _tag: "Pressed", button: "left" })
+    expect(pico.state().anchors).toEqual({})
+    expect(pico.korri.requests.filter(request => request._tag === "MoveCatalog").at(-1)).toMatchObject({ from: { _tag: "Around", gameId: "g0" } })
+    expect(pico.state().focus).toBe("cart:g0")
+    expect(pico.state().held).toBeUndefined()
+    const shelf = home(pico)
+    expect(shelf.carts[shelf.selectedIndex]?.id).toBe("g0")
+    // Near focus, a press acts as ever after clearing the anchor.
+    pico.send({ _tag: "Dragged", region: "shelf", by: 3 })
+    pico.send({ _tag: "Pressed", button: "right" })
+    expect(pico.state().anchors).toEqual({})
+    expect(pico.state().focus).toBe("cart:g1")
   })
 
   test("hides the highlight until the next button, which shows it again", () => {
@@ -458,6 +511,14 @@ describe("a drag across a rack that moves by focus", () => {
     pico.send({ _tag: "Dragged", region: "shelf", by: 3 })
     expect((pico.view()["attract"] as { shown: boolean }).shown).toBe(false)
     expect(pico.state().focus).toBe("cart:g0")
+    expect(pico.state().anchors).toEqual({})
+  })
+
+  test("no drag, no anchor: a view without one is the view as before", () => {
+    const pico = library(10)
+    expect(pico.state().anchors).toEqual({})
+    expect(pico.state().held).toBeUndefined()
+    expect(JSON.stringify(pico.view())).not.toMatch(/anchor|"held"/)
   })
 
   test("a region that is no drag row, or not on the screen, is ignored", () => {

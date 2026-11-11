@@ -6,6 +6,7 @@ import type { PicoLayoutPlan, PicoWindow } from "../pico-display-plan"
 import type { CatalogQuery, KorriModel, SurfaceIdentityDisposition, SurfaceModel } from "../model"
 import type { PicoFontId } from "../pico-fonts"
 import type { PicoTextDraft } from "../pico-text-draft"
+import type { PicoShelfGame } from "../pico-shelf-game"
 import type { PicoMessage } from "../state/messages"
 import type { PicoNavigation } from "../state/navigation"
 import type { OnboardingMessage, OnboardingNav } from "../state/onboarding"
@@ -48,6 +49,25 @@ export interface State {
   /** A tap came last, not a button (ADR 0055): the focus highlight hides
    * until the next `Pressed`. The cursor stays where it is. */
   readonly touched: boolean
+  /**
+   * Where a finger scrolled each library row (ADR 0055, `Dragged`), by the
+   * row's focus region: the target id the row keeps in sight. Focus does not
+   * move with it. The next button press clears every one.
+   */
+  readonly anchors: Readonly<Record<string, string>>
+  /**
+   * The focused game, kept while a scrolled row may page the catalog window
+   * away from it: focus stays on it out of sight, its stage still shows it,
+   * and the next press brings the window back round it.
+   */
+  readonly held: Held | undefined
+}
+
+/** The focused game while a row is scrolled: its target, the game, its place in the library. */
+export interface Held {
+  readonly id: string
+  readonly game: PicoShelfGame
+  readonly place: number
 }
 
 export type Dispatch =
@@ -83,6 +103,9 @@ export interface Screen {
   /** Each region's active target (the chosen cart, the open tab), for an
    * exit that enters by `active` (contract 8.4). */
   readonly active?: Readonly<Record<string, string>>
+  /** Each library row a finger scrolls (ADR 0055): every target id along it,
+   * in order, the whole window and not only what is drawn. */
+  readonly rows?: Readonly<Record<string, readonly string[]>>
   /** Left and right do this instead of moving, whatever is focused. */
   readonly horizontal?: { readonly left: Act; readonly right: Act }
 }

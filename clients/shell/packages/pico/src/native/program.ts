@@ -45,14 +45,15 @@ import { update as picoUpdate } from "../state/update"
 import { chosenIndex, cursorGame, detailScreen, findQuery, findScreen, homeScreen, sameQuery } from "./catalog"
 import { interned } from "./intern"
 import { memo, share } from "./memo"
-import { type Direction, firstIn, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
+import { type Direction, type FocusPlan, moveFocus, resolveExits, settleFocus, type Target } from "./focus"
 import { cartView, type CartView, flatEntry, HINT_A, HINT_B, HINT_LEFT, HINT_RIGHT, type HintView } from "./kit"
 import { launchScreen, settingsScreen } from "./panel"
 import { qrPath } from "./qr"
 import { overlayScreen, runnerScreen } from "./sheet"
 import { setupScreen } from "./setup"
 import { storeScreen } from "./store"
-import type { Act, Ctx, Dispatch, Plan, Screen, State } from "./types"
+import type { Act, Ctx, Dispatch, Held, Plan, Screen, State } from "./types"
+import { picoShelfGame } from "../pico-home-view"
 
 /** How many games a window holds, and how near its edge the cursor may come
  * before the window moves (contract 3.4). */
@@ -84,8 +85,13 @@ export function init(raw: KorriModel, preferences: Readonly<Record<string, strin
     window: PICO_WINDOW_BEFORE_RESIZED,
     remembered: {},
     touched: false,
+    anchors: NO_ANCHORS,
+    held: undefined,
   }
 }
+
+/** No row scrolled by a finger. */
+const NO_ANCHORS: State["anchors"] = {}
 
 interface Step {
   readonly state: State
@@ -208,7 +214,7 @@ function partsOf(korri: KorriModel): readonly unknown[] {
 /** A screen reads only these parts of the state (src/native/*.ts). */
 const catalogScreenOf = memo(
   6,
-  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, ...korriParts(s, korri)],
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.anchors, s.held, ...korriParts(s, korri)],
   (s: State, korri: KorriModel) => screenOf(s, korri),
 )
 
@@ -283,7 +289,11 @@ function settle(step: Step, korri: KorriModel): Step {
     const home = state.nav.home
     // Home asked for the cursor back where it was: on MENU, or on the cart.
     const returning = home.focusOnReturn !== "None" && topLayer(state.nav) === "Home" && screen.key.startsWith("home:")
-    const focus = changed || returning
+    // A row a finger scrolled (ADR 0055) may draw, or page the window, away
+    // from the focused game: focus stays on it out of sight (`held`).
+    const kept = !changed && !returning && state.held !== undefined && state.held.id === state.focus
+    const focus = kept ? state.focus
+      : changed || returning
       ? settleFocus(screen.targets, screen.fallback, undefined)
       : settleFocus(screen.targets, state.focus, screen.fallback)
     const moved = focus !== state.focus
@@ -329,7 +339,9 @@ function wanted(s: State, model: SurfaceModel): { readonly query: CatalogQuery; 
   const hero = !s.nav.find && s.nav.home.mode === "hero"
   const query = s.nav.find ? findQuery(s.nav.search) : hero ? HERO_QUERY : DEFAULT_QUERY
   const cursor = cursorGame(s.focus)
-  const anchor = s.nav.detail?.gameId ?? (hero ? undefined : cursor) ?? (s.nav.find || hero ? undefined : s.nav.home.selectedGameId)
+  // A row a finger scrolled pages the window from where it was left (ADR 0055).
+  const scrolled = s.nav.find ? cursorGame(s.anchors["results"]) : s.nav.home.mode === "shelf" ? cursorGame(s.anchors["shelf"]) : undefined
+  const anchor = s.nav.detail?.gameId ?? scrolled ?? (hero ? undefined : cursor) ?? (s.nav.find || hero ? undefined : s.nav.home.selectedGameId)
   void model
   return { query, anchor }
 }
@@ -349,8 +361,9 @@ function sync(step: Step, korri: KorriModel): Step {
       let move: SurfaceRequest | undefined
       if (!sameAsked) {
         move = { _tag: "MoveCatalog", query, from: anchor === undefined || state.nav.find || query.order === "recent" ? { _tag: "Start" } : { _tag: "Around", gameId: anchor }, count: WINDOW }
-      } else if (anchor !== undefined && at === -1 && cursorGame(state.focus) === undefined) {
-        // A game's own screen, or the shelf's kept cart, outside the window.
+      } else if (anchor !== undefined && at === -1 && (cursorGame(state.focus) === undefined || state.held?.id === state.focus)) {
+        // A game's own screen, the shelf's kept cart, or the focused game a
+        // scrolled row paged away from, outside the window.
         move = { _tag: "MoveCatalog", query, from: { _tag: "Around", gameId: anchor }, count: WINDOW }
       } else if (at !== -1 && ((catalog.after !== undefined && at >= window.length - EDGE) || (catalog.before !== undefined && at < EDGE))) {
         move = { _tag: "MoveCatalog", query, from: { _tag: "Around", gameId: anchor ?? "" }, count: WINDOW }
@@ -509,51 +522,46 @@ function activated(step: Step, message: Extract<SurfaceMessage, { _tag: "Activat
     // then the screen settles as it does between two presses.
     const moved: Act = model.onboarding === undefined ? [{ to: "nav", message: { _tag: "MovedFocus" } }] : []
     next = settle(run({ ...step, state: { ...s, focus: id } }, [...moved, ...(target.enter ?? [])], korri), korri)
+    // A game in a list opens on the second tap (ADR 0055): the first only
+    // chooses it, as a d-pad move does.
+    if (GAME_REGIONS.has(target.region)) return next
   }
   return pressed(next, "confirm", korri)
 }
 
-/** The racks that move by focus, which a finger drags item by item (ADR 0055). */
+/**
+ * The regions whose targets are games in a list (ADR 0055): a tap on one
+ * that does not have focus only moves focus there; a tap on the focused one
+ * opens it. Every other target acts on one tap. The one place this is decided.
+ */
+export const GAME_REGIONS: ReadonlySet<string> = new Set(["shelf", "grid", "resume", "results"])
+
+/** The racks that move by focus, which a finger scrolls item by item (ADR 0055). */
 export const DRAG_ROWS: ReadonlySet<string> = new Set(["shelf", "resume", "results"])
 
 /**
- * A finger dragged a rack across `by` whole items (ADR 0055): the cursor
- * moves `by` targets along that region, one d-pad press at a time (so each
- * step runs its `enter`, and the window follows the cursor with MoveCatalog
- * as a walk would), and stops at the region's end. A cursor outside the
- * region enters it first, on its active target. A region that is no drag
- * row, or not on the screen shown, does nothing (undefined). While attract
- * shows, the drag only wakes the screen.
+ * A finger scrolled a row `by` whole items (ADR 0055): the row's scroll
+ * anchor moves that far along it, held at its ends; focus does not move. The
+ * row draws the items round the anchor, and the catalog pages from it
+ * (`wanted`). It starts from focus when focus is in the row, else from what
+ * the row keeps in sight. A region that is no drag row, or not on the screen
+ * shown, does nothing (undefined). While attract shows, the drag only wakes.
  */
 function dragged(step: Step, message: Extract<SurfaceMessage, { _tag: "Dragged" }>, korri: KorriModel): Step | undefined {
   const { region, by } = message
   if (!DRAG_ROWS.has(region) || !Number.isInteger(by) || by === 0 || korri.presentation.kind === "gameplay-overlay") return undefined
   const model = picoModelFrom(korri)
-  if (model.onboarding === undefined && attractShowing(step.state.nav, model)) return run(step, [{ to: "nav", message: { _tag: "PressedScreen" } }], korri)
-  const screen = catalogScreen(step.state, korri)
-  const inRegion = screen.targets.filter(target => target.region === region)
-  if (inRegion.length === 0) return undefined
-  let next = step
-  if (!inRegion.some(target => target.id === step.state.focus)) {
-    const entry = enterRegion(inRegion, screen.active?.[region] ?? step.state.remembered[region])
-    const arrived = inRegion.find(target => target.id === entry)
-    const moved: Act = model.onboarding === undefined ? [{ to: "nav", message: { _tag: "MovedFocus" } }] : []
-    next = sync(settle(run({ ...next, state: { ...next.state, focus: entry } }, [...moved, ...(arrived?.enter ?? [])], korri), korri), korri)
-  }
-  const direction: Direction = by > 0 ? "right" : "left"
-  for (let count = 0; count < Math.abs(by); count += 1) {
-    const targets = catalogScreen(next.state, korri).targets.filter(target => target.region === region)
-    const to = moveFocus(targets, next.state.focus, direction)
-    if (to === undefined || to === next.state.focus) break
-    next = sync(settle(pressed(next, direction, korri), korri), korri)
-    if (next.state.focus !== to) break
-  }
-  return next
-}
-
-/** Where a drag enters a region: its active or remembered target, else its first. */
-function enterRegion(targets: readonly Target<Act>[], wanted: string | undefined): string | undefined {
-  return targets.some(target => target.id === wanted) ? wanted : firstIn(targets, targets[0]?.region ?? "")?.id
+  const s = step.state
+  if (model.onboarding === undefined && attractShowing(s.nav, model)) return run(step, [{ to: "nav", message: { _tag: "PressedScreen" } }], korri)
+  const screen = catalogScreen(s, korri)
+  const row = screen.rows?.[region]
+  if (row === undefined || row.length === 0) return undefined
+  const from = s.anchors[region] ?? (s.focus !== undefined && row.includes(s.focus) ? s.focus : screen.active?.[region] ?? s.remembered[region])
+  const at = from === undefined ? -1 : row.indexOf(from)
+  const to = row[Math.max(0, Math.min(row.length - 1, (at === -1 ? 0 : at) + by))]
+  if (to === undefined || to === s.anchors[region]) return step
+  // The focused game is held before the row draws away from it.
+  return { ...step, state: hold({ ...s, anchors: { ...s.anchors, [region]: to } }, korri) }
 }
 
 /** The button each hint runs (ADR 0055). */
@@ -620,11 +628,16 @@ function updated(state: State, message: SurfaceMessage, korri: KorriModel): { st
         step = run(step, [{ to: "nav", message: { _tag: "IdleElapsed" } }], korri)
       }
       break
-    case "Pressed":
-      // A button brings the focus highlight back (ADR 0055).
-      if (step.state.touched) step = { ...step, state: { ...step.state, touched: false } }
-      step = pressed(step, message.button, korri)
+    case "Pressed": {
+      // A button brings the focus highlight back, and every scrolled row
+      // back to focus (ADR 0055).
+      const away = step.state.held !== undefined && step.state.held.id === step.state.focus && !inWindow(korri, cursorGame(step.state.focus))
+      if (step.state.touched || step.state.anchors !== NO_ANCHORS) step = { ...step, state: { ...step.state, touched: false, anchors: NO_ANCHORS } }
+      // The focused game was paged out of the window: this press only brings
+      // the window back round it (`sync`).
+      if (!away) step = pressed(step, message.button, korri)
       break
+    }
     case "Touched":
       // A finger went down (ADR 0055): touch is in use, so the highlight
       // hides until the next button. Nothing else: it wakes nothing.
@@ -654,9 +667,37 @@ function updated(state: State, message: SurfaceMessage, korri: KorriModel): { st
   }
   step = settle(step, korri)
   step = sync(step, korri)
-  step = { ...step, state: remember(step.state, korri) }
+  step = { ...step, state: hold(remember(step.state, korri), korri) }
   return { state: step.state, requests: step.requests }
 }
+
+/** Whether the game `id` is in the catalog window now. */
+function inWindow(korri: KorriModel, id: string | undefined): boolean {
+  return id !== undefined && korri.catalog._tag === "Ready" && korri.catalog.window.some(game => game.id === id)
+}
+
+/**
+ * Keep a copy of the focused game while a row is scrolled (ADR 0055), so
+ * focus and its stage stay on it if the window pages away; let it go once no
+ * row is scrolled and the window holds the game again.
+ */
+function hold(s: State, korri: KorriModel): State {
+  const anchored = s.anchors !== NO_ANCHORS && Object.keys(s.anchors).length > 0
+  if (!anchored && s.held === undefined) return s
+  const gameId = cursorGame(s.focus)
+  const catalog = korri.catalog
+  const at = gameId === undefined || catalog._tag !== "Ready" ? -1 : catalog.window.findIndex(game => game.id === gameId)
+  if (at === -1) return s.held === undefined || s.held.id === s.focus ? s : { ...s, held: undefined }
+  if (!anchored || catalog._tag !== "Ready") return { ...s, held: undefined }
+  const game = catalog.window[at]!
+  const place = catalog.firstIndex + at
+  if (s.held !== undefined && s.held.id === s.focus && heldSource.get(s.held) === game && s.held.place === place) return s
+  const held: Held = { id: s.focus!, game: picoShelfGame(game), place }
+  heldSource.set(held, game)
+  return { ...s, held }
+}
+
+const heldSource = new WeakMap<Held, object>()
 
 // ---- view ----
 
@@ -849,7 +890,7 @@ export function view(s: State, raw: KorriModel) {
 /** The view reads the screen's inputs, the notices' round and the font. */
 const viewOf = memo(
   2,
-  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.noticeRound, s.touched, ...korriParts(s, korri)],
+  (s: State, korri: KorriModel) => [s.nav, s.setup, s.focus, s.sections, s.typing, s.font, s.window, s.noticeRound, s.touched, s.anchors, s.held, ...korriParts(s, korri)],
   (s: State, korri: KorriModel) => buildView(s, korri),
 )
 
