@@ -1,7 +1,10 @@
 """Installed-plugin stream cadence CLI. All effects are bounded at this edge."""
 
 import argparse
+import base64
 import fcntl
+import gzip
+import ipaddress
 import json
 import math
 import os
@@ -9,6 +12,7 @@ from pathlib import Path
 import re
 import shlex
 import signal
+import socket
 import ssl
 import subprocess
 import sys
@@ -18,9 +22,22 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 
+import numpy as np
+
+from bar import BITS, Location, Unreadable, decode_rows, search
 from decode import decode
 from discovery import session_log
-from score import InvalidMeasurement, bridge, score, stamps
+from score import (
+    InvalidMeasurement,
+    battery_mw,
+    bridge,
+    capture_gaps,
+    cpu_rate,
+    display_records,
+    score,
+    stamps,
+)
+from verdict import judge
 
 
 class Refusal(RuntimeError):
@@ -73,7 +90,7 @@ def ssh_target(
 
 
 def tools(
-    architecture: str, target: str, options: list[str]
+    architecture: str, target: str, options: list[str], extra: tuple[str, ...] = ()
 ) -> tuple[str, str, list[str]]:
     if architecture not in ("aarch64", "x86_64"):
         raise Refusal(
@@ -89,8 +106,10 @@ def tools(
         "tools = import "
         + json.dumps(str(Path(__file__).with_name("default.nix")))
         + " { inherit pkgs; }; "
-        "in [ tools.runtime.python tools.runtime.motion ]"
     )
+    selection = " ".join("tools.runtime." + name for name in ("python", "motion", *extra))
+    source_expression = expression + "in toString tools.runtime.source"
+    expression += "in [ " + selection + " ]"
     # This Nix command runs on the client/build host. Never invoke a build over SSH.
     print(
         f"Building prebuilt tools for {architecture} on this host or its builders.",
@@ -103,10 +122,6 @@ def tools(
         ).stdout
     )
     paths = [row["outputs"]["out"] for row in outputs]
-    source_expression = expression.replace(
-        "in [ tools.runtime.python tools.runtime.motion ]",
-        "in toString tools.runtime.source",
-    )
     source = execute(
         ["nix", "eval", "--raw", "--impure", "--expr", source_expression], timeout=30
     ).stdout
@@ -304,6 +319,32 @@ def app_name(host: str, info: ET.Element, keydir: Path, server_certificate: str)
     return "Desktop"
 
 
+def sender_stream(
+    args: argparse.Namespace, remote: Remote, facts: dict, certificate: str, motion: str
+) -> tuple[str, int, str]:
+    """Wake the sender, admit the test certificate and start the frame-ID source."""
+    if not facts["working_encoders"]:
+        raise Refusal(
+            "Sunshine has no working encoder in its current startup journal. Wake the panel and restart the installed Sunshine service by hand, then retry. The test never restarts it."
+        )
+    facts["awake_display"] = remote.request("wake")
+    host = args.stream_host
+    if not host:
+        host = args.ssh_target.rsplit("@", 1)[-1].strip("[]")
+    # Brackets belong only to URL syntax, not to Moonlight's host argument.
+    url_host = "[" + host + "]" if ":" in host and not host.startswith("[") else host
+    info, port = server_info(url_host, facts["listening_tcp_ports"])
+    facts["sunshine_port"] = port
+    facts["host_uuid"] = info.findtext("uniqueid")
+    facts["stream_host"] = host
+    result = remote.request(
+        "provision", hostUuid=facts["host_uuid"], certificate=certificate
+    )
+    app = app_name(url_host, info, args.keydir, result["serverCertificate"])
+    remote.request("start", motion=motion)
+    return host, port, app
+
+
 def stop_client(client: subprocess.Popen | None) -> None:
     if client and client.poll() is None:
         client.send_signal(signal.SIGINT)
@@ -366,27 +407,7 @@ def run_case(
     samples = []
     latest = ""
     try:
-        if not facts["working_encoders"]:
-            raise Refusal(
-                "Sunshine has no working encoder in its current startup journal. Wake the panel and restart the installed Sunshine service by hand, then retry. The test never restarts it."
-            )
-        facts["awake_display"] = remote.request("wake")
-        host = args.stream_host
-        if not host:
-            host = args.ssh_target.rsplit("@", 1)[-1].strip("[]")
-        # Brackets belong only to URL syntax, not to Moonlight's host argument.
-        url_host = (
-            "[" + host + "]" if ":" in host and not host.startswith("[") else host
-        )
-        info, port = server_info(url_host, facts["listening_tcp_ports"])
-        facts["sunshine_port"] = port
-        facts["host_uuid"] = info.findtext("uniqueid")
-        facts["stream_host"] = host
-        result = remote.request(
-            "provision", hostUuid=facts["host_uuid"], certificate=certificate
-        )
-        app = app_name(url_host, info, args.keydir, result["serverCertificate"])
-        remote.request("start", motion=motion)
+        host, port, app = sender_stream(args, remote, facts, certificate, motion)
         before = clock(remote)
         facts["clock_bridge_before"] = before
         width, height = (
@@ -630,6 +651,372 @@ def run(args: argparse.Namespace) -> int:
     return int(any(not record["discovered"]["torn_limit_pass"] for record in results))
 
 
+def pgm(data: bytes) -> np.ndarray:
+    magic, size, depth, pixels = data.split(b"\n", 3)
+    width, height = map(int, size.split())
+    if magic != b"P5" or depth != b"255" or len(pixels) != width * height:
+        raise ValueError("capture probe is not an 8-bit PGM frame")
+    return np.frombuffer(pixels, dtype=np.uint8).reshape(height, width)
+
+
+def locate(viewer: Remote, sender: Remote, capture: str) -> tuple[Location, int]:
+    """Find the ID bar on the viewer's output once the stream shows."""
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        sender.request("sample")
+        state = viewer.request("sample")
+        if state["viewer_exit"] is not None:
+            raise Refusal(
+                f"Viewer exited before it showed the stream ({state['viewer_exit']}); read viewer.log"
+            )
+        image = pgm(gzip.decompress(base64.b64decode(viewer.request("probe", capture=capture)["pgm"])))
+        try:
+            return search(image), image.shape[1]
+        except ValueError:
+            time.sleep(0.5)
+    raise Refusal(
+        "The viewer showed no ID bar within the startup deadline; check viewer.log"
+    )
+
+
+def view_case(
+    args: argparse.Namespace,
+    sender: Remote,
+    viewer: Remote,
+    paths: dict[str, str],
+    directory: Path,
+    certificate: str,
+    index: int,
+) -> dict:
+    record: dict = {
+        "label": directory.name,
+        "primary_clock": "display_ns",
+        "warmup_seconds": args.warmup,
+    }
+    facts = sender.request("discover")
+    record["discovered"] = facts
+    facts["valid"] = False
+    facts["imported_store_paths"] = args.imported_store_paths
+    facts["run_index"] = index
+    facts["bridge_uncertainty_ms"] = None
+    samples: list[dict] = []
+    latest = ""
+    try:
+        seat = viewer.request("discover")
+        facts["viewer"] = seat
+        same_clock = seat["boot_id"] == facts["boot_id"]
+        refresh = min(facts["display"]["refresh_hz"], args.viewer_refresh)
+        fps = args.fps if args.fps is not None else refresh
+        width, height = args.resolution
+        facts.update(
+            requested_fps=fps,
+            requested_resolution={"width": width, "height": height},
+            requested_codec=args.codec,
+            requested_bitrate=args.bitrate,
+            viewer_refresh_hz=args.viewer_refresh,
+            max_capture_gaps=args.max_capture_gaps,
+        )
+        host, port, app = sender_stream(args, sender, facts, certificate, paths["motion"])
+        # A viewer on the sender's own machine reaches Sunshine on IPv4 loopback,
+        # where Sunshine's wildcard listener answers.
+        loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
+        viewer_host = args.viewer_stream_host or (loopback if same_clock else host)
+        prepared = viewer.request(
+            "prepare",
+            width=width,
+            height=height,
+            refresh_hz=args.viewer_refresh,
+            certificate=certificate,
+            key=(args.keydir / "key.pem").read_text(),
+        )
+        command = [
+            paths["viewer"] + "/bin/moonlight",
+            "stream",
+            viewer_host,
+            "-port",
+            str(port),
+            "-platform",
+            "sdl",
+            "-viewonly",
+            "-width",
+            str(width),
+            "-height",
+            str(height),
+            "-fps",
+            str(round(fps)),
+            "-codec",
+            args.codec,
+            "-app",
+            app,
+            "-keydir",
+            prepared["keydir"],
+        ]
+        if args.bitrate:
+            command += ["-bitrate", str(args.bitrate)]
+        facts["viewer_command"] = command
+        # The first start only locates the bar. The second start is the measure,
+        # with the capture already running, so startup time is observable.
+        viewer.request("start", command=command)
+        location, output_width = locate(viewer, sender, paths["capture"])
+        viewer.request("stop")
+        facts["bar_location"] = {"x": location.x, "y": location.y, "cell": location.cell}
+        before, seat_before = clock(sender), clock(viewer)
+        viewer.request(
+            "capture",
+            capture=paths["capture"],
+            width=output_width,
+            upper=int(location.y),
+            lower=int(location.y + 3 * location.cell),
+            x=location.x,
+            cell=location.cell,
+        )
+        started = viewer.request("start", command=command)
+        duration = math.floor(args.seconds / args.window) * args.window
+        deadline = time.monotonic() + args.startup + args.warmup + duration + 2
+        while time.monotonic() < deadline:
+            latest = sender.request("sample")["journal"]
+            facts.update(session_log(latest))
+            state = viewer.request("sample")
+            samples.append(state)
+            if state["viewer_exit"] is not None:
+                raise Refusal(
+                    f"Viewer exited during the measure ({state['viewer_exit']}); read viewer.log"
+                )
+            if state["capture_exit"] is not None:
+                raise Refusal("Capture client exited during the measure; read capture.log")
+            time.sleep(0.5)
+        viewer.request("stop")
+        after, seat_after = clock(sender), clock(viewer)
+        motion_log = sender.request("evidence")["motion_log"]
+        shown = viewer.request("evidence")
+        (directory / "motion.log").write_text(motion_log)
+        (directory / "display.csv").write_text(shown["times"])
+        (directory / "display.rows").write_bytes(base64.b64decode(shown["rows"]))
+        for name in ("viewer_log", "capture_log", "fixture_log"):
+            (directory / name.replace("_", ".")).write_text(shown[name])
+        times = display_records(shown["times"])
+        values = np.frombuffer(base64.b64decode(shown["rows"]), dtype=np.uint8)
+        # The capture writes the samples of a frame before its time record.
+        cells = values[: len(times) * 2 * BITS].reshape(-1, 2, BITS)
+        frames = [decode_rows(cells[i]) for i in range(len(cells))]
+        first = next(
+            (
+                i
+                for i, frame in enumerate(frames)
+                if not isinstance(frame, Unreadable)
+                and times[i]["display_ns"] >= started["start_ns"]
+            ),
+            None,
+        )
+        if first is None:
+            raise Refusal("The measured viewer start showed no readable ID; read viewer.log")
+        if same_clock:
+            to_sender = to_seat = lambda ns: ns
+            facts["bridge_uncertainty_ms"] = 0.0
+        else:
+            to_sender, sender_error = bridge(before, after)
+            to_seat, seat_error = bridge(seat_before, seat_after)
+            facts["bridge_uncertainty_ms"] = sender_error + seat_error
+        origin = times[first]["display_ns"]
+        scored = (origin + args.warmup * 1e9, origin + (args.warmup + duration) * 1e9)
+        period = 1e9 / args.viewer_refresh
+        gaps = capture_gaps(
+            [row for row in times if scored[0] <= row["display_ns"] <= scored[1]], period
+        )
+        record["viewer"] = {
+            "startup_ms": (origin - started["start_ns"]) / 1e6,
+            "cpu_seconds_per_second": cpu_rate(
+                samples, int(scored[0]), int(scored[1]), seat["clock_ticks_per_second"]
+            ),
+            "battery_mw": battery_mw(samples, int(scored[0]), int(scored[1])),
+            "stream_stalls": None,
+            "viewer_exits": 0,
+            "capture_frames": len(times),
+            "capture_gaps": gaps,
+            "packet_to_display_ms": None,
+            "input_ms": None,
+            "not_measured": {
+                "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
+                "input_ms": "The press-to-packet measure is not built.",
+            },
+        }
+        if record["viewer"]["battery_mw"] is None:
+            record["viewer"]["not_measured"]["battery_mw"] = (
+                "No battery discharged through the whole scored time."
+            )
+        record.update(decoded_frames=len(frames), decode_errors=0, decode_warnings=0)
+        source = score(
+            frames[first:],
+            [
+                {"index": i, "display_ns": to_seat(row["display_ns"])}
+                for i, row in enumerate(times[first:])
+            ],
+            motion_log,
+            to_sender,
+            warmup=args.warmup,
+            seconds=args.seconds,
+            window=args.window,
+            fps=fps,
+            refresh=refresh,
+            # An unreadable output frame is a smoothness count, not a broken recording.
+            max_unreadable_frames=len(frames),
+            display_period_ns=period,
+        )
+        source["label"] = directory.name
+        source["bridge_uncertainty_ms"] = facts["bridge_uncertainty_ms"]
+        record["source_counter"] = source
+        record["viewer"]["stream_stalls"] = source["stream_stalls"]
+        if gaps > args.max_capture_gaps:
+            raise Refusal(
+                f"The capture missed {gaps} output frames in the scored time; limit {args.max_capture_gaps}. The display record is incomplete."
+            )
+        facts["valid"] = True
+    except (KeyboardInterrupt, SystemExit):
+        facts["error"] = "Run interrupted; measurement is invalid"
+        raise
+    except InvalidMeasurement as error:
+        error.report["label"] = directory.name
+        error.report["bridge_uncertainty_ms"] = facts["bridge_uncertainty_ms"]
+        record["source_counter"] = error.report
+        facts["error"] = str(error)
+    except Exception as error:
+        facts["error"] = str(error)
+    finally:
+        (directory / "threads.json").write_text(json.dumps(samples, indent=2))
+        if latest:
+            (directory / "journal.log").write_text(latest)
+        failed: dict = {
+            "pass": False,
+            "run_folder_removed": None,
+            "pids_unchanged": {},
+        }
+        for name, remote in (("viewer_restore", viewer), ("restore", sender)):
+            try:
+                facts[name] = remote.close()
+            except Exception as error:
+                facts[name] = dict(failed, errors=[str(error)])
+        restored = facts["restore"]["pass"] and facts["viewer_restore"]["pass"]
+        if not restored:
+            facts["valid"] = False
+            facts["error"] = (
+                "Device restore check failed. Stop device work and inspect restore evidence."
+            )
+        (directory / "result.json").write_text(json.dumps(record, indent=2) + "\n")
+        if "source_counter" in record:
+            print(summary(record), flush=True)
+            measured = record["viewer"]
+            print(
+                f"{record['label']} viewer: startup_ms={measured['startup_ms']:.1f} "
+                f"cpu={measured['cpu_seconds_per_second']} stalls={measured['stream_stalls']} "
+                f"capture_gaps={measured['capture_gaps']}/{measured['capture_frames']}",
+                flush=True,
+            )
+        if not restored:
+            raise Refusal(facts["error"])
+    return record
+
+
+def view(args: argparse.Namespace) -> int:
+    sender_target, sender_options = ssh_target(args.sender, None, args.ssh_option)
+    viewer_target, viewer_options = ssh_target(args.viewer, None, args.ssh_option)
+    args.ssh_target = sender_target
+
+    def deliver(target: str, options: list[str], extra: tuple[str, ...]) -> tuple[str, list[str]]:
+        architecture = execute(
+            ["ssh", *options, target, "uname -m"], timeout=20
+        ).stdout.strip()
+        agent, _, paths = tools(architecture, target, options, extra)
+        return agent, paths
+
+    sender_agent, sender_paths = deliver(sender_target, sender_options, ())
+    seat_agent, seat_paths = deliver(viewer_target, viewer_options, ("capture", "viewer"))
+    seat_agent = seat_agent.replace("/device.py", "/viewer.py")
+    paths = {
+        "motion": next(p for p in sender_paths if p.endswith("-stream-cadence-motion"))
+        + "/bin/stream-cadence-motion",
+        "capture": next(p for p in seat_paths if "-stream-cadence-capture-" in p)
+        + "/bin/stream-cadence-capture",
+        "viewer": next(p for p in seat_paths if "-moonlight-embedded-" in p),
+    }
+    args.imported_store_paths = sorted(set(sender_paths + seat_paths))
+    args.out = (
+        args.out.resolve()
+        if args.out
+        else Path(tempfile.mkdtemp(prefix="stream-cadence-view-"))
+    )
+    args.out.mkdir(parents=True, exist_ok=True)
+    args.keydir = args.keydir.expanduser().resolve()
+    args.keydir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    results: list[dict] = []
+    with (args.keydir / "lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise Refusal(
+                "Another cadence run uses this client certificate; wait for it to finish"
+            ) from error
+        certificate = keypair(args.keydir)
+        print("Results:", args.out, flush=True)
+        for index in range(args.runs):
+            directory = args.out / f"run-{index + 1}"
+            directory.mkdir()
+            remotes = [
+                Remote(
+                    ["ssh", *sender_options, sender_target, sender_agent],
+                    directory / "device-agent.log",
+                ),
+                Remote(
+                    ["ssh", *viewer_options, viewer_target, seat_agent],
+                    directory / "viewer-agent.log",
+                ),
+            ]
+            try:
+                result = view_case(
+                    args, remotes[0], remotes[1], paths, directory, certificate, index
+                )
+                results.append(result)
+                if not result["discovered"]["valid"]:
+                    raise Refusal(result["discovered"]["error"])
+            except Exception:
+                for remote in remotes:
+                    if not remote.closed:
+                        # EOF also triggers device cleanup if initialization refused.
+                        if remote.process.stdin and not remote.process.stdin.closed:
+                            remote.process.stdin.close()
+                        remote.process.wait(timeout=30)
+                        remote.log.close()
+                raise
+            finally:
+                (args.out / "results.json").write_text(
+                    json.dumps(results, indent=2) + "\n"
+                )
+    return 0
+
+
+def verdicts(args: argparse.Namespace) -> int:
+    rows = judge(records(args.baseline), records(args.candidate), args.min_runs)
+
+    def text(values: list[float | None]) -> str:
+        if any(value is None for value in values):
+            return "not measured"
+        return f"{min(values):.3f}..{max(values):.3f}"  # type: ignore[type-var]
+
+    print("number | metric | baseline runs | candidate runs | verdict")
+    for row in rows:
+        print(
+            " | ".join(
+                [
+                    row["number"],
+                    row["metric"],
+                    text(row["baseline"]),
+                    text(row["candidate"]),
+                    row["verdict"],
+                ]
+            )
+        )
+    return int(any(row["verdict"] == "worse" for row in rows))
+
+
 def records(path: Path) -> list[dict]:
     result = json.loads(path.read_text())
     if isinstance(result, dict):
@@ -811,6 +1198,41 @@ def parser() -> argparse.ArgumentParser:
         default=0,
         help="maximum total unreadable frames across scored windows; unreadable IDs never count as received",
     )
+    watch = commands.add_parser(
+        "view", help="measure a viewer from outside: what it shows, and when"
+    )
+    watch.add_argument("--sender", required=True, help="SSH target that runs Sunshine")
+    watch.add_argument("--viewer", required=True, help="SSH target that shows the stream")
+    watch.add_argument("--ssh-option", action="append", default=[])
+    watch.add_argument("--stream-host", help="sender address as this host reaches it")
+    watch.add_argument(
+        "--viewer-stream-host", help="sender address as the viewer reaches it"
+    )
+    watch.add_argument("--fps", type=positive)
+    watch.add_argument("--resolution", type=resolution, default=(1920, 1080))
+    watch.add_argument("--viewer-refresh", type=positive, default=60.0)
+    watch.add_argument(
+        "--codec", choices=["h264", "h265", "av1", "auto"], default="h264"
+    )
+    watch.add_argument("--bitrate", type=int, default=10000)
+    watch.add_argument("--seconds", type=positive, default=60)
+    watch.add_argument("--warmup", type=positive, default=10)
+    watch.add_argument("--window", type=positive, default=10)
+    watch.add_argument(
+        "--startup", type=positive, default=15, help="seconds allowed before the first frame"
+    )
+    watch.add_argument("--runs", type=int, default=5)
+    watch.add_argument("--out", type=Path)
+    watch.add_argument(
+        "--keydir", type=Path, default=state / "korri/stream-cadence/keys"
+    )
+    watch.add_argument("--max-capture-gaps", type=nonnegative_integer, default=0)
+    ruling = commands.add_parser(
+        "verdict", help="equal, better or worse for each number of two view results"
+    )
+    ruling.add_argument("baseline", type=Path)
+    ruling.add_argument("candidate", type=Path)
+    ruling.add_argument("--min-runs", type=int, default=5)
     diff = commands.add_parser("compare")
     diff.add_argument("old", type=Path)
     diff.add_argument("new", type=Path)
@@ -833,7 +1255,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, terminate)
     arguments = parser()
     args = arguments.parse_args()
-    if args.command == "run":
+    if args.command in ("run", "view"):
         if (
             args.runs <= 0
             or args.seconds < args.window
@@ -844,7 +1266,9 @@ def main() -> int:
                 "runs/bitrate must be positive, and seconds must include a complete window"
             )
     try:
-        return run(args) if args.command == "run" else compare(args)
+        return {"run": run, "view": view, "verdict": verdicts, "compare": compare}[
+            args.command
+        ](args)
     except (Refusal, ValueError, OSError, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)
         return 1

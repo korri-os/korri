@@ -78,7 +78,13 @@ def read(image: np.ndarray, at: Location) -> Frame:
     ys = [int(at.y), int(at.y + 3 * at.cell)]
     if xs.min() < 0 or xs.max() >= w or min(ys) < 0 or max(ys) >= h:
         return Unreadable("bar outside decoded image")
-    values = image[np.array(ys)[:, None], xs]
+    return decode_rows(image[np.array(ys)[:, None], xs])
+
+
+def decode_rows(values: np.ndarray) -> Frame:
+    """Decode the 36 cell samples of the upper and the lower bar row."""
+    if values.shape != (2, BITS):
+        return Unreadable("bar samples have the wrong shape")
     decoded = []
     for index, row in enumerate(values):
         if np.min(np.abs(row.astype(float) - 128)) < 45:

@@ -164,6 +164,85 @@ measurement can fail that explicit gate; no torn limit applies by default.
 Without limits, numerical regressions exit zero.
 Run/window pairing is positional; compare the same requests in the same order.
 
+## Viewer measure
+
+`run` measures the sender and the network: its client has no renderer. `view`
+measures a viewer from outside, with its real renderer, and no person looks at
+a screen.
+
+```sh
+nix run .#stream-cadence -- view --sender operator@sender --viewer operator@viewer
+nix run .#stream-cadence -- verdict baseline/results.json candidate/results.json
+```
+
+The sender runs Sunshine and the frame-ID source, as in `run`. On the viewer
+device, `capture.c` reads the ID bar from the compositor through
+wlr-screencopy. It samples the 36 cells of both bar rows on every output frame
+and writes one `display.csv` record (`index,display_ns`) for each frame.
+`bar.py` decodes the samples, so the bar has one decoder.
+
+Each run starts the viewer twice. The first start only finds the bar on the
+viewer's output. The second start is the measure: the capture already runs, so
+the time to the first frame is visible. Windows start at the first readable
+ID after that second start.
+
+`display_ns` is the compositor's commit time for the output frame. It is not
+panel scanout, and it tells nothing about panel response or how a stream
+feels. While the capture runs, the compositor composes every frame, so direct
+scanout is off. A baseline and its candidate are measured the same way, so
+they stay comparable.
+
+### The fixture
+
+The viewer and the capture client run inside a fixture: a second, headless
+sway process started from the device's installed sway binary, with the pixman
+renderer, inside the run directory. The product compositor is read and never
+changed, and the test viewer never appears on the display that Sunshine
+captures. The fixture viewer is nixpkgs `moonlight-embedded` with its `sdl`
+system, copied with `nix copy`. A server-only device has no viewer plugin.
+
+The fixture proves a viewer's session part and network library. It does not
+prove the picture path of a handheld or a phone. A run against the installed
+`@korri:moonlight` plugin on a device's own compositor is not built yet; it
+needs a docked bench device (ADR 0063).
+
+The private half of the test key pair crosses SSH into the viewer's run
+directory, because the viewer runs there. Cleanup removes it. The sender
+still revokes the certificate on exit.
+
+### The six numbers of ADR 0062
+
+| Number | Fields | Method |
+| --- | --- | --- |
+| 1 Packet arrival to display | `viewer.packet_to_display_ms` | Not measured: today's viewer reports no arrival time. The gate is `latency_ms`, sender presentation to viewer display, on the same sender and link. |
+| 2 Late, repeated, dropped | `capture_misses`, `repeated_frames`, `late_frames`, `torn_frames`, `undecodable_frames` in each window | A dropped ID was presented and never displayed. A repeated frame shows no new ID. A late frame is a new ID more than 1.5 refresh periods after the previous new ID. |
+| 3 CPU and battery | `viewer.cpu_seconds_per_second`, `viewer.battery_mw` | Viewer process CPU time from procfs over the scored time. Battery power only while a battery discharges in every sample; else not measured. |
+| 4 Startup | `viewer.startup_ms` | Viewer process start to the first displayed readable ID. korrid's launch path is not included. |
+| 5 Input | `viewer.input_ms` | Not measured: the press-to-packet measure is not built. |
+| 6 Stability | `viewer.stream_stalls`, `viewer.viewer_exits` | A stall is one second without a new ID in the scored time. A viewer exit ends the run as invalid. |
+
+`viewer.not_measured` gives the reason for each number that has no value. No
+number is estimated. An unreadable output frame is a count, not an invalid
+recording: a viewer can show a frame without a whole bar.
+
+`viewer.capture_gaps` counts output frames that the capture did not read: an
+interval above 1.5 refresh periods between two records in the scored time. The
+default limit is zero, and a run above `--max-capture-gaps` is invalid.
+
+### Verdict
+
+`verdict` compares two `view` results, five valid runs each by default. Every
+metric is lower-is-better. A metric is **worse** when every candidate run is
+worse than every baseline run, and **better** when every candidate run is
+better. Otherwise the candidate is inside the run-to-run spread, and the
+metric is **equal**. A metric with no value in a run is **not measured**. The
+command exits non-zero when a metric is worse. With five runs each, two
+results from the same viewer separate by chance in about 0.8% of comparisons
+for each metric.
+
+Baselines live in `baselines/<device>/results.json`. They are measurement
+data and are not part of the tool's Nix source.
+
 ## Pairing and cleanup
 
 Only the public test certificate reaches the device. The bounded native
@@ -206,7 +285,7 @@ nix build --no-link --impure --expr \
   'let pkgs = import NIXPKGS_PATH { system = "x86_64-linux"; }; in (import ./nix/stream-cadence { inherit pkgs; }).tests'
 ```
 
-`default.nix` exports `app`, `shim`, `motion`, `device`, `tests`, and `sourceCheck`.
+`default.nix` exports `app`, `shim`, `motion`, `capture`, `device`, `tests`, and `sourceCheck`.
 Use the same expression with an architecture-appropriate `pkgs` to build each
 output for either supported architecture. Tests compile the actual C bar,
 round-trip it through lossy libx264 at three resolutions, inject source discards

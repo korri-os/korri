@@ -4,7 +4,7 @@ Only the public certificate crosses SSH. Provision/revoke use the exact native
 SEQPACKET request from korrid's moonlight_certificate.rs, under the unit's UID/GID.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 import json
 import os
@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import TextIO
+from typing import Any, TextIO
 
 from discovery import (
     credentials,
@@ -206,6 +206,8 @@ def discover() -> dict:
     facts = {
         "model": model,
         "architecture": os.uname().machine,
+        # Two agents with one boot ID share one monotonic clock.
+        "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
         "os_release": properties(Path("/etc/os-release").read_text()),
         "korri_system_path": str(Path("/run/current-system").resolve()),
         "plugin_status": plugin,
@@ -599,11 +601,16 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "certificate":
         certificate_child(json.loads(sys.argv[2]))
         return
+    serve(Session)
+
+
+def serve(open_session: Callable[[], Any]) -> None:
+    """One JSON request per line; stdin EOF, signals and silence all clean up."""
     signal.signal(signal.SIGTERM, terminate)
     signal.signal(signal.SIGINT, terminate)
     signal.signal(signal.SIGHUP, terminate)
     try:
-        session = Session()
+        session = open_session()
     except Exception as error:
         print(json.dumps({"error": str(error)}), flush=True)
         return

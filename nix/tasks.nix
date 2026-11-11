@@ -126,8 +126,8 @@ let
       '';
     };
     stream-cadence = {
-      description = "Measure distinct Sunshine frames against the discovered display ceiling; compare receive-clock windows.";
-      usageSuffix = " -- <run --device ssh-target | compare old.json new.json>";
+      description = "Measure distinct Sunshine frames against the discovered display ceiling, or what a viewer shows; compare results.";
+      usageSuffix = " -- <run --device ssh-target | view --sender ssh-target --viewer ssh-target | compare old.json new.json | verdict baseline.json candidate.json>";
       runtimeInputs = [ (import ./stream-cadence/default.nix { inherit pkgs; }).app ];
       script = ''
         exec stream-cadence "$@"

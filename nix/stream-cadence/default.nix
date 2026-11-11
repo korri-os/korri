@@ -4,7 +4,8 @@ let
     src = ./.;
     filter =
       path: type:
-      type == "directory" && builtins.baseNameOf path != "__pycache__"
+      # Baselines are measurement data. A new baseline must not rebuild the tool.
+      type == "directory" && !(builtins.elem (builtins.baseNameOf path) [ "__pycache__" "baselines" ])
       || type == "regular" && !(pkgs.lib.hasSuffix ".pyc" path);
   };
   sourceCheck =
@@ -19,7 +20,38 @@ let
     fileset = pkgs.lib.fileset.unions [
       ./device.py
       ./discovery.py
+      ./viewer.py
     ];
+  };
+  captureSource = pkgs.lib.fileset.toSource {
+    root = ./.;
+    fileset = pkgs.lib.fileset.unions [
+      ./capture.c
+      ./frame-bar.h
+    ];
+  };
+  # The viewer-side half of the outside measure: a wlr-screencopy client.
+  capture = pkgs.stdenv.mkDerivation {
+    pname = "stream-cadence-capture";
+    version = "1";
+    src = captureSource;
+    nativeBuildInputs = [ pkgs.wayland-scanner ];
+    buildInputs = [ pkgs.wayland ];
+    dontConfigure = true;
+    buildPhase = ''
+      runHook preBuild
+      protocol=${pkgs.wlr-protocols}/share/wlr-protocols/unstable/wlr-screencopy-unstable-v1.xml
+      wayland-scanner client-header "$protocol" wlr-screencopy-unstable-v1-client-protocol.h
+      wayland-scanner private-code "$protocol" wlr-screencopy-unstable-v1-protocol.c
+      # frame-bar.h supplies BAR_BITS; its painter belongs to the motion source.
+      $CC -std=c11 -Wall -Wextra -Werror -Wno-unused-function -O2 -I. capture.c wlr-screencopy-unstable-v1-protocol.c \
+        -o stream-cadence-capture -lwayland-client
+      runHook postBuild
+    '';
+    installPhase = ''
+      mkdir -p "$out/bin"
+      cp stream-cadence-capture "$out/bin/"
+    '';
   };
   python = pkgs.python3.withPackages (p: [ p.numpy ]);
   weston = pkgs.weston.overrideAttrs (old: {
@@ -111,13 +143,16 @@ in
     app
     shim
     motion
+    capture
     device
     tests
     sourceCheck
     ;
   runtime = {
-    inherit motion;
+    inherit motion capture;
     python = pkgs.python3;
     source = deviceSource;
+    # aka is server-only and has no viewer plugin. The fixture copies this one.
+    viewer = pkgs.moonlight-embedded;
   };
 }

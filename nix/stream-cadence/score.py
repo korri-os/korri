@@ -76,6 +76,68 @@ def bridge(before: dict, after: dict) -> tuple[Callable[[int], int], float]:
     )
 
 
+def clock_ns(row: dict[str, int]) -> int:
+    """A display record carries nanoseconds; a receive record carries milliseconds."""
+    return row["display_ns"] if "display_ns" in row else row["receive_ms"] * 1_000_000
+
+
+def stamp(row: dict[str, int]) -> dict[str, int]:
+    name = "display_ns" if "display_ns" in row else "receive_ms"
+    return {name: row[name]}
+
+
+def display_records(text: str) -> list[dict[str, int]]:
+    rows = [{k: int(v) for k, v in row.items()} for row in csv.DictReader(text.splitlines())]
+    if any(row["index"] != i for i, row in enumerate(rows)):
+        raise ValueError("nonconsecutive display records")
+    if any(a["display_ns"] >= b["display_ns"] for a, b in zip(rows, rows[1:])):
+        raise ValueError("display clock did not advance")
+    return rows
+
+
+def capture_gaps(rows: list[dict[str, int]], period_ns: float) -> int:
+    """Output frames that the capture did not read: the proof needs zero."""
+    return sum(
+        b["display_ns"] - a["display_ns"] > 1.5 * period_ns for a, b in zip(rows, rows[1:])
+    )
+
+
+def cpu_rate(
+    samples: list[dict], start_ns: int, end_ns: int, ticks_per_second: int
+) -> float | None:
+    """Viewer CPU seconds for each second, between the first and last scored sample."""
+    inside = [
+        row
+        for row in samples
+        if start_ns <= row["device_ns"] <= end_ns and row["viewer_ticks"] is not None
+    ]
+    if len(inside) < 2 or inside[-1]["device_ns"] <= inside[0]["device_ns"]:
+        return None
+    used = (inside[-1]["viewer_ticks"] - inside[0]["viewer_ticks"]) / ticks_per_second
+    return used / ((inside[-1]["device_ns"] - inside[0]["device_ns"]) / 1e9)
+
+
+def battery_mw(samples: list[dict], start_ns: int, end_ns: int) -> float | None:
+    """Average battery power, only when a battery discharges in every scored sample."""
+    powers = []
+    for row in samples:
+        if not start_ns <= row["device_ns"] <= end_ns:
+            continue
+        cells = row["battery"]
+        if not cells or any(cell["status"] != "Discharging" for cell in cells):
+            return None
+        total = 0.0
+        for cell in cells:
+            if cell["power_now"] is not None:
+                total += abs(cell["power_now"]) / 1e3
+            elif cell["current_now"] is not None and cell["voltage_now"] is not None:
+                total += abs(cell["current_now"]) * cell["voltage_now"] / 1e9
+            else:
+                return None
+        powers.append(total)
+    return statistics.fmean(powers) if powers else None
+
+
 def latency(values: list[float]) -> dict:
     ordered = sorted(values)
     return {
@@ -98,30 +160,38 @@ def score(
     fps: float,
     refresh: float,
     max_unreadable_frames: int = 0,
+    display_period_ns: float | None = None,
 ) -> dict:
+    """Score decode units on the receive clock, or output frames on the display clock.
+
+    With `display_period_ns` the rows are a viewer's output frames. Each window
+    then also counts frames that repeat an ID and new IDs that arrive late.
+    """
     if max_unreadable_frames < 0:
         raise ValueError("max_unreadable_frames must be nonnegative")
     if len(ids) != len(rows):
         raise ValueError(
             f"decode count {len(ids)} differs from receive count {len(rows)}"
         )
-    if not rows or any(
-        a["receive_ms"] > b["receive_ms"] for a, b in zip(rows, rows[1:])
-    ):
+    if not rows or any(clock_ns(a) > clock_ns(b) for a, b in zip(rows, rows[1:])):
         raise ValueError("empty or reversed receive clock")
     count = int(seconds // window)
     duration = count * window
     if count < 1:
         raise ValueError("duration must include at least one complete window")
-    origin = rows[0]["receive_ms"] * 1_000_000
-    if rows[-1]["receive_ms"] * 1_000_000 < origin + (warmup + duration) * 1e9:
+    origin = clock_ns(rows[0])
+    if clock_ns(rows[-1]) < origin + (warmup + duration) * 1e9:
         raise ValueError(
             "recording does not cover warm-up and every complete scored window"
         )
     presented, submitted, discarded = feedback(source)
 
     def empty(length: float) -> dict:
+        display = (
+            dict(repeated_frames=0, late_frames=0) if display_period_ns is not None else {}
+        )
         return dict(
+            **display,
             capture_misses=0,
             source_misses=0,
             new_frames=0,
@@ -158,13 +228,27 @@ def score(
     window_numbers = {
         id(values): index for index, values in enumerate([warm, *windows])
     }
+    last_new_ns: int | None = None
+    stalls = 0
     for index, (frame, row) in enumerate(zip(ids, rows)):
-        target = bucket(row["receive_ms"] * 1_000_000)
+        target = bucket(clock_ns(row))
+        fresh = [ident for ident in frame_ids(frame) if ident not in observed]
+        if display_period_ns is not None and not isinstance(frame, Unreadable):
+            if fresh:
+                gap = clock_ns(row) - last_new_ns if last_new_ns is not None else 0
+                if target and gap > 1.5 * display_period_ns:
+                    target[0]["late_frames"] += 1
+                # A stall is a second without a new ID while the stream is scored.
+                if target and target[0] is not warm and gap >= 1e9:
+                    stalls += 1
+                last_new_ns = clock_ns(row)
+            elif target:
+                target[0]["repeated_frames"] += 1
         if isinstance(frame, Unreadable):
             unreadable_events.append(
                 {
                     "index": index,
-                    "receive_ms": row["receive_ms"],
+                    **stamp(row),
                     "window": window_numbers[id(target[0])] if target else None,
                     "reason": frame.reason,
                 }
@@ -173,7 +257,7 @@ def score(
             torn_events.append(
                 {
                     "index": index,
-                    "receive_ms": row["receive_ms"],
+                    **stamp(row),
                     "window": window_numbers[id(target[0])] if target else None,
                     "upper_id": frame.upper_id,
                     "lower_id": frame.lower_id,
@@ -197,11 +281,7 @@ def score(
                         values["captured_unpresented_ids"] += 1
                     else:
                         delays.append(
-                            (
-                                row["receive_ms"] * 1_000_000
-                                - to_host(presented[ident]["present_ns"])
-                            )
-                            / 1e6
+                            (clock_ns(row) - to_host(presented[ident]["present_ns"])) / 1e6
                         )
         observed.update(frame_ids(frame))
     capture_events, source_events = [], []
@@ -245,7 +325,11 @@ def score(
     report = dict(
         warmup_seconds=warmup,
         scored_seconds=duration,
-        clock="receive_ms with monotonic presentation bridge",
+        clock=(
+            "display_ns with monotonic presentation bridge"
+            if display_period_ns is not None
+            else "receive_ms with monotonic presentation bridge"
+        ),
         raw_warmup=warm,
         windows=windows,
         capture_events=capture_events,
@@ -263,6 +347,8 @@ def score(
             v["capture_misses"] == 0 and v["undecodable_frames"] == 0 for v in windows
         ),
     )
+    if display_period_ns is not None:
+        report["stream_stalls"] = stalls
     first_present = to_host(ordered[0]["present_ns"])
     last_present = to_host(ordered[-1]["present_ns"])
     uncovered = [
