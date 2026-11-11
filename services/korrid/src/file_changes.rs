@@ -236,6 +236,14 @@ fn run(
     messages: mpsc::Receiver<Message>,
 ) {
     loop {
+        // Re-registration already invalidates the whole projection. Old
+        // events are superseded by its rescan, but shutdown must not starve.
+        if messages
+            .try_iter()
+            .any(|message| matches!(message, Message::Stop))
+        {
+            return;
+        }
         let resolved = resolved_paths(&observed.paths);
         let (watcher, watched) = match install(&resolved, events.clone()) {
             Ok(installed) => installed,
@@ -247,6 +255,17 @@ fn run(
                 }
             }
         };
+        // A symlink or missing directory can change while watches are being
+        // installed. Events from that gap are not guaranteed to reach this
+        // watcher. Resolve again before publishing a usable generation.
+        let after_registration = resolved_paths(&observed.paths);
+        if !same_paths(&resolved, &after_registration)
+            || watched != registration(&after_registration)
+        {
+            observed.publish(Some("file inputs changed during watch registration".into()));
+            drop(watcher);
+            continue;
+        }
         *observed
             .resolved
             .lock()
