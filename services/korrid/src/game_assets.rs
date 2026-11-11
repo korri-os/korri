@@ -2,10 +2,11 @@ use image::{GenericImageView, ImageFormat, ImageReader, Limits};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
     io::{Cursor, Write},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -69,6 +70,22 @@ pub(crate) enum AssetError {
     Storage,
 }
 
+/// `app.game-assets.object`: the bytes of one stored image, by its asset id.
+/// Like `app.saves.object`, it is a tagged request answered with bytes on an
+/// object route (`game_asset_object`), not with a JSON outcome on `/rpc`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GameAssetObjectRequest {
+    pub asset_id: String,
+}
+
+/// One stored image and the media type its asset id names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AssignedAsset {
+    pub bytes: Vec<u8>,
+    pub content_type: &'static str,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct GameAssetRepository {
     root: PathBuf,
@@ -123,6 +140,37 @@ impl GameAssetRepository {
             asset_ids.insert(owner.playable_id.clone(), assignment.asset_id.clone());
         }
         Ok(asset_ids)
+    }
+
+    /// The image an assignment names, for `app.game-assets.object`.
+    ///
+    /// The rules are those of `KorriGameAssetPathHandler` at `android-final`:
+    /// the id is one well-formed content address, an assignment record must
+    /// name it, and the blob is read from the blob folder by that id alone.
+    /// A request path is never joined to the private root.
+    pub(crate) fn assigned_asset(
+        &self,
+        asset_id: &str,
+    ) -> Result<Option<AssignedAsset>, AssetError> {
+        if !valid_asset_id(asset_id) {
+            return Ok(None);
+        }
+        if !assigned_asset_ids(&self.root)?.contains(asset_id) {
+            return Ok(None);
+        }
+        let blob = self.root.join(BLOBS_DIR).join(asset_id);
+        let bytes = match fs::read(&blob) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err(AssetError::Storage),
+        };
+        if bytes.len() > MAX_ASSET_BYTES {
+            return Err(AssetError::Oversized);
+        }
+        Ok(Some(AssignedAsset {
+            bytes,
+            content_type: content_type(asset_id),
+        }))
     }
 
     pub(crate) fn assign_tile(
@@ -192,6 +240,69 @@ fn valid_asset_id(asset_id: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
         && SUPPORTED_ASSET_EXTENSIONS.contains(&extension)
+}
+
+/// What identifies one written `assignments.json`: every write replaces the
+/// file (`write_atomically`), so a new one has a new modification time.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AssignmentsFileKey {
+    path: PathBuf,
+    modified: SystemTime,
+    length: u64,
+}
+
+/// The asset ids the assignment records name. A surface asks for every cover
+/// of its window at once, so the records are read once per written file, not
+/// once per image (as `KorriGameAssetPathHandler` at `android-final` did).
+fn assigned_asset_ids(root: &Path) -> Result<Arc<BTreeSet<String>>, AssetError> {
+    static LAST: Mutex<Option<(AssignmentsFileKey, Arc<BTreeSet<String>>)>> = Mutex::new(None);
+    let path = root.join(ASSIGNMENTS_FILE);
+    let key = match fs::metadata(&path) {
+        Ok(metadata) => AssignmentsFileKey {
+            modified: metadata.modified().map_err(|_| AssetError::Storage)?,
+            length: metadata.len(),
+            path,
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Arc::default());
+        }
+        Err(_) => return Err(AssetError::Storage),
+    };
+    let mut last = LAST.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((known, ids)) = last.as_ref() {
+        if *known == key {
+            return Ok(Arc::clone(ids));
+        }
+    }
+    let ids: Arc<BTreeSet<String>> = Arc::new(
+        read_assignments(root)?
+            .into_values()
+            .map(|assignment| assignment.asset_id)
+            .collect(),
+    );
+    *last = Some((key, Arc::clone(&ids)));
+    Ok(ids)
+}
+
+/// The media type of a well-formed asset id (`SUPPORTED_ASSET_EXTENSIONS`).
+fn content_type(asset_id: &str) -> &'static str {
+    match asset_id.rsplit_once('.').map(|(_, extension)| extension) {
+        Some("png") => "image/png",
+        Some("jpg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        _ => "application/octet-stream",
+    }
+}
+
+/// How the model names a stored image: this prefix and the asset id. It is
+/// the form `coverArtUrl` had for the WebView at `android-final`
+/// (`KorriGameAssetPathHandler.ROUTE_PREFIX`). It is a reference, not a
+/// route: a surface host reads the image with `app.game-assets.object`.
+const ASSET_REFERENCE_PREFIX: &str = "/game-assets/";
+
+/// `SurfaceGame.coverArtUrl` for a stored asset.
+pub(crate) fn asset_url(asset_id: &str) -> String {
+    format!("{ASSET_REFERENCE_PREFIX}{asset_id}")
 }
 
 fn validate_image(candidate: &AssetCandidate) -> Result<DecodedImage, AssetError> {
@@ -391,6 +502,101 @@ mod tests {
         )
         .unwrap();
         assert_eq!(repo.matching_tile_asset_id(&owner()).unwrap(), None);
+    }
+
+    #[test]
+    fn serves_only_the_blob_an_assignment_names() {
+        let private = tempfile::tempdir().unwrap();
+        let repo = GameAssetRepository::new(private.path());
+        let assignment = repo
+            .assign_tile(
+                owner(),
+                AssetCandidate {
+                    bytes: PNG_1X1.to_vec(),
+                    declared_width: Some(1),
+                    declared_height: Some(1),
+                    game_id: 10,
+                    grid_id: 20,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            repo.assigned_asset(&assignment.asset_id).unwrap(),
+            Some(AssignedAsset {
+                bytes: PNG_1X1.to_vec(),
+                content_type: "image/png",
+            })
+        );
+        assert_eq!(
+            asset_url(&assignment.asset_id),
+            format!("/game-assets/{}", assignment.asset_id)
+        );
+
+        // A well-formed id no assignment names, even with a blob on disk.
+        let stray = format!("{}.png", "a".repeat(64));
+        fs::write(
+            private.path().join(STATE_DIR).join(BLOBS_DIR).join(&stray),
+            PNG_1X1,
+        )
+        .unwrap();
+        assert_eq!(repo.assigned_asset(&stray).unwrap(), None);
+
+        // Anything that is not one content address.
+        for id in [
+            "",
+            "assignments.json",
+            "../assignments.json",
+            "../../steamgriddb.credential",
+            &format!("{}.gif", "a".repeat(64)),
+            &format!("{}.png", "A".repeat(64)),
+            &format!("{}.png/", "a".repeat(64)),
+            &format!("/{}", assignment.asset_id),
+        ] {
+            assert_eq!(repo.assigned_asset(id).unwrap(), None, "{id}");
+        }
+
+        // A later assignment is served too: the records are read again once
+        // the file is written again.
+        let mut larger = Vec::new();
+        image::RgbaImage::new(2, 2)
+            .write_to(&mut Cursor::new(&mut larger), ImageFormat::Png)
+            .unwrap();
+        let later_id = format!("{}.png", hex::encode(Sha256::digest(&larger)));
+        assert_eq!(repo.assigned_asset(&later_id).unwrap(), None);
+        let mut other = owner();
+        other.playable_id = "sm".into();
+        let later = repo
+            .assign_tile(
+                other,
+                AssetCandidate {
+                    bytes: larger.clone(),
+                    declared_width: None,
+                    declared_height: None,
+                    game_id: 11,
+                    grid_id: 21,
+                },
+            )
+            .unwrap();
+        assert_eq!(later.asset_id, later_id);
+        assert_eq!(
+            repo.assigned_asset(&later_id)
+                .unwrap()
+                .map(|asset| asset.bytes),
+            Some(larger)
+        );
+        assert!(repo.assigned_asset(&assignment.asset_id).unwrap().is_some());
+
+        // The assignment stays, the blob is gone.
+        fs::remove_file(
+            private
+                .path()
+                .join(STATE_DIR)
+                .join(BLOBS_DIR)
+                .join(&assignment.asset_id),
+        )
+        .unwrap();
+        assert_eq!(repo.assigned_asset(&assignment.asset_id).unwrap(), None);
     }
 
     fn png_with_dimensions(width: u32, height: u32) -> Vec<u8> {

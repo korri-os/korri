@@ -65,6 +65,10 @@ struct State {
     displays: Option<Value>,
     /// A catalog published as it is (Loading, Error, Empty) instead of a window.
     fixed_catalog: Option<Value>,
+    /// `app.game-assets.object`: the bytes answered for each asset id.
+    assets: BTreeMap<String, Vec<u8>>,
+    /// Every asset id asked for with the capability, in order.
+    asset_requests: Vec<String>,
 }
 
 pub struct Fixture {
@@ -101,6 +105,8 @@ impl Fixture {
                 generation: 0,
                 displays: None,
                 fixed_catalog: None,
+                assets: BTreeMap::new(),
+                asset_requests: Vec::new(),
             }),
             Condvar::new(),
         ));
@@ -145,6 +151,27 @@ impl Fixture {
 
     pub fn origin(&self) -> &str {
         &self.origin
+    }
+
+    /// Answer `app.game-assets.object` for `asset_id` with `bytes`, as korrid
+    /// does for an image it stores. Any other asset id is 404.
+    pub fn set_asset(&self, asset_id: &str, bytes: Vec<u8>) {
+        self.shared
+            .0
+            .lock()
+            .expect("fixture state")
+            .assets
+            .insert(asset_id.to_owned(), bytes);
+    }
+
+    /// Every asset id asked for with the capability, in order.
+    pub fn asset_requests(&self) -> Vec<String> {
+        self.shared
+            .0
+            .lock()
+            .expect("fixture state")
+            .asset_requests
+            .clone()
     }
 
     pub fn requests(&self) -> Vec<(String, Value)> {
@@ -437,6 +464,34 @@ fn serve(
         return stream.write_all(b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\n\r\n");
     }
     let request: Value = serde_json::from_slice(&body).map_err(io::Error::other)?;
+    let request_line = String::from_utf8_lossy(&head);
+    // korrid's object route: the tagged request, answered with bytes.
+    if request_line.lines().next().unwrap_or_default() == "POST /game-assets-object HTTP/1.1" {
+        if request.get("_tag").and_then(Value::as_str) != Some("app.game-assets.object") {
+            return stream.write_all(b"HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n");
+        }
+        let asset_id = request
+            .pointer("/payload/assetId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let found = {
+            let mut state = shared.0.lock().expect("fixture state");
+            state.asset_requests.push(asset_id.to_owned());
+            state.assets.get(asset_id).cloned()
+        };
+        shared.1.notify_all();
+        return match found {
+            Some(bytes) => {
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ncontent-length: {}\r\n\r\n",
+                    bytes.len()
+                )?;
+                stream.write_all(&bytes)
+            }
+            None => stream.write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n"),
+        };
+    }
     let reply = rpc(shared, &request);
     let reply = reply.to_string();
     // Chunked, as hyper may send it, so the client's chunk reader is used.

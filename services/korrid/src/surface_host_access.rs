@@ -28,6 +28,8 @@ impl SurfaceHostPermission {
             | RpcRequest::SurfaceRequest(_)
             | RpcRequest::SurfacePreferences(_)
             | RpcRequest::SurfaceDeclare(_) => true,
+            // An image the model the surface may read names (`coverArtUrl`).
+            RpcRequest::GameAssetObject(_) => true,
             RpcRequest::InvitesList(_) | RpcRequest::SavesStatus(_)
             | RpcRequest::SavesHistory(_)
             | RpcRequest::NetworkStatus(_)
@@ -307,6 +309,28 @@ mod tests {
             assert!(!permission.permits(&start));
         }
         assert!(SurfaceHostPermission::Full.permits(&start));
+    }
+
+    #[test]
+    fn every_surface_host_may_read_the_images_its_model_names() {
+        let image: RpcRequest = serde_json::from_value(json!({
+            "_tag": "app.game-assets.object",
+            "payload": {"assetId": format!("{}.png", "a".repeat(64))},
+        }))
+        .unwrap();
+        for permission in [
+            SurfaceHostPermission::Full,
+            SurfaceHostPermission::ReadOnly,
+            SurfaceHostPermission::LocalSessions,
+        ] {
+            assert!(permission.permits(&image));
+        }
+        // The request names an asset id and nothing else.
+        assert!(serde_json::from_value::<RpcRequest>(json!({
+            "_tag": "app.game-assets.object",
+            "payload": {"assetId": "a.png", "path": "/etc/passwd"},
+        }))
+        .is_err());
     }
 
     const TOKEN: &str = "shell-test-token";

@@ -284,6 +284,44 @@ impl Diff {
         }
     }
 
+    /// The diff that converts again only the images of `view` named `url`,
+    /// and leaves every other value as it is: what brings a view up to date
+    /// when a korrid image arrives after the view was applied.
+    pub fn image(view: &Json, url: &str) -> Diff {
+        match view {
+            Json::Object(fields) => {
+                if let Some(named) = fields.get("$image") {
+                    return if named.as_str() == Some(url) {
+                        Diff::Replaced
+                    } else {
+                        Diff::Same
+                    };
+                }
+                let fields: HashMap<String, Diff> = fields
+                    .iter()
+                    .map(|(name, value)| (name.clone(), Diff::image(value, url)))
+                    .collect();
+                if fields.values().all(|d| *d == Diff::Same) {
+                    Diff::Same
+                } else {
+                    Diff::Fields(fields)
+                }
+            }
+            Json::Array(items) => {
+                let rows: Vec<Diff> = items.iter().map(|row| Diff::image(row, url)).collect();
+                if rows.iter().all(|d| *d == Diff::Same) {
+                    Diff::Same
+                } else {
+                    Diff::Rows {
+                        before: items.len(),
+                        rows,
+                    }
+                }
+            }
+            _ => Diff::Same,
+        }
+    }
+
     fn field(&self, name: &str) -> Option<&Diff> {
         match self {
             Diff::Same => Some(&Diff::Same),
@@ -585,6 +623,22 @@ impl Binder {
     ) -> Result<usize> {
         let diff = self.differ.next(view);
         self.apply_diff(component, view, &diff, images)
+    }
+
+    /// The image `url` arrived in `images` after `view`, the view this binder applied
+    /// last: set again the values of `view` that name it. Returns how many properties
+    /// changed.
+    pub fn refresh_image(
+        &mut self,
+        component: &ComponentInstance,
+        view: &Json,
+        url: &str,
+        images: &mut ImageCache,
+    ) -> Result<usize> {
+        match Diff::image(view, url) {
+            Diff::Same => Ok(0),
+            diff => self.apply_diff(component, view, &diff, images),
+        }
     }
 
     /// Apply `view`, given how it differs from the view applied before it (`Differ`, kept
@@ -1040,6 +1094,118 @@ mod tests {
             panic!("model");
         };
         assert_eq!(items.row_count(), 2);
+        Ok(())
+    }
+
+    /// The pixels of `images::tests::png_data_url`, as the loading thread hands them over.
+    fn arrived_pixels() -> crate::images::Pixels {
+        use base64::Engine as _;
+        let url = crate::images::tests::png_data_url();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(url.split_once(',').expect("comma").1)
+            .expect("base64");
+        crate::images::decode_raster(&bytes, None).expect("decode")
+    }
+
+    fn image_width(value: &Value) -> u32 {
+        match value {
+            Value::Image(image) => image.size().width,
+            other => panic!("not an image: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_image_diff_names_only_the_values_that_show_the_url() {
+        let (a, b) = ("/game-assets/a.png", "/game-assets/b.png");
+        let view = json!({
+            "count": 1,
+            "art": {"$image": a},
+            "items": [{"label": "x", "art": {"$image": b}}, {"label": "y", "art": {"$image": a}}],
+        });
+        assert_eq!(
+            Diff::image(&view, a),
+            Diff::Fields(HashMap::from([
+                ("count".to_owned(), Diff::Same),
+                ("art".to_owned(), Diff::Replaced),
+                (
+                    "items".to_owned(),
+                    Diff::Rows {
+                        before: 2,
+                        rows: vec![
+                            Diff::Same,
+                            Diff::Fields(HashMap::from([
+                                ("label".to_owned(), Diff::Same),
+                                ("art".to_owned(), Diff::Replaced),
+                            ])),
+                        ],
+                    }
+                ),
+            ]))
+        );
+        assert_eq!(Diff::image(&view, "/game-assets/c.png"), Diff::Same);
+    }
+
+    #[test]
+    fn an_image_that_arrives_later_is_set_where_the_view_names_it() -> Result<()> {
+        crate::backend::headless::Headless::install();
+        let definition = compile(SOURCE);
+        let instance = definition.create()?;
+        let dir = tempfile::tempdir()?;
+        let mut images = ImageCache::new(dir.path());
+        images.load_assets_with(Box::new(|_, _| {}));
+        let mut binder = Binder::new(&definition);
+        let mut differ = Differ::default();
+        let wanted = format!("/game-assets/{}.png", "a".repeat(64));
+        let other = format!("/game-assets/{}.png", "b".repeat(64));
+        let view = json!({
+            "count": 3,
+            "art": {"$image": wanted},
+            "items": [{"label": "x", "art": {"$image": other}}, {"label": "y", "art": {"$image": wanted}}],
+        });
+        let diff = differ.next(&view);
+        binder.apply_diff(&instance, &view, &diff, &mut images)?;
+        assert_eq!(image_width(&instance.get_property("art")?), 0);
+        let Value::Model(items) = instance.get_property("items")? else {
+            panic!("model")
+        };
+
+        assert!(images.arrived(&wanted, None, Some(arrived_pixels())));
+        // The top-level image and the items model: `count` is left alone.
+        assert_eq!(
+            binder.refresh_image(&instance, &view, &wanted, &mut images)?,
+            2
+        );
+        assert_eq!(image_width(&instance.get_property("art")?), 2);
+        let Value::Model(after) = instance.get_property("items")? else {
+            panic!("model")
+        };
+        assert!(
+            items == after,
+            "the model is kept, so its repeater keeps its rows"
+        );
+        let widths: Vec<u32> = after
+            .iter()
+            .map(|row| match row {
+                Value::Struct(row) => image_width(row.get_field("art").expect("art")),
+                other => panic!("not a struct: {other:?}"),
+            })
+            .collect();
+        assert_eq!(widths, vec![0, 2], "only the row that names it changed");
+
+        // The next view from the logic diffs against the same view as before.
+        let next = json!({
+            "count": 4,
+            "art": {"$image": wanted},
+            "items": [{"label": "x", "art": {"$image": other}}, {"label": "y", "art": {"$image": wanted}}],
+        });
+        let diff = differ.next(&next);
+        assert_eq!(binder.apply_diff(&instance, &next, &diff, &mut images)?, 1);
+        assert_eq!(image_width(&instance.get_property("art")?), 2);
+        // An image no value names changes nothing.
+        assert_eq!(
+            binder.refresh_image(&instance, &next, "/game-assets/none.png", &mut images)?,
+            0
+        );
         Ok(())
     }
 }

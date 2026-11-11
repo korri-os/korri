@@ -174,6 +174,9 @@ pub struct SurfaceGame {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subtitle: Option<String>,
     /// Cover art. Absent when Korri has none — surfaces must have a fallback.
+    /// Opaque: hand it back unchanged as an image, `{ $image: coverArtUrl }`.
+    /// The host loads it later, so the image is empty until it arrives, and
+    /// stays empty if it cannot be loaded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover_art_url: Option<String>,
     /// True when confirming continues an existing session rather than starting.

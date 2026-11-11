@@ -218,7 +218,12 @@ pub fn game_from_entry(entry: &Entry, entries: &[Entry]) -> SurfaceGame {
                 None => local.system.clone(),
                 Some(alternative) => format!("{} · {alternative}", local.system),
             });
-            // The portal's production client published no local cover art.
+            // The cover korrid stores for this game, named as a surface host
+            // reads it (#129). A peer's copy has no cover here.
+            game.cover_art_url = local
+                .cover_asset_id
+                .as_deref()
+                .map(crate::game_assets::asset_url);
             let locations = launch_locations_for_entry(entry);
             if locations.len() >= 2 {
                 game.launch_locations = Some(locations);

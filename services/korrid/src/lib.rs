@@ -1541,6 +1541,10 @@ pub enum RpcRequest {
     #[typeshare(skip)]
     #[serde(rename = "app.saves.object")]
     SaveObject(saves::types::SaveObjectRequest),
+    /// Answered with the image's bytes on the surface host's object route.
+    #[typeshare(skip)]
+    #[serde(rename = "app.game-assets.object")]
+    GameAssetObject(game_assets::GameAssetObjectRequest),
     #[serde(rename = "app.saves.status")]
     SavesStatus(saves::types::SaveStatusRequest),
     #[serde(rename = "app.saves.history")]
@@ -2917,9 +2921,10 @@ async fn dispatch(
         return Ok(response);
     }
     let mut response = match request {
-        RpcRequest::SaveObject(_) | RpcRequest::ReleaseObject(_) => {
-            return Err(authorization::AuthorizationDenied)
-        }
+        // Objects are answered with bytes on their own routes, never here.
+        RpcRequest::SaveObject(_)
+        | RpcRequest::ReleaseObject(_)
+        | RpcRequest::GameAssetObject(_) => return Err(authorization::AuthorizationDenied),
         RpcRequest::SaveHeads(_) => {
             let service = state
                 .saves
@@ -5186,6 +5191,42 @@ async fn rpc(
         .map_err(|_| StatusCode::FORBIDDEN)
 }
 
+/// The surface host's object route (#129): `app.game-assets.object` answers
+/// the bytes of an image an asset assignment names. It is the local twin of
+/// the peer's object routes (`saves/peer/object_route.rs`): the same tagged
+/// request and the same authority as `/rpc` (`SurfaceHostAccess::authorize`),
+/// with bytes for an answer and no new envelope. `SurfaceGame.coverArtUrl`
+/// names the image; the capability travels in the `Authorization` header.
+async fn game_asset_object(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RpcRequest>,
+) -> Result<axum::response::Response, StatusCode> {
+    use axum::response::IntoResponse;
+    let access = state
+        .surface_host_access
+        .as_ref()
+        .ok_or(StatusCode::NOT_FOUND)?;
+    access.authorize(&headers, &request)?;
+    let RpcRequest::GameAssetObject(request) = request else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    let repository = game_assets::GameAssetRepository::new(state.private_state_root());
+    let asset = tokio::task::spawn_blocking(move || repository.assigned_asset(&request.asset_id))
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, asset.content_type),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        asset.bytes,
+    )
+        .into_response())
+}
+
 fn default_local_storage_root() -> PathBuf {
     std::env::var_os("KORRI_LOCAL_STORAGE_ROOT")
         .map(PathBuf::from)
@@ -5490,6 +5531,7 @@ fn surface_host_router_with_surfaces(
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
     Router::new()
         .route("/rpc", post(rpc))
+        .route("/game-assets-object", post(game_asset_object))
         .layer(cors)
         .with_state(state)
 }
@@ -7622,6 +7664,149 @@ mod tests {
             .unwrap()
             .get("coverAssetId")
             .is_none());
+    }
+
+    /// One request on the surface host's object route: its status, content
+    /// type and body.
+    async fn asset_object(
+        app: Router,
+        request: serde_json::Value,
+        authorization: Option<&str>,
+        origin: Option<&str>,
+    ) -> (StatusCode, Option<String>, Vec<u8>) {
+        let body = request.to_string();
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/game-assets-object")
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(authorization) = authorization {
+            request = request.header(header::AUTHORIZATION, authorization);
+        }
+        if let Some(origin) = origin {
+            request = request.header(header::ORIGIN, origin);
+        }
+        let response = app
+            .oneshot(request.body(Body::from(body)).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, content_type, body.to_vec())
+    }
+
+    fn asset_request(asset_id: &str) -> serde_json::Value {
+        serde_json::json!({"_tag": "app.game-assets.object", "payload": {"assetId": asset_id}})
+    }
+
+    #[tokio::test]
+    async fn game_asset_object_answers_an_assigned_cover_to_the_capability_holder_only() {
+        let readable = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let app = discovery_test_router(
+            readable.path(),
+            private.path(),
+            discovery::FolderSelectionGrantStore::default(),
+        );
+        let assignment = game_assets::GameAssetRepository::new(private.path())
+            .assign_tile(
+                game_assets::AssetOwnerIdentity {
+                    playable_id: "wl4".into(),
+                    release_id: "gba".into(),
+                    release_fingerprint: "sha256:item".into(),
+                    rom_identity: "sha256:rom".into(),
+                },
+                game_assets::AssetCandidate {
+                    bytes: PNG_1X1.to_vec(),
+                    declared_width: Some(1),
+                    declared_height: Some(1),
+                    game_id: 10,
+                    grid_id: 20,
+                },
+            )
+            .unwrap();
+        let wanted = asset_request(&assignment.asset_id);
+
+        let (status, content_type, body) = asset_object(
+            app.clone(),
+            wanted.clone(),
+            Some("Bearer right-token"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(content_type.as_deref(), Some("image/png"));
+        assert_eq!(body, PNG_1X1);
+
+        // The same authority as `/rpc`: the shell's own origin is allowed,
+        // any other origin is not, and the bearer must be exact.
+        let (status, _, _) = asset_object(
+            app.clone(),
+            wanted.clone(),
+            Some("Bearer right-token"),
+            Some("https://shell.example"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _, body) = asset_object(
+            app.clone(),
+            wanted.clone(),
+            Some("Bearer right-token"),
+            Some("https://page.example"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body.is_empty());
+        for authorization in [None, Some("Bearer wrong-token"), Some("right-token")] {
+            let (status, _, body) =
+                asset_object(app.clone(), wanted.clone(), authorization, None).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{authorization:?}");
+            assert!(body.is_empty());
+        }
+
+        // The capability never opens anything but an assigned image.
+        for asset_id in [
+            format!("{}.png", "b".repeat(64)),
+            "assignments.json".to_owned(),
+            "../assignments.json".to_owned(),
+            "../../steamgriddb.credential".to_owned(),
+            String::new(),
+        ] {
+            let (status, _, body) = asset_object(
+                app.clone(),
+                asset_request(&asset_id),
+                Some("Bearer right-token"),
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{asset_id}");
+            assert!(body.is_empty(), "{asset_id}");
+        }
+
+        // The object route answers objects only, and `/rpc` never answers one.
+        let (status, _, _) = asset_object(
+            app.clone(),
+            serde_json::json!({"_tag": "system.health", "payload": {}}),
+            Some("Bearer right-token"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let on_rpc = Request::builder()
+            .method("POST")
+            .uri("/rpc")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::AUTHORIZATION, "Bearer right-token")
+            .body(Body::from(wanted.to_string()))
+            .unwrap();
+        assert_eq!(
+            app.oneshot(on_rpc).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
     }
 
     #[tokio::test]

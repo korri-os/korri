@@ -87,6 +87,13 @@ pub enum Event {
         generation: u64,
         outcome: Box<Outcome>,
     },
+    /// A korrid image a view named was loaded, or could not be (`crate::images`).
+    Image {
+        generation: u64,
+        url: String,
+        mode: Option<crate::pico8::Mode>,
+        pixels: std::result::Result<crate::images::Arrival, String>,
+    },
 }
 
 /// Delivers events to the shell on the UI thread, later.
@@ -141,6 +148,12 @@ struct Loaded {
     surface_binder: Binder,
     overlay: Option<(ComponentInstance, Binder)>,
     images: ImageCache,
+    /// The view `surface_binder` applied last, and the one the overlay's binder did:
+    /// what a korrid image that arrives later is set into.
+    last_view: Option<Value>,
+    last_overlay: Option<Value>,
+    /// Whether a korrid image already failed to load: only the first is logged.
+    image_failed: bool,
     watch: Option<crate::korrid::Watch>,
     drawn: Rc<Cell<bool>>,
     gameplay_overlay: bool,
@@ -180,6 +193,13 @@ struct RequestJob {
     request: Value,
 }
 
+/// One korrid image to fetch and decode off the UI thread.
+struct ImageJob {
+    generation: u64,
+    url: String,
+    mode: Option<crate::pico8::Mode>,
+}
+
 pub struct Shell {
     packages: Vec<Package>,
     /// Each package's views, compiled at its first load and kept for the life of the
@@ -203,6 +223,7 @@ pub struct Shell {
     previous: Option<String>,
     next_generation: u64,
     jobs: mpsc::Sender<RequestJob>,
+    image_jobs: mpsc::Sender<ImageJob>,
     clock: Instant,
     frames: FrameCounter,
     repeat: Option<slint::Timer>,
@@ -243,6 +264,33 @@ impl Shell {
                 }
             })
             .expect("spawn the request thread");
+        let (image_jobs, receiver) = mpsc::channel::<ImageJob>();
+        let worker_korrid = korrid.clone();
+        let worker_post = post.clone();
+        // korrid's images are fetched and decoded here, never on the UI thread: a
+        // cover's decode alone is longer than a frame on the handhelds. A surface
+        // that is gone still gets its answers; `image_arrived` drops them.
+        thread::Builder::new()
+            .name("korrid-images".into())
+            .spawn(move || {
+                for job in receiver {
+                    let pixels = worker_korrid
+                        .asset(&job.url, crate::images::MAX_ENCODED_BYTES)
+                        .map_err(|error| error.to_string())
+                        .and_then(|bytes| {
+                            crate::images::decode_raster(&bytes, job.mode)
+                                .map(crate::images::Arrival)
+                                .map_err(|_| "it does not decode".to_owned())
+                        });
+                    worker_post.post(Event::Image {
+                        generation: job.generation,
+                        url: job.url,
+                        mode: job.mode,
+                        pixels,
+                    });
+                }
+            })
+            .expect("spawn the image thread");
         Self {
             packages,
             compiled: Default::default(),
@@ -260,6 +308,7 @@ impl Shell {
             previous: None,
             next_generation: 0,
             jobs,
+            image_jobs,
             clock: Instant::now(),
             frames: FrameCounter::default(),
             repeat: None,
@@ -465,6 +514,70 @@ impl Shell {
                 generation,
                 outcome,
             } => self.logic_done(generation, *outcome),
+            Event::Image {
+                generation,
+                url,
+                mode,
+                pixels,
+            } => self.image_arrived(generation, &url, mode, pixels),
+        }
+    }
+
+    /// A korrid image was loaded, or could not be: keep it, and set it where the views
+    /// on screen name it. One that could not be loaded stays empty.
+    fn image_arrived(
+        &mut self,
+        generation: u64,
+        url: &str,
+        mode: Option<crate::pico8::Mode>,
+        pixels: std::result::Result<crate::images::Arrival, String>,
+    ) {
+        if self
+            .current
+            .as_ref()
+            .is_none_or(|c| c.generation != generation)
+        {
+            return; // a retired surface's image
+        }
+        let Some(mut current) = self.current.take() else {
+            return;
+        };
+        let pixels = match pixels {
+            Ok(arrival) => Some(arrival.0),
+            Err(reason) => {
+                if !current.image_failed {
+                    current.image_failed = true;
+                    let id = current.package.id.clone();
+                    self.say(format!(
+                        "{id}: image {url}: {reason} (later image failures of this surface are not logged)"
+                    ));
+                }
+                None
+            }
+        };
+        if !current.images.arrived(url, mode, pixels) {
+            self.current = Some(current);
+            return;
+        }
+        let refreshed = (|| -> Result<()> {
+            if let Some(view) = &current.last_view {
+                current.surface_binder.refresh_image(
+                    &current.surface,
+                    view,
+                    url,
+                    &mut current.images,
+                )?;
+            }
+            if let (Some((component, binder)), Some(view)) =
+                (current.overlay.as_mut(), &current.last_overlay)
+            {
+                binder.refresh_image(component, view, url, &mut current.images)?;
+            }
+            Ok(())
+        })();
+        match refreshed {
+            Ok(()) => self.current = Some(current),
+            Err(error) => self.fail(current, Failure::View(error)),
         }
     }
 
@@ -814,6 +927,14 @@ impl Shell {
         self.next_generation += 1;
         let generation = self.next_generation;
         let mut images = ImageCache::new(&package.dir);
+        let image_jobs = self.image_jobs.clone();
+        images.load_assets_with(Box::new(move |url, mode| {
+            let _ = image_jobs.send(ImageJob {
+                generation,
+                url: url.to_owned(),
+                mode,
+            });
+        }));
         let surface = views.surface.create()?;
         self.bind_input(&surface, generation, 0)?;
         let mut surface_binder = Binder::new(&views.surface);
@@ -889,6 +1010,9 @@ impl Shell {
             surface_binder,
             overlay: None,
             images,
+            last_view: Some(view.0),
+            last_overlay: None,
+            image_failed: false,
             watch: Some(watch),
             drawn,
             gameplay_overlay,
@@ -1045,6 +1169,7 @@ impl Shell {
         }
         let (component, binder) = loaded.overlay.as_mut().expect("just created");
         binder.apply_diff(component, &view, &diff, &mut loaded.images)?;
+        loaded.last_overlay = Some(view);
         component.show()?;
         if loaded.surface_shown {
             if !self.backend.shared_window() {
@@ -1098,13 +1223,15 @@ impl Shell {
             if let Some(gameplay) = step.gameplay_overlay {
                 current.gameplay_overlay = gameplay;
             }
-            if let Some((view, diff)) = &step.view {
+            let viewed = step.view.is_some();
+            if let Some((view, diff)) = step.view {
                 current
                     .surface_binder
-                    .apply_diff(&current.surface, view, diff, &mut current.images)
+                    .apply_diff(&current.surface, &view, &diff, &mut current.images)
                     .map_err(Failure::View)?;
+                current.last_view = Some(view);
             }
-            if step.view.is_some() || step.gameplay_overlay.is_some() {
+            if viewed || step.gameplay_overlay.is_some() {
                 self.render_overlay(&mut current, step.overlay)
                     .map_err(Failure::View)?;
             }

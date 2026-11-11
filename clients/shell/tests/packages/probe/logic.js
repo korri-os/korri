@@ -1,4 +1,9 @@
 // A test package for the shell's integration tests. Plain JavaScript, no bundle.
+// The cover of the catalog window's game `index`, handed back as the treaty says.
+const cover = (model, index, name) => {
+  const game = model.catalog._tag === "Ready" ? model.catalog.window[index] : undefined;
+  return game && game.coverArtUrl ? { [name]: { $image: game.coverArtUrl } } : {};
+};
 globalThis.surface = {
   preferences: { "probe.word": { mark: "device", initial: "first" } },
   init: (model, preferences) => ({ word: preferences["probe.word"], count: 0, stored: false, idle: -1, ticks: 0 }),
@@ -45,6 +50,8 @@ globalThis.surface = {
     total: model.catalog._tag === "Ready" ? model.catalog.total : 0,
     stored: state.stored,
     focusedGame: model.focusedGame ? model.focusedGame.gameId : "",
+    ...cover(model, 0, "art"),
+    ...cover(model, 1, "secondArt"),
   }),
   overlay: (state, model) => ({
     activation: state.activation || "",

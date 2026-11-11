@@ -237,6 +237,27 @@ mod surface_model {
     }
 
     #[test]
+    fn publishes_a_stored_cover_by_its_asset_id_alone() {
+        let asset_id = format!("{}.png", "a".repeat(64));
+        let with_cover = Entry::LocalGame {
+            game: from(
+                json!({ "id": "wl4", "title": "Wario Land 4", "system": "GBA", "coverAssetId": asset_id }),
+            ),
+            alternatives: Vec::new(),
+        };
+        let state = ready(vec![with_cover, local_game(), host_game()], None, None);
+        let games = games(&state);
+        // A reference only: no host, port or capability (contract section 2).
+        assert_eq!(
+            games[0].cover_art_url.as_deref(),
+            Some(format!("/game-assets/{asset_id}").as_str())
+        );
+        // No stored cover, and a peer's game: absent, so the surface draws its own.
+        assert_eq!(games[1].cover_art_url, None);
+        assert_eq!(games[2].cover_art_url, None);
+    }
+
+    #[test]
     fn publishes_play_facts_as_utc_millis_and_merges_folded_copies() {
         let entry = Entry::LocalGame {
             game: from(

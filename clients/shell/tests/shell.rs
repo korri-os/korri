@@ -66,6 +66,18 @@ fn source(id: &str) -> PathBuf {
 }
 
 fn rig(ids: &[&str], games: usize, behaviour: Behaviour) -> Rig {
+    let (_, examples) = verify::fixture();
+    rig_with(ids, catalog::games(&examples, games), behaviour, |_| {})
+}
+
+/// `rig` over these games; `prepare` sets the fixture korrid up before the shell
+/// loads its first surface.
+fn rig_with(
+    ids: &[&str],
+    games: Vec<Value>,
+    behaviour: Behaviour,
+    prepare: impl FnOnce(&Fixture),
+) -> Rig {
     let backend: Rc<dyn Backend> = Rc::new(Headless::install());
     let root = tempfile::tempdir().unwrap();
     let packages: Vec<Package> = ids
@@ -86,8 +98,9 @@ fn rig(ids: &[&str], games: usize, behaviour: Behaviour) -> Rig {
             Package::at(&dir).unwrap()
         })
         .collect();
-    let (model, examples) = verify::fixture();
-    let fixture = Fixture::start(model, catalog::games(&examples, games), behaviour).unwrap();
+    let (model, _) = verify::fixture();
+    let fixture = Fixture::start(model, games, behaviour).unwrap();
+    prepare(&fixture);
     let queue = Arc::new(Queue::default());
     let options = Options {
         limits: Limits {
@@ -176,6 +189,14 @@ impl Rig {
         }
     }
 
+    /// The width of an image property: 0 while it is empty.
+    fn image_width(&self, name: &str) -> u32 {
+        match self.shell.surface_property(name) {
+            Some(SlintValue::Image(image)) => image.size().width,
+            other => panic!("{name}: {other:?}"),
+        }
+    }
+
     fn string(&self, name: &str) -> String {
         match self.shell.surface_property(name) {
             Some(SlintValue::String(s)) => s.to_string(),
@@ -205,6 +226,75 @@ impl Rig {
             .map(|(_, r)| r)
             .collect()
     }
+}
+
+/// The asset id of a stored cover.
+fn cover_id(fill: char) -> String {
+    format!("{}.png", fill.to_string().repeat(64))
+}
+
+/// How korrid's model names a stored cover (`SurfaceGame.coverArtUrl`).
+fn cover_url(asset_id: &str) -> String {
+    format!("/game-assets/{asset_id}")
+}
+
+/// A PNG `width` pixels wide and one high.
+fn png(width: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    image::RgbaImage::from_pixel(width, 1, image::Rgba([0x2b, 0xac, 0xfd, 255]))
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    bytes
+}
+
+fn game_with_cover(id: &str, cover: &str) -> Value {
+    json!({"id": id, "title": id, "coverArtUrl": cover})
+}
+
+#[test]
+fn a_cover_korrid_stores_is_fetched_with_the_capability_and_shown_when_it_arrives() {
+    let (stored, missing) = (cover_id('a'), cover_id('b'));
+    let mut rig = rig_with(
+        &["probe"],
+        vec![
+            game_with_cover("first", &cover_url(&stored)),
+            game_with_cover("second", &cover_url(&missing)),
+        ],
+        Behaviour::default(),
+        |fixture| fixture.set_asset(&stored, png(3)),
+    );
+    // The surface is up before any cover: the view never waits for an image.
+    assert_eq!(rig.shell.current_id(), Some("probe"));
+    rig.until("the stored cover", |rig| rig.image_width("art") == 3);
+    rig.until("both answers", |rig| {
+        rig.fixture.asset_requests().len() == 2 && !rig.shell.log().is_empty()
+    });
+    rig.settle();
+
+    // The cover korrid does not have stays empty, and the surface stays loaded.
+    assert_eq!(rig.image_width("second-art"), 0);
+    assert_eq!(rig.shell.current_id(), Some("probe"));
+    assert!(rig.shell.notice().is_none());
+    let failures: Vec<&String> = rig
+        .shell
+        .log()
+        .iter()
+        .filter(|line| line.contains("image /game-assets/"))
+        .collect();
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(failures[0].contains(&missing) && failures[0].contains("HTTP 404"));
+
+    // Later views name the same covers: each was asked for once, by its asset id.
+    rig.key(Key::Right);
+    rig.key(Key::Right);
+    assert_eq!(rig.int("count"), 2.0);
+    assert_eq!(rig.image_width("art"), 3);
+    let mut asked = rig.fixture.asset_requests();
+    asked.sort();
+    assert_eq!(asked, vec![stored, missing]);
 }
 
 #[test]

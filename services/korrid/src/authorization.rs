@@ -270,7 +270,10 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::SurfaceModel(_)
         | RpcRequest::SurfaceRequest(_)
         | RpcRequest::SurfacePreferences(_)
-        | RpcRequest::SurfaceDeclare(_) => PeerPolicy::LocalSurfaceHostOnly,
+        | RpcRequest::SurfaceDeclare(_)
+        // A peer's copy of a game has no cover here yet; only this device's
+        // surface host reads a stored image.
+        | RpcRequest::GameAssetObject(_) => PeerPolicy::LocalSurfaceHostOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LibraryFoldersSnapshot(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LibraryFolderAdd(_) | RpcRequest::LibraryFolderChange(_) => {

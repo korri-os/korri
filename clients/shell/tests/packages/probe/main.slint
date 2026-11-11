@@ -18,6 +18,9 @@ export component Surface inherits Window {
     in property <int> height-seen;
     in property <int> resizes;
     in property <int> views-before-first-resize;
+    // The covers of the catalog window's first and second games.
+    in property <image> art;
+    in property <image> second-art;
     TouchArea {
         x: 40px; y: 40px; width: 80px; height: 40px;
         clicked => { root.activated("probe:tap", -1, false); }

@@ -365,7 +365,12 @@ export interface SurfaceGame {
 	section?: string;
 	/** Short provenance line, e.g. "GBA · This device". */
 	subtitle?: string;
-	/** Cover art. Absent when Korri has none — surfaces must have a fallback. */
+	/**
+	 * Cover art. Absent when Korri has none — surfaces must have a fallback.
+	 * Opaque: hand it back unchanged as an image, `{ $image: coverArtUrl }`.
+	 * The host loads it later, so the image is empty until it arrives, and
+	 * stays empty if it cannot be loaded.
+	 */
 	coverArtUrl?: string;
 	/** True when confirming continues an existing session rather than starting. */
 	resumable?: boolean;

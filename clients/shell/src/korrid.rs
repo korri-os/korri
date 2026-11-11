@@ -16,6 +16,11 @@
 //! {"surfaceId":…}}`. korrid pushes `{"kind":"model","revision":"N","model":…}`
 //! and sends nothing more until the shell replies `{"kind":"ack","revision":"N"}`.
 //!
+//! Objects: `POST http://127.0.0.1:PORT/game-assets-object` with the same
+//! header and the body `{"_tag": "app.game-assets.object", "payload":
+//! {"assetId": …}}` answers the image's bytes, not a JSON outcome. The model
+//! names a stored image as `/game-assets/<asset id>` (`images::asset_path`).
+//!
 //! Nothing here logs a payload, a failure body or the capability.
 
 use crate::config::Connection;
@@ -149,9 +154,19 @@ impl Korrid {
         Ok(())
     }
 
+    /// The bytes of one image korrid stores, by the name the model gave it
+    /// (`images::asset_id`): `app.game-assets.object`. At most `limit` bytes.
+    pub fn asset(&self, url: &str, limit: usize) -> Result<Vec<u8>> {
+        let asset_id =
+            crate::images::asset_id(url).ok_or_else(|| unavailable("not a stored image"))?;
+        let body =
+            json!({"_tag": "app.game-assets.object", "payload": {"assetId": asset_id}}).to_string();
+        post(&self.connection, "/game-assets-object", &body, limit)
+    }
+
     fn call(&self, method: &str, payload: Value) -> Result<Value> {
         let body = json!({"_tag": method, "payload": payload}).to_string();
-        let reply = post(&self.connection, &body)?;
+        let reply = post(&self.connection, "/rpc", &body, MAX_REPLY_BYTES)?;
         let reply: Value =
             serde_json::from_slice(&reply).map_err(|_| unavailable("reply is not JSON"))?;
         if reply.get("_tag").and_then(Value::as_str) != Some(method) {
@@ -194,7 +209,16 @@ pub fn loopback(port: u16) -> SocketAddr {
 
 /// One HTTP/1.1 request on its own connection. korrid is local; keep-alive
 /// buys nothing measurable here.
-fn post(connection: &Connection, body: &str) -> Result<Vec<u8>> {
+/// `path` is one of the shell's own two (`/rpc` and the object route), never
+/// a model's text. The reply's body is at most `limit` bytes.
+fn post(connection: &Connection, path: &str, body: &str, limit: usize) -> Result<Vec<u8>> {
+    let head = format!(
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        connection.port,
+        connection.bearer().as_str(),
+        body.len()
+    );
+    let head = zeroize::Zeroizing::new(head);
     let mut stream = TcpStream::connect_timeout(&loopback(connection.port), CONNECT_TIMEOUT)
         .map_err(unavailable)?;
     stream
@@ -203,19 +227,12 @@ fn post(connection: &Connection, body: &str) -> Result<Vec<u8>> {
     stream
         .set_write_timeout(Some(IO_TIMEOUT))
         .map_err(unavailable)?;
-    let head = format!(
-        "POST /rpc HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        connection.port,
-        connection.bearer().as_str(),
-        body.len()
-    );
-    let head = zeroize::Zeroizing::new(head);
     stream.write_all(head.as_bytes()).map_err(unavailable)?;
     stream.write_all(body.as_bytes()).map_err(unavailable)?;
-    read_response(BufReader::new(stream))
+    read_response(BufReader::new(stream), limit)
 }
 
-fn read_response(mut reader: impl BufRead) -> Result<Vec<u8>> {
+fn read_response(mut reader: impl BufRead, limit: usize) -> Result<Vec<u8>> {
     let mut line = String::new();
     reader.read_line(&mut line).map_err(unavailable)?;
     let status: u16 = line
@@ -265,7 +282,7 @@ fn read_response(mut reader: impl BufRead) -> Result<Vec<u8>> {
             if size == 0 {
                 break;
             }
-            if body.len() + size > MAX_REPLY_BYTES {
+            if body.len() + size > limit {
                 return Err(unavailable("reply too large"));
             }
             let start = body.len();
@@ -275,17 +292,17 @@ fn read_response(mut reader: impl BufRead) -> Result<Vec<u8>> {
             reader.read_exact(&mut crlf).map_err(unavailable)?;
         }
     } else if let Some(length) = length {
-        if length > MAX_REPLY_BYTES {
+        if length > limit {
             return Err(unavailable("reply too large"));
         }
         body.resize(length, 0);
         reader.read_exact(&mut body).map_err(unavailable)?;
     } else {
         reader
-            .take(MAX_REPLY_BYTES as u64 + 1)
+            .take(limit as u64 + 1)
             .read_to_end(&mut body)
             .map_err(unavailable)?;
-        if body.len() > MAX_REPLY_BYTES {
+        if body.len() > limit {
             return Err(unavailable("reply too large"));
         }
     }
@@ -446,12 +463,26 @@ mod tests {
     #[test]
     fn reads_length_and_chunked_replies_and_refuses_errors() {
         let plain = b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\n\r\nhello".as_slice();
-        assert_eq!(read_response(plain).unwrap(), b"hello");
+        assert_eq!(read_response(plain, 5).unwrap(), b"hello");
         let chunked = b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n3\r\nhel\r\n2\r\nlo\r\n0\r\n\r\n".as_slice();
-        assert_eq!(read_response(chunked).unwrap(), b"hello");
+        assert_eq!(read_response(chunked, 5).unwrap(), b"hello");
         let denied = b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\n\r\n".as_slice();
         assert!(
-            matches!(read_response(denied), Err(KorridError::Unavailable(r)) if r == "HTTP 401")
+            matches!(read_response(denied, 5), Err(KorridError::Unavailable(r)) if r == "HTTP 401")
         );
+    }
+
+    #[test]
+    fn refuses_a_reply_over_the_callers_limit_however_it_is_framed() {
+        let replies: [&[u8]; 3] = [
+            b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\n\r\nhello",
+            b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n3\r\nhel\r\n2\r\nlo\r\n0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\n\r\nhello",
+        ];
+        for reply in replies {
+            assert!(
+                matches!(read_response(reply, 4), Err(KorridError::Unavailable(r)) if r == "reply too large")
+            );
+        }
     }
 }
