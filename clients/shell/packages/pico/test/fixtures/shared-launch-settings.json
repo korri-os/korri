@@ -1,0 +1,427 @@
+{
+  "_tag": "Ready",
+  "gameTitle": "Wario Land 4",
+  "places": [
+    {
+      "id": "device/any",
+      "title": "Device",
+      "layer": {
+        "id": "device",
+        "title": "Device"
+      },
+      "scope": {
+        "kind": "any",
+        "label": "Any runner"
+      },
+      "groups": [
+        {
+          "title": "Runner",
+          "items": [
+            {
+              "id": "launch:set:device/any#runner",
+              "label": "Runner",
+              "value": "Inherit",
+              "description": "The most specific place that names an installed runner wins.",
+              "interaction": {
+                "kind": "choice",
+                "choices": [
+                  {
+                    "value": "inherit",
+                    "label": "Inherit"
+                  },
+                  {
+                    "value": "retroarch/mgba",
+                    "label": "mGBA"
+                  },
+                  {
+                    "value": "retroarch/gpsp",
+                    "label": "gpSP"
+                  }
+                ],
+                "selected": "inherit"
+              },
+              "source": "mGBA from Game",
+              "scope": "shared"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "system:gba/any",
+      "title": "System gba",
+      "layer": {
+        "id": "system:gba",
+        "title": "System gba"
+      },
+      "scope": {
+        "kind": "any",
+        "label": "Any runner"
+      },
+      "groups": [
+        {
+          "title": "Runner",
+          "items": [
+            {
+              "id": "launch:set:system:gba/any#runner",
+              "label": "Runner",
+              "value": "Inherit",
+              "description": "The most specific place that names an installed runner wins.",
+              "interaction": {
+                "kind": "choice",
+                "choices": [
+                  {
+                    "value": "inherit",
+                    "label": "Inherit"
+                  },
+                  {
+                    "value": "retroarch/mgba",
+                    "label": "mGBA"
+                  },
+                  {
+                    "value": "retroarch/gpsp",
+                    "label": "gpSP"
+                  }
+                ],
+                "selected": "inherit"
+              },
+              "source": "mGBA from Game",
+              "scope": "shared"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "game:wario/any",
+      "title": "Game",
+      "layer": {
+        "id": "game:wario",
+        "title": "Game"
+      },
+      "scope": {
+        "kind": "any",
+        "label": "Any runner"
+      },
+      "groups": [
+        {
+          "title": "Runner",
+          "items": [
+            {
+              "id": "launch:set:game:wario/any#runner",
+              "label": "Runner",
+              "value": "mGBA",
+              "description": "The most specific place that names an installed runner wins.",
+              "interaction": {
+                "kind": "choice",
+                "choices": [
+                  {
+                    "value": "inherit",
+                    "label": "Inherit"
+                  },
+                  {
+                    "value": "retroarch/mgba",
+                    "label": "mGBA"
+                  },
+                  {
+                    "value": "retroarch/gpsp",
+                    "label": "gpSP"
+                  }
+                ],
+                "selected": "retroarch/mgba"
+              },
+              "source": "from Game",
+              "scope": "shared"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "launch/any",
+      "title": "This launch",
+      "layer": {
+        "id": "launch",
+        "title": "This launch"
+      },
+      "scope": {
+        "kind": "any",
+        "label": "Any runner"
+      },
+      "groups": [
+        {
+          "title": "Any runner · Video",
+          "items": [
+            {
+              "id": "launch:set:launch/any#setting:video.render-scale",
+              "label": "Render scale",
+              "value": "4",
+              "interaction": {
+                "kind": "number",
+                "value": 4.0,
+                "clearable": true
+              },
+              "scope": "device"
+            },
+            {
+              "id": "launch:set:launch/any#default:setting:video.render-scale",
+              "label": "Default Render scale",
+              "value": "Use",
+              "description": "Any runner's own default holds here, whatever less specific places set.",
+              "interaction": {
+                "kind": "action",
+                "actionId": "launch:set:launch/any#default:setting:video.render-scale"
+              }
+            },
+            {
+              "id": "launch:set:launch/any#add-setting:video",
+              "label": "Add setting",
+              "value": "Choose a setting",
+              "description": "13 more settings Any runner offers here.",
+              "interaction": {
+                "kind": "choice",
+                "choices": [
+                  {
+                    "value": "video.aspect-ratio",
+                    "label": "Aspect ratio"
+                  },
+                  {
+                    "value": "video.window-mode",
+                    "label": "Window mode"
+                  },
+                  {
+                    "value": "video.vsync",
+                    "label": "Vsync"
+                  },
+                  {
+                    "value": "video.fps-limit",
+                    "label": "FPS limit"
+                  },
+                  {
+                    "value": "video.renderer",
+                    "label": "Renderer"
+                  },
+                  {
+                    "value": "video.resolution.width",
+                    "label": "Resolution width"
+                  },
+                  {
+                    "value": "video.resolution.height",
+                    "label": "Resolution height"
+                  },
+                  {
+                    "value": "video.texture-filter",
+                    "label": "Texture filter"
+                  },
+                  {
+                    "value": "video.scaling.filter",
+                    "label": "Scaling filter"
+                  },
+                  {
+                    "value": "video.scaling.scaler",
+                    "label": "Scaling scaler"
+                  },
+                  {
+                    "value": "video.anisotropic-filtering",
+                    "label": "Anisotropic filtering"
+                  },
+                  {
+                    "value": "video.msaa",
+                    "label": "Msaa"
+                  },
+                  {
+                    "value": "video.rotation-degrees",
+                    "label": "Rotation degrees"
+                  }
+                ],
+                "selected": ""
+              }
+            }
+          ]
+        },
+        {
+          "title": "Keep one-launch values",
+          "items": [
+            {
+              "id": "launch:keep:3:video.render-scale",
+              "label": "Keep Render scale",
+              "value": "4",
+              "description": "Render scale: 4x. Choose where to keep it.",
+              "interaction": {
+                "kind": "choice",
+                "choices": [
+                  {
+                    "value": "game:wario/any",
+                    "label": "Game"
+                  },
+                  {
+                    "value": "game:wario/family:retroarch",
+                    "label": "Game for family retroarch"
+                  },
+                  {
+                    "value": "game:wario/runner:retroarch/mgba",
+                    "label": "Game for mGBA"
+                  },
+                  {
+                    "value": "game:wario/runner:retroarch/gpsp",
+                    "label": "Game for gpSP"
+                  },
+                  {
+                    "value": "device/any",
+                    "label": "Device"
+                  },
+                  {
+                    "value": "device/family:retroarch",
+                    "label": "Device for family retroarch"
+                  },
+                  {
+                    "value": "device/runner:retroarch/mgba",
+                    "label": "Device for mGBA"
+                  },
+                  {
+                    "value": "device/runner:retroarch/gpsp",
+                    "label": "Device for gpSP"
+                  },
+                  {
+                    "value": "system:gba/any",
+                    "label": "System gba"
+                  },
+                  {
+                    "value": "system:gba/family:retroarch",
+                    "label": "System gba for family retroarch"
+                  },
+                  {
+                    "value": "system:gba/runner:retroarch/mgba",
+                    "label": "System gba for mGBA"
+                  },
+                  {
+                    "value": "system:gba/runner:retroarch/gpsp",
+                    "label": "System gba for gpSP"
+                  },
+                  {
+                    "value": "release:usa/any",
+                    "label": "Release usa"
+                  },
+                  {
+                    "value": "release:usa/family:retroarch",
+                    "label": "Release usa for family retroarch"
+                  },
+                  {
+                    "value": "release:usa/runner:retroarch/mgba",
+                    "label": "Release usa for mGBA"
+                  },
+                  {
+                    "value": "release:usa/runner:retroarch/gpsp",
+                    "label": "Release usa for gpSP"
+                  }
+                ],
+                "selected": ""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "launch/runner:retroarch/mgba",
+      "title": "This launch",
+      "layer": {
+        "id": "launch",
+        "title": "This launch"
+      },
+      "scope": {
+        "kind": "runner",
+        "label": "mGBA"
+      },
+      "groups": [
+        {
+          "title": "mGBA · Video",
+          "items": [
+            {
+              "id": "launch:set:launch/runner:retroarch/mgba#add-setting:video",
+              "label": "Add setting",
+              "value": "Choose a setting",
+              "description": "14 more settings mGBA offers here.",
+              "interaction": {
+                "kind": "choice",
+                "choices": [
+                  {
+                    "value": "video.render-scale",
+                    "label": "Render scale"
+                  },
+                  {
+                    "value": "video.aspect-ratio",
+                    "label": "Aspect ratio"
+                  },
+                  {
+                    "value": "video.window-mode",
+                    "label": "Window mode"
+                  },
+                  {
+                    "value": "video.vsync",
+                    "label": "Vsync"
+                  },
+                  {
+                    "value": "video.fps-limit",
+                    "label": "FPS limit"
+                  },
+                  {
+                    "value": "video.renderer",
+                    "label": "Renderer"
+                  },
+                  {
+                    "value": "video.resolution.width",
+                    "label": "Resolution width"
+                  },
+                  {
+                    "value": "video.resolution.height",
+                    "label": "Resolution height"
+                  },
+                  {
+                    "value": "video.texture-filter",
+                    "label": "Texture filter"
+                  },
+                  {
+                    "value": "video.scaling.filter",
+                    "label": "Scaling filter"
+                  },
+                  {
+                    "value": "video.scaling.scaler",
+                    "label": "Scaling scaler"
+                  },
+                  {
+                    "value": "video.anisotropic-filtering",
+                    "label": "Anisotropic filtering"
+                  },
+                  {
+                    "value": "video.msaa",
+                    "label": "Msaa"
+                  },
+                  {
+                    "value": "video.rotation-degrees",
+                    "label": "Rotation degrees"
+                  }
+                ],
+                "selected": ""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "profiles": [],
+  "notes": [],
+  "actions": [
+    {
+      "id": "launch:reload",
+      "label": "Reload",
+      "enabled": true
+    },
+    {
+      "id": "launch:cancel",
+      "label": "Close",
+      "enabled": true
+    }
+  ]
+}

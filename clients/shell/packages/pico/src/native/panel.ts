@@ -82,7 +82,7 @@ export function rowView(row: PicoSettingRowView, focused: boolean, focusId?: str
   const control = row.control
   const state = row.state
   const value = control.kind === "step" ? control.current
-    : control.kind === "pick" ? "Choose a setting"
+    : control.kind === "pick" ? (row.value ?? "Choose a setting")
     : control.kind === "text" && control.sensitive ? (row.value ?? "")
     : control.kind === "network" ? (control.network.connected ? "CONNECTED" : "")
     : row.value ?? ""

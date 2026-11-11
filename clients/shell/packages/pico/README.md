@@ -13,6 +13,20 @@ The web Pico (`surfaces/pico/`) was removed in the same cut. Its state, view
 helpers, fixtures and behaviour tests moved here unchanged except for their
 imports.
 
+## Shared launch settings
+
+Pico reads the same launch editor model as Zone. Korri supplies the shared
+sections, runner scopes, device-only marks, one-launch values and Keep targets.
+The existing layer spines and scope tabs show them without a second backend.
+Keep displays the retained value, then opens Pico's existing picker with Game
+first. Other published places remain reachable by scrolling the picker.
+
+`test/shared-launch-settings.test.ts` covers touch and button requests at four
+container sizes. Its JSON fixture is a subset of the real controller export
+from korrid's `one_launch_editor_is_ephemeral_and_keep_writes_only_the_chosen_value`
+test. Rows, IDs and choices are unchanged. It is editor data, not evidence that
+the fixture game supports a particular renderer option.
+
 ## Layout
 
 | Path | What |
