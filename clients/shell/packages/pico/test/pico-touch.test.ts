@@ -16,7 +16,7 @@ import { initialOverlay, type PicoOverlayMessage, RANGE_COMMIT_DELAY_MS, updateO
 import type { PicoRequest } from "../src/state/requests"
 import { code, read, ROOT } from "./slint-source"
 import { join } from "node:path"
-import { fixtureModel, fixtureOverlay } from "./fixtures/fixture-host"
+import { fixtureModel, fixtureOverlay, fixtureOverlayStream } from "./fixtures/fixture-host"
 
 const catalogModel = (): KorriModel => {
   const base = fixtureModel as unknown as KorriModel
@@ -467,5 +467,34 @@ describe("a drag across a rack that moves by focus", () => {
       expect(pico.send({ _tag: "Dragged", region, by: 1 }).state).toBe(before)
     }
     expect(shell(overlayModel()).send({ _tag: "Dragged", region: "shelf", by: 1 }).requests).toEqual([])
+  })
+})
+
+describe("the stream controls (#379) take touch as every pause-menu row does", () => {
+  const streamModel = (): KorriModel => ({ ...catalogModel(), presentation: fixtureOverlayStream, clockLabel: "3:42 PM" }) as unknown as KorriModel
+  const stream = fixtureOverlayStream.groups.find(group => group.label === "Stream controls")!.controls
+
+  test("every one is a drawn target with its focusId; a tap moves the cursor there; the status strip is none", () => {
+    const pico = shell(streamModel())
+    const items = (pico.overlay()["sheet"] as { items: { focusId?: string; target?: boolean; focusRegion?: string }[] }).items
+    for (const control of stream) {
+      const id = `control:${control.id}`
+      expect(items.find(item => item.focusId === id)).toMatchObject({ target: true, focusRegion: "list" })
+      pico.tap(id)
+      expect(pico.state().overlayFocus).toBe(id)
+    }
+    expect(JSON.stringify(pico.overlay()["strip"])).not.toMatch(/focusId|"focused"/)
+  })
+
+  test("a range among them follows the finger: at, one send per snapped step, and the lift sends no repeat", () => {
+    const pico = shell(streamModel())
+    const id = "control:viewer:l:1:1:sgsr-sharpness"
+    pico.requests.length = 0
+    // 0 to 50 by 1, at 20.
+    pico.tap(id, 0.5, false)
+    pico.tap(id, 0.505, false)
+    pico.tap(id, 0.6, false)
+    pico.tap(id, 0.6, true)
+    expect(invoked(pico.requests)).toEqual([25, 30])
   })
 })

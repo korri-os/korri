@@ -320,3 +320,35 @@ describe("scrolling", () => {
     expect(touch.tap("hint:back").requests).toEqual([{ _tag: "DismissGameplayOverlay" }])
   })
 })
+
+describe("the stream controls (#379) take touch as every PAUSED row does", () => {
+  const streamModel = (): SurfaceModel => ({ ...games(), presentation: scenario("paused-stream").presentation, status: { _tag: "Running", kicker: "Playing" } }) as SurfaceModel
+  const sent = (requests: readonly SurfaceRequest[]) =>
+    requests.filter(request => request._tag === "InvokeGameplayControl").map(request => (request as { value?: { value: number } }).value?.value)
+
+  test("every one is a drawn target with its focusId; a tap moves the cursor there", () => {
+    const korri = streamModel()
+    const touch = zone(korri)
+    const presentation = korri.presentation as Extract<SurfaceModel["presentation"], { kind: "gameplay-overlay" }>
+    const stream = presentation.groups.find(group => group.label === "Stream controls")!.controls
+    for (const control of stream) {
+      const id = `control:${control.id}`
+      expect((touch.overlay()["rows"] as { focusId?: string; focusRegion?: string }[]).find(entry => entry.focusId === id)?.focusRegion).toMatch(/^control-/)
+      touch.tap(id)
+      expect(touch.state().zone.overlay.focusedId).toBe(control.id)
+    }
+    expect(JSON.stringify(touch.overlay()["strip"])).not.toMatch(/focusId|"focused"/)
+  })
+
+  test("a range among them follows the finger: at, one send per snapped step", () => {
+    const touch = zone(streamModel())
+    const id = "control:viewer:launch-7f3a:2:9:sgsr-sharpness"
+    touch.tap(id)
+    touch.requests.length = 0
+    touch.tap(id, 0.5)
+    touch.tap(id, 0.505)
+    touch.tap(id, 0.6)
+    expect(sent(touch.requests).length).toBe(2)
+    expect(new Set(sent(touch.requests)).size).toBe(2)
+  })
+})
