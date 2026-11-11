@@ -94,18 +94,6 @@ fn linux_viewer_boundaries_refuse_inexact_launch_and_address_injection() {
         Some(80)
     );
 }
-#[test]
-fn linux_viewer_helper_exercises_real_command_and_propagates_failure() {
-    assert_eq!(
-        run(
-            Path::new("/bin/sh"),
-            &["-c".into(), "printf output; exit 3".into()]
-        )
-        .unwrap(),
-        (false, "output".into())
-    );
-    assert!(run(Path::new("/nonexistent/helper"), &[]).is_err());
-}
 struct ViewerShell;
 impl crate::host::ShellUnit for ViewerShell {
     fn window_pids(&self) -> Result<std::collections::BTreeSet<i32>, crate::host::LaunchUnitError> {

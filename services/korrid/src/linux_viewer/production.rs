@@ -8,9 +8,7 @@ use crate::host::{LaunchSandbox, LaunchUnitBackend, LaunchUnitState, SystemdLaun
 use futures::future::BoxFuture;
 use std::{
     collections::BTreeMap,
-    io::Read,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -136,63 +134,6 @@ fn server_url(address: &str) -> Result<url::Url, LinuxViewerError> {
             .map_err(|_| error("invalid Moonlight port"))?;
     }
     Ok(url)
-}
-
-/// Bounded real helper execution. Never log helper output: Moonlight bootstrap
-/// output can contain identity details. A deadline also applies to failed hosts.
-fn run(program: &Path, args: &[String]) -> Result<(bool, String), LinuxViewerError> {
-    use std::os::fd::AsRawFd;
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(error)?;
-    let result = (|| {
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| error("helper has no stdout"))?;
-        let fd = stdout.as_raw_fd();
-        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-            return Err(error("cannot make helper output nonblocking"));
-        }
-        let deadline = Instant::now() + Duration::from_secs(20);
-        let mut bytes = Vec::new();
-        let mut exited = None;
-        loop {
-            let mut buffer = [0; 8192];
-            loop {
-                match stdout.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(count) => {
-                        if bytes.len() + count > 4 * 1024 * 1024 {
-                            return Err(error("helper output exceeded its budget"));
-                        }
-                        bytes.extend_from_slice(&buffer[..count]);
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(e) => return Err(error(e)),
-                }
-            }
-            if let Some(status) = exited {
-                return Ok((status, String::from_utf8(bytes).map_err(error)?));
-            }
-            exited = child.try_wait().map_err(error)?.map(|s| s.success());
-            if Instant::now() >= deadline {
-                return Err(error("Moonlight/compositor helper timed out"));
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    })();
-    if result.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    result
 }
 
 fn platform() -> &'static str {
