@@ -55,3 +55,9 @@ overlay into any Android `Surface` it is given, and does not depend on Game.
 Today Game hosts that Surface. For intent launches, a Korri-owned window over
 other apps will host it. Only the host of the Surface and the way Home is
 caught differ between the two.
+
+Guide opens the overlay only while the app in front is an active game that
+Korri launched. In any other app, Guide brings up Korri instead (owner,
+2026-11-10, #382). RetroArch's own menu is reached only through the overlay's
+plugin control; no in-game controller chord opens it (owner, 2026-11-10,
+#402).
