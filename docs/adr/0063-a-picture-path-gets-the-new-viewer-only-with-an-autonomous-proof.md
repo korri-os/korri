@@ -15,7 +15,8 @@ from, and what happens to a device that has none.
   fixture. The test starts it and removes it, and aka stays a server-only
   device (ADR 0051).
 - A device bench proves each picture path. The bench is the RG353M (RK3566),
-  one RG35XX (H700) and a Pixel 3 for Android. Bench devices stay powered and
+  the RG35XX Pro (H700) and a Galaxy Z Fold3 for Android. The RG35XX SP has the
+  Pro's chip and is not measured separately. Bench devices stay powered and
   reachable, and agents restart them at any time. An Android emulator also
   runs for every change.
 - A device with no proof is postponed and keeps the old Moonlight viewer. The
