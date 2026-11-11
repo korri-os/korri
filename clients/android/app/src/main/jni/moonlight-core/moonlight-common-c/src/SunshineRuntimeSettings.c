@@ -451,8 +451,6 @@ int SsRuntimeSettingsProcessAck(SS_RUNTIME_SETTINGS_STATE* state,
     uint16_t operation;
     uint16_t status;
     uint16_t reason;
-    uint32_t value;
-    uint32_t secondaryValue;
 
     if (!decodeAckHeader(payload, payloadLength, &requestId, &operation, &status, &reason)) {
         return LI_RUNTIME_SETTINGS_ERROR_MALFORMED_ACK;
@@ -470,10 +468,12 @@ int SsRuntimeSettingsProcessAck(SS_RUNTIME_SETTINGS_STATE* state,
         if (!capabilityFactsValid(state, payload, status, reason)) {
             return LI_RUNTIME_SETTINGS_ERROR_MALFORMED_ACK;
         }
+        command->active = false;
+        recordCapability(state, &commandSnapshot, payload, status, reason);
     }
     else {
-        value = get32(payload + 8);
-        secondaryValue = operation == SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION ?
+        uint32_t value = get32(payload + 8);
+        uint32_t secondaryValue = operation == SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION ?
             get32(payload + 12) : 0;
         if (!currentValueSane(&state->snapshot, command, operation, value, secondaryValue)) {
             return LI_RUNTIME_SETTINGS_ERROR_MALFORMED_ACK;
@@ -483,13 +483,7 @@ int SsRuntimeSettingsProcessAck(SS_RUNTIME_SETTINGS_STATE* state,
                  secondaryValue != command->requestedSecondaryValue)) {
             return LI_RUNTIME_SETTINGS_ERROR_MALFORMED_ACK;
         }
-    }
-
-    command->active = false;
-    if (operation == SS_RUNTIME_SETTINGS_OPERATION_QUERY_CAPABILITIES) {
-        recordCapability(state, &commandSnapshot, payload, status, reason);
-    }
-    else {
+        command->active = false;
         recordMutationCurrent(state, operation, value, secondaryValue);
     }
 
