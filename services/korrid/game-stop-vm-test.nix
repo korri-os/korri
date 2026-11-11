@@ -108,6 +108,7 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("multi-user.target")
     machine.succeed("systemctl start polkit.service")
     machine.wait_for_unit("polkit.service")
+    assert machine.succeed("readlink /proc/1/exe").strip() == "${pkgs.systemd}/lib/systemd/systemd"
 
     def freezer(verb, name, user="korrid"):
         return f"runuser -u {user} -- systemctl --no-ask-password {verb} {name}"
