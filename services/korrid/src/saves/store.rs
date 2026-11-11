@@ -103,6 +103,9 @@ fn remember_verified(path: PathBuf, stamp: RecordStamp) {
 fn io(e: std::io::Error) -> SaveError {
     SaveError::Storage(e.to_string())
 }
+fn is_stage_name(name: &str) -> bool {
+    name.starts_with(".save-") && name.ends_with(".tmp")
+}
 fn codec(s: &str) -> String {
     crate::host::play_log::encode_uri_component(s)
 }
@@ -442,7 +445,13 @@ impl NativeSaveStore {
             }
             if metadata.is_dir() {
                 for entry in fs::read_dir(path).map_err(io)? {
-                    walk(store, root, &entry.map_err(io)?.path(), files)?;
+                    let entry = entry.map_err(io)?;
+                    // An overlapping location can contain another location's
+                    // abandoned old tree. It is never snapshot content.
+                    if entry.file_name().to_str().is_some_and(is_stage_name) {
+                        continue;
+                    }
+                    walk(store, root, &entry.path(), files)?;
                 }
             } else if metadata.is_file() {
                 let mut file = OpenOptions::new()
@@ -628,10 +637,24 @@ impl NativeSaveStore {
             }
             Ok(())
         })();
+        let mut cleanup_error = None;
         for (stage, _) in staged {
             if stage.exists() {
-                fs::remove_dir_all(stage).map_err(io)?;
+                if let Err(error) = fs::remove_dir_all(stage) {
+                    if result.is_err() {
+                        return Err(io(error));
+                    }
+                    // The swap committed the restore. Runtime-owned directories
+                    // can deny deletion; do not turn that into a launch failure.
+                    cleanup_error.get_or_insert(error.kind());
+                }
             }
+        }
+        if let Some(kind) = cleanup_error {
+            // One warning per restore, with no person, game, or filesystem path.
+            eprintln!(
+                "korrid: save restore committed; old tree cleanup failed ({kind:?}); leaving stage"
+            );
         }
         result
     }
@@ -876,10 +899,7 @@ impl NativeSaveStore {
             let entry = entry.map_err(io)?;
             let name = entry.file_name();
             let name = name.to_str().ok_or_else(|| invalid("record filename"))?;
-            if name == "confirmations.json"
-                || name == "in-use.json"
-                || (name.starts_with(".save-") && name.ends_with(".tmp"))
-            {
+            if name == "confirmations.json" || name == "in-use.json" || is_stage_name(name) {
                 continue;
             }
             let hex = name

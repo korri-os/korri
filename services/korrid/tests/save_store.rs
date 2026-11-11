@@ -431,3 +431,159 @@ fn retention_ranks_ancestry_not_device_clocks() {
         "the recent ancestor stays despite its earlier clock"
     );
 }
+
+#[test]
+fn restore_keeps_the_new_tree_when_old_tree_cleanup_is_denied() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let root = tempfile::tempdir().unwrap();
+    let store = NativeSaveStore::new(root.path());
+    let saves = tempfile::tempdir().unwrap();
+    let save_root = saves
+        .path()
+        .join("users")
+        .join(PERSON)
+        .join("saves/gba%2Fwario");
+    let folder = save_root.join("saves");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(folder.join("game.srm"), b"progress").unwrap();
+    let locations = vec![SaveLocation {
+        key: "saves".into(),
+        kind: SaveKind::Save,
+        path: folder.to_str().unwrap().into(),
+    }];
+    let captured = store.capture(PERSON, &locations, record()).unwrap();
+    let id = store.put_record(PERSON, &captured).unwrap();
+    let old = folder.join("runtime-created");
+    fs::create_dir(&old).unwrap();
+    fs::write(old.join("old.srm"), b"old").unwrap();
+    // No write permission simulates the effective ACL mask on korri's directory.
+    fs::set_permissions(&old, fs::Permissions::from_mode(0o500)).unwrap();
+    let result = store.materialize(
+        PERSON,
+        "gba/wario",
+        &id,
+        save_root.to_str().unwrap(),
+        &locations,
+    );
+    let leftovers: Vec<_> = fs::read_dir(&save_root)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with(".save-")
+        })
+        .collect();
+    assert_eq!(leftovers.len(), 1);
+    // Keep the leftover non-removable through the retry, but make the test's
+    // temporary directory removable even when the regression assertion fails.
+    struct RestoreWrite(std::path::PathBuf);
+    impl Drop for RestoreWrite {
+        fn drop(&mut self) {
+            fs::set_permissions(&self.0, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+    }
+    let _cleanup = RestoreWrite(leftovers[0].join("runtime-created"));
+    result.unwrap();
+    assert_eq!(fs::read(folder.join("game.srm")).unwrap(), b"progress");
+    assert_eq!(
+        store.capture(PERSON, &locations, record()).unwrap(),
+        captured
+    );
+    assert_eq!(
+        store.records(PERSON, "gba/wario").unwrap(),
+        vec![captured.clone()]
+    );
+    store
+        .materialize(
+            PERSON,
+            "gba/wario",
+            &id,
+            save_root.to_str().unwrap(),
+            &locations,
+        )
+        .unwrap();
+    assert!(
+        leftovers[0].exists(),
+        "a later restore must not reuse the leftover"
+    );
+    assert_eq!(
+        store.capture(PERSON, &locations, record()).unwrap(),
+        captured
+    );
+}
+
+#[test]
+fn restore_staging_failure_keeps_the_live_tree_and_fails() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let root = tempfile::tempdir().unwrap();
+    let store = NativeSaveStore::new(root.path());
+    let saves = tempfile::tempdir().unwrap();
+    let save_root = saves
+        .path()
+        .join("users")
+        .join(PERSON)
+        .join("saves/gba%2Fwario");
+    let parent = save_root.join("read-only");
+    let folder = parent.join("saves");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(folder.join("game.srm"), b"progress").unwrap();
+    let locations = vec![SaveLocation {
+        key: "saves".into(),
+        kind: SaveKind::Save,
+        path: folder.to_str().unwrap().into(),
+    }];
+    let captured = store.capture(PERSON, &locations, record()).unwrap();
+    let id = store.put_record(PERSON, &captured).unwrap();
+    fs::write(folder.join("game.srm"), b"later").unwrap();
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o500)).unwrap();
+    let result = store.materialize(
+        PERSON,
+        "gba/wario",
+        &id,
+        save_root.to_str().unwrap(),
+        &locations,
+    );
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(result.is_err());
+    assert_eq!(fs::read(folder.join("game.srm")).unwrap(), b"later");
+}
+
+#[test]
+fn abandoned_stages_are_neither_records_nor_captured_content() {
+    use std::fs;
+    let root = tempfile::tempdir().unwrap();
+    let store = NativeSaveStore::new(root.path());
+    let original = record();
+    store.put_record(PERSON, &original).unwrap();
+    let abandoned_record = root
+        .path()
+        .join("saves")
+        .join(PERSON)
+        .join("gba%2Fwario/.save-0123456789abcdef.tmp");
+    fs::create_dir(&abandoned_record).unwrap();
+    fs::write(abandoned_record.join("not-a-record"), b"old").unwrap();
+    assert_eq!(store.records(PERSON, "gba/wario").unwrap(), vec![original]);
+    let saves = tempfile::tempdir().unwrap();
+    // A nested/overlapping save location can put the abandoned sibling of one
+    // location inside another location. Never capture that old live tree.
+    let abandoned = saves.path().join(".save-0123456789abcdef.tmp");
+    fs::create_dir(&abandoned).unwrap();
+    fs::write(abandoned.join("old.srm"), b"old").unwrap();
+    fs::write(saves.path().join("game.srm"), b"progress").unwrap();
+    let captured = store
+        .capture(
+            PERSON,
+            &[SaveLocation {
+                key: "saves".into(),
+                kind: SaveKind::Save,
+                path: saves.path().to_str().unwrap().into(),
+            }],
+            record(),
+        )
+        .unwrap();
+    assert_eq!(captured.locations[0].files.len(), 1);
+    assert_eq!(captured.locations[0].files[0].path, "game.srm");
+}
