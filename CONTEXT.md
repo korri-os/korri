@@ -96,7 +96,7 @@ Destroying a live session on purpose. Unsaved progress is lost. When Korri canno
 _Avoid_: quit, kill, close
 
 **Gameplay overlay**:
-The screen Korri shows over a live session while the game keeps running. It offers resume, end, disconnect, the full Korri screen, the actions the active plugin supports, and the stream controls of the stream viewer. A pause exists only as an action of the plugin.
+The screen Korri shows over a live session while the game keeps running. It offers resume, end, disconnect, the full Korri screen, the actions the active plugin supports, and the stream controls of the viewer. A pause exists only as an action of the plugin.
 _Avoid_: pause menu, system panel
 
 **Disconnect**:
@@ -108,8 +108,12 @@ A line of facts shown with the gameplay overlay: the time, the battery, the stre
 _Avoid_: HUD, status bar
 
 **Stream control**:
-A control over how a device shows and drives a stream, such as screen fit or mouse mode. Each stream viewer declares the stream controls it supports.
+A control over how a device shows and drives a stream, such as screen fit or mouse mode. Each viewer declares the stream controls it supports.
 _Avoid_: Moonlight setting, viewer option
+
+**Viewer**:
+The software on a device that shows a stream from another device and sends the person's input back to it. It belongs to the device's client part.
+_Avoid_: stream viewer, stream client, Moonlight
 
 **Shared play**:
 More than one device playing one game together. Stream play and netplay are its two kinds.
