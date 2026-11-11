@@ -30,6 +30,11 @@ does.
 
 ## Open questions for the sync slice
 
+**Owner decision, 2026-11-11.** Sync of shared kinds is built with records
+(issue #185) and uses their transport. No settings-only copy path is built
+first. A streamed game does not need sync: the device that runs the game
+applies its own launch settings.
+
 - Shared values must be keyed by game identity, not by a device's library ID.
 - Ownership (person or device owner), transport (the saves peer path is the
   nearest pattern, ADR 0014), and edits that two devices make while offline.
