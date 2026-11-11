@@ -2811,7 +2811,9 @@ mod save_sync {
 
     /// A1 7.2: Back closed the flow while korrid checked other devices;
     /// Checking now publishes that Cancel beside Skip and marks it.
-    #[tokio::test]
+    // These assertions inspect an in-flight request. Wall-clock scheduling
+    // must not finish its simulated delay before the busy-state observation.
+    #[tokio::test(start_paused = true)]
     async fn checking_marks_a_cancel_that_closes_the_flow() {
         let (sync, script) = sync();
         push(
@@ -2855,7 +2857,7 @@ mod save_sync {
     /// Reading both sides of a split: the marked Cancel closes the flow.
     /// The split question marks Not now; a pick under way marks nothing,
     /// since the portal's Back cancelled nothing there.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn reading_marks_cancel_choosing_marks_not_now_and_picking_marks_nothing() {
         let (sync, script) = sync();
         split(&script);
