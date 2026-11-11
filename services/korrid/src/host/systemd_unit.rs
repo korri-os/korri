@@ -6,12 +6,13 @@ use std::{
     os::fd::AsRawFd,
     path::{Component, Path, PathBuf},
     process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Output, Stdio},
+    sync::Arc,
     thread,
     time::{Duration, Instant},
 };
 
 #[cfg(test)]
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 const UNIT_PREFIX: &str = "korri-game-";
 const UNIT_SUFFIX: &str = ".service";
