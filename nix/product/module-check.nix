@@ -907,8 +907,18 @@ assert
   builtins.fromJSON productConfig.environment.etc."korri-plugin-host/publishers.json".text
   == requirements.constants.publishers;
 assert builtins.elem productPluginPublicKey productConfig.nix.settings.trusted-public-keys;
-assert productConfig.systemd.services.korri-display-idle.environment.KORRI_WATCHED_DISPLAYS == "HEADLESS-1";
-assert withUnwatchedDisplay.config.systemd.services.korri-display-idle.environment.KORRI_WATCHED_DISPLAYS == "";
+# Display facts and stream occupancy have one authority: korrid, not a second
+# watched-output list in the idle service. Both devices use the same RPC script.
+assert
+  productConfig.systemd.services.korri-display-idle.serviceConfig.ExecStart
+  == withUnwatchedDisplay.config.systemd.services.korri-display-idle.serviceConfig.ExecStart;
+assert lib.hasInfix "korri-display-power-idle" (
+  builtins.readFile productConfig.systemd.services.korri-display-idle.serviceConfig.ExecStart
+);
+assert
+  !(lib.hasInfix "swaymsg" (
+    builtins.readFile productConfig.systemd.services.korri-display-idle.serviceConfig.ExecStart
+  ));
 assert productPluginHost.officialCatalogUrl == (import ./published-plugins.nix).catalogUrl;
 assert productConfig.nix.buildMachines == [ ];
 assert builtins.elem "nix-command" productConfig.nix.settings.experimental-features;
@@ -1065,8 +1075,7 @@ assert builtins.elem 39217 rg353m.networking.firewall.allowedTCPPorts;
 assert lib.all
   (
     device:
-    lib.hasSuffix " --installed --placement fullscreen --surfaces pico,zone"
-      device.config.systemd.services.korri-shell.serviceConfig.ExecStart
+    lib.hasSuffix " --installed --placement fullscreen --surfaces pico,zone" device.config.systemd.services.korri-shell.serviceConfig.ExecStart
   )
   [
     standalone

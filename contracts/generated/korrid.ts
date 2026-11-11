@@ -361,6 +361,9 @@ export interface DetailsRequest {
 	id: string;
 }
 
+export interface DisplayIdleRequest {
+}
+
 export interface DisplayWakeRequest {
 }
 
@@ -2052,6 +2055,10 @@ export type DetailsOutcome =
 	| { _tag: "Ok", payload: ProviderClaimDetails }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type DisplayIdleOutcome =
+	| { _tag: "Ok", payload?: undefined }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type DisplayWakeOutcome =
 	| { _tag: "Ok", payload?: undefined }
 	| { _tag: "Err", payload: RpcFailure };
@@ -2179,6 +2186,7 @@ export enum PluginRepositoryRemoveResult {
 }
 
 export type RpcRequest =
+	| { _tag: "app.displays.idle", payload: DisplayIdleRequest }
 	| { _tag: "app.displays.wake", payload: DisplayWakeRequest }
 	| { _tag: "app.surface.displays", payload: SurfaceDisplaysRequest }
 	| { _tag: "app.surface.model", payload: SurfaceModelRequest }
@@ -2277,6 +2285,7 @@ export type RpcRequest =
 	| { _tag: "system.plugins.setEnabled", payload: PluginSetEnabledRequest };
 
 export type RpcResponse =
+	| { _tag: "app.displays.idle", outcome: DisplayIdleOutcome }
 	| { _tag: "app.displays.wake", outcome: DisplayWakeOutcome }
 	| { _tag: "app.surface.displays", outcome: SurfaceDisplaysOutcome }
 	| { _tag: "app.surface.model", outcome: SurfaceModelOutcome }

@@ -1096,6 +1096,48 @@ impl HostSessionControl {
         observe(status, ownership, handoff, recovered)
     }
 
+    pub(crate) fn idle_displays(&self) -> Result<(), String> {
+        // Use the same transition lock as launch and stream registration. An idle
+        // timeout cannot race the wake-before-capture handoff.
+        let _state = self
+            .state
+            .lock()
+            .map_err(|_| "session state mutex poisoned")?;
+        let displays = super::display_placement::configured_displays()?;
+        if displays.is_empty() {
+            return Err("display facts unavailable".into());
+        }
+        let mut protected = Vec::new();
+        if self.peer_selection.active() {
+            protected.extend(displays.iter().filter(|d| d.main).map(|d| d.name.clone()));
+        }
+        if let Some(ActiveSession::Running {
+            launch_id,
+            starter_device_public_key,
+            stream_players,
+            ..
+        }) = read_active(&self.identity_root)?
+        {
+            // Both facts already belong to the exact session journal. Do not
+            // keep a second stream-lifetime flag or infer streaming from input.
+            if starter_device_public_key.is_some() || !stream_players.is_empty() {
+                protected.extend(self.launch_placement(&launch_id, &displays)?.outputs);
+            }
+        }
+        let mut commands: Vec<_> = displays
+            .iter()
+            .filter(|d| !d.unwatched && !protected.contains(&d.name))
+            .map(|d| format!("output {} power off", d.name))
+            .collect();
+        if !protected.is_empty() {
+            // Re-arm swayidle's existing 300 s timer. Otherwise a skipped timeout
+            // would never run again after the session ends without local input.
+            commands.push("seat * idle_notify".into());
+        }
+        let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
+        super::display_placement::apply(compositor.as_ref(), &commands)
+    }
+
     pub(crate) fn wake_displays(&self) -> Result<(), String> {
         // Serialize with placement, without StateGuard's session reconciliation.
         // Waking displays must not focus, thaw, or route a session.
@@ -1120,11 +1162,55 @@ impl HostSessionControl {
             }
             content
         };
+        self.power_displays(&displays, &occupied)
+    }
+
+    fn power_displays(
+        &self,
+        displays: &[super::display_placement::Display],
+        occupied: &[String],
+    ) -> Result<(), String> {
         let compositor = self.compositor.as_ref().ok_or("compositor unavailable")?;
         super::display_placement::apply(
             compositor.as_ref(),
-            &super::display_placement::power_commands(&displays, &occupied),
+            &super::display_placement::power_commands(displays, occupied),
         )
+    }
+
+    // Caller holds the session transition lock, including during registration.
+    fn wake_launch_displays(&self, launch_id: &str) -> Result<(), String> {
+        let displays = super::display_placement::configured_displays()?;
+        if displays.is_empty() {
+            return Ok(());
+        }
+        let placement = self.launch_placement(launch_id, &displays)?;
+        self.power_displays(&displays, &placement.outputs)
+    }
+
+    fn wake_viewer_displays(&self) -> Result<(), String> {
+        let _state = self
+            .state
+            .lock()
+            .map_err(|_| "session state mutex poisoned")?;
+        self.wake_prepared_displays(None)
+    }
+
+    fn wake_prepared_displays(
+        &self,
+        placement: Option<&super::display_placement::Placement>,
+    ) -> Result<(), String> {
+        let displays = super::display_placement::configured_displays()?;
+        if displays.is_empty() {
+            return Ok(());
+        }
+        let occupied = placement.map(|p| p.outputs.clone()).unwrap_or_else(|| {
+            displays
+                .iter()
+                .filter(|d| d.main)
+                .map(|d| d.name.clone())
+                .collect()
+        });
+        self.power_displays(&displays, &occupied)
     }
 
     fn launch_placement(
@@ -2161,6 +2247,10 @@ impl HostSessionControl {
                 launch_id,
                 game_id: Some(active_game_id),
             } if resume_same_game && active_game_id == game_id => {
+                if self.starting_device.is_some() {
+                    self.wake_launch_displays(launch_id)
+                        .map_err(|message| failure("PlacementFailed", message))?;
+                }
                 if self.ensure_seats(launch_id).is_err() {
                     let launch_id = launch_id.clone();
                     self.stop_game_after_seat_failure(&mut state, &launch_id);
@@ -2224,6 +2314,19 @@ impl HostSessionControl {
         let prepared_command = crate::launcher::plugin_launch::prepare_command(configured_command?)
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
         let configured_command = prepared_command.as_slice();
+        let composition: Option<crate::launcher::plugin_launch::LaunchComposition> =
+            if configured_command
+                .get(1)
+                .is_some_and(|v| v == "plugin-launch")
+            {
+                configured_command
+                    .get(4)
+                    .map(|encoded| serde_json::from_str(encoded))
+                    .transpose()
+                    .map_err(|e| failure("PlacementFailed", e.to_string()))?
+            } else {
+                None
+            };
         let sunshine_args = crate::launcher::plugin_launch::sunshine_args(configured_command)
             .map_err(|message| failure("LocalRouteUnavailable", message))?;
         if let Some(person) = person_public_key {
@@ -2328,6 +2431,12 @@ impl HostSessionControl {
                 warnings,
                 &sandbox,
             )?;
+        }
+        if self.starting_device.is_some() {
+            // Wake the declared game outputs before Sunshine can restart/probe
+            // or the game can spawn. Use the same power path as idle resume.
+            self.wake_prepared_displays(composition.as_ref().and_then(|c| c.placement.as_ref()))
+                .map_err(|message| failure("PlacementFailed", message))?;
         }
         let mut active = ActiveSession::running(
             launch_id.clone(),
@@ -2520,29 +2629,21 @@ impl HostSessionControl {
         // repeated prepare after restart cannot substitute a new display mode.
         launch_environment.remove(super::systemd_unit::DISPLAY_ENV);
         let mut display = None;
-        if configured_command
-            .get(1)
-            .is_some_and(|v| v == "plugin-launch")
-        {
-            if let Some(encoded) = configured_command.get(4) {
-                let composition: crate::launcher::plugin_launch::LaunchComposition =
-                    serde_json::from_str(encoded)
-                        .map_err(|e| failure("PlacementFailed", e.to_string()))?;
-                display = composition.display;
-                if let Some(display) = &display {
-                    launch_environment.insert(
-                        super::systemd_unit::DISPLAY_ENV.into(),
-                        serde_json::to_string(display)
-                            .map_err(|e| failure("PlacementFailed", e.to_string()))?,
-                    );
-                }
-                if let Some(placement) = composition.placement {
-                    launch_environment.insert(
-                        super::systemd_unit::PLACEMENT_ENV.into(),
-                        serde_json::to_string(&placement)
-                            .map_err(|e| failure("PlacementFailed", e.to_string()))?,
-                    );
-                }
+        if let Some(composition) = composition {
+            display = composition.display;
+            if let Some(display) = &display {
+                launch_environment.insert(
+                    super::systemd_unit::DISPLAY_ENV.into(),
+                    serde_json::to_string(display)
+                        .map_err(|e| failure("PlacementFailed", e.to_string()))?,
+                );
+            }
+            if let Some(placement) = composition.placement {
+                launch_environment.insert(
+                    super::systemd_unit::PLACEMENT_ENV.into(),
+                    serde_json::to_string(&placement)
+                        .map_err(|e| failure("PlacementFailed", e.to_string()))?,
+                );
             }
         }
         if let Some(runner_id) = runner_id {
@@ -10143,3 +10244,7 @@ mod runner_steps_tests {
         assert_eq!(progress.surface_steps().current, 2);
     }
 }
+
+#[cfg(test)]
+#[path = "stream_displays_tests.rs"]
+mod stream_displays_tests;

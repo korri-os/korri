@@ -1478,6 +1478,15 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
+    pub(crate) async fn idle_displays(&self) -> Result<(), String> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            runtime.control().map_err(|e| e.message)?.idle_displays()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
     pub(crate) async fn wake_displays(&self) -> Result<(), String> {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {

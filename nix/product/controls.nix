@@ -13,28 +13,25 @@
 let
   host = config.services.korriLinuxHost;
   runtimeDir = "/run/user/${toString host.runtimeUid}";
-  # Idle can blank every display. Wake asks korrid for its current placement;
-  # a display with no content must remain off, including after idle.
-  displayWake = pkgs.writeShellScript "korri-display-wake" ''
-    set -euo pipefail
-    ${pkgs.curl}/bin/curl --silent --show-error --fail --max-time 10 \
-      --unix-socket ${lib.escapeShellArg config.services.korridLinuxDevice.cliSocket} \
-      --header 'content-type: application/json' \
-      --data '{"_tag":"app.displays.wake","payload":{}}' http://localhost/rpc \
-      | ${pkgs.jq}/bin/jq --exit-status '.outcome._tag == "Ok"' >/dev/null
-  '';
-  # An unwatched display is never powered off for idleness (CONTEXT.md). The
-  # names arrive as unit environment, a device fact, so the script itself is
-  # the same on every device.
-  watchedDisplays = map (display: display.name) (
-    builtins.filter (display: !display.unwatched) host.compositor.displays
-  );
-  powerOffWatched = "for output in $KORRI_WATCHED_DISPLAYS; do ${pkgs.sway}/bin/swaymsg output \"$output\" power off; done";
+  # Both transitions go through korrid's placement/session lock. Only korrid
+  # knows which watched outputs a live stream must keep powered on.
+  displayPower =
+    action:
+    pkgs.writeShellScript "korri-display-power-${action}" ''
+      set -euo pipefail
+      ${pkgs.curl}/bin/curl --silent --show-error --fail --max-time 10 \
+        --unix-socket ${lib.escapeShellArg config.services.korridLinuxDevice.cliSocket} \
+        --header 'content-type: application/json' \
+        --data '{"_tag":"app.displays.${action}","payload":{}}' http://localhost/rpc \
+        | ${pkgs.jq}/bin/jq --exit-status '.outcome._tag == "Ok"' >/dev/null
+    '';
+  displayWake = displayPower "wake";
+  displayOff = displayPower "idle";
   displayIdle = pkgs.writeShellScript "korri-display-idle" ''
     exec ${pkgs.swayidle}/bin/swayidle -w \
-      timeout 300 '${powerOffWatched}' \
+      timeout 300 '${displayOff}' \
       resume '${displayWake}' \
-      before-sleep '${powerOffWatched}'
+      before-sleep '${displayOff}'
   '';
   volume = step: {
     command = [
@@ -113,7 +110,9 @@ in
       if (action.id == "org.freedesktop.systemd1.manage-units" &&
           subject.user == "${host.runtimeUser}" &&
           action.lookup("verb") == "start" &&
-          ${builtins.toJSON (map (unit: "${unit}.service") (builtins.attrNames backlightUnits))}.indexOf(action.lookup("unit")) >= 0) {
+          ${
+            builtins.toJSON (map (unit: "${unit}.service") (builtins.attrNames backlightUnits))
+          }.indexOf(action.lookup("unit")) >= 0) {
         return polkit.Result.YES;
       }
     });
@@ -144,7 +143,6 @@ in
       XDG_RUNTIME_DIR = runtimeDir;
       WAYLAND_DISPLAY = "korri-wayland";
       SWAYSOCK = "/run/korri-compositor/sway-ipc.sock";
-      KORRI_WATCHED_DISPLAYS = lib.concatStringsSep " " watchedDisplays;
     };
     serviceConfig = {
       User = host.runtimeUser;
