@@ -53,12 +53,14 @@ case "$command" in
  get_outputs)
   mode=$(cat mode); width=${{mode%x*}}; height=${{mode#*x}}
   printf '[{{"name":"HEADLESS-1","active":true,"focused":true,"rect":{{"width":%s,"height":%s}},"current_mode":{{"width":%s,"height":%s,"refresh":60000}}}}]' "$width" "$height" "$width" "$height";;
- get_tree) printf '{{"nodes":[{{"id":10,"pid":4100,"app_id":"korri-shell","focused":true}}]}}';;
+ get_tree) if test -f tree; then cat tree; else printf '{{"nodes":[{{"id":10,"pid":4100,"app_id":"korri-shell","focused":true}}]}}'; fi;;
  *)
   printf '%s\n' "$command" >> commands
   case "$command" in
    *'mode --custom'*)
-    printf 2176x1808 > mode
+    requested=${{command#*mode --custom }}
+    requested=${{requested%%@*}}
+    printf '%s' "$requested" > mode
     touch shaped
     if test -f block-shape; then
       while ! test -f release-shape; do sleep 0.01; done
@@ -124,6 +126,134 @@ fn prepare(runtime: &HostRuntime) -> Result<crate::game_routes::SelectedGameLaun
             height: 1812,
         }),
     )
+}
+
+#[test]
+fn live_shape_owner_changes_size_and_refusal_restores_the_previous_live_mode() {
+    let name = "live_shape_owner_changes_size_and_refusal_restores_the_previous_live_mode";
+    if isolated(name) {
+        return;
+    }
+    use crate::live_display::{
+        SessionViewerDisplayRequest as Request, ViewerDisplayEvent as Event,
+    };
+    let fixture = Fixture::new(1);
+    let runtime = fixture
+        .runtime
+        .clone()
+        .for_starting_device(Some("phone".into()));
+    let launch = prepare(&runtime).unwrap().session.launch_id;
+    let control = fixture.runtime.control().unwrap();
+    control
+        .stream_play(
+            &launch,
+            crate::StreamPlayer {
+                device_public_key: "tv".into(),
+                label: "TV".into(),
+            },
+        )
+        .unwrap();
+    let report = |peer: &str, event| {
+        control.viewer_display_report(
+            peer,
+            &Request {
+                expected_launch_id: launch.clone(),
+                event,
+            },
+        )
+    };
+    let first = report(
+        "phone",
+        Event::Report {
+            connection: "one".into(),
+            display: PluginDisplay {
+                width: 2448,
+                height: 1848,
+            },
+        },
+    )
+    .unwrap();
+    assert!(first.owner);
+    assert_eq!(fixture.mode(), "2448x1848");
+    let revision = first.revision.unwrap();
+    let joiner = report(
+        "tv",
+        Event::Report {
+            connection: "two".into(),
+            display: PluginDisplay {
+                width: 1920,
+                height: 1080,
+            },
+        },
+    )
+    .unwrap();
+    assert!(!joiner.owner);
+    assert_eq!(fixture.mode(), "2448x1848");
+    assert!(report(
+        "tv",
+        Event::Portrait {
+            connection: "two".into(),
+            enabled: true
+        }
+    )
+    .is_err());
+    let restored = report(
+        "phone",
+        Event::Refused {
+            connection: "one".into(),
+            revision,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        restored.display,
+        PluginDisplay {
+            width: 2176,
+            height: 1808
+        }
+    );
+    assert_eq!(fixture.mode(), "2176x1808");
+    assert_eq!(restored.notice.as_deref(), Some("Couldn't reshape"));
+    let again = report(
+        "phone",
+        Event::Report {
+            connection: "one".into(),
+            display: PluginDisplay {
+                width: 2448,
+                height: 1848,
+            },
+        },
+    )
+    .unwrap();
+    assert!(again.notice.is_none());
+    assert!(again.revision.is_none());
+    assert_eq!(fixture.mode(), "2176x1808");
+    report(
+        "phone",
+        Event::Leave {
+            connection: "one".into(),
+        },
+    )
+    .unwrap();
+    let next = report(
+        "tv",
+        Event::Report {
+            connection: "two".into(),
+            display: PluginDisplay {
+                width: 1920,
+                height: 1080,
+            },
+        },
+    )
+    .unwrap();
+    assert!(next.owner);
+    assert_eq!(
+        next.display,
+        PluginDisplay {
+            width: 1920,
+            height: 1080
+        }
+    );
 }
 
 #[test]
@@ -381,4 +511,77 @@ fn runtime_refusal_after_shaping_does_not_cache_out_restore() {
     assert_eq!(fixture.mode(), "2176x1808");
     fixture.catalog().unwrap();
     assert_eq!(fixture.mode(), "1920x1080");
+}
+
+#[test]
+fn restart_restores_journaled_shape_before_accepting_another_change() {
+    let name = "restart_restores_journaled_shape_before_accepting_another_change";
+    if isolated(name) {
+        return;
+    }
+    use crate::live_display::{
+        SessionViewerDisplayRequest as Request, ViewerDisplayEvent as Event,
+    };
+    let fixture = Fixture::new(1);
+    let launch = prepare(
+        &fixture
+            .runtime
+            .clone()
+            .for_starting_device(Some("phone".into())),
+    )
+    .unwrap()
+    .session
+    .launch_id;
+    let request = Request {
+        expected_launch_id: launch.clone(),
+        event: Event::Report {
+            connection: "one".into(),
+            display: PluginDisplay {
+                width: 2448,
+                height: 1848,
+            },
+        },
+    };
+    assert!(fixture
+        .runtime
+        .control()
+        .unwrap()
+        .viewer_display_report("phone", &request)
+        .unwrap()
+        .revision
+        .is_some());
+    assert_eq!(fixture.mode(), "2448x1848");
+    fixture.backend.set_window_pids(&launch, [4200].into());
+    fs::write(
+        fixture.root.path().join("tree"),
+        r#"{"nodes":[{"id":20,"pid":4200,"app_id":"game","focused":true}]}"#,
+    )
+    .unwrap();
+    let restarted = HostRuntime::from_paths_with_backend(
+        &fixture.root.path().join("host.toml"),
+        None,
+        fixture.root.path().join("private"),
+        fixture.backend.clone(),
+    )
+    .with_route_registry(
+        fixture.root.path().into(),
+        crate::plugin_test_fixtures::installed(fixture.root.path()),
+    )
+    .with_shell_unit(Arc::new(super::control::RecordingShellUnit::identity_only()));
+    let restored = restarted
+        .control()
+        .unwrap()
+        .viewer_display_report("phone", &request)
+        .unwrap();
+    assert_eq!(fixture.mode(), "2176x1808");
+    assert_eq!(restored.notice.as_deref(), Some("Couldn't reshape"));
+    assert!(restored.revision.is_none());
+    let next = restarted
+        .control()
+        .unwrap()
+        .viewer_display_report("phone", &request)
+        .unwrap();
+    assert!(next.notice.is_none());
+    assert!(next.revision.is_none());
+    assert_eq!(fixture.mode(), "2176x1808");
 }

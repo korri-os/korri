@@ -596,7 +596,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         boolean portraitMode = currentOrientation == Configuration.ORIENTATION_PORTRAIT;
-        shouldInvertDecoderResolution = portraitMode && prefConfig.autoInvertVideoResolution;
+        shouldInvertDecoderResolution = !korriViewerRequested && portraitMode && prefConfig.autoInvertVideoResolution;
 
         displayWidth = shouldInvertDecoderResolution ? prefConfig.height : prefConfig.width;
         displayHeight = shouldInvertDecoderResolution ? prefConfig.width : prefConfig.height;
@@ -826,6 +826,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 shouldInvertDecoderResolution,
                 glPrefs.glRenderer,
                 this);
+        if (korriViewerRequested) decoderRenderer.enableLiveResolution();
         decoderRenderer.setFirstFrameRenderedListener(() -> runOnUiThread(this::revealKorriStream));
 
 // --- Force tight thresholds (prefConfig.forceTightThresholds) ---
@@ -1013,6 +1014,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         //streamContainer.getHolder().addCallback(this);
 
         streamContainer.setOnSurfaceAvailable(() -> {
+            if (korriViewerRequested && connected && attemptedConnection) {
+                if (!KorriStreamViewer.canPresent(Game.this, korriViewerLease)) return;
+                if (!decoderRenderer.rebindLiveSurface(streamContainer.getSurface())) {
+                    displayTransientMessage("Could not restore the video surface");
+                    stopConnection();
+                } else {
+                    observeLiveDisplay();
+                    com.simonwjackson.korri.korrid.KorridServer.viewerDisplayChanged();
+                }
+                return;
+            }
             if (!attemptedConnection) {
                 LimeLog.info("Surface is available, starting connection...");
                 if (korriViewerRequested && !KorriStreamViewer.opening(Game.this, korriViewerLease)) {
@@ -1255,6 +1267,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void setPreferredOrientationForActivity() {
+        if (korriViewerRequested) {
+            setRequestedOrientation(displayWidth < displayHeight
+                    ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            return;
+        }
         Display display = getWindowManager().getDefaultDisplay();
 
         // For semi-square displays, we use more complex logic to determine which orientation to use (if any)
@@ -3847,6 +3865,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             throw new IllegalStateException("Surface destroyed before creation!");
         }
 
+        if (korriViewerRequested && connected && !isFinishing() && decoderRenderer.parkLiveSurface()) {
+            surfaceCreated = false;
+            return;
+        }
         if (attemptedConnection) {
             // Let the decoder know immediately that the surface is gone
             decoderRenderer.prepareForStop();
@@ -4520,6 +4542,105 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 this, "checkbox_enable_pip", String.valueOf(value));
         applyLivePrefs();
         updatePipAutoEnter();
+    }
+
+    private android.hardware.display.DisplayManager liveDisplayManager;
+    private android.hardware.display.DisplayManager.DisplayListener liveDisplayListener;
+    private android.os.Handler liveDisplayHandler;
+    private volatile long liveDisplayChangedAt;
+    private int liveScreenWidth, liveScreenHeight;
+    private final Runnable liveDisplayWake = () -> {
+        if (korriSunshineRuntimeSettings != null) com.simonwjackson.korri.korrid.KorridServer.viewerDisplayChanged();
+    };
+
+    private synchronized void observeLiveDisplay() {
+        if (korriSunshineRuntimeSettings == null || liveDisplayListener == null) return;
+        int[] screen = KorriStreamViewer.screenStreamSize(this);
+        if (screen == null || (screen[0] == liveScreenWidth && screen[1] == liveScreenHeight)) return;
+        liveScreenWidth = screen[0]; liveScreenHeight = screen[1];
+        liveDisplayChangedAt = android.os.SystemClock.elapsedRealtime();
+        liveDisplayHandler.removeCallbacks(liveDisplayWake);
+        liveDisplayHandler.postDelayed(liveDisplayWake, 400);
+    }
+
+    synchronized void startLiveResolution() {
+        if (korriSunshineRuntimeSettings != null) return;
+        android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+        KorriSunshineRuntimeSettings owner = new KorriSunshineRuntimeSettings(
+                KorriSunshineRuntimeSettings.moonBridge(), new KorriSunshineRuntimeSettings.Scheduler() {
+                    public void postDelayed(Runnable action, long delay) { handler.postDelayed(action, delay); }
+                    public void remove(Runnable action) { handler.removeCallbacks(action); }
+                }, ignored -> {});
+        korriSunshineRuntimeSettings = owner;
+        liveDisplayHandler = handler;
+        liveDisplayManager = (android.hardware.display.DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        liveDisplayListener = new android.hardware.display.DisplayManager.DisplayListener() {
+            public void onDisplayAdded(int id) { observeLiveDisplay(); }
+            public void onDisplayRemoved(int id) { observeLiveDisplay(); }
+            public void onDisplayChanged(int id) { observeLiveDisplay(); }
+        };
+        if (liveDisplayManager != null) liveDisplayManager.registerDisplayListener(liveDisplayListener, handler);
+        handler.post(this::observeLiveDisplay);
+        owner.start();
+    }
+
+    synchronized void stopLiveResolution() {
+        liveResizeGeneration.incrementAndGet();
+        KorriSunshineRuntimeSettings owner = korriSunshineRuntimeSettings;
+        korriSunshineRuntimeSettings = null;
+        if (liveDisplayManager != null && liveDisplayListener != null) liveDisplayManager.unregisterDisplayListener(liveDisplayListener);
+        liveDisplayListener = null;
+        if (liveDisplayHandler != null) liveDisplayHandler.removeCallbacks(liveDisplayWake);
+        if (owner != null) owner.close();
+    }
+
+    org.json.JSONObject liveResolutionSnapshot(String connection) throws org.json.JSONException {
+        int[] screen = KorriStreamViewer.screenStreamSize(this);
+        if (screen == null) return null;
+        KorriSunshineRuntimeSettings owner = korriSunshineRuntimeSettings;
+        Surface liveSurface = streamContainer == null ? null : streamContainer.getSurface();
+        boolean ready = owner != null && owner.available(MoonBridge.SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION)
+                && liveSurface != null && liveSurface.isValid()
+                && decoderRenderer != null && decoderRenderer.acceptsLiveResolution(screen[0], screen[1])
+                && android.os.SystemClock.elapsedRealtime() - liveDisplayChangedAt >= 400;
+        return new org.json.JSONObject().put("connection", connection)
+            .put("screen", new org.json.JSONObject().put("width", screen[0]).put("height", screen[1]))
+            .put("encoded", new org.json.JSONObject()
+                .put("width", decoderRenderer != null && decoderRenderer.decodedWidth() > 0 ? decoderRenderer.decodedWidth() : displayWidth)
+                .put("height", decoderRenderer != null && decoderRenderer.decodedHeight() > 0 ? decoderRenderer.decodedHeight() : displayHeight))
+            .put("ready", ready);
+    }
+
+    private final java.util.concurrent.atomic.AtomicLong liveResizeGeneration = new java.util.concurrent.atomic.AtomicLong();
+
+    boolean resizeLiveStream(int width, int height, KorriSunshineRuntimeSettings.Authorization authority) {
+        long generation = liveResizeGeneration.incrementAndGet();
+        KorriSunshineRuntimeSettings owner = korriSunshineRuntimeSettings;
+        if (decoderRenderer == null || !decoderRenderer.acceptsLiveResolution(width, height)) return false;
+        if (owner == null || owner.setResolution(width, height, authority) != KorriSunshineRuntimeSettings.MutationResult.APPLIED) return false;
+        if (!decoderRenderer.awaitLiveResolution(width, height) || !authority.isCurrent()) return false;
+        java.util.function.BooleanSupplier current = () -> authority.isCurrent() && liveResizeGeneration.get() == generation;
+        java.util.concurrent.atomic.AtomicBoolean applied = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.CountDownLatch completed = new java.util.concurrent.CountDownLatch(1);
+        runOnUiThread(() -> {
+            if (!current.getAsBoolean()) { completed.countDown(); return; }
+            streamContainer.resizeVideoSource(width, height, current, ready -> runOnUiThread(() -> {
+                if (!ready || !current.getAsBoolean()) { completed.countDown(); return; }
+                displayWidth = width;
+                displayHeight = height;
+                setPreferredOrientationForActivity();
+                streamContainer.setDesiredAspectRatio((double) width / height);
+                applied.set(true);
+                completed.countDown();
+            }));
+        });
+        try {
+            if (completed.await(1200, java.util.concurrent.TimeUnit.MILLISECONDS)) return applied.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+        liveResizeGeneration.compareAndSet(generation, generation + 1);
+        return false;
     }
 
     private KorriSunshineRuntimeSettings runtimeSettingsOwner() {

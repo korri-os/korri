@@ -553,6 +553,61 @@ impl ProductionLinuxStreamViewer {
 }
 
 impl LinuxStreamViewer for ProductionLinuxStreamViewer {
+    fn snapshot<'a>(
+        &'a self,
+        launch: &'a str,
+    ) -> futures::future::BoxFuture<'a, Result<Option<super::ViewerSnapshot>, LinuxViewerError>>
+    {
+        let this = self.clone();
+        let launch = launch.to_owned();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                validate_launch(&launch)?;
+                let (phase, text) = this.units.state_with_status(&launch).map_err(unit_error)?;
+                if phase == crate::host::LaunchUnitState::Completed {
+                    return Ok(Some(super::ViewerSnapshot {
+                        connected: Some(false),
+                        ..Default::default()
+                    }));
+                }
+                if phase != crate::host::LaunchUnitState::Running {
+                    return Ok(None);
+                }
+                let Some(text) = text else {
+                    return Ok(None);
+                };
+                if text == "korri-viewer-disconnected" {
+                    return Ok(Some(super::ViewerSnapshot {
+                        connected: Some(false),
+                        ..Default::default()
+                    }));
+                }
+                let Some(encoded) = connected_stream_size(&text) else {
+                    return Ok(None);
+                };
+                let screen = this
+                    .display()
+                    .ok_or_else(|| error("Viewer display unavailable"))?;
+                Ok(Some(super::ViewerSnapshot {
+                    connected: Some(true),
+                    shape: Some(super::ViewerShapeSnapshot {
+                        connection: text
+                            .rsplitn(3, ':')
+                            .last()
+                            .expect("validated presence")
+                            .to_owned(),
+                        screen,
+                        encoded,
+                        ready: false,
+                    }),
+                    ..Default::default()
+                }))
+            })
+            .await
+            .map_err(error)?
+        })
+    }
+
     fn display(&self) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
         let (width, height) = self.dimensions().ok()?;
         Some(crate::launcher::plugin_launch::PluginDisplay {
@@ -722,3 +777,31 @@ impl ProductionLinuxStreamViewer {
 #[cfg(test)]
 #[path = "production_tests.rs"]
 mod tests;
+
+// Only the native connectionStarted callback emits this StatusText. A live
+// process or a visible Moonlight window alone does not prove a connection.
+fn connected_stream_size(text: &str) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+    let fields: Vec<_> = text
+        .strip_prefix("korri-viewer-connected:")?
+        .split(':')
+        .collect();
+    if fields.len() != 5 {
+        return None;
+    }
+    let pid = fields[0].parse::<u32>().ok()?;
+    let seconds = fields[1].parse::<u64>().ok()?;
+    let nanos = fields[2].parse::<u32>().ok()?;
+    let width = fields[3].parse::<u32>().ok()?;
+    let height = fields[4].parse::<u32>().ok()?;
+    if pid == 0
+        || seconds == 0
+        || nanos >= 1_000_000_000
+        || width == 0
+        || height == 0
+        || width > 16384
+        || height > 16384
+    {
+        return None;
+    }
+    Some(crate::launcher::plugin_launch::PluginDisplay { width, height })
+}

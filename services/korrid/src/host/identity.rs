@@ -74,6 +74,12 @@ pub(super) enum ActiveSession {
             skip_serializing_if = "Option::is_none"
         )]
         after_hooks: Option<super::hooks::AfterHooks>,
+        #[serde(
+            rename = "displayChange",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        display_change: Option<super::live_shape::DisplayChangeContext>,
     },
     CompletionPending {
         #[serde(rename = "launchId")]
@@ -114,6 +120,7 @@ impl ActiveSession {
             runner_id: None,
             save_locations: None,
             after_hooks: None,
+            display_change: None,
         }
     }
 

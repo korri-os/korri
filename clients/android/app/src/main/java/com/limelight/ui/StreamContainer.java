@@ -211,6 +211,15 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
         }
     }
 
+    public void resizeVideoSource(int width, int height, java.util.function.BooleanSupplier current,
+                                  java.util.function.Consumer<Boolean> completed) {
+        if (renderMode == StreamMode.MODE_SGSR && mSgsrRenderer != null) {
+            mSgsrRenderer.resizeSource(width, height, current, completed);
+        } else {
+            completed.accept(current.getAsBoolean());
+        }
+    }
+
     public Surface getSurface() {
         return mCurrentSurface;
     }
@@ -254,6 +263,9 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     }
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        // Detach the decoder before releasing an SGSR input surface. A live
+        // configuration change parks video without ending the connection.
+        game.surfaceDestroyed(holder);
         if (renderMode == StreamMode.MODE_2D) {
             isSurfaceReady = false;
             mCurrentSurface = null;
@@ -261,7 +273,6 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
             mSgsrRenderer.onSurfaceDestroyed();
         }
 
-        game.surfaceDestroyed(holder);
     }
 
     @Override

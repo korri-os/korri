@@ -7,11 +7,26 @@ use jni::{
 };
 use std::sync::Arc;
 
+static VIEWER_CHANGED: std::sync::OnceLock<Arc<tokio::sync::Notify>> = std::sync::OnceLock::new();
+fn viewer_changed() -> Arc<tokio::sync::Notify> {
+    VIEWER_CHANGED
+        .get_or_init(|| Arc::new(tokio::sync::Notify::new()))
+        .clone()
+}
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_viewerDisplayChanged(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    viewer_changed().notify_one();
+}
+
 const CONTROL: &str = "(Ljava/lang/String;)Ljava/lang/String;";
 const DISPLAY: &str = "()Ljava/lang/String;";
 const START: &str = "(Ljava/lang/String;Ljava/lang/String;II)Ljava/lang/String;";
 
 struct AndroidViewer {
+    resize_gate: Arc<tokio::sync::Mutex<()>>,
     vm: JavaVM,
     class: GlobalRef,
 }
@@ -30,10 +45,12 @@ impl AndroidViewer {
                 .iter()
                 .map(|value| JValue::Object(value.as_ref()))
                 .collect::<Vec<_>>();
-            let signature = if arguments.len() == 1 {
-                CONTROL
-            } else {
-                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
+            let signature = match arguments.len() {
+                1 => CONTROL,
+                2 => "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                3 => "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                4 => "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                _ => return Err(jni::errors::Error::JniCall(jni::errors::JniError::InvalidArguments)),
             };
             let result = env
                 .call_static_method(class, method, signature, &values)?
@@ -138,6 +155,49 @@ impl Adapter {
 }
 
 impl LinuxStreamViewer for Adapter {
+    fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
+        Some(viewer_changed())
+    }
+    fn notice<'a>(
+        &'a self,
+        launch: &'a str,
+        message: &'a str,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        let viewer = self.0.clone();
+        let arguments = vec![launch.into(), message.into()];
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || viewer.local("viewerNotice", &arguments))
+                .await
+                .map_err(|_| LinuxViewerError::new("Viewer worker failed"))??;
+            Ok(())
+        })
+    }
+    fn resize<'a>(
+        &'a self,
+        launch: &'a str,
+        connection: &'a str,
+        display: crate::launcher::plugin_launch::PluginDisplay,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        let viewer = self.0.clone();
+        let arguments = vec![
+            launch.into(),
+            connection.into(),
+            display.width.to_string(),
+            display.height.to_string(),
+        ];
+        Box::pin(async move {
+            let _guard = viewer.resize_gate.clone().lock_owned().await;
+            let answer =
+                tokio::task::spawn_blocking(move || viewer.local("viewerResize", &arguments))
+                    .await
+                    .map_err(|_| LinuxViewerError::new("Viewer worker failed"))??;
+            if answer == "Applied" {
+                Ok(())
+            } else {
+                Err(LinuxViewerError::new("Viewer resize not confirmed"))
+            }
+        })
+    }
     fn snapshot<'a>(
         &'a self,
         launch: &'a str,
@@ -272,6 +332,12 @@ pub(super) fn adapter(
     env.get_static_method_id(class, "viewerSnapshot", CONTROL)?;
     env.get_static_method_id(
         class,
+        "viewerNotice",
+        "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+    )?;
+    env.get_static_method_id(class, "viewerResize", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;")?;
+    env.get_static_method_id(
+        class,
         "viewerApply",
         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
     )?;
@@ -285,6 +351,7 @@ pub(super) fn adapter(
         env.get_static_method_id(class, method, CONTROL)?;
     }
     Ok(Arc::new(Adapter(Arc::new(AndroidViewer {
+        resize_gate: Arc::new(tokio::sync::Mutex::new(())),
         vm: env.get_java_vm()?,
         class: env.new_global_ref(class)?,
     }))))

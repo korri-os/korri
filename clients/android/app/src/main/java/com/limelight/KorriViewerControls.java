@@ -23,7 +23,7 @@ final class KorriViewerControls {
         if (!touch && touchOnly(effect)) return false;
         switch (effect) {
             case SET_FILL_MODE: case TOGGLE_KEYBOARD: case TOGGLE_FULL_KEYBOARD:
-            case SET_ZOOM_MODE: case SET_MOUSE_MODE: case SET_LOCAL_CURSOR: case ROTATE_SCREEN:
+            case SET_ZOOM_MODE: case SET_MOUSE_MODE: case SET_LOCAL_CURSOR:
             case TOGGLE_KEYBOARD_CONTROLLER: case SWITCH_TOUCH_SENSITIVITY:
             case SET_SGSR_SHARPNESS: case SET_SGSR_EDGE_THRESHOLD:
             case SET_FACE_BUTTON_FLIP: case SET_RUMBLE: case SET_PICTURE_IN_PICTURE:
@@ -45,6 +45,9 @@ final class KorriViewerControls {
         }
     }
 
+    private static final String PROCESS_CONNECTION = java.util.UUID.randomUUID().toString();
+    static String connection(String prefix) { return PROCESS_CONNECTION + ":" + prefix; }
+
     static String prefix(String launch, long generation, long lease) {
         return "viewer:" + launch + ":" + generation + ":" + lease + ":";
     }
@@ -57,7 +60,9 @@ final class KorriViewerControls {
                     .put("label", label(effect)).put("enabled", true).put("destructive", false)
                     .put("dismissOnSuccess", dismiss(effect)).put("interaction", interaction(game, effect)));
         }
-        JSONObject result = new JSONObject().put("controls", controls);
+        JSONObject result = new JSONObject().put("controls", controls).put("connected", true);
+        JSONObject shape = game.liveResolutionSnapshot(connection(prefix));
+        if (shape != null) result.put("shape", shape);
         BatteryManager battery = (BatteryManager) game.getSystemService(Context.BATTERY_SERVICE);
         int capacity = battery == null ? Integer.MIN_VALUE : battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
         if (capacity >= 0 && capacity <= 100) result.put("batteryPercent", capacity);

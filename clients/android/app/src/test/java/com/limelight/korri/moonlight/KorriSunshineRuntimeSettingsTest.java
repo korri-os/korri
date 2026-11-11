@@ -21,6 +21,47 @@ public class KorriSunshineRuntimeSettingsTest {
     private static final KorriSunshineRuntimeSettings.Authorization CURRENT = () -> true;
 
     @Test
+    public void explicitShapeCanGrowAndChangeAspectWithResolutionOnlyCapabilities() throws Exception {
+        FakeNative nativeApi = FakeNative.ready(81, 20000, 60, 60);
+        nativeApi.wire[7] = 1L << MoonBridge.SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION;
+        nativeApi.wire[9] = 0;
+        nativeApi.wire[10] = 0;
+        ControlledWaiter waiter = new ControlledWaiter();
+        KorriSunshineRuntimeSettings owner = owner(nativeApi, new FakeScheduler(), ignored -> {}, waiter,
+                new KorriSunshineRuntimeSettings.ProcessEpochQueryBudget());
+        AtomicReference<KorriSunshineRuntimeSettings.MutationResult> result = new AtomicReference<>();
+        Thread mutation = new Thread(() -> result.set(owner.setResolution(2448, 1848, CURRENT)));
+        mutation.start();
+        assertTrue(nativeApi.mutationSent.await(1, TimeUnit.SECONDS));
+        assertEquals("2448x1848", nativeApi.lastResolution);
+        synchronized (nativeApi) {
+            nativeApi.wire[18] = 2448;
+            nativeApi.wire[19] = 1848;
+            nativeApi.completeMutation(MoonBridge.SS_RUNTIME_SETTINGS_OUTCOME_APPLIED,
+                    MoonBridge.SS_RUNTIME_SETTINGS_STATUS_APPLIED, MoonBridge.SS_RUNTIME_SETTINGS_REASON_NONE);
+        }
+        waiter.advance();
+        mutation.join(1000);
+        assertFalse(mutation.isAlive());
+        assertEquals(KorriSunshineRuntimeSettings.MutationResult.APPLIED, result.get());
+        assertEquals(2448, owner.width());
+        assertEquals(1848, owner.height());
+        assertTrue(owner.available(MoonBridge.SS_RUNTIME_SETTINGS_OPERATION_SET_RESOLUTION));
+        assertFalse(owner.available(MoonBridge.SS_RUNTIME_SETTINGS_OPERATION_SET_BITRATE_KBPS));
+    }
+
+    @Test
+    public void explicitShapeRejectsInvalidDimensionsBeforeSending() {
+        FakeNative nativeApi = FakeNative.ready(82, 20000, 60, 60);
+        KorriSunshineRuntimeSettings owner = owner(nativeApi, new FakeScheduler(), ignored -> {}, new ControlledWaiter(),
+                new KorriSunshineRuntimeSettings.ProcessEpochQueryBudget());
+        for (int[] size : new int[][] {{0,1848},{2448,0},{2449,1848},{2448,1849},{4098,1848},{2448,4098}}) {
+            assertEquals(KorriSunshineRuntimeSettings.MutationResult.FAILED, owner.setResolution(size[0],size[1],CURRENT));
+        }
+        assertEquals(0,nativeApi.mutationCalls);
+    }
+
+    @Test
     public void appliedWaitsForDelayedExactHostAckAndNotifiesListener() throws Exception {
         FakeNative nativeApi = FakeNative.ready(1, 12345, 60, 60);
         FakeScheduler scheduler = new FakeScheduler();

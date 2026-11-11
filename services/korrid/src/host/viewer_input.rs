@@ -99,6 +99,24 @@ impl LocalInputViewer {
     }
 }
 impl LinuxStreamViewer for LocalInputViewer {
+    fn change_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
+        self.viewer.change_signal()
+    }
+    fn notice<'a>(
+        &'a self,
+        launch: &'a str,
+        message: &'a str,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        self.viewer.notice(launch, message)
+    }
+    fn resize<'a>(
+        &'a self,
+        launch: &'a str,
+        connection: &'a str,
+        display: crate::launcher::plugin_launch::PluginDisplay,
+    ) -> BoxFuture<'a, Result<(), LinuxViewerError>> {
+        self.viewer.resize(launch, connection, display)
+    }
     fn snapshot<'a>(
         &'a self,
         launch: &'a str,

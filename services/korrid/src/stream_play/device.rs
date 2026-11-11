@@ -85,8 +85,15 @@ pub(crate) fn spawn_watch(
     tokio::spawn(async move {
         let mut ticks = tokio::time::interval(std::time::Duration::from_secs(1));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let signal = peers.local_viewer().change_signal();
         loop {
-            ticks.tick().await;
+            tokio::select! {
+                _ = ticks.tick() => {},
+                _ = async {
+                    if let Some(signal) = &signal { signal.notified().await; }
+                    else { std::future::pending::<()>().await; }
+                } => {},
+            }
             if peers.has_selected_session() {
                 if let Err(error) = peers.session_status().await {
                     if error.code() == "HostLaunchFailed" {

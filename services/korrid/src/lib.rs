@@ -50,6 +50,7 @@ pub mod identity;
 pub mod identity_cli;
 pub mod identity_switch;
 pub mod linux_viewer;
+pub mod live_display;
 pub mod local_signer;
 pub mod native_input;
 pub mod network;
@@ -1636,6 +1637,8 @@ pub enum RpcRequest {
     SessionResume(SessionResumeRequest),
     #[serde(rename = "app.session.viewer")]
     SessionViewer(SessionViewerRequest),
+    #[serde(rename = "app.session.viewer.display")]
+    SessionViewerDisplay(live_display::SessionViewerDisplayRequest),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusRequest),
     #[serde(rename = "app.peer.list")]
@@ -1847,6 +1850,8 @@ pub enum RpcResponse {
     SessionResume(SessionTransitionOutcome),
     #[serde(rename = "app.session.viewer")]
     SessionViewer(SessionViewerOutcome),
+    #[serde(rename = "app.session.viewer.display")]
+    SessionViewerDisplay(live_display::SessionViewerDisplayOutcome),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusOutcome),
     #[serde(rename = "app.peer.list")]
@@ -3598,6 +3603,24 @@ async fn dispatch(
             RpcResponse::SessionPrepare(game_routes::SelectedGameLaunchOutcome::Err(
                 installed_routes_unsupported(),
             ))
+        }
+        RpcRequest::SessionViewerDisplay(request) => {
+            let outcome = if let (ServerMode::Host(host), Some(peer)) =
+                (&state.mode, authorization.starting_device())
+            {
+                host.viewer_display_report(peer, request.clone()).await
+            } else {
+                Err(RpcFailure {
+                    code: "OperationUnsupported".into(),
+                    message:
+                        "Viewer display reports require an authenticated peer and a native holder."
+                            .into(),
+                })
+            };
+            RpcResponse::SessionViewerDisplay(match outcome {
+                Ok(value) => live_display::SessionViewerDisplayOutcome::Ok(value),
+                Err(error) => live_display::SessionViewerDisplayOutcome::Err(error),
+            })
         }
         RpcRequest::SessionPrepare(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {

@@ -324,6 +324,7 @@ fn inspect_route(
                 .warnings,
             );
             modifiers.push(ResolvedLaunchModifier {
+                display_change: registry.modifiers().get(id).and_then(|modifier| modifier.display_change.clone()),
                 modifier_id: id.clone(),
                 manifest: modifier_package.package.join("manifest.json"),
                 entry: modifier_package.entry.clone(),

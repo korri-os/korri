@@ -222,7 +222,9 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         | RpcRequest::InvitesNetplay(_)
         | RpcRequest::InvitesStreamPlay(_)
         | RpcRequest::InvitesDismiss(_) => PeerPolicy::LocalOnly,
-        RpcRequest::SessionPrepare(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionPrepare(_) | RpcRequest::SessionViewerDisplay(_) => {
+            PeerPolicy::ExplicitScope(Scope::StreamLaunch)
+        }
         RpcRequest::SavesStatus(_)
         | RpcRequest::SavesHistory(_)
         | RpcRequest::SavesChoose(_)

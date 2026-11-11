@@ -128,6 +128,28 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private byte optimalSlicesPerFrame;
     private boolean refFrameInvalidationActive;
     private int initialWidth, initialHeight;
+    private boolean liveResolutionEnabled;
+    private volatile int liveMaxWidth, liveMaxHeight;
+    private volatile int decodedWidth, decodedHeight;
+
+    public void enableLiveResolution() { liveResolutionEnabled = true; }
+    public int decodedWidth() { return decodedWidth; }
+    public int decodedHeight() { return decodedHeight; }
+    public boolean acceptsLiveResolution(int width, int height) {
+        return liveResolutionEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && adaptivePlayback && width > 0 && height > 0
+                && width <= liveMaxWidth && height <= liveMaxHeight;
+    }
+    public boolean awaitLiveResolution(int width, int height) {
+        long deadline = android.os.SystemClock.elapsedRealtime() + 1500;
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            if (decodedWidth == width && decodedHeight == height) return true;
+            try { Thread.sleep(10); } catch (InterruptedException stopped) {
+                Thread.currentThread().interrupt(); return false;
+            }
+        }
+        return false;
+    }
     private boolean invertResolution;
     private int videoFormat;
     private Surface renderTarget;
@@ -361,6 +383,35 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         return decoderInfo;
     }
 
+    private android.graphics.SurfaceTexture parkedTexture;
+    private Surface parkedSurface;
+
+    public synchronized boolean parkLiveSurface() {
+        if (!liveResolutionEnabled || stopping || videoDecoder == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false;
+        try {
+            if (parkedSurface == null) {
+                parkedTexture = new android.graphics.SurfaceTexture(false);
+                parkedSurface = new Surface(parkedTexture);
+            }
+            videoDecoder.setOutputSurface(parkedSurface);
+            renderTarget = parkedSurface;
+            return true;
+        } catch (RuntimeException refused) { return false; }
+    }
+
+    public synchronized boolean rebindLiveSurface(Surface surface) {
+        if (!liveResolutionEnabled || stopping || videoDecoder == null || surface == null || !surface.isValid()) return false;
+        if (surface == renderTarget) return true;
+        try {
+            videoDecoder.setOutputSurface(surface);
+            renderTarget = surface;
+            if (parkedSurface != null) { parkedSurface.release(); parkedSurface = null; }
+            if (parkedTexture != null) { parkedTexture.release(); parkedTexture = null; }
+            MoonBridge.requestIdrFrame();
+            return true;
+        } catch (RuntimeException refused) { return false; }
+    }
+
     public void setRenderTarget(Surface renderTarget) {
         this.renderTarget = renderTarget;
     }
@@ -545,8 +596,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Populate keys for adaptive playback
         if (adaptivePlayback) {
-            videoFormat.setInteger(MediaFormat.KEY_MAX_WIDTH, initialWidth);
-            videoFormat.setInteger(MediaFormat.KEY_MAX_HEIGHT, initialHeight);
+            videoFormat.setInteger(MediaFormat.KEY_MAX_WIDTH, liveMaxWidth);
+            videoFormat.setInteger(MediaFormat.KEY_MAX_HEIGHT, liveMaxHeight);
         }
 
         // Android 7.0 adds color options to the MediaFormat
@@ -754,6 +805,20 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return -3;
         }
         adaptivePlayback = MediaCodecHelper.decoderSupportsAdaptivePlayback(selectedDecoderInfo, mimeType);
+        liveMaxWidth = initialWidth;
+        liveMaxHeight = initialHeight;
+        if (liveResolutionEnabled && adaptivePlayback) {
+            MediaCodecInfo.VideoCapabilities capabilities = selectedDecoderInfo.getCapabilitiesForType(mimeType).getVideoCapabilities();
+            // Reserve a decoder-supported square so either orientation fits.
+            // Never advertise dimensions outside the allocation negotiated here.
+            for (int side = 4096; side >= Math.max(initialWidth, initialHeight); side -= 8) {
+                if (capabilities.areSizeAndRateSupported(side, side, refreshRate)) {
+                    liveMaxWidth = side;
+                    liveMaxHeight = side;
+                    break;
+                }
+            }
+        }
         fusedIdrFrame = MediaCodecHelper.decoderSupportsFusedIdrFrame(selectedDecoderInfo, mimeType);
 
         for (int tryNumber = 0;; tryNumber++) {
@@ -1471,6 +1536,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
                                     LimeLog.info("Output format changed");
                                     outputFormat = videoDecoder.getOutputFormat();
+                                    decodedWidth = outputFormat.containsKey("crop-right") && outputFormat.containsKey("crop-left")
+                                            ? outputFormat.getInteger("crop-right") - outputFormat.getInteger("crop-left") + 1
+                                            : outputFormat.getInteger(MediaFormat.KEY_WIDTH);
+                                    decodedHeight = outputFormat.containsKey("crop-bottom") && outputFormat.containsKey("crop-top")
+                                            ? outputFormat.getInteger("crop-bottom") - outputFormat.getInteger("crop-top") + 1
+                                            : outputFormat.getInteger(MediaFormat.KEY_HEIGHT);
                                     LimeLog.info("New output format: " + outputFormat);
                                     break;
                                 default:
@@ -1650,8 +1721,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     }
 
     @Override
-    public void cleanup() {
+    public synchronized void cleanup() {
         videoDecoder.release();
+        if (parkedSurface != null) { parkedSurface.release(); parkedSurface = null; }
+        if (parkedTexture != null) { parkedTexture.release(); parkedTexture = null; }
     }
 
     @Override
@@ -1847,7 +1920,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                     sb.append(context.getString(R.string.perf_overlay_lite_fps, fps.totalFps));
                 }else{
                     // If GPU renders the frames, the render FPS is the actual drawn and visible fps for the user
-                    sb.append(context.getString(R.string.perf_overlay_streamdetails, initialWidth + "x" + initialHeight, fps.totalFps));
+                    sb.append(context.getString(R.string.perf_overlay_streamdetails, (decodedWidth > 0 ? decodedWidth : initialWidth) + "x" + (decodedHeight > 0 ? decodedHeight : initialHeight), fps.totalFps));
                     sb.append('\n');
                     sb.append(context.getString(R.string.perf_overlay_decoder, decoder)).append('\n');
                     sb.append(context.getString(R.string.perf_overlay_incomingfps, fps.receivedFps)).append('\n');

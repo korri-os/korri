@@ -1900,6 +1900,41 @@ export interface SessionTransitionResult {
 	changed: boolean;
 }
 
+export interface SessionViewerDisplay {
+	display: PluginDisplay;
+	owner: boolean;
+	portrait: boolean;
+	/** Present only for the exact owner that must apply this pending encode size. */
+	revision?: string;
+	notice?: string;
+}
+
+export type ViewerDisplayEvent =
+	| { kind: "report", payload: {
+	connection: string;
+	display: PluginDisplay;
+}}
+	| { kind: "leave", payload: {
+	connection: string;
+}}
+	| { kind: "portrait", payload: {
+	connection: string;
+	enabled: boolean;
+}}
+	| { kind: "applied", payload: {
+	connection: string;
+	revision: string;
+}}
+	| { kind: "refused", payload: {
+	connection: string;
+	revision: string;
+}};
+
+export interface SessionViewerDisplayRequest {
+	expectedLaunchId: string;
+	event: ViewerDisplayEvent;
+}
+
 /**
  * Local stream-viewer effects. They never change the far game's execution.
  * Grounded in LinuxStreamViewer's background and stop effects.
@@ -2244,6 +2279,7 @@ export type RpcRequest =
 	| { _tag: "app.session.leave", payload: SessionLeaveRequest }
 	| { _tag: "app.session.resume", payload: SessionResumeRequest }
 	| { _tag: "app.session.viewer", payload: SessionViewerRequest }
+	| { _tag: "app.session.viewer.display", payload: SessionViewerDisplayRequest }
 	| { _tag: "app.source.status", payload: SourceStatusRequest }
 	| { _tag: "app.peer.list", payload: PeerListRequest }
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
@@ -2343,6 +2379,7 @@ export type RpcResponse =
 	| { _tag: "app.session.leave", outcome: SessionTransitionOutcome }
 	| { _tag: "app.session.resume", outcome: SessionTransitionOutcome }
 	| { _tag: "app.session.viewer", outcome: SessionViewerOutcome }
+	| { _tag: "app.session.viewer.display", outcome: SessionViewerDisplayOutcome }
 	| { _tag: "app.source.status", outcome: SourceStatusOutcome }
 	| { _tag: "app.peer.list", outcome: PeerListOutcome }
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }
@@ -2437,6 +2474,10 @@ export type SessionStreamPlayOutcome =
 
 export type SessionTransitionOutcome =
 	| { _tag: "Ok", payload: SessionTransitionResult }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SessionViewerDisplayOutcome =
+	| { _tag: "Ok", payload: SessionViewerDisplay }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SessionViewerOutcome =
