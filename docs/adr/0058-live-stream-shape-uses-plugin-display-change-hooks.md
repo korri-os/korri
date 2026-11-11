@@ -46,9 +46,12 @@ Every gamescope package shipped with this change carries the hook.
   runtime-user execution boundary.
 - Android's `KorriStreamViewerState.connected` observes an actual connection.
   Selecting a route or registering a stream player is not proof of connection.
-- Android's runtime-resolution adapter and Sunshine's runtime-resolution
-  patches provide the encoder mechanism. Their success and failure must be
-  observed, not inferred from accepting a command.
+- Android retains a runtime-resolution adapter, but current Sunshine does not
+  carry its server counterpart. Plugins commit `32dfe4415` removed that protocol
+  and its patches on 2026-10-23. The earlier research read a stale checkout.
+  Live encode resizing without reconnecting therefore needs new server work.
+  The Sway/gamescope demo proves live game rendering, not live encode resizing.
+  This prerequisite must be resolved before the full transaction is implemented.
 
 Connected viewers, their authenticated identities, and reconnect generations
 must be tracked per exact launch. A stale disconnect must not evict a newer
