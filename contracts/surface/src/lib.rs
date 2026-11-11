@@ -1469,10 +1469,11 @@ pub enum SurfaceMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         released: Option<bool>,
     },
-    /// A finger dragged or flung a row that draws only the items near focus
+    /// A finger dragged or flung a row that draws only some of its items
     /// (ADR 0055). `region` is the surface's own focus-region name; `by` is the
     /// signed number of whole items moved since the last `Dragged`. The
-    /// surface moves focus by `by` within the region, clamped at its ends.
+    /// surface moves that row's scroll position by `by`, clamped at its ends.
+    /// Focus does not move.
     Dragged { region: String, by: i32 },
     /// A finger went down anywhere on the surface (ADR 0055). The shell sends
     /// it once per gesture, before any `Activated` or `Dragged` that gesture

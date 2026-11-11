@@ -20,6 +20,11 @@ targets carry an `act`, which is what Confirm runs. Zone's Confirm handler
 - A tap on a target moves focus there and activates it, as if the person had
   moved there and pressed Confirm. It reuses what Confirm already does on that
   target (Pico's `act`, Zone's Confirm handler).
+- Exception, owner decision after the first Fold7 test (2026-11-10): on a
+  game in a list (library rows, the shelf, the grid, Find's and the store's
+  results), the first tap only moves focus there, and a tap on the focused
+  game opens it. Buttons, menu rows, settings rows and keyboard keys still act
+  on one tap.
 - The package's Slint view decides which target a tap hit. Focusable atoms
   report their focus-target id through one generic root callback, a convention
   like `reveal`. The shell carries that id to logic as a new `SurfaceMessage`.
@@ -38,18 +43,20 @@ targets carry an `act`, which is what Confirm runs. Zone's Confirm handler
   nothing to the treaty.
 - Scrolling does not move focus. The next button press scrolls the focused
   target back into sight.
-- Exception, owner decision during the build (2026-11-09): rows that draw
-  only the items near focus (Pico's shelf, RESUME, Find's and the store's
-  results; Zone's card band and save band) cannot follow the finger with focus
-  standing still, because nothing is drawn past the near items. On these rows a
-  sideways drag or fling moves focus: the row slides under the finger, and
-  focus follows it. The treaty gains a second variant, `Dragged { region, by }`.
-  `region` is the package's own focus-region name (contract section 8.4), and
-  `by` is the signed number of whole items moved since the last `Dragged`. The
-  view keeps the row under the finger between whole items and runs a fling's
-  momentum itself. Logic moves focus by `by` within the region, clamped at its
-  ends, keeps the highlight hidden, and loads more games through the existing
-  focus-driven paging.
+- Rows that draw only the items near focus (Pico's shelf, RESUME, Find's and
+  the store's results; Zone's card band and save band) cannot draw past the
+  near items by themselves. The treaty has a second variant,
+  `Dragged { region, by }`. `region` is the package's own focus-region name
+  (contract section 8.4), and `by` is the signed number of whole items moved
+  since the last `Dragged`. The view keeps the row under the finger between
+  whole items and runs a fling's momentum itself.
+- Owner decision after the first Fold7 test (2026-11-10), replacing the
+  2026-11-09 rule that a drag moved focus: scrolling never moves focus, on
+  these rows too. Logic keeps a separate scroll position per row. `Dragged`
+  moves that position by `by`, clamped at the row's ends. Logic draws the
+  items around the scroll position and pages the catalog from it, as it pages
+  from focus today. Focus stays on the selected game, even when it is out of
+  sight. The next button press brings the row back to the focused game.
 - While the person uses touch, the package hides its focus highlight. The
   highlight comes back on the next button press, and that press brings the
   focused target back into sight even when it does not move focus.
