@@ -205,9 +205,18 @@ bun test packages/velvet/test
 bun run velvet:typecheck
 cargo test --release --features fixture --test velvet_package
 cargo run --release -- verify packages/velvet
-bash packages/velvet/preview/probe.sh  <surface-probe>
+bash packages/velvet/preview/probe.sh  <surface-probe> [MAX] [JOBS] [SCENARIOS...]
 bash packages/velvet/preview/shots.sh  <korri-shell> <fixture-korrid> OUT [SIZES] [SCENARIOS...]
 ```
+
+`probe.sh` runs the shell's own probe (where each press goes, and a tap on
+every target) over scenarios' models. Over all 92 it takes hours; these 33
+have the models that differ: `home home-no-art set-peer home-fresh home-one
+home-stale empty error loading first-boot first-boot-starter wifi wifi-none
+wifi-failed store store-results store-offer store-downloading identity
+identity-backup identity-retired saves runner launch-settings overlay
+overlay-groups busy-steps problem-long confirm choose-save invites
+settings-problem ended`.
 
 `velvet_package.rs` draws every preview state at five sizes, plays every
 scenario at six and checks the focused target is all in sight after every

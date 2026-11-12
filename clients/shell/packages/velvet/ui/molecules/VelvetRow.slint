@@ -212,7 +212,9 @@ export component VelvetRow inherits Rectangle {
     VelvetTap {
         width: parent.width;
         height: parent.height;
-        target: root.target && !root.inert && !root.it.dim ? root.it.focus-id : "";
+        // A dimmed row is still a target: a tap moves the focus there, as a button would,
+        // and logic does nothing more with it.
+        target: root.target && !root.inert ? root.it.focus-id : "";
         range: root.it.kind == "range";
         track-start: root.track-x;
         track-end: root.track-x + root.track-w;

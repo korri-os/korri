@@ -7,19 +7,25 @@
 # what is drawn (contract 8.4) and taps every target (ADR 0055). Prints each
 # walk's line and every FAIL, then the total; exits 1 when any walk fails.
 #
-#   bash packages/velvet/preview/probe.sh PROBE [MAX] [JOBS]
+#   bash packages/velvet/preview/probe.sh PROBE [MAX] [JOBS] [SCENARIOS...]
 #
 # PROBE: the built surface-probe (cargo build --release --features fixture
-# --example surface-probe, in clients/shell). MAX defaults to 40, JOBS to 8.
+# --example surface-probe, in clients/shell). MAX defaults to 12, JOBS to 8.
+# With no SCENARIOS it walks every one, which takes hours: the probe draws
+# and taps every target of every state at five sizes, and most scenarios
+# share a model. Name the ones whose models differ for a run of minutes
+# (README, "Checks").
 set -euo pipefail
 probe=$(realpath "$1")
-max=${2:-40}
+max=${2:-12}
 jobs=${3:-8}
+shift $(( $# < 3 ? $# : 3 ))
 velvet=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/models" "$work/out"
-for scenario in "$velvet"/preview/scenarios/*.json; do
+if (( $# > 0 )); then scenarios=(); for name in "$@"; do scenarios+=("$velvet/preview/scenarios/$name.json"); done; else scenarios=("$velvet"/preview/scenarios/*.json); fi
+for scenario in "${scenarios[@]}"; do
   name=$(basename "$scenario" .json)
   count=$(jq '.models | length' "$scenario")
   for ((i = 0; i < count; i++)); do

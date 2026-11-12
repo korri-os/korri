@@ -262,6 +262,7 @@ export component Overlay inherits Window {
     in property <string> clock;
     in property <[Fact]> facts;
     in property <[Row]> rows;
+    // Korri was asked to close the overlay. The rows stay as they are until it does.
     in property <bool> leaving;
     in property <Keyboard> keyboard;
     in property <[Key]> keys;
@@ -300,7 +301,6 @@ export component Overlay inherits Window {
         clock: root.clock;
         facts: root.facts;
         rows: root.rows;
-        inert: root.leaving;
         activated(target, at, released) => { root.activated(target, at, released); }
     }
     if root.keyboard.shown: VelvetKeyboard {

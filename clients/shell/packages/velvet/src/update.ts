@@ -324,7 +324,8 @@ function pressed(state: State, button: SurfaceButton, model: Model, out: Request
   const what = shown(state, model)
   const panel = screenPanel(state, model)
   if (panel !== undefined) {
-    if (what === "overlay" && state.overlay.leaving) return state
+    // Korri was asked to close the overlay: the focus still moves, and nothing is asked twice.
+    if (what === "overlay" && state.overlay.leaving && button !== "up" && button !== "down") return state
     if (button === "system" && what === "page" && state.pages[state.pages.length - 1]?.p !== "settings") return perform(state, { t: "open", page: { p: "settings" } }, model, out)
     return done(panelPress(state, panel, button, p))
   }

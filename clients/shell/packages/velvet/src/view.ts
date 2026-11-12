@@ -95,9 +95,14 @@ function pageView(panel: PanelSpec, state: State, p: Plan, live: boolean) {
       qr: side?.qr === undefined ? NO_IMAGE : { $image: qrOf(side.qr) },
     },
     rows: panel.rows.map(row => rowView(row, "rows", focus, live)),
-    buttons: panel.buttons.map((button): PillView => pill(button.label, "buttons", button.id, live && button.id === focus, {
-      icon: button.icon ?? "", quiet: button.quiet === true, dim: button.dim === true, danger: button.danger === true, note: "",
-    })),
+    // Down from the rows lands on the first button that can be pressed (a dimmed Next waits
+    // beside Skip): that one is the region's active entry, and the rows' exit says so.
+    buttons: panel.buttons.map((button): PillView => ({
+      ...pill(button.label, "buttons", button.id, live && button.id === focus, {
+        icon: button.icon ?? "", quiet: button.quiet === true, dim: button.dim === true, danger: button.danger === true, note: "",
+      }),
+      focusActive: button === (panel.buttons.find(candidate => candidate.dim !== true) ?? panel.buttons[0]),
+    } as PillView)),
     panelLines: (side?.lines ?? []).flatMap(line => breakLines(line.length > 60 && !line.includes(" ") ? chunk(line, 28) : line, p.fact, p.panelW)),
     tiles: game === undefined ? [] : [gameCard(game)],
   }
@@ -112,7 +117,7 @@ function chunk(text: string, size: number): string {
 
 function panelExits(panel: PanelSpec): Record<string, Record<string, { to: string; entry: string }>> {
   const rows = panel.rows.some(isTarget)
-  return rows && panel.buttons.length > 0 ? { rows: { down: { to: "buttons", entry: "first" } }, buttons: { up: { to: "rows", entry: "remembered" } } } : {}
+  return rows && panel.buttons.length > 0 ? { rows: { down: { to: "buttons", entry: "active" } }, buttons: { up: { to: "rows", entry: "remembered" } } } : {}
 }
 
 function keyboardView(state: State, live: boolean) {
@@ -314,7 +319,7 @@ export function overlayView(state: State, model: Model) {
     titleSize: fitCaps(overlay?.title ?? "Paused", p.pauseW * 0.8, p.head * 2.2, p.head, 16).size,
     clock: model.clockLabel ?? "",
     facts,
-    rows: panel === undefined ? [] : panel.rows.map(row => rowView(row, "rows", focus, top === "screen" && !state.overlay.leaving)),
+    rows: panel === undefined ? [] : panel.rows.map(row => rowView(row, "rows", focus, top === "screen")),
     leaving: state.overlay.leaving,
     keyboard: keyboard.keyboard,
     keys: keyboard.keys,

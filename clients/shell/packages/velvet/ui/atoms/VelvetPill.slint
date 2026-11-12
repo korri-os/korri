@@ -89,7 +89,8 @@ export component VelvetPill inherits Rectangle {
     VelvetTap {
         width: parent.width;
         height: parent.height;
-        target: root.pill.shown && !root.pill.dim && !root.inert ? root.pill.focus-id : "";
+        // A dimmed pill is still a target (see VelvetRow).
+        target: root.pill.shown && !root.inert ? root.pill.focus-id : "";
         activated(target, at, released) => { root.activated(target, at, released); }
     }
 }
