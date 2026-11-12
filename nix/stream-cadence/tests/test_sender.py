@@ -212,6 +212,24 @@ class Cleanup(unittest.TestCase):
         self.assertFalse(root.exists())
         self.assertIsNotNone(tracked.poll())
 
+    @staticmethod
+    def ended(pid: int) -> bool:
+        """A killed process has ended when it is gone, or a zombie that its new parent has not reaped yet.
+
+        The stray is an orphan. On a loaded host its entry can stay in /proc
+        for a moment after the kill, and that is not the agent's to end. The
+        agent's own check (`survivors`) no longer sees it then.
+        """
+        for _ in range(50):
+            try:
+                state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+            except OSError:
+                return True
+            if state == "Z":
+                return True
+            time.sleep(0.1)
+        return False
+
     def test_close_ends_what_descends_from_the_fixture_and_nothing_else(self):
         root = Path(tempfile.mkdtemp(prefix="cadence-sender-test-"))
         session = self.session(root)
@@ -239,7 +257,7 @@ class Cleanup(unittest.TestCase):
         try:
             restore = session.close()
             self.assertEqual(restore["stray_processes_killed"], [left_behind])
-            self.assertFalse(Path(f"/proc/{left_behind}").exists())
+            self.assertTrue(self.ended(left_behind))
             # Listed and alive: the agent kills only what it can prove its own.
             self.assertEqual(
                 sorted(row["pid"] for row in restore["other_processes"]),
