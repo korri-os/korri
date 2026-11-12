@@ -218,14 +218,24 @@ it. The sender still revokes the certificate on exit.
 
 On a device with the enabled `@korri:moonlight` plugin, `view` runs the
 plugin's own `moonlight` on the device's own compositor and its real panel.
-A plugin that is installed but switched off counts as absent: the device then
-gets the copied viewer and the fixture.
+A plugin that is switched off, or whose `korri-plugin status` fails, is not
+usable. What happens then depends on the chip:
+
+- korrid's chip table names a hardware picture path for the device (every
+  handheld on the bench). The tool refuses the run and says why the plugin is
+  not usable. It never runs its software viewer there: that viewer decodes on
+  the CPU, it is not the product's picture path, and it heats a passive
+  device.
+- The table names none. The device gets the copied viewer and the fixture.
 
 The agent runs as root, changes to the compositor's user with that user's
 groups, and starts the viewer with the arguments of korrid's `linux_viewer`
 (`stream_args`). The `-platform` value comes from a copy of korrid's chip
-table in `viewer.py`. A test reads korrid's file and fails when the two
-differ.
+table in `viewer.py`. `tests/test_korrid_copy.py` reads korrid's file and
+fails when the two differ: the chips, each picture path, the default, the
+answer for an absent device tree, and whole-value comparison. The source
+gate runs it, so the app build depends on it. The plugin's `moonlight` is one
+program and not a wrapper, so its CPU time is the viewer's.
 
 This is not a korrid launch. The differences:
 
@@ -234,10 +244,14 @@ This is not a korrid launch. The differences:
 - The arguments carry the tool's request (`-width`, `-height`, `-fps`,
   `-codec`, `-bitrate`), not the settings that the plugin renders for a
   launch.
+- `-app` is the sender's application: `Desktop` with the sender fixture.
+  korrid asks for `Korri Stream`.
 - `-viewonly` is set and no `-input` seat is given.
 - Sound goes to SDL's dummy driver. The product's audio server exists only
   inside a korrid launch.
-- HOME and the key directory are the run directory.
+- `HOME`, `XDG_RUNTIME_DIR`, `XDG_CACHE_HOME`, `TMPDIR` and the key directory
+  are in the run directory. The viewer's shader cache therefore starts empty
+  in each run.
 - The agent, not korrid, asks sway for fullscreen and focus. It tries every
   0.1 s until sway knows the window. `startup_ms` contains that step.
 - korrid's own launch path and its lifecycle reports are not used.
@@ -262,42 +276,64 @@ short run (10 scored seconds, 640x480) on each handheld:
 | `startup_ms` | 1990.5 | 1569.1 |
 | Viewer CPU, CPU seconds each second | 0.147 | 0.135 |
 
-The next run on the RG353M ended 5 s into the measured stream: the device
-reset. In the 7 s before, the viewer used about 1 to 2 CPU seconds each second
-in place of 0.15. The device's log of that run is lost, and no cause is
+**The next run on the RG353M was not this path, and it reset the device.**
+In that run `korri-plugin status` gave no enabled plugin, to the tool and to
+the agent alike. The tool kept no reason, so the cause is not known. The
+tool then did what it did for a server-only device: it copied the nixpkgs
+viewer and ran it in the fixture, at 1920x1080 with software decode, on an
+RK3566. That viewer used about 1 to 2 CPU seconds each second. The device
+left the USB link 5 s into the measured stream and rebooted. No cause is
 proven; a thermal reset fits. With nothing of the tool running, that device
-reads 69 to 74 °C, and its first passive trip point is 70 °C: its korrid
-uses one whole CPU. No handheld baseline exists, and device runs stopped
-there.
+reads 69 to 74 °C, and its first passive trip point is 70 °C (its korrid
+uses one whole CPU, issue #165). The tool now refuses that case, and keeps
+the reason when the plugin is not usable. No handheld baseline exists.
 
-By the gap rule of "Capture gaps", 3 of the RG353M run's 4 scored gaps lose
-an ID, so that run stays invalid. The RG35XX Pro run has no gap.
+By the gap rule of "Capture gaps", the RG353M run stays invalid: 14 of the
+15 gaps of its record lose an ID. The RG35XX Pro run has no gap.
 
 ### The heat guard
 
-A viewer measure can heat a passive device. The viewer's agent guards every
-run, on every target. It reads each thermal zone and its trip points from
+A viewer measure can heat a passive device. The viewer's agent guards the
+viewer side of every run. It reads each thermal zone and its trip points from
 `/sys/class/thermal` at run time. No temperature of a device is in the tool.
+**The sender's agent has no guard yet**: a hot host that runs the sender
+fixture encodes unguarded.
+
 The tool's own rules, in `viewer.py`:
 
 | Rule | Limit |
 | --- | --- |
 | A run does not start | at or above a zone's lowest passive trip point. With no passive trip point: within 20 °C of its critical trip point. |
 | A run ends at once | 10 °C below a zone's critical trip point, or half-way between its highest passive trip point and its critical trip point when that is lower. |
-| A run of the installed viewer on a hardware picture path ends at once | when the viewer's log says that its first frame did not come from the hardware decoder, or when the viewer uses more than 1.0 CPU second each second for 2 s. |
-| A valid run of that viewer | needs the log line that says hardware decode started. |
+| A run does not start, and a running viewer is stopped | when the guard cannot read: a zone that has a limit is gone or gives no temperature, a zone's trip points cannot be read, or the guard's own thread fails. |
+| A device with a hardware picture path does not run | when no zone has a critical trip point: the guard has no limit for it. |
+| A device with a hardware picture path does not run the software viewer | ever. |
+| A viewer on a hardware picture path is stopped | when its log says that its first frame did not come from the hardware decoder, or when it uses more than 1.0 CPU second each second for 2 s. |
+| A valid run on a hardware picture path | needs the log line of the measured start that says hardware decode started. |
 
-A zone with no critical trip point is recorded and not judged. A trip point
-at or below zero is a placeholder and counts as absent. A thread of the agent
-looks at a running viewer four times each second and stops it by itself, so a
-slow host or link cannot delay the stop. The run then ends as invalid with
-the reason, and cleanup runs as after any run.
+A device with no hardware picture path and no zone with a critical trip
+point runs unguarded; `discovered.viewer.heat_guarded` is then false. A zone
+with readable trip points and no critical one is recorded and not judged. A
+trip point at or below zero is a placeholder and counts as absent.
 
-Each viewer sample holds `thermal` (each zone's temperature in millidegrees)
-and `hardware_decode`, and the samples of the locating start are kept too.
-Each run prints the lowest and highest temperature of the guarded zones.
-`viewer.thermal` in the result holds the zones, their trip points and the
-limits that the tool derived.
+The tool asks the viewer's agent for the start rules before it starts
+anything, the sender fixture included. A thread of the agent then looks at a
+running viewer four times each second and stops it by itself, so a slow host
+or link cannot delay the stop. The run ends as invalid with the reason, also
+when the stop comes after the last sample, and cleanup runs as after any
+run.
+
+Each viewer start writes its own `viewer.log`; the log of the locating start
+is kept as `viewer.earlier.log`. Each viewer sample holds `thermal` (a list:
+zone, type and temperature in millidegrees, or no temperature when it cannot
+be read) and `hardware_decode`, and the samples of the locating start are
+kept too. Each run prints the lowest and highest temperature of the guarded
+zones. `discovered.viewer.thermal` in the result holds the zones, their trip
+points and the limits that the tool derived.
+
+`--test-heat-end-margin DEGREES` is for a test of the guard only. It moves
+the end limit down, so that the guard ends a run on a cool device. It cannot
+move the limit up: a margin below the tool's own 10 °C is not taken.
 
 For the RG353M the limits are: start below 70 °C, end at 85 °C (critical 95).
 For the RG35XX Pro: start below 60 °C, end at 90 °C (critical 110). The build
@@ -357,10 +393,10 @@ request, and `display.refresh_hz` is the mode.
 
 Two results follow from that rate.
 
-- **A floor on a 60 Hz panel.** The panel refreshes about 2.3 times each
-  second more often than the fixture sends a frame. Each of those refreshes
-  repeats a picture, so a viewer on a 60 Hz panel shows about 2.3
-  `repeated_frames` and `late_frames` each second that come from the fixture,
+- **A floor on a 60 Hz panel.** The panel refreshes about 2.2 times each
+  second more often than the fixture sends a frame (60 minus 57.8). Each of
+  those refreshes repeats a picture, so a viewer on a 60 Hz panel shows about
+  2.2 `repeated_frames` and `late_frames` each second that come from the fixture,
   not from the viewer. Compare two viewers against the same fixture, and
   subtract nothing: the floor is the same for both.
 - **`expected_new_frames` is a ceiling, not the real rate.** It is the mode's
@@ -418,6 +454,11 @@ In a quieter moment on the same host, a 20 second stream to the `run`
 client had no presentation interval above 18 ms. Record a baseline only on a
 host that is quiet for the whole set.
 
+Those ten runs were valid by the gap rule of that day. By today's rule, four
+of the ten records hold a gap that loses an ID, so this proof must be
+recorded again. The heat guard refuses the viewer on that host while its CPU
+zone reads 99 °C.
+
 `tests/intervals.py RESULTS.json` prints, for each run, the interval
 distribution of the sender's presentations and of the new IDs on the viewer's
 display. A long tail in the first is the sender's own.
@@ -438,23 +479,55 @@ number is estimated. An unreadable output frame is a count, not an invalid
 recording: a viewer can show a frame without a whole bar.
 
 **Capture gaps.** A gap is an interval above 1.5 refresh periods between two
-records in the scored time. `score.py:capture_gaps` judges each gap by the
-display times and the IDs of the record, and by nothing else:
+records. `score.py:capture_gaps` judges each gap by the display times and the
+IDs of the record, and by nothing else:
 
-- **A gap that loses an ID** counts in `viewer.capture_gaps`. The sender
-  presented an ID that appears nowhere in the record, and that ID was due
-  inside the gap: the records up to the gap show only older IDs, and the
-  records after it show only newer ones. The display record is then
-  incomplete, because nothing can tell a frame that the capture missed from
-  a frame that the viewer dropped. The default limit is zero, and a run
-  above `--max-capture-gaps` is invalid.
+- **A gap that loses an ID** counts in `viewer.capture_gaps`. The display
+  record is then incomplete, because nothing can tell a frame that the
+  capture missed from a frame that the viewer dropped. The default limit is
+  zero, and a run above `--max-capture-gaps` is invalid.
 - **A gap that loses no ID** counts in `viewer.output_repeats`, which
   `verdict` judges, and the run stays valid. The panel showed one picture
   across the gap. At worst the record lacks one output frame that repeated
   that picture.
 
-A lost ID with no gap beside it is a dropped frame (`capture_misses`) and
-no gap.
+How a gap is judged:
+
+- **Which IDs are lost.** The source counts its IDs up by one. An ID is lost
+  when it is nowhere in the record and the sender did not discard it itself.
+  The sender's presentation log is not asked, so a log that lacks a line
+  hides nothing.
+- **Which lost IDs belong to a gap.** Display order places a lost ID only
+  between its neighbours. Each gap is judged by the two readable records
+  before it and the two after it: an ID between their oldest and newest that
+  is lost makes the gap lose an ID. The one record of margin on each side is
+  on purpose. A lost ID right beside a gap can belong to it, and a torn frame
+  shows two IDs. IDs far from a gap decide nothing about it.
+- **Order.** Those four records must be in order. A gap where they are not,
+  or with no readable record on one side, cannot be judged and counts as
+  losing an ID.
+- **The scored time.** A gap counts when any part of it lies in the scored
+  time. A gap after the scored end also counts when it loses an ID that the
+  sender presented inside the scored time, because `score()` books a lost ID
+  by the sender's time.
+
+A lost ID with no gap within one record of it is a dropped frame
+(`capture_misses`) and no gap.
+
+**What this costs.** A viewer that skips a late frame to catch up makes a
+gap that loses an ID. The record cannot tell that from a missed capture, so
+with the default limit such a viewer gives no valid run, and no set of five.
+The default stays at zero; a method that counts vblanks is the way out, not
+a higher limit.
+
+**What the rule cannot see.**
+
+- The capture misses a frame between two commits that are less than 1.5
+  periods apart in sum. No gap exists, and the missed ID counts as a dropped
+  frame of the viewer. With intervals down to 0.61 period that can happen.
+- The capture misses an output frame that repeated a picture, with no gap.
+  The record lacks one repeat and nothing shows it.
+- An ID that the sender's log wrongly marks as discarded is never lost.
 
 `copy_ns` stays in the record as evidence. No rule and no verdict metric
 reads it. An earlier rule used it and assumed that two compositor commits are
@@ -472,13 +545,8 @@ and 1.25 periods (one short run each on 2026-11-11, `tests/intervals.py`):
 | above 1.50: a gap | 18 | 0 |
 
 In that RG353M run the earlier rule called one gap an output repeat although
-an ID was lost in it. From the first readable frame on, 11 of 15 gaps lose
-an ID; 3 more gaps lie before that frame.
-
-What the rule cannot see: when the capture misses a frame between two
-commits that are less than 1.5 periods apart in sum, no gap exists, and the
-missed ID counts as a dropped frame of the viewer. With intervals down to
-0.61 period that can happen, and the record cannot show it.
+an ID was lost in it. From the first readable frame on, 14 of 15 gaps lose
+an ID by the rule above; 3 more gaps lie before that frame.
 
 ### Verdict
 
@@ -494,7 +562,12 @@ for each metric.
 `verdict` refuses two results that were not measured under the same
 conditions: the sender's display mode, Sunshine version, encoder and capture
 backend, the sender's model and render node, the viewer device's model, and
-the requested resolution, frame rate, codec, bitrate and viewer refresh. A difference there would judge the sender, not the viewer. An unwatched
+the requested resolution, frame rate, codec, bitrate and viewer refresh. A
+difference there would judge the sender or the device, not the viewer. The
+model is the device's own name for itself; on a board whose firmware gives a
+placeholder (aka says "System Product Name"), two such machines look alike.
+When only one result has a condition, `verdict` says that this result was
+recorded before the tool kept it. An unwatched
 display keeps the mode of the last viewer that shaped it, so check the mode
 before a candidate run. `--allow-different-conditions` overrides the refusal.
 
@@ -505,10 +578,12 @@ data and are not part of the tool's Nix source.
 | --- | --- | --- | --- |
 | `baselines/aka` | 2026-11-11, five runs | nixpkgs `moonlight-embedded` 2.7.1, `sdl` system, in the fixture | The session part and network library on aka. Record it again with the published `@korri:moonlight` x86_64 plugin before stage 1 of #391 compares against it. |
 
-That baseline is older than three things that now run on the measured
-device during a measure: the check for a `korri-game-*` unit (one
-`systemctl list-units` every 2 s), the thermal reads of the heat guard, and
-the guard's thread. Record it again before a comparison that counts.
+That baseline must be recorded again before any comparison. It predates the
+condition `viewer_model`, so `verdict` refuses it against every result of
+today's tool. It also predates the gap rule above and
+three things that now run on the measured device during a measure: the check
+for a `korri-game-*` unit (one `systemctl list-units` every 2 s), the
+thermal reads of the heat guard, and the guard's thread.
 
 In that baseline the viewer's delay grows in steps of one refresh period
 during the first 20 seconds and then stays near 51.5 ms, about three periods
