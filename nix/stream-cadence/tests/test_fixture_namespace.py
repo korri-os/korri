@@ -33,3 +33,13 @@ class FixtureNamespace(unittest.TestCase):
         self.assertEqual(environment['XDG_RUNTIME_DIR'], '/tmp/run/rt')
         self.assertNotIn('XAUTHORITY', environment)
         self.assertEqual(environment['SDL_AUDIODRIVER'], 'dummy')
+
+
+class PrivateBus(unittest.TestCase):
+    def test_private_fixture_does_not_autolaunch_dbus_or_reach_the_product_bus(self):
+        session = object.__new__(viewer.Session)
+        session.root = Path('/tmp/run')
+        session.fixture = session.plugin_viewer = session.x_namespace = True
+        environment = session.viewer_environment()
+        for name in ('DBUS_SESSION_BUS_ADDRESS', 'DBUS_SYSTEM_BUS_ADDRESS'):
+            self.assertTrue(environment[name].startswith('unix:path=/tmp/run/rt/'))

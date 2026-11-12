@@ -1469,7 +1469,8 @@ nor its abstract socket can be the product's. All run directories are
 created after the mount; both agents see them. The product's `/tmp` is not
 changed. `/dev/dri`, graphics drivers, `/proc` and thermal sensors stay
 visible. Viewer-side children also take a child-only mount namespace with
-an empty tmpfs over `/dev/input`, before dropping privileges.
+an empty tmpfs over `/dev/input`, before dropping privileges. Explicit nonexistent private DBus addresses
+also prevent session-bus autolaunch and access to the product's system bus.
 
 The cost is another X server and a root-only namespace setup. This route
 cannot stream across two devices: the isolated loopback cannot reach the
@@ -1482,8 +1483,8 @@ uses none of this namespace route.
 and network/mount identities. `viewer_fixture.private_x_namespace` records
 whether this route ran. The agent reads the viewer's open files and Linux
 Unix-socket diagnostics in each sample. Peer socket inodes must join the
-viewer's actual X connection to an Xwayland descendant of the fixture
-compositor in the pair's network namespace. An X connection to any other
+viewer's actual X connection to an Xwayland in the pair's network namespace that has an actual WM/Wayland
+socket connection to the fixture compositor. An X connection to any other
 server fails. `discovered.viewer_isolation` keeps the peer inodes, socket
 names, Xwayland PIDs and input-node list for the measured start. A run needs
 at least one positive X proof, no lost proof after that, and no open

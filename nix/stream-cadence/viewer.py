@@ -549,7 +549,11 @@ class Session:
             # run may reach the device's display.
             return dict(
                 self.environment(),
-                **({"DISPLAY": ":0"} if self.x_namespace else {}),
+                **({
+                    "DISPLAY": ":0",
+                    "DBUS_SESSION_BUS_ADDRESS": "unix:path=" + str(self.root / "rt/no-session-bus"),
+                    "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=" + str(self.root / "rt/no-system-bus"),
+                } if self.x_namespace else {}),
                 **(product if self.plugin_viewer else {}),
                 WAYLAND_DISPLAY=DISPLAY,
                 SDL_VIDEODRIVER="x11" if self.x_namespace else "wayland",

@@ -193,24 +193,8 @@ def x_connection(viewer: set[int], xwayland: set[int], peers: dict[int, dict]) -
     }
 
 
-def descendants(pid: int) -> set[int]:
-    found = set()
-    pending = [pid]
-    while pending:
-        parent = pending.pop()
-        try:
-            children = Path(f'/proc/{parent}/task/{parent}/children').read_text().split()
-        except FileNotFoundError:
-            continue
-        for child in map(int, children):
-            if child not in found:
-                found.add(child)
-                pending.append(child)
-    return found
-
-
 def isolation(viewer: int, compositor: int) -> dict:
-    """Prove the viewer's actual X peer is a child of our compositor, not a product process."""
+    """Prove the viewer's X peer is our compositor's Xwayland, including daemonized servers."""
     viewer_links = fd_links(viewer)
     if viewer_links is None:
         raise RuntimeError('Cannot read the fixture viewer open files.')
@@ -219,19 +203,31 @@ def isolation(viewer: int, compositor: int) -> dict:
     network = os.readlink('/proc/self/ns/net')
     if os.readlink(f'/proc/{viewer}/ns/net') != network:
         raise RuntimeError('The fixture viewer left the pair network namespace.')
-    for child in sorted(descendants(compositor)):
+    peers = unix_peers()
+    compositor_links = fd_links(compositor)
+    if compositor_links is None:
+        raise RuntimeError('Cannot read the fixture compositor open files.')
+    compositor_sockets = socket_inodes(compositor_links)
+    # wlroots double-forks Xwayland, so its PPID can be 1. A process-tree
+    # check misses it. Prove both the private network identity and its actual
+    # WM/Wayland socket connection to our compositor instead.
+    for process in Path('/proc').glob('[0-9]*'):
+        child = int(process.name)
         try:
-            if Path(os.readlink(f'/proc/{child}/exe')).name != 'Xwayland':
+            if os.readlink(process / 'ns/net') != network:
                 continue
-            if os.readlink(f'/proc/{child}/ns/net') != network:
-                raise RuntimeError('The fixture Xwayland left the pair network namespace.')
+            if Path(os.readlink(process / 'exe')).name != 'Xwayland':
+                continue
             links = fd_links(child)
             if links is None:
                 raise RuntimeError('Cannot read the fixture Xwayland open files.')
+            sockets = socket_inodes(links)
+            if not any(peers.get(inode, {}).get('peer') in compositor_sockets for inode in sockets):
+                continue
             servers.append(child)
-            xwayland |= socket_inodes(links)
-        except FileNotFoundError:
+            xwayland |= sockets
+        except (FileNotFoundError, ProcessLookupError):
             continue
-    x = x_connection(socket_inodes(viewer_links), xwayland, unix_peers())
+    x = x_connection(socket_inodes(viewer_links), xwayland, peers)
     inputs = sorted(link for link in viewer_links if link.startswith('/dev/input/'))
     return {'pass': x['pass'] and not inputs, 'x': x, 'input_nodes': inputs, 'xwayland_pids': servers, 'network': network}
