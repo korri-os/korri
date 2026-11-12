@@ -521,7 +521,11 @@ root, as for a product measure. Then:
 **Files.** The agent owns the run directory and writes only there: its
 logs, `sway.conf`, `sunshine.conf`. The fixture's programs write in `home`
 and `rt`, which the agent hands to their user as its last step of preparing.
-Afterwards the agent writes nothing in them and only reads there. Every file
+Afterwards the agent creates and writes no file in them. It reads there, and
+it removes names there: a socket that an earlier start of the compositor
+left in `rt`, and the last Sunshine log in `home`, before each start of the
+sender's stack. To remove a name follows no link: a link in that place is
+removed itself, and what it points to is not touched. Every file
 that an agent creates, appends, reads or hands over in a run directory is
 opened without following a link, so a program of the run cannot send a root
 agent to a file outside. The viewer's agent keeps the same layout: the
@@ -602,8 +606,8 @@ results, because no single setup of the pair shows everything.
 | Rates | The sender is the slower side: a request of the viewer's refresh, which gives a 17 ms sender output against the viewer fixture's 16 ms output at 60. | The sender is the faster side: its output period is one millisecond below the viewer fixture's, 15 ms against 16 ms at 60 (a request of 67; `cli.py:pair_rate` knows the number). |
 | Shows | The delay with no queue, startup, CPU, and the viewer's own dropped frames: the sender adds none. | How deep the viewer's queue gets and what the delay settles at. |
 | Hides | The queue. The viewer always waits for a frame, so two viewers that differ only in how they queue measure equal. | The viewer's own dropped frames. The sender shows more frames than the viewer can show, and something must drop them: 87 to 294 in a run of 60 s on aka, more or fewer with the sender's rate. |
-| Floor from the pair | About 133 to 149 `repeated_frames` and `late_frames` in a run of 60 s. | The dropped frames above. No repeats. |
-| `discovered.measure` | `base` | `queue` |
+| Floor from the pair | About 110 to 149 `repeated_frames` and `late_frames` in a run of 60 s. | The dropped frames above. No repeats. |
+| `discovered.measure` | `base`: the sender's output has the longer frame period | `queue`: the sender's output has the shorter frame period |
 
 A baseline for a private pair has both parts: one result of each measure,
 for the baseline viewer and for the candidate. `verdict` compares base with
@@ -615,11 +619,25 @@ number. The result says so in `viewer.not_measured.dropped_frames`, and
 `verdict` gives `dropped_frames` no verdict there. The count stays in the
 windows (`capture_misses`) as evidence.
 
-`--queue-measure` is accepted only for a private pair, and not with `--fps`:
-the measure sets the rate. `--fps 67` alone asks for the same rate, but the
-result is then a base result with that rate, and `verdict` keeps it apart
-from both measures. With an installed viewer the sender is asked for the
-panel's rate, as before.
+The two output periods name the measure, not the option. The tool takes the
+mode that the sender's compositor reports and the mode that it gives the
+viewer fixture, and compares their whole-millisecond frame periods
+(`cli.py:pair_measure`). So a private pair with `--fps 67`, or with
+`--fps 63 --viewer-refresh 58.823`, is a queue result with the note on its
+dropped frames, like one that `--queue-measure` asked for. `verdict` still
+keeps two results with different rates apart.
+
+A private pair whose two periods are equal does not run: `--fps 63` at the
+default viewer refresh (16 ms against 16 ms), or `--viewer-refresh 58.823`
+alone (17 ms against 17 ms). The refusal says that an equal pair gives no
+steady measure, and it comes before the sender starts. The tries below are
+the reason.
+
+`--queue-measure` is the named way to ask for the queue pair. It is accepted
+only for a private pair, and not with `--fps`: the measure sets the rate.
+With an installed viewer the sender is asked for the panel's rate, as
+before, and the result is a base result whatever the rate: a real panel has
+its own clock, and the tool does not compare it with the sender's period.
 
 **Why two: the tries on aka.** Against the product sender on aka, the same
 fixture viewer's delay climbed from about 18 ms in steps of one refresh
@@ -645,9 +663,17 @@ options alone, 60 scored seconds each. "Game" says whether a game ran on aka
 
 These runs are from the builds of that night. `--queue-measure` did not
 exist then; the 15 ms runs asked for the same rate with `--fps 67`, and one
-with no option, from a build in which that rate was the default. No run has
-used the option itself. One more run of the 17 ms pair began with a game and
-ended with none; it is in no row.
+with no option, from a build in which that rate was the default. Today's
+tool refuses the two pairs with equal periods. One more run of the 17 ms
+pair began with a game and ended with none; it is in no row.
+
+One run of each measure by its name followed on aka, from the build of
+`f5333d99a`, with no game, run by the coordinator of this work
+(`/tmp/korri-432/tip-base` and `tip-queue`). Both are valid. The base run
+has a delay p50 of 20.3 to 21.3 ms in its windows, 0 dropped frames and 110
+repeated frames. The `--queue-measure` run has 61.4 to 61.8 ms, 142 dropped
+frames and 1 repeated frame. In that build the option named the measure;
+the periods name it since.
 
 What the tries show:
 
@@ -813,8 +839,11 @@ during a run, and the measure of a private pair (base or queue). A
 difference there would judge the sender or the device, not the viewer. The
 model is the device's own name for itself; on a board whose firmware gives a
 placeholder (aka says "System Product Name"), two such machines look alike.
-When only one result has a condition, `verdict` says that this result was
-recorded before the tool kept it. An unwatched
+When only one result has the condition `viewer_model`, `verdict` says that
+this result was recorded before the tool kept it. For every other condition
+an absent value is a value: a product sender has no render node, and a
+result with no `live_game` or `measure` ran with no game and is a base
+result. An unwatched
 display keeps the mode of the last viewer that shaped it, so check the mode
 before a candidate run. `--allow-different-conditions` overrides the refusal.
 

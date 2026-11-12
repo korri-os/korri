@@ -19,6 +19,7 @@ from cli import (  # noqa: E402
     Remote,
     endpoint,
     fixture_rate,
+    pair_measure,
     pair_rate,
     parser,
     queue_measure_refusal,
@@ -89,6 +90,37 @@ class TwoMeasures(unittest.TestCase):
             )
             with self.assertRaisesRegex(Refusal, "--queue-measure"):
                 view(args)
+
+    def test_the_two_output_periods_name_the_measure_and_the_option_does_not(self):
+        def measure(fps: float | None, refresh: float, queue: bool = False) -> str:
+            # The sender's mode, as its agent sets it for the rate that the tool asks.
+            mode = sender.steady_refresh_mhz(fixture_rate(fps, refresh, queue=queue)) / 1000
+            return pair_measure(mode, refresh)
+
+        self.assertEqual(measure(None, 60.0), BASE)
+        self.assertEqual(measure(None, 60.0, queue=True), QUEUE)
+        # A rate that makes the sender the faster side is the queue measure, however it was asked.
+        self.assertEqual(measure(67.0, 60.0), QUEUE)
+        self.assertEqual(measure(63.0, 58.823), QUEUE)
+        self.assertEqual(measure(120.0, 60.0), QUEUE)
+        # A slower sender is the base measure.
+        self.assertEqual(measure(30.0, 60.0), BASE)
+        self.assertEqual(measure(60.0, 90.0), BASE)
+        # The modes that the tries on aka had (README).
+        self.assertEqual(pair_measure(58.823, 60.0), BASE)
+        self.assertEqual(pair_measure(66.666, 60.0), QUEUE)
+        self.assertEqual(pair_measure(62.5, 58.823), QUEUE)
+
+    def test_a_pair_with_equal_periods_is_refused(self):
+        # 16 ms against 16 ms, and 17 ms against 17 ms: the queue fills in 4 s or in 50 s.
+        for mode, refresh in ((62.5, 60.0), (58.823, 58.823), (62.5, 62.5)):
+            with self.subTest(sender=mode, viewer=refresh):
+                with self.assertRaisesRegex(Refusal, "equal.*no steady measure"):
+                    pair_measure(mode, refresh)
+        with self.assertRaisesRegex(Refusal, "no steady measure"):
+            pair_measure(sender.steady_refresh_mhz(63.0) / 1000, 60.0)
+        with self.assertRaisesRegex(Refusal, "no steady measure"):
+            pair_measure(sender.steady_refresh_mhz(60.0) / 1000, 58.823)
 
     def test_queue_result_says_that_its_dropped_frames_are_not_the_viewers(self):
         self.assertNotIn("dropped_frames", viewer_notes(BASE))

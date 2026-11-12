@@ -40,6 +40,7 @@ from score import (
     score,
     stamps,
 )
+from sender import steady_refresh_mhz
 from verdict import BASE, QUEUE, judge
 
 
@@ -429,6 +430,29 @@ def fixture_rate(requested: float | None, viewer_refresh: float, queue: bool) ->
     if requested is not None:
         return requested
     return pair_rate(viewer_refresh) if queue else viewer_refresh
+
+
+def output_period_ms(refresh_hz: float) -> int:
+    """The frame period of a headless output in this mode: wlroots' timer of whole milliseconds."""
+    return 1_000_000 // round(refresh_hz * 1000)
+
+
+def pair_measure(sender_refresh_hz: float, viewer_refresh_hz: float) -> str:
+    """Which measure a private pair gives, from the modes of its two headless outputs.
+
+    The two frame periods decide, not the option that asked for them. A sender
+    with the longer period is the slower side: the base measure. A sender
+    with the shorter period is the faster side: the queue measure, whose
+    dropped frames are the sender's floor. Equal periods are refused.
+    """
+    sender_ms, viewer_ms = output_period_ms(sender_refresh_hz), output_period_ms(viewer_refresh_hz)
+    if sender_ms > viewer_ms:
+        return BASE
+    if sender_ms < viewer_ms:
+        return QUEUE
+    raise Refusal(
+        f"The sender fixture's output and the viewer fixture's output would have an equal frame period ({sender_ms} ms). An equal pair gives no steady measure: the two rates then differ only by the machine's load, a viewer's queue fills in 4 s or in 50 s, and one viewer gives a short or a long delay by the moment. Leave --fps out for the base measure, or give {QUEUE_OPTION} for the queue measure, or choose a rate whose period differs by a whole millisecond."
+    )
 
 
 QUEUE_OPTION = "--queue-measure"
@@ -925,10 +949,15 @@ def view_case(
             viewer_refresh = args.viewer_refresh
             width, height = args.resolution or (1920, 1080)
         loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
+        measure = BASE
         if args.sender_fixture:
             # The fixture's display exists for this stream alone: the requested
             # size, at the steady refresh nearest below the requested rate.
             fps = fixture_rate(args.fps, viewer_refresh, queue=args.queue_measure)
+            if plugin is None:
+                # A private pair. Before the sender starts: the mode that its agent
+                # sets for this rate must not give the viewer fixture's frame period.
+                pair_measure(steady_refresh_mhz(fps) / 1000, viewer_refresh)
             built = sender.request(
                 "prepare",
                 sway=paths["sway"],
@@ -940,6 +969,16 @@ def view_case(
             facts.update(built["facts"])
             facts["live_game"]["sender_at_start"] = facts.pop("live_games_at_start", [])
             refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
+            if plugin is None:
+                # From the mode that the sender's compositor reports, and the mode
+                # that the viewer fixture's compositor is given below.
+                measure = pair_measure(facts["display"]["refresh_hz"], viewer_refresh)
+            if args.queue_measure and measure != QUEUE:
+                raise Refusal(
+                    f"{QUEUE_OPTION} did not give a sender that is faster than the viewer fixture "
+                    f"(sender mode {facts['display']['refresh_hz']} Hz, viewer refresh {viewer_refresh} Hz). "
+                    "No run starts."
+                )
         else:
             refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
             fps = args.fps if args.fps is not None else refresh
@@ -950,8 +989,9 @@ def view_case(
             requested_bitrate=args.bitrate,
             viewer_refresh_hz=viewer_refresh,
             max_capture_gaps=args.max_capture_gaps,
-            # Which of the two measures of a private pair this is; verdict keeps them apart.
-            measure=QUEUE if args.queue_measure else BASE,
+            # Which of the two measures of a private pair this is; verdict keeps them
+            # apart. Anything that is not a private pair is a base result.
+            measure=measure,
         )
         key = None
         if args.sender_fixture:

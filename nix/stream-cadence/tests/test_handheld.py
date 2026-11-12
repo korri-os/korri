@@ -95,7 +95,8 @@ class Conditions(unittest.TestCase):
         self.assertEqual(len(judge(queue, queue, 5)), 15)
         # A result from before the tool named its measure is a base result.
         self.assertEqual(len(judge(pair(None, 60.0, 58823), base, 5)), 15)
-        # The same rate asked with --fps is not the queue measure: the result says which it is.
+        # verdict reads the result's own label. A build before the periods named the
+        # measure called a faster sender `base` when --fps asked for it.
         with self.assertRaisesRegex(ValueError, "queue measure"):
             judge(pair("base", 67.0, 66666), queue, 5)
 
