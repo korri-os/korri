@@ -116,17 +116,19 @@ class NoInputDevice(Machine):
         session = self.session()
         self.assertEqual(session.render_nodes(), [str(sender.RENDER_NODES / "renderD1")])
 
-    def test_new_input_device_during_a_run_ends_it_and_fails_the_restore(self):
+    def test_new_input_device_during_a_run_is_recorded_and_is_no_fault(self):
+        # The fixture's user cannot open uinput, so the entry is not the fixture's:
+        # a game's controller, or one that a person plugged in.
         session = self.session()
         facts = self.prepare(session)["facts"]
         self.assertEqual(facts["fixture_user"], pwd.getpwuid(os.geteuid()).pw_name)
         session.check()
         (self.inputs / "event17").touch()
-        with self.assertRaisesRegex(RuntimeError, "New input devices appeared.*event17"):
-            session.check()
+        session.check()
         restore = session.close()
         self.assertEqual(restore["new_input_devices"], ["event17"])
-        self.assertFalse(restore["pass"])
+        self.assertEqual(restore["gone_input_devices"], [])
+        self.assertTrue(restore["pass"], restore)
         self.assertTrue(restore["run_folder_removed"])
 
     def test_unchanged_input_devices_pass(self):

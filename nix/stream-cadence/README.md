@@ -563,7 +563,10 @@ device is not proof for another game or device.
 
 Every result names the game units that were live on each device at the start
 and at the end of the run (`discovered.live_game`), without their command
-lines.
+lines. The units are read at those two moments only. A game that starts or
+ends between them shows in the same place through the entries under
+`/dev/input` that appeared or disappeared during the run, which the sender's
+agent looks for at every sample.
 
 **A game changes the pair's numbers.** In the 60 s run of that trial the
 delay p50 of the six windows was 23.9 to 26.0 ms. On aka with no game, the
@@ -576,8 +579,11 @@ than that. The size of the difference is not a rule; that there is a
 difference is the reason for this rule:
 `verdict` does not compare a result that was recorded beside a game with one
 that was not. A game at the start or at the end of any run, on either
-device, makes the result "beside a game" (condition `beside_a_game`). A game
-that starts and ends between those two reads is not seen. Two results that
+device, makes the result "beside a game" (condition `beside_a_game`). So
+does an entry under `/dev/input` that appeared or disappeared during a run:
+it is evidence of a game that started or ended between the two reads. A
+controller that a person plugs in counts the same way, which errs to the
+safe side. Two results that
 were both recorded beside a game are compared; the tool does not know
 whether it was the same game or how much of the machine it used, so prefer
 results with no game for a verdict.
@@ -703,9 +709,22 @@ root, as for a product measure. Then:
   client, all through `/dev/uinput`; the product's input stack would see
   them. The fixture does not start where its user can open `/dev/uinput`;
   the open is tried as that user, so ACLs count.
-  Its Sunshine has `mouse`, `keyboard` and `controller` off. A new entry
-  under `/dev/input` during a run ends the run and fails the restore check
-  (`restore.new_input_devices`), whoever made it.
+  Its Sunshine has `mouse`, `keyboard` and `controller` off.
+- A new entry under `/dev/input` during a run is a record, not a fault. The
+  rule that it ended the run was there to catch the fixture's own Sunshine
+  making a device. The probe above already proves that it cannot: the open
+  of `/dev/uinput` was tried as the fixture's user and failed. So an entry
+  that appears is not the fixture's. A game that starts makes such entries
+  (on aka: `event17`, `event18`, `mouse2`, `mouse3`), and a game must not
+  stop a private pair; before, each game that started during a run ended it
+  as "Device restore check failed". The result keeps every entry that
+  appeared or disappeared at any moment of the run
+  (`live_game.input_devices_appeared`, `live_game.input_devices_disappeared`,
+  and `restore.new_input_devices`, `restore.gone_input_devices`), and
+  `live_game.input_rule` is `record`. When the probe gave no answer (the
+  child that tries the node did not run), nothing is proven: the old strict
+  rule stays for that run, a new entry ends it and fails the restore check,
+  and `input_rule` says `strict` and why.
 - A `korri-game-*` unit does not stop the fixture; the result names the
   units that are live (see above).
 - The tool itself asks the fixture's Sunshine nothing. With both targets on

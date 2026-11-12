@@ -70,6 +70,8 @@ RUNS = Path("/tmp")
 RENDER_NODES = Path("/dev/dri")
 INPUT_DEVICES = Path("/dev/input")
 UINPUT = Path("/dev/uinput")
+# What a new entry under /dev/input means during a run (`input_rule`).
+INPUT_RECORD, INPUT_STRICT = "record", "strict"
 DISPLAY = "wayland-1"
 RENDERER = "gles2"
 APPLICATION = "Desktop"
@@ -323,6 +325,11 @@ class Session:
         self.ended: str | None = None
         # Taken again when the fixture prepares; here so that a close is never blind.
         self.inputs: set[str] = input_devices()
+        self.appeared: set[str] = set()
+        self.gone: set[str] = set()
+        # What a new entry under /dev/input means during a run. Strict, until the
+        # uinput probe shows that the fixture cannot make one (prepare).
+        self.input_rule = INPUT_STRICT + ": the fixture is not prepared"
         # A Korri device: the agent is root there and took the compositor's user.
         self.watch_games = self.identity is not None
         self.root: Path | None = None
@@ -356,20 +363,29 @@ class Session:
         # After the change of user, which clears it.
         end_with_agent()
 
-    def opens(self, node: Path, how: int) -> bool:
+    def probe(self, node: Path, how: int) -> bool | None:
         """Whether the fixture's user can open a device node, tried as that user.
 
         A child takes the fixture's user and groups and opens the node. Mode
         bits, ACLs and everything else decide as they will for the fixture.
+        None when the child gave no answer: the probe could not be made.
         """
-        tried = subprocess.run(
-            [sys.executable, "-B", __file__, "open", str(node), str(how)],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            timeout=20,
-            preexec_fn=self.restrict,
-        )
-        return tried.returncode == 0
+        try:
+            tried = subprocess.run(
+                [sys.executable, "-B", __file__, "open", str(node), str(how)],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=20,
+                preexec_fn=self.restrict,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        # open_as_asked answers 0 or 1; any other end is no answer.
+        return {0: True, 1: False}.get(tried.returncode)
+
+    def opens(self, node: Path, how: int) -> bool:
+        """Whether the probe says that the fixture's user can open the node."""
+        return self.probe(node, how) is True
 
     def render_nodes(self) -> list[str]:
         """The render nodes that the fixture's user can open for its compositor and encoder."""
@@ -383,8 +399,16 @@ class Session:
         return self.identity["uid"] if self.identity else os.geteuid()
 
     def new_inputs(self) -> list[str]:
-        """Input devices that appeared since the fixture started. None may be the fixture's."""
-        return sorted(input_devices() - self.inputs)
+        """Input devices that appeared at any moment since the fixture started.
+
+        Each look also keeps what disappeared (`self.gone`). Where the
+        fixture's user cannot open uinput these are not the fixture's: a game
+        that starts makes devices, and a person plugs a controller in.
+        """
+        now = input_devices()
+        self.appeared |= now - self.inputs
+        self.gone |= (self.inputs | self.appeared) - now
+        return sorted(self.appeared)
 
     def spawn(self, name: str, args: list[str], env: dict[str, str]) -> subprocess.Popen:
         assert self.root is not None
@@ -543,12 +567,23 @@ class Session:
         # touch screen and a pen tablet for each client, all through uinput. The
         # product's input stack would see them. The fixture runs only where its
         # Sunshine cannot open that node; the open is tried as the fixture's user.
-        if self.opens(UINPUT, os.O_WRONLY):
+        uinput = self.probe(UINPUT, os.O_WRONLY)
+        if uinput:
             raise RuntimeError(
                 f"The user {self.facts['fixture_user']} can open {UINPUT}. A stock Sunshine "
                 "would make input devices there that the product's input stack sees. The "
                 "sender fixture does not start."
             )
+        # The probe was made and the open failed: no entry under /dev/input can
+        # be the fixture's, so one that appears is recorded and is no fault. A
+        # game that starts makes such entries, and a game must not stop the pair.
+        # A probe that gave no answer proves nothing: the strict rule stays.
+        self.input_rule = (
+            INPUT_RECORD
+            if uinput is False
+            else f"{INPUT_STRICT}: whether the fixture's user can open {UINPUT} could not be tried"
+        )
+        self.facts["input_rule"] = self.input_rule
         if self.hardware_path:
             # Whatever its temperature: a handheld is a viewer, never a sender.
             raise RuntimeError(
@@ -561,7 +596,7 @@ class Session:
         )
         if refused:
             raise RuntimeError(refused)
-        self.inputs = input_devices()
+        self.inputs, self.appeared, self.gone = input_devices(), set(), set()
         self.sway, self.sunshine = str(request["sway"]), str(request["sunshine"])
         width, height = int(request["width"]), int(request["height"])
         hertz = steady_refresh_mhz(float(request["fps"])) / 1000
@@ -714,10 +749,11 @@ class Session:
                     f"The fixture's {name} stopped: " + self.text(f"{name}.out")[-2000:]
                 )
         appeared = self.new_inputs()
-        if appeared:
+        if appeared and self.input_rule != INPUT_RECORD:
             raise RuntimeError(
                 f"New input devices appeared while the fixture ran: {', '.join(appeared)}. "
-                "The fixture must make none; the run ends."
+                f"The fixture must make none, and this run could not prove that it cannot "
+                f"({self.input_rule}); the run ends."
             )
 
     def start(self, request: dict) -> dict:
@@ -796,7 +832,7 @@ class Session:
         others: list[dict] = []
         remaining: list[int] = []
         size = 0
-        if appeared:
+        if appeared and self.input_rule != INPUT_RECORD:
             errors.append("new input devices: " + ", ".join(appeared))
         if root:
             # Nothing of the fixture outlives the run. The agent ends what it can
@@ -847,7 +883,12 @@ class Session:
             # Not the agent's by proof, so not killed: an operator's shell in the
             # run directory, or a fixture process that left its session.
             "other_processes": others,
+            # Entries under /dev/input that appeared or disappeared at any moment
+            # of the run. With the rule `record` they are not the fixture's and
+            # are no fault; they are evidence of a game or of a person.
             "new_input_devices": appeared,
+            "gone_input_devices": sorted(self.gone),
+            "input_rule": self.input_rule,
             "errors": errors,
         }
 

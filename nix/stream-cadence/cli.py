@@ -1112,6 +1112,9 @@ def view_case(
             )
             facts.update(built["facts"])
             facts["live_game"]["sender_at_start"] = facts.pop("live_games_at_start", [])
+            # `record`: an entry under /dev/input during the run is no fault,
+            # because the fixture's user cannot open uinput. Else `strict`, and why.
+            facts["live_game"]["input_rule"] = facts.pop("input_rule", None)
             refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
             if not on_display:
                 # From the mode that the sender's compositor reports, and the mode
@@ -1430,6 +1433,16 @@ def view_case(
         if "live_game" in facts:
             facts["live_game"]["sender_at_end"] = facts["restore"].get("live_games", [])
             facts["live_game"]["viewer_at_end"] = facts["viewer_restore"].get("live_games", [])
+            if args.sender_fixture:
+                # What the sender's agent saw under /dev/input at any moment of the
+                # run. A game that starts or ends between the two reads of the units
+                # shows here, and verdict counts the run as beside a game.
+                facts["live_game"]["input_devices_appeared"] = facts["restore"].get(
+                    "new_input_devices", []
+                )
+                facts["live_game"]["input_devices_disappeared"] = facts["restore"].get(
+                    "gone_input_devices", []
+                )
         restored = facts["restore"]["pass"] and facts["viewer_restore"]["pass"]
         if not restored:
             facts["valid"] = False

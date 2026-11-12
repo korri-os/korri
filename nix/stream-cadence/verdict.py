@@ -95,6 +95,8 @@ DISPLAY, FIXTURE = "display", "fixture"
 PLUGIN_VIEWER, STAND_IN = "plugin", "stand-in"
 # The lists of game units in `discovered.live_game`: each device, start and end.
 LIVE_GAME_MOMENTS = ("sender_at_start", "viewer_at_start", "sender_at_end", "viewer_at_end")
+# The entries under /dev/input that changed during the run, in the same place.
+LIVE_GAME_INPUTS = ("input_devices_appeared", "input_devices_disappeared")
 
 
 def conditions(record: dict) -> dict:
@@ -110,8 +112,13 @@ def conditions(record: dict) -> dict:
     values["viewer_model"] = (facts.get("viewer") or {}).get("model")
     # A game on the device changes the numbers of a private pair. A result from
     # before this record was kept ran with no game: the tool refused beside one.
+    # The units are read at the start and at the end. A game that starts or ends
+    # between the two adds or removes entries under /dev/input, so such an
+    # entry counts as a game too; a controller that a person plugs in does as well.
     live = facts.get("live_game") or {}
-    values["beside_a_game"] = any(live.get(moment) for moment in LIVE_GAME_MOMENTS)
+    values["beside_a_game"] = any(
+        live.get(evidence) for evidence in (*LIVE_GAME_MOMENTS, *LIVE_GAME_INPUTS)
+    )
     # A result from before the tool named its measure is a base result: the
     # queue measure did not exist.
     values["measure"] = facts.get("measure") or BASE
@@ -282,7 +289,8 @@ def judge(
             )
         if "beside_a_game" in changed:
             advice.append(
-                "Some runs were recorded while a game ran on the device and others were not. "
+                "Some runs were recorded while a game ran on the device, or while its input "
+                "devices changed, and others were not. "
                 "A game changes a private pair's numbers; record both results with a game, "
                 "or both with none."
             )

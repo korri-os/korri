@@ -9,6 +9,7 @@ through the agent's own flag for it.
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -19,6 +20,7 @@ from cli import parser  # noqa: E402
 import heat  # noqa: E402
 import machine  # noqa: E402
 import sender  # noqa: E402
+from verdict import judge  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -138,12 +140,111 @@ class APrivatePairBesideAGame(Device):
         with self.assertRaisesRegex(RuntimeError, "uinput"):
             self.prepare_sender(self.sender_session())
         sender.UINPUT.unlink()
-        # The input-device watch still ends a run.
-        pair = self.sender_session()
-        self.prepare_sender(pair)
-        (sender.INPUT_DEVICES / "event9").touch()
-        with self.assertRaisesRegex(RuntimeError, "New input devices"):
-            pair.check()
+        # The heat guard still refuses a hot host.
+        zone = heat.THERMAL / "thermal_zone0"
+        zone.mkdir(parents=True)
+        (zone / "type").write_text("cpu-thermal\n")
+        (zone / "trip_point_0_type").write_text("critical\n")
+        (zone / "trip_point_0_temp").write_text("95000\n")
+        (zone / "temp").write_text("90000\n")
+        with self.assertRaisesRegex(RuntimeError, "The device is hot"):
+            self.prepare_sender(self.sender_session())
+
+
+class AGameThatStartsDuringARun(Device):
+    """A game's controllers add entries under /dev/input. They are a record, not a fault."""
+
+    def pair(self) -> sender.Session:
+        (sender.INPUT_DEVICES / "event0").touch()
+        (sender.INPUT_DEVICES / "js0").touch()
+        session = self.sender_session()
+        built = self.prepare_sender(session)
+        # The fixture's user cannot open uinput: the probe was made and it failed.
+        self.assertEqual(built["facts"]["input_rule"], "record")
+        return session
+
+    def test_new_input_entries_do_not_end_the_run_and_do_not_fail_the_restore(self):
+        session = self.pair()
+        session.check()
+        # A game starts: korrid's input stack makes its virtual devices.
+        for name in ("event17", "event18", "mouse2", "mouse3"):
+            (sender.INPUT_DEVICES / name).touch()
+        session.check()
+        # A controller is unplugged, and one of the game's devices goes again.
+        (sender.INPUT_DEVICES / "js0").unlink()
+        (sender.INPUT_DEVICES / "mouse3").unlink()
+        session.check()
+        restore = session.close()
+        self.assertTrue(restore["pass"], restore)
+        self.assertEqual(restore["errors"], [])
+        # Everything that appeared or disappeared at any moment of the run is kept.
+        self.assertEqual(restore["new_input_devices"], ["event17", "event18", "mouse2", "mouse3"])
+        self.assertEqual(restore["gone_input_devices"], ["js0", "mouse3"])
+        self.assertEqual(restore["input_rule"], "record")
+
+    def test_the_fixture_still_does_not_start_where_its_user_can_open_uinput(self):
+        sender.UINPUT.touch()
+        with self.assertRaisesRegex(RuntimeError, "can open .*uinput.*does not start"):
+            self.prepare_sender(self.sender_session())
+
+    def test_a_probe_that_could_not_be_made_keeps_the_strict_rule_and_says_so(self):
+        session = self.sender_session()
+        # The child that tries the node as the fixture's user did not run.
+        session.probe = lambda node, how: None if node == sender.UINPUT else True
+        built = self.prepare_sender(session)
+        self.assertRegex(built["facts"]["input_rule"], "^strict: .*uinput.*could not be tried")
+        (sender.INPUT_DEVICES / "event17").touch()
+        with self.assertRaisesRegex(RuntimeError, "New input devices appeared.*event17"):
+            session.check()
+        restore = session.close()
+        self.assertFalse(restore["pass"])
+        self.assertEqual(restore["errors"], ["new input devices: event17"])
+        self.assertRegex(restore["input_rule"], "^strict")
+
+    def test_the_probe_tells_cannot_open_from_could_not_try(self):
+        session = self.sender_session()
+        node = sender.UINPUT
+        self.assertIs(session.probe(node, os.O_WRONLY), False)
+        node.touch()
+        self.assertIs(session.probe(node, os.O_WRONLY), True)
+        real = sender.subprocess.run
+        self.addCleanup(setattr, sender.subprocess, "run", real)
+
+        def broken(*_args, **_kwargs):
+            raise OSError("no child")
+
+        sender.subprocess.run = broken
+        self.assertIsNone(session.probe(node, os.O_WRONLY))
+        sender.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, 2)
+        self.assertIsNone(session.probe(node, os.O_WRONLY))
+        # A render node is offered only when the probe says yes.
+        self.assertFalse(session.opens(node, os.O_WRONLY))
+
+    def test_an_input_entry_during_a_run_makes_the_result_beside_a_game(self):
+        def result(**live) -> list[dict]:
+            window = {
+                "latency_ms": {"p50": 20.0, "p95": 22.0}, "capture_misses": 0,
+                "repeated_frames": 0, "late_frames": 0, "torn_frames": 0, "undecodable_frames": 0,
+            }
+            moments = {"sender_at_start": [], "viewer_at_start": [], "sender_at_end": [], "viewer_at_end": []}
+            facts = {
+                "valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0,
+                "live_game": {**moments, "input_devices_appeared": [], "input_devices_disappeared": [], **live},
+            }
+            return [
+                {"discovered": dict(facts), "source_counter": {"windows": [window]}, "viewer": {"startup_ms": 900.0}}
+                for _ in range(5)
+            ]
+
+        free = result()
+        # A game that started and ended between the two reads of the units.
+        between = result(input_devices_appeared=["event17", "mouse2"], input_devices_disappeared=["event17", "mouse2"])
+        with self.assertRaisesRegex(ValueError, "beside_a_game"):
+            judge(free, between, 5)
+        with self.assertRaisesRegex(ValueError, "beside_a_game"):
+            judge(free, result(input_devices_disappeared=["js0"]), 5)
+        self.assertEqual(len(judge(between, result(sender_at_start=[GAME]), 5)), 15)
+        self.assertEqual(len(judge(free, free, 5)), 15)
 
 
 class WhatUsesTheDisplayStillRefuses(Device):
