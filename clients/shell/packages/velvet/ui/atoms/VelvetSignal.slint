@@ -1,0 +1,21 @@
+// VelvetSignal: a Wi-Fi network's strength as four bars, the lit ones in
+// House light. It encodes Korri's strengthPercent in quarters.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetSignal inherits Rectangle {
+    in property <int> bars;
+    in property <color> ink: Tokens.house-light;
+    in property <length> size: Tokens.screen.fact * Tokens.unit;
+    width: size * 1.2;
+    height: size;
+    for n in 4: Rectangle {
+        x: n * root.size * 0.32;
+        y: parent.height * (0.75 - n * 0.25);
+        width: root.size * 0.22;
+        height: parent.height - self.y;
+        border-radius: self.width / 3;
+        background: root.ink;
+        opacity: n < root.bars ? 1 : 0.25;
+    }
+}

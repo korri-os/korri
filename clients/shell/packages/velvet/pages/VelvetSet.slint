@@ -1,0 +1,106 @@
+// VelvetSet: one set of the library as a grid: a shelf's games, one system,
+// or every game. Its head names it and counts it; Sort and filter is a quiet
+// pill on that line, reached by up or the options button, and what focus is
+// on reads at the right. The pill aligns to the head's baseline; the readout
+// gives way to it.
+
+import { Tokens } from "../ui/tokens.slint";
+import { Set, Tile, Mark } from "../ui/types.slint";
+import { VelvetPill } from "../ui/atoms/VelvetPill.slint";
+import { VelvetWords } from "../ui/atoms/VelvetWords.slint";
+import { VelvetHead } from "../ui/atoms/VelvetHead.slint";
+import { VelvetGrid } from "../ui/organisms/VelvetGrid.slint";
+
+export component VelvetSet inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
+    in property <Set> set;
+    in property <[Tile]> tiles;
+    in property <[Mark]> marks;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <length> pad-x: Tokens.screen.pad-x * u;
+    property <length> head-y: Tokens.screen.head-y * u;
+    property <length> head-h: Tokens.screen.head-h * u;
+    property <length> fact: Tokens.screen.fact * u;
+    property <bool> narrow: Tokens.screen.narrow;
+    property <bool> in;
+    init => { in = true; }
+    opacity: in ? 1 : 0;
+    animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+    head := HorizontalLayout {
+        x: root.pad-x;
+        y: root.head-y;
+        width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+        height: root.head-h;
+        spacing: root.fact * 0.8;
+        title := VelvetHead {
+            horizontal-stretch: 0;
+            max-width: root.width * (root.narrow ? 0.62 : 0.4);
+            text: root.set.title;
+        }
+        VerticalLayout {
+            alignment: end;
+            padding-bottom: title.drop - root.fact * 0.24;
+            VelvetWords {
+                text: root.set.count;
+            }
+        }
+        if root.set.pill.shown && !root.narrow: VerticalLayout {
+            alignment: end;
+            padding-left: root.fact;
+            padding-bottom: title.drop - Tokens.screen.small * root.u * 0.72;
+            VelvetPill {
+                pill: root.set.pill;
+                size: Tokens.screen.small * root.u;
+                inert: root.inert;
+                activated(target, at, released) => { root.activated(target, at, released); }
+            }
+        }
+    }
+    if root.set.pill.shown && root.narrow: VelvetPill {
+        x: root.pad-x;
+        y: root.head-y + root.head-h + 4px;
+        pill: root.set.pill;
+        size: Tokens.screen.small * root.u;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    // What focus is on. A readout: it has what the head leaves.
+    if !root.narrow: HorizontalLayout {
+        x: head.x + head.width + root.fact * 1.4;
+        y: root.head-y + root.head-h - self.height - title.drop + root.fact * 0.3;
+        width: Math.max(0px, parent.width - root.pad-x - self.x);
+        height: root.fact * 1.5;
+        alignment: end;
+        spacing: root.fact * 0.6;
+        VelvetWords {
+            text: root.set.now-title;
+            ink: Tokens.house-light;
+            strong: true;
+        }
+        VelvetWords {
+            horizontal-stretch: 0;
+            text: root.set.now-fact;
+        }
+    }
+    if root.set.state == "": VelvetGrid {
+        x: 0;
+        y: Tokens.screen.lib-top * root.u;
+        width: parent.width;
+        height: parent.height - self.y;
+        tiles: root.tiles;
+        marks: root.marks;
+        first-row: root.set.first-row;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+        dragged(region, by) => { root.dragged(region, by); }
+    }
+    if root.set.state != "": VelvetWords {
+        x: root.pad-x;
+        y: Tokens.screen.lib-top * root.u + root.fact;
+        width: parent.width - 2 * root.pad-x;
+        text: root.set.words;
+        size: Tokens.screen.body * root.u;
+    }
+}

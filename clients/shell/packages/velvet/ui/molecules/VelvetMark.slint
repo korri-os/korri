@@ -1,0 +1,83 @@
+// VelvetMark: one game's name and facts. A logo where Korri has one (the
+// fitted title stands in its place until the logo arrives, and stays if it
+// never does); the title in the display face otherwise; no name at all when
+// the card beside it already says it. Under the name: the facts, which wait
+// for the focus to rest (Tokens.dwell) before they show.
+//
+// `on` brings the mark in (and lets its facts follow); off, it leaves at
+// once. The block stands on its foot when `foot`, else hangs from its top.
+
+import { Tokens } from "../tokens.slint";
+import { Marquee } from "../types.slint";
+import { VelvetCaps } from "../atoms/VelvetCaps.slint";
+import { VelvetFacts } from "VelvetFacts.slint";
+
+export component VelvetMark inherits Rectangle {
+    in property <Marquee> mq;
+    in property <bool> on: true;
+    in property <bool> foot: true;
+    // The facts show with the name (the detail), not after the dwell.
+    in property <bool> prompt;
+    in property <length> fact-size: Tokens.screen.fact * Tokens.unit;
+    // Room kept under the facts (the buttons stand there).
+    in property <length> under;
+    property <bool> named: mq.logo-shown || mq.lines > 0;
+    property <length> name-h: mq.logo-shown ? Math.max(mq.logo-h * Tokens.unit, title.block) : title.block;
+    property <length> gap: named ? fact-size * 1.05 : 0px;
+    out property <length> block: name-h + gap + facts.block;
+    property <length> top: foot ? self.height - under - block : 0px;
+    name := Rectangle {
+        x: 0;
+        y: root.top;
+        width: root.width;
+        height: root.name-h;
+        opacity: 0;
+        title := VelvetCaps {
+            x: 0;
+            y: parent.height - self.block;
+            width: parent.width;
+            lines: [root.mq.line1, root.mq.line2, root.mq.line3];
+            count: root.mq.lines;
+            size: root.mq.size * Tokens.unit;
+            // The title steps back once the logo is there.
+            opacity: root.mq.logo-shown && logo.source.width > 1 ? 0 : 1;
+            animate opacity { duration: Tokens.t-mark-in; easing: ease-in-out; }
+        }
+        logo := Image {
+            x: 0;
+            y: parent.height - self.height;
+            width: root.mq.logo-w * Tokens.unit;
+            height: root.mq.logo-h * Tokens.unit;
+            source: root.mq.logo;
+            image-fit: contain;
+            horizontal-alignment: left;
+            vertical-alignment: bottom;
+            visible: root.mq.logo-shown;
+            opacity: self.source.width > 1 ? 1 : 0;
+            animate opacity { duration: Tokens.t-mark-in; easing: ease-in-out; }
+        }
+    }
+    facts := VelvetFacts {
+        x: 0;
+        y: root.top + root.name-h + root.gap;
+        width: root.width;
+        facts: root.mq.facts;
+        badge: root.mq.badge;
+        size: root.fact-size;
+        opacity: 0;
+    }
+    states [
+        shown when root.on: {
+            name.opacity: 1;
+            facts.opacity: 1;
+            in {
+                animate name.opacity { duration: Tokens.t-mark-in; delay: Tokens.still ? 0ms : 60ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+                animate facts.opacity { duration: Tokens.t-meta; delay: root.prompt ? 0ms : Tokens.dwell; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+            }
+            out {
+                animate name.opacity { duration: Tokens.t-mark-out; easing: ease-in-out; }
+                animate facts.opacity { duration: Tokens.t-mark-out; easing: ease-in-out; }
+            }
+        }
+    ]
+}

@@ -1,0 +1,382 @@
+// The view's shapes: the structs logic.ts's view() and overlay() fill
+// (src/view.ts). Types only: no component lives here. A colour crosses as an
+// int, 0xRRGGBB (Tokens.tint turns it back); a length as a number of logical
+// px or, inside a card, of card units (a card is 60 x 90).
+//
+// Every list is a property of its own on the window (main.slint), never a
+// field of one of these structs, with one exception: a list inside a row of
+// such a list (a tile's poster). The shell updates a list's rows in place,
+// and a row that changes is made again whole; a list inside a struct that
+// changes with it can miss a change that comes twice before a frame.
+
+// The plan for one window (src/plan.ts, from the shell's Resized). The
+// logic's focus graph reads the same values, so what is drawn where is
+// decided once.
+export struct Screen {
+    width: float,
+    height: float,
+    k: float,
+    pad-x: float,
+    pad-y: float,
+    narrow: bool,
+    title: float,
+    head: float,
+    body: float,
+    fact: float,
+    label: float,
+    button: float,
+    small: float,
+    poster-x: float,
+    poster-y: float,
+    poster-h: float,
+    text-x: float,
+    text-y: float,
+    text-w: float,
+    text-h: float,
+    hero-x: float,
+    hero-y: float,
+    hero-w: float,
+    hero-h: float,
+    mark-h: float,
+    pick-title: float,
+    strip-y: float,
+    strip-h: float,
+    strip-gap: float,
+    row-y: float,
+    row-h: float,
+    row-gap: float,
+    row-mark-y: float,
+    row-mark-h: float,
+    row-mark-w: float,
+    peek-y: float,
+    head-y: float,
+    head-h: float,
+    lib-top: float,
+    shelf-label: float,
+    shelf-row-y: float,
+    shelf-h: float,
+    shelf-gap: float,
+    shelf-pitch: float,
+    halo: float,
+    columns: int,
+    tile-w: float,
+    tile-h: float,
+    grid-gap: float,
+    grid-inset: float,
+    grid-rows: int,
+    pool-rows: int,
+    sheet-w: float,
+    detail-logo-h: float,
+    detail-logo-w: float,
+    detail-title: float,
+    detail-fact: float,
+    detail-y: float,
+    detail-w: float,
+    stack: bool,
+    page-w: float,
+    row-height: float,
+    panel-beside: bool,
+    panel-w: float,
+    key-w: float,
+    key-h: float,
+    key-gap: float,
+    keys-y: float,
+    curtain-w: float,
+    kicker: float,
+    empty-wide: bool,
+    pause-w: float,
+}
+
+// One filled path of a no-art card, in the card's 60 x 90 box.
+export struct Layer {
+    d: string,
+    c: int,
+    o: float,
+    e: bool,
+}
+
+// The no-art card (src/poster.ts): its paths and its fitted title.
+export struct Poster {
+    shown: bool,
+    layers: [Layer],
+    lines: [string],
+    size: float,
+    tx: float,
+    ty: float,
+    tw: float,
+    th: float,
+    top: bool,
+    ink: int,
+}
+
+// A 2:3 tile: a game, a way further in ("All games", "See all", "A to Z"), or a system.
+export struct Tile {
+    shown: bool,
+    // "game", "nav" or "system".
+    kind: string,
+    focus-id: string,
+    focused: bool,
+    // Drawn as focused though it is no focus target itself (a set's tile: the set's marks are its targets).
+    lit: bool,
+    // "": the no-art card alone. "poster": the picture fills the tile.
+    // "cover": a square cover over a field, the title under it. "logo": the
+    // logo on a field.
+    art-kind: string,
+    art: image,
+    art-w: float,
+    art-h: float,
+    field: int,
+    cap-lines: [string],
+    cap-size: float,
+    poster: Poster,
+    // The system, on the focused game only; at the card's top when its title is low.
+    badge: string,
+    badge-top: bool,
+    label: string,
+    count: string,
+    // Its place: a column in a row, or its place in the whole set.
+    at: int,
+    // The shelf it stands on, in the lobby.
+    shelf: int,
+}
+
+// One fact of the focused game: a small drawn mark and its words.
+export struct Fact {
+    icon: string,
+    text: string,
+    strong: bool,
+}
+
+// One line of facts, already broken to fit by the logic (src/fit.ts): up to four.
+export struct FactLine {
+    count: int,
+    a: Fact,
+    b: Fact,
+    c: Fact,
+    d: Fact,
+}
+
+// Up to three lines of facts.
+export struct Facts {
+    count: int,
+    first: FactLine,
+    second: FactLine,
+    third: FactLine,
+}
+
+// The focused game's name and facts. `key` names the game: a new key is a
+// new marquee (the old one leaves, the facts wait for the dwell again).
+export struct Marquee {
+    key: string,
+    logo-shown: bool,
+    logo: image,
+    logo-w: float,
+    logo-h: float,
+    // The title, fitted by the logic, in px: up to three lines. Drawn in the
+    // logo's place until it arrives, and alone when there is none. No line:
+    // no mark at all (the card beside it already names the game).
+    lines: int,
+    line1: string,
+    line2: string,
+    line3: string,
+    size: float,
+    badge: string,
+    facts: Facts,
+}
+
+// A button: a pill.
+export struct Pill {
+    shown: bool,
+    label: string,
+    icon: string,
+    note: string,
+    focus-id: string,
+    focused: bool,
+    quiet: bool,
+    dim: bool,
+    danger: bool,
+}
+
+// What lights the stage. `key` names the picture: a new key crossfades.
+export struct Stage {
+    key: string,
+    light: int,
+    art-shown: bool,
+    art: image,
+    // The house lights over it all, 0 to 1 (the library and the pages dim the stage).
+    veil: float,
+    drift: bool,
+}
+
+// One shelf of the lobby: its label and the column it keeps in view. Its
+// tiles are in the window's one list of shelf tiles, each naming its shelf.
+export struct Shelf {
+    key: string,
+    label: string,
+    at: int,
+    count: int,
+}
+
+// A row of a list page, a sheet or the gameplay overlay.
+export struct Row {
+    // "row", "head", "note", "problem", "range", "meter".
+    kind: string,
+    focus-id: string,
+    focused: bool,
+    label: string,
+    value: string,
+    // Under the label: Korri's description, a source, why it is dim.
+    note: string,
+    // "", "check", "more", "step", "busy", "lock", "on", "off".
+    mark: string,
+    // Wi-Fi bars, 0 to 4; -1: none.
+    bars: int,
+    dim: bool,
+    danger: bool,
+    // A range's place along its track, 0 to 1.
+    share: float,
+}
+
+// A key of the keyboard.
+export struct Key {
+    focus-id: string,
+    focused: bool,
+    label: string,
+    icon: string,
+    // Its column and row in the grid, and how many columns it spans.
+    column: float,
+    row: int,
+    span: float,
+    lit: bool,
+    quiet: bool,
+}
+
+export struct Keyboard {
+    shown: bool,
+    heading: string,
+    name: string,
+    // The draft as drawn (a secret is dots), split at the caret.
+    before: string,
+    after: string,
+    placeholder: string,
+    note: string,
+}
+
+// One step of a launch: Korri's words and where it stands.
+export struct Step {
+    label: string,
+    // "done", "now" or "next".
+    state: string,
+}
+
+// The curtain: Korri's status, a question of Korri's or of Velvet's own.
+// Its kicker, words, steps and buttons are lists of the window.
+export struct Curtain {
+    shown: bool,
+    // "busy", "problem", "ask", "running".
+    kind: string,
+    kicker-size: float,
+    name: string,
+    // Lines above the first shown, and whether more stand under the last.
+    more-up: bool,
+    more-down: bool,
+    step-line: string,
+    // Measured progress, 0 to 1; -1: under way with no known end; -2: none.
+    progress: float,
+    progress-line: string,
+    stack: bool,
+}
+
+// A sheet over the right edge: the sort and filter, the house menu, a game's actions.
+export struct Sheet {
+    shown: bool,
+    title: string,
+}
+
+// A list page: settings, Wi-Fi, the store, saves, a runner, first boot.
+export struct Page {
+    shown: bool,
+    key: string,
+    title: string,
+    sub: string,
+    // First boot's place: step n of count; count 0 draws none.
+    step: int,
+    steps: int,
+    stack: bool,
+    // "": none. "qr", "text", "tile".
+    panel: string,
+    panel-title: string,
+    qr: image,
+}
+
+// The home: the pick, the row under it, the lobby under that.
+export struct Home {
+    shown: bool,
+    // 0: the pick. 1: the row. 2: the lobby.
+    depth: int,
+    // The hero is the stage: no card, the mark carries the pick.
+    hero: bool,
+    mark: Marquee,
+    play: Pill,
+    menu: Pill,
+    clock: string,
+    // The column the row keeps in view (the focused one, until a finger scrolls it).
+    row-at: int,
+    row-mark: Marquee,
+    shelf-at: int,
+    lib-title: string,
+    lib-count: string,
+    now-title: string,
+    now-fact: string,
+}
+
+// A place of a set that takes focus: the window Korri gave holds one per game.
+export struct Mark {
+    focus-id: string,
+    focused: bool,
+    label: string,
+    at: int,
+}
+
+// A set: one shelf's games, one system, or every game, as a grid.
+export struct Set {
+    shown: bool,
+    title: string,
+    count: string,
+    pill: Pill,
+    // The first row the window shows, and the rows the set holds.
+    first-row: int,
+    rows: int,
+    now-title: string,
+    now-fact: string,
+    // "": games. "loading", "none".
+    state: string,
+    words: string,
+}
+
+// The detail: the hero is the stage, the mark over it, Play focused.
+export struct Detail {
+    shown: bool,
+    hero: bool,
+    mark: Marquee,
+    stack: bool,
+    facts: Facts,
+    note: string,
+}
+
+// The empty library, and the library that is loading or could not be read.
+export struct Empty {
+    shown: bool,
+    title-size: float,
+    stack: bool,
+    menu: Pill,
+    clock: string,
+    ghosts: bool,
+}
+
+// A notice that takes no focus: an invite, a save still to sync.
+export struct Notice {
+    shown: bool,
+    title: string,
+    words: string,
+}

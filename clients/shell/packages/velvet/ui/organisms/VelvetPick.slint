@@ -1,0 +1,91 @@
+// VelvetPick: one game filling the stage, as the home's pick and as the
+// detail.
+//
+//   the hero is the stage   no card: the game's mark stands large at the
+//                           left over the picture, its buttons under it
+//   no hero                 the game's card stands at the left (over the
+//                           words when the window is narrow) and the words
+//                           beside it; a card that already names the game
+//                           is not named twice
+//
+// `cinema` is the detail: the facts leave the mark for the stage's foot and
+// show at once.
+
+import { Tokens } from "../tokens.slint";
+import { Tile, Marquee, Pill, Facts } from "../types.slint";
+import { VelvetTile } from "../molecules/VelvetTile.slint";
+import { VelvetMarquee } from "../molecules/VelvetMarquee.slint";
+import { VelvetButtons } from "../molecules/VelvetButtons.slint";
+import { VelvetFacts } from "../molecules/VelvetFacts.slint";
+import { VelvetWords } from "../atoms/VelvetWords.slint";
+
+export component VelvetPick inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <bool> hero;
+    // The game's card when no hero lights the stage: one tile, or none.
+    in property <[Tile]> cards;
+    in property <Marquee> mark;
+    in property <[Pill]> buttons;
+    in property <bool> stack;
+    in property <bool> cinema;
+    in property <Facts> foot-facts;
+    in property <string> note;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <bool> narrow: Tokens.screen.narrow;
+    property <length> button: Tokens.screen.button * u;
+    // The words' box.
+    property <length> box-x: (hero ? Tokens.screen.hero-x : Tokens.screen.text-x) * u;
+    property <length> box-w: (hero ? (cinema ? Tokens.screen.detail-w : Tokens.screen.hero-w) : Tokens.screen.text-w) * u;
+    property <length> box-y: (hero ? Tokens.screen.hero-y : Tokens.screen.text-y) * u;
+    property <length> box-h: (hero ? Tokens.screen.hero-h : Tokens.screen.text-h) * u;
+    property <length> gap: Tokens.screen.fact * u * 1.2;
+    // The buttons stand at the box's foot; the mark over them.
+    property <length> buttons-y: cinema && hero
+        ? Math.min(self.height * (narrow ? 0.72 : 0.78) - buttons-row.block, box-y + box-h - buttons-row.block)
+        : box-y + box-h - buttons-row.block;
+    for card in root.cards: VelvetTile {
+        x: Tokens.screen.poster-x * root.u;
+        y: Tokens.screen.poster-y * root.u;
+        width: Tokens.screen.poster-h * root.u * Tokens.tile-ratio;
+        height: Tokens.screen.poster-h * root.u;
+        tile: card;
+        fixed: true;
+        inert: true;
+    }
+    VelvetMarquee {
+        x: root.box-x;
+        y: root.narrow && !root.hero ? root.box-y : 0;
+        width: root.box-w;
+        height: root.narrow && !root.hero ? root.buttons-y - root.gap - root.box-y : root.buttons-y - root.gap;
+        mq: root.mark;
+        foot: !(root.narrow && !root.hero);
+        prompt: root.cinema;
+    }
+    buttons-row := VelvetButtons {
+        x: root.box-x;
+        y: root.buttons-y;
+        width: root.stack ? Math.min(root.box-w, parent.width - 2 * Tokens.screen.pad-x * root.u) : parent.width - root.box-x - Tokens.screen.pad-x * root.u;
+        pills: root.buttons;
+        stack: root.stack;
+        inert: root.inert;
+        prompt: !root.cinema;
+        size: root.button;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.note != "": VelvetWords {
+        x: root.box-x;
+        y: root.buttons-y + buttons-row.block + root.gap * 0.6;
+        width: root.box-w;
+        text: root.note;
+        size: Tokens.screen.detail-fact * root.u;
+        wraps: true;
+    }
+    if root.cinema: VelvetFacts {
+        x: Tokens.screen.pad-x * root.u;
+        y: parent.height - Tokens.screen.pad-y * root.u - self.block;
+        width: parent.width - 2 * Tokens.screen.pad-x * root.u;
+        facts: root.foot-facts;
+        size: Tokens.screen.detail-fact * root.u;
+    }
+}

@@ -1,0 +1,41 @@
+// VelvetSteps: a launch's honest progress (contract amendment A4). One
+// segment a step: done is House light, the one running now is lit and
+// breathes, the ones to come are thinned light. Under it, "Step i of n" and
+// the running step in Korri's words. The bar shrinks with its box; the words
+// cut with an ellipsis and never clip.
+
+import { Tokens } from "../tokens.slint";
+import { Step } from "../types.slint";
+
+export component VelvetSteps inherits Rectangle {
+    in property <[Step]> steps;
+    in property <string> line;
+    in property <length> size: Tokens.screen.body * Tokens.unit;
+    property <length> gap: Math.max(2px, Math.min(size * 0.3, self.width * 0.012));
+    property <length> seg: steps.length == 0 ? 0px : (self.width - (steps.length - 1) * gap) / steps.length;
+    property <float> breath: Tokens.still ? 1 : 0.7 + 0.3 * Math.abs(Math.mod(animation-tick() / 900ms, 2) - 1);
+    height: size * 2.4;
+    for step[n] in root.steps: Rectangle {
+        x: n * (root.seg + root.gap);
+        y: 0;
+        width: root.seg;
+        height: Math.max(3px, root.size * 0.22);
+        border-radius: self.height / 2;
+        background: step.state == "next" ? Tokens.light-20 : Tokens.house-light;
+        opacity: step.state == "now" ? root.breath : 1;
+    }
+    Text {
+        x: 0;
+        y: root.size * 0.8;
+        width: root.width;
+        height: root.size * 1.5;
+        text: root.line;
+        color: Tokens.usher;
+        font-family: Tokens.text;
+        font-weight: Tokens.text-weight;
+        font-size: root.size * 0.88;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}

@@ -1,0 +1,61 @@
+// VelvetMarquee: the focused game's name and facts, where focus travels.
+// When focus moves to another game (a new `key`) the old mark leaves quickly
+// and the new one comes in after it; its facts wait for the dwell again.
+// Two marks take turns, so the change is a crossfade and never a blank.
+
+import { Tokens } from "../tokens.slint";
+import { Marquee } from "../types.slint";
+import { VelvetMark } from "VelvetMark.slint";
+
+export component VelvetMarquee inherits Rectangle {
+    in property <Marquee> mq;
+    in property <bool> on: true;
+    in property <bool> foot: true;
+    in property <bool> prompt;
+    in property <length> fact-size: Tokens.screen.fact * Tokens.unit;
+    in property <length> under;
+    property <Marquee> first;
+    property <Marquee> second;
+    property <bool> turn;
+    property <string> shown-key;
+    out property <length> block: turn ? b.block : a.block;
+    init => {
+        first = mq;
+        shown-key = mq.key;
+    }
+    changed mq => {
+        if (mq.key != shown-key) {
+            if (turn) {
+                first = mq;
+            } else {
+                second = mq;
+            }
+            turn = !turn;
+            shown-key = mq.key;
+        } else if (turn) {
+            second = mq;
+        } else {
+            first = mq;
+        }
+    }
+    a := VelvetMark {
+        width: root.width;
+        height: root.height;
+        mq: root.first;
+        on: root.on && !root.turn && root.first.key != "";
+        foot: root.foot;
+        prompt: root.prompt;
+        fact-size: root.fact-size;
+        under: root.under;
+    }
+    b := VelvetMark {
+        width: root.width;
+        height: root.height;
+        mq: root.second;
+        on: root.on && root.turn && root.second.key != "";
+        foot: root.foot;
+        prompt: root.prompt;
+        fact-size: root.fact-size;
+        under: root.under;
+    }
+}

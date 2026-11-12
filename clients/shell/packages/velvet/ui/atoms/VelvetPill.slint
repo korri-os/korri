@@ -1,0 +1,94 @@
+// VelvetPill: a button. At rest a quiet pill of thinned light (or only its
+// words, when `quiet`); focused, it is the one filled thing on the stage:
+// House light, with ink words and a soft ring. Dim: Korri cannot do it now.
+// Exit red marks what cannot be undone. A note stands under the label as a
+// second line (a save's device over when it was made).
+
+import { Tokens } from "../tokens.slint";
+import { Pill } from "../types.slint";
+import { VelvetTap } from "VelvetTap.slint";
+import { VelvetIcon } from "VelvetIcon.slint";
+
+export component VelvetPill inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Pill> pill;
+    in property <length> size: Tokens.screen.button * Tokens.unit;
+    // Filled at rest too: the pick's one prompt.
+    in property <bool> prompt;
+    // Under another layer: drawn, but no target.
+    in property <bool> inert;
+    property <bool> lit: pill.focused && Tokens.ring && !inert;
+    property <bool> filled: lit || prompt;
+    property <color> words: filled ? Tokens.ink : pill.danger ? Tokens.exit : pill.quiet ? Tokens.usher : Tokens.house-light;
+    out property <length> natural: content.preferred-width + size * 2.6;
+    width: natural;
+    height: pill.note == "" ? size * 2.3 : size * 3.1;
+    opacity: pill.dim ? 0.45 : 1;
+    accessible-role: button;
+    accessible-label: pill.label;
+    accessible-item-selectable: pill.shown && pill.focus-id != "" && !inert;
+    accessible-item-selected: pill.focused;
+    // The ring: a soft halo outside the pill.
+    Rectangle {
+        x: -size * 0.24;
+        y: -size * 0.24;
+        width: parent.width + size * 0.48;
+        height: parent.height + size * 0.48;
+        border-radius: self.height / 2;
+        background: Tokens.light-20;
+        opacity: root.pill.focused && Tokens.ring && !root.inert ? 1 : 0;
+        animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
+    }
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: self.height / 2;
+        background: (root.pill.focused && Tokens.ring && !root.inert) || root.prompt ? (root.pill.danger ? Tokens.exit : Tokens.house-light) : root.pill.quiet ? Tokens.clear : Tokens.light-10;
+        border-width: root.filled || root.pill.quiet ? 0px : Tokens.hair * 1.5;
+        border-color: Tokens.light-20;
+        animate background { duration: Tokens.t-ring; easing: ease-in-out; }
+    }
+    content := HorizontalLayout {
+        x: (parent.width - self.width) / 2;
+        y: 0;
+        width: Math.min(self.preferred-width, parent.width - root.size * 1.6);
+        height: parent.height;
+        spacing: root.size * 0.5;
+        alignment: center;
+        if root.pill.icon != "": VerticalLayout {
+            alignment: center;
+            VelvetIcon {
+                name: root.pill.icon;
+                size: root.size * 0.95;
+                ink: root.words;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: root.size * 0.08;
+            Text {
+                text: root.pill.label;
+                color: root.words;
+                font-family: Tokens.text;
+                font-weight: Tokens.strong-weight;
+                font-size: root.size;
+                overflow: elide;
+                horizontal-alignment: root.pill.note == "" ? center : left;
+            }
+            if root.pill.note != "": Text {
+                text: root.pill.note;
+                color: root.filled ? Tokens.ink-quiet : Tokens.usher;
+                font-family: Tokens.text;
+                font-weight: Tokens.text-weight;
+                font-size: root.size * 0.72;
+                overflow: elide;
+            }
+        }
+    }
+    VelvetTap {
+        width: parent.width;
+        height: parent.height;
+        target: root.pill.shown && !root.pill.dim && !root.inert ? root.pill.focus-id : "";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+}

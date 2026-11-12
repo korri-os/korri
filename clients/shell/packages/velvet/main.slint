@@ -1,0 +1,276 @@
+// Velvet as a native surface package (docs/briefs/2026-10-31-native-surfaces-contract.md).
+//
+// The binding: the only file that knows the view. The shell sets the
+// Surface's (and the Overlay's) properties from logic.ts's view() and
+// overlay(); this file feeds the Tokens global its inputs (the window's
+// size, the plan, reduced motion, touch) and hands each page plain
+// properties. Below it every component is a shape (ui/, pages/).
+//
+// Layers, back to front: the stage (what lights the house), the page, a
+// sheet, the keyboard, the curtain, a notice. `layer` names the one that
+// holds focus; everything under it is drawn inert: no focus target, no tap.
+//
+// Input: one generic activation callback and one drag callback, no
+// per-control callbacks (ADR 0055). A tap or a click on a focus target
+// reports its id through `activated(target, at, released)`; `at` is the
+// finger's place along a range's track, 0 to 1 (`at < 0`: absent). A finger
+// that drags a set's rows sends `dragged("grid", by)` once for each whole
+// row. `touching` hides the focus edge while touch is in use, until the next
+// button press.
+
+import { Tokens } from "ui/tokens.slint";
+import { Screen, Layer, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice } from "ui/types.slint";
+import { VelvetStage } from "ui/organisms/VelvetStage.slint";
+import { VelvetSheet } from "ui/organisms/VelvetSheet.slint";
+import { VelvetKeyboard } from "ui/organisms/VelvetKeyboard.slint";
+import { VelvetCurtain } from "ui/organisms/VelvetCurtain.slint";
+import { VelvetNotice } from "ui/organisms/VelvetNotice.slint";
+import { VelvetBrowse } from "pages/VelvetBrowse.slint";
+import { VelvetSet } from "pages/VelvetSet.slint";
+import { VelvetDetail } from "pages/VelvetDetail.slint";
+import { VelvetList } from "pages/VelvetList.slint";
+import { VelvetHouse } from "pages/VelvetHouse.slint";
+import { VelvetPaused } from "pages/VelvetPaused.slint";
+
+export { Screen, Layer, Poster, Tile, Fact, FactLine, Facts, Marquee, Pill, Stage, Shelf, Row, Key, Keyboard, Step, Curtain, Sheet, Page, Home, Mark, Set, Detail, Empty, Notice }
+
+export component Surface inherits Window {
+    // A focus target was tapped or clicked (ADR 0055): one callback for every target.
+    callback activated(target: string, at: float, released: bool);
+    // A set's rows were dragged across `by` whole rows (ADR 0055).
+    callback dragged(region: string, by: int);
+    title: "Velvet";
+    background: Tokens.house-down;
+
+    // ---- From logic.ts's view() ----
+    in property <Screen> screen: Tokens.screen;
+    in property <bool> still;
+    in property <bool> touching;
+    // "screen", "sheet", "keyboard" or "curtain": the layer that holds focus.
+    in property <string> layer: "screen";
+    // "home", "empty", "set", "detail" or "list".
+    in property <string> page: "empty";
+    in property <Stage> stage;
+    // Every list is a property of its own (ui/types.slint says why).
+    in property <Home> home;
+    in property <[Tile]> home-cards;
+    in property <[Tile]> home-row;
+    in property <[Shelf]> shelves;
+    in property <[Tile]> shelf-tiles;
+    in property <Set> set;
+    in property <[Tile]> set-tiles;
+    in property <[Mark]> set-marks;
+    in property <Detail> detail;
+    in property <[Tile]> detail-cards;
+    in property <[Pill]> detail-buttons;
+    in property <Empty> empty;
+    in property <[string]> empty-title;
+    in property <[string]> empty-lines;
+    in property <[Pill]> empty-buttons;
+    in property <Page> list;
+    in property <[Row]> list-rows;
+    in property <[Pill]> list-buttons;
+    in property <[string]> list-panel-lines;
+    in property <[Tile]> list-tiles;
+    in property <Sheet> sheet;
+    in property <[Row]> sheet-rows;
+    in property <Keyboard> keyboard;
+    in property <[Key]> keys;
+    in property <Curtain> curtain;
+    in property <[string]> curtain-kicker;
+    in property <[string]> curtain-lines;
+    in property <[Step]> curtain-steps;
+    in property <[Pill]> curtain-buttons;
+    in property <Notice> notice;
+
+    // ---- The Tokens' inputs ----
+    init => {
+        Tokens.width = self.width;
+        Tokens.height = self.height;
+        Tokens.screen = self.screen;
+        Tokens.still = self.still;
+        Tokens.touching = self.touching;
+    }
+    changed screen => {
+        Tokens.screen = self.screen;
+    }
+    changed still => {
+        Tokens.still = self.still;
+    }
+    changed touching => {
+        Tokens.touching = self.touching;
+    }
+    changed width => {
+        Tokens.width = self.width;
+    }
+    changed height => {
+        Tokens.height = self.height;
+    }
+
+    VelvetStage {
+        width: root.width;
+        height: root.height;
+        stage: root.stage;
+    }
+    if root.page == "home" && root.home.shown: VelvetBrowse {
+        width: root.width;
+        height: root.height;
+        home: root.home;
+        cards: root.home-cards;
+        row-tiles: root.home-row;
+        shelves: root.shelves;
+        shelf-tiles: root.shelf-tiles;
+        inert: root.layer != "screen";
+        activated(target, at, released) => { root.activated(target, at, released); }
+        dragged(region, by) => { root.dragged(region, by); }
+    }
+    if root.page == "empty" && root.empty.shown: VelvetHouse {
+        width: root.width;
+        height: root.height;
+        empty: root.empty;
+        title: root.empty-title;
+        lines: root.empty-lines;
+        buttons: root.empty-buttons;
+        inert: root.layer != "screen";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.page == "set" && root.set.shown: VelvetSet {
+        width: root.width;
+        height: root.height;
+        set: root.set;
+        tiles: root.set-tiles;
+        marks: root.set-marks;
+        inert: root.layer != "screen";
+        activated(target, at, released) => { root.activated(target, at, released); }
+        dragged(region, by) => { root.dragged(region, by); }
+    }
+    if root.page == "detail" && root.detail.shown: VelvetDetail {
+        width: root.width;
+        height: root.height;
+        detail: root.detail;
+        cards: root.detail-cards;
+        buttons: root.detail-buttons;
+        inert: root.layer != "screen";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.page == "list" && root.list.shown: VelvetList {
+        width: root.width;
+        height: root.height;
+        page: root.list;
+        rows: root.list-rows;
+        buttons: root.list-buttons;
+        panel-lines: root.list-panel-lines;
+        tiles: root.list-tiles;
+        inert: root.layer != "screen";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.sheet.shown: VelvetSheet {
+        width: root.width;
+        height: root.height;
+        sheet: root.sheet;
+        rows: root.sheet-rows;
+        inert: root.layer != "sheet";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.keyboard.shown: VelvetKeyboard {
+        width: root.width;
+        height: root.height;
+        keyboard: root.keyboard;
+        keys: root.keys;
+        inert: root.layer != "keyboard";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.curtain.shown: VelvetCurtain {
+        width: root.width;
+        height: root.height;
+        curtain: root.curtain;
+        kicker: root.curtain-kicker;
+        lines: root.curtain-lines;
+        steps: root.curtain-steps;
+        buttons: root.curtain-buttons;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.notice.shown: VelvetNotice {
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - Tokens.screen.pad-y * Tokens.unit;
+        notice: root.notice;
+    }
+}
+
+// The gameplay overlay, driven by overlay(). See-through: the running game
+// is the stage (ADR 0053), and Velvet draws a panel at its edge, never a
+// ground. A window without alpha (the shell on Linux) shows black there.
+export component Overlay inherits Window {
+    callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
+    title: "Velvet overlay";
+    background: Tokens.clear;
+    in property <Screen> screen: Tokens.screen;
+    in property <bool> still;
+    in property <bool> touching;
+    in property <string> layer: "screen";
+    in property <[string]> title-lines;
+    in property <float> title-size;
+    in property <string> clock;
+    in property <[Fact]> facts;
+    in property <[Row]> rows;
+    in property <bool> leaving;
+    in property <Keyboard> keyboard;
+    in property <[Key]> keys;
+    in property <Curtain> curtain;
+    in property <[string]> curtain-kicker;
+    in property <[string]> curtain-lines;
+    in property <[Step]> curtain-steps;
+    in property <[Pill]> curtain-buttons;
+    init => {
+        Tokens.width = self.width;
+        Tokens.height = self.height;
+        Tokens.screen = self.screen;
+        Tokens.still = self.still;
+        Tokens.touching = self.touching;
+    }
+    changed screen => {
+        Tokens.screen = self.screen;
+    }
+    changed still => {
+        Tokens.still = self.still;
+    }
+    changed touching => {
+        Tokens.touching = self.touching;
+    }
+    changed width => {
+        Tokens.width = self.width;
+    }
+    changed height => {
+        Tokens.height = self.height;
+    }
+    VelvetPaused {
+        width: root.width;
+        height: root.height;
+        title: root.title-lines;
+        title-size: root.title-size * Tokens.unit;
+        clock: root.clock;
+        facts: root.facts;
+        rows: root.rows;
+        inert: root.layer != "screen" || root.leaving;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.keyboard.shown: VelvetKeyboard {
+        width: root.width;
+        height: root.height;
+        keyboard: root.keyboard;
+        keys: root.keys;
+        inert: root.layer != "keyboard";
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.curtain.shown: VelvetCurtain {
+        width: root.width;
+        height: root.height;
+        curtain: root.curtain;
+        kicker: root.curtain-kicker;
+        lines: root.curtain-lines;
+        steps: root.curtain-steps;
+        buttons: root.curtain-buttons;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+}

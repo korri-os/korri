@@ -1,0 +1,128 @@
+// VelvetStage: the dark house and what lights it. From the back: House
+// down; the stage light in the focused game's colour; the game's hero, cut
+// to fill the stage; the vignette every picture shares; and the house
+// lights (`veil`), which come up the further the person is from the game.
+//
+// When focus moves to another game (a new `key`) the new light and the new
+// hero come in over the old ones, so the change is a crossfade with no dark
+// dip. A hero is late or may never come (ADR 0065): until it is there, the
+// stage is the light alone, and that is a finished picture too.
+//
+// After a rest the hero pushes in and drifts (`drift`); it holds its frame
+// the moment a press comes. No blur anywhere.
+
+import { Tokens } from "../tokens.slint";
+import { Stage } from "../types.slint";
+import { VelvetLight } from "../atoms/VelvetLight.slint";
+import { VelvetScrim } from "../atoms/VelvetScrim.slint";
+
+export component VelvetStage inherits Rectangle {
+    in property <Stage> stage;
+    in property <bool> narrow: Tokens.screen.narrow;
+    property <int> light-a;
+    property <int> light-b;
+    property <image> art-a;
+    property <image> art-b;
+    property <bool> turn;
+    property <string> shown-key;
+    // The drift: time spent drifting, kept across a pause.
+    property <duration> began;
+    property <duration> spent;
+    property <duration> clock: stage.drift ? animation-tick() - began : spent;
+    // 0 to 1 and back, one way in Tokens.drift.
+    property <float> push: 0.5 - 0.5 * Math.cos(clock / Tokens.drift * 180deg);
+    background: Tokens.house-down;
+    clip: true;
+    init => {
+        light-a = stage.light;
+        art-a = stage.art;
+        shown-key = stage.key;
+    }
+    changed stage => {
+        if (stage.key != shown-key) {
+            if (turn) {
+                light-a = stage.light;
+                art-a = stage.art;
+            } else {
+                light-b = stage.light;
+                art-b = stage.art;
+            }
+            turn = !turn;
+            shown-key = stage.key;
+            spent = 0ms;
+            began = animation-tick();
+        } else if (turn) {
+            light-b = stage.light;
+            art-b = stage.art;
+        } else {
+            light-a = stage.light;
+            art-a = stage.art;
+        }
+        if (stage.drift) {
+            began = animation-tick() - spent;
+        } else {
+            spent = clock;
+        }
+    }
+    VelvetLight {
+        width: parent.width;
+        height: parent.height;
+        glow: Tokens.tint(root.light-a);
+        narrow: root.narrow;
+    }
+    VelvetLight {
+        width: parent.width;
+        height: parent.height;
+        glow: Tokens.tint(root.light-b);
+        narrow: root.narrow;
+        opacity: root.turn ? 1 : 0;
+        animate opacity { duration: Tokens.t-light; easing: ease-in-out; }
+    }
+    first := Image {
+        property <bool> there: self.source.width > 1;
+        property <float> fit: self.there ? Math.max(root.width / (self.source.width * 1px), root.height / (self.source.height * 1px)) : 1;
+        property <float> grown: self.fit * (1 + Tokens.drift-scale * (root.turn ? 0 : root.push));
+        width: self.source.width * 1px * self.grown;
+        height: self.source.height * 1px * self.grown;
+        x: (root.width - self.width) * 0.5 - root.width * 0.02 * (root.turn ? 0 : root.push);
+        y: (root.height - self.height) * 0.3 - root.height * 0.014 * (root.turn ? 0 : root.push);
+        source: root.art-a;
+        image-fit: fill;
+        // Under the second while that one shows; gone when the second is still on its way.
+        opacity: (root.turn ? second.source.width > 1 : self.source.width > 1) ? 1 : 0;
+        animate opacity { duration: Tokens.t-backdrop; easing: ease-in-out; }
+    }
+    second := Image {
+        property <bool> there: self.source.width > 1;
+        property <float> fit: self.there ? Math.max(root.width / (self.source.width * 1px), root.height / (self.source.height * 1px)) : 1;
+        property <float> grown: self.fit * (1 + Tokens.drift-scale * (root.turn ? root.push : 0));
+        width: self.source.width * 1px * self.grown;
+        height: self.source.height * 1px * self.grown;
+        x: (root.width - self.width) * 0.5 - root.width * 0.02 * (root.turn ? root.push : 0);
+        y: (root.height - self.height) * 0.3 - root.height * 0.014 * (root.turn ? root.push : 0);
+        source: root.art-b;
+        image-fit: fill;
+        opacity: root.turn && self.source.width > 1 ? 1 : 0;
+        animate opacity { duration: Tokens.t-backdrop; easing: ease-in-out; }
+    }
+    // A constant dimmer over the picture, then the shared vignette.
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.velvet-30;
+        opacity: (root.turn ? second.source.width > 1 : first.source.width > 1) ? 1 : 0;
+        animate opacity { duration: Tokens.t-backdrop; easing: ease-in-out; }
+    }
+    VelvetScrim {
+        width: parent.width;
+        height: parent.height;
+        narrow: root.narrow;
+    }
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Tokens.house-down;
+        opacity: root.stage.veil;
+        animate opacity { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+    }
+}

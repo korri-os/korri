@@ -1,0 +1,10 @@
+// VelvetGhost: an empty place on the stage, waiting for a game. A hairline
+// of thinned light and nothing in it.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetGhost inherits Rectangle {
+    border-width: Tokens.hair * 1.5;
+    border-color: Tokens.light-20;
+    background: @linear-gradient(180deg, Tokens.light-05 0%, Tokens.clear 100%);
+}

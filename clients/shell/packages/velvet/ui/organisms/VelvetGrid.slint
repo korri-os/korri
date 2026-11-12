@@ -1,0 +1,87 @@
+// VelvetGrid: a set's games as a grid of 2:3 tiles. The plan gives the
+// columns and the tile; rows scroll so the focused one stays whole in the
+// window, with room over the first row for a focused tile to grow.
+//
+// It draws only the rows near its window (`tiles`, each in its place by
+// `at`), so a set of 10,000 costs what a screenful does. The places that
+// take focus are `marks`, one for every game of the window Korri gave: a
+// mark is the focus target and takes the tap; the tile under it is the
+// picture. A finger that drags up or down scrolls whole rows (ADR 0055) and
+// moves no focus.
+
+import { Tokens } from "../tokens.slint";
+import { Tile, Mark } from "../types.slint";
+import { VelvetTap } from "../atoms/VelvetTap.slint";
+import { VelvetTile } from "../molecules/VelvetTile.slint";
+
+export component VelvetGrid inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
+    in property <[Tile]> tiles;
+    in property <[Mark]> marks;
+    in property <int> first-row;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <int> columns: Tokens.screen.columns;
+    property <length> tile-w: Tokens.screen.tile-w * u;
+    property <length> tile-h: Tokens.screen.tile-h * u;
+    property <length> gap: Tokens.screen.grid-gap * u;
+    property <length> pad: Tokens.screen.pad-x * u;
+    property <length> inset: Tokens.screen.grid-inset * u;
+    property <length> pitch: tile-h + gap;
+    // The finger's travel since the last whole row.
+    property <length> carried;
+    clip: true;
+    // The rows stand on one track; the track scrolls.
+    Rectangle {
+        x: 0;
+        y: -root.first-row * (Tokens.screen.tile-h + Tokens.screen.grid-gap) * Tokens.unit;
+        width: root.width;
+        height: root.height;
+        animate y { duration: Tokens.t-scroll; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        for tile in root.tiles: VelvetTile {
+            x: root.pad + Math.mod(tile.at, root.columns) * (root.tile-w + root.gap);
+            y: root.inset + Math.floor(tile.at / root.columns) * root.pitch;
+            width: root.tile-w;
+            height: root.tile-h;
+            tile: tile;
+            inert: true;
+            visible: tile.shown;
+        }
+        for mark in root.marks: Rectangle {
+            x: root.pad + Math.mod(mark.at, root.columns) * (root.tile-w + root.gap);
+            y: root.inset + Math.floor(mark.at / root.columns) * root.pitch;
+            width: root.tile-w;
+            height: root.tile-h;
+            accessible-role: button;
+            accessible-label: mark.label;
+            accessible-item-selectable: !root.inert;
+            accessible-item-selected: mark.focused;
+            VelvetTap {
+                width: parent.width;
+                height: parent.height;
+                target: root.inert ? "" : mark.focus-id;
+                rows: !root.inert;
+                activated(target, at, released) => { root.activated(target, at, released); }
+                slide(dy) => {
+                    root.carried += dy;
+                    if (root.carried <= -root.pitch * 0.5) {
+                        root.dragged("grid", 1);
+                        root.carried += root.pitch;
+                    } else if (root.carried >= root.pitch * 0.5) {
+                        root.dragged("grid", -1);
+                        root.carried -= root.pitch;
+                    }
+                }
+                slid => { root.carried = 0px; }
+            }
+        }
+    }
+    // A cut row at the foot fades: more is there.
+    Rectangle {
+        y: root.height - self.height;
+        width: root.width;
+        height: Tokens.screen.pad-y * root.u;
+        background: @linear-gradient(0deg, Tokens.house-down 0%, Tokens.clear 100%);
+    }
+}

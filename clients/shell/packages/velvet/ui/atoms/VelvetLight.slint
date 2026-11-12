@@ -1,0 +1,24 @@
+// VelvetLight: the stage light. Two soft pools of one colour on the dark:
+// the large one up and to the right, where the picture's subject usually
+// stands, and a low dim one at the left foot. Static: a gradient, no blur.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetLight inherits Rectangle {
+    in property <color> glow: Tokens.usher;
+    in property <bool> narrow;
+    Rectangle {
+        x: parent.width * (root.narrow ? 0.5 : 0.7) - self.width / 2;
+        y: parent.height * (root.narrow ? 0.2 : 0.32) - self.height / 2;
+        width: Math.max(parent.width, parent.height) * 1.5;
+        height: self.width;
+        background: @radial-gradient(circle, root.glow.with-alpha(0.9) 0%, root.glow.with-alpha(0.42) 30%, root.glow.with-alpha(0.1) 58%, root.glow.with-alpha(0) 72%);
+    }
+    Rectangle {
+        x: parent.width * 0.15 - self.width / 2;
+        y: parent.height * 0.95 - self.height / 2;
+        width: Math.max(parent.width, parent.height) * 1.1;
+        height: self.width;
+        background: @radial-gradient(circle, root.glow.with-alpha(0.3) 0%, root.glow.with-alpha(0.08) 45%, root.glow.with-alpha(0) 72%);
+    }
+}

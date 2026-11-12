@@ -1,0 +1,60 @@
+// VelvetSheet: a sheet over the right edge of the stage. More choice costs
+// one more step, and this is that step: a set's sort and filter, the house
+// menu, a game's other actions. What is under it stays where it was.
+
+import { Tokens } from "../tokens.slint";
+import { Sheet, Row } from "../types.slint";
+import { VelvetRows } from "VelvetRows.slint";
+
+export component VelvetSheet inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Sheet> sheet;
+    in property <[Row]> rows;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <length> w: Tokens.screen.sheet-w * u;
+    property <length> pad-y: Math.max(14px, Tokens.screen.pad-y * u * 0.8);
+    property <length> pad-x: Math.max(8px, Tokens.screen.pad-x * u * 0.3);
+    // It comes in from the edge.
+    property <bool> in;
+    init => { in = true; }
+    panel := Rectangle {
+        x: root.width - Tokens.screen.sheet-w * Tokens.unit * (root.in ? 1 : 0.8);
+        y: 0;
+        width: root.w;
+        height: root.height;
+        background: @linear-gradient(90deg, Tokens.velvet-94 0%, Tokens.house-down 100%);
+        opacity: root.in ? 1 : 0;
+        animate x, opacity { duration: Tokens.t-sheet; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        // The edge the sheet throws on the stage.
+        Rectangle {
+            x: -Tokens.screen.pad-x * root.u;
+            width: Tokens.screen.pad-x * root.u;
+            height: parent.height;
+            background: @linear-gradient(90deg, Tokens.clear 0%, Tokens.velvet-55 100%);
+        }
+        Text {
+            x: root.pad-x + Tokens.screen.body * root.u * 0.9;
+            y: root.pad-y;
+            width: parent.width - 2 * self.x;
+            height: Tokens.screen.body * root.u * 1.6;
+            text: root.sheet.title;
+            color: Tokens.house-light;
+            font-family: Tokens.text;
+            font-weight: Tokens.strong-weight;
+            font-size: Tokens.screen.body * root.u;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        VelvetRows {
+            x: root.pad-x;
+            y: root.pad-y + Tokens.screen.body * root.u * 2;
+            width: parent.width - 2 * root.pad-x;
+            height: parent.height - self.y - root.pad-y;
+            rows: root.rows;
+            inert: root.inert;
+            ground: Tokens.house-down;
+            activated(target, at, released) => { root.activated(target, at, released); }
+        }
+    }
+}

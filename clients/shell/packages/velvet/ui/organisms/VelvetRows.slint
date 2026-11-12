@@ -1,0 +1,80 @@
+// VelvetRows: rows top to bottom in a clip, scrolled so the focused row
+// stands in view (a cut row at an edge shows more is there, and a fade
+// marks the edge). A finger scrolls it too (ADR 0055): it is a Flickable,
+// and the place focus gives it is set again whenever focus moves, or a
+// button brings the highlight back.
+
+import { Tokens } from "../tokens.slint";
+import { Row } from "../types.slint";
+import { VelvetRow } from "../molecules/VelvetRow.slint";
+
+export component VelvetRows inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <[Row]> rows;
+    in property <bool> inert;
+    in property <length> size: Tokens.screen.body * Tokens.unit;
+    // The fade at a cut edge is drawn in this colour (what stands behind the list).
+    in property <color> ground: Tokens.house-down;
+    in-out property <length> focus-y;
+    in-out property <length> focus-h;
+    property <length> list-h: list.preferred-height;
+    property <length> scroll: list-h <= self.height ? 0 : Math.clamp(focus-y + focus-h / 2 - self.height / 2, 0, list-h - self.height);
+    property <bool> ring: Tokens.ring;
+    out property <length> content: list-h;
+    function follow() {
+        flick.content-y = -scroll;
+    }
+    init => { follow(); }
+    changed scroll => { follow(); }
+    changed focus-y => { follow(); }
+    changed ring => {
+        if (ring) {
+            follow();
+        }
+    }
+    clip: true;
+    flick := Flickable {
+        width: root.width;
+        height: root.height;
+        content-width: root.width;
+        content-height: Math.max(root.list-h, root.height);
+        list := VerticalLayout {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: self.preferred-height;
+            spacing: Math.max(2px, root.size * 0.12);
+            for r in root.rows: VelvetRow {
+                it: r;
+                size: root.size;
+                inert: root.inert;
+                // Slint cannot read a repeated row's place from outside, so the row reports it.
+                function keep() {
+                    if (self.holds) {
+                        root.focus-y = self.y;
+                        root.focus-h = self.height;
+                    }
+                }
+                init => { self.keep(); }
+                changed holds => { self.keep(); }
+                changed y => { self.keep(); }
+                changed height => { self.keep(); }
+                activated(target, at, released) => { root.activated(target, at, released); }
+            }
+        }
+    }
+    // More above, more below.
+    Rectangle {
+        width: root.width;
+        height: root.size * 1.4;
+        background: @linear-gradient(180deg, root.ground 0%, root.ground.with-alpha(0) 100%);
+        opacity: flick.content-y < -1px ? 1 : 0;
+    }
+    Rectangle {
+        y: root.height - self.height;
+        width: root.width;
+        height: root.size * 1.4;
+        background: @linear-gradient(0deg, root.ground 0%, root.ground.with-alpha(0) 100%);
+        opacity: root.list-h + flick.content-y > root.height + 1px ? 1 : 0;
+    }
+}

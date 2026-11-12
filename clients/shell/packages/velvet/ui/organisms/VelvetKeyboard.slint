@@ -1,0 +1,93 @@
+// VelvetKeyboard: typing with a d-pad or a finger. What is being typed is
+// named at the top (Korri's label, and the network or place it is for); the
+// draft stands under it, a secret as dots; then five rows of ten keys, every
+// key on one grid so a press moves to the key drawn that way (src/keys.ts).
+// The page under it steps back; nothing else changes.
+
+import { Tokens } from "../tokens.slint";
+import { Keyboard, Key } from "../types.slint";
+import { VelvetKeycap } from "../atoms/VelvetKeycap.slint";
+
+export component VelvetKeyboard inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Keyboard> keyboard;
+    in property <[Key]> keys;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <length> key-w: Tokens.screen.key-w * u;
+    property <length> key-h: Tokens.screen.key-h * u;
+    property <length> gap: Tokens.screen.key-gap * u;
+    property <length> keys-w: 10 * key-w + 9 * gap;
+    property <length> keys-x: (self.width - keys-w) / 2;
+    property <length> keys-y: Tokens.screen.keys-y * u;
+    property <length> body: Tokens.screen.body * u;
+    property <length> draft-size: Math.min(Tokens.screen.head * u, keys-y * 0.2);
+    property <bool> in;
+    init => { in = true; }
+    background: Tokens.velvet-86;
+    opacity: in ? 1 : 0;
+    animate opacity { duration: Tokens.t-sheet; easing: ease-in-out; }
+    TouchArea { }
+    // What is being typed, and for what.
+    Text {
+        x: root.keys-x;
+        y: Math.max(4px, root.keys-y - root.draft-size * 2.3 - root.body * 3.4);
+        width: root.keys-w;
+        height: root.body * 1.4;
+        text: root.keyboard.name == "" ? root.keyboard.heading : root.keyboard.heading + ": " + root.keyboard.name;
+        color: Tokens.usher;
+        font-family: Tokens.text;
+        font-weight: Tokens.strong-weight;
+        font-size: Math.min(root.body, root.keys-y * 0.14);
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    // The draft, on a line of light.
+    Rectangle {
+        x: root.keys-x;
+        y: root.keys-y - root.draft-size * 2.3 - root.body * 1.6;
+        width: root.keys-w;
+        height: root.draft-size * 1.9;
+        Text {
+            x: 0;
+            width: parent.width - root.draft-size * 0.5;
+            height: parent.height;
+            text: root.keyboard.before == "" ? root.keyboard.placeholder : root.keyboard.before;
+            color: root.keyboard.before == "" ? Tokens.light-45 : Tokens.house-light;
+            font-family: Tokens.text;
+            font-weight: Tokens.strong-weight;
+            font-size: root.draft-size;
+            vertical-alignment: center;
+            // A long draft keeps its end in view: that is where typing happens.
+            horizontal-alignment: self.preferred-width > self.width ? right : left;
+            overflow: clip;
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: Tokens.hair * 2;
+            background: Tokens.house-light;
+        }
+    }
+    Text {
+        x: root.keys-x;
+        y: root.keys-y - root.body * 1.5;
+        width: root.keys-w;
+        height: root.body * 1.3;
+        text: root.keyboard.note;
+        color: Tokens.usher;
+        font-family: Tokens.text;
+        font-size: Math.min(root.body * 0.8, root.keys-y * 0.11);
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    for key in root.keys: VelvetKeycap {
+        x: root.keys-x + key.column * (root.key-w + root.gap);
+        y: root.keys-y + key.row * (root.key-h + root.gap);
+        width: key.span * (root.key-w + root.gap) - root.gap;
+        height: root.key-h;
+        key: key;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+}

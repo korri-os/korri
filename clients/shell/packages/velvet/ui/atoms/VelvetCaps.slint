@@ -1,0 +1,33 @@
+// VelvetCaps: lines of the display face (Big Shoulders ExtraBold, already in
+// caps and already wrapped by src/fit.ts), set tight. `size` is the font
+// size; the block's top is the first line's cap top, its foot the last
+// line's baseline, so a title aligns to an edge by its letters, not by the
+// face's own ascent.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetCaps inherits Rectangle {
+    in property <[string]> lines;
+    // How many of the lines are set; under 0: all of them.
+    in property <int> count: -1;
+    property <int> shown: count < 0 ? lines.length : Math.min(count, lines.length);
+    in property <length> size: 24px;
+    in property <color> ink: Tokens.house-light;
+    in property <bool> centred;
+    // The block as set: its height from the first cap's top to the last baseline.
+    out property <length> block: shown == 0 ? 0px : (shown - 1) * size * Tokens.display-line + size * Tokens.display-cap;
+    height: block;
+    for line[i] in root.lines: Text {
+        x: 0;
+        y: i * root.size * Tokens.display-line - root.size * Tokens.display-cap-top;
+        width: root.width;
+        text: line;
+        visible: i < root.shown;
+        color: root.ink;
+        font-family: Tokens.display;
+        font-weight: Tokens.display-weight;
+        font-size: root.size;
+        horizontal-alignment: root.centred ? center : left;
+        overflow: clip;
+    }
+}

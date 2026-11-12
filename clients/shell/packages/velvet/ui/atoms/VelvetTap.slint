@@ -1,0 +1,102 @@
+// VelvetTap: where a finger (or a mouse) presses a focus target (ADR 0055).
+// Placed over the target, the size of it; it draws nothing. It reports the
+// target's id through `activated`, which every layer passes up to the root's
+// one callback; logic.js moves focus there and does what Confirm does.
+//
+// A press that moves more than Tokens.drag-start is a drag, and a drag never
+// activates. A region that scrolls is a Flickable, which takes a drag along
+// its axis before this sees it. A cancel ends the gesture with nothing.
+//
+// A range (`range`, its track from `track-start` to `track-end` in local x):
+// a tap on the track sends the finger's place along it as `at` (0 to 1) with
+// `released`; a sideways drag sends `at` on every move and `released` on the
+// lift.
+//
+// On a set's grid (`rows`), which draws only the rows near its window, a
+// drag that goes up or down first reports each move to `slide` (in window
+// coordinates, so the rows moving under the finger do not count) and its end
+// to `slid`; the grid turns that into whole rows. A shelf (`columns`) does
+// the same with a drag that goes sideways first, in whole tiles.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetTap inherits TouchArea {
+    // The focus target's id; empty: no target here.
+    in property <string> target;
+    in property <bool> range;
+    in property <length> track-start;
+    in property <length> track-end;
+    in property <bool> rows;
+    in property <bool> columns;
+    callback activated(target: string, at: float, released: bool);
+    callback slide(by: length);
+    callback slid();
+    property <bool> rowing;
+    property <length> finger;
+    property <bool> sideways;
+    property <bool> dragged;
+    property <bool> sliding;
+    property <bool> on-track;
+    property <bool> armed;
+    enabled: target != "" || rows || columns;
+    pure function along(x: length) -> float {
+        return track-end <= track-start ? 0 : Math.clamp((x - track-start) / (track-end - track-start), 0, 1);
+    }
+    function finish(lifted: bool) {
+        if (armed && lifted) {
+            if (sliding) {
+                root.activated(target, along(self.mouse-x), true);
+            } else if (!dragged) {
+                if (on-track) {
+                    root.activated(target, along(self.mouse-x), true);
+                } else {
+                    root.activated(target, -1, false);
+                }
+            }
+        }
+        if (armed && rowing) {
+            root.slid();
+        }
+        armed = false;
+        dragged = false;
+        sliding = false;
+        rowing = false;
+        on-track = false;
+    }
+    pointer-event(event) => {
+        if (event.button != PointerEventButton.left && event.kind != PointerEventKind.cancel) {
+            return;
+        }
+        if (event.kind == PointerEventKind.down) {
+            armed = true;
+            dragged = false;
+            sliding = false;
+            on-track = range && self.mouse-x >= track-start - Tokens.drag-start && self.mouse-x <= track-end + Tokens.drag-start;
+        } else if (event.kind == PointerEventKind.up) {
+            finish(true);
+        } else if (event.kind == PointerEventKind.cancel) {
+            finish(false);
+        }
+    }
+    moved => {
+        if (!armed) {
+            return;
+        }
+        if (!dragged && (Math.abs(self.mouse-x - self.pressed-x) > Tokens.drag-start || Math.abs(self.mouse-y - self.pressed-y) > Tokens.drag-start)) {
+            dragged = true;
+            sliding = on-track && Math.abs(self.mouse-x - self.pressed-x) > Math.abs(self.mouse-y - self.pressed-y);
+            sideways = Math.abs(self.mouse-x - self.pressed-x) > Math.abs(self.mouse-y - self.pressed-y);
+            rowing = !sliding && ((rows && !sideways) || (columns && sideways));
+            if (rowing) {
+                finger = sideways ? self.absolute-position.x + self.pressed-x : self.absolute-position.y + self.pressed-y;
+            }
+        }
+        if (rowing) {
+            root.slide((sideways ? self.absolute-position.x + self.mouse-x : self.absolute-position.y + self.mouse-y) - finger);
+            finger = sideways ? self.absolute-position.x + self.mouse-x : self.absolute-position.y + self.mouse-y;
+        }
+        if (sliding) {
+            root.activated(target, along(self.mouse-x), false);
+        }
+    }
+}

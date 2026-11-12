@@ -1,0 +1,182 @@
+// VelvetBrowse: the home and, one level down, the lobby: one tall page the
+// view moves over (`depth`).
+//
+//   0  the pick fills the stage; the row under it is a strip of small tiles
+//   1  the strip has grown into a shelf, the focused game's name over it,
+//      and the library shows under it
+//   2  the lobby: the library's head and its shelves
+//
+// Every part stays on the page at every depth, above or below the window
+// when it is not the one in view, so a press always has somewhere drawn to
+// go (contract 8.4) and the move between depths is one motion.
+
+import { Tokens } from "../ui/tokens.slint";
+import { Home, Tile, Shelf } from "../ui/types.slint";
+import { VelvetPill } from "../ui/atoms/VelvetPill.slint";
+import { VelvetWords } from "../ui/atoms/VelvetWords.slint";
+import { VelvetHead } from "../ui/atoms/VelvetHead.slint";
+import { VelvetTile } from "../ui/molecules/VelvetTile.slint";
+import { VelvetMarquee } from "../ui/molecules/VelvetMarquee.slint";
+import { VelvetPick } from "../ui/organisms/VelvetPick.slint";
+import { VelvetLobby } from "../ui/organisms/VelvetLobby.slint";
+
+export component VelvetBrowse inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
+    in property <Home> home;
+    // The pick's card (one tile, or none), the row's tiles, the shelves and their tiles.
+    in property <[Tile]> cards;
+    in property <[Tile]> row-tiles;
+    in property <[Shelf]> shelves;
+    in property <[Tile]> shelf-tiles;
+    // The finger's travel along the row since the last whole tile.
+    property <length> carried;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <length> pad-x: Tokens.screen.pad-x * u;
+    property <length> pad-y: Tokens.screen.pad-y * u;
+    property <int> depth: home.depth;
+    // The row's tile: a strip at rest, a shelf once it is focused. These are where things
+    // are going; each item animates its own place (ui/molecules/VelvetTile.slint says why).
+    property <length> tile-h: (depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * u;
+    property <length> tile-gap: (depth == 0 ? Tokens.screen.strip-gap : Tokens.screen.row-gap) * u;
+    property <length> tile-w: tile-h * Tokens.tile-ratio;
+    clip: true;
+    Rectangle {
+        x: 0;
+        y: root.home.depth == 0 ? 0px : -root.height;
+        width: root.width;
+        height: root.height;
+        animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        VelvetPick {
+            width: parent.width;
+            height: parent.height;
+            hero: root.home.hero;
+            cards: root.cards;
+            mark: root.home.mark;
+            buttons: [root.home.play];
+            inert: root.inert;
+            activated(target, at, released) => { root.activated(target, at, released); }
+        }
+        VelvetPill {
+            x: parent.width - root.pad-x - self.width;
+            y: root.pad-y * 0.7;
+            pill: root.home.menu;
+            size: Tokens.screen.small * root.u;
+            inert: root.inert;
+            activated(target, at, released) => { root.activated(target, at, released); }
+        }
+        if root.home.clock != "": VelvetWords {
+            x: parent.width - root.pad-x - Tokens.screen.small * root.u * 12;
+            y: root.pad-y * 0.7;
+            width: Tokens.screen.small * root.u * 6;
+            height: Tokens.screen.small * root.u * 2.3;
+            text: root.home.clock;
+            size: Tokens.screen.small * root.u;
+            horizontal-alignment: right;
+        }
+    }
+    // The focused game's name over the shelf.
+    VelvetMarquee {
+        x: root.pad-x;
+        y: Tokens.screen.row-mark-y * root.u;
+        width: Tokens.screen.row-mark-w * root.u;
+        height: Tokens.screen.row-mark-h * root.u;
+        mq: root.home.row-mark;
+        on: root.depth == 1;
+    }
+    // The row: the pick's own tile joins at its head once the row is the shelf.
+    for tile[n] in root.row-tiles: VelvetTile {
+        // An animated binding names its inputs itself (the component's `in` properties, the tokens,
+        // its own geometry), never a property worked out from them: the shell's Slint can lose
+        // the value of an animated binding that reads a derived property.
+        x: root.home.depth == 0
+            ? Tokens.screen.pad-x * Tokens.unit + (n - 1) * (Tokens.screen.strip-h * Tokens.tile-ratio + Tokens.screen.strip-gap) * Tokens.unit
+            : Tokens.screen.pad-x * Tokens.unit + n * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit
+                - Math.clamp(
+                    root.home.row-at * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit - Tokens.screen.row-h * Tokens.tile-ratio * Tokens.unit * 1.75),
+                    0px,
+                    Math.max(0px, root.row-tiles.length * (Tokens.screen.row-h * Tokens.tile-ratio + Tokens.screen.row-gap) * Tokens.unit - Tokens.screen.row-gap * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit)));
+        y: root.home.depth == 0 ? Tokens.screen.strip-y * Tokens.unit : root.home.depth == 1 ? Tokens.screen.row-y * Tokens.unit : -Tokens.screen.row-h * Tokens.unit * 1.4;
+        width: (root.home.depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * Tokens.tile-ratio * Tokens.unit;
+        height: (root.home.depth == 0 ? Tokens.screen.strip-h : Tokens.screen.row-h) * Tokens.unit;
+        tile: tile;
+        rests: root.depth == 0;
+        inert: root.inert;
+        slides: root.depth == 1;
+        animate x, y, width, height { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        activated(target, at, released) => { root.activated(target, at, released); }
+        slide(by) => {
+            root.carried += by;
+            if (root.carried <= -(root.tile-w + root.tile-gap) * 0.5) {
+                root.dragged("row", 1);
+                root.carried += root.tile-w + root.tile-gap;
+            } else if (root.carried >= (root.tile-w + root.tile-gap) * 0.5) {
+                root.dragged("row", -1);
+                root.carried -= root.tile-w + root.tile-gap;
+            }
+        }
+        slid => { root.carried = 0px; }
+    }
+    Rectangle {
+        x: 0;
+        y: root.home.depth == 2 ? 0px : root.home.depth == 1 && Tokens.screen.peek-y > 0 ? (Tokens.screen.peek-y - Tokens.screen.lib-top) * Tokens.unit : root.height;
+        width: root.width;
+        height: root.height;
+        animate y { duration: Tokens.t-layer; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        // The library's head.
+        HorizontalLayout {
+            x: root.pad-x;
+            y: Tokens.screen.head-y * root.u;
+            width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+            height: Tokens.screen.head-h * root.u;
+            spacing: Tokens.screen.fact * root.u * 0.8;
+            opacity: root.home.depth == 2 ? 1 : 0;
+            animate opacity { duration: Tokens.t-level; easing: ease-in-out; }
+            lib := VelvetHead {
+                horizontal-stretch: 0;
+                text: root.home.lib-title;
+            }
+            VerticalLayout {
+                alignment: end;
+                padding-bottom: lib.drop - Tokens.screen.fact * root.u * 0.24;
+                VelvetWords {
+                    text: root.home.lib-count;
+                }
+            }
+        }
+        // What focus is on, and one fact about it. A readout: it gives way first.
+        HorizontalLayout {
+            x: Tokens.screen.narrow ? root.pad-x : parent.width * 0.5;
+            y: Tokens.screen.narrow ? (Tokens.screen.head-y + Tokens.screen.head-h) * root.u + 2px : (Tokens.screen.head-y + Tokens.screen.head-h) * root.u - self.height - lib.drop + Tokens.screen.fact * root.u * 0.3;
+            width: Tokens.screen.narrow ? parent.width - 2 * root.pad-x : parent.width * 0.5 - root.pad-x;
+            height: Tokens.screen.fact * root.u * 1.5;
+            alignment: Tokens.screen.narrow ? start : end;
+            spacing: Tokens.screen.fact * root.u * 0.6;
+            opacity: root.home.depth == 2 ? 1 : 0;
+            animate opacity { duration: Tokens.t-level; easing: ease-in-out; }
+            VelvetWords {
+                text: root.home.now-title;
+                ink: Tokens.house-light;
+                strong: true;
+            }
+            VelvetWords {
+                horizontal-stretch: 0;
+                text: root.home.now-fact;
+            }
+        }
+        VelvetLobby {
+            x: 0;
+            y: Tokens.screen.lib-top * root.u;
+            width: parent.width;
+            height: parent.height - self.y;
+            shelves: root.shelves;
+            tiles: root.shelf-tiles;
+            shelf-at: root.home.shelf-at;
+            entered: root.depth == 2;
+            inert: root.inert;
+            activated(target, at, released) => { root.activated(target, at, released); }
+            dragged(region, by) => { root.dragged(region, by); }
+        }
+    }
+}

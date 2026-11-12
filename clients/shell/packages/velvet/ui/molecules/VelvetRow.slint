@@ -1,0 +1,219 @@
+// VelvetRow: one row of a list page, a sheet or the gameplay overlay.
+//
+//   row      a label, its value at the right, and a mark that says what a
+//            press does: a chevron (goes deeper), a pair of arrows (left and
+//            right step it), a tick (the one in force), a lock (needs a
+//            key), bars (a network's strength). Focused, the row is House
+//            light with ink words, and its note shows under the label.
+//   head     a group's title, quiet
+//   note     a sentence of Korri's or Velvet's, no focus
+//   problem  what went wrong, with the Exit mark
+//   range    a value on a track, set with left and right or a finger
+//   meter    measured progress
+//
+// A dim row is something Korri cannot do now; its note says why.
+
+import { Tokens } from "../tokens.slint";
+import { Row } from "../types.slint";
+import { VelvetTap } from "../atoms/VelvetTap.slint";
+import { VelvetIcon } from "../atoms/VelvetIcon.slint";
+import { VelvetSignal } from "../atoms/VelvetSignal.slint";
+import { VelvetBar } from "../atoms/VelvetBar.slint";
+
+export component VelvetRow inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Row> it;
+    in property <bool> inert;
+    in property <length> size: Tokens.screen.body * Tokens.unit;
+    property <bool> target: (it.kind == "row" || it.kind == "range") && it.focus-id != "";
+    property <bool> lit: target && it.focused && Tokens.ring && !inert;
+    property <bool> noted: it.note != "" && (lit || it.kind == "range");
+    property <length> line: Math.max(Tokens.screen.row-height * Tokens.unit, size * 2.1);
+    property <color> ink: lit ? Tokens.ink : it.danger ? Tokens.exit : Tokens.house-light;
+    property <color> quiet: lit ? Tokens.ink-quiet : Tokens.usher;
+    property <length> pad: size * 0.9;
+    property <length> track-x: self.width * 0.45;
+    property <length> track-w: self.width * 0.55 - pad - size * 3.2;
+    out property <bool> holds: target && it.focused;
+    height: it.kind == "head" ? size * 2.5
+        : it.kind == "note" || it.kind == "problem" ? words.preferred-height + size * 0.7
+        : it.kind == "meter" ? size * 2.6
+        : line + (noted ? note.preferred-height + size * 0.35 : 0px);
+    accessible-role: button;
+    accessible-label: it.label;
+    accessible-item-selectable: target && !inert;
+    accessible-item-selected: it.focused;
+    if root.target: Rectangle {
+        width: root.width;
+        height: root.height;
+        border-radius: Math.min(root.size * 0.55, 12px);
+        background: Tokens.house-light;
+        opacity: root.it.focused && Tokens.ring && !root.inert ? 1 : 0;
+        animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
+    }
+    if root.it.kind == "head": Text {
+        x: root.pad;
+        y: root.size * 0.9;
+        width: root.width - 2 * root.pad;
+        height: root.size * 1.4;
+        text: root.it.label;
+        color: Tokens.usher;
+        font-family: Tokens.text;
+        font-weight: Tokens.text-weight;
+        font-size: root.size * 0.82;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    words := Text {
+        x: root.pad + (root.it.kind == "problem" ? root.size * 1.5 : 0px);
+        y: root.size * 0.35;
+        width: root.width - 2 * root.pad - (root.it.kind == "problem" ? root.size * 1.5 : 0px);
+        visible: root.it.kind == "note" || root.it.kind == "problem";
+        text: root.it.label;
+        color: root.it.kind == "problem" ? Tokens.house-light : Tokens.usher;
+        font-family: Tokens.text;
+        font-weight: Tokens.text-weight;
+        font-size: root.size * 0.9;
+        wrap: word-wrap;
+    }
+    if root.it.kind == "problem": VelvetIcon {
+        x: root.pad;
+        y: root.size * 0.42;
+        name: "note";
+        size: root.size * 1.05;
+        ink: Tokens.exit;
+    }
+    if root.it.kind == "meter": Rectangle {
+        width: root.width;
+        height: root.height;
+        VelvetBar {
+            x: root.pad;
+            y: root.size * 0.5;
+            width: parent.width - 2 * root.pad;
+            share: root.it.share;
+        }
+        Text {
+            x: root.pad;
+            y: root.size * 1.0;
+            width: parent.width - 2 * root.pad;
+            height: root.size * 1.5;
+            text: root.it.label;
+            color: Tokens.usher;
+            font-family: Tokens.text;
+            font-size: root.size * 0.82;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    if root.target: Rectangle {
+        width: root.width;
+        height: root.line;
+        opacity: root.it.dim ? 0.45 : 1;
+        HorizontalLayout {
+            x: root.pad;
+            width: parent.width - 2 * root.pad;
+            height: parent.height;
+            spacing: root.size * 0.6;
+            Text {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                text: root.it.label;
+                color: root.ink;
+                font-family: Tokens.text;
+                font-weight: root.lit ? Tokens.strong-weight : Tokens.text-weight;
+                font-size: root.size;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            if root.it.bars >= 0: VerticalLayout {
+                alignment: center;
+                VelvetSignal {
+                    bars: root.it.bars;
+                    ink: root.ink;
+                    size: root.size * 0.9;
+                }
+            }
+            if root.it.kind == "row" && root.it.value != "": Text {
+                horizontal-stretch: 0;
+                max-width: root.width * 0.5;
+                text: root.it.value;
+                color: root.quiet;
+                font-family: Tokens.text;
+                font-weight: Tokens.text-weight;
+                font-size: root.size * 0.9;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                overflow: elide;
+            }
+            if root.it.kind == "range": Rectangle {
+                horizontal-stretch: 0;
+                width: root.width * 0.55 - root.pad;
+                Rectangle {
+                    x: 0;
+                    y: (parent.height - self.height) / 2;
+                    width: root.track-w;
+                    height: Math.max(3px, root.size * 0.2);
+                    border-radius: self.height / 2;
+                    background: root.lit ? Tokens.ink-quiet : Tokens.light-20;
+                    Rectangle {
+                        width: parent.width * Math.clamp(root.it.share, 0, 1);
+                        height: parent.height;
+                        border-radius: parent.border-radius;
+                        background: root.ink;
+                    }
+                }
+                Rectangle {
+                    x: root.track-w * Math.clamp(root.it.share, 0, 1) - self.width / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: root.size * 0.8;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: root.ink;
+                }
+                Text {
+                    x: root.track-w + root.size * 0.6;
+                    width: parent.width - self.x;
+                    height: parent.height;
+                    text: root.it.value;
+                    color: root.quiet;
+                    font-family: Tokens.text;
+                    font-size: root.size * 0.9;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                }
+            }
+            if root.it.mark != "": VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                VelvetIcon {
+                    name: root.it.mark == "check" ? "check" : root.it.mark == "more" ? "more" : root.it.mark == "lock" ? "lock" : root.it.mark == "busy" ? "watch" : root.it.mark == "step" ? "sliders" : root.it.mark == "on" ? "check" : root.it.mark == "off" ? "stop" : "";
+                    size: root.size * 0.9;
+                    ink: root.it.mark == "check" || root.it.mark == "on" ? root.ink : root.quiet;
+                    opacity: root.it.mark == "off" ? 0.4 : 1;
+                }
+            }
+        }
+    }
+    note := Text {
+        x: root.pad;
+        y: root.line - root.size * 0.25;
+        width: root.width - 2 * root.pad;
+        visible: root.target && root.noted;
+        text: root.it.note;
+        color: root.quiet;
+        font-family: Tokens.text;
+        font-weight: Tokens.text-weight;
+        font-size: root.size * 0.8;
+        wrap: word-wrap;
+    }
+    VelvetTap {
+        width: parent.width;
+        height: parent.height;
+        target: root.target && !root.inert && !root.it.dim ? root.it.focus-id : "";
+        range: root.it.kind == "range";
+        track-start: root.track-x;
+        track-end: root.track-x + root.track-w;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+}

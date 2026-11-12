@@ -56,4 +56,10 @@ paths = [
   # Zone's preview scenarios carry its fixtures' made-up backup secret
   # (a deterministic bech32 string from fixture-save-data.ts, never a real key).
   '''clients/shell/packages/zone/preview/scenarios/''',
+  # Velvet's logic.js, for the same reason as Zone's: the minified bundle of
+  # logic.ts (which is scanned) sets one-letter names beside `secret:`.
+  '''clients/shell/packages/velvet/logic\.js$''',
+  # Velvet's preview scenarios carry a made-up backup secret (a fixed bech32
+  # string written by preview/scenarios.ts, never a real key).
+  '''clients/shell/packages/velvet/preview/scenarios/''',
 ]

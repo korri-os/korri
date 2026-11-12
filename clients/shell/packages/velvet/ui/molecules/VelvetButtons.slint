@@ -1,0 +1,50 @@
+// VelvetButtons: a group of pills. Side by side while the plan says they
+// fit, else one under the other at the group's full width (`stack`): the
+// same group either way, never a button dropped.
+
+import { Tokens } from "../tokens.slint";
+import { Pill } from "../types.slint";
+import { VelvetPill } from "../atoms/VelvetPill.slint";
+
+export component VelvetButtons inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <[Pill]> pills;
+    in property <bool> stack;
+    in property <bool> inert;
+    in property <bool> centred;
+    // The first pill is filled at rest (the pick's prompt).
+    in property <bool> prompt;
+    in property <length> size: Tokens.screen.button * Tokens.unit;
+    property <bool> noted: pills.length > 0 && pills[0].note != "";
+    property <length> pitch: size * (noted ? 3.1 : 2.3) + size * 0.5;
+    out property <length> block: pills.length == 0 ? 0px : stack ? pills.length * pitch - size * 0.5 : size * 2.3;
+    height: block;
+    if root.stack: Rectangle {
+        width: root.width;
+        height: root.block;
+        for pill[n] in root.pills: VelvetPill {
+            x: 0;
+            y: n * root.pitch;
+            width: root.width;
+            pill: pill;
+            size: root.size;
+            inert: root.inert;
+            prompt: root.prompt && n == 0;
+            activated(target, at, released) => { root.activated(target, at, released); }
+        }
+    }
+    if !root.stack: HorizontalLayout {
+        x: root.centred ? (root.width - self.width) / 2 : 0;
+        y: 0;
+        width: Math.min(self.preferred-width, root.width);
+        height: root.size * 2.3;
+        spacing: root.size * 0.8;
+        for pill[n] in root.pills: VelvetPill {
+            pill: pill;
+            size: root.size;
+            inert: root.inert;
+            prompt: root.prompt && n == 0;
+            activated(target, at, released) => { root.activated(target, at, released); }
+        }
+    }
+}

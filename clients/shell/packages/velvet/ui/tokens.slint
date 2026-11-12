@@ -1,0 +1,134 @@
+// Velvet's tokens, as one global. A dark house: near-black, lit by the game
+// in front of you. The design inputs are literals here and nowhere else;
+// every component reads them and none writes them (main.slint and the
+// preview frame write the four inputs).
+//
+// Colour: House down (the stage), House light (titles, the focus edge, the
+// one filled button), Usher (facts). Velvet is the scrim: House down with
+// alpha. Exit is the one signal colour, for what cannot be undone and what
+// went wrong; it is never decoration.
+//
+// Type: Big Shoulders ExtraBold in caps for display, Archivo semi-condensed
+// for everything a person reads as a sentence or a fact (SIL OFL 1.1, fonts/).
+//
+// Motion: focus travel under 250 ms on an ease-out with no overshoot;
+// structural moves 150 to 440 ms; `still` (the velvet.motion preference)
+// lands every change at once. No blur anywhere: the shell's renderer has
+// none, and the authoring gate forbids it.
+
+import "../fonts/BigShoulders-ExtraBold.ttf";
+import "../fonts/Archivo-SemiCondensed.ttf";
+import "../fonts/Archivo-SemiCondensed-Bold.ttf";
+import { Screen } from "types.slint";
+
+export global Tokens {
+    // ---- Inputs ----
+    in-out property <length> width: 640px;
+    in-out property <length> height: 480px;
+    // The plan for the window (src/plan.ts).
+    in-out property <Screen> screen: {
+        width: 640, height: 480, k: 0.4, pad-x: 32, pad-y: 26, narrow: false,
+        title: 42, head: 22, body: 14, fact: 13, label: 13, button: 15, small: 12,
+        poster-x: 32, poster-y: 26, poster-h: 317, text-x: 277, text-y: 26, text-w: 331, text-h: 317,
+        hero-x: 32, hero-y: 26, hero-w: 358, hero-h: 317, mark-h: 133, pick-title: 54,
+        strip-y: 401, strip-h: 53, strip-gap: 10, row-y: 221, row-h: 154, row-gap: 16,
+        row-mark-y: 26, row-mark-h: 177, row-mark-w: 384, peek-y: 419,
+        head-y: 26, head-h: 26, lib-top: 62, shelf-label: 23, shelf-row-y: 40, shelf-h: 144, shelf-gap: 15, shelf-pitch: 202, halo: 8,
+        columns: 4, tile-w: 136, tile-h: 204, grid-gap: 11, grid-inset: 25, grid-rows: 1, pool-rows: 4, sheet-w: 260,
+        detail-logo-h: 144, detail-logo-w: 320, detail-title: 64, detail-fact: 12, detail-y: 163, detail-w: 320, stack: false,
+        page-w: 334, row-height: 37, panel-beside: true, panel-w: 216,
+        key-w: 53, key-h: 48, key-gap: 2, keys-y: 211, curtain-w: 384, kicker: 29, empty-wide: false, pause-w: 280,
+    };
+    // A tap or a drag came last, not a button (ADR 0055): the focus
+    // highlight hides until the next button press.
+    in-out property <bool> touching;
+    // Reduced motion: every change lands at once.
+    in-out property <bool> still;
+
+    // ---- Derived inputs ----
+    out property <bool> ring: !touching;
+    out property <length> unit: 1px;
+    // How far a press may move before it is a drag and no longer a tap.
+    out property <length> drag-start: 8px;
+
+    // ---- Colour ----
+    out property <color> house-down: #040406;
+    out property <color> house-light: #f3eee6;
+    out property <color> usher: #b3ada3;
+    // Words on House light.
+    out property <color> ink: #0a0a0c;
+    out property <color> ink-quiet: #45423d;
+    out property <color> exit: #f0655a;
+    out property <color> clear: #04040600;
+    // Velvet: the scrim, by weight.
+    out property <color> velvet-30: #0404064d;
+    out property <color> velvet-40: #04040666;
+    out property <color> velvet-55: #0404068c;
+    out property <color> velvet-62: #0404069e;
+    out property <color> velvet-70: #040406b3;
+    out property <color> velvet-86: #040406db;
+    out property <color> velvet-94: #0e0e12f0;
+    // House light, thinned: a quiet button's ground, a hairline, an empty place.
+    out property <color> light-05: #f3eee60d;
+    out property <color> light-10: #f3eee61a;
+    out property <color> light-20: #f3eee633;
+    out property <color> light-45: #f3eee673;
+    // A tile's shade: under it, and over its foot.
+    out property <color> shade-00: #00000000;
+    out property <color> shade-45: #00000073;
+    out property <color> shade-72: #000000b8;
+    out property <color> sheen: #ffffff12;
+    out property <color> cone: #ffd6a029;
+
+    // ---- Type ----
+    out property <string> display: "Big Shoulders";
+    out property <string> text: "Archivo";
+    out property <int> display-weight: 800;
+    out property <int> text-weight: 400;
+    out property <int> strong-weight: 700;
+    // The display face's line pitch, where its caps start under a Text's top,
+    // and how tall they are, in font sizes (src/fit.ts holds the same).
+    out property <float> display-line: 0.9;
+    out property <float> display-cap-top: 0.186;
+    out property <float> display-cap: 0.8;
+
+    // ---- Shape ----
+    // A card is 60 x 90 units; a tile's edge is 3 px of House light.
+    out property <float> card-w: 60;
+    out property <float> card-h: 90;
+    out property <float> tile-ratio: 0.6667;
+    out property <float> focus-scale: 1.08;
+    out property <length> edge: 3px;
+    out property <length> hair: 1px;
+    out property <float> rows-dim: 0.5;
+
+    // ---- Motion ----
+    out property <duration> t-focus: still ? 0ms : 240ms;
+    out property <duration> t-unfocus: still ? 0ms : 200ms;
+    out property <duration> t-ring: still ? 0ms : 140ms;
+    out property <duration> t-scroll: still ? 0ms : 260ms;
+    out property <duration> t-backdrop: still ? 0ms : 380ms;
+    out property <duration> t-light: still ? 0ms : 420ms;
+    out property <duration> t-mark-out: still ? 0ms : 120ms;
+    out property <duration> t-mark-in: still ? 0ms : 260ms;
+    out property <duration> t-meta: still ? 0ms : 300ms;
+    out property <duration> t-layer: still ? 0ms : 420ms;
+    out property <duration> t-level: still ? 0ms : 360ms;
+    out property <duration> t-sheet: still ? 0ms : 220ms;
+    out property <duration> t-detail: still ? 0ms : 150ms;
+    out property <duration> t-reveal: still ? 0ms : 420ms;
+    out property <duration> t-stagger: still ? 0ms : 40ms;
+    // The facts wait for the focus to rest, also when motion is reduced.
+    out property <duration> dwell: 450ms;
+    // The backdrop's slow push: one way in this long, then back.
+    out property <duration> drift: 18s;
+    out property <float> drift-scale: 0.10;
+
+    // An int from the logic, 0xRRGGBB, as a colour.
+    pure public function tint(v: int) -> color {
+        return rgb(Math.floor(v / 65536), Math.mod(Math.floor(v / 256), 256), Math.mod(v, 256));
+    }
+    pure public function veil(v: int, alpha: float) -> color {
+        return rgba(Math.floor(v / 65536), Math.mod(Math.floor(v / 256), 256), Math.mod(v, 256), alpha);
+    }
+}

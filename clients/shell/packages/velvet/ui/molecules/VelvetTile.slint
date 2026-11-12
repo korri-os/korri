@@ -1,0 +1,188 @@
+// VelvetTile: one 2:3 place on a shelf, in a row or in a set.
+//
+//   a game     its poster when Korri has one; a square cover over a field
+//              with the title under it; its logo on a field; else the no-art
+//              card. The no-art card is drawn under every picture, so a
+//              picture that is late or never comes leaves no hole.
+//   a way in   "All games", "See all", "A to Z": a quiet place with a grid
+//              mark, its words and its count.
+//   a system   the system's own card, its count at the head.
+//
+// Focus: the tile grows from its foot (Tokens.focus-scale) and takes the
+// edge; its neighbours never move. The system's badge shows on the focused
+// game only, after the focus has rested.
+
+import { Tokens } from "../tokens.slint";
+import { Tile } from "../types.slint";
+import { VelvetTap } from "../atoms/VelvetTap.slint";
+import { VelvetEdge } from "../atoms/VelvetEdge.slint";
+import { VelvetBadge } from "../atoms/VelvetBadge.slint";
+import { VelvetCaps } from "../atoms/VelvetCaps.slint";
+import { VelvetIcon } from "../atoms/VelvetIcon.slint";
+import { VelvetWords } from "../atoms/VelvetWords.slint";
+import { VelvetPoster } from "VelvetPoster.slint";
+
+export component VelvetTile inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    // A finger drags the shelf this tile stands on (ADR 0055).
+    callback slide(by: length);
+    callback slid();
+    in property <bool> slides;
+    in property <Tile> tile;
+    // The row this tile stands in is not the focused one: it steps back.
+    in property <bool> rests;
+    // Focus does not make it grow (the pick's card: it is the show already).
+    in property <bool> fixed;
+    // Under another layer, or a card that only shows: drawn, but no target.
+    in property <bool> inert;
+    property <bool> lit: (tile.focused || tile.lit) && Tokens.ring && !inert;
+    // Focused, it grows from its foot; arriving, it comes in a little small and clears.
+    property <bool> ready: tile.shown && (tile.poster.shown || tile.kind != "game" || tile.art-kind != "");
+    accessible-role: button;
+    accessible-label: tile.label;
+    accessible-item-selectable: tile.shown && tile.focus-id != "" && !inert;
+    accessible-item-selected: tile.focused;
+    // The shade under the tile: deeper while it is focused.
+    Rectangle {
+        x: card.x;
+        y: card.y + card.height;
+        width: card.width;
+        height: root.height * (root.lit ? 0.09 : 0.05);
+        opacity: card.opacity;
+        background: @linear-gradient(180deg, Tokens.shade-72 0%, Tokens.shade-00 100%);
+    }
+    card := Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height;
+        // An animated binding names its inputs itself (the component's `in` properties, the tokens,
+        // its own geometry), never a property worked out from them: the shell's Slint can lose
+        // the value of an animated binding that reads a derived property.
+        width: root.width * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "")) ? 0.95 : (root.tile.focused || root.tile.lit) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
+        height: root.height * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "")) ? 0.95 : (root.tile.focused || root.tile.lit) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
+        animate width, height { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        clip: true;
+        opacity: !(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "")) ? 0 : root.rests ? Tokens.rows-dim : 1;
+        animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
+        background: root.tile.kind == "nav" ? Tokens.light-05 : Tokens.house-down;
+        if root.tile.kind != "nav": VelvetPoster {
+            width: parent.width;
+            height: parent.height;
+            poster: root.tile.poster;
+        }
+        // The game's poster fills the tile.
+        if root.tile.kind == "game" && root.tile.art-kind == "poster": Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.tile.art;
+            image-fit: cover;
+            opacity: self.source.width > 1 ? 1 : 0;
+            animate opacity { duration: Tokens.t-reveal; easing: ease-in-out; }
+        }
+        // A square cover: over a field, the title under it. The field comes with the picture.
+        if root.tile.kind == "game" && root.tile.art-kind == "cover": Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: Tokens.tint(root.tile.field);
+            opacity: cover.source.width > 1 ? 1 : 0;
+            animate opacity { duration: Tokens.t-reveal; easing: ease-in-out; }
+            cover := Image {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.width;
+                source: root.tile.art;
+                image-fit: contain;
+            }
+            VelvetCaps {
+                x: parent.width * 0.08;
+                y: parent.width + (parent.height - parent.width - self.block) / 2;
+                width: parent.width * 0.86;
+                lines: root.tile.cap-lines;
+                size: root.tile.cap-size * parent.width / Tokens.card-w;
+            }
+        }
+        // A logo alone: on a field.
+        if root.tile.kind == "game" && root.tile.art-kind == "logo": Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: @linear-gradient(180deg, Tokens.tint(root.tile.field) 0%, Tokens.house-down 135%);
+            opacity: logo.source.width > 1 ? 1 : 0;
+            animate opacity { duration: Tokens.t-reveal; easing: ease-in-out; }
+            logo := Image {
+                x: parent.width * 0.1;
+                y: parent.height * 0.26;
+                width: parent.width * 0.8;
+                height: parent.height * 0.42;
+                source: root.tile.art;
+                image-fit: contain;
+            }
+        }
+        // The light on the card's head.
+        if root.tile.kind != "nav": Rectangle {
+            width: parent.width;
+            height: parent.height * 0.38;
+            background: @linear-gradient(180deg, Tokens.sheen 0%, Tokens.clear 100%);
+        }
+        if root.tile.kind == "nav": Rectangle {
+            width: parent.width;
+            height: parent.height;
+            border-width: Tokens.hair;
+            border-color: Tokens.light-20;
+            VelvetIcon {
+                x: (parent.width - self.width) / 2;
+                y: parent.height * 0.4 - self.height / 2;
+                name: "grid";
+                size: parent.width * 0.26;
+                ink: Tokens.house-light;
+                opacity: 0.8;
+            }
+            HorizontalLayout {
+                x: 0;
+                y: parent.height * 0.8 - self.height / 2;
+                width: parent.width;
+                height: self.preferred-height;
+                alignment: center;
+                spacing: parent.height * 0.02;
+                VelvetWords {
+                    text: root.tile.label;
+                    size: Math.max(Tokens.screen.small * Tokens.unit * 0.8, root.height * 0.058);
+                    ink: Tokens.house-light;
+                    strong: true;
+                }
+                VelvetWords {
+                    text: root.tile.count;
+                    size: Math.max(Tokens.screen.small * Tokens.unit * 0.8, root.height * 0.058);
+                    ink: Tokens.usher;
+                }
+            }
+        }
+        if root.tile.kind == "system" && root.tile.count != "": VelvetBadge {
+            x: parent.height * 0.035;
+            y: parent.height * 0.035;
+            text: root.tile.count;
+            size: Math.clamp(root.height * 0.05, 10px, 18px);
+        }
+        if root.tile.kind == "game": VelvetBadge {
+            x: Math.max(5px, parent.height * 0.03);
+            y: root.tile.badge-top ? self.x : parent.height - self.height - self.x;
+            text: root.tile.badge;
+            size: Math.clamp(root.height * 0.045, 10px, 18px);
+            opacity: (root.tile.focused || root.tile.lit) && Tokens.ring && !root.inert && root.tile.badge != "" ? 1 : 0;
+            animate opacity { duration: Tokens.t-meta; delay: (root.tile.focused || root.tile.lit) && Tokens.ring && !root.inert && root.tile.badge != "" ? Tokens.dwell : 0ms; easing: ease-out; }
+        }
+        VelvetEdge {
+            width: parent.width;
+            height: parent.height;
+            lit: root.lit;
+        }
+    }
+    VelvetTap {
+        width: parent.width;
+        height: parent.height;
+        target: root.tile.shown && !root.inert ? root.tile.focus-id : "";
+        columns: root.slides && !root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+        slide(by) => { root.slide(by); }
+        slid => { root.slid(); }
+    }
+}

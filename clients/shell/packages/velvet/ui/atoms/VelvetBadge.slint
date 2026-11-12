@@ -1,0 +1,26 @@
+// VelvetBadge: a small plate of words on the scrim. It names the system of
+// the focused game, and nothing else wears it.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetBadge inherits Rectangle {
+    in property <string> text;
+    in property <length> size: Tokens.screen.small * Tokens.unit;
+    width: words.preferred-width + size * 1.2;
+    height: size * 1.7;
+    border-radius: self.height / 2;
+    background: Tokens.velvet-86;
+    border-width: Tokens.hair;
+    border-color: Tokens.light-20;
+    words := Text {
+        x: root.size * 0.6;
+        y: 0;
+        height: parent.height;
+        text: root.text;
+        color: Tokens.house-light;
+        font-family: Tokens.text;
+        font-weight: Tokens.strong-weight;
+        font-size: root.size;
+        vertical-alignment: center;
+    }
+}

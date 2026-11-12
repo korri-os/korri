@@ -1,0 +1,49 @@
+// VelvetFacts: the facts Korri publishes about a game, in up to three lines:
+// when it was last played, how long, where it plays. The system's badge
+// leads the first line when there is one.
+
+import { Tokens } from "../tokens.slint";
+import { Facts } from "../types.slint";
+import { VelvetBadge } from "../atoms/VelvetBadge.slint";
+import { VelvetFactLine } from "VelvetFactLine.slint";
+
+export component VelvetFacts inherits Rectangle {
+    in property <Facts> facts;
+    in property <string> badge;
+    in property <length> size: Tokens.screen.fact * Tokens.unit;
+    property <length> pitch: size * 1.7;
+    property <length> lead: badge == "" ? 0px : plate.width + size * 0.9;
+    out property <length> block: Math.max(facts.count, badge != "" ? 1 : 0) * pitch;
+    height: block;
+    plate := VelvetBadge {
+        x: 0;
+        y: (root.pitch - self.height) / 2;
+        text: root.badge;
+        size: root.size * 0.86;
+        visible: root.badge != "";
+    }
+    if root.facts.count > 0: VelvetFactLine {
+        x: root.lead;
+        y: 0;
+        width: Math.min(self.preferred-width, root.width - root.lead);
+        height: root.pitch;
+        line: root.facts.first;
+        size: root.size;
+    }
+    if root.facts.count > 1: VelvetFactLine {
+        x: 0;
+        y: root.pitch;
+        width: Math.min(self.preferred-width, root.width);
+        height: root.pitch;
+        line: root.facts.second;
+        size: root.size;
+    }
+    if root.facts.count > 2: VelvetFactLine {
+        x: 0;
+        y: 2 * root.pitch;
+        width: Math.min(self.preferred-width, root.width);
+        height: root.pitch;
+        line: root.facts.third;
+        size: root.size;
+    }
+}

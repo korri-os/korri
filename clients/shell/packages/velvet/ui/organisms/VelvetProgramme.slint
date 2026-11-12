@@ -1,0 +1,131 @@
+// VelvetProgramme: a list page, the theatre's programme: what the house can
+// do, set out in rows. Its title in the display face, a line under it, the
+// rows, and its buttons at the foot. Settings, Wi-Fi, getting games, invites,
+// identity, saves, a runner, launch settings and first boot are all this one
+// page with other rows.
+//
+// A page may hold a panel: the backup's QR code and its text. Beside the
+// rows while the window is wide for its height (the plan decides), else over
+// them. First boot shows where it stands among its steps.
+
+import { Tokens } from "../tokens.slint";
+import { Page, Row, Pill, Tile } from "../types.slint";
+import { VelvetHead } from "../atoms/VelvetHead.slint";
+import { VelvetWords } from "../atoms/VelvetWords.slint";
+import { VelvetQr } from "../atoms/VelvetQr.slint";
+import { VelvetButtons } from "../molecules/VelvetButtons.slint";
+import { VelvetTile } from "../molecules/VelvetTile.slint";
+import { VelvetRows } from "VelvetRows.slint";
+
+export component VelvetProgramme inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Page> page;
+    in property <[Row]> rows;
+    in property <[Pill]> buttons;
+    in property <[string]> panel-lines;
+    in property <[Tile]> tiles;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <length> pad-x: Tokens.screen.pad-x * u;
+    property <length> pad-y: Tokens.screen.pad-y * u;
+    property <length> body: Tokens.screen.body * u;
+    property <length> fact: Tokens.screen.fact * u;
+    property <bool> beside: Tokens.screen.panel-beside;
+    property <bool> panelled: page.panel != "";
+    property <length> page-w: panelled || beside ? Tokens.screen.page-w * u : Math.min(self.width - 2 * pad-x, 980px);
+    property <length> head-foot: (Tokens.screen.head-y + Tokens.screen.head-h) * u;
+    property <length> sub-h: page.sub == "" ? 0px : sub.preferred-height + fact * 0.4;
+    property <length> body-top: head-foot + sub-h + fact * 1.1;
+    // The panel over the rows takes at most two fifths of what is left.
+    property <length> panel-h: !panelled ? 0px : beside ? self.height - body-top - pad-y : Math.min((self.height - body-top - pad-y) * 0.4, self.width - 2 * pad-x);
+    property <length> rows-y: body-top + (panelled && !beside ? panel-h + fact : 0px);
+    property <length> buttons-h: buttons.length == 0 ? 0px : pills.block + body * 0.9;
+    property <length> rows-h: Math.max(0px, self.height - rows-y - pad-y - buttons-h);
+    property <bool> in;
+    init => { in = true; }
+    opacity: in ? 1 : 0;
+    animate opacity { duration: Tokens.t-level; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+    HorizontalLayout {
+        x: root.pad-x;
+        y: Tokens.screen.head-y * root.u;
+        width: Math.min(self.preferred-width, parent.width - 2 * root.pad-x);
+        height: Tokens.screen.head-h * root.u;
+        spacing: root.fact;
+        title := VelvetHead {
+            horizontal-stretch: 0;
+            text: root.page.title;
+        }
+        if root.page.steps > 0: VerticalLayout {
+            alignment: end;
+            padding-bottom: title.drop - root.fact * 0.24;
+            VelvetWords {
+                text: "Step " + root.page.step + " of " + root.page.steps;
+            }
+        }
+    }
+    sub := VelvetWords {
+        x: root.pad-x;
+        y: root.head-foot + root.fact * 0.3;
+        width: Math.min(parent.width - 2 * root.pad-x, root.body * 34);
+        text: root.page.sub;
+        wraps: true;
+        vertical-alignment: TextVerticalAlignment.top;
+    }
+    list := VelvetRows {
+        x: root.pad-x - root.body * 0.9;
+        y: root.rows-y;
+        width: root.page-w + root.body * 0.9;
+        height: Math.min(root.rows-h, self.content);
+        rows: root.rows;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    pills := VelvetButtons {
+        x: root.pad-x;
+        y: list.y + list.height + (root.rows.length > 0 ? root.body * 0.9 : 0px);
+        width: root.page.stack ? Math.min(root.page-w, parent.width - 2 * root.pad-x) : parent.width - 2 * root.pad-x;
+        pills: root.buttons;
+        stack: root.page.stack;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.panelled: Rectangle {
+        x: root.beside ? root.pad-x + root.page-w + root.pad-x * 0.8 : root.pad-x;
+        y: root.body-top;
+        width: root.beside ? Tokens.screen.panel-w * root.u : parent.width - 2 * root.pad-x;
+        height: root.panel-h;
+        property <length> art: Math.min(self.height * (root.beside ? 0.56 : 1), root.beside ? self.width : self.width * 0.42);
+        if root.page.panel == "qr": VelvetQr {
+            x: 0;
+            y: 0;
+            width: parent.art;
+            height: parent.art;
+            code: root.page.qr;
+        }
+        for tile in root.tiles: VelvetTile {
+            x: 0;
+            y: 0;
+            width: parent.art * Tokens.tile-ratio;
+            height: parent.art;
+            tile: tile;
+            fixed: true;
+            inert: true;
+        }
+        VerticalLayout {
+            x: root.beside ? 0px : parent.art + root.fact;
+            y: root.beside ? parent.art + root.fact : 0px;
+            width: root.beside ? parent.width : parent.width - parent.art - root.fact;
+            height: Math.min(self.preferred-height, parent.height - self.y);
+            spacing: root.fact * 0.2;
+            alignment: start;
+            if root.page.panel-title != "": VelvetWords {
+                text: root.page.panel-title;
+                ink: Tokens.house-light;
+                strong: true;
+            }
+            for line in root.panel-lines: VelvetWords {
+                text: line;
+            }
+        }
+    }
+}

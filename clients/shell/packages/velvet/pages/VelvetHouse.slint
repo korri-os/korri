@@ -1,0 +1,25 @@
+// VelvetHouse: the house with no game on its stage: an empty library (the
+// invitation), a library still being read, or one Korri could not read.
+
+import { Tokens } from "../ui/tokens.slint";
+import { Empty, Pill } from "../ui/types.slint";
+import { VelvetEmpty } from "../ui/organisms/VelvetEmpty.slint";
+
+export component VelvetHouse inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Empty> empty;
+    in property <[string]> title;
+    in property <[string]> lines;
+    in property <[Pill]> buttons;
+    in property <bool> inert;
+    VelvetEmpty {
+        width: parent.width;
+        height: parent.height;
+        empty: root.empty;
+        title: root.title;
+        lines: root.lines;
+        buttons: root.buttons;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+}

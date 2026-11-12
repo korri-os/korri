@@ -1,0 +1,37 @@
+// VelvetPoster: the no-art card (src/poster.ts). A paper field, the parts of
+// a machine or a generated pattern, and the title in the display face, all
+// as the logic drew them in a 60 x 90 box; this scales that box to the tile.
+// It stands in every tile that has no picture, and under every picture
+// until the picture arrives (ADR 0065).
+
+import { Tokens } from "../tokens.slint";
+import { Poster } from "../types.slint";
+import { VelvetShape } from "../atoms/VelvetShape.slint";
+import { VelvetCaps } from "../atoms/VelvetCaps.slint";
+
+export component VelvetPoster inherits Rectangle {
+    in property <Poster> poster;
+    // One card unit, in px.
+    property <length> u: self.width / Tokens.card-w;
+    clip: true;
+    for layer in root.poster.layers: VelvetShape {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        box-w: Tokens.card-w;
+        box-h: Tokens.card-h;
+        commands: layer.d;
+        ink: Tokens.tint(layer.c);
+        opacity: layer.o;
+        even-odd: layer.e;
+    }
+    title := VelvetCaps {
+        x: root.poster.tx * root.u;
+        y: root.poster.top ? root.poster.ty * root.u : (root.poster.ty + root.poster.th) * root.u - self.block;
+        width: root.poster.tw * root.u + root.u;
+        lines: root.poster.lines;
+        size: root.poster.size * root.u;
+        ink: Tokens.tint(root.poster.ink);
+    }
+}

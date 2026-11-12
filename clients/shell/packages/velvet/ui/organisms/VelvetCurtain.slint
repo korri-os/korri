@@ -1,0 +1,135 @@
+// VelvetCurtain: what stands over any screen while Korri is busy, asks, or
+// has a problem, and while Velvet asks before something that cannot be
+// undone. The house lights go down and the words stand on the dark: Korri's
+// kicker in the display face, the game it is about, its words, a launch's
+// steps or measured progress, then exactly the actions Korri gives. No card:
+// the stage itself carries it.
+
+import { Tokens } from "../tokens.slint";
+import { Curtain, Step, Pill } from "../types.slint";
+import { VelvetCaps } from "../atoms/VelvetCaps.slint";
+import { VelvetBar } from "../atoms/VelvetBar.slint";
+import { VelvetIcon } from "../atoms/VelvetIcon.slint";
+import { VelvetSteps } from "../molecules/VelvetSteps.slint";
+import { VelvetButtons } from "../molecules/VelvetButtons.slint";
+
+export component VelvetCurtain inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Curtain> curtain;
+    in property <[string]> kicker;
+    in property <[string]> lines;
+    in property <[Step]> steps;
+    in property <[Pill]> buttons;
+    property <length> u: Tokens.unit;
+    property <length> w: Math.min(Tokens.screen.curtain-w * u, self.width - 2 * Tokens.screen.pad-x * u);
+    property <length> body: Tokens.screen.body * u;
+    property <bool> in;
+    init => { in = true; }
+    background: Tokens.velvet-86;
+    opacity: in ? 1 : 0;
+    animate opacity { duration: Tokens.t-sheet; easing: ease-in-out; }
+    // A press outside the words does nothing; it must not reach what is under the curtain.
+    TouchArea { }
+    column := VerticalLayout {
+        x: (root.width - root.w) / 2;
+        y: Math.max(Tokens.screen.pad-y * root.u, (root.height - self.preferred-height) / 2);
+        width: root.w;
+        height: self.preferred-height;
+        spacing: root.body * 0.7;
+        alignment: start;
+        if root.curtain.name != "": Text {
+            text: root.curtain.name;
+            color: Tokens.usher;
+            font-family: Tokens.text;
+            font-weight: Tokens.strong-weight;
+            font-size: root.body * 0.9;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+        Rectangle {
+            height: caps.block + (root.curtain.kind == "problem" ? root.body * 1.8 : 0px);
+            if root.curtain.kind == "problem": VelvetIcon {
+                x: (parent.width - self.width) / 2;
+                y: 0;
+                name: "note";
+                size: root.body * 1.3;
+                ink: Tokens.exit;
+            }
+            caps := VelvetCaps {
+                x: 0;
+                y: parent.height - self.block;
+                width: parent.width;
+                lines: root.kicker;
+                size: root.curtain.kicker-size * root.u;
+                centred: true;
+            }
+        }
+        if root.curtain.more-up: Text {
+            text: "More above";
+            color: Tokens.usher;
+            font-family: Tokens.text;
+            font-size: root.body * 0.74;
+            horizontal-alignment: center;
+        }
+        if root.lines.length > 0: VerticalLayout {
+            spacing: 0;
+            for line in root.lines: Text {
+                height: root.body * 1.35;
+                text: line;
+                color: Tokens.house-light;
+                font-family: Tokens.text;
+                font-weight: Tokens.text-weight;
+                font-size: root.body;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        if root.curtain.more-down: Text {
+            text: "More below";
+            color: Tokens.usher;
+            font-family: Tokens.text;
+            font-size: root.body * 0.74;
+            horizontal-alignment: center;
+        }
+        if root.steps.length > 0: VelvetSteps {
+            steps: root.steps;
+            line: root.curtain.step-line;
+            size: root.body;
+        }
+        if root.curtain.progress > -2: Rectangle {
+            height: root.curtain.progress-line == "" ? root.body * 0.6 : root.body * 2.2;
+            VelvetBar {
+                x: parent.width * 0.2;
+                y: root.body * 0.2;
+                width: parent.width * 0.6;
+                share: root.curtain.progress;
+            }
+            if root.curtain.progress-line != "": Text {
+                x: 0;
+                y: root.body * 0.8;
+                width: parent.width;
+                height: root.body * 1.4;
+                text: root.curtain.progress-line;
+                color: Tokens.usher;
+                font-family: Tokens.text;
+                font-size: root.body * 0.88;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        if root.buttons.length > 0: Rectangle {
+            height: pills.block + root.body * 0.6;
+            pills := VelvetButtons {
+                x: root.curtain.stack ? (parent.width - self.width) / 2 : 0;
+                y: root.body * 0.6;
+                width: root.curtain.stack ? Math.min(parent.width, Tokens.screen.button * root.u * 22) : parent.width;
+                pills: root.buttons;
+                stack: root.curtain.stack;
+                centred: true;
+                activated(target, at, released) => { root.activated(target, at, released); }
+            }
+        }
+    }
+}

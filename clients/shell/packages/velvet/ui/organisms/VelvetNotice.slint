@@ -1,0 +1,57 @@
+// VelvetNotice: a few words at the foot of the stage that take no focus:
+// someone on another device is playing, and this one can join. It shows
+// once for each new invite and leaves by itself.
+
+import { Tokens } from "../tokens.slint";
+import { Notice } from "../types.slint";
+import { VelvetIcon } from "../atoms/VelvetIcon.slint";
+
+export component VelvetNotice inherits Rectangle {
+    in property <Notice> notice;
+    // The widest it may be: the window, less its pads.
+    in property <length> most: Tokens.width - 2 * Tokens.screen.pad-x * Tokens.unit;
+    property <length> size: Tokens.screen.small * Tokens.unit;
+    property <bool> in;
+    init => { in = true; }
+    width: Math.min(row.preferred-width + size * 2.4, most);
+    height: size * 4;
+    border-radius: Math.min(self.height / 2, 28px);
+    background: Tokens.velvet-94;
+    border-width: Tokens.hair;
+    border-color: Tokens.light-20;
+    opacity: in ? 1 : 0;
+    animate opacity { duration: Tokens.t-sheet; easing: ease-in-out; }
+    row := HorizontalLayout {
+        x: root.size * 1.2;
+        width: Math.min(self.preferred-width, root.width - root.size * 2.4);
+        height: parent.height;
+        spacing: root.size * 0.8;
+        VerticalLayout {
+            alignment: center;
+            VelvetIcon {
+                name: "person";
+                size: root.size * 1.4;
+                ink: Tokens.house-light;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: root.size * 0.1;
+            Text {
+                text: root.notice.title;
+                color: Tokens.house-light;
+                font-family: Tokens.text;
+                font-weight: Tokens.strong-weight;
+                font-size: root.size;
+                overflow: elide;
+            }
+            Text {
+                text: root.notice.words;
+                color: Tokens.usher;
+                font-family: Tokens.text;
+                font-size: root.size * 0.86;
+                overflow: elide;
+            }
+        }
+    }
+}

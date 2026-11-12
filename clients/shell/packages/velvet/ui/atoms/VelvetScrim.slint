@@ -1,0 +1,28 @@
+// VelvetScrim: the light vignette over the stage, the one grade every
+// picture shares. Velvet at the left edge and the foot, where the words and
+// the row stand, and a soft corner fall-off. A static overlay.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetScrim inherits Rectangle {
+    in property <bool> narrow;
+    // The fall-off: clear around the subject, velvet towards the corners.
+    Rectangle {
+        x: parent.width * (root.narrow ? 0.5 : 0.74) - self.width / 2;
+        y: parent.height * (root.narrow ? 0.18 : 0.26) - self.height / 2;
+        width: Math.max(parent.width, parent.height) * 2.4;
+        height: self.width;
+        background: @radial-gradient(circle, Tokens.velvet-30 0%, Tokens.velvet-55 55%, Tokens.velvet-70 100%);
+    }
+    if !root.narrow: Rectangle {
+        width: parent.width * 0.6;
+        height: parent.height;
+        background: @linear-gradient(90deg, Tokens.velvet-55 0%, Tokens.clear 100%);
+    }
+    Rectangle {
+        y: parent.height * (root.narrow ? 0.4 : 0.45);
+        width: parent.width;
+        height: parent.height - self.y;
+        background: @linear-gradient(180deg, Tokens.clear 0%, Tokens.velvet-62 100%);
+    }
+}

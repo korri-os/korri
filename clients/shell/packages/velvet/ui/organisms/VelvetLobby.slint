@@ -1,0 +1,89 @@
+// VelvetLobby: the library's first level, a few short shelves and nothing
+// else: Lately, Not started, one per other device, By system. The focused
+// shelf stands at the top; the others step back to half. Up and down move a
+// shelf's pitch. A shelf's games or a system open as a set one level deeper.
+//
+// A shelf is a row of 2:3 tiles under its label. Its tiles never move for
+// focus; the row scrolls so the focused tile stays in view and the next one
+// peeks (`at`, the column the shelf keeps in view). A finger that drags a
+// shelf sideways scrolls it by whole tiles (ADR 0055) and moves no focus.
+
+import { Tokens } from "../tokens.slint";
+import { Shelf, Tile } from "../types.slint";
+import { VelvetTile } from "../molecules/VelvetTile.slint";
+
+export component VelvetLobby inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    callback dragged(region: string, by: int);
+    in property <[Shelf]> shelves;
+    // Every shelf's tiles, each naming its shelf and its column.
+    in property <[Tile]> tiles;
+    in property <int> shelf-at;
+    // Focus is in the lobby (else it only shows under the home's row).
+    in property <bool> entered;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <length> pad: Tokens.screen.pad-x * u;
+    property <length> tile-h: Tokens.screen.shelf-h * u;
+    property <length> tile-w: tile-h * Tokens.tile-ratio;
+    property <length> gap: Tokens.screen.shelf-gap * u;
+    property <length> pitch-x: tile-w + gap;
+    property <length> pitch-y: Tokens.screen.shelf-pitch * u;
+    property <length> row-y: Tokens.screen.shelf-row-y * u;
+    property <length> view: self.width - 2 * pad;
+    property <length> keep: view - tile-w * 1.75;
+    // The finger's travel since the last whole tile.
+    property <length> carried;
+    clip: true;
+    // The shelves stand on one track; the track moves a shelf's pitch.
+    Rectangle {
+        x: 0;
+        y: -root.shelf-at * Tokens.screen.shelf-pitch * Tokens.unit;
+        width: root.width;
+        height: root.height;
+        animate y { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        for shelf[n] in root.shelves: Text {
+            x: root.pad;
+            y: n * root.pitch-y;
+            width: root.view;
+            height: Tokens.screen.shelf-label * root.u;
+            text: shelf.label;
+            color: Tokens.house-light;
+            font-family: Tokens.text;
+            font-weight: Tokens.strong-weight;
+            font-size: Tokens.screen.label * root.u;
+            vertical-alignment: center;
+            overflow: elide;
+            opacity: root.entered && n == root.shelf-at ? 1 : 0.5;
+            animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
+        }
+        for tile in root.tiles: VelvetTile {
+            property <Shelf> on: root.shelves[tile.shelf];
+            x: Tokens.screen.pad-x * Tokens.unit + tile.at * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit
+                - Math.clamp(
+                    root.shelves[tile.shelf].at * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit - Tokens.screen.shelf-h * Tokens.tile-ratio * Tokens.unit * 1.75),
+                    0px,
+                    Math.max(0px, root.shelves[tile.shelf].count * (Tokens.screen.shelf-h * Tokens.tile-ratio + Tokens.screen.shelf-gap) * Tokens.unit - Tokens.screen.shelf-gap * Tokens.unit - (root.width - 2 * Tokens.screen.pad-x * Tokens.unit)));
+            y: tile.shelf * root.pitch-y + root.row-y;
+            width: root.tile-w;
+            height: root.tile-h;
+            tile: tile;
+            rests: !root.entered || tile.shelf != root.shelf-at;
+            inert: root.inert;
+            slides: true;
+            animate x { duration: Tokens.t-scroll; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+            activated(target, at, released) => { root.activated(target, at, released); }
+            slide(by) => {
+                root.carried += by;
+                if (root.carried <= -root.pitch-x * 0.5) {
+                    root.dragged("shelf:" + self.on.key, 1);
+                    root.carried += root.pitch-x;
+                } else if (root.carried >= root.pitch-x * 0.5) {
+                    root.dragged("shelf:" + self.on.key, -1);
+                    root.carried -= root.pitch-x;
+                }
+            }
+            slid => { root.carried = 0px; }
+        }
+    }
+}

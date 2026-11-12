@@ -1,0 +1,32 @@
+// The preview frame: a window that feeds the Tokens global as main.slint
+// does for the shell, so a component's preview states
+// (`<Name>.<layer>.preview.slint`) draw it alone at any size. The preview
+// renderer (clients/shell/tests/velvet_package.rs) sets the size and the
+// logic's plan for it.
+
+import { Tokens } from "tokens.slint";
+import { Screen } from "types.slint";
+
+export component VelvetPreview inherits Window {
+    in property <Screen> screen: Tokens.screen;
+    in property <bool> still: true;
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: Tokens.house-down;
+    init => {
+        Tokens.width = self.width;
+        Tokens.height = self.height;
+        Tokens.screen = self.screen;
+        Tokens.still = self.still;
+    }
+    changed screen => {
+        Tokens.screen = self.screen;
+    }
+    changed width => {
+        Tokens.width = self.width;
+    }
+    changed height => {
+        Tokens.height = self.height;
+    }
+    @children
+}

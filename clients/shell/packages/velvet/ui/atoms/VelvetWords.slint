@@ -1,0 +1,18 @@
+// VelvetWords: a sentence or a fact in the text face (Archivo). One line cut
+// with an ellipsis, or wrapped when `wraps`.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetWords inherits Text {
+    in property <length> size: Tokens.screen.fact * Tokens.unit;
+    in property <color> ink: Tokens.usher;
+    in property <bool> strong;
+    in property <bool> wraps;
+    color: ink;
+    font-family: Tokens.text;
+    font-weight: strong ? Tokens.strong-weight : Tokens.text-weight;
+    font-size: size;
+    wrap: wraps ? word-wrap : no-wrap;
+    overflow: wraps ? clip : elide;
+    vertical-alignment: center;
+}

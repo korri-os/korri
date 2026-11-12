@@ -1,0 +1,24 @@
+// VelvetEdge: the focus edge. House light, three px, with a hairline of
+// shade inside it so it reads on a bright picture too. It fades in; it never
+// moves a neighbour. Hidden while touch is in use (Tokens.ring).
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetEdge inherits Rectangle {
+    in property <bool> lit;
+    in property <length> radius;
+    border-radius: radius;
+    border-width: Tokens.edge;
+    border-color: Tokens.house-light;
+    opacity: lit ? 1 : 0;
+    animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
+    Rectangle {
+        x: Tokens.edge;
+        y: Tokens.edge;
+        width: parent.width - 2 * Tokens.edge;
+        height: parent.height - 2 * Tokens.edge;
+        border-radius: Math.max(0px, root.radius - Tokens.edge);
+        border-width: Tokens.hair;
+        border-color: Tokens.shade-45;
+    }
+}

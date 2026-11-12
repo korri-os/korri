@@ -1,0 +1,31 @@
+// VelvetFact: one fact Korri publishes about a game: a small drawn mark and
+// its words. The mark says what kind of fact it is; the words say it.
+
+import { Tokens } from "../tokens.slint";
+import { Fact } from "../types.slint";
+import { VelvetIcon } from "VelvetIcon.slint";
+
+export component VelvetFact inherits HorizontalLayout {
+    in property <Fact> fact;
+    in property <length> size: Tokens.screen.fact * Tokens.unit;
+    spacing: size * 0.45;
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 0;
+        VelvetIcon {
+            name: root.fact.icon;
+            size: root.size * 1.05;
+            ink: root.fact.strong ? Tokens.house-light : Tokens.usher;
+            opacity: 0.85;
+        }
+    }
+    Text {
+        text: root.fact.text;
+        color: root.fact.strong ? Tokens.house-light : Tokens.usher;
+        font-family: Tokens.text;
+        font-weight: root.fact.strong ? Tokens.strong-weight : Tokens.text-weight;
+        font-size: root.size;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}

@@ -1,0 +1,29 @@
+// VelvetFactLine: up to four facts side by side, as the logic broke them to
+// fit (src/fit.ts). The last one gives way with an ellipsis if the face
+// measured a little wide.
+
+import { Tokens } from "../tokens.slint";
+import { FactLine } from "../types.slint";
+import { VelvetFact } from "../atoms/VelvetFact.slint";
+
+export component VelvetFactLine inherits HorizontalLayout {
+    in property <FactLine> line;
+    in property <length> size: Tokens.screen.fact * Tokens.unit;
+    spacing: size * 1.4;
+    if root.line.count > 0: VelvetFact {
+        fact: root.line.a;
+        size: root.size;
+    }
+    if root.line.count > 1: VelvetFact {
+        fact: root.line.b;
+        size: root.size;
+    }
+    if root.line.count > 2: VelvetFact {
+        fact: root.line.c;
+        size: root.size;
+    }
+    if root.line.count > 3: VelvetFact {
+        fact: root.line.d;
+        size: root.size;
+    }
+}

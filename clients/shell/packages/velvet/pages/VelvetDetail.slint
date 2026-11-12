@@ -1,0 +1,38 @@
+// VelvetDetail: one game, ready to start. Confirm on a game opens this with
+// Play already focused, so Confirm twice launches. With a hero it is the
+// Cinema: the hero is the stage, cut to fill, the logo over it. Without one
+// the game's card stands on the lit stage beside the buttons. The facts
+// stand at the foot. It comes in at once (Tokens.t-detail).
+
+import { Tokens } from "../ui/tokens.slint";
+import { Detail, Tile, Pill } from "../ui/types.slint";
+import { VelvetPick } from "../ui/organisms/VelvetPick.slint";
+
+export component VelvetDetail inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Detail> detail;
+    in property <[Tile]> cards;
+    in property <[Pill]> buttons;
+    in property <bool> inert;
+    property <bool> in;
+    init => { in = true; }
+    opacity: in ? 1 : 0;
+    animate opacity { duration: Tokens.t-detail; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+    VelvetPick {
+        x: 0;
+        y: root.in ? 0px : 10px;
+        width: parent.width;
+        height: parent.height;
+        hero: root.detail.hero;
+        cards: root.cards;
+        mark: root.detail.mark;
+        buttons: root.buttons;
+        stack: root.detail.stack;
+        cinema: true;
+        foot-facts: root.detail.facts;
+        note: root.detail.note;
+        inert: root.inert;
+        animate y { duration: Tokens.t-mark-in; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+}

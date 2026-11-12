@@ -7,7 +7,9 @@
     "zone:build": "cd packages/zone && bun build logic.ts --outfile logic.js --format iife --target browser --minify",
     "zone:typecheck": "tsc -p packages/zone",
     "pico:build": "cd packages/pico && bun build logic.ts --outfile logic.js --format iife --target browser --minify",
-    "pico:typecheck": "tsc -p packages/pico"
+    "pico:typecheck": "tsc -p packages/pico",
+    "velvet:build": "cd packages/velvet && bun build logic.ts --outfile logic.js --format iife --target browser --minify",
+    "velvet:typecheck": "tsc -p packages/velvet"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

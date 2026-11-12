@@ -1,0 +1,17 @@
+// VelvetHead: one line of the display face at its natural width, for a
+// page's or a set's head. The words come already in caps. Its box ends at
+// the face's descent; `drop` is how far the baseline stands over the box's
+// foot, so the words beside it can share the baseline.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetHead inherits Text {
+    in property <length> size: Tokens.screen.head * Tokens.unit;
+    out property <length> drop: size * 0.214;
+    color: Tokens.house-light;
+    font-family: Tokens.display;
+    font-weight: Tokens.display-weight;
+    font-size: size;
+    overflow: elide;
+    vertical-alignment: bottom;
+}

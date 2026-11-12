@@ -1,0 +1,20 @@
+// VelvetQr: the identity backup as a QR code, dark modules on a well of
+// House light with the quiet zone the code needs. One pixel a module; never
+// smoothed.
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetQr inherits Rectangle {
+    in property <image> code;
+    background: Tokens.house-light;
+    border-radius: Tokens.screen.k * 8px;
+    Image {
+        x: parent.width * 0.04;
+        y: parent.height * 0.04;
+        width: parent.width * 0.92;
+        height: parent.height * 0.92;
+        source: root.code;
+        image-fit: contain;
+        image-rendering: pixelated;
+    }
+}

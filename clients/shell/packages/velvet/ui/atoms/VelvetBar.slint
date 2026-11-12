@@ -1,0 +1,23 @@
+// VelvetBar: how far work has got. A measured share fills from the left;
+// work with no known end is a short light that travels (still, at a third,
+// when motion is reduced).
+
+import { Tokens } from "../tokens.slint";
+
+export component VelvetBar inherits Rectangle {
+    // 0 to 1: measured. Under 0: under way, no known end.
+    in property <float> share;
+    property <bool> travels: share < 0;
+    property <float> phase: travels && !Tokens.still ? Math.mod(animation-tick() / 1.2s, 1) : 0.28;
+    height: Math.max(2px, Tokens.screen.k * 4px);
+    border-radius: self.height / 2;
+    background: Tokens.light-20;
+    clip: true;
+    Rectangle {
+        x: root.travels ? parent.width * (root.phase * 1.35 - 0.35) : 0;
+        width: root.share < 0 ? parent.width * 0.35 : parent.width * Math.clamp(root.share, 0, 1);
+        height: parent.height;
+        border-radius: parent.border-radius;
+        background: Tokens.house-light;
+    }
+}

@@ -1,0 +1,93 @@
+// VelvetEmpty: the library with no game to show. An empty library is an
+// invitation, not an error: "The stage is yours", with Find games already
+// focused, Open settings beside it, and three empty places waiting under a
+// warm light. The same frame says what Korri said when the library could
+// not be read (with Try again), and holds still while it is being read.
+
+import { Tokens } from "../tokens.slint";
+import { Empty, Pill } from "../types.slint";
+import { VelvetCaps } from "../atoms/VelvetCaps.slint";
+import { VelvetGhost } from "../atoms/VelvetGhost.slint";
+import { VelvetPill } from "../atoms/VelvetPill.slint";
+import { VelvetWords } from "../atoms/VelvetWords.slint";
+import { VelvetButtons } from "../molecules/VelvetButtons.slint";
+
+export component VelvetEmpty inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Empty> empty;
+    in property <[string]> title;
+    in property <[string]> lines;
+    in property <[Pill]> buttons;
+    in property <bool> inert;
+    property <length> u: Tokens.unit;
+    property <bool> wide: Tokens.screen.empty-wide;
+    property <length> pad-x: Tokens.screen.pad-x * u;
+    property <length> pad-y: Tokens.screen.pad-y * u;
+    property <length> body: Tokens.screen.body * u;
+    property <length> text-w: wide ? self.width * 0.46 : Math.min(self.width - 2 * pad-x, 900px);
+    // The empty places: beside the words while width is plentiful, else under them.
+    property <length> ghost-h: wide ? Math.clamp(self.height * 0.34, 90px, 400px) : Math.clamp(Math.min(self.height * 0.26, (self.width - 2 * pad-x) / 3.4 / Tokens.tile-ratio), 50px, 360px);
+    property <length> ghost-w: ghost-h * Tokens.tile-ratio;
+    property <length> ghost-gap: ghost-w * 0.16;
+    property <length> ghosts-w: 3 * ghost-w + 2 * ghost-gap;
+    property <length> ghosts-x: wide ? self.width - pad-x - ghosts-w : (self.width - ghosts-w) / 2;
+    property <length> ghosts-y: wide ? (self.height - ghost-h) / 2 : self.height - pad-y - ghost-h;
+    property <length> block: title.block + (lines.length > 0 ? body * 1.1 + lines.length * body * 1.3 : 0px) + (buttons.length > 0 ? body * 1.4 + pills.block : 0px);
+    property <length> top: wide || !empty.ghosts ? Math.max(pad-y * 2.4, (self.height - block) / 2) : Math.max(pad-y * 2.6, (ghosts-y - block) / 2);
+    if root.empty.ghosts: Rectangle {
+        // The cone of warm light over the empty places.
+        x: root.ghosts-x + root.ghosts-w / 2 - self.width / 2;
+        y: -self.height * 0.5;
+        width: Math.max(root.width, root.height) * 0.9;
+        height: self.width;
+        background: @radial-gradient(circle, Tokens.cone 0%, Tokens.cone.with-alpha(0.05) 50%, Tokens.cone.with-alpha(0) 72%);
+    }
+    if root.empty.ghosts: Rectangle {
+        for n in 3: VelvetGhost {
+            x: root.ghosts-x + n * (root.ghost-w + root.ghost-gap);
+            y: root.ghosts-y - (n == 1 ? root.ghost-h * 0.04 : 0px);
+            width: root.ghost-w;
+            height: root.ghost-h;
+            opacity: 0.9 - n * 0.25;
+        }
+    }
+    title := VelvetCaps {
+        x: root.pad-x;
+        y: root.top;
+        width: root.text-w;
+        lines: root.title;
+        size: root.empty.title-size * root.u;
+    }
+    for line[n] in root.lines: VelvetWords {
+        x: root.pad-x;
+        y: root.top + title.block + root.body * 1.1 + n * root.body * 1.3;
+        width: root.text-w;
+        height: root.body * 1.3;
+        text: line;
+        size: root.body;
+    }
+    pills := VelvetButtons {
+        x: root.pad-x;
+        y: root.top + title.block + (root.lines.length > 0 ? root.body * 1.1 + root.lines.length * root.body * 1.3 : 0px) + root.body * 1.4;
+        width: root.empty.stack ? root.width - 2 * root.pad-x : root.width - 2 * root.pad-x;
+        pills: root.buttons;
+        stack: root.empty.stack;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    VelvetPill {
+        x: root.width - root.pad-x - self.width;
+        y: root.pad-y * 0.7;
+        pill: root.empty.menu;
+        size: Tokens.screen.small * root.u;
+        inert: root.inert;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+    if root.empty.clock != "": VelvetWords {
+        x: root.pad-x;
+        y: root.pad-y * 0.7;
+        height: Tokens.screen.small * root.u * 2.3;
+        text: root.empty.clock;
+        size: Tokens.screen.small * root.u;
+    }
+}

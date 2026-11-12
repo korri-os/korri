@@ -1,0 +1,39 @@
+// VelvetKeycap: one key of the keyboard. A character key is a quiet plate;
+// focused it is House light with ink, like every focused thing. Done is lit
+// at rest: it is where typing ends.
+
+import { Tokens } from "../tokens.slint";
+import { Key } from "../types.slint";
+import { VelvetTap } from "VelvetTap.slint";
+
+export component VelvetKeycap inherits Rectangle {
+    callback activated(target: string, at: float, released: bool);
+    in property <Key> key;
+    in property <bool> inert;
+    property <bool> lit: key.focused && Tokens.ring && !inert;
+    border-radius: Math.min(self.height * 0.22, 10px);
+    background: key.focused && Tokens.ring && !inert ? Tokens.house-light : key.lit ? Tokens.light-20 : Tokens.light-10;
+    animate background { duration: Tokens.t-ring; easing: ease-in-out; }
+    accessible-role: button;
+    accessible-label: key.label;
+    accessible-item-selectable: !inert;
+    accessible-item-selected: key.focused;
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.key.label;
+        color: root.lit ? Tokens.ink : root.key.quiet ? Tokens.usher : Tokens.house-light;
+        font-family: Tokens.text;
+        font-weight: root.key.quiet ? Tokens.text-weight : Tokens.strong-weight;
+        font-size: Math.min(root.height * (root.key.quiet ? 0.36 : 0.46), root.width * 0.62);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    VelvetTap {
+        width: parent.width;
+        height: parent.height;
+        target: root.inert ? "" : root.key.focus-id;
+        activated(target, at, released) => { root.activated(target, at, released); }
+    }
+}
