@@ -309,7 +309,7 @@ viewer alone:
 | A run ends at once | 10 °C below a zone's critical trip point, or half-way between its highest passive trip point and its critical trip point when that is lower. |
 | A run does not start, and a running viewer is stopped | when the guard cannot read: a zone that has a limit is gone or gives no temperature, a zone's trip points cannot be read, or the guard's own thread fails. |
 | A device with a hardware picture path does not run | when no zone has a critical trip point: the guard has no limit for it. |
-| A device with a device tree (`/proc/device-tree`) hosts no fixture | ever: no software viewer and no sender fixture. |
+| A board with a device tree (a root node with a `compatible` that is not empty) hosts no fixture | ever: no software viewer and no sender fixture. |
 | A viewer on a hardware picture path is stopped | when any line of its log says that a frame did not come from the hardware decoder, or when it uses more than 1.0 CPU second each second for 2 s. |
 | A valid run on a hardware picture path | needs the log line of the measured start that says hardware decode started. |
 
@@ -405,27 +405,41 @@ machine that can carry a software load: a server, a desktop or a laptop.
 A passive handheld runs only its installed viewer: it has no fan, and a
 software compositor, viewer or encoder heats it. The fixtures do not start:
 
-- on a device that has a device tree (`/proc/device-tree`). The tool takes
-  every such device for a passive handheld. Nothing else marks them all:
-  korrid's table of hardware picture paths does not name every chip, and a
-  handheld's kernel can show no power supply. The R36T Max is the case: its
-  chip (`rockchip,rk3326`) is not in the table, and its device tree leaves
-  the charger out, so `/sys/class/power_supply` is empty;
+- on a board with a device tree: a device whose device tree's root node has
+  a `compatible` property that is not empty
+  (`/proc/device-tree/compatible`). The tool takes every such board for a
+  passive handheld. Nothing else marks them all: korrid's table of hardware
+  picture paths does not name every chip, and a handheld's kernel can show
+  no power supply. The R36T Max is the case: its root node says
+  `aislpc,r36t-max`, `rockchip,rk3326`, that chip is not in the table, and
+  its device tree leaves the charger out, so `/sys/class/power_supply` is
+  empty;
+- on a device where that property is there and cannot be read. The refusal
+  says that the board could not be read; the installed viewer does not
+  start there either;
 - on a hot host, or where the heat guard cannot read (see "The heat guard").
 
-The refusal says which of these it is and what the rule is for. korrid's
-chip table still decides the rules of the installed viewer (the heat guard
-and the decode rules); a chip in it also refuses the fixtures by itself.
+The refusal says which of these it is and what the rule is for. One read
+answers "which board is this" for this rule and for korrid's chip table
+(`viewer.py:board`). The chip table still decides the rules of the
+installed viewer (the heat guard and the decode rules); a chip in it also
+refuses the fixtures by itself. Each agent records the board's names
+(`board`: empty for no board).
 
-A laptop, a desktop or a server with ACPI firmware has no device tree, so
-the rule lets it through. A laptop has fans, and thermal zones that the
-heat guard reads; that guard decides there. The build host is such a
-laptop. Today the heat guard refuses it, because it reads within 20 °C of
-its critical trip point.
+That `/proc/device-tree` exists does not mark a board. aka is x86_64, and
+its kernel has device-tree support: its root node has `#address-cells`,
+`name` and `#size-cells`, and no `compatible`. A rule that asked only for
+the directory refused aka for a day; no run on aka had tried it.
+
+A laptop, a desktop or a server with ACPI firmware names no board, so the
+rule lets it through. A laptop has fans, and thermal zones that the heat
+guard reads; that guard decides there. The build host is such a laptop.
+Today the heat guard refuses it, because it reads within 20 °C of its
+critical trip point.
 
 The rule can be wrong both ways, and the cost is accepted. An ARM builder,
 board or laptop with a device tree is refused, also on mains power. A
-handheld with x86 firmware has no device tree and is let through; only the
+handheld with x86 firmware names no board and is let through; only the
 heat guard protects it. No such device has been tried.
 
 The agent `sender.py` owns one run directory under `/tmp`. In it run:

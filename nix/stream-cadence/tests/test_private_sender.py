@@ -203,20 +203,43 @@ class SenderHeatGuard(Machine):
         self.assertIsNone(session.root)
 
 
-class NotOnADeviceTree(Machine):
+class NotOnABoard(Machine):
+    def place(self) -> str:
+        return self.directory.name
+
     def test_sender_fixture_never_starts_on_the_r36t_max(self):
         # Its chip is not in korrid's table, its kernel shows no power supply, and it is cool.
-        viewer.COMPATIBLE.write_bytes(b"aislpc,r36t-max\0rockchip,rk3326\0")
-        machine.device_tree()
+        machine.device_tree(self.place(), b"aislpc,r36t-max\0rockchip,rk3326\0")
         self.zone(50000)
         session = self.session()
         facts = session.handle({"operation": "discover"})
         self.assertFalse(facts["hardware_picture_path"])
         self.assertEqual(list(self.supplies.glob("*")), [])
-        self.assertIs(facts["device_tree"], True)
+        self.assertEqual(facts["board"], ["aislpc,r36t-max", "rockchip,rk3326"])
         with self.assertRaisesRegex(
-            RuntimeError, "device tree.*runs only its installed viewer.*sender fixture does not start"
+            RuntimeError,
+            "board with a device tree \\(aislpc,r36t-max, rockchip,rk3326\\).*runs only its installed viewer.*sender fixture does not start",
         ):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+        self.assertFalse((self.peers / "arguments.log").exists())
+
+    def test_sender_fixture_starts_on_aka_whose_device_tree_names_no_board(self):
+        # aka is x86_64: /proc/device-tree is there with `#address-cells`, `name`
+        # and `#size-cells`, and no `compatible`.
+        root = machine.device_tree(self.place(), None)
+        self.assertEqual(sorted(entry.name for entry in root.iterdir()), ["#address-cells", "#size-cells", "name"])
+        session = self.session()
+        self.prepare(session)
+        self.assertEqual(session.handle({"operation": "discover"})["board"], [])
+        self.assertTrue(session.close()["pass"])
+
+    def test_a_board_that_cannot_be_read_is_refused_and_the_refusal_says_so(self):
+        root = machine.device_tree(self.place(), None)
+        (root / "compatible").mkdir()
+        session = self.session()
+        self.assertIsNone(session.handle({"operation": "discover"})["board"])
+        with self.assertRaisesRegex(RuntimeError, "board of this device could not be read.*sender fixture does not start"):
             self.prepare(session)
         self.assertIsNone(session.root)
         self.assertFalse((self.peers / "arguments.log").exists())
@@ -225,7 +248,7 @@ class NotOnADeviceTree(Machine):
         machine.supply(self.supplies, "AC", "Mains")
         machine.supply(self.supplies, "BAT0", "Battery")
         session = self.session()
-        self.assertIs(session.handle({"operation": "discover"})["device_tree"], False)
+        self.assertEqual(session.handle({"operation": "discover"})["board"], [])
         self.prepare(session)
         self.assertTrue(session.close()["pass"])
 

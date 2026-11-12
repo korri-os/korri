@@ -12,8 +12,8 @@ fixture's programs the product compositor's user. The agent owns the run
 directory and writes only there; the programs write in `home` and `rt`.
 
 The fixture does not start on a handheld (a hardware picture path, or any
-device tree), on a hot host, or where its Sunshine could make an input
-device. A game on a Korri device does not stop it; the result names the game.
+board with a device tree), on a hot host, or where its Sunshine could make
+an input device. A game on a Korri device does not stop it; the result names the game.
 """
 
 import base64
@@ -40,14 +40,12 @@ import urllib.request
 
 from device import (
     append_log,
-    device_tree,
     deferred_termination,
     end_with_agent,
     hand_over,
     let_in,
     live_games,
     model,
-    no_fixture_on_device_tree,
     plain_bytes,
     plain_text,
     proc,
@@ -59,7 +57,14 @@ from device import (
 )
 from discovery import encoder_probe, output, properties
 from heat import must_end, no_start, thermal_limits, thermal_zones
-from viewer import GUARD_PERIOD, PICTURE_PATH_DEFAULT, platform
+from viewer import (
+    GUARD_PERIOD,
+    PICTURE_PATH_DEFAULT,
+    board,
+    board_names,
+    no_fixture_on_board,
+    platform,
+)
 
 RUNS = Path("/tmp")
 RENDER_NODES = Path("/dev/dri")
@@ -311,7 +316,9 @@ class Session:
         self.facts["heat_guarded"] = any(self.limits.values())
         self.hardware_path = platform() != PICTURE_PATH_DEFAULT
         self.facts["hardware_picture_path"] = self.hardware_path
-        self.facts["device_tree"] = device_tree()
+        # The names of the board in its device tree; none for a machine that is
+        # no such board, None for a board that could not be read.
+        self.facts["board"] = board_names(board())
         # Why the guard stopped the fixture, once it did.
         self.ended: str | None = None
         # Taken again when the fixture prepares; here so that a close is never blind.
@@ -549,7 +556,7 @@ class Session:
                 "handheld. A compositor, a Sunshine and an encoder are too much load for it, "
                 "so the sender fixture does not start here."
             )
-        refused = no_fixture_on_device_tree("sender fixture") or no_start(
+        refused = no_fixture_on_board("sender fixture") or no_start(
             thermal_zones(), self.limits, self.hardware_path
         )
         if refused:

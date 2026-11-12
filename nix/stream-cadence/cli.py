@@ -938,9 +938,11 @@ def view_case(
                 raise Refusal(
                     f"The viewer device's chip has a hardware picture path ({seat['platform']}), and its viewer plugin is not usable: {seat.get('plugin_missing')}. The tool does not run its software viewer on such a device."
                 )
-            if seat.get("device_tree"):
+            if seat.get("no_fixture"):
+                # The agent's own reason: a board with a device tree, or a board
+                # that it could not read.
                 raise Refusal(
-                    f"The viewer device has a device tree: the tool takes it for a passive handheld, and its viewer plugin is not usable: {seat.get('plugin_missing')}. A device with a device tree runs only its installed viewer; the tool does not run its software viewer there."
+                    f"Viewer device: {seat['no_fixture']} Its viewer plugin is not usable: {seat.get('plugin_missing')}."
                 )
             if not paths["viewer"]:
                 raise Refusal(

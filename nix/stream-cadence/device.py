@@ -117,30 +117,6 @@ def plain_bytes(root: Path) -> int:
 
 
 POWER_SUPPLY = Path("/sys/class/power_supply")
-DEVICE_TREE = Path("/proc/device-tree")
-
-
-def device_tree() -> bool:
-    """Whether the kernel has a device tree: the tool then takes the device for a passive handheld.
-
-    Every Korri handheld has one. Nothing else marks them all: korrid's chip
-    table does not name every chip, and a handheld's kernel can show no power
-    supply at all. A server, a desktop or a laptop with ACPI firmware has no
-    device tree; its fans and thermal zones are what the heat guard is for.
-    """
-    return DEVICE_TREE.is_dir()
-
-
-def no_fixture_on_device_tree(fixture: str) -> str | None:
-    """Why a fixture must not start on this device, or None. The rule of both agents."""
-    if not device_tree():
-        return None
-    return (
-        f"This device has a device tree ({DEVICE_TREE}): the tool takes it for a passive "
-        "handheld. A fixture is a software load, and such a device has no fan to carry it. "
-        "A device with a device tree runs only its installed viewer; an ARM board on "
-        f"mains power is refused by the same rule. The {fixture} does not start here."
-    )
 
 
 def model() -> str | None:

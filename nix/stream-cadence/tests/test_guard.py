@@ -20,7 +20,7 @@ RG353M = [("passive", 70000), ("passive", 75000), ("critical", 95000)]
 class Device(unittest.TestCase):
     """A session on sysfs-shaped files: one thermal zone, and a chip the test chooses."""
 
-    chip = b"vendor,board\0rockchip,rk3566\0"
+    chip: bytes | None = b"vendor,board\0rockchip,rk3566\0"
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -32,7 +32,8 @@ class Device(unittest.TestCase):
             (self.zone / f"trip_point_{n}_type").write_text(kind + "\n")
             (self.zone / f"trip_point_{n}_temp").write_text(f"{value}\n")
         self.read(50000)
-        (root / "compatible").write_bytes(self.chip)
+        if self.chip is not None:
+            (root / "compatible").write_bytes(self.chip)
         self.peer = root / "peer"
         self.peer.write_text(f'#!/bin/sh\nexec {sys.executable} -B {TESTS / "host-peer.py"} "$@"\n')
         self.peer.chmod(0o755)
@@ -85,8 +86,8 @@ class NoSoftwareViewerOnAHandheld(Device):
         with self.assertRaisesRegex(RuntimeError, "korrid did not answer"):
             self.prepare(session)
 
-    def test_a_chip_with_no_hardware_path_keeps_the_fixture_viewer(self):
-        viewer.COMPATIBLE.write_bytes(b"vendor,board\0vendor,chip\0")
+    def test_a_machine_with_no_board_keeps_the_fixture_viewer(self):
+        viewer.COMPATIBLE.unlink()
         session = self.session()
         try:
             self.assertFalse(session.handle({"operation": "discover"})["hardware_picture_path"])
@@ -192,8 +193,10 @@ class EachStartHasItsOwnLog(Device):
             self.assertTrue(session.close()["pass"])
 
 
-class DesktopChip(Device):
-    chip = b"vendor,board\0vendor,chip\0"
+class Desktop(Device):
+    """A machine with no board: no device tree, so no `compatible`. It may host the fixture."""
+
+    chip = None
 
     def running(self, session: viewer.Session):
         self.prepare(session)
@@ -202,7 +205,7 @@ class DesktopChip(Device):
         return session.processes["viewer"]
 
 
-class AGuardThatCannotReadStopsTheRun(DesktopChip):
+class AGuardThatCannotReadStopsTheRun(Desktop):
     def ended(self, break_it, words: str) -> None:
         session = self.session()
         try:
@@ -270,7 +273,7 @@ def trips(*values: tuple[str, int]) -> dict:
     }
 
 
-class TestMarginOnlyLowersTheEnd(DesktopChip):
+class TestMarginOnlyLowersTheEnd(Desktop):
     def test_a_margin_below_the_tools_own_is_not_taken(self):
         for zone in (trips(*RG353M), trips(("critical", 110000))):
             normal = heat.thermal_limits(zone)
@@ -290,7 +293,7 @@ class TestMarginOnlyLowersTheEnd(DesktopChip):
             self.assertTrue(session.close()["pass"])
 
 
-class AStopAfterTheLastSampleIsReported(DesktopChip):
+class AStopAfterTheLastSampleIsReported(Desktop):
     def test_stop_says_that_the_guard_ended_the_viewer(self):
         session = self.session()
         try:
@@ -312,7 +315,7 @@ class AStopAfterTheLastSampleIsReported(DesktopChip):
             self.assertTrue(session.close()["pass"])
 
 
-class HeatIsCheckedBeforeAnythingStarts(DesktopChip):
+class HeatIsCheckedBeforeAnythingStarts(Desktop):
     def test_check_refuses_a_hot_or_unreadable_device_and_makes_nothing(self):
         session = self.session()
         self.assertEqual(session.handle({"operation": "check"}), {})
@@ -360,37 +363,68 @@ class ABusyViewerOnAHardwarePath(Device):
             self.assertTrue(session.close()["pass"])
 
 
-class NoFixtureOnADeviceTree(DesktopChip):
-    """The R36T Max: its chip is not in korrid's table, and its kernel shows no power supply.
+class NoFixtureOnABoard(Desktop):
+    """A board with a device tree hosts no fixture; a root node that names no board does not count."""
 
-    `nix/devices/r36tmax/dts/rk3326-aislpc-r36t-max.dts` gives the compatible
-    value; the device tree leaves the charger node out. The zone has the
-    passive trip at 70 °C that the kernel shows there.
-    """
-
-    chip = b"aislpc,r36t-max\0rockchip,rk3326\0"
+    def place(self) -> str:
+        return self.directory.name
 
     def test_fixture_viewer_is_refused_on_the_r36t_max(self):
-        machine.device_tree()
+        # `nix/devices/r36tmax/dts/rk3326-aislpc-r36t-max.dts`: a chip that korrid's
+        # table does not name. Its kernel shows no power supply, and it is cool.
+        machine.device_tree(self.place(), b"aislpc,r36t-max\0rockchip,rk3326\0")
         self.read(50000)
         session = self.session()
         facts = session.handle({"operation": "discover"})
         self.assertFalse(facts["hardware_picture_path"])
         self.assertEqual(list(self.supplies.glob("*")), [])
-        self.assertIs(facts["device_tree"], True)
+        self.assertEqual(facts["board"], ["aislpc,r36t-max", "rockchip,rk3326"])
         with self.assertRaisesRegex(
-            RuntimeError, "device tree.*runs only its installed viewer.*viewer fixture does not start"
+            RuntimeError,
+            "board with a device tree \\(aislpc,r36t-max, rockchip,rk3326\\).*runs only its installed viewer.*viewer fixture does not start",
         ):
             self.prepare(session)
         self.assertIsNone(session.root)
         self.assertEqual(session.processes, {})
+
+    def test_fixture_viewer_starts_on_aka_whose_device_tree_names_no_board(self):
+        # aka is x86_64. Its kernel has device-tree support, so /proc/device-tree
+        # is there with `#address-cells`, `name` and `#size-cells`, and no `compatible`.
+        root = machine.device_tree(self.place(), None)
+        self.assertEqual(sorted(entry.name for entry in root.iterdir()), ["#address-cells", "#size-cells", "name"])
+        session = self.session()
+        self.assertTrue(Path(self.prepare(session)["run_folder"]).is_dir())
+        facts = session.handle({"operation": "discover"})
+        self.assertEqual(facts["board"], [])
+        self.assertIsNone(facts["no_fixture"])
+
+    def test_an_empty_compatible_names_no_board(self):
+        machine.device_tree(self.place(), b"\0")
+        session = self.session()
+        self.assertEqual(session.handle({"operation": "discover"})["board"], [])
+        self.assertTrue(Path(self.prepare(session)["run_folder"]).is_dir())
+
+    def test_a_board_that_cannot_be_read_is_refused_and_the_refusal_says_so(self):
+        # The property is there and gives no value: here a directory in its place.
+        root = machine.device_tree(self.place(), None)
+        (root / "compatible").mkdir()
+        session = self.session()
+        facts = session.handle({"operation": "discover"})
+        self.assertIsNone(facts["board"])
+        self.assertRegex(facts["no_fixture"], "could not be read")
+        with self.assertRaisesRegex(RuntimeError, "board of this device could not be read"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+        # The installed viewer does not start there either: its rules depend on the board.
+        with self.assertRaisesRegex(RuntimeError, "board of this device could not be read"):
+            session.handle({"operation": "prepare", "fixture": False, "server_certificate": "public"})
 
     def test_a_laptop_has_no_device_tree_and_hosts_the_fixture(self):
         # Its battery does not decide. Its fans and thermal zones are what the heat guard is for.
         machine.supply(self.supplies, "AC", "Mains")
         machine.supply(self.supplies, "BAT0", "Battery")
         session = self.session()
-        self.assertIs(session.handle({"operation": "discover"})["device_tree"], False)
+        self.assertEqual(session.handle({"operation": "discover"})["board"], [])
         self.assertTrue(Path(self.prepare(session)["run_folder"]).is_dir())
 
     def test_a_hot_laptop_is_still_refused_by_the_heat_guard(self):
@@ -402,8 +436,8 @@ class NoFixtureOnADeviceTree(DesktopChip):
     def test_a_mains_board_with_a_device_tree_is_refused_too(self):
         # The accepted cost of the rule: an ARM builder is not told from a handheld.
         machine.supply(self.supplies, "usb", "USB")
-        machine.device_tree()
-        with self.assertRaisesRegex(RuntimeError, "device tree"):
+        machine.device_tree(self.place(), b"vendor,builder\0vendor,chip\0")
+        with self.assertRaisesRegex(RuntimeError, "board with a device tree"):
             self.prepare(self.session())
 
 
@@ -428,7 +462,8 @@ class ADeviceWithNoThermalZone(Device):
 
     def test_other_device_with_no_zone_runs_unguarded_and_says_so(self):
         self.empty()
-        viewer.COMPATIBLE.write_bytes(b"vendor,board\0vendor,chip\0")
+        # aka: no thermal zone, and no board.
+        viewer.COMPATIBLE.unlink()
         session = self.session()
         try:
             facts = session.handle({"operation": "discover"})

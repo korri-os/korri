@@ -36,7 +36,6 @@ from heat import END_MARGIN, must_end, no_start, thermal_limits, thermal_zones
 import device
 from device import (
     append_log,
-    device_tree,
     deferred_termination,
     end_with_agent,
     games,
@@ -45,7 +44,6 @@ from device import (
     let_in,
     live_games,
     model,
-    no_fixture_on_device_tree,
     plain_text,
     read_plain,
     proc,
@@ -173,8 +171,65 @@ def picture_path(compatible: bytes) -> str:
 COMPATIBLE = Path("/proc/device-tree/compatible")
 
 
+def board() -> bytes | None:
+    """Which board this is: the `compatible` value of the device tree's root node.
+
+    Empty when the root node names no board. A machine with ACPI firmware has
+    no device tree at all, or, when its kernel has device-tree support, a
+    root node with no `compatible`: aka is such a machine. That
+    /proc/device-tree exists says nothing. None when the property is there
+    and cannot be read. The chip-table rule and the fixture rule both ask here.
+    """
+    try:
+        return COMPATIBLE.read_bytes()
+    except FileNotFoundError:
+        return b""
+    except OSError:
+        return None
+
+
+def board_names(value: bytes | None) -> list[str] | None:
+    """The names in a `compatible` value; none for no board; None for a board that was not read."""
+    if value is None:
+        return None
+    return [name.decode(errors="replace") for name in value.split(b"\0") if name]
+
+
 def platform() -> str:
-    return picture_path(COMPATIBLE.read_bytes() if COMPATIBLE.exists() else b"")
+    # A board that cannot be read gets no viewer and no fixture (board_unread).
+    return picture_path(board() or b"")
+
+
+def board_unread() -> str | None:
+    """Why nothing may start here, when the board cannot be read; else None."""
+    if board() is not None:
+        return None
+    return (
+        f"The board of this device could not be read: {COMPATIBLE} is there and gives no "
+        "value. The tool cannot tell a handheld from another machine here, so it starts "
+        "no viewer and no fixture."
+    )
+
+
+def no_fixture_on_board(fixture: str) -> str | None:
+    """Why a fixture must not start on this device, or None. The rule of both agents.
+
+    A board with a device tree is taken for a passive handheld. korrid's chip
+    table does not name every handheld's chip, and a handheld's kernel can
+    show no power supply; every Korri handheld's root node names its board.
+    """
+    unread = board_unread()
+    if unread:
+        return f"{unread} The {fixture} does not start here."
+    names = board_names(board())
+    if not names:
+        return None
+    return (
+        f"This device is a board with a device tree ({', '.join(names)}): the tool takes it "
+        "for a passive handheld. A fixture is a software load, and such a device has no fan "
+        "to carry it. A board with a device tree runs only its installed viewer; an ARM "
+        f"board on mains power is refused by the same rule. The {fixture} does not start here."
+    )
 
 
 PIN_LINE = r"(PIN on the target PC: )(\d{4})\b"
@@ -239,9 +294,10 @@ class Session:
             "platform": chosen,
             # korrid's chip table names a hardware picture path for this device.
             "hardware_picture_path": chosen != PICTURE_PATH_DEFAULT,
-            # With a device tree the tool takes the device for a passive handheld,
-            # which hosts no fixture.
-            "device_tree": device_tree(),
+            # The names of the board in its device tree; none for a machine that
+            # is no such board. A board hosts no fixture; `no_fixture` says why.
+            "board": board_names(board()),
+            "no_fixture": no_fixture_on_board("viewer fixture"),
             # The host that runs the tool, as this device reaches it: the far end
             # of the agent's own SSH connection. Absent with no SSH.
             "controller_address": connection[0] if connection else None,
@@ -451,9 +507,12 @@ class Session:
         """Refuse a run that the heat guard cannot watch, or that would start hot.
 
         The tool asks this before it starts anything on any target, and the
-        agent asks it again when it prepares.
+        agent asks it again when it prepares. A board that cannot be read is
+        refused here too: the rules of this agent depend on the board.
         """
-        refused = no_start(thermal_zones(), self.limits, self.hardware_path())
+        refused = board_unread() or no_start(
+            thermal_zones(), self.limits, self.hardware_path()
+        )
         if refused:
             raise RuntimeError(refused)
 
@@ -487,7 +546,7 @@ class Session:
             )
         if request["fixture"]:
             # korrid's chip table does not name every handheld's chip.
-            handheld = no_fixture_on_device_tree("viewer fixture")
+            handheld = no_fixture_on_board("viewer fixture")
             if handheld:
                 raise RuntimeError(
                     handheld + f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."
