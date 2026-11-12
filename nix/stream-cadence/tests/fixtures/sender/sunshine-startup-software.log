@@ -1,0 +1,34 @@
+[2026-11-11 17:39:46.529]: Info: Sunshine version: 2026.516.143833 commit: refs/tags/v2026.516.143833
+[2026-11-11 17:39:46.581]: Info: Trying encoder [nvenc]
+[2026-11-11 17:39:46.581]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:39:46.581]: Info: Creating encoder [h264_nvenc]
+[2026-11-11 17:39:46.582]: Error: [CUDA @ 0x55f2b9120140] Cannot load libcuda.so.1
+[2026-11-11 17:39:46.582]: Error: [CUDA @ 0x55f2b9120140] Could not dynamically load CUDA
+[2026-11-11 17:39:46.582]: Error: Failed to create a CUDA device: Operation not permitted
+[2026-11-11 17:39:46.582]: Info: Creating encoder [h264_nvenc]
+[2026-11-11 17:39:46.582]: Error: [CUDA @ 0x55f2b9134b00] Cannot load libcuda.so.1
+[2026-11-11 17:39:46.582]: Error: [CUDA @ 0x55f2b9134b00] Could not dynamically load CUDA
+[2026-11-11 17:39:46.582]: Error: Failed to create a CUDA device: Operation not permitted
+[2026-11-11 17:39:46.582]: Info: Encoder [nvenc] failed
+[2026-11-11 17:39:46.582]: Info: Trying encoder [vulkan]
+[2026-11-11 17:39:46.582]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:39:46.582]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-11 17:39:46.782]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:39:46.782]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-11 17:39:46.982]: Info: Encoder [vulkan] failed
+[2026-11-11 17:39:46.982]: Info: Trying encoder [vaapi]
+[2026-11-11 17:39:46.982]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:39:46.983]: Info: Creating encoder [h264_vaapi]
+[2026-11-11 17:39:47.416]: Error: [h264_vaapi @ 0x55f2b911fd00] No usable encoding entrypoint found for profile VAProfileH264High (7).
+[2026-11-11 17:39:47.489]: Error: Could not open codec [h264_vaapi]: Function not implemented
+[2026-11-11 17:39:47.491]: Info: Creating encoder [h264_vaapi]
+[2026-11-11 17:39:47.759]: Error: [h264_vaapi @ 0x55f2b911fd00] No usable encoding entrypoint found for profile VAProfileH264High (7).
+[2026-11-11 17:39:47.830]: Error: Could not open codec [h264_vaapi]: Function not implemented
+[2026-11-11 17:39:47.831]: Info: Encoder [vaapi] failed
+[2026-11-11 17:39:47.831]: Info: Trying encoder [software]
+[2026-11-11 17:39:47.831]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:39:47.837]: Info: Creating encoder [libx264]
+[2026-11-11 17:39:48.109]: Info: Creating encoder [libx264]
+[2026-11-11 17:39:48.208]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:39:48.212]: Info: Found H.264 encoder: libx264 [software]
+[2026-11-11 17:39:48.276]: Info: Configuration UI available at [https://localhost:48790]

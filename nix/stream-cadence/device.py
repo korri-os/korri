@@ -6,6 +6,7 @@ SEQPACKET request from korrid's moonlight_certificate.rs, under the unit's UID/G
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,16 @@ from discovery import (
     properties,
     tcp_ports,
 )
+
+
+LIBC = ctypes.CDLL(None, use_errno=True)
+PR_SET_PDEATHSIG = 1
+
+
+def end_with_agent() -> None:
+    """A child's preexec step: the kernel ends the child when the agent dies, however it dies."""
+    if LIBC.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0):
+        os._exit(127)
 
 
 def command(*args: str) -> str:

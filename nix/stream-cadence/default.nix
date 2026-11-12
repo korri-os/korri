@@ -20,6 +20,7 @@ let
     fileset = pkgs.lib.fileset.unions [
       ./device.py
       ./discovery.py
+      ./sender.py
       ./viewer.py
     ];
   };
@@ -154,5 +155,9 @@ in
     source = deviceSource;
     # aka is server-only and has no viewer plugin. The fixture copies this one.
     viewer = pkgs.moonlight-embedded;
+    # The sender fixture's hidden compositor and its stock Sunshine. A host with
+    # no Korri also takes this sway for the viewer fixture.
+    sway = pkgs.sway-unwrapped;
+    sunshine = pkgs.sunshine;
   };
 }

@@ -1,0 +1,30 @@
+[2026-11-11 17:16:44.928]: Info: Sunshine version: 2026.516.143833 commit: refs/tags/v2026.516.143833
+[2026-11-11 17:16:44.975]: Info: Trying encoder [nvenc]
+[2026-11-11 17:16:44.975]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:16:44.975]: Info: Creating encoder [h264_nvenc]
+[2026-11-11 17:16:44.976]: Error: [CUDA @ 0x55d160620e40] Cannot load libcuda.so.1
+[2026-11-11 17:16:44.976]: Error: [CUDA @ 0x55d160620e40] Could not dynamically load CUDA
+[2026-11-11 17:16:44.976]: Error: Failed to create a CUDA device: Operation not permitted
+[2026-11-11 17:16:44.976]: Info: Creating encoder [h264_nvenc]
+[2026-11-11 17:16:44.976]: Error: [CUDA @ 0x55d160620d40] Cannot load libcuda.so.1
+[2026-11-11 17:16:44.976]: Error: [CUDA @ 0x55d160620d40] Could not dynamically load CUDA
+[2026-11-11 17:16:44.976]: Error: Failed to create a CUDA device: Operation not permitted
+[2026-11-11 17:16:44.976]: Info: Encoder [nvenc] failed
+[2026-11-11 17:16:44.976]: Info: Trying encoder [vulkan]
+[2026-11-11 17:16:44.976]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:16:44.976]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-11 17:16:45.176]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:16:45.176]: Error: [wlgrab] Could not initialize display with the given hw device type.
+[2026-11-11 17:16:45.376]: Info: Encoder [vulkan] failed
+[2026-11-11 17:16:45.376]: Info: Trying encoder [vaapi]
+[2026-11-11 17:16:45.376]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:16:45.377]: Info: Creating encoder [h264_vaapi]
+[2026-11-11 17:16:45.415]: Info: Creating encoder [hevc_vaapi]
+[2026-11-11 17:16:45.479]: Info: Creating encoder [av1_vaapi]
+[2026-11-11 17:16:45.488]: Error: [av1_vaapi @ 0x55d160ee7300] No usable encoding entrypoint found for profile VAProfileAV1Profile0 (32).
+[2026-11-11 17:16:45.489]: Error: Could not open codec [av1_vaapi]: Function not implemented
+[2026-11-11 17:16:45.490]: Info: Screencasting with Wayland's protocol
+[2026-11-11 17:16:45.490]: Info: Creating encoder [hevc_vaapi]
+[2026-11-11 17:16:45.551]: Info: Found H.264 encoder: h264_vaapi [vaapi]
+[2026-11-11 17:16:45.551]: Info: Found HEVC encoder: hevc_vaapi [vaapi]
+[2026-11-11 17:16:45.605]: Info: Configuration UI available at [https://localhost:48790]
