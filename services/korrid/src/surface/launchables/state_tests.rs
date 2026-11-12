@@ -1081,7 +1081,7 @@ fn an_external_stop_shows_stopping_until_the_exact_session_is_gone() {
     assert!(
         matches!(stopping.loaded().unwrap().phase, Phase::Stopping { ref launch_id } if launch_id == "exact")
     );
-    let gone = stopping.with_status_after_stop(&status(json!({"_tag":"Ok", "payload": {}})));
+    let gone = stopping.with_session_status(&status(json!({"_tag":"Ok", "payload": {}})));
     assert_eq!(tag(&gone), "Ready");
 }
 
