@@ -356,6 +356,9 @@ it is cooler.
 nix run .#stream-cadence -- view --sender local --viewer local --sender-fixture
 nix run .#stream-cadence -- view --sender local --viewer operator@viewer \
   --sender-fixture --viewer-stream-host ADDRESS_OF_THIS_HOST
+# The second measure of a private pair: the viewer's queue.
+nix run .#stream-cadence -- view --sender local --viewer local --sender-fixture \
+  --queue-measure
 ```
 
 `--sender-fixture` gives the measure a private sender. The sender target
@@ -455,9 +458,8 @@ and shows about 62 frames each second. Sunshine takes one frame for each
 period of the stream's frame rate, so it would skip about two source frames
 each second. The fixture sets the fastest mode whose whole-millisecond period
 is not shorter than the stream's period: 58.823 Hz (17 ms) for a request of
-60, and 66.666 Hz (15 ms) for the request of 67 that a private pair gets by
-default (see "A viewer's queue, and the pair's default rate"). The numbers
-that follow are for a request of 60.
+60, which is the default. (`--queue-measure` asks for 67 and gets 66.666 Hz,
+15 ms; see "Two measures for a private pair".)
 The output is then the slower side, Sunshine takes every frame, and the
 source shows about 57.8 frames each second. `requested_fps` stays the
 request, and `display.refresh_hz` is the mode.
@@ -550,8 +552,8 @@ on one graphics card.
 
 **The private pair on aka, 2026-11-12.** Sender fixture and viewer fixture
 both on aka (`view --sender root@aka --sender-fixture --viewer root@aka`), at
-that day's defaults: 1920x1080, a request of 60 (`--fps 60` today; see the
-default rate below), 60 scored seconds. The fixture's
+the defaults: 1920x1080, a request of 60, 60 scored seconds. This is the
+base measure of "Two measures for a private pair" below. The fixture's
 Sunshine started beside the product's and encoded with the AMD card's VAAPI
 H.264 encoder, as the user `korri`. Two sets of five runs. Set B's build is
 commit `6c092579f`. Set A's build came from the tree just before that commit
@@ -588,32 +590,61 @@ are not tested. aka has no thermal zone, so these runs had no heat guard.
 These sets are evidence, not a baseline: the viewer is the nixpkgs viewer in
 the fixture, not the product's.
 
-**A viewer's queue, and the pair's default rate.** Against the product sender
-on aka, the same fixture viewer's delay climbed from about 18 ms in steps of
-one refresh period and stayed near 51.5 ms: it queues frames and never drops
-one to catch up. A pair must be able to show that, or two viewers that differ
-only in how they queue measure equal.
+**Two measures for a private pair.** A comparison of two viewers needs two
+results, because no single setup of the pair shows everything.
 
-Whether the queue shows depends on the two rates. Both fixtures show on a
-headless output with a period of whole milliseconds, and each compositor's
-own work adds about 0.2 to 1.4 ms to its period, more or less with the
-machine's load. Five pairs ran on aka on 2026-11-12 with the tool's options
-alone, 60 scored seconds each. "Game" says whether a game ran on aka
+| | Base measure | Queue measure |
+| --- | --- | --- |
+| How | the default | `--queue-measure` |
+| Rates | The sender is the slower side: a request of the viewer's refresh, which gives a 17 ms sender output against the viewer fixture's 16 ms output at 60. | The sender is the faster side: its output period is one millisecond below the viewer fixture's, 15 ms against 16 ms at 60 (a request of 67; `cli.py:pair_rate` knows the number). |
+| Shows | The delay with no queue, startup, CPU, and the viewer's own dropped frames: the sender adds none. | How deep the viewer's queue gets and what the delay settles at. |
+| Hides | The queue. The viewer always waits for a frame, so two viewers that differ only in how they queue measure equal. | The viewer's own dropped frames. The sender shows more frames than the viewer can show, and something must drop them: 87 to 294 in a run of 60 s on aka, more or fewer with the sender's rate. |
+| Floor from the pair | About 133 to 149 `repeated_frames` and `late_frames` in a run of 60 s. | The dropped frames above. No repeats. |
+| `discovered.measure` | `base` | `queue` |
+
+A baseline for a private pair has both parts: one result of each measure,
+for the baseline viewer and for the candidate. `verdict` compares base with
+base and queue with queue. It refuses a base result against a queue result
+and says that this is the cause.
+
+In a queue result the dropped frames are the sender's floor and not a viewer
+number. The result says so in `viewer.not_measured.dropped_frames`, and
+`verdict` gives `dropped_frames` no verdict there. The count stays in the
+windows (`capture_misses`) as evidence.
+
+`--queue-measure` is accepted only for a private pair, and not with `--fps`:
+the measure sets the rate. `--fps 67` alone asks for the same rate, but the
+result is then a base result with that rate, and `verdict` keeps it apart
+from both measures. With an installed viewer the sender is asked for the
+panel's rate, as before.
+
+**Why two: the tries on aka.** Against the product sender on aka, the same
+fixture viewer's delay climbed from about 18 ms in steps of one refresh
+period and stayed near 51.5 ms: it queues frames and never drops one to
+catch up. Whether a pair shows that depends on the two rates. Both fixtures
+show on a headless output with a period of whole milliseconds, and each
+compositor's own work adds about 0.2 to 1.4 ms to its period, more or less
+with the machine's load. Five pairs ran on aka on 2026-11-12 with the tool's
+options alone, 60 scored seconds each. "Game" says whether a game ran on aka
 (`discovered.live_game`).
 
-| Pair (sender, viewer) | Options | Game | Runs | Sender, each second | Viewer output, each second | Delay p50, each 10 s window | Dropped, each run |
+| Pair (sender, viewer) | Options then | Game | Runs | Sender, each second | Viewer output, each second | Delay p50, each 10 s window | Dropped, each run |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 17 ms, 16 ms | `--fps 60` | yes | 1 | 57.6 | 60.0 | 25.2 to 26.9 ms | 0 |
+| 17 ms, 16 ms (base measure) | `--fps 60` | yes | 1 | 57.6 | 60.0 | 25.2 to 26.9 ms | 0 |
+| 17 ms, 16 ms (base measure) | same | no | 3 | 57.9 | 60.2 | 21.8 to 23.0 ms | 0 |
 | 17 ms, 17 ms | `--fps 60 --viewer-refresh 58.823` | yes | 3 | 57.0 to 57.3 | 56.5 to 56.7 | 50.8 to 67.1 ms | 20 to 52 |
 | 17 ms, 17 ms | same | no | 1 | 56.9 | 56.8 | 66.9 to 67.4 ms | 5 |
 | 16 ms, 16 ms | `--fps 63` | yes | 4 | 60.3 to 60.5 | 59.8 to 60.0 | 46.1 to 63.3 ms | 15 to 57 |
 | 16 ms, 16 ms | same | no | 2 | 59.9 to 60.3 | 60.1 to 60.3 | 30.2 to 63.6 ms | 3 to 8 |
 | 16 ms, 17 ms | `--fps 63 --viewer-refresh 58.823` | yes | 1 | 60.8 | 56.6 | 62.2 to 63.9 ms | 250 |
 | 16 ms, 17 ms | same | no | 1 | 60.9 | 56.8 | 62.6 to 63.4 ms | 247 |
-| 15 ms, 16 ms | `--fps 67`, and once the default | no | 7 | 61.3 to 64.4 | 59.5 to 60.6 | 57.3 to 63.2 ms | 87 to 294 |
+| 15 ms, 16 ms (queue measure) | `--fps 67`, and once no option | no | 7 | 61.3 to 64.4 | 59.5 to 60.6 | 57.3 to 63.2 ms | 87 to 294 |
 
-One more run of the 17 ms pair began with a game and ended with none; it is
-in no row.
+These runs are from the builds of that night. `--queue-measure` did not
+exist then; the 15 ms runs asked for the same rate with `--fps 67`, and one
+with no option, from a build in which that rate was the default. No run has
+used the option itself. One more run of the 17 ms pair began with a game and
+ended with none; it is in no row.
 
 What the tries show:
 
@@ -629,41 +660,30 @@ What the tries show:
 - **A sender that is one millisecond faster fills the queue in every
   window.** In all nine runs of the last three rows the delay p50 of every
   scored window is between 57.3 and 63.9 ms. `verdict` between two sets of
-  three runs of the 15 ms pair says `equal` for each measured number.
+  three runs of the 15 ms pair said `equal` for each measured number.
+- **The slower sender adds no drops.** All four runs of the first two rows
+  have 0 dropped frames, as have the ten runs of sets A and B.
 
-**The default.** For a private pair with no `--fps`, the tool asks the sender
-for the rate whose output period is one millisecond below the viewer
-fixture's: 67 for the default viewer refresh of 60, a 15 ms output against a
-16 ms output (`cli.py:pair_rate`). `--fps 60` gives the pair of sets A and B
-above. With an installed viewer the rule does not apply: the sender is asked
-for the panel's rate, as before.
+Open points of the queue measure:
 
-What this default costs, and what is not known:
-
-- The sender shows 1.4 to 4.3 frames each second more than the viewer can
-  show. Something drops them: 87 to 294 `dropped_frames` in a run of 60 s
-  are the pair's floor, and the floor moves with the sender's rate. A
-  viewer's own few drops do not show against it. `repeated_frames` and
-  `late_frames`, which had a floor of 138 to 149 in sets A and B, have none
-  here.
-- The delay is the delay of a full queue. A viewer that drops frames to
-  catch up was not measured; the expectation that it shows a short delay
-  here is not tested.
 - The sender's rate at 15 ms moved from 64.4 to 61.3 frames each second
   over seven runs in 25 minutes. The cause is not known. At 60.6 the sender
   is no faster than the viewer and the queue is no longer sure; the result's
   sender intervals show the rate (`tests/intervals.py`).
+- It has not run beside a game. The 16 ms sender against the 17 ms viewer
+  has, once.
+- It has not run with a viewer that drops frames to catch up. The
+  expectation that such a viewer shows a short delay here is not tested.
 - Two of the seven runs at 15 ms have one sender interval near 142 ms (8
   `source_misses` each). Sets A and B had no interval above 1.5 periods in
   44 453. Over that night, runs with a sender interval above 1.5 periods
   were: 1 of 10 with a 17 ms sender (35.9 ms, as a game ended), 2 of 9 with
   a 16 ms sender (79 and 350 ms), 2 of 7 with a 15 ms sender. A set of three
-  runs of the 17 ms pair (`--fps 60`) after the 15 ms sets, with no game,
-  had none in 13 298 intervals. So a faster sender output may stall more
-  often; the counts are too small to say. Such a run stays valid, and its
+  runs of the 17 ms pair after the 15 ms sets, with no game, had none in
+  13 298 intervals. So a faster sender output may stall more often; the
+  counts are too small to say. Such a run stays valid, and its
   `source_misses`, `repeated_frames` and longest delay show the stall.
-- All of this is one machine in one night. The 15 ms pair has not run beside
-  a game; the 16 ms sender against the 17 ms viewer has, once.
+- All of this is one machine in one night.
 
 A headless output cannot run at 60.0, so no pair of headless outputs has
 equal rates by construction.
@@ -785,8 +805,8 @@ for each metric.
 conditions: the sender's display mode, Sunshine version, encoder and capture
 backend, the sender's model and render node, the viewer device's model, and
 the requested resolution, frame rate, codec, bitrate and viewer refresh,
-the limit `max_capture_gaps` of the run, and whether a game ran on a device
-during a run. A
+the limit `max_capture_gaps` of the run, whether a game ran on a device
+during a run, and the measure of a private pair (base or queue). A
 difference there would judge the sender or the device, not the viewer. The
 model is the device's own name for itself; on a board whose firmware gives a
 placeholder (aka says "System Product Name"), two such machines look alike.
