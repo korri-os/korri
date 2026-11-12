@@ -40,7 +40,7 @@ from score import (
     score,
     stamps,
 )
-from verdict import judge
+from verdict import BASE, QUEUE, judge
 
 
 class Refusal(RuntimeError):
@@ -398,7 +398,7 @@ def fixture_stream(
 
 
 def pair_rate(viewer_refresh: float) -> float:
-    """The stream rate at which the sender fixture is a little faster than the viewer fixture.
+    """The stream rate of the queue measure: the sender fixture is a little faster than the viewer fixture.
 
     Both fixtures show on a headless output, which commits on a timer of whole
     milliseconds (sender.py: steady_refresh_mhz). The viewer fixture's output
@@ -418,16 +418,53 @@ def pair_rate(viewer_refresh: float) -> float:
     return float(math.ceil(1000 / max(1, viewer_ms - 1)))
 
 
-def fixture_rate(requested: float | None, viewer_refresh: float, fixture_viewer: bool) -> float:
+def fixture_rate(requested: float | None, viewer_refresh: float, queue: bool) -> float:
     """The stream rate to ask of the sender fixture.
 
-    A requested rate is kept. A private pair gets the rate that can fill the
-    viewer's queue. An installed viewer shows on a real panel with its own
-    clock, so the sender is asked for that panel's rate.
+    A requested rate is kept. The base measure, the default, asks for the
+    viewer's refresh: the sender's output is then the slower side, no queue
+    builds, and the sender adds no dropped frame. The queue measure asks for
+    the rate that fills a viewer's queue.
     """
     if requested is not None:
         return requested
-    return pair_rate(viewer_refresh) if fixture_viewer else viewer_refresh
+    return pair_rate(viewer_refresh) if queue else viewer_refresh
+
+
+QUEUE_OPTION = "--queue-measure"
+
+
+def queue_measure_refusal(
+    sender_fixture: bool, requested_fps: float | None, installed_viewer: bool
+) -> str | None:
+    """Why the queue measure is not accepted for this run, or None.
+
+    It is a measure of a private pair: the rule for its rate holds between two
+    headless outputs, and the measure sets the rate itself.
+    """
+    if not sender_fixture:
+        return f"{QUEUE_OPTION} is accepted only with --sender-fixture: it is a measure of a private pair, and the tool does not set the rate of a product sender's display."
+    if requested_fps is not None:
+        return f"{QUEUE_OPTION} is not accepted with --fps: the queue measure sets the rate itself, one millisecond of frame period below the viewer fixture's. Give one of the two."
+    if installed_viewer:
+        return f"{QUEUE_OPTION} is not accepted with the installed viewer: a real panel has its own clock, and the rule for the rate holds only between two fixtures."
+    return None
+
+
+def viewer_notes(measure: str) -> dict[str, str]:
+    """Why a number of a viewer result has no value, or is not the viewer's (`viewer.not_measured`)."""
+    notes = {
+        "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
+        "input_ms": "The press-to-packet measure is not built.",
+    }
+    if measure == QUEUE:
+        notes["dropped_frames"] = (
+            "Queue measure: the sender shows more frames each second than the viewer "
+            "can show, so frames must be dropped. The count of capture_misses is the "
+            "sender's floor and not the viewer's number. The base measure gives the "
+            "viewer's own drops."
+        )
+    return notes
 
 
 def plugin_enabled(code: int, status: str) -> bool:
@@ -863,6 +900,9 @@ def view_case(
         }
         same_clock = seat["boot_id"] == facts["boot_id"]
         plugin = seat["plugin"]
+        if args.queue_measure and plugin:
+            # Before the sender fixture starts.
+            raise Refusal(queue_measure_refusal(True, None, installed_viewer=True))
         if plugin:
             # The installed viewer shows the stream on the device's own display.
             mode = seat["display"]["mode"]
@@ -888,7 +928,7 @@ def view_case(
         if args.sender_fixture:
             # The fixture's display exists for this stream alone: the requested
             # size, at the steady refresh nearest below the requested rate.
-            fps = fixture_rate(args.fps, viewer_refresh, fixture_viewer=plugin is None)
+            fps = fixture_rate(args.fps, viewer_refresh, queue=args.queue_measure)
             built = sender.request(
                 "prepare",
                 sway=paths["sway"],
@@ -910,6 +950,8 @@ def view_case(
             requested_bitrate=args.bitrate,
             viewer_refresh_hz=viewer_refresh,
             max_capture_gaps=args.max_capture_gaps,
+            # Which of the two measures of a private pair this is; verdict keeps them apart.
+            measure=QUEUE if args.queue_measure else BASE,
         )
         key = None
         if args.sender_fixture:
@@ -1112,10 +1154,7 @@ def view_case(
             "output_repeats": repeats,
             "packet_to_display_ms": None,
             "input_ms": None,
-            "not_measured": {
-                "packet_to_display_ms": "Today's viewer reports no packet arrival time. The gate is sender presentation to viewer display.",
-                "input_ms": "The press-to-packet measure is not built.",
-            },
+            "not_measured": viewer_notes(facts["measure"]),
         }
         if record["viewer"]["battery_mw"] is None:
             record["viewer"]["not_measured"]["battery_mw"] = (
@@ -1224,6 +1263,11 @@ def view(args: argparse.Namespace) -> int:
             f"The target {LOCAL} is the host that runs the tool, with no root. It can host the sender fixture only: add --sender-fixture."
         )
     args.ssh_target = sender_target
+    if args.queue_measure:
+        # Before any device is asked. The installed viewer is known later.
+        refused = queue_measure_refusal(args.sender_fixture, args.fps, installed_viewer=False)
+        if refused:
+            raise Refusal(refused)
 
     def built(
         target: str | None, options: list[str], extra: tuple[str, ...]
@@ -1568,6 +1612,11 @@ def parser() -> argparse.ArgumentParser:
     watch.add_argument("--stream-host", help="sender address as this host reaches it")
     watch.add_argument(
         "--viewer-stream-host", help="sender address as the viewer reaches it"
+    )
+    watch.add_argument(
+        "--queue-measure",
+        action="store_true",
+        help="the queue measure of a private pair: the sender fixture is the faster side, so a viewer that queues frames has a full queue. The default is the base measure, with the sender as the slower side. Not with --fps",
     )
     watch.add_argument("--fps", type=positive)
     watch.add_argument(

@@ -12,14 +12,18 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from cli import (  # noqa: E402
+    BASE,
     LOCAL,
+    QUEUE,
     Refusal,
     Remote,
     endpoint,
     fixture_rate,
     pair_rate,
     parser,
+    queue_measure_refusal,
     view,
+    viewer_notes,
     viewer_stream_host,
 )
 from discovery import session_log  # noqa: E402
@@ -44,8 +48,57 @@ class SteadyMode(unittest.TestCase):
         self.assertEqual(sender.steady_refresh_mhz(50), 50000)
 
 
+class TwoMeasures(unittest.TestCase):
+    """A private pair has a base measure, the default, and a queue measure, by one option."""
+
+    def test_base_measure_is_the_default_and_its_sender_is_the_slower_side(self):
+        rate = fixture_rate(None, 60.0, queue=False)
+        self.assertEqual(rate, 60.0)
+        # A 17 ms sender output against the viewer fixture's 16 ms output: no queue
+        # can build, and the sender adds no dropped frame.
+        self.assertEqual(1_000_000 // sender.steady_refresh_mhz(rate), 17)
+        self.assertEqual(1_000_000 // round(60.0 * 1000), 16)
+        self.assertFalse(parser().parse_args(["view", "--sender", "a", "--viewer", "b"]).queue_measure)
+        # A requested rate is kept as it is.
+        self.assertEqual(fixture_rate(30.0, 60.0, queue=False), 30.0)
+
+    def test_queue_measure_is_one_named_option_and_pair_rate_knows_the_number(self):
+        args = parser().parse_args(
+            ["view", "--sender", "a", "--viewer", "b", "--sender-fixture", "--queue-measure"]
+        )
+        self.assertTrue(args.queue_measure)
+        rate = fixture_rate(None, 60.0, queue=True)
+        self.assertEqual(rate, pair_rate(60.0))
+        self.assertEqual(1_000_000 // sender.steady_refresh_mhz(rate), 15)
+
+    def test_queue_measure_is_refused_where_it_is_not_a_private_pair(self):
+        ok = dict(sender_fixture=True, requested_fps=None, installed_viewer=False)
+        self.assertIsNone(queue_measure_refusal(**ok))
+        cases = {
+            "--sender-fixture": dict(ok, sender_fixture=False),
+            "--fps": dict(ok, requested_fps=60.0),
+            "installed viewer": dict(ok, installed_viewer=True),
+        }
+        for words, case in cases.items():
+            with self.subTest(case=words):
+                self.assertRegex(queue_measure_refusal(**case), "--queue-measure.*" + words)
+        # Before any device is asked: with a product sender, and with a rate of its own.
+        for extra in ([], ["--sender-fixture", "--fps", "67"]):
+            args = parser().parse_args(
+                ["view", "--sender", "operator@sender", "--viewer", "operator@viewer", "--queue-measure", *extra]
+            )
+            with self.assertRaisesRegex(Refusal, "--queue-measure"):
+                view(args)
+
+    def test_queue_result_says_that_its_dropped_frames_are_not_the_viewers(self):
+        self.assertNotIn("dropped_frames", viewer_notes(BASE))
+        self.assertRegex(viewer_notes(QUEUE)["dropped_frames"], "sender.*not the viewer's")
+        # What no measure has is in both.
+        self.assertEqual(set(viewer_notes(QUEUE)) - set(viewer_notes(BASE)), {"dropped_frames"})
+
+
 class PairRate(unittest.TestCase):
-    """The default rate of a private pair: frames arrive faster than the viewer can show them."""
+    """The rate of the queue measure: frames arrive faster than the viewer can show them."""
 
     def test_sender_output_is_one_millisecond_faster_than_the_viewer_fixtures_output(self):
         for refresh in (50, 58.823, 59.94, 60, 90, 120, 144):
@@ -62,14 +115,6 @@ class PairRate(unittest.TestCase):
         self.assertEqual(pair_rate(60), 67)
         self.assertEqual(sender.steady_refresh_mhz(pair_rate(60)), 66666)
         self.assertEqual(sender.steady_refresh_mhz(pair_rate(58.823)), 62500)
-
-    def test_only_a_private_pair_with_no_requested_rate_gets_it(self):
-        self.assertEqual(fixture_rate(None, 60.0, fixture_viewer=True), 67)
-        # A real panel has its own clock: the sender is asked for the panel's rate.
-        self.assertEqual(fixture_rate(None, 59.98, fixture_viewer=False), 59.98)
-        # A requested rate is kept as it is.
-        self.assertEqual(fixture_rate(60.0, 60.0, fixture_viewer=True), 60.0)
-        self.assertEqual(fixture_rate(30.0, 60.0, fixture_viewer=False), 30.0)
 
 
 class Ports(unittest.TestCase):

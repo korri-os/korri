@@ -76,6 +76,40 @@ class Conditions(unittest.TestCase):
             for _ in range(5)
         ]
 
+    def test_base_measure_and_queue_measure_refuse_each_other_and_name_the_cause(self):
+        def pair(measure: str | None, fps: float, refresh: int) -> list[dict]:
+            facts = {"requested_fps": fps, "display": {"mode": {"refresh": refresh}}}
+            return self.result(**facts, **({} if measure is None else {"measure": measure}))
+
+        base, queue = pair("base", 60.0, 58823), pair("queue", 67.0, 66666)
+        for old, new in ((base, queue), (queue, base)):
+            with self.assertRaisesRegex(ValueError, "measure") as refused:
+                judge(old, new, 5)
+            words = str(refused.exception)
+            self.assertIn("base measure", words)
+            self.assertIn("queue measure", words)
+            self.assertIn("--queue-measure", words)
+            # The measure is the cause; the rate and the mode follow from it.
+            self.assertNotIn("same sender, request and devices", words)
+            self.assertNotIn("recorded before", words)
+        self.assertEqual(len(judge(queue, queue, 5)), 15)
+        # A result from before the tool named its measure is a base result.
+        self.assertEqual(len(judge(pair(None, 60.0, 58823), base, 5)), 15)
+        # The same rate asked with --fps is not the queue measure: the result says which it is.
+        with self.assertRaisesRegex(ValueError, "queue measure"):
+            judge(pair("base", 67.0, 66666), queue, 5)
+
+    def test_dropped_frames_of_a_queue_result_are_not_judged(self):
+        queue = self.result(measure="queue")
+        for record in queue:
+            record["viewer"]["not_measured"] = {"dropped_frames": "the sender's floor"}
+            record["source_counter"]["windows"][0]["capture_misses"] = 200
+        rows = {row["metric"]: row for row in judge(queue, queue, 5)}
+        self.assertEqual(rows["dropped_frames"]["verdict"], "not measured")
+        self.assertEqual(rows["repeated_frames"]["verdict"], "equal")
+        base = {row["metric"]: row for row in judge(self.result(), self.result(), 5)}
+        self.assertEqual(base["dropped_frames"]["verdict"], "equal")
+
     def test_a_raised_gap_limit_is_another_condition(self):
         with self.assertRaisesRegex(ValueError, "max_capture_gaps") as refused:
             judge(self.result(), self.result(max_capture_gaps=3), 5)

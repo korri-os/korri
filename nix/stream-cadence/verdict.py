@@ -29,6 +29,18 @@ def window_total(name: str) -> Callable[[dict], Value]:
     )
 
 
+def viewer_drops(record: dict) -> Value:
+    """Frames that the sender presented and the viewer did not show.
+
+    A result can say that this count is not the viewer's: in the queue measure
+    the sender shows more frames than the viewer can. The count then stays in
+    the windows as evidence and has no verdict.
+    """
+    if "dropped_frames" in (record["viewer"].get("not_measured") or {}):
+        return None
+    return window_total("capture_misses")(record)
+
+
 def measured(name: str) -> Callable[[dict], Value]:
     # A result from before a metric existed has no value for it.
     return lambda record: record["viewer"].get(name)
@@ -39,7 +51,7 @@ METRICS: list[tuple[str, str, Callable[[dict], Value]]] = [
     ("1 packet arrival to display", "packet_to_display_ms", measured("packet_to_display_ms")),
     ("1 sender presentation to display", "latency_p50_ms", lambda r: window_median(r, "p50")),
     ("1 sender presentation to display", "latency_p95_ms", lambda r: window_median(r, "p95")),
-    ("2 smoothness", "dropped_frames", window_total("capture_misses")),
+    ("2 smoothness", "dropped_frames", viewer_drops),
     ("2 smoothness", "repeated_frames", window_total("repeated_frames")),
     ("2 smoothness", "late_frames", window_total("late_frames")),
     ("2 smoothness", "torn_frames", window_total("torn_frames")),
@@ -73,6 +85,11 @@ CONDITIONS = (
 # Only for these can one result be older than the condition. A value that is
 # absent for any other condition is a value: a product sender has no render node.
 ADDED_LATER = ("viewer_model",)
+# The two measures of a private pair, in `discovered.measure`. The base measure
+# is the default: its sender is the slower side. The queue measure's sender is
+# the faster side (cli.py: pair_rate). They answer different questions.
+BASE = "base"
+QUEUE = "queue"
 # The lists of game units in `discovered.live_game`: each device, start and end.
 LIVE_GAME_MOMENTS = ("sender_at_start", "viewer_at_start", "sender_at_end", "viewer_at_end")
 
@@ -92,6 +109,9 @@ def conditions(record: dict) -> dict:
     # before this record was kept ran with no game: the tool refused beside one.
     live = facts.get("live_game") or {}
     values["beside_a_game"] = any(live.get(moment) for moment in LIVE_GAME_MOMENTS)
+    # A result from before the tool named its measure is a base result: the
+    # queue measure did not exist.
+    values["measure"] = facts.get("measure") or BASE
     return values
 
 
@@ -152,8 +172,19 @@ def judge(
             and any(row[name] is None for row in every)
             and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
         ]
-        differ = [name for name in changed if name not in absent and name != "beside_a_game"]
+        # These have their own words. The measure also sets the rate and the mode.
+        named = {"beside_a_game"}
+        if "measure" in changed:
+            named |= {"measure", "requested_fps", "display"}
+        differ = [name for name in changed if name not in absent and name not in named]
         advice = []
+        if "measure" in changed:
+            advice.append(
+                "Some runs are the base measure of a private pair and others are its queue "
+                "measure (--queue-measure). The base measure shows the delay with no queue and "
+                "the viewer's own drops; the queue measure shows the delay of a full queue. "
+                "Compare base with base, and queue with queue."
+            )
         if "beside_a_game" in changed:
             advice.append(
                 "Some runs were recorded while a game ran on the device and others were not. "
