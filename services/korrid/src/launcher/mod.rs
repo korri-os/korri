@@ -73,7 +73,7 @@ pub fn local_games_with_cover_assets(
     let mut diagnostics = Vec::new();
     let mut games = Vec::new();
     let art = private_root
-        .map(|private_root| stored_art(readable_root, private_root))
+        .map(|private_root| stored_art(readable_root, private_root, registry))
         .unwrap_or_default();
     let play_stats = private_root
         .map(|root| crate::play_log::PlayLogRepository::new(root).load_all_stats())
@@ -126,7 +126,7 @@ fn local_game_from_route(
     }
 }
 
-/// The images korrid stores for the games discovery owns, by playable id:
+/// The images korrid stores for local catalog games, by playable id:
 /// the tile as the cover, and the other roles as media.
 #[derive(Default)]
 struct StoredArt {
@@ -134,8 +134,8 @@ struct StoredArt {
     media: BTreeMap<String, Vec<LocalGameMedia>>,
 }
 
-fn stored_art(readable_root: &Path, private_root: &Path) -> StoredArt {
-    let Ok(games) = discovery::reconcile::owned_discovery_games(readable_root, private_root) else {
+fn stored_art(readable_root: &Path, private_root: &Path, registry: &PluginRegistry) -> StoredArt {
+    let Ok(games) = discovery::reconcile::artwork_games(readable_root, registry) else {
         return StoredArt::default();
     };
     let repo = GameAssetRepository::new(private_root);
@@ -248,7 +248,7 @@ mod tests {
         let bare = listed(Some(private.path()));
         assert_eq!((bare.cover_asset_id, bare.media), (None, None));
 
-        let game = discovery::reconcile::owned_discovery_games(root.path(), private.path())
+        let game = discovery::reconcile::artwork_games(root.path(), &registry)
             .unwrap()
             .remove(0);
         let repository = GameAssetRepository::new(private.path());

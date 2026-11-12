@@ -120,7 +120,7 @@ For each game, korrid does this:
    download.
 4. It validates the bytes with `game_assets::validate_image`, unchanged.
 5. Under the write lock, it checks that the game is still current
-   (`current_owned_discovery_game`), then writes the blob and the assignment.
+   (`current_artwork_game`), then writes the blob and the assignment.
 6. It records the attempt.
 
 ### 2. When korrid calls it
@@ -381,6 +381,52 @@ The "Portal" bullet of section 5 does not apply: the portal is gone.
 Built in `services/korrid/src/acquisition/artwork.rs` and
 `services/korrid/src/game_assets.rs`. The one-off migration is
 `services/korrid/deploy/migrate-plugin-artwork.py`.
+
+## Amendment: acquired games share the artwork pass (issue #464)
+
+The pass covers the device's local `catalog/library.yaml`, not only games
+owned by folder discovery. Acquired games and starter-pack acquisitions use
+that same library. No new persisted fields, wire types, provider identities,
+or fallback reads are introduced.
+
+`discovery::reconcile::artwork_games` selects the first release with an
+identity that has a non-missing saved location, a ready acquired or copied
+cache, or an enabled artifact/package declaration. These are the existing
+content sources used by `config/linux_routes.rs`. Library releases are ordered
+oldest first (`config/library.rs`). The selector uses that order without
+requiring an installed runner.
+
+A removed folder location is not proof of an acquired release: replacement
+can remove the old location while keeping the historical library release
+(`reconcile/change.rs::add_unit`). `acquisition/game.rs::acquired_game_dirs`
+provides the ready content keys instead. It reads the library release
+identities, provider links and existing cache layout; artwork adds no
+acquisition marker. `record_content` writes no saved location for an acquired
+game. A plugin that declares a key is still never called without it.
+
+The existing `AssetOwnerIdentity` rule is used for both sources:
+
+| Field | Existing source and grounding |
+|---|---|
+| `playable_id` | The `library` map key. `record_content` returns this game id; the ibuki record supplied for #464 is `2048gb`. Folder entries, such as `a-very-super-mario-world`, use the same map. |
+| `release_id` | The selected release's `identity.value`, **not** its local `releases[].id`. This preserves `owned_discovery_games` at `460b0c2f2` and `ResolvedRoute.release_id`. The supplied ibuki `2048gb` release has local id `3ea2376b15b3` and a `kind: hash`, `value: sha256:…` identity. `record_content` writes `change::library_identity(ContentIdentity)`, whose `value()` is the content release key (ADR 0030). |
+| `release_fingerprint` | The unchanged SHA-256 fingerprint of the serialized typed library game record (`reconcile::fingerprint_mapping`). As for folder games, a title or release-list edit invalidates the assignment, even if the first release identity stays the same. |
+| `rom_identity` | The same selected `identity.value`, as for folder games. `ContentIdentity::value` is SHA-256 for a file or ordered parts and SHA-1 for CHD. It does not come from a provider link, a claim id, a cache path or the game's ULID. |
+
+The supplied ibuki retired `catalog/releases.yaml` maps each `sha256:…`
+release key to `{ game: <ULID>, system: pico8, identity: file }`. It confirms
+that content key, but is **not** read by the pass. Current acquisition writes
+the identity into `library.yaml`; the retired catalog's operational cut is
+owned by `catalog_migrate.rs`, not by artwork.
+
+The attempt key still hashes those four fields. Before storing downloaded
+bytes, the pass enumerates the current catalog again under the existing
+publication lock and requires the same game record. `launcher::stored_art`
+uses the same enumeration when it attaches `LocalGame.media` and the tile;
+`surface::model::game_from_entry` turns them into `SurfaceGame.media` and
+`coverArtUrl` references (ADR 0065). A changed release therefore hides old
+art immediately and gets a new lookup on the next pass. Stored old blobs and
+old attempt records are not garbage-collected by this change.
 
 ## Owner questions
 

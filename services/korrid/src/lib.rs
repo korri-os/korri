@@ -7748,10 +7748,13 @@ mod tests {
         )
         .await;
         wait_for_discovery_idle(app.clone()).await;
-        let game = discovery::reconcile::owned_discovery_games(readable.path(), private.path())
-            .unwrap()
-            .pop()
-            .unwrap();
+        let game = discovery::reconcile::artwork_games(
+            readable.path(),
+            &plugin_test_fixtures::installed(readable.path()),
+        )
+        .unwrap()
+        .pop()
+        .unwrap();
         let assignment = game_assets::GameAssetRepository::new(private.path())
             .assign(
                 game_assets::AssetOwnerIdentity {

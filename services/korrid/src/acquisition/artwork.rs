@@ -24,7 +24,7 @@ use super::{
     Failure,
 };
 use crate::{
-    discovery::reconcile::{self, DiscoveryOwnedGame},
+    discovery::reconcile::{self, ArtworkGame},
     game_assets::{
         AssetCandidate, AssetError, AssetOwnerIdentity, GameAssetRepository, GameAssetRole,
         MAX_ASSET_BYTES,
@@ -188,9 +188,9 @@ enum AttemptOutcome {
     AssetRejected,
 }
 
-/// main's `attempt_key`: one game as discovery sees it now. A changed ROM or
-/// a changed library record is another key, so it is looked up again.
-fn attempt_key(game: &DiscoveryOwnedGame) -> String {
+/// main's `attempt_key`: one game as the local catalog sees it now. A changed
+/// ROM or library record is another key, so it is looked up again.
+fn attempt_key(game: &ArtworkGame) -> String {
     let mut hasher = Sha256::new();
     hasher.update(game.playable_id.as_bytes());
     hasher.update(b"\0");
@@ -202,7 +202,7 @@ fn attempt_key(game: &DiscoveryOwnedGame) -> String {
     format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
-fn attempt_record(game: &DiscoveryOwnedGame, outcome: AttemptOutcome) -> AttemptRecord {
+fn attempt_record(game: &ArtworkGame, outcome: AttemptOutcome) -> AttemptRecord {
     AttemptRecord {
         outcome,
         playable_id: game.playable_id.clone(),
@@ -212,7 +212,7 @@ fn attempt_record(game: &DiscoveryOwnedGame, outcome: AttemptOutcome) -> Attempt
     }
 }
 
-fn owner_identity(game: &DiscoveryOwnedGame) -> AssetOwnerIdentity {
+fn owner_identity(game: &ArtworkGame) -> AssetOwnerIdentity {
     AssetOwnerIdentity {
         playable_id: game.playable_id.clone(),
         release_id: game.release_id.clone(),
@@ -414,8 +414,7 @@ impl ArtworkPass {
         if plugins.is_empty() {
             return report;
         }
-        let games = match reconcile::owned_discovery_games(&self.readable_root, &self.private_root)
-        {
+        let games = match reconcile::artwork_games(&self.readable_root, &registry) {
             Ok(games) => games,
             Err(error) => {
                 report.diagnostics.push(diagnostic(
@@ -427,7 +426,8 @@ impl ArtworkPass {
             }
         };
         for plugin in plugins {
-            self.plugin_pass(plugin, &games, &mut report).await;
+            self.plugin_pass(plugin, &registry, &games, &mut report)
+                .await;
         }
         report
     }
@@ -459,7 +459,8 @@ impl ArtworkPass {
     async fn plugin_pass(
         &self,
         mut plugin: ArtPlugin,
-        games: &[DiscoveryOwnedGame],
+        registry: &PluginRegistry,
+        games: &[ArtworkGame],
         report: &mut ArtworkReport,
     ) {
         let credential = match self.credential(&plugin) {
@@ -514,7 +515,7 @@ impl ArtworkPass {
                 }
                 asked += 1;
                 report.attempted += 1;
-                self.one_game(&plugin, game, &held, report).await
+                self.one_game(&plugin, registry, game, &held, report).await
             };
             let outcome = match outcome {
                 GameOutcome::Recorded(outcome) => outcome,
@@ -572,7 +573,8 @@ impl ArtworkPass {
     async fn one_game(
         &self,
         plugin: &ArtPlugin,
-        game: &DiscoveryOwnedGame,
+        registry: &PluginRegistry,
+        game: &ArtworkGame,
         held: &BTreeSet<GameAssetRole>,
         report: &mut ArtworkReport,
     ) -> GameOutcome {
@@ -631,7 +633,7 @@ impl ArtworkPass {
                     continue;
                 }
             };
-            match self.store(plugin, game, role, candidate, bytes) {
+            match self.store(plugin, registry, game, role, candidate, bytes) {
                 Ok(true) => stored += 1,
                 Ok(false) => return GameOutcome::Skipped,
                 Err(Stored::Catalog(message)) => {
@@ -711,15 +713,15 @@ impl ArtworkPass {
     fn store(
         &self,
         plugin: &ArtPlugin,
-        game: &DiscoveryOwnedGame,
+        registry: &PluginRegistry,
+        game: &ArtworkGame,
         role: GameAssetRole,
         candidate: &GameAssetCandidate,
         bytes: Vec<u8>,
     ) -> Result<bool, Stored> {
         let _guard = self.lock();
-        let Some(current) =
-            reconcile::current_owned_discovery_game(&self.readable_root, &self.private_root, game)
-                .map_err(|error| Stored::Catalog(error.to_string()))?
+        let Some(current) = reconcile::current_artwork_game(&self.readable_root, registry, game)
+            .map_err(|error| Stored::Catalog(error.to_string()))?
         else {
             return Ok(false);
         };

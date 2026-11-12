@@ -110,14 +110,15 @@ fn source_views_is_read_only_and_can_run_under_the_shared_write_lock() {
 
 #[test]
 fn enrichment_uses_available_replacement_without_discarding_release_history() {
-    let (root, private, writer, mut report) = fixture();
+    let (root, _private, writer, mut report) = fixture();
+    let registry = crate::plugin_test_fixtures::claims_only_registry();
     writer.run(&report, &DiscoveryOptions::default()).unwrap();
     report.scanned[0].units[0].identity = ContentIdentity::Hash {
         sha256: format!("sha256:{}", "b".repeat(64)),
         sha1: format!("sha1:{}", "b".repeat(40)),
     };
     writer.run(&report, &DiscoveryOptions::default()).unwrap();
-    let games = owned_discovery_games(root.path(), private.path()).unwrap();
+    let games = artwork_games(root.path(), &registry).unwrap();
     assert_eq!(games.len(), 1);
     assert_eq!(games[0].release_id, format!("sha256:{}", "b".repeat(64)));
     assert_eq!(
@@ -132,9 +133,7 @@ fn enrichment_uses_available_replacement_without_discarding_release_history() {
     );
     report.scanned[0].units.clear();
     writer.run(&report, &DiscoveryOptions::default()).unwrap();
-    assert!(owned_discovery_games(root.path(), private.path())
-        .unwrap()
-        .is_empty());
+    assert!(artwork_games(root.path(), &registry).unwrap().is_empty());
 }
 
 #[test]
@@ -379,4 +378,56 @@ fn authored_steam_location_after_uninstall_survives_enabled_rescan() {
 #[test]
 fn authored_steam_location_after_uninstall_survives_disabled_rescan() {
     assert_authored_steam_location_after_uninstall_survives(false);
+}
+
+#[test]
+fn artwork_uses_acquired_content_identities_without_discovery_ownership() {
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    let writer = DiscoveryCoordinator::for_tests(root.path(), private.path());
+    let registry = crate::plugin_test_fixtures::claims_only_registry();
+    let parts = vec![format!("sha256:{}", "c".repeat(64))];
+    let identities = [
+        ContentIdentity::Hash {
+            sha256: format!("sha256:{}", "a".repeat(64)),
+            sha1: format!("sha1:{}", "b".repeat(40)),
+        },
+        ContentIdentity::Parts {
+            value: format!(
+                "sha256:{}",
+                hex::encode(Sha256::digest(parts.join("\n").as_bytes()))
+            ),
+            parts,
+        },
+        ContentIdentity::Chd {
+            sha1: format!("sha1:{}", "d".repeat(40)),
+        },
+    ];
+    for (index, identity) in identities.iter().enumerate() {
+        let title = format!("Acquired {index}");
+        let id = writer
+            .record_acquired(&AcquiredGame {
+                provider: "@test:shop",
+                claim_id: &index.to_string(),
+                title: &title,
+                system: "gba",
+                identity,
+            })
+            .unwrap();
+        let ready = crate::acquisition::placement::copied_release_cache(root.path())
+            .join(crate::acquisition::placement::ready_name(identity.value()).unwrap());
+        fs::create_dir_all(&ready).unwrap();
+        fs::write(ready.join("game.gba"), b"verified acquisition content").unwrap();
+        let game = artwork_games(root.path(), &registry)
+            .unwrap()
+            .into_iter()
+            .find(|game| game.playable_id == id)
+            .unwrap();
+        assert_eq!(game.title, title);
+        assert_eq!(game.release_id, identity.value());
+        assert_eq!(game.rom_identity, identity.value());
+        assert!(game.release_fingerprint.starts_with("sha256:"));
+        assert!(writer.published().unwrap().locations.is_empty());
+    }
+    assert_eq!(artwork_games(root.path(), &registry).unwrap().len(), 3);
 }

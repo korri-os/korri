@@ -27,9 +27,13 @@ fn plugin_source(api: &str) -> String {
         r#"
 export const name = "steamgriddb";
 export const title = "SteamGridDB";
+export const providers = {{ "@korri:steamgriddb": {{ id: "@korri:steamgriddb", title: "Test shop" }} }};
 const API = "{api}";
 const ROLES = ["tile", "poster", "hero", "logo"];
 export const handlers = {{
+  "claims.search": () => [],
+  "claims.details": () => ({{}}),
+  "artifact.resolve-download": () => ({{}}),
   "game-assets.candidates": (input) => {{
     if (Object.keys(input).sort().join() !== "responses,title") {{
       throw new Error("unexpected input");
@@ -116,6 +120,74 @@ impl Fixture {
         fixture
     }
 
+    /// Publish the same library record and ready-cache layout as acquisition.
+    fn acquire(&self, title: &str, bytes: &[u8]) -> String {
+        use crate::discovery::{identify::ContentIdentity, reconcile::AcquiredGame};
+        let identity = ContentIdentity::Hash {
+            sha256: format!("sha256:{}", hex::encode(Sha256::digest(bytes))),
+            sha1: format!("sha1:{}", "a".repeat(40)),
+        };
+        let id = self
+            .discovery
+            .record_acquired(&AcquiredGame {
+                provider: ART_PLUGIN_ID,
+                claim_id: "homebrew",
+                title,
+                system: "gba",
+                identity: &identity,
+            })
+            .unwrap();
+        let cache = super::super::placement::provider_cache(
+            self.readable.path(),
+            ART_PLUGIN_ID,
+            ART_PLUGIN_ID,
+        )
+        .join(super::super::placement::ready_name(identity.value()).unwrap());
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("game.gba"), bytes).unwrap();
+        id
+    }
+
+    fn surface(&self, title: &str) -> korri_surface_treaty::SurfaceGame {
+        let registry = installed_with_art(
+            self.readable.path(),
+            art_package(self.readable.path(), &plugin_source(""), &[], None),
+        );
+        let state =
+            crate::config::snapshot::ConfigSnapshotCoordinator::new(self.readable.path()).reload();
+        let game = crate::launcher::local_games_with_cover_assets(
+            self.readable.path(),
+            Some(self.private.path()),
+            &state,
+            &registry,
+        )
+        .games
+        .into_iter()
+        .find(|game| game.title == title)
+        .expect("local game");
+        let entry = crate::surface::launchables::state::Entry::LocalGame {
+            game,
+            alternatives: Vec::new(),
+        };
+        crate::surface::model::game_from_entry(&entry, std::slice::from_ref(&entry))
+    }
+
+    // Publish a second content release through the real writer, then remove
+    // the old release from the library, as an explicit catalog edit can do.
+    fn replace_acquired_release(&self, title: &str, bytes: &[u8]) {
+        let id = self.acquire(title, bytes);
+        let state =
+            crate::config::snapshot::ConfigSnapshotCoordinator::new(self.readable.path()).reload();
+        let mut library = state.snapshot.library.clone();
+        assert_eq!(library.get_mut(&id).unwrap().releases.len(), 2);
+        library.get_mut(&id).unwrap().releases.remove(0);
+        fs::write(
+            self.readable.path().join("catalog/library.yaml"),
+            serde_yaml::to_string(&BTreeMap::from([("library", library)])).unwrap(),
+        )
+        .unwrap();
+    }
+
     fn secrets(&self) -> PluginSecrets {
         PluginSecrets::new(self.private.path())
     }
@@ -157,11 +229,18 @@ impl Fixture {
         )
     }
 
-    fn games(&self) -> Vec<DiscoveryOwnedGame> {
-        reconcile::owned_discovery_games(self.readable.path(), self.private.path()).unwrap()
+    fn games(&self) -> Vec<ArtworkGame> {
+        reconcile::artwork_games(
+            self.readable.path(),
+            &installed_with_art(
+                self.readable.path(),
+                art_package(self.readable.path(), &plugin_source(""), &[], None),
+            ),
+        )
+        .unwrap()
     }
 
-    fn game(&self, title: &str) -> DiscoveryOwnedGame {
+    fn game(&self, title: &str) -> ArtworkGame {
         self.games()
             .into_iter()
             .find(|game| game.title == title)
@@ -172,7 +251,7 @@ impl Fixture {
         GameAssetRepository::new(self.private.path())
     }
 
-    fn outcome(&self, game: &DiscoveryOwnedGame) -> Option<AttemptOutcome> {
+    fn outcome(&self, game: &ArtworkGame) -> Option<AttemptOutcome> {
         read_attempts(self.private.path(), ART_PLUGIN_ID)
             .unwrap()
             .attempts
@@ -263,7 +342,22 @@ fn assert_plain(report: &ArtworkReport) {
 
 #[test]
 fn a_pass_stores_the_first_candidate_of_each_role_and_the_secret_goes_to_its_host_only() {
-    let fixture = Fixture::new(&["Wario Land 4.gba"]);
+    assert_art_chain(false);
+}
+
+#[test]
+fn an_acquired_game_gets_art_through_the_local_catalog_and_surface_model() {
+    assert_art_chain(true);
+}
+
+fn assert_art_chain(acquired: bool) {
+    let fixture = Fixture::new(if acquired { &[] } else { &["Wario Land 4.gba"] });
+    if acquired {
+        assert_eq!(
+            fixture.acquire("Wario Land 4", b"acquired rom"),
+            "wario-land-4"
+        );
+    }
     fixture.found("wario-land-4", 7);
     // Two tiles: the plugin's order is its preference, so the first is taken.
     fixture.list(
@@ -382,25 +476,7 @@ fn a_pass_stores_the_first_candidate_of_each_role_and_the_secret_goes_to_its_hos
     assert_eq!(fixture.server.received().len(), before);
 
     // The whole chain: what the plugin found is what a surface is given.
-    let registry = installed_with_art(
-        fixture.readable.path(),
-        art_package(fixture.readable.path(), &plugin_source(""), &[], None),
-    );
-    let state =
-        crate::config::snapshot::ConfigSnapshotCoordinator::new(fixture.readable.path()).reload();
-    let listed = crate::launcher::local_games_with_cover_assets(
-        fixture.readable.path(),
-        Some(fixture.private.path()),
-        &state,
-        &registry,
-    )
-    .games
-    .remove(0);
-    let entry = crate::surface::launchables::state::Entry::LocalGame {
-        game: listed,
-        alternatives: Vec::new(),
-    };
-    let surface = crate::surface::model::game_from_entry(&entry, std::slice::from_ref(&entry));
+    let surface = fixture.surface("Wario Land 4");
     let asset_id = |bytes: &[u8]| format!("{}.png", hex::encode(sha2::Sha256::digest(bytes)));
     assert_eq!(
         surface.cover_art_url,
@@ -427,7 +503,19 @@ fn a_pass_stores_the_first_candidate_of_each_role_and_the_secret_goes_to_its_hos
 
 #[test]
 fn no_secret_no_call() {
-    let fixture = Fixture::new(&["Wario Land 4.gba"]);
+    assert_no_secret_no_call(false);
+}
+
+#[test]
+fn an_acquired_game_with_no_secret_makes_no_call() {
+    assert_no_secret_no_call(true);
+}
+
+fn assert_no_secret_no_call(acquired: bool) {
+    let fixture = Fixture::new(if acquired { &[] } else { &["Wario Land 4.gba"] });
+    if acquired {
+        fixture.acquire("Wario Land 4", b"acquired rom");
+    }
     fixture.secrets().clear(ART_PLUGIN_ID).unwrap();
     fixture.found("wario-land-4", 7);
 
@@ -1024,4 +1112,79 @@ fn a_device_with_no_artwork_plugin_runs_no_pass() {
         .join(ART_PLUGIN_ID)
         .join("attempts.json")
         .exists());
+}
+
+#[test]
+fn an_acquired_release_change_drops_the_old_art_and_requests_it_again() {
+    let fixture = Fixture::new(&[]);
+    fixture.acquire("Wario Land 4", b"first release");
+    fixture.candidates(
+        "wario-land-4",
+        serde_json::json!([
+            { "role": "poster", "source": { "url": fixture.cdn("/img/poster.png") } }
+        ]),
+    );
+    fixture.image("/img/poster.png", png(60, 90));
+    assert_eq!(fixture.pass().run().stored, 1);
+    let before = fixture.game("Wario Land 4");
+    assert!(fixture.surface("Wario Land 4").media.is_some());
+
+    fixture.replace_acquired_release("Wario Land 4", b"second release");
+    let after = fixture.game("Wario Land 4");
+    assert_eq!(before.playable_id, after.playable_id);
+    assert_ne!(before.release_id, after.release_id);
+    assert_ne!(before.rom_identity, after.rom_identity);
+    assert_ne!(before.release_fingerprint, after.release_fingerprint);
+    assert!(fixture
+        .repository()
+        .matching_assignment(&owner_identity(&after), GameAssetRole::Poster)
+        .unwrap()
+        .is_none());
+    assert!(fixture.surface("Wario Land 4").media.is_none());
+
+    let report = fixture.pass().run();
+    assert_eq!((report.attempted, report.stored), (1, 1));
+    assert_eq!(fixture.requests_to("/search/wario-land-4").len(), 2);
+    assert_eq!(fixture.outcome(&after), Some(AttemptOutcome::Assigned));
+    assert!(fixture.surface("Wario Land 4").media.is_some());
+}
+
+#[test]
+fn an_acquired_release_that_changes_during_download_does_not_store_stale_art() {
+    let fixture = Fixture::new(&[]);
+    fixture.acquire("Wario Land 4", b"first release");
+    fixture.candidates(
+        "wario-land-4",
+        serde_json::json!([
+            { "role": "poster", "source": { "url": fixture.cdn("/img/poster.png") } }
+        ]),
+    );
+    fixture.server.route(
+        "/img/poster.png",
+        Route::ok("image/png", png(60, 90)).paced(16, Duration::from_millis(30)),
+    );
+    let before = fixture.game("Wario Land 4");
+    let pass = fixture.pass();
+    let running = std::thread::spawn(move || pass.run());
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while fixture.requests_to("/img/poster.png").is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "image download did not start"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    fixture.replace_acquired_release("Wario Land 4", b"second release");
+    let report = running.join().unwrap();
+    assert_eq!((report.attempted, report.stored), (1, 0));
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    assert_eq!(fixture.outcome(&before), None);
+    let after = fixture.game("Wario Land 4");
+    assert!(fixture
+        .repository()
+        .assigned_roles(&owner_identity(&after))
+        .unwrap()
+        .is_empty());
+    fixture.image("/img/poster.png", png(60, 90));
+    assert_eq!(fixture.pass().run().stored, 1);
 }

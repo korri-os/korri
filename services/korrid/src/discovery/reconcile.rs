@@ -695,41 +695,60 @@ pub(crate) fn reject_pending_publication(private_root: &Path) -> Result<(), Disc
     }
 }
 
+/// A local catalog game with a release identity that can own artwork.
+/// The four identity fields retain ADR 0032's folder-game rules.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct DiscoveryOwnedGame {
+pub(crate) struct ArtworkGame {
     pub playable_id: String,
     pub title: String,
     pub release_id: String,
     pub release_fingerprint: String,
     pub rom_identity: String,
 }
-pub(crate) fn owned_discovery_games(
+pub(crate) fn artwork_games(
     readable_root: &Path,
-    private_root: &Path,
-) -> Result<Vec<DiscoveryOwnedGame>, DiscoveryError> {
+    registry: &crate::plugin::PluginRegistry,
+) -> Result<Vec<ArtworkGame>, DiscoveryError> {
     let snapshot = Documents::read(readable_root)?.validate()?;
-    let private = PrivateState::read(private_root)?;
     Ok(snapshot
         .library
         .iter()
         .filter_map(|(id, game)| {
-            // Replacement preserves release history. Enrich the first available
-            // discovery-owned release, not an unavailable historical release.
+            // Use the same release order and sources as Linux routes, without
+            // requiring an installed runner. An old folder release can have
+            // no location after replacement; absence alone is not readiness.
             let key = game.releases.iter().find_map(|release| {
                 let key = release.identity.as_ref()?.value();
-                (key.starts_with("sha256:")
-                    && private.ownership.origins.contains_key(key)
-                    && snapshot.locations.get(key).is_some_and(|locations| {
-                        locations.iter().any(|location| {
-                            matches!(location,
+                let located = snapshot.locations.get(key).is_some_and(|locations| {
+                    locations.iter().any(|location| {
+                        !matches!(location,
                             config::Location::File { discovery: Some(meta), .. }
                             | config::Location::FileSet { discovery: Some(meta), .. }
-                            if meta.missing_since.is_none())
-                        })
-                    }))
+                            if meta.missing_since.is_some())
+                    })
+                });
+                let declared = registry.declared_hash(key).iter().any(|declared| {
+                    matches!(
+                        declared.release.file,
+                        Some(
+                            crate::plugin::DeclaredReleaseFile::Artifact(_)
+                                | crate::plugin::DeclaredReleaseFile::Package(_)
+                        )
+                    )
+                });
+                (located
+                    || declared
+                    || crate::acquisition::acquired_game_content(
+                        readable_root,
+                        registry,
+                        &snapshot,
+                        id,
+                        key,
+                    )
+                    .is_some())
                 .then_some(key)
             })?;
-            Some(DiscoveryOwnedGame {
+            Some(ArtworkGame {
                 playable_id: id.clone(),
                 title: game.title.clone().unwrap_or_default(),
                 release_id: key.into(),
@@ -741,12 +760,12 @@ pub(crate) fn owned_discovery_games(
         })
         .collect())
 }
-pub(crate) fn current_owned_discovery_game(
+pub(crate) fn current_artwork_game(
     readable_root: &Path,
-    private_root: &Path,
-    expected: &DiscoveryOwnedGame,
-) -> Result<Option<DiscoveryOwnedGame>, DiscoveryError> {
-    Ok(owned_discovery_games(readable_root, private_root)?
+    registry: &crate::plugin::PluginRegistry,
+    expected: &ArtworkGame,
+) -> Result<Option<ArtworkGame>, DiscoveryError> {
+    Ok(artwork_games(readable_root, registry)?
         .into_iter()
         .find(|game| game == expected))
 }

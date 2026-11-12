@@ -3087,16 +3087,11 @@ export const games = {{fallout:{{title:"Fallout", releases:{{prepared:{{hashes:[
             }
         }
         // Fingerprints are computed from the current title, not persisted in ownership.
-        let games = crate::discovery::reconcile::owned_discovery_games(root.path(), private.path())
-            .unwrap();
+        let games = crate::discovery::reconcile::artwork_games(root.path(), &registry).unwrap();
         assert!(games.iter().all(|game| {
-            crate::discovery::reconcile::current_owned_discovery_game(
-                root.path(),
-                private.path(),
-                game,
-            )
-            .unwrap()
-            .is_some()
+            crate::discovery::reconcile::current_artwork_game(root.path(), &registry, game)
+                .unwrap()
+                .is_some()
         }));
         let coordinator = crate::discovery::DiscoveryCoordinator::new(root.path(), private.path())
             .with_registry_source(crate::plugin_policy::RegistrySource::Selected(
