@@ -60,6 +60,37 @@ class FirstFrame(unittest.TestCase):
 
 
 class Conditions(unittest.TestCase):
+    def result(self, **facts) -> list[dict]:
+        window = {
+            "latency_ms": {"p50": 20.0, "p95": 22.0}, "capture_misses": 0,
+            "repeated_frames": 0, "late_frames": 0, "torn_frames": 0,
+            "undecodable_frames": 0,
+        }
+        known = {"valid": True, "model": "host A", "viewer": {"model": "host A"}, "max_capture_gaps": 0}
+        return [
+            {
+                "discovered": {**known, **facts},
+                "source_counter": {"windows": [window]},
+                "viewer": {"startup_ms": 900.0},
+            }
+            for _ in range(5)
+        ]
+
+    def test_a_raised_gap_limit_is_another_condition(self):
+        with self.assertRaisesRegex(ValueError, "max_capture_gaps") as refused:
+            judge(self.result(), self.result(max_capture_gaps=3), 5)
+        self.assertIn("same sender, request and devices", str(refused.exception))
+        self.assertEqual(len(judge(self.result(max_capture_gaps=3), self.result(max_capture_gaps=3), 5)), 15)
+
+    def test_a_product_sender_has_no_render_node_and_predates_nothing_for_it(self):
+        product = self.result()
+        fixture = self.result(sender_fixture={"render_node": "/dev/dri/renderD128"})
+        with self.assertRaisesRegex(ValueError, "sender_render_node") as refused:
+            judge(product, fixture, 5)
+        # One has a fixture and one has not: recording again changes nothing.
+        self.assertNotIn("recorded before", str(refused.exception))
+        self.assertIn("same sender, request and devices", str(refused.exception))
+
     def test_refusal_says_when_a_result_predates_a_condition(self):
         def run(viewer_model) -> dict:
             window = {

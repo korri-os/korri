@@ -65,7 +65,14 @@ CONDITIONS = (
     "sunshine_version",
     "encoder",
     "capture_backend",
+    # A result that was recorded with a raised limit for gaps that lose an ID
+    # was valid by a looser rule.
+    "max_capture_gaps",
 )
+# Conditions that every result of today's tool has and an older result lacks.
+# Only for these can one result be older than the condition. A value that is
+# absent for any other condition is a value: a product sender has no render node.
+ADDED_LATER = ("viewer_model",)
 
 
 def conditions(record: dict) -> dict:
@@ -135,7 +142,8 @@ def judge(
         absent = [
             name
             for name in changed
-            if any(row[name] is None for row in every)
+            if name in ADDED_LATER
+            and any(row[name] is None for row in every)
             and len({json.dumps(row[name], sort_keys=True) for row in every if row[name] is not None}) == 1
         ]
         differ = [name for name in changed if name not in absent]
