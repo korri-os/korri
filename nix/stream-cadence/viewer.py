@@ -517,11 +517,12 @@ class Session:
                 return
             time.sleep(GUARD_PERIOD)
 
-    def prepare(self, request: dict) -> dict:
-        if self.compositor:
-            games()
-        if self.root is not None:
-            raise RuntimeError("viewer session already prepared")
+    def check(self) -> None:
+        """Refuse a run that the heat guard cannot watch, or that would start hot.
+
+        The tool asks this before it starts anything on any target, and the
+        agent asks it again when it prepares.
+        """
         zones = thermal_zones()
         unseen = blind(zones, self.limits)
         if unseen:
@@ -534,6 +535,13 @@ class Session:
         hot = too_hot(zones, self.limits, "start_below")
         if hot:
             raise RuntimeError("The device is hot. " + hot + " Let it cool, then run again.")
+
+    def prepare(self, request: dict) -> dict:
+        if self.compositor:
+            games()
+        if self.root is not None:
+            raise RuntimeError("viewer session already prepared")
+        self.check()
         if request.get("test_end_margin") is not None:
             # A test sets the end limit low on purpose, to show that the guard ends a run.
             self.end_margin = int(request["test_end_margin"])
@@ -620,6 +628,9 @@ class Session:
             return self.facts
         if operation == "clock":
             return {"device_ns": time.monotonic_ns()}
+        if operation == "check":
+            self.check()
+            return {}
         if operation == "prepare":
             return self.prepare(request)
         if operation == "close":

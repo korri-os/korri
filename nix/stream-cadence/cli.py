@@ -816,6 +816,9 @@ def view_case(
     try:
         seat = viewer.request("discover")
         facts["viewer"] = seat
+        # Before the sender fixture or anything else starts: a viewer device that
+        # is hot, or that the heat guard cannot read, gets no run.
+        viewer.request("check")
         same_clock = seat["boot_id"] == facts["boot_id"]
         plugin = seat["plugin"]
         if plugin:

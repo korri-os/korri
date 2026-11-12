@@ -266,6 +266,20 @@ class AStopAfterTheLastSampleIsReported(DesktopChip):
             self.assertTrue(session.close()["pass"])
 
 
+class HeatIsCheckedBeforeAnythingStarts(DesktopChip):
+    def test_check_refuses_a_hot_or_unreadable_device_and_makes_nothing(self):
+        session = viewer.Session(str(self.peer))
+        self.assertEqual(session.handle({"operation": "check"}), {})
+        self.read(72222)
+        with self.assertRaisesRegex(RuntimeError, "device is hot.*72.2"):
+            session.handle({"operation": "check"})
+        (self.zone / "temp").write_text("\n")
+        with self.assertRaisesRegex(RuntimeError, "cannot read.*does not start"):
+            session.handle({"operation": "check"})
+        self.assertIsNone(session.root)
+        self.assertTrue(session.close()["pass"])
+
+
 class ADeviceWithNoThermalZone(Device):
     def empty(self) -> None:
         for path in self.zone.iterdir():
