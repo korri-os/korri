@@ -882,24 +882,37 @@ result. An unwatched
 display keeps the mode of the last viewer that shaped it, so check the mode
 before a candidate run. `--allow-different-conditions` overrides the refusal.
 
-Baselines live in `baselines/<device>/results.json`. They are measurement
-data and are not part of the tool's Nix source.
+Baselines live in `baselines/<device>/`. They are measurement data and are
+not part of the tool's Nix source. A baseline of a private pair has one
+directory for each measure.
 
-| Baseline | Recorded | Viewer | What it proves |
+| Baseline | Recorded | Pair | Runs |
 | --- | --- | --- | --- |
-| `baselines/aka` | 2026-11-11, five runs | nixpkgs `moonlight-embedded` 2.7.1, `sdl` system, in the fixture | The session part and network library on aka. Record it again with the published `@korri:moonlight` x86_64 plugin before stage 1 of #391 compares against it. |
+| `baselines/aka/private-pair/base/results.json` | 2026-11-12, tool at `a2bfded2e` | Sender fixture and viewer fixture on aka, no game live, load about 1 | 5 valid of 5 |
+| `baselines/aka/private-pair/queue/results.json` | 2026-11-12, tool at `a2bfded2e` | The same, with `--queue-measure` | 5 valid of 5 |
 
-That baseline must be recorded again before any comparison. It predates the
-condition `viewer_model`, so `verdict` refuses it against every result of
-today's tool. It also predates the gap rule above and
-three things that now run on the measured device during a measure: the check
-for a `korri-game-*` unit (one `systemctl list-units` every 2 s), the
-thermal reads of the heat guard, and the guard's thread.
+The viewer in both is the fixture viewer: nixpkgs `moonlight-embedded` 2.7.1
+with its `sdl` system. These baselines prove the measure and give stage 1 of
+#391 its first comparison for the session part on aka. They are not a
+baseline of the published `@korri:moonlight` plugin, and they say nothing
+about a handheld's picture path.
 
-In that baseline the viewer's delay grows in steps of one refresh period
-during the first 20 seconds and then stays near 51.5 ms, about three periods
-above the first frames. The viewer queues frames and never drops one to catch
-up. This is the fixture viewer's own behaviour, not a fault of the measure.
+| Metric | Base, range of the five runs | Queue, range of the five runs |
+| --- | --- | --- |
+| Sender presentation to display, p50 by window | 15.4 to 15.9 ms | 59.1 to 61.9 ms |
+| Dropped frames | 0 | 213 to 236, the sender's floor, not judged |
+| Viewer CPU seconds each second | 1.253 to 1.260 | 1.302 to 1.305 |
+| Startup | 754 to 803 ms | 770 to 803 ms |
+| Capture gaps, stalls, viewer exits | 0 | 0 |
+
+In the queue baseline the delay is about two and a half refresh periods above
+the base delay in every window. The fixture viewer queues frames and never
+drops one to catch up. This is that viewer's own behaviour, not a fault of
+the measure.
+
+An earlier baseline against the product sender, recorded on 2026-11-11, is
+removed. It predated the gap rule, the heat guard and the conditions that
+`verdict` compares.
 
 ## Pairing and cleanup
 
