@@ -1365,6 +1365,13 @@ impl UpstreamRegistry {
                         self.set_viewer_confirmed(&selected, false);
                         return Err(UpstreamError::SelectedRemoteSessionReplaced);
                     }
+                    // Stopping is a normal observation, not a request to
+                    // recover the viewer. Retain the exact selection without
+                    // restarting, focusing or resizing a viewer for a dying
+                    // game. Authoritative absence below retires it normally.
+                    if active.phase.as_deref() == Some("stopping") {
+                        return Ok(status);
+                    }
                     if selected.viewer.is_some() {
                         let phase = RecoveredHolderPhase::parse(active.phase.as_deref())?;
                         self.recover_viewer(&selected, phase).await?;
@@ -4480,7 +4487,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn stopping_recovery_has_zero_viewer_effects() {
+    async fn stopping_observation_has_zero_viewer_effects() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
             .prepare_stream("game", None)
@@ -4496,13 +4503,51 @@ command = ["native-game"]
         .await;
 
         assert!(matches!(
-            registry.session_status().await,
-            Err(UpstreamError::Tagged { code, message })
-                if code == "NativeViewerRecoveryIncomplete"
-                    && message.contains("stopping")
+            registry.session_status().await.unwrap(),
+            UpstreamSessionStatus::SessionStatus { active: Some(active) }
+                if active.phase.as_deref() == Some("stopping")
         ));
         assert!(viewer.calls().is_empty());
         assert_eq!(registry.selected().unwrap().launch_id, state.launch_id);
+    }
+
+    #[tokio::test]
+    async fn pending_native_stop_observes_stopping_until_the_exact_holder_ends() {
+        let (native_url, state) = exact_native_server(true).await;
+        let viewer = TestLinuxStreamViewer::default();
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
+            .with_linux_viewer(Arc::new(viewer.clone()));
+        let prepared = registry.prepare_stream("game", None).await.unwrap();
+        let id = &prepared.session.launch_id;
+        assert!(matches!(
+            registry.session_stop(Some(id), false).await.unwrap(),
+            UpstreamSessionStop::StopPending { .. }
+        ));
+        state.set_phase("stopping");
+        let before = viewer.calls();
+        for _ in 0..2 {
+            assert!(matches!(registry.session_status().await.unwrap(),
+                UpstreamSessionStatus::SessionStatus { active: Some(active) }
+                    if active.launch_id == *id && active.phase.as_deref() == Some("stopping")));
+            assert_eq!(registry.selected().unwrap().launch_id, *id);
+            assert_eq!(viewer.calls(), before);
+        }
+        *state.active_phase.lock().unwrap() = None;
+        assert!(matches!(
+            registry.session_status().await.unwrap(),
+            UpstreamSessionStatus::SessionStatus { active: None }
+        ));
+        assert!(registry.selected().is_none());
+        let ended = viewer.calls();
+        assert_eq!(ended.last().unwrap().action, LinuxViewerAction::Stop);
+        assert_eq!(ended.last().unwrap().launch_id, *id);
+        assert_eq!(
+            ended
+                .iter()
+                .filter(|call| call.action == LinuxViewerAction::Stop)
+                .count(),
+            1
+        );
     }
 
     #[tokio::test]
