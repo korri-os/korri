@@ -17,6 +17,18 @@ pub(super) struct Route {
     pub pace: Option<(usize, std::time::Duration)>,
     /// Send no Content-Length: the body ends when the connection closes.
     pub unsized_body: bool,
+    /// Repeat the request's own `Authorization` header in the response, as a
+    /// debugging endpoint or an error page does.
+    pub echo_authorization: Option<Echo>,
+}
+
+/// Where a route repeats the request's `Authorization` header.
+#[derive(Clone, Copy)]
+pub(super) enum Echo {
+    /// In a response header.
+    Header,
+    /// In a JSON body, which replaces the route's own body.
+    Body,
 }
 
 impl Route {
@@ -27,6 +39,7 @@ impl Route {
             body: body.into(),
             pace: None,
             unsized_body: false,
+            echo_authorization: None,
         }
     }
     pub fn unsized_body(mut self) -> Self {
@@ -47,7 +60,12 @@ impl Route {
             body: Vec::new(),
             pace: None,
             unsized_body: false,
+            echo_authorization: None,
         }
+    }
+    pub fn echoing(mut self, echo: Echo) -> Self {
+        self.echo_authorization = Some(echo);
+        self
     }
     pub fn header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.into(), value.into()));
@@ -94,6 +112,8 @@ impl HttpFixture {
                     let method = line.split_whitespace().next().unwrap_or("").to_owned();
                     let path = line.split_whitespace().nth(1).unwrap_or("/").to_owned();
                     let mut headers = Vec::new();
+                    // The value exactly as it arrived, for a route that echoes it.
+                    let mut authorization: Option<String> = None;
                     loop {
                         let mut header = String::new();
                         if reader.read_line(&mut header).is_err()
@@ -101,6 +121,11 @@ impl HttpFixture {
                             || header.is_empty()
                         {
                             break;
+                        }
+                        if let Some((name, value)) = header.trim_end().split_once(':') {
+                            if name.eq_ignore_ascii_case("authorization") {
+                                authorization = Some(value.trim().to_owned());
+                            }
                         }
                         headers.push(header.trim_end().to_ascii_lowercase());
                     }
@@ -119,13 +144,30 @@ impl HttpFixture {
                         headers,
                         body,
                     });
-                    let route = routes.lock().unwrap().get(&path).cloned().unwrap_or(Route {
+                    let mut route = routes.lock().unwrap().get(&path).cloned().unwrap_or(Route {
                         status: 404,
                         headers: Vec::new(),
                         body: b"missing".to_vec(),
                         pace: None,
                         unsized_body: false,
+                        echo_authorization: None,
                     });
+                    match route.echo_authorization {
+                        Some(Echo::Header) => route.headers.push((
+                            "X-Request-Authorization".into(),
+                            authorization.clone().unwrap_or_default(),
+                        )),
+                        Some(Echo::Body) => {
+                            route.body = serde_json::json!({
+                                "success": true,
+                                "data": [],
+                                "request": { "headers": { "Authorization": authorization } },
+                            })
+                            .to_string()
+                            .into_bytes()
+                        }
+                        None => {}
+                    }
                     let mut head = format!("HTTP/1.1 {} Status\r\n", route.status);
                     let declares_length = route
                         .headers

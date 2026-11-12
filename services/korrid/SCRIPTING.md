@@ -642,6 +642,13 @@ only while the next host is still `credentialHost`; once a redirect leaves
 that host, the request never carries the secret again. A request that starts
 on another host never gains it. The game download and the artwork image
 download never carry it. A plugin still cannot set `authorization` itself.
+korrid checks every response of a turn that has a secret before a handler
+sees it: if a header, the body or the final address repeats the secret, as a
+host that echoes the request's `Authorization` header does, korrid does not
+pass that response on, the operation fails as `ProviderFailed` with a
+diagnostic that names the host and never the value, and the artwork pass
+records the game as `no-match`, so it is not asked about again until the
+secret changes.
 
 Today korrid supplies the secret to the turns of `game-assets.candidates`
 (ADR 0032). The turns of an acquisition provider carry no secret: no provider
@@ -1154,7 +1161,7 @@ the release id, the release fingerprint and the ROM identity:
 | Event | Outcome | Cleared by |
 |---|---|---|
 | An image was stored, or the game held images and nothing failed | `assigned` | never |
-| The plugin returned no candidate | `no-match` | a set or a clear of the plugin's secret |
+| The plugin returned no candidate, or a response repeated the plugin's secret | `no-match` | a set or a clear of the plugin's secret |
 | `ProviderUnreachable`, `ProviderFailed`, a failed download | `transient` | a rescan |
 | korrid refused the bytes and stored nothing | `asset-rejected` | a set or a clear of the plugin's secret |
 | The game changed during the pass | not recorded | |

@@ -179,7 +179,8 @@ struct AttemptRecord {
 enum AttemptOutcome {
     /// An image was stored. Never cleared.
     Assigned,
-    /// The plugin found nothing. Cleared by a secret change.
+    /// The plugin found nothing, or a response repeated the plugin's secret
+    /// and korrid kept it from the plugin. Cleared by a secret change.
     NoMatch,
     /// The site or the download failed. Cleared by a rescan.
     Transient,
@@ -579,6 +580,21 @@ impl ArtworkPass {
         let candidates = match self.candidates(&plugin.context, &game.title).await {
             Ok(candidates) => candidates,
             Err(ProviderError::Unauthorized) => return GameOutcome::Unauthorized,
+            Err(ProviderError::CredentialRepeated { host }) => {
+                // The site, not the network, is at fault, and it will be at
+                // the next rescan too. The game is on record until the
+                // secret changes, so korrid does not send the secret to
+                // that address again for this game at every rescan.
+                report.diagnostics.push(diagnostic(
+                    "ProviderFailed",
+                    &format!(
+                        "{host} repeated the key of {} in a response. Korri did not give that response to the plugin.",
+                        plugin.id
+                    ),
+                    Some(playable_id),
+                ));
+                return GameOutcome::Recorded(AttemptOutcome::NoMatch);
+            }
             Err(error) => {
                 // The fixed copy of the provider failure: no site text.
                 let failure = error.rpc();

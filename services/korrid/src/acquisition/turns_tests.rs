@@ -2,7 +2,7 @@
 use super::{
     claims::DownloadResolution,
     download::DownloadEngine,
-    http_fixture::{HttpFixture, Route},
+    http_fixture::{Echo, HttpFixture, Route},
     turns::{self, ProviderContext, ProviderError},
     Failure,
 };
@@ -737,4 +737,111 @@ async fn a_plugin_with_a_secret_still_cannot_set_authorization_and_no_failure_na
             assert!(!text.contains(SECRET), "{text}");
         }
     }
+}
+
+/// ADR 0034: the plugin's code never receives the secret "in a response". A
+/// host that repeats the request's `Authorization` header would hand it
+/// over, so korrid keeps such a response from the handler.
+#[tokio::test]
+async fn a_response_that_repeats_the_secret_is_never_given_to_the_plugin() {
+    let server = HttpFixture::start([
+        ("/plain", Route::ok("application/json", r#"{"ok":true}"#)),
+        (
+            "/echo-header",
+            Route::ok("application/json", "{}").echoing(Echo::Header),
+        ),
+        (
+            "/echo-body",
+            Route::ok("application/json", "{}").echoing(Echo::Body),
+        ),
+        // Only the redirect's target, on the same host, repeats it.
+        ("/moved", Route::redirect("/echo-body")),
+    ]);
+    // The site puts the value in the address it redirects to, and another
+    // declared host has a page that holds it.
+    server.route(
+        "/moved-with-key",
+        Route::redirect(&format!("/plain?key={SECRET}")),
+    );
+    server.route(
+        &format!("/plain?key={SECRET}"),
+        Route::ok("text/plain", "fine"),
+    );
+    server.route(
+        "/leaked",
+        Route::ok("text/plain", format!("the key is {SECRET}")),
+    );
+    // A handler that, if it were ever called with a response, would hand
+    // everything it was given back as the claim's title.
+    let asking = |urls: &[String]| {
+        format!(
+            "{{'claims.search': (i) => i.responses.length ? [{claim}] : ({{_tag: 'HttpRequests', requests: [{requests}]}})}}",
+            claim = claim("x", "JSON.stringify(i.responses)"),
+            requests = urls
+                .iter()
+                .map(|url| format!("{{url: '{url}'}}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+    let own = |path: &str| server.url(HOST, path);
+
+    // A normal response from the secret's host still passes.
+    let (context, _private) = context_with_secret(&asking(&[own("/plain")]));
+    let claims = turns::search(&engine(), &context, "q").await.unwrap();
+    assert!(
+        claims[0].title.contains(r#"{\"ok\":true}"#),
+        "{}",
+        claims[0].title
+    );
+    assert!(carried_secret(server.received().last().unwrap()));
+
+    for (urls, answering_host, real_echo) in [
+        (vec![own("/echo-header")], HOST, true),
+        (vec![own("/echo-body")], HOST, true),
+        (vec![own("/moved")], HOST, true),
+        (vec![own("/moved-with-key")], HOST, false),
+        (
+            vec![server.url("other.test", "/leaked")],
+            "other.test",
+            false,
+        ),
+        // One bad response ends the turn: the good one is not passed on either.
+        (vec![own("/plain"), own("/echo-header")], HOST, true),
+    ] {
+        let (context, _private) = context_with_secret(&asking(&urls));
+        let error = turns::search(&engine(), &context, "q").await.unwrap_err();
+        // The handler was not called again: its answer would have been `Ok`.
+        assert_eq!(
+            error,
+            ProviderError::CredentialRepeated {
+                host: answering_host.into()
+            },
+            "{urls:?}"
+        );
+        let failure = error.rpc();
+        assert_eq!(failure.code, "ProviderFailed");
+        for text in [format!("{error:?}"), failure.message] {
+            assert!(!text.contains(SECRET), "{text}");
+        }
+        if real_echo {
+            // A real echo: the response held the secret because the request did.
+            assert!(
+                carried_secret(server.received().last().unwrap()),
+                "{urls:?}"
+            );
+        }
+    }
+
+    // The same echoing page is harmless to a plugin with no secret: there is
+    // nothing to repeat.
+    let mut plain = context_with_secret(&asking(&[own("/echo-body")])).0;
+    plain.credential = None;
+    let claims = turns::search(&engine(), &plain, "q").await.unwrap();
+    assert!(
+        claims[0].title.contains("Authorization"),
+        "{}",
+        claims[0].title
+    );
+    assert!(!claims[0].title.contains(SECRET));
 }

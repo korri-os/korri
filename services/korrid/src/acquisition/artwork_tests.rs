@@ -3,7 +3,7 @@
 use super::{
     super::{
         download::DownloadEngine,
-        http_fixture::{HttpFixture, Received, Route},
+        http_fixture::{Echo, HttpFixture, Received, Route},
     },
     *,
 };
@@ -453,6 +453,67 @@ fn no_secret_no_call() {
         fixture.outcome(&fixture.game("Wario Land 4")),
         Some(AttemptOutcome::NoMatch)
     );
+}
+
+/// A site that repeats the request's `Authorization` header in its answer
+/// would hand the secret to the plugin. korrid keeps that answer from the
+/// handler, says which host did it, and does not ask again at every rescan.
+#[test]
+fn a_site_that_repeats_the_secret_is_kept_from_the_plugin_and_is_not_asked_at_every_rescan() {
+    let fixture = Fixture::new(&["Anguna.gba", "Wario Land 4.gba"]);
+    fixture.candidates(
+        "anguna",
+        serde_json::json!([{ "role": "tile", "source": { "url": fixture.cdn("/img/a.png") } }]),
+    );
+    fixture.image("/img/a.png", png(8, 8));
+    for (echo, title) in [(Echo::Body, "Wario Land 4"), (Echo::Header, "Wario Land 4")] {
+        fixture.server.route(
+            "/search/wario-land-4",
+            Route::ok("application/json", r#"{"id":7}"#).echoing(echo),
+        );
+        let report = fixture.pass().run();
+
+        // The echo was real: the request carried the secret.
+        let search = fixture.requests_to("/search/wario-land-4");
+        assert!(carried_secret(search.last().unwrap()));
+        // One search and no second turn: the handler never got that answer,
+        // so it never asked for the lists of game 7.
+        assert!(fixture.requests_to("/tile/7").is_empty());
+        assert_eq!(codes(&report), ["ProviderFailed"]);
+        let diagnostic = &report.diagnostics[0];
+        assert_eq!(
+            diagnostic.message,
+            format!(
+                "{API} repeated the key of {ART_PLUGIN_ID} in a response. Korri did not give that response to the plugin."
+            )
+        );
+        assert!(!format!("{diagnostic:?}").contains(SECRET));
+        // On record until the secret changes: a rescan does not ask again.
+        let game = fixture.game(title);
+        assert_eq!(fixture.outcome(&game), Some(AttemptOutcome::NoMatch));
+        fixture.pass().clear_retryable_attempts();
+        let before = fixture.server.received().len();
+        assert_eq!(fixture.pass().run().attempted, 0);
+        assert_eq!(fixture.server.received().len(), before);
+        // A normal answer from the same host in the same pass still worked.
+        assert_eq!(
+            fixture.outcome(&fixture.game("Anguna")),
+            Some(AttemptOutcome::Assigned)
+        );
+        // Nothing korrid wrote holds the secret.
+        let attempts = fs::read_to_string(
+            fixture
+                .private
+                .path()
+                .join(ART_PLUGIN_ID)
+                .join("attempts.json"),
+        )
+        .unwrap();
+        assert!(!attempts.contains(SECRET));
+        // A set or a clear of the secret lets the next pass ask again.
+        fixture.pass().secret_changed(ART_PLUGIN_ID).unwrap();
+        assert_eq!(fixture.outcome(&game), None);
+    }
 }
 
 #[test]

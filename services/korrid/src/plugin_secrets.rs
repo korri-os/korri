@@ -114,6 +114,7 @@ impl PluginSecrets {
         Ok(Some(PluginCredential {
             host: host.to_owned(),
             header: bearer(&secret)?,
+            secret,
         }))
     }
 
@@ -177,13 +178,18 @@ fn bearer(secret: &str) -> Result<reqwest::header::HeaderValue, PluginSecretErro
 }
 
 /// A plugin's secret with the one declared host that receives it. It has no
-/// `Debug` and no accessor for the value: the only thing it gives is the
-/// header for a request to that host.
+/// `Debug` and no accessor for the value. It gives the header for a request
+/// to that host, says whether a text repeats the secret, and takes the secret
+/// out of a text. Nothing else can be done with it.
 #[derive(Clone)]
 pub(crate) struct PluginCredential {
     host: String,
     header: reqwest::header::HeaderValue,
+    secret: String,
 }
+
+/// What stands where a secret was, in a text korrid may show or log.
+const REDACTED: &str = "<redacted>";
 
 impl PluginCredential {
     /// The `Authorization` header for a request to `url`, or `None` when
@@ -204,6 +210,24 @@ impl PluginCredential {
         url: &url::Url,
     ) -> Option<reqwest::header::HeaderValue> {
         self.is_for(url).then(|| self.header.clone())
+    }
+
+    /// Whether `text` holds the secret: its exact value, which is also what
+    /// its `Bearer <value>` form holds. A host that repeats a request's
+    /// `Authorization` header in its answer would otherwise hand the secret
+    /// to the plugin's code (ADR 0034: never "in a response").
+    pub(crate) fn appears_in(&self, text: &str) -> bool {
+        text.contains(self.secret.as_str())
+    }
+
+    /// `text` without the secret, for a failure text or a log line that is
+    /// built from something a site or a plugin wrote.
+    pub(crate) fn redact(&self, text: &str) -> String {
+        if self.appears_in(text) {
+            text.replace(self.secret.as_str(), REDACTED)
+        } else {
+            text.to_owned()
+        }
     }
 
     fn is_for(&self, url: &url::Url) -> bool {
@@ -430,6 +454,40 @@ mod tests {
             "http://WWW.SteamGridDB.com:8443/x",
         ] {
             assert!(credential.authorization(&url(plain)).is_none(), "{plain}");
+        }
+    }
+
+    #[test]
+    fn a_credential_finds_its_secret_in_a_text_and_takes_it_out() {
+        let private = tempfile::tempdir().unwrap();
+        let secrets = PluginSecrets::new(private.path());
+        secrets.set(PLUGIN, "very-secret-value").unwrap();
+        let credential = secrets
+            .credential(PLUGIN, "www.steamgriddb.com")
+            .unwrap()
+            .unwrap();
+        // The exact value, and the form korrid sends it in.
+        for repeated in [
+            "very-secret-value",
+            "Bearer very-secret-value",
+            r#"{"headers":{"Authorization":"Bearer very-secret-value"}}"#,
+            "authorization: bearer very-secret-value",
+            "https://www.steamgriddb.com/?key=very-secret-value&x=1",
+        ] {
+            assert!(credential.appears_in(repeated), "{repeated}");
+            let redacted = credential.redact(repeated);
+            assert!(!redacted.contains("very-secret-value"), "{redacted}");
+            assert!(redacted.contains("<redacted>"), "{redacted}");
+        }
+        for other in [
+            "",
+            "Bearer another-value",
+            "very-secret",
+            "VERY-SECRET-VALUE",
+            r#"{"success":true,"data":[]}"#,
+        ] {
+            assert!(!credential.appears_in(other), "{other}");
+            assert_eq!(credential.redact(other), other);
         }
     }
 

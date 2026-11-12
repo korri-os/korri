@@ -188,6 +188,11 @@ pub(super) enum ProviderError {
     /// (ADR 0032, section 2). The operation ends: the handler is not called
     /// again with an answer that only says the secret is wrong.
     Unauthorized,
+    /// A response repeated the plugin's secret, in a header, in its body or
+    /// in its final address (ADR 0034: the plugin's code never receives the
+    /// secret "in a response"). The response is not given to the handler and
+    /// the operation ends. `host` is the host that answered, never the value.
+    CredentialRepeated { host: String },
 }
 
 impl ProviderError {
@@ -200,6 +205,10 @@ impl ProviderError {
             Self::Failed(_) | Self::Unauthorized => (
                 "ProviderFailed",
                 "The provider sent an answer Korri cannot use. Please retry later.",
+            ),
+            Self::CredentialRepeated { .. } => (
+                "ProviderFailed",
+                "The provider repeated the plugin's key in its answer. Korri did not use that answer.",
             ),
         };
         crate::RpcFailure {
@@ -234,9 +243,18 @@ pub(super) async fn run<T>(
     input: impl Fn(Vec<PluginHttpResponse>) -> serde_json::Result<String>,
     decode: impl Fn(&str) -> serde_json::Result<Turn<T>>,
 ) -> Result<T, ProviderError> {
+    // A failure text can hold what a site or the plugin wrote. With the
+    // check below none of it can hold the secret; it is taken out all the
+    // same before the text can reach a log.
+    let failed = |text: String| {
+        ProviderError::Failed(match &context.credential {
+            Some(credential) => credential.redact(&text),
+            None => text,
+        })
+    };
     let mut responses = Vec::new();
     for call in 1..=MAX_CALLS {
-        let input = input(responses.clone()).map_err(|e| ProviderError::Failed(e.to_string()))?;
+        let input = input(responses.clone()).map_err(|e| failed(e.to_string()))?;
         if input.len() > MAX_INPUT_BYTES {
             return Err(ProviderError::Failed("handler input exceeds 4 MiB".into()));
         }
@@ -251,9 +269,9 @@ pub(super) async fn run<T>(
         })
         .await
         .map_err(|_| ProviderError::Failed("handler call was interrupted".into()))?
-        .map_err(|failure| ProviderError::Failed(failure.to_string()))?;
+        .map_err(|failure| failed(failure.to_string()))?;
         let requests = match decode(&output)
-            .map_err(|e| ProviderError::Failed(format!("invalid {operation} output: {e}")))?
+            .map_err(|e| failed(format!("invalid {operation} output: {e}")))?
         {
             Turn::Result(result) => return Ok(result),
             Turn::Requests(requests) => requests,
@@ -289,6 +307,13 @@ pub(super) async fn run<T>(
             if response.credential_sent && response.status == 401 {
                 return Err(ProviderError::Unauthorized);
             }
+            if let Some(credential) = &context.credential {
+                if repeats_secret(credential, &response) {
+                    return Err(ProviderError::CredentialRepeated {
+                        host: answering_host(&response.url),
+                    });
+                }
+            }
             responses.push(PluginHttpResponse {
                 status: response.status,
                 ok: (200..300).contains(&response.status),
@@ -299,6 +324,31 @@ pub(super) async fn run<T>(
         }
     }
     unreachable!("the loop returns by the fourth call")
+}
+
+/// Whether any part of a response that a handler would be given holds the
+/// plugin's secret: a header name or value, the body text, or the final
+/// address after redirects. Every response of the turn is checked, also one
+/// from a host that was not sent the secret.
+fn repeats_secret(
+    credential: &crate::plugin_secrets::PluginCredential,
+    response: &super::download::TextResponse,
+) -> bool {
+    credential.appears_in(&response.text)
+        || credential.appears_in(&response.url)
+        || response
+            .headers
+            .iter()
+            .any(|(name, value)| credential.appears_in(name) || credential.appears_in(value))
+}
+
+/// The host of a response's final address, for a diagnostic. An address is
+/// never copied whole: its path or query may be what repeated the secret.
+fn answering_host(address: &str) -> String {
+    url::Url::parse(address)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "the provider".to_owned())
 }
 
 struct Admitted {
