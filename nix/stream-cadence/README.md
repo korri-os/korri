@@ -549,8 +549,11 @@ The product sender's agent (`device.py`) has the same layout: `motion.log`
 is the agent's, in the run directory, and the frame-ID source has `home`
 for its own files. Before, that root agent gave the whole run directory to
 the compositor's user and then wrote and read `motion.log` there through
-calls that follow a link. `run` and `view` against a product sender have
-not run since this change; a test with no product covers the files only.
+calls that follow a link. One `run` and one `view` against the product
+sender ran on aka after this change (20 scored seconds each, from the build
+of `bb7f93da0`): both valid at 60.000 new frames each second. During them
+the run directory was `root:root 0755`, `motion.log` `root:root 0644`,
+`home` `korri:korri 0700`, and the source's working directory was `home`.
 
 **Cleanup.** Each child of the agent ends when the agent dies, however it
 dies. Each program of the fixture starts in a session of its own. `close`
