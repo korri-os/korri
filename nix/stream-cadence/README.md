@@ -419,8 +419,30 @@ sender with a vblank counter is scored by sequence, as before.
 and no root. As a sender, `local` can host the fixture only. As a viewer,
 `local` runs the viewer fixture as the calling user with a sway from nixpkgs,
 and reads no Korri unit, even when Korri runs on that host. A viewer on
-another device reaches the sender through `--viewer-stream-host`. The tool
-does not change a firewall.
+another device reaches the sender at the far end of its agent's SSH
+connection, or at `--viewer-stream-host`. The tool does not change a
+firewall.
+
+**On a Korri device, beside the product.** With an SSH target the agent is
+root, as for a product measure. Then:
+
+- Nothing of the fixture runs as root. The compositor, the source, Sunshine
+  and `swaymsg` take the product compositor's user, with only the
+  supplementary groups that own a render node. As root on a host with no
+  `korri-compositor` the fixture refuses.
+- The fixture makes no input device. Stock Sunshine makes a virtual mouse
+  and keyboard when it starts, and a touch screen and a pen tablet for each
+  client, all through `/dev/uinput`; the product's input stack would see
+  them. The fixture does not start where its user can open `/dev/uinput`.
+  Its Sunshine has `mouse`, `keyboard` and `controller` off. A new entry
+  under `/dev/input` during a run ends the run and fails the restore check
+  (`restore.new_input_devices`), whoever made it.
+- A `korri-game-*` unit refuses the start and ends a run.
+- The tool itself asks the fixture's Sunshine nothing. With both targets on
+  one device the stream uses loopback, which a device's firewall admits.
+- The product's Sunshine, compositor and korrid are not read by the
+  sender's agent, except for the compositor's user. The viewer's agent
+  compares the compositor's PID as before.
 
 **Cleanup.** Each child of the agent ends when the agent dies, however it
 dies. `close` stops the source, Sunshine and the compositor, then looks for
@@ -439,7 +461,44 @@ refuses to compare a fixture result with a product-sender result: the
 capture backend and the display mode differ. It also refuses two fixture
 results from different sender hosts, render nodes or viewer devices.
 
-Not tested yet: the fixture on an SSH target, and on aarch64.
+Not tested yet: the fixture on aarch64, and two encode sessions at one time
+on one graphics card.
+
+**The private pair on aka, 2026-11-12.** Sender fixture and viewer fixture
+both on aka (`view --sender root@aka --sender-fixture --viewer root@aka`), at
+the defaults: 1920x1080, a request of 60, 60 scored seconds. The fixture's
+Sunshine started beside the product's and encoded with the AMD card's VAAPI
+H.264 encoder, as the user `korri`. Two sets of five runs:
+
+| | Set A | Set B |
+| --- | --- | --- |
+| Valid runs | 5 of 5 | 5 of 5 |
+| `source_misses`, each run | 0 | 0 |
+| Dropped frames, each run | 0 | 0 |
+| Sender presentation interval, p50 | 17.18 to 17.21 ms | 17.17 to 17.21 ms |
+| Sender presentation interval, p99 | 17.55 to 17.59 ms | 17.54 to 17.60 ms |
+| Longest sender interval | 17.7 to 23.0 ms | 17.8 to 19.8 ms |
+| Sender intervals above 1.5 periods | 0 | 0 |
+| Latency p50 | 15.59 to 16.14 ms | 15.55 to 16.27 ms |
+| Viewer CPU, CPU seconds each second | 1.26 to 1.30 | 1.25 to 1.30 |
+| `startup_ms` | 675 to 802 | 673 to 703 |
+| aka's load before and after | 0.30 and 2.22 | 2.04 and 1.53 |
+
+`verdict` between the two sets says `equal` for each measured number. The
+sender is steady on aka: of 44 453 presentation intervals none is above 1.5
+periods. On the build host the same fixture had 29 such intervals in 21 800
+and needed four attempts for each set. The 138 to 149 repeated and late
+frames of each run are the floor of the fixture against the viewer
+fixture's 60.5 output frames each second.
+
+The product did not notice: the main PIDs and start times of
+`korri-sunshine`, `korri-compositor` and `korrid` were the same before and
+after, `/dev/input` had the same 27 entries through every run, and
+`korri-sunshine` and `korri-compositor` logged nothing in that time. The
+product's Sunshine had no stream then, so two encode sessions at one time
+are not tested. aka has no thermal zone, so these runs had no heat guard.
+These sets are evidence, not a baseline: the viewer is the nixpkgs viewer in
+the fixture, not the product's.
 
 **First proof, 2026-11-11.** Both fixtures ran on the build host (an XPS 17
 9710) at 1280x720 with a request of 60 and 20 scored seconds. Sunshine used
