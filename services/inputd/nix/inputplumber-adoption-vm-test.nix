@@ -72,6 +72,7 @@ pkgs.testers.runNixOSTest {
         actionGid = 1000;
       };
     };
+    systemd.services.inputplumber.environment.LOG_LEVEL = lib.mkForce "debug";
     systemd.services.korri-inputd.wantedBy = lib.mkForce [ ];
     systemd.services.adoption-profile = {
       wantedBy = [ "multi-user.target" ];

@@ -22,9 +22,16 @@ async fn main() {
     );
     let profile = std::env::args().nth(1).expect("immutable profile path");
     let source = DbusSignalSource::system().await.unwrap();
+    let mut last = String::new();
     loop {
-        let status = source.ensure_capture_profiles(Path::new(&profile)).await;
-        println!("{status:?}");
+        let status = format!(
+            "{:?}",
+            source.ensure_capture_profiles(Path::new(&profile)).await
+        );
+        if status != last {
+            println!("{status}");
+            last = status;
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
