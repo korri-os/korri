@@ -293,13 +293,15 @@ By the gap rule of "Capture gaps", the RG353M run stays invalid: 14 of the
 
 ### The heat guard
 
-A viewer measure can heat a passive device. The viewer's agent guards the
-viewer side of every run. It reads each thermal zone and its trip points from
-`/sys/class/thermal` at run time. No temperature of a device is in the tool.
-**The sender's agent has no guard yet**: a hot host that runs the sender
-fixture encodes unguarded.
+A viewer measure can heat a passive device, and a hot host must not get more
+load from this tool. The viewer's agent guards the viewer side of every run,
+and the sender's agent guards the sender fixture with the same rules. Each
+reads the thermal zones and their trip points from `/sys/class/thermal` at
+run time. No temperature of a device is in the tool. The product sender
+(`device.py`) starts nothing but the source and has no guard.
 
-The tool's own rules, in `viewer.py`:
+The tool's own rules, in `heat.py` for both agents and in `viewer.py` for the
+viewer alone:
 
 | Rule | Limit |
 | --- | --- |
@@ -322,11 +324,14 @@ A zone with readable trip points and no critical one is recorded and not
 judged. A trip point at or below zero is a placeholder and counts as absent.
 
 The tool asks the viewer's agent for the start rules before it starts
-anything, the sender fixture included. A thread of the agent then looks at a
-running viewer four times each second and stops it by itself, so a slow host
-or link cannot delay the stop. The run ends as invalid with the reason, also
-when the stop comes after the last sample, and cleanup runs as after any
-run.
+anything, the sender fixture included. A thread of each agent then looks
+four times each second and stops what that agent runs by itself: the viewer,
+or the fixture's Sunshine, compositor and source. A slow host or link cannot
+delay the stop. The run ends as invalid with the reason, also when the stop
+comes after the last sample, and cleanup runs as after any run.
+
+A hot build host is therefore refused as viewer and as sender. That is
+intended, and a measure that needs that host waits until it is cooler.
 
 Each viewer start writes its own `viewer.log`; the log of the locating start
 is kept as `viewer.earlier.log`. Each viewer sample holds `thermal` (a list:
@@ -486,8 +491,8 @@ H.264 encoder, as the user `korri`. Two sets of five runs:
 
 `verdict` between the two sets says `equal` for each measured number. The
 sender is steady on aka: of 44 453 presentation intervals none is above 1.5
-periods. On the build host the same fixture had 29 such intervals in 21 800
-and needed four attempts for each set. The 138 to 149 repeated and late
+periods. On the hot build host the same fixture had 29 such intervals in
+21 800 and needed four attempts for each set. The 138 to 149 repeated and late
 frames of each run are the floor of the fixture against the viewer
 fixture's 60.5 output frames each second.
 
@@ -500,28 +505,44 @@ are not tested. aka has no thermal zone, so these runs had no heat guard.
 These sets are evidence, not a baseline: the viewer is the nixpkgs viewer in
 the fixture, not the product's.
 
-**First proof, 2026-11-11.** Both fixtures ran on the build host (an XPS 17
-9710) at 1280x720 with a request of 60 and 20 scored seconds. Sunshine used
-the Intel VAAPI H.264 hardware encoder. Two sets of five valid runs gave
-`equal` for each measured number. This is not a baseline, for two reasons.
+**What this pair cannot show: a viewer's queue.** Against the product sender
+on aka, the same fixture viewer's delay climbed from about 18 ms in steps of
+one refresh period and stayed near 51.5 ms: it queues frames and never drops
+one to catch up. In the private pair on aka the delay is flat near 16 ms. The
+cause is the rates. The fixture's source shows about 58.1 frames each second
+(a 17 ms output), and the viewer fixture's output can show about 60.5 (a 16
+ms output). The viewer always waits for the sender, so no queue can build.
+Two viewers that differ only in how they queue would measure equal here.
 
-- The host was not quiet. Other work held its CPU package at 100 °C, and the
-  host then stops all CPUs together for tens of milliseconds at a time. Each set
-  needed four attempts, because a run with a capture gap is invalid and ends
-  its set.
-- The spread is wide. Eight runs have at most 1 source miss and at most 3
-  dropped frames in 1156. Two runs have 5 and 6 source misses and 64 and 15
-  dropped frames. In each run the sender's median presentation interval is
-  17.3 to 17.4 ms. Of about 21 800 intervals, 29 are above 25.5 ms.
+A setup that shows a queue needs frames that arrive at the viewer's refresh
+rate or slightly above it, with no skip at the sender. The tool's options can
+make three such pairs. None has run yet: a game took aka on 2026-11-12 before
+the first try, and the tool refused, as it must.
 
-In a quieter moment on the same host, a 20 second stream to the `run`
-client had no presentation interval above 18 ms. Record a baseline only on a
-host that is quiet for the whole set.
+| Try | Options | Sender output | Viewer output |
+| --- | --- | --- | --- |
+| Both at 17 ms | `--fps 60 --viewer-refresh 58.823` | 17 ms, about 58.1 each second | 17 ms, expected a little below 58 |
+| Both at 16 ms | `--fps 63 --viewer-refresh 60` | 16 ms, expected near 61.8 | 16 ms, about 60.5 |
+| Sender faster | `--fps 63 --viewer-refresh 58.823` | 16 ms | 17 ms |
 
-Those ten runs were valid by the gap rule of that day. By today's rule, four
-of the ten records hold a gap that loses an ID, so this proof must be
-recorded again. The heat guard refuses the viewer on that host while its CPU
-zone reads 99 °C.
+`--fps 63` asks Sunshine for a period below 16 ms, so it takes every frame of
+a 16 ms output. The default stays at the 17 ms sender against the 16 ms
+viewer fixture until one of these has shown the climb on aka. A headless
+output cannot run at 60.0, so no pair of headless outputs has equal rates by
+construction; the rates above are what the compositors' own work adds to
+their timers.
+
+For a real 60 Hz panel (not tested): a 17 ms sender shows 58.1 frames each
+second, adds about 1.9 repeats each second and never fills a viewer's queue.
+A 16 ms sender with `--fps 63` shows about 61.8, so the viewer must drop
+about 1.8 frames each second or queue; that shows the queue, and the drops
+are the sender's floor. A source with its own clock at the panel's refresh,
+on a 16 ms output, would add neither. The source has no such mode yet.
+
+History: on 2026-11-11 two sets of five runs on the build host gave `equal`
+for each number, at 1280x720 on a host at 100 °C; that proof is void, because
+four of its ten records hold a gap that loses an ID by today's gap rule, and
+it is not recorded again while that host is hot.
 
 `tests/intervals.py RESULTS.json` prints, for each run, the interval
 distribution of the sender's presentations and of the new IDs on the viewer's
