@@ -210,6 +210,90 @@ The private half of the test key pair crosses SSH into the viewer's run
 directory, because the viewer runs there. Cleanup removes it. The sender
 still revokes the certificate on exit.
 
+### The sender fixture
+
+```sh
+nix run .#stream-cadence -- view --sender local --viewer local --sender-fixture
+nix run .#stream-cadence -- view --sender local --viewer operator@viewer \
+  --sender-fixture --viewer-stream-host ADDRESS_OF_THIS_HOST
+```
+
+`--sender-fixture` gives the measure a private sender. The sender target
+then needs no product Sunshine, no Korri compositor, no certificate socket
+and no root. A game on a device does not stop the measure, because the
+fixture does not use the device's display.
+
+The agent `sender.py` owns one run directory under `/tmp`. In it run:
+
+- a hidden compositor: a headless sway from nixpkgs with the `gles2` renderer
+  on a render node. With a software renderer Sunshine captures one frame only;
+- the frame-ID source, shown on that compositor alone;
+- a stock Sunshine from nixpkgs with its own ports, state, key and log. It
+  captures the hidden compositor through the Wayland protocol.
+
+The fixture discovers what it uses:
+
+| Value | How |
+| --- | --- |
+| Ports | A port that the kernel reports free, with Sunshine's whole span free around it. The fixture never takes the span of Sunshine's default port, so a product Sunshine that starts later finds its ports. |
+| Render node | Each node in `/dev/dri` that the user can open, in order. The first node on which Sunshine finds a hardware encoder wins. With none, the first node that encodes at all. |
+| Encoder | Sunshine's configuration names none. Sunshine tries hardware encoders first. The result records `encoder`, `working_encoders` and `sender_fixture.hardware_encoder`. |
+| Display mode | The requested stream size, at the steady refresh below. |
+
+Pairing replaces the certificate grant. The viewer side runs `moonlight pair`
+with the viewer binary of that run, and makes its own key pair in its run
+directory. Moonlight prints a PIN. The sender's agent posts the PIN to its
+Sunshine on loopback, with a web UI login that it made for the run. The host
+key directory is not used.
+
+Sunshine announces each host through Avahi and has no setting against it.
+The fixture gives its Sunshine a system bus address that does not exist, so
+the private sender does not appear in the host lists of the network.
+
+**The steady refresh.** A headless output has no clock. After each frame it
+waits a whole number of milliseconds: an output that says 60 Hz waits 16 ms
+and shows about 62 frames each second. Sunshine takes one frame for each
+period of the stream's frame rate, so it would skip about two source frames
+each second. The fixture sets the fastest mode whose whole-millisecond period
+is not shorter than the stream's period: 58.823 Hz (17 ms) for a request of
+60. The output is then the slower side, Sunshine takes every frame, and the
+source shows about 57.8 frames each second. `requested_fps` stays the
+request, and `display.refresh_hz` is the mode.
+
+A headless output also counts no vblanks: every presentation has sequence 0.
+For such a sender a source miss is a refresh that passes between two
+presentations with no new frame, found by time: a gap above 1.5 refresh
+periods. A sender with a vblank counter is scored by sequence, as before.
+
+**The host that runs the tool.** The target `local` names it. It uses no SSH
+and no root. As a sender, `local` can host the fixture only. As a viewer,
+`local` runs the viewer fixture as the calling user with a sway from nixpkgs,
+and reads no Korri unit, even when Korri runs on that host. A viewer on
+another device reaches the sender through `--viewer-stream-host`. The tool
+does not change a firewall.
+
+**Cleanup.** Each child of the agent ends when the agent dies, however it
+dies. `close` stops the source, Sunshine and the compositor, then looks for
+any process that still carries the run directory in its arguments,
+environment or working directory. It ends each one and lists it in
+`restore.stray_processes_killed`. The restore check fails the run when a
+process or the directory is left.
+
+**What the fixture does not prove.** It is not the product's sender. It does
+not use the product's KMS capture, its encoder settings, its pacing or its
+display. Sound is off. With both targets on one host the stream uses
+loopback, so the network is not measured, and the sender and the viewer
+share one machine's CPU. The numbers compare an old and a new viewer against
+the same test sender. `run` still measures the product sender. `verdict`
+refuses to compare a fixture result with a product-sender result: the
+capture backend and the display mode differ.
+
+Not tested yet: the fixture on an SSH target, and on aarch64.
+
+`tests/intervals.py RESULTS.json` prints, for each run, the interval
+distribution of the sender's presentations and of the new IDs on the viewer's
+display. A long tail in the first is the sender's own.
+
 ### The six numbers of ADR 0062
 
 | Number | Fields | Method |
@@ -302,6 +386,8 @@ nix build --no-link --impure --expr \
 ```
 
 `default.nix` exports `app`, `shim`, `motion`, `capture`, `device`, `tests`, and `sourceCheck`.
+`runtime` holds what an agent needs on its target, including the sender
+fixture's `sway` and `sunshine` from nixpkgs.
 Use the same expression with an architecture-appropriate `pkgs` to build each
 output for either supported architecture. Tests compile the actual C bar,
 round-trip it through lossy libx264 at three resolutions, inject source discards
@@ -309,8 +395,10 @@ and capture drops, test three display ceilings, parse recorded SP procfs/native
 IPC/journal samples, exercise real SEQPACKET requests and compare limits, and
 reject device constants in production source. A C regression test covers the
 process-relative receive-clock bridge that otherwise causes an immediate stop.
-The app build depends on the source gate. Tests also run Ruff and Mypy over all
-six production Python modules.
+Sender-fixture tests bind real ports, parse recorded Sunshine startup logs,
+end real stray processes, and run the host-mode viewer fixture with stand-in
+programs. The app build depends on the source gate. Tests also run Ruff and
+Mypy over every production Python module.
 
 Every device executable is built on this host or configured remote builders.
 The controller selects by remote `uname -m`, signs the immutable closures with
