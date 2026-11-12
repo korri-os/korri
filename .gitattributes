@@ -1,6 +1,7 @@
 services/sunshine/patches/*.patch whitespace=-blank-at-eol
 services/sunshine/rotation-probe.patch whitespace=-blank-at-eol
 services/inputd/nix/sway-idle-notify.patch whitespace=-blank-at-eol,-space-before-tab
+services/inputd/nix/inputplumber-ignore-before-reconnect.patch whitespace=-blank-at-eol
 nix/devices/rpminiv2/systemd/*.patch whitespace=-blank-at-eol
 # Font licences ship verbatim from their foundries, trailing spaces included.
 clients/shell/packages/zone/fonts/Jersey10-OFL.txt whitespace=-blank-at-eol

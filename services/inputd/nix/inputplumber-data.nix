@@ -188,8 +188,16 @@ let
           }
 
         ${lib.optionalString (builtins.elem profile selectedDeviceProfiles) ''
+          # Udev matchers are independent alternatives to typed matchers in
+          # InputPlumber. Every alternative must constrain input/event nodes.
           test "$(yq eval '.maximum_sources' "$selected_device")" = 1 \
-            && test "$(yq eval '[.source_devices[] | select(has("hidraw"))] | length' "$selected_device")" = 0 || {
+            && test "$(yq eval '.source_devices | length' "$selected_device")" -gt 0 \
+            && test "$(yq eval '[.source_devices[] | select(
+              has("hidraw") or has("iio") or has("led") or has("tty")
+              or (.evdev == null and .udev == null)
+              or (.evdev != null and .evdev.handler != "event*")
+              or (.udev != null and (.udev.subsystem != "input" or .udev.sys_name != "event*"))
+            )] | length' "$selected_device")" = 0 || {
             echo "selected profile ${profile.file} no longer guarantees one evdev source" >&2
             exit 1
           }

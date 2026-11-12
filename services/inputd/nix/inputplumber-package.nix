@@ -11,6 +11,7 @@ let
     ./inputplumber-dbus-observer-timing.patch
     ./inputplumber-target-device-paths.patch
     ./inputplumber-startup-unhide-quiet.patch
+    ./inputplumber-ignore-before-reconnect.patch
   ];
 in
 assert inputplumber.pname == "inputplumber";
@@ -25,8 +26,11 @@ inputplumber.overrideAttrs (previous: {
   # The startup unhide reloads and re-triggers udev only when it undid a hide:
   # upstream ran a full `udevadm trigger` on every start, which on the RG353M
   # (2026-10-01) queued 628 change events behind boot coldplug.
+  # Resolve ordered ignore policy before a persistent composite can reclaim
+  # a source slot; profile ordering must also hold across device reconnects.
   inherit patches;
-  # The patches' regression tests run with the upstream unit suite on builds.
+  # Run the upstream unit suite and the patches' unit regressions on builds.
+  # Reconnect exclusions need kernel/udev/DBus and run in the adoption VM.
   doCheck = true;
   nativeCheckInputs = (previous.nativeCheckInputs or [ ]) ++ [ dbus ];
   DBUS_TEST_SESSION_CONFIG = "${dbus}/share/dbus-1/session.conf";

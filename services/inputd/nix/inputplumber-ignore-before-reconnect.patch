@@ -1,0 +1,90 @@
+Subject: [PATCH] input: apply ordered ignore policy before composite reconnect
+
+A persistent composite with a vacant source slot previously captured matching
+nodes before the active configurations could exclude them. Resolve the first
+matching active configuration before either the reconnect or creation paths.
+Preserve auto_manage/system eligibility and first-match ordering: later broad
+ignore configurations must not override an earlier non-ignored match.
+
+This is provider behavior, independent of Korri profiles, and is suitable for
+upstream ShadowBlip/InputPlumber. Regression coverage uses real uinput, udev and
+DBus in Korri's inputplumber-adoption-vm test for both generic and Xbox 360
+persistent composites.
+
+--- a/src/input/manager.rs
++++ b/src/input/manager.rs
+@@ -939,6 +939,44 @@
+             return Ok(());
+         }
+ 
++        // Resolve the ordered policy before reconnecting an existing composite.
++        // Persistent composites can have empty source slots, but must not capture
++        // devices excluded by the first matching active configuration. Do not
++        // scan later ignore rules after a non-ignored match (e.g. a catch-all).
++        let mut configs = self.load_device_configs().await;
++        configs.retain(|(path, config)| {
++            // Check to see if 'auto_manage' is enabled for this config.
++            let auto_manage = config
++                .options
++                .as_ref()
++                .map(|options| options.auto_manage.unwrap_or(false))
++                .unwrap_or(false);
++            if !self.manage_all_devices && !auto_manage {
++                log::trace!(
++                    "Config {path:?} does not have 'auto_manage' option enabled. Skipping.",
++                );
++                return false;
++            }
++
++            // Check to see if this configuration matches the system
++            if !config.has_valid_matches(&self.dmi_data, &self.cpu_info) {
++                log::trace!("Configuration {path:?} does not match system");
++                return false;
++            }
++
++            true
++        });
++        for (_, config) in &configs {
++            let Some(source_device) = config.get_matching_device(&device) else {
++                continue;
++            };
++            if source_device.ignore.unwrap_or(false) {
++                log::trace!("Source device configured to ignore: {:?}", device);
++                return Ok(());
++            }
++            break;
++        }
++
+         // Check all existing composite devices to see if this device is part of
+         // their config
+         'start: for composite_device in self.composite_devices.keys() {
+@@ -1046,29 +1084,9 @@
+ 
+         // Check all CompositeDevice configs to see if this device creates
+         // a match that will automatically create a CompositeDevice.
+-        let configs = self.load_device_configs().await;
+         log::debug!("Checking unused configs");
+         for (path, config) in configs {
+             log::trace!("Checking if config {path:?} matches device",);
+-
+-            // Check to see if 'auto_manage' is enabled for this config.
+-            let auto_manage = config
+-                .options
+-                .as_ref()
+-                .map(|options| options.auto_manage.unwrap_or(false))
+-                .unwrap_or(false);
+-            if !self.manage_all_devices && !auto_manage {
+-                log::trace!(
+-                    "Config {path:?} does not have 'auto_manage' option enabled. Skipping.",
+-                );
+-                continue;
+-            }
+-
+-            // Check to see if this configuration matches the system
+-            if !config.has_valid_matches(&self.dmi_data, &self.cpu_info) {
+-                log::trace!("Configuration {path:?} does not match system");
+-                continue;
+-            }
+ 
+             // Check if this device matches any source configs
+             if let Some(source_device) = config.get_matching_device(&device) {

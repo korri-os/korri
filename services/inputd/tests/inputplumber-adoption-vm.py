@@ -171,7 +171,59 @@ async def main():
         subprocess.run(["udevadm", "settle"], check=True)
         await asyncio.sleep(2)
         assert sources(await snapshot(bus)) == expected
-        print("PASS: nine simultaneous pads carry the Korri profile; nine outputs and three multi-interface Sony pads ignored; ManageAllDevices=false")
+        # Persistence leaves an empty source slot. New devices must still pass
+        # the ordered ignore policy before the old matcher's reconnect path.
+        failures = []
+        for vacancy in (7, 0):  # generic fallback, then Xbox 360-specific matcher
+            pad = pads[vacancy]
+            node = pad.device.path
+            before = await snapshot(bus)
+            path = next(path for path, c in before.items()
+                        if node in c["SourceDevicePaths"])
+            targets = before[path]["TargetDevices"]
+            pad.close()
+            expected.remove(node)
+            state = await wait_for(bus, lambda state: sources(state) == expected)
+            assert path in state and state[path]["SourceDevicePaths"] == [], state
+            assert state[path]["TargetDevices"] == targets, state
+            excluded_models = [
+                ("Microsoft X-Box 360 pad", 0x045e, 0x028e, 1, None),
+                ("Korri Seat P1", 0x045e, 0x028e, 0x0114, "korri/input-seat/p1"),
+                ("Sony Interactive Entertainment Wireless Controller",
+                 0x054c, 0x0ce6, 0x0101, None),
+            ]
+            for model in excluded_models:
+                excluded = device(*model)
+                try:
+                    subprocess.run(["udevadm", "settle"], check=True)
+                    properties = subprocess.check_output([
+                        "udevadm", "info", "--query=property",
+                        f"--path=/sys/class/input/{Path(excluded.device.path).name}",
+                    ], text=True).splitlines()
+                    assert "ID_BUS=bluetooth" in properties, properties
+                    assert "ID_INPUT_JOYSTICK=1" in properties, properties
+                    # Check repeatedly, not just before the add event arrives.
+                    for _ in range(15):
+                        await asyncio.sleep(0.2)
+                        state = await snapshot(bus)
+                        if sources(state) != expected:
+                            failures.append({"vacancy": models[vacancy][0],
+                                             "excluded": model[0], "state": state})
+                            break
+                    print(json.dumps({"vacancy": models[vacancy][0],
+                                      "excluded": model[0], "state": state}))
+                finally:
+                    excluded.close()
+                await wait_for(bus, lambda state: sources(state) == expected)
+            # A real reconnect must still reuse the persistent composite/targets.
+            pads[vacancy] = device(*models[vacancy])
+            node = pads[vacancy].device.path
+            expected.add(node)
+            state = await wait_for(bus, lambda state: sources(state) == expected)
+            assert state[path]["SourceDevicePaths"] == [node], state
+            assert state[path]["TargetDevices"] == targets, state
+        assert not failures, json.dumps(failures)
+        print("PASS: nine simultaneous pads carry the Korri profile; outputs and Sony pads ignored before and after disconnect; generic and Xbox 360 composites reconnect with unchanged targets; ManageAllDevices=false")
     finally:
         for handle in pads + outputs + deferred:
             handle.close()
