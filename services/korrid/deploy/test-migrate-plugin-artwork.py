@@ -199,13 +199,106 @@ class MigrationTests(unittest.TestCase):
                 self.assertEqual(device.tree(), before)
 
     def test_a_secret_the_plugin_already_has_is_never_replaced(self):
+        other = 'newer-secret-not-a-real-one'
         device = Device(self)
         device.credential.parent.mkdir(mode=0o700)
-        device.credential.write_text('newer secret')
+        device.credential.write_text(other)
+        os.chmod(device.credential, 0o600)
         before = device.tree()
-        with self.assertRaisesRegex(migration.Refused, 'already has a secret'):
+        for apply in (False, True):
+            with self.assertRaisesRegex(migration.Refused, 'hold different values') as refusal:
+                migration.run(device.private, apply=apply)
+            # It says which file is which, and neither value.
+            message = str(refusal.exception)
+            self.assertIn('steamgriddb.credential (the old key file)', message)
+            self.assertIn("@korri:steamgriddb/credential (the plugin's secret)", message)
+            self.assertNotIn(SECRET, message)
+            self.assertNotIn(other, message)
+        self.assertEqual(device.tree(), before)
+        # The command prints the same words, and no value.
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), '--private', str(device.private), '--apply'],
+            capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('refused, nothing changed', result.stderr)
+        self.assertNotIn(SECRET, result.stdout + result.stderr)
+        self.assertNotIn(other, result.stdout + result.stderr)
+        self.assertEqual(device.tree(), before)
+
+    def stopped_after_writing_the_secret(self):
+        """A device as a run leaves it when it stops right after it wrote the
+        plugin's secret: the records are rewritten and backed up, the secret
+        is written by the script's own writer, and the old key file and the
+        old attempts are still there."""
+        device = Device(self)
+        device.assignments.with_name('assignments.json.before-plugin-artwork').write_bytes(BEFORE)
+        device.assignments.write_bytes(AFTER)
+        device.credential.parent.mkdir(mode=0o700)
+        os.chmod(device.credential.parent, 0o700)
+        migration.write_owned(device.credential, SECRET.encode(), 0o600, device.private.stat())
+        return device
+
+    def test_a_run_that_stopped_after_writing_the_secret_finishes_on_the_next_run(self):
+        device = self.stopped_after_writing_the_secret()
+        self.assertTrue(device.old_key.exists() and device.credential.exists())
+        # A dry run says what it will do and does nothing.
+        before = device.tree()
+        report = migration.run(device.private)
+        self.assertFalse(report['applied'])
+        self.assertIn('already moved', ' '.join(report['changes']))
+        self.assertEqual(device.tree(), before)
+
+        report = migration.run(device.private, apply=True)
+
+        self.assertTrue(report['applied'])
+        self.assertEqual(len(report['changes']), 2)
+        self.assertNotIn(SECRET, json.dumps(report))
+        # The old key file is gone and the plugin's secret is as it was.
+        self.assertFalse(device.old_key.exists())
+        self.assertEqual(device.credential.read_text(), SECRET)
+        self.assertEqual(mode(device.credential.parent), 0o700)
+        self.assertEqual(mode(device.credential), 0o600)
+        self.assertEqual(sorted(path.name for path in device.credential.parent.iterdir()), ['credential'])
+        # The rest of the migration is finished too.
+        self.assertFalse(device.old_attempts.exists())
+        self.assertEqual(device.assignments.read_bytes(), AFTER)
+        # And it is over: another run is refused as on any migrated device.
+        with self.assertRaisesRegex(migration.Refused, 'already migrated'):
+            migration.run(device.private, apply=True)
+
+    def test_the_same_value_with_modes_this_migration_does_not_set_is_refused(self):
+        for name, widen in [
+            ('file readable by others', lambda device: os.chmod(device.credential, 0o644)),
+            ('folder open to others', lambda device: os.chmod(device.credential.parent, 0o755)),
+            ('file readable by the group', lambda device: os.chmod(device.credential, 0o640)),
+        ]:
+            with self.subTest(name):
+                device = self.stopped_after_writing_the_secret()
+                widen(device)
+                before = device.tree()
+                modes = (mode(device.credential.parent), mode(device.credential))
+                for apply in (False, True):
+                    with self.assertRaisesRegex(migration.Refused, 'mode and owner') as refusal:
+                        migration.run(device.private, apply=apply)
+                    message = str(refusal.exception)
+                    # It says why, and tells the person to look before fixing.
+                    self.assertIn('did not write it', message)
+                    self.assertIn('Check who can read it', message)
+                    self.assertNotIn(SECRET, message)
+                # Refused, not repaired: nothing moved and no mode changed.
+                self.assertEqual(device.tree(), before)
+                self.assertTrue(device.old_key.exists())
+                self.assertEqual((mode(device.credential.parent), mode(device.credential)), modes)
+
+    def test_a_plugin_secret_that_is_not_a_regular_file_is_refused(self):
+        device = Device(self)
+        device.credential.parent.mkdir(mode=0o700)
+        device.credential.symlink_to(device.old_key)
+        before = device.tree()
+        with self.assertRaisesRegex(migration.Refused, 'is not a regular file'):
             migration.run(device.private, apply=True)
         self.assertEqual(device.tree(), before)
+        self.assertTrue(device.credential.is_symlink())
 
     def test_links_and_other_backups_are_refused(self):
         device = Device(self)

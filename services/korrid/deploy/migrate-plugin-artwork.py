@@ -29,8 +29,11 @@ changes. A device with none of these files needs nothing.
 
 It is a dry run unless `--apply` is given. It checks everything before it
 writes anything, keeps one backup of the old `assignments.json` beside it,
-and refuses to run on a private root that is already migrated. It prints
-what it changed. It never prints or copies the key anywhere else.
+and refuses to run on a private root that is already migrated. A run that
+stopped part way is finished by the next run: also one that stopped after it
+wrote the plugin's secret and before it deleted the old key file, which it
+knows by the same value, the modes and the owner. It prints what it changed.
+It never prints or copies the key anywhere else.
 
 Check afterwards: korrid starts, the local games list reports the same
 `coverAssetId` values as before, and the settings snapshot shows the
@@ -174,10 +177,38 @@ def run(private, apply=False):
     has_key = old_key.exists() or old_key.is_symlink()
     if has_key and not regular_file(old_key):
         raise Refused(f'{OLD_KEY_FILE} is not a regular file')
-    if has_key and (credential.exists() or credential.is_symlink()):
-        raise Refused('the plugin already has a secret; this migration will not replace it')
     if plugin_folder.is_symlink() or (plugin_folder.exists() and not plugin_folder.is_dir()):
         raise Refused(f'{PLUGIN_ID} is not a directory')
+    # The key is read once, trimmed as korrid trimmed it, and never printed.
+    secret = old_key.read_bytes().strip() if has_key else b''
+    # Both files exist when a run stopped after it wrote the plugin's secret
+    # and before it deleted the old key file, or when the plugin got a secret
+    # some other way. Only the first is this migration's to finish.
+    already_moved = False
+    if has_key and (credential.exists() or credential.is_symlink()):
+        new_name = f'{PLUGIN_ID}/credential (the plugin\'s secret)'
+        old_name = f'{OLD_KEY_FILE} (the old key file)'
+        if not regular_file(credential):
+            raise Refused(f'{new_name} is not a regular file')
+        if credential.read_bytes().strip() != secret:
+            raise Refused(f'{old_name} and {new_name} both exist and hold different values; '
+                          'this migration will not replace the plugin\'s secret. '
+                          f'Delete {OLD_KEY_FILE} if the plugin\'s secret is the one to keep')
+        # The same value is not enough: this migration writes the folder as
+        # 0700 and the file as 0600, both owned as the private root is. A
+        # file that differs was not written by it. It is not repaired here,
+        # because a wider mode means others may already have read the key,
+        # and that is for a person to judge.
+        written_by_this_migration = all(
+            stat.S_IMODE(path.stat().st_mode) == mode and path.stat().st_uid == owner.st_uid
+            for path, mode in [(plugin_folder, 0o700), (credential, 0o600)])
+        if not written_by_this_migration:
+            raise Refused(f'{new_name} holds the same value as {old_name}, but its folder or '
+                          'file does not have the mode and owner this migration sets (folder '
+                          '0700, file 0600, owner of the private state root), so this '
+                          'migration did not write it. Check who can read it, set the modes '
+                          f'and owner or remove it, then run again')
+        already_moved = True
     has_attempts = old_attempts.exists() or old_attempts.is_symlink()
     if has_attempts and (old_attempts.is_symlink() or not old_attempts.is_dir()):
         raise Refused(f'{OLD_ATTEMPTS_FOLDER} is not a directory')
@@ -188,13 +219,14 @@ def run(private, apply=False):
             raise Refused('this private state root is already migrated')
         return {'applied': False, 'changes': [], 'note': 'nothing to migrate'}
 
-    # The key is read once, trimmed as korrid trimmed it, and never printed.
-    secret = old_key.read_bytes().strip() if has_key else b''
     changes = []
     if rewritten:
         changes.append(f'{ASSIGNMENTS}: {rewritten} record(s) rewritten as <playable id>:tile '
                        f'with source provider {PLUGIN_ID}; backup {backup.name}')
-    if has_key and secret:
+    if already_moved:
+        changes.append(f'{OLD_KEY_FILE}: already moved to {PLUGIN_ID}/credential by a run that '
+                       'stopped; old key file deleted')
+    elif has_key and secret:
         changes.append(f'{OLD_KEY_FILE}: moved to {PLUGIN_ID}/credential (0700 folder, 0600 file)')
     elif has_key:
         changes.append(f'{OLD_KEY_FILE}: empty, deleted; the plugin has no secret')
@@ -218,7 +250,7 @@ def run(private, apply=False):
                 os.fsync(output.fileno())
         write_owned(assignments, updated, stat.S_IMODE(metadata.st_mode), metadata)
     if has_key:
-        if secret:
+        if secret and not already_moved:
             plugin_folder.mkdir(mode=0o700, exist_ok=True)
             os.chmod(plugin_folder, 0o700)
             if os.geteuid() == 0:
