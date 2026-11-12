@@ -192,10 +192,13 @@ backdrop pixel differs from its neighbour by more than four levels.
   twice on seven fresh engines and holds every single `view()`, and the
   longest `update()` of every step, to the budget by its median over the
   engines; it multiplies this workstation's CPU time by 28, the factor Zone
-  measured. In a full run of the test binary a view is 5 to 22 ms there
-  (medians; the worst single call 24 ms) and an update under 11 ms; the
-  update that keeps a window of 200 games while the home reads its lists
-  again is 20 to 23 ms.
+  measured. Two full runs of the test binary, the same logic: with this
+  machine quiet a view was 5 to 22 ms there (medians; the worst single call
+  24 ms), an update under 11 ms, and the update that keeps a window of 200
+  games while the home reads its lists again 20 to 23 ms; with the machine
+  busy (the logic took twice as long to load) the same calls were up to
+  30 ms, 12 ms and 27 ms. The heaviest are the first sight of the lobby and
+  of a shelf that comes into sight: the cards made there.
   - About half of a view call is its JSON, and that follows the number of
     values. A view holds what is on the stage and no more (the largest is
     under 13 kB): the shelves in sight, the set's rows in sight and one each
