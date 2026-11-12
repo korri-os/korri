@@ -1643,7 +1643,8 @@ def view(args: argparse.Namespace) -> int:
         return Remote(["ssh", *options, target, command], log)
 
     if copied:
-        # Who signed it, before this host adds its own signature for the copy.
+        # Who has signed it in this host's store: the publisher, and after the
+        # first copy also this host's own cache key, which deliver adds.
         copied["signed_by"] = signer_names(
             execute(
                 ["nix", "path-info", "--sigs", "--json", copied["package"]], timeout=60

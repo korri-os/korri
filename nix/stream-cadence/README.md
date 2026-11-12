@@ -483,6 +483,117 @@ powered off, and the product compositor's focus did not change.
 socket beside the product's was left, also after a run that the heat guard
 ended on purpose (`--test-heat-end-margin`).
 
+**ibuki is not the home of the measure.** Two more base sets on ibuki, ten
+minutes apart, with the same `moonlight` store path and all ten runs valid,
+showed that the viewer's CPU for the same work moves by a factor of two
+within minutes: 0.52 and 0.54 CPU seconds each second in two runs, then 0.24
+to 0.32 in six, then 0.37 and 0.54. The delay p50 of a window was 15 to 21 ms
+in the fast runs and 19 to 34 ms in the slow ones, with 0 to 5 and 10 to 15
+dropped frames. The sets above were all in the slow state. ibuki has two
+cores, its CPU governor is `powersave` (1.5 GHz when idle), and its korrid
+logs reach activity every second. The cause was not looked for. A baseline
+there could hide a change of 10 ms, so the baseline lives on aka. ibuki
+stays a device on which the mode above was proven.
+
+During one of those sets `korri-shell`, `korri-sunshine` and `korrid` on
+ibuki restarted (a bundle switch); the result did not show it. Since then
+each result records the product's units (see "Verdict").
+
+### A copied product viewer on a device with no plugin
+
+aka is the home of the measure. It has no viewer plugin and must not get one
+installed (ADR 0051). `--viewer-package` lets the product's viewer run there:
+
+```sh
+nix run .#stream-cadence -- view --sender root@aka --sender-fixture \
+  --viewer root@aka --viewer-package /nix/store/…-moonlight-embedded-korri-2.7.1-korri
+```
+
+- The option names a product viewer package in the build host's Nix store:
+  the plugin's `moonlight-embedded-korri`, with `bin/moonlight` and the
+  controller mapping `share/moonlight/korri-inputplumber-gamecontrollerdb.txt`
+  (the file that the plugin's manifest names). A path that is not a store
+  path or lacks one of the two is refused before any device is asked.
+- The tool copies the package to the viewer device like its other pieces:
+  signed with the build host's cache key, with `nix copy`, never built on
+  the device.
+- The viewer fixture runs it with the arguments and environment of "The
+  plugin's viewer in the fixture". Nothing is installed: no plugin, no unit,
+  no state outside the run directory, and the store path is garbage like any
+  other copied piece.
+- It is for a device with no plugin. Where the plugin is installed and
+  enabled, the option is refused: a private pair runs the plugin's own
+  binary there.
+- `discovered.viewer_ran.kind` is `copied-product`, with the package's store
+  path, the host that it was copied from (`copied_from`) and the names of
+  the keys that have signed it in the build host's store (`signed_by`: the
+  publisher's key, and after the first copy the build host's own cache key,
+  which the copy adds). `verdict`
+  prints "copied product package (…, copied from …, signed by …)". It is
+  not confused with an installed plugin or with the stand-in; when an
+  installed plugin and a copied package are the same store path, `verdict`
+  says that the two results ran the same viewer binary.
+
+To bring a package to the build host: `nix copy --from ssh://root@DEVICE
+/nix/store/…`. Nix checks the signatures; the package of release
+`build-6a16a09421bf-shared-settings` came from ibuki so, signed by
+`korri-plugins-1`.
+
+**The copied product viewer on aka, 2026-11-12.** Package
+`moonlight-embedded-korri-2.7.1-korri` of plugin release
+`build-6a16a09421bf-shared-settings`, copied from the build host, sender
+fixture and viewer fixture on aka at the defaults (1920x1080, gles2, 60
+scored seconds). No `korri-game-*` unit was live in any run: 0 runs of every
+set were beside a game. The product's 15 units kept their PIDs in every run,
+and `/dev/input` did not change. These sets are evidence, not a baseline.
+
+aka was not quiet for the first sets. A unit of another test that is no
+game unit (`hookshot-pr-hold-test.service`, about 2.5 CPUs) ran until 18:05
+UTC, and aka's load average was 14 to 16, then 4 to 5. Nothing in a result
+says so today. The table has aka's 1-minute load before and after each set.
+
+| Set | Load | Valid | Delay p50, each window | Dropped | Viewer CPU s/s | `startup_ms` |
+| --- | --- | --- | --- | --- | --- | --- |
+| Copied, base A | 14.6, 16.1 | 5 of 5 | 18.7 to 20.7 ms | 0 to 1 | 0.257 to 0.263 | 1053 to 1162 |
+| Stand-in, base | 16.2, 4.8 | 5 of 5 | 11.6 to 20.0 ms | 0 | 0.165 to 0.258 | 626 to 1097 |
+| Copied, base B | 3.8, 5.4 | 5 of 5 | 11.8 to 18.8 ms | 0 to 13 | 0.167 to 0.214 | 625 to 803 |
+| Copied, queue | 5.3, 1.4 | 5 of 5 | 56.4 to 58.3 ms | 232 to 237 | 0.180 to 0.241 | 609 to 803 |
+| Stand-in, queue | 1.3, 0.5 | 5 of 5 | 56.4 to 56.9 ms | 230 to 233 | 0.181 to 0.197 | 625 to 770 |
+| Copied, in turns with the stand-in | below 1 | 5 of 5 | 11.7 to 12.2 ms | 0 | 0.164 to 0.165 | 754 to 770 |
+| Stand-in, in turns with the copied | below 1 | 5 of 5 | 11.7 to 12.1 ms | 0 | 0.165 to 0.167 | 625 to 754 |
+| Copied, base C | 0.4, 0.6 | 5 of 5 | 11.7 to 12.0 ms | 0 | 0.165 to 0.167 | 625 to 785 |
+| Copied, base D | 0.6, 0.7 | 5 of 5 | 11.7 to 12.1 ms | 0 | 0.164 to 0.166 | 625 to 770 |
+
+What the sets show:
+
+- **On a quiet aka the pair is steady.** `verdict` between base C and base D
+  says `equal` for each measured number: the delay p50 of every one of the
+  60 windows is within 0.4 ms, no frame is dropped, and the viewer's CPU is
+  within 2%. The sender showed 58.3 frames each second with no interval
+  above 1.5 periods.
+- **Another load on aka moves every number.** `verdict` between base A
+  (load 15) and base B (load 4), the same viewer, says `better` for the
+  delay (19.6 to 20.0 ms against 11.8 to 14.6 ms), for the CPU and for the
+  startup, and `worse` for repeated frames. The stand-in's first run, under
+  the same load as base A, has the numbers of base A (19 to 20 ms, 0.258,
+  1097 ms). A baseline needs a quiet aka, and the person who records it
+  must look at the load: the tool does not record it.
+- **The product's viewer and the stand-in measure alike in this fixture.**
+  In turns on a quiet aka: the same delay (11.7 to 12.2 ms against 11.7 to
+  12.1 ms), no dropped frame in either, and a CPU of 0.164 to 0.165 against
+  0.165 to 0.167. `verdict` there says `better` for the CPU, by 1%, and
+  `worse` for the startup (754 to 770 ms against 625 to 754 ms): the two
+  ranges of five runs do not overlap by 0.2 ms. Sets C and D of the copied
+  viewer have startups from 625 ms, so that `worse` is chance, and the 1%
+  is at the edge of what five runs separate. The queue sets are `equal` in
+  every number.
+- Both viewers held `/dev/dri/renderD129` open: their OpenGL ran on a
+  graphics card. The sender fixture used `renderD128`.
+
+The picture path of the fixture is the software one (`-platform x11`: SDL,
+FFmpeg's software decoder). It says nothing about a handheld's hardware
+picture path.
+
 ### The heat guard
 
 A viewer measure can heat a passive device, and a hot host must not get more
@@ -1100,7 +1211,23 @@ candidate viewer: stand-in (/nix/store/…-moonlight-embedded-2.7.1/bin/moonligh
 The two results ran different viewers; every verdict below compares these two.
 ```
 
-A result whose runs have more than one viewer gets no verdict. The
+A result whose runs have more than one viewer gets no verdict.
+
+**The product's own processes.** On a Korri device each agent records the
+main PID and the start time of the product's active service units at the
+start and at the end of a run (`discovered.product_units`, for the sender's
+device and the viewer's): every active `korri*` service that the device
+has, without the games. A unit that restarted, appeared or went during a
+run is named in `changed`. The run stays valid, because a private pair uses
+nothing of the product, but the device was not the same during that run.
+`verdict` says it in a line of its own above the table:
+
+```
+candidate: the product changed during run-3: korri-shell.service (restarted), korrid.service (restarted). The run is valid and is in the verdict.
+```
+
+A result from before this record gets the line "the product's units were
+not recorded". The
 model is the device's own name for itself; on a board whose firmware gives a
 placeholder (aka says "System Product Name"), two such machines look alike.
 When only one result has the condition `viewer_model`, `verdict` says that
