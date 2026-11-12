@@ -290,6 +290,24 @@ capture backend and the display mode differ.
 
 Not tested yet: the fixture on an SSH target, and on aarch64.
 
+**First proof, 2026-11-11.** Both fixtures ran on the build host (an XPS 17
+9710) at 1280x720 with a request of 60 and 20 scored seconds. Sunshine used
+the Intel VAAPI H.264 hardware encoder. Two sets of five valid runs gave
+`equal` for each measured number. This is not a baseline, for two reasons.
+
+- The host was not quiet. Other work held its CPU package at 100 °C, and the
+  host then stops all CPUs together for tens of milliseconds at a time. Each set
+  needed four attempts, because a run with a capture gap is invalid and ends
+  its set.
+- The spread is wide. Eight runs have at most 1 source miss and at most 3
+  dropped frames in 1156. Two runs have 5 and 6 source misses and 64 and 15
+  dropped frames. In each run the sender's median presentation interval is
+  17.3 to 17.4 ms. Of about 21 800 intervals, 29 are above 25.5 ms.
+
+In a quieter moment on the same host, a 20 second stream to the `run`
+client had no presentation interval above 18 ms. Record a baseline only on a
+host that is quiet for the whole set.
+
 `tests/intervals.py RESULTS.json` prints, for each run, the interval
 distribution of the sender's presentations and of the new IDs on the viewer's
 display. A long tail in the first is the sender's own.
