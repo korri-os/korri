@@ -139,16 +139,39 @@ fn server_url(address: &str) -> Result<url::Url, LinuxViewerError> {
 fn platform() -> &'static str {
     platform_from_path(
         Path::new("/sys/firmware/devicetree/base/compatible"),
+        std::env::consts::ARCH,
+        Path::new("/dev/dri"),
         |error| {
             log::warn!("Moonlight cannot read device-tree compatibility; using x11: {error}");
         },
     )
 }
 
-fn platform_from_path(path: &Path, report: impl FnOnce(&std::io::Error)) -> &'static str {
+fn platform_from_path(
+    path: &Path,
+    architecture: &str,
+    dri: &Path,
+    report: impl FnOnce(&std::io::Error),
+) -> &'static str {
     let compatible = match std::fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return "x11",
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // A render node makes VA-API worth trying, not guaranteed. Moonlight
+            // falls back to SDL software decoding if VA-API cannot initialize.
+            let render_node = architecture == "x86_64"
+                && std::fs::read_dir(dri).is_ok_and(|mut entries| {
+                    entries.any(|entry| {
+                        entry.is_ok_and(|entry| {
+                            entry.file_name().to_str().is_some_and(|name| {
+                                name.strip_prefix("renderD").is_some_and(|suffix| {
+                                    !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+                                })
+                            }) && entry.path().exists()
+                        })
+                    })
+                });
+            return if render_node { "x11_vaapi" } else { "x11" };
+        }
         Err(error) => {
             report(&error);
             return "x11";
@@ -311,10 +334,11 @@ fn stream_args(
                 "occupied seat callback returned an invalid or duplicate event path",
             ));
         }
-        // Moonlight resolves `x11` to its SDL system when SDL is built in, and
-        // its SDL system exits on any `-input`: SDL reads every controller
-        // itself. Only the evdev systems (such as v4l2m2m) take explicit seats.
-        if platform != "x11" {
+        // x11 resolves to SDL. x11_vaapi uses evdev with udev auto-discovery
+        // when no -input is given; failed VA-API init also resolves to SDL.
+        // SDL exits on any -input, so both X11 choices must omit it. ARM
+        // platforms keep explicit seats. See docs/research/2026-11-11-x86-viewer-vaapi.md.
+        if !matches!(platform, "x11" | "x11_vaapi") {
             args.extend(["-input".into(), seat.display().to_string()]);
         }
     }
