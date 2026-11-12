@@ -1,0 +1,106 @@
+{
+  "decisions": [
+    {
+      "id": "structure",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "yes"
+        },
+        {
+          "label": "Close, see notes",
+          "value": "close"
+        },
+        {
+          "label": "No",
+          "value": "no"
+        }
+      ],
+      "page": "one-list",
+      "question": "Is one list what you meant?"
+    }
+  ],
+  "devices": [
+    "fold-open",
+    "rg353m",
+    {
+      "height": 240,
+      "id": "strip",
+      "label": "Strip 1024×240",
+      "width": 1024
+    }
+  ],
+  "pages": [
+    {
+      "caption": "A separate This launch block.",
+      "id": "today",
+      "src": "today-this-launch.png",
+      "title": "Today"
+    },
+    {
+      "caption": "Same list, local or streamed.",
+      "id": "one-list",
+      "src": "one-list.html",
+      "title": "One list",
+      "toggles": [
+        {
+          "default": "streamed",
+          "id": "where",
+          "label": "Game runs",
+          "options": [
+            {
+              "label": "On aka",
+              "value": "streamed"
+            },
+            {
+              "label": "Here",
+              "value": "local"
+            },
+            {
+              "label": "aka offline",
+              "value": "offline"
+            }
+          ]
+        },
+        {
+          "default": "some",
+          "id": "changes",
+          "label": "Changes",
+          "options": [
+            {
+              "label": "Two changed",
+              "value": "some"
+            },
+            {
+              "label": "None",
+              "value": "none"
+            }
+          ]
+        },
+        {
+          "default": "typical",
+          "id": "data",
+          "label": "Content",
+          "options": [
+            {
+              "label": "Typical",
+              "value": "typical"
+            },
+            {
+              "label": "Longest",
+              "value": "long"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "n": 1,
+      "started": "2026-11-11T23:54:28Z",
+      "title": "One list, first look"
+    }
+  ],
+  "title": "Launch settings: one list"
+}

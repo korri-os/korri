@@ -1,0 +1,268 @@
+<!doctype html>
+<!--
+  PROTOTYPE. Throwaway. Not production, not the real Zone package.
+  Question it answers: does one list of launch settings, the same for a local
+  and a streamed game, with no separate "This launch" block, feel right?
+  Look and units are copied from clients/shell/packages/zone/ui/tokens.slint.
+  URL parameters: where=local|streamed|offline, changes=none|some, data=typical|long
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launch settings: one list (prototype)</title>
+<style>
+@font-face { font-family: "ZoneCaps"; src: url("fonts/ZoneCaps.ttf"); }
+@font-face { font-family: "Anton"; src: url("fonts/Anton-latin.ttf"); }
+
+:root {
+  /* Zone's art pixel: the short side holds 240 art rows (tokens.slint art-rows). */
+  --a: calc(min(100vw, 100vh) / 240);
+  --c1: calc(10 * var(--a));            /* caps-1 */
+  --c2: calc(20 * var(--a));            /* caps-2 */
+  --fact: calc(var(--c1) / 0.859);      /* Anton sized so its cap is caps-1 */
+  --row: calc(13 * var(--a));
+  --gap: calc(4 * var(--a));
+  --pad: calc(8 * var(--a));
+  --black: #000000; --white: #f7f3f7; --white-shade: #b5bee7;
+  --yellow: #f7db08; --ground: #efc300; --sky: #31a2f7;
+  --banner-blue: #0020b5; --banner-yellow: #f7db00; --hud-edge: #3151ad;
+  --red: #e70000; --pink: #ce6584; --danger: #f75131;
+  --key-disc: #292029; --key-b: #ef285a; --key-a: #639f3d;
+}
+* { box-sizing: border-box; }
+html { background: var(--ground); }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; color: var(--white); }
+.caps { font-family: "ZoneCaps", monospace; font-size: var(--c1); line-height: 1; text-transform: uppercase; }
+.fact { font-family: "Anton", sans-serif; font-size: var(--fact); line-height: 1; }
+.shaded { background: linear-gradient(var(--white) 62%, var(--white-shade) 62%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* ---------- header: sticky, about a quarter of the height, as Zone has it ---------- */
+header { position: sticky; top: 0; z-index: 3; background: var(--ground); padding: calc(4 * var(--a)) var(--pad) calc(5 * var(--a)); display: grid; row-gap: calc(4 * var(--a)); justify-items: center; }
+.keys { position: absolute; inset: calc(4 * var(--a)) var(--pad) auto var(--pad); display: flex; justify-content: space-between; pointer-events: none; }
+.key { display: flex; align-items: center; gap: calc(3 * var(--a)); background: var(--black); padding-right: calc(8 * var(--a)); clip-path: polygon(0 0, 100% 0, calc(100% - 10 * var(--a)) 100%, 0 100%); }
+.key .disc { width: calc(13 * var(--a)); height: calc(13 * var(--a)); border-radius: 50%; background: var(--key-disc); display: grid; place-items: center; }
+.key.b .disc { color: var(--key-b); } .key.a .disc { color: var(--key-a); }
+html[data-keys="discs"] .key { background: none; padding: 0; clip-path: none; }
+html[data-keys="discs"] .key .word { display: none; }
+html[data-keys="stacked"] .keys { position: static; width: 100%; align-items: center; }
+/* Narrow: the keys' row has free room in its middle, so the badge moves there. */
+.keys .where { display: none; pointer-events: auto; }
+html[data-keys="stacked"] .keys .where { display: block; }
+html[data-keys="stacked"] .titleline .where { display: none; }
+.banner { background: var(--banner-blue); color: var(--banner-yellow); font-size: var(--c2); padding: calc(3 * var(--a)) calc(14 * var(--a)); clip-path: polygon(0 50%, calc(9 * var(--a)) 0, calc(100% - 9 * var(--a)) 0, 100% 50%, calc(100% - 9 * var(--a)) 100%, calc(9 * var(--a)) 100%); text-shadow: calc(1 * var(--a)) calc(1 * var(--a)) 0 var(--black), calc(-1 * var(--a)) calc(1 * var(--a)) 0 var(--black), calc(1 * var(--a)) calc(-1 * var(--a)) 0 var(--black), calc(-1 * var(--a)) calc(-1 * var(--a)) 0 var(--black); white-space: nowrap; }
+.titleline { display: flex; align-items: center; gap: calc(6 * var(--a)); max-width: 100%; min-width: 0; }
+.title { background: var(--black); padding: calc(3 * var(--a)) calc(20 * var(--a)); clip-path: polygon(calc(14 * var(--a)) 0, 100% 0, calc(100% - 14 * var(--a)) 100%, 0 100%); font-size: calc(var(--title-cap, 16) * var(--a) / 0.859); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.where { flex: none; background: var(--black); padding: calc(2 * var(--a)) calc(4 * var(--a)); white-space: nowrap; }
+.where[data-state="offline"] span { background: none; color: var(--danger); }
+
+/* ---------- the list: the document scrolls, not an inner pane ---------- */
+main { flex: 1; background: var(--sky); border-top: calc(3 * var(--a)) solid var(--black); border-bottom: calc(3 * var(--a)) solid var(--black); padding: var(--gap) var(--pad) calc(2 * var(--gap)); }
+h2 { margin: calc(5 * var(--a)) 0 calc(1 * var(--a)) calc(3 * var(--a)); font-weight: normal; color: var(--yellow); text-shadow: calc(1 * var(--a)) 0 0 var(--hud-edge), calc(-1 * var(--a)) 0 0 var(--hud-edge), 0 calc(1 * var(--a)) 0 var(--hud-edge), 0 calc(-1 * var(--a)) 0 var(--hud-edge); }
+h2:first-child { margin-top: 0; }
+.row { display: grid; grid-template-columns: 54fr 44fr; column-gap: 2%; align-items: start; margin-bottom: var(--gap); cursor: pointer; }
+.label { height: var(--row); background: var(--black); clip-path: polygon(0 0, 100% 0, calc(100% - var(--row)) 100%, 0 100%); padding: 0 calc(var(--row) + 2 * var(--a)) 0 calc(3 * var(--a)); display: flex; align-items: center; min-width: 0; }
+.label span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.value { height: var(--row); background: var(--black); clip-path: polygon(var(--row) 0, 100% 0, 100% 100%, 0 100%); padding: 0 calc(3 * var(--a)) 0 calc(var(--row) + 1 * var(--a)); display: grid; grid-template-columns: calc(6 * var(--a)) 1fr calc(6 * var(--a)); align-items: center; container-type: inline-size; min-width: 0; }
+.value .now { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.value .was { display: inline-block; line-height: 1; overflow: hidden; vertical-align: bottom; color: var(--white-shade); margin-left: calc(4 * var(--a)); }
+/* Yield order: the "was" readout goes before the value is squeezed. */
+@container (max-width: 22em) { .value .was { display: none; } }
+.arrow { color: var(--red); font-size: calc(7 * var(--a)); line-height: 1; visibility: hidden; }
+.arrow.r { text-align: right; }
+.row.focus .arrow { visibility: visible; }
+.row.fixed .arrow, .row.off .arrow { visibility: hidden; }
+.row.changed .now { color: var(--yellow); }
+.row.fixed .now { color: var(--white-shade); }
+.row.off .label, .row.off .value { opacity: 0.45; }
+.underline { grid-column: 1; height: calc(2 * var(--a)); background: var(--pink); visibility: hidden; margin-right: var(--row); }
+.row.focus .underline { visibility: visible; }
+.note { grid-column: 1 / -1; display: none; justify-self: start; max-width: 100%; background: var(--black); padding: calc(2 * var(--a)) calc(var(--row) + 2 * var(--a)) calc(2 * var(--a)) calc(4 * var(--a)); clip-path: polygon(0 0, 100% 0, calc(100% - var(--row)) 100%, 0 100%); }
+.row.focus .note:not(:empty) { display: block; }
+
+/* ---------- keep bar: appears only when something changed; the one filled action ---------- */
+#keep { position: sticky; bottom: calc(22 * var(--a)); z-index: 2; background: var(--sky); padding: var(--gap) 0 0; margin-top: var(--gap); border-top: calc(2 * var(--a)) solid var(--black); }
+#keep[hidden] { display: none; }
+#keep .label { background: var(--yellow); }
+#keep .label span { background: none; color: var(--black); }
+#keep .row { margin-bottom: 0; }
+
+/* ---------- status strip, as the shell draws it ---------- */
+footer { position: sticky; bottom: 0; z-index: 3; height: calc(22 * var(--a)); background: var(--ground); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--pad); }
+footer .tab { background: var(--black); padding: calc(2 * var(--a)) calc(12 * var(--a)); clip-path: polygon(calc(8 * var(--a)) 0, 100% 0, calc(100% - 8 * var(--a)) 100%, 0 100%); display: flex; gap: calc(3 * var(--a)); align-items: baseline; }
+footer .tab .caps { color: var(--yellow); }
+footer .build { color: var(--black); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.row, #keep { scroll-margin-top: var(--head-h, 0px); scroll-margin-bottom: calc(60 * var(--a)); }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+</head>
+<body>
+<header id="head">
+  <div class="keys">
+    <div class="key b"><span class="disc caps">B</span><span class="word caps shaded">Back</span></div>
+    <div class="where caps"><span class="shaded"></span></div>
+    <div class="key a"><span class="disc caps">A</span><span class="word caps shaded">Change</span></div>
+  </div>
+  <div class="banner caps">Launch settings</div>
+  <div class="titleline">
+    <div class="title fact" id="title"></div>
+    <div class="where caps"><span class="shaded"></span></div>
+  </div>
+</header>
+<main id="list" aria-label="Launch settings"></main>
+<footer>
+  <div class="tab"><span class="caps">Time</span><span class="fact">21:47</span></div>
+  <div class="build fact">korri 0.4.1</div>
+</footer>
+<script>
+"use strict";
+// ---------- layout: one pure decision from the space given ----------
+const ART_ROWS = 240;            // Zone: the short side holds 240 art rows
+const BANNER_ART = 215;          // the banner's width in art pixels (measured on Zone)
+const KEY_WORD_ART = 62;         // one key with its word
+const KEY_DISC_ART = 16;         // one key drawn as a disc only
+const TITLE_CAP_MAX = 16;        // the title's cap height in art pixels when it fits
+const TITLE_CAP_MIN = 10;        // never smaller than a row's caps; then it truncates
+function plan(width, height) {
+  const a = Math.min(width, height) / ART_ROWS;
+  const artWide = width / a;
+  let keys;
+  if (artWide >= BANNER_ART + 2 * KEY_WORD_ART + 16) keys = "words";      // wide: words beside the banner
+  else if (artWide >= BANNER_ART + 2 * KEY_DISC_ART + 16) keys = "discs";  // room for discs only
+  else keys = "stacked";                                                    // narrow: keys take their own row
+  return { a, keys };
+}
+function applyPlan() {
+  const p = plan(window.innerWidth, window.innerHeight);
+  document.documentElement.dataset.keys = p.keys;
+  // The title yields size before it yields letters.
+  const title = document.getElementById("title");
+  for (let cap = TITLE_CAP_MAX; cap >= TITLE_CAP_MIN; cap--) {
+    title.style.setProperty("--title-cap", cap);
+    if (title.scrollWidth <= title.clientWidth) break;
+  }
+  document.documentElement.style.setProperty("--head-h", document.getElementById("head").offsetHeight + "px");
+}
+
+// ---------- the case ----------
+const q = new URLSearchParams(location.search);
+const where = q.get("where") || "streamed";        // local | streamed | offline
+const startChanged = (q.get("changes") || "none") === "some";
+const long = (q.get("data") || "typical") === "long";
+const streamed = where !== "local";
+const offline = where === "offline";
+const runDevice = streamed ? "aka" : "this device";
+
+const rows = [
+  { group: "Video", label: "Render scale", values: ["1x", "2x", "3x", "4x", "5x", "6x"], at: 3, stays: "run" },
+  { group: "Video", label: "Aspect ratio", values: ["Original", "Fill view", "Stretch", "4:3", "16:9"], at: 1 },
+  { group: "Video", label: "Window mode", values: ["Windowed", "Borderless", "Exclusive"], at: 1, stays: "run" },
+  { group: "Video", label: "FPS limit", values: ["Off"], at: 0, fixed: "WiiCompiled cannot limit the frame rate." },
+  { group: "Audio", label: "Volume", values: ["0%", "25%", "50%", "75%", "100%"], at: 4 },
+  { group: "Stream", only: "streamed", label: "Stream size", values: ["This screen", "1920×1080", "1280×720"], at: 0, stays: "view" },
+  { group: "Stream", only: "streamed", label: "Stream frame rate", values: ["30", "60", "90", "120"], at: 1, stays: "view" },
+  { group: "Stream", only: "streamed", label: "Bitrate", values: ["10 Mbps", "20 Mbps", "40 Mbps", "80 Mbps"], at: 2, stays: "view" },
+  { group: "Stream", only: "streamed", label: "Codec", values: ["Automatic", "H.264", "HEVC", "AV1"], at: 0, stays: "view" },
+  { group: "Performance", label: "CPU limit", values: ["25%", "50%", "75%", "100%"], at: 3, stays: "run" },
+  { group: "Performance", label: "CPU governor", values: ["Powersave", "Schedutil", "Performance"], at: 0, stays: "run" },
+  { group: "Runs with", label: "Runner", values: ["WiiCompiled"], at: 0, fixed: "This game has one runner." },
+  { group: "Runs with", label: "Gamescope", values: ["Off", "On"], at: 1 },
+];
+if (long) {
+  rows.splice(4, 0,
+    { group: "Video", label: "Anisotropic filtering", values: ["Off", "2x", "4x", "8x", "16x"], at: 4 },
+    { group: "Video", label: "Texture filter", values: ["Nearest", "Linear", "Sharp bilinear, integer prescale"], at: 2 },
+    { group: "Video", label: "Multisample anti-aliasing", values: ["Off", "2x", "4x", "8x"], at: 0 });
+  rows.push(
+    { group: "Language", label: "Language", values: ["English", "Português (Brasil)", "Deutsch"], at: 1 },
+    { group: "Input", label: "Rumble", values: ["Off", "On"], at: 1 },
+    { group: "Input", label: "Stick dead zone", values: ["0%", "5%", "10%", "15%"], at: 2 });
+}
+const shown = rows.filter(r => !r.only || streamed);
+shown.forEach(r => { r.start = r.at; });
+// With aka offline its rows cannot change, so that case starts with the two stream rows changed instead.
+if (startChanged && !offline) { shown[0].at = 1; shown[1].at = 0; }      // render scale 4x -> 2x, fill view -> original
+if (startChanged && offline) { const s = shown.filter(r => r.stays === "view"); s[1].at = 0; s[2].at = 1; }
+
+const keep = { label: "", values: ["This launch", "This game", "Every game"], at: 1, isKeep: true,
+  notes: ["They end when you stop playing.", "Used every time you play this game.", "Used by every game that has no value of its own."] };
+let focus = 0;
+
+function changedCount() { return shown.filter(r => r.at !== r.start).length; }
+function away(r) { return offline && !r.isKeep && r.stays !== "view"; }   // lives on a device that cannot be reached
+function locked(r) { return !!r.fixed || away(r); }
+function note(r) {
+  if (r.isKeep) return r.notes[r.at];
+  if (away(r)) return "aka cannot be reached. This cannot change now.";
+  if (r.fixed) return r.fixed;
+  if (r.at !== r.start) return "Was " + r.values[r.start] + ".";
+  if (r.stays === "run") return "Stays on " + runDevice + ".";
+  if (r.stays === "view") return "Stays on this device.";
+  return "";
+}
+function focusables() { return changedCount() > 0 ? [...shown, keep] : shown; }
+
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+function rowNode(r, index) {
+  const row = el("div", "row" + (index === focus ? " focus" : "") + (r.at !== r.start && !r.isKeep ? " changed" : "") + (r.fixed && !away(r) ? " fixed" : "") + (away(r) ? " off" : ""));
+  const label = el("div", "label"); label.append(el("span", "caps shaded", r.isKeep ? "Keep " + changedCount() + (changedCount() === 1 ? " change" : " changes") : r.label));
+  const value = el("div", "value fact");
+  const now = el("div", "now", r.values[r.at]);
+  if (!r.isKeep && r.at !== r.start) now.append(el("span", "was", "was " + r.values[r.start]));
+  value.append(el("div", "arrow", "\u25C0"), now, el("div", "arrow r", "\u25B6"));
+  row.append(label, value, el("div", "underline"), el("div", "note fact", note(r)));
+  row.addEventListener("click", ev => {
+    const list = focusables(); focus = list.indexOf(r);
+    if (ev.target.closest(".value") && !locked(r)) {
+      const box = value.getBoundingClientRect();
+      step(r, ev.clientX < box.left + box.width / 2 ? -1 : 1);
+    }
+    render();
+  });
+  return row;
+}
+function step(r, by) { if (locked(r) || r.values.length < 2) return; r.at = (r.at + by + r.values.length) % r.values.length; }
+function render() {
+  const list = focusables(); if (focus >= list.length) focus = list.length - 1;
+  const main = document.getElementById("list"); main.replaceChildren();
+  let group = null;
+  shown.forEach((r, i) => {
+    if (r.group !== group) { group = r.group; main.append(el("h2", "fact", group)); }
+    main.append(rowNode(r, i));
+  });
+  const bar = el("div"); bar.id = "keep"; bar.hidden = changedCount() === 0;
+  if (!bar.hidden) bar.append(rowNode(keep, shown.length));
+  main.append(bar);
+  const target = main.querySelector(".row.focus");
+  if (target) {
+    const r = list[focus], noteEl = target.querySelector(".note"), was = target.querySelector(".was"), span = target.querySelector(".label span");
+    // One signal for one fact: when the value bar already says "was 4x", the note says where the value stays.
+    if (was && getComputedStyle(was).display !== "none") noteEl.textContent = r.stays === "run" ? "Stays on " + runDevice + "." : r.stays === "view" ? "Stays on this device." : "";
+    // A truncated label stays reachable: the focused row's note spells it out.
+    if (!r.isKeep && span.scrollWidth > span.clientWidth) noteEl.textContent = (r.label + ". " + noteEl.textContent).trim();
+    const now = target.querySelector(".now");
+    if (now.scrollWidth > now.clientWidth) noteEl.textContent = (r.values[r.at] + ". " + noteEl.textContent).trim();
+    target.scrollIntoView({ block: "nearest" });
+  }
+}
+document.addEventListener("keydown", ev => {
+  const list = focusables(); const r = list[focus];
+  if (ev.key === "ArrowDown") focus = Math.min(focus + 1, list.length - 1);
+  else if (ev.key === "ArrowUp") focus = Math.max(focus - 1, 0);
+  else if (ev.key === "ArrowLeft") step(r, -1);
+  else if (ev.key === "ArrowRight" || ev.key === "Enter") step(r, 1);
+  else return;
+  ev.preventDefault(); render();
+});
+
+document.getElementById("title").textContent = long ? "The Legend of Zelda: Echoes of Wisdom" : "Mario Kart Wii: Retro Rewind";
+for (const badge of document.querySelectorAll(".where")) {
+  badge.dataset.state = offline ? "offline" : "ok";
+  badge.firstElementChild.textContent = offline ? "aka offline" : streamed ? "Runs on aka" : "Runs here";
+}
+applyPlan(); render();
+window.addEventListener("resize", applyPlan);
+document.fonts.ready.then(applyPlan);
+</script>
+</body>
+</html>
