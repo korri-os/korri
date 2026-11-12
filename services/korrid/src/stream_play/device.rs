@@ -615,7 +615,7 @@ mod tests {
         let read = ask(
             &state,
             &shell,
-            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"holder":"holder"}}),
         )
         .await;
         assert_eq!(read["_tag"], "Ok", "{read}");
@@ -635,7 +635,7 @@ mod tests {
             &state,
             &shell,
             json!({"_tag":"app.launch-settings.set","payload":{
-                "host":"holder",
+                "holder":"holder",
                 "place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},
                 "path":{"_tag":"CpuMax"},
                 "value":55,
@@ -654,7 +654,7 @@ mod tests {
         let routes = ask(
             &state,
             &shell,
-            json!({"_tag":"app.local-games.routes","payload":{"gameId":"absent","host":"holder"}}),
+            json!({"_tag":"app.local-games.routes","payload":{"gameId":"absent","holder":"holder"}}),
         )
         .await;
         assert_eq!(routes["_tag"], "Err");
@@ -672,7 +672,7 @@ mod tests {
         let hop = ask(
             &state,
             &peer,
-            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"holder":"holder"}}),
         )
         .await;
         assert_ne!(hop["payload"]["resolved"]["values"]["cpu.max"]["value"], 55);
@@ -682,7 +682,7 @@ mod tests {
         let gone = ask(
             &state,
             &shell,
-            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"holder":"holder"}}),
         )
         .await;
         assert_eq!(gone["_tag"], "Err");
@@ -731,7 +731,7 @@ mod tests {
         let read = ask(
             &state,
             &shell,
-            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"holder":"holder"}}),
         )
         .await;
         assert_eq!(read["_tag"], "Ok", "{read}");
@@ -743,7 +743,7 @@ mod tests {
             &state,
             &shell,
             json!({"_tag":"app.launch-settings.set","payload":{
-                "host":"holder",
+                "holder":"holder",
                 "place":{"layer":{"_tag":"Device"},"scope":{"_tag":"Any"}},
                 "path":{"_tag":"CpuMax"},
                 "value":55,
@@ -760,11 +760,11 @@ mod tests {
         for (call, payload) in [
             (
                 "app.local-games.routes",
-                json!({"gameId":"absent","host":"holder"}),
+                json!({"gameId":"absent","holder":"holder"}),
             ),
             (
                 "app.launch-settings.profile.select",
-                json!({"gameId":"absent","host":"holder","expectedRevision":"r"}),
+                json!({"gameId":"absent","holder":"holder","expectedRevision":"r"}),
             ),
         ] {
             let asked = ask(&state, &shell, json!({"_tag":call,"payload":payload})).await;
@@ -796,7 +796,7 @@ mod tests {
         let hop = ask(
             &state,
             &peer,
-            json!({"_tag":"app.launch-settings.snapshot","payload":{"host":"holder"}}),
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"holder":"holder"}}),
         )
         .await;
         assert_eq!(hop["payload"]["code"], "OperationUnsupported", "{hop}");
@@ -805,7 +805,7 @@ mod tests {
             &state,
             &shell,
             json!({"_tag":"app.local-games.launch.selected","payload":{
-                "gameId":"absent","host":"holder","runnerId":"@test:runner/main"}}),
+                "gameId":"absent","holder":"holder","runnerId":"@test:runner/main"}}),
         )
         .await;
         assert_eq!(launched["_tag"], "Err");
@@ -831,7 +831,7 @@ mod tests {
             format!("http://{address}"),
         )]);
         let request = serde_json::from_value(
-            json!({"_tag":"app.launch-settings.snapshot","payload":{"gameId":"g","host":"holder"}}),
+            json!({"_tag":"app.launch-settings.snapshot","payload":{"gameId":"g","holder":"holder"}}),
         )
         .unwrap();
         let response = ask_holder(&peers, &request)
@@ -865,7 +865,7 @@ mod tests {
             json!({"_tag":"app.session.prepare","payload":{
                 "gameId":"holder-game","host":"holder","launch":{"cpu":{"max":50}}}}),
             json!({"_tag":"app.local-games.launch.selected","payload":{
-                "gameId":"holder-game","host":"holder","runnerId":"@test:runner/main"}}),
+                "gameId":"holder-game","holder":"holder","runnerId":"@test:runner/main"}}),
         ] {
             let refused = ask(&state, &shell, request).await;
             assert_eq!(refused["_tag"], "Err", "{refused}");
