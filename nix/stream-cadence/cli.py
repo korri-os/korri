@@ -43,6 +43,7 @@ from score import (
 from sender import steady_refresh_mhz
 from verdict import (
     BASE,
+    COPIED_PRODUCT,
     DISPLAY,
     FIXTURE,
     PLUGIN_VIEWER,
@@ -50,6 +51,7 @@ from verdict import (
     STAND_IN,
     conditions_that_differ,
     judge,
+    product_changes,
     valid_runs,
     viewers,
 )
@@ -534,12 +536,75 @@ def viewer_place(plugin: bool, sender_fixture: bool, same_device: bool) -> str:
     return DISPLAY
 
 
-def viewer_ran(plugin: dict | None, stand_in: str, place: str) -> dict:
+NIX_STORE = Path("/nix/store")
+PACKAGE_OPTION = "--viewer-package"
+# Where the plugin's viewer package holds the controller mapping that korrid
+# gives the viewer: `mapping` in plugins/moonlight/plugin.nix of the plugins
+# repository. An installed plugin names the file in its manifest; a copied
+# package has no manifest.
+PRODUCT_MAPPING = "share/moonlight/korri-inputplumber-gamecontrollerdb.txt"
+
+
+def product_package(path: str) -> dict:
+    """The product viewer package that the build host names: its binary and its mapping.
+
+    A device with no viewer plugin, as aka, must not get one installed. The
+    tool copies this package there like its other pieces, and the viewer
+    fixture runs it as it runs an installed plugin's binary.
+    """
+    package = Path(path.rstrip("/"))
+    if package.parent != NIX_STORE or not package.is_dir():
+        raise Refusal(
+            f"{PACKAGE_OPTION} {path} is not a store path on this host: give the package itself, a directory directly under {NIX_STORE}. Bring it here with nix copy from a device or a cache that holds it."
+        )
+    for needed in ("bin/moonlight", PRODUCT_MAPPING):
+        if not (package / needed).is_file():
+            raise Refusal(
+                f"{PACKAGE_OPTION} {path} is no product viewer package: it has no {needed}."
+            )
+    return {
+        "package": str(package),
+        "moonlight": str(package / "bin" / "moonlight"),
+        "mapping": str(package / PRODUCT_MAPPING),
+    }
+
+
+def copied_viewer_refusal(plugin: bool) -> str | None:
+    """Why a copied product viewer package cannot run on this viewer device, or None."""
+    if plugin:
+        return f"{PACKAGE_OPTION} is for a device with no viewer plugin. This device has the plugin installed and enabled: a private pair runs the plugin's own binary there, and the tool has no way yet to run another package beside it."
+    return None
+
+
+def signer_names(text: str) -> list[str]:
+    """The names of the keys that signed a store path, from `nix path-info --sigs --json`."""
+    found = json.loads(text)
+    rows = list(found.values()) if isinstance(found, dict) else found
+    return sorted(
+        {signature.split(":", 1)[0] for row in rows for signature in (row or {}).get("signatures", [])}
+    )
+
+
+def viewer_ran(
+    plugin: dict | None, stand_in: str, place: str, copied: dict | None = None
+) -> dict:
     """Which viewer a run measured, for the result (`discovered.viewer_ran`).
 
-    The plugin's own binary with its release and package, or the stand-in
-    from nixpkgs that the tool copied. `stand_in` is that copy's store path.
+    The plugin's own binary with its release and package; a product viewer
+    package that the tool copied, with its store path, the host it was copied
+    from and the keys that signed it; or the stand-in from nixpkgs that the
+    tool copied. `stand_in` is that copy's store path.
     """
+    if copied:
+        return {
+            "kind": COPIED_PRODUCT,
+            "place": place,
+            "moonlight": copied["moonlight"],
+            "release_version": None,
+            "package": copied["package"],
+            "copied_from": copied.get("copied_from"),
+            "signed_by": copied.get("signed_by"),
+        }
     if plugin:
         return {
             "kind": PLUGIN_VIEWER,
@@ -1051,6 +1116,12 @@ def view_case(
         }
         same_clock = seat["boot_id"] == facts["boot_id"]
         plugin = seat["plugin"]
+        # A product viewer package that the tool copied, for a device with no
+        # plugin. Either one is the product's binary and is started as korrid does.
+        copied = getattr(args, "product_viewer", None)
+        product = plugin or copied
+        if copied and plugin:
+            raise Refusal(copied_viewer_refusal(True))
         # A private pair on one device runs its viewer in the fixture, also where
         # the plugin is installed: nothing of it uses the device's display.
         on_display = (
@@ -1090,7 +1161,7 @@ def view_case(
                 # The agent's own reason: a board with a device tree, or a board
                 # that it could not read.
                 raise Refusal(f"Viewer device: {seat['no_fixture']} Also: {why}.")
-            if not plugin and not paths["viewer"]:
+            if not plugin and not copied and not paths["viewer"]:
                 raise Refusal(
                     "The viewer's agent finds no enabled viewer plugin, and the tool copied no viewer. Run the measure again."
                 )
@@ -1175,7 +1246,8 @@ def view_case(
             "prepare",
             fixture=not on_display,
             # The plugin's own binary in the fixture gets korrid's environment there.
-            plugin_viewer=bool(plugin) and not on_display,
+            plugin_viewer=bool(product) and not on_display,
+            viewer_package=copied["package"] if copied else None,
             # None: the agent's default, gles2. The device's own display has none.
             renderer=args.viewer_renderer,
             width=width,
@@ -1198,7 +1270,9 @@ def view_case(
             # What draws the fixture's output; verdict keeps two renderers apart.
             facts["viewer_fixture"] = {"renderer": prepared.get("renderer")}
         # Which viewer this run measures, and where it shows the stream.
-        facts["viewer_ran"] = viewer_ran(plugin, paths["viewer"], DISPLAY if on_display else FIXTURE)
+        facts["viewer_ran"] = viewer_ran(
+            plugin, paths["viewer"], DISPLAY if on_display else FIXTURE, copied=copied
+        )
         moonlight = facts["viewer_ran"]["moonlight"]
         if args.sender_fixture:
             # Pairing replaces the certificate grant. The viewer binary of this
@@ -1229,7 +1303,7 @@ def view_case(
         ]
         if args.bitrate:
             request += ["-bitrate", str(args.bitrate)]
-        if plugin:
+        if product:
             # The arguments of korrid's linux_viewer (stream_args), with no input
             # seat and none of the plugin's rendered settings. The README lists
             # every difference from a korrid launch.
@@ -1241,7 +1315,7 @@ def view_case(
                 "-platform",
                 seat["platform"],
                 "-mapping",
-                plugin["mapping"],
+                product["mapping"],
                 "-keydir",
                 prepared["keydir"],
                 "-windowed",
@@ -1455,6 +1529,13 @@ def view_case(
                 facts["live_game"]["input_devices_disappeared"] = facts["restore"].get(
                     "gone_input_devices", []
                 )
+        # The product's own units on each device, at the start and at the end of
+        # the run, and which of them changed. A change keeps the run valid;
+        # verdict says it in a line of its own. None for an agent that reads none.
+        facts["product_units"] = {
+            "sender": facts["restore"].get("product_units"),
+            "viewer": facts["viewer_restore"].get("product_units"),
+        }
         restored = facts["restore"]["pass"] and facts["viewer_restore"]["pass"]
         if not restored:
             facts["valid"] = False
@@ -1532,7 +1613,16 @@ def view(args: argparse.Namespace) -> int:
             timeout=30,
         )
         installed = plugin_enabled(status.returncode, status.stdout)
-    seat_parts: tuple[str, ...] = ("capture",) if installed else ("capture", "viewer")
+    # A product viewer package for a device with no plugin: named on this host,
+    # copied like the other pieces, and run in the viewer fixture.
+    copied = product_package(args.viewer_package) if args.viewer_package else None
+    if copied:
+        refused = copied_viewer_refusal(installed)
+        if refused:
+            raise Refusal(refused)
+    seat_parts: tuple[str, ...] = (
+        ("capture",) if installed or copied else ("capture", "viewer")
+    )
     if viewer_target is None:
         seat_parts += ("sway",)
     seat_agent, seat_paths = built(viewer_target, viewer_options, seat_parts)
@@ -1552,6 +1642,18 @@ def view(args: argparse.Namespace) -> int:
             return Remote(shlex.split(command), log, detached=True)
         return Remote(["ssh", *options, target, command], log)
 
+    if copied:
+        # Who signed it, before this host adds its own signature for the copy.
+        copied["signed_by"] = signer_names(
+            execute(
+                ["nix", "path-info", "--sigs", "--json", copied["package"]], timeout=60
+            ).stdout
+        )
+        copied["copied_from"] = socket.gethostname()
+        if viewer_target is not None:
+            deliver(viewer_target, viewer_options, [copied["package"]])
+        seat_paths = [*seat_paths, copied["package"]]
+    args.product_viewer = copied
     args.imported_store_paths = sorted(set(sender_paths + seat_paths))
     args.out = (
         args.out.resolve()
@@ -1621,6 +1723,9 @@ def verdicts(args: argparse.Namespace) -> int:
     if differ:
         # Only the override lets a verdict come this far. It still names the difference.
         print("Allowed by --allow-different-conditions. " + differ)
+    # A product process that restarted during a run: valid, and said here.
+    for line in product_changes(old, new):
+        print(line)
 
     def text(values: list[float | None]) -> str:
         if any(value is None for value in values):
@@ -1841,6 +1946,10 @@ def parser() -> argparse.ArgumentParser:
         "--sender-fixture",
         action="store_true",
         help="give the measure a private sender on the sender target: a hidden compositor and a stock Sunshine on its own ports",
+    )
+    watch.add_argument(
+        "--viewer-package",
+        help="a product viewer package in this host's Nix store (the plugin's moonlight-embedded-korri) to copy to a viewer device that has no viewer plugin and to run in the viewer fixture there, with korrid's arguments and environment",
     )
     watch.add_argument("--ssh-option", action="append", default=[])
     watch.add_argument("--stream-host", help="sender address as this host reaches it")

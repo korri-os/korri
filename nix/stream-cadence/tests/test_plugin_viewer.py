@@ -1,5 +1,6 @@
 """The product's viewer in the fixture: a private pair on one device shows nothing on its display."""
 
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -7,19 +8,26 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import cli  # noqa: E402
 from cli import (  # noqa: E402
+    COPIED_PRODUCT,
     DISPLAY,
     FIXTURE,
     PLUGIN_VIEWER,
     STAND_IN,
+    Refusal,
+    copied_viewer_refusal,
     parser,
+    product_package,
     renderer_refusal,
+    signer_names,
     viewer_place,
     viewer_ran,
 )
+import device  # noqa: E402
 import heat  # noqa: E402
 import machine  # noqa: E402
-from verdict import judge, viewers  # noqa: E402
+from verdict import judge, product_changes, viewers  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -241,6 +249,206 @@ class FixtureRenderer(PluginViewerInTheFixture):
         with self.assertRaisesRegex(ValueError, "viewer_renderer"):
             judge(result(None), result("gles2"), 5)
         self.assertEqual(len(judge(result("gles2"), result("gles2"), 5)), 15)
+
+
+class CopiedProductViewer(PluginViewerInTheFixture):
+    """A product viewer package that the tool copies to a device with no plugin, as aka is."""
+
+    def package(self) -> Path:
+        store = Path(self.directory.name) / "store"
+        package = store / "ycag-moonlight-embedded-korri-2.7.1-korri"
+        (package / "bin").mkdir(parents=True)
+        (package / "bin" / "moonlight").write_text("#!/bin/sh\n")
+        (package / "share" / "moonlight").mkdir(parents=True)
+        (package / "share" / "moonlight" / "korri-inputplumber-gamecontrollerdb.txt").write_text("map\n")
+        previous, cli.NIX_STORE = cli.NIX_STORE, store
+        self.addCleanup(setattr, cli, "NIX_STORE", previous)
+        return package
+
+    def test_the_package_gives_the_plugins_binary_and_its_mapping(self):
+        package = self.package()
+        self.assertEqual(
+            product_package(str(package)),
+            {
+                "package": str(package),
+                "moonlight": str(package / "bin" / "moonlight"),
+                "mapping": str(package / "share" / "moonlight" / "korri-inputplumber-gamecontrollerdb.txt"),
+            },
+        )
+        # A trailing slash names the same package.
+        self.assertEqual(product_package(str(package) + "/")["package"], str(package))
+
+    def test_a_path_that_is_no_product_viewer_package_is_refused_before_any_device(self):
+        package = self.package()
+        with self.assertRaisesRegex(Refusal, "--viewer-package.*store path"):
+            product_package(str(package / "bin"))
+        with self.assertRaisesRegex(Refusal, "--viewer-package.*store path"):
+            product_package(self.directory.name)
+        (package / "share" / "moonlight" / "korri-inputplumber-gamecontrollerdb.txt").unlink()
+        with self.assertRaisesRegex(Refusal, "korri-inputplumber-gamecontrollerdb.txt"):
+            product_package(str(package))
+        (package / "bin" / "moonlight").unlink()
+        with self.assertRaisesRegex(Refusal, "bin/moonlight"):
+            product_package(str(package))
+
+    def test_it_is_for_a_device_with_no_plugin(self):
+        self.assertIsNone(copied_viewer_refusal(plugin=False))
+        self.assertRegex(copied_viewer_refusal(plugin=True), "--viewer-package.*plugin.*installed")
+
+    def test_the_result_says_copied_product_package_and_where_it_came_from(self):
+        package = self.package()
+        copied = dict(product_package(str(package)), copied_from="buildhost", signed_by=["korri-plugins-1"])
+        ran = viewer_ran(None, "", FIXTURE, copied=copied)
+        self.assertEqual(
+            ran,
+            {
+                "kind": COPIED_PRODUCT,
+                "place": FIXTURE,
+                "moonlight": str(package / "bin" / "moonlight"),
+                "release_version": None,
+                "package": str(package),
+                "copied_from": "buildhost",
+                "signed_by": ["korri-plugins-1"],
+            },
+        )
+        # Not the installed plugin, and not the stand-in.
+        self.assertNotIn(ran["kind"], (PLUGIN_VIEWER, STAND_IN))
+
+    def test_signers_are_read_from_nix_path_info(self):
+        path = "/nix/store/ycag-moonlight-embedded-korri-2.7.1-korri"
+        new = json.dumps({path: {"signatures": ["korri-plugins-1:Pgbb==", "cache.nixos.org-1:abc="]}})
+        old = json.dumps([{"path": path, "signatures": ["korri-plugins-1:Pgbb=="]}])
+        self.assertEqual(signer_names(new), ["cache.nixos.org-1", "korri-plugins-1"])
+        self.assertEqual(signer_names(old), ["korri-plugins-1"])
+        self.assertEqual(signer_names(json.dumps({path: {}})), [])
+
+    def test_the_agent_starts_a_copied_package_as_it_starts_the_plugins_binary(self):
+        package = self.package()
+        session = self.session()
+        self.assertIsNone(session.facts["plugin"])
+        self.prepare(session, plugin_viewer=True, viewer_package=str(package))
+        environment = session.viewer_environment()
+        self.assertEqual(environment["KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT"], "1")
+        self.assertEqual(environment["SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"], "1")
+        self.assertEqual(environment["KORRI_MOONLIGHT_SERVER_CERTIFICATE"], str(session.root / "server.pem"))
+        self.assertEqual(environment["SDL_VIDEODRIVER"], "wayland")
+        self.assertNotIn("DISPLAY", environment)
+
+    def test_the_agent_refuses_a_package_that_is_not_on_the_device(self):
+        session = self.session()
+        with self.assertRaisesRegex(RuntimeError, "is not on this device"):
+            self.prepare(session, plugin_viewer=True, viewer_package="/nix/store/none-moonlight-embedded-korri")
+        self.assertIsNone(session.root)
+
+    def test_verdict_names_a_copied_package_and_knows_the_same_binary(self):
+        def result(ran: dict) -> list[dict]:
+            window = {
+                "latency_ms": {"p50": 20.0, "p95": 22.0}, "capture_misses": 0,
+                "repeated_frames": 0, "late_frames": 0, "torn_frames": 0, "undecodable_frames": 0,
+            }
+            facts = {
+                "valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0,
+                "viewer_ran": ran, "viewer_fixture": {"renderer": "gles2"},
+            }
+            return [
+                {"discovered": dict(facts), "source_counter": {"windows": [window]}, "viewer": {"startup_ms": 900.0}}
+                for _ in range(5)
+            ]
+
+        copied = viewer_ran(
+            None, "", FIXTURE,
+            copied={"package": "/nix/store/bbbb-moonlight-embedded-korri-2.7.1-korri", "moonlight": PLUGIN["moonlight"],
+                    "mapping": PLUGIN["mapping"], "copied_from": "buildhost", "signed_by": ["korri-plugins-1"]},
+        )
+        stand_in = viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE)
+        lines = viewers(result(copied), result(stand_in))
+        self.assertRegex(
+            lines[0],
+            "^baseline viewer: copied product package \\(.*bbbb-moonlight-embedded-korri.*copied from buildhost, signed by korri-plugins-1\\), in the fixture",
+        )
+        self.assertRegex(lines[2], "different viewers")
+        # The same binary, installed as a plugin on one device and copied to the other.
+        installed = viewer_ran(PLUGIN, "", FIXTURE)
+        self.assertRegex(viewers(result(copied), result(installed))[2], "same viewer binary")
+        self.assertEqual(len(judge(result(copied), result(stand_in), 5)), 15)
+
+
+class ProductUnits(unittest.TestCase):
+    """The product's own processes, read at the start and at the end of a run."""
+
+    SHOW = (
+        "Id=korri-compositor.service\nMainPID=391963\nExecMainStartTimestampMonotonic=1996941782522\n\n"
+        "Id=korri-shell.service\nMainPID=919859\nExecMainStartTimestampMonotonic=2091468004537\n\n"
+        "Id=korrid.service\nMainPID=919983\nExecMainStartTimestampMonotonic=2091469746682\n\n"
+        "Id=korri-oneshot.service\nMainPID=0\nExecMainStartTimestampMonotonic=5\n"
+    )
+
+    def test_units_are_the_ones_that_the_device_has_without_the_games(self):
+        listing = (
+            "korri-compositor.service loaded active running Korri compositor\n"
+            "korri-game-0123456789abcdef.service loaded active running [systemd-run] /nix/store/x secret-argument\n"
+            "korri-shell.service loaded active running Korri shell\n"
+            "korrid.service loaded active running korrid\n"
+        )
+        self.assertEqual(
+            device.unit_names(listing), ["korri-compositor.service", "korri-shell.service", "korrid.service"]
+        )
+        self.assertEqual(
+            device.unit_processes(self.SHOW),
+            {
+                "korri-compositor.service": {"pid": 391963, "started": 1996941782522},
+                "korri-shell.service": {"pid": 919859, "started": 2091468004537},
+                "korrid.service": {"pid": 919983, "started": 2091469746682},
+                "korri-oneshot.service": {"pid": 0, "started": 5},
+            },
+        )
+
+    def test_a_unit_that_restarted_appeared_or_went_is_named(self):
+        before = device.unit_processes(self.SHOW)
+        self.assertEqual(device.changed_units(before, dict(before)), [])
+        after = dict(before)
+        # ibuki at 17:05:50 UTC: a bundle switch restarted three units; the compositor kept its PID.
+        after["korri-shell.service"] = {"pid": 1000001, "started": 2099999999999}
+        after["korrid.service"] = {"pid": 1000002, "started": 2099999999998}
+        del after["korri-oneshot.service"]
+        after["korri-sunshine.service"] = {"pid": 1000003, "started": 2099999999997}
+        self.assertEqual(
+            device.changed_units(before, after),
+            ["korri-oneshot.service (gone)", "korri-shell.service (restarted)", "korri-sunshine.service (new)", "korrid.service (restarted)"],
+        )
+        # Units that could not be read at one end say so; nothing is guessed.
+        self.assertEqual(device.changed_units(None, after), ["the product's units could not be read"])
+
+    def test_verdict_says_in_a_line_of_its_own_which_runs_had_a_change(self):
+        def result(changed: list[str] | None) -> list[dict]:
+            window = {
+                "latency_ms": {"p50": 20.0, "p95": 22.0}, "capture_misses": 0,
+                "repeated_frames": 0, "late_frames": 0, "torn_frames": 0, "undecodable_frames": 0,
+            }
+            runs = []
+            for n in range(5):
+                facts: dict = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0}
+                if changed is not None:
+                    hit = changed if n == 2 else []
+                    facts["product_units"] = {"sender": {"changed": hit}, "viewer": {"changed": hit}}
+                runs.append(
+                    {"label": f"run-{n + 1}", "discovered": facts, "source_counter": {"windows": [window]}, "viewer": {"startup_ms": 900.0}}
+                )
+            return runs
+
+        quiet = result([])
+        switched = result(["korri-shell.service (restarted)", "korrid.service (restarted)"])
+        self.assertEqual(product_changes(quiet, quiet), [])
+        lines = product_changes(quiet, switched)
+        self.assertEqual(len(lines), 1)
+        self.assertRegex(
+            lines[0],
+            "^candidate: the product changed during run-3: korri-shell.service \\(restarted\\), korrid.service \\(restarted\\)",
+        )
+        # The run stays valid and is judged; the line is what tells.
+        self.assertEqual(len(judge(quiet, switched, 5)), 15)
+        # A result from before the record says nothing about its product.
+        self.assertEqual(product_changes(result(None), quiet), ["baseline: the product's units were not recorded."])
 
 
 class IbukisThermalZones(unittest.TestCase):

@@ -45,6 +45,8 @@ from device import (
     hand_over,
     let_in,
     live_games,
+    product_units,
+    units_record,
     model,
     plain_bytes,
     plain_text,
@@ -337,6 +339,9 @@ class Session:
         self.input_rule = INPUT_STRICT + ": the fixture is not prepared"
         # A Korri device: the agent is root there and took the compositor's user.
         self.watch_games = self.identity is not None
+        # The product's units at the start of the run, once read (prepare).
+        self.units: dict | None = None
+        self.units_read = False
         self.root: Path | None = None
         self.sway = ""
         self.sunshine = ""
@@ -568,6 +573,9 @@ class Session:
         # device's display nor the product Sunshine. A game changes the pair's
         # numbers, so the result names the units that are live.
         self.facts["live_games_at_start"] = live_games() if self.watch_games else []
+        if self.watch_games:
+            # The product's own processes, to say at the end which of them changed.
+            self.units, self.units_read = product_units(), True
         # Stock Sunshine makes a virtual mouse and keyboard when it starts, and a
         # touch screen and a pen tablet for each client, all through uinput. The
         # product's input stack would see them. The fixture runs only where its
@@ -878,6 +886,9 @@ class Session:
                 errors.append(f"live games: {error}")
         return {
             "live_games": live,
+            # A product unit that restarted during the run is a record, not a
+            # fault: the fixture does not use the product. None with no Korri.
+            "product_units": units_record(self.units) if self.units_read else None,
             "pass": not errors
             and not remaining
             and not fails_restore(others, self.user_id())

@@ -156,6 +156,71 @@ def unit(name: str) -> dict[str, str]:
     )
 
 
+def unit_names(listing: str) -> list[str]:
+    """The product's units from `systemctl list-units`, without the games.
+
+    Whatever units of that name the device has: nothing here names one. A
+    game unit is not the product's own process; `live_game` records games.
+    """
+    names = [line.split()[0] for line in listing.splitlines() if line.strip()]
+    return sorted(name for name in names if not name.startswith("korri-game-"))
+
+
+def unit_processes(show: str) -> dict[str, dict]:
+    """Main PID and start time of each unit, from one `systemctl show` of several units."""
+    found = {}
+    for block in show.split("\n\n"):
+        values = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+        if "Id" in values:
+            found[values["Id"]] = {
+                "pid": int(values.get("MainPID") or 0),
+                "started": int(values.get("ExecMainStartTimestampMonotonic") or 0),
+            }
+    return found
+
+
+def product_units() -> dict[str, dict] | None:
+    """The product's active service units with their main PID and start time; None when unreadable."""
+    try:
+        names = unit_names(
+            command(
+                "systemctl", "list-units", "korri*", "--type=service", "--state=active",
+                "--no-legend", "--plain",
+            )
+        )
+        if not names:
+            return {}
+        return unit_processes(
+            command(
+                "systemctl", "show", *names, "-p", "Id", "-p", "MainPID",
+                "-p", "ExecMainStartTimestampMonotonic",
+            )
+        )
+    except Exception:
+        return None
+
+
+def changed_units(before: dict | None, after: dict | None) -> list[str]:
+    """The units whose process is another one at the end of a run, that appeared, or that went."""
+    if before is None or after is None:
+        return ["the product's units could not be read"]
+    changed = []
+    for name in sorted(set(before) | set(after)):
+        if name not in after:
+            changed.append(f"{name} (gone)")
+        elif name not in before:
+            changed.append(f"{name} (new)")
+        elif before[name] != after[name]:
+            changed.append(f"{name} (restarted)")
+    return changed
+
+
+def units_record(at_start: dict | None) -> dict:
+    """For an agent's restore block: the product's units at the start and now, and what changed."""
+    at_end = product_units()
+    return {"at_start": at_start, "at_end": at_end, "changed": changed_units(at_start, at_end)}
+
+
 def live_games() -> list[str]:
     """The names of the korri-game-* units that run now. Names only, no command line."""
     text = command(

@@ -45,6 +45,8 @@ from device import (
     korrid_displays,
     let_in,
     live_games,
+    product_units,
+    units_record,
     model,
     plain_text,
     read_plain,
@@ -395,6 +397,9 @@ class Session:
         self.last_game_check = 0.0
         # A Korri device: the product compositor is there.
         self.watch_games = self.compositor is not None
+        # The product's units at the start of the run, once read (prepare).
+        self.units: dict | None = None
+        self.units_read = False
         self.beside_game = False
         self.processes: dict[str, subprocess.Popen] = {}
         self.logs: dict[str, TextIO] = {}
@@ -631,6 +636,9 @@ class Session:
         # units that are live.
         self.beside_game = bool(request.get("private_pair")) and bool(request["fixture"])
         live: list[str] = live_games() if self.watch_games else []
+        if self.watch_games and not self.units_read:
+            # The product's own processes, to say at the end which of them changed.
+            self.units, self.units_read = product_units(), True
         if self.watch_games and not self.beside_game:
             games()
         if self.root is not None:
@@ -661,7 +669,15 @@ class Session:
                 "not start on it."
             )
         plugin_viewer = bool(request.get("plugin_viewer"))
-        if plugin_viewer and not (request["fixture"] and self.facts["plugin"]):
+        # A product viewer package that the tool copied here, for a device with
+        # no plugin. It is started as the plugin's own binary is.
+        package = request.get("viewer_package")
+        if package and not Path(package, "bin", "moonlight").is_file():
+            raise RuntimeError(
+                f"The product viewer package {package} is not on this device: the tool's "
+                "copy did not arrive. The viewer does not start."
+            )
+        if plugin_viewer and not (request["fixture"] and (self.facts["plugin"] or package)):
             raise RuntimeError(
                 "The plugin's viewer in the fixture needs the fixture and an enabled viewer "
                 "plugin. This agent found no enabled viewer plugin: "
@@ -960,6 +976,9 @@ class Session:
                 errors.append(f"live games: {error}")
         return {
             "live_games": live,
+            # Which product units restarted, appeared or went during the run. A
+            # record, not a fault. None with no Korri.
+            "product_units": units_record(self.units) if self.units_read else None,
             "pass": all(unchanged.values())
             and not errors
             and not remaining

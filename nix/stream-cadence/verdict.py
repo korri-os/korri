@@ -93,6 +93,8 @@ QUEUE = "queue"
 # Which viewer ran and where, in `discovered.viewer_ran`.
 DISPLAY, FIXTURE = "display", "fixture"
 PLUGIN_VIEWER, STAND_IN = "plugin", "stand-in"
+# A product viewer package that the tool copied to a device with no plugin.
+COPIED_PRODUCT = "copied-product"
 # The lists of game units in `discovered.live_game`: each device, start and end.
 LIVE_GAME_MOMENTS = ("sender_at_start", "viewer_at_start", "sender_at_end", "viewer_at_end")
 # The entries under /dev/input that changed during the run, in the same place.
@@ -178,9 +180,14 @@ def one_viewer(records: list[dict], name: str) -> dict:
 
 
 def described(ran: dict) -> str:
-    name = (
-        f"plugin {ran.get('release_version')}" if ran["kind"] == PLUGIN_VIEWER else "stand-in"
-    )
+    name = {
+        PLUGIN_VIEWER: f"plugin {ran.get('release_version')}",
+        COPIED_PRODUCT: "copied product package",
+    }.get(ran["kind"], "stand-in")
+    origin = ""
+    if ran["kind"] == COPIED_PRODUCT:
+        signed = ", ".join(ran.get("signed_by") or []) or "no key"
+        origin = f", copied from {ran.get('copied_from')}, signed by {signed}"
     place = "in the fixture" if ran["place"] == FIXTURE else "on the device's own display"
     # The render nodes that the viewer held open: where its own OpenGL ran. A
     # result from before that read has no word about it.
@@ -192,7 +199,7 @@ def described(ran: dict) -> str:
         if nodes
         else ", no render node open: its OpenGL is Mesa's software rasterizer, or it has none"
     )
-    return f"{name} ({ran.get('moonlight')}), {place}{opengl}"
+    return f"{name} ({ran.get('moonlight')}{origin}), {place}{opengl}"
 
 
 def viewers(baseline: list[dict], candidate: list[dict]) -> list[str]:
@@ -210,9 +217,41 @@ def viewers(baseline: list[dict], candidate: list[dict]) -> list[str]:
             "The two results ran the same viewer binary, but its OpenGL differs: one drew on "
             "the graphics card and one did not. Every verdict below compares these two."
         )
+    elif old.get("moonlight") == new.get("moonlight"):
+        last = (
+            "The two results ran the same viewer binary; how it came to the device, or where "
+            "it showed the stream, differs."
+        )
     else:
         last = "The two results ran different viewers; every verdict below compares these two."
     return ["baseline viewer: " + described(old), "candidate viewer: " + described(new), last]
+
+
+def product_changes(baseline: list[dict], candidate: list[dict]) -> list[str]:
+    """What happened to the product's own processes during the runs, for lines of their own.
+
+    A run in which a product unit restarted, appeared or went stays valid:
+    the pair does not use the product. But the device was not the same
+    during that run, and a reader of the verdict must know it.
+    """
+    lines = []
+    for name, records in (("baseline", baseline), ("candidate", candidate)):
+        kept = [record for record in records if "product_units" in record["discovered"]]
+        if not kept:
+            lines.append(f"{name}: the product's units were not recorded.")
+            continue
+        for record in kept:
+            sides = record["discovered"]["product_units"] or {}
+            changed = sorted(
+                {unit for side in sides.values() for unit in ((side or {}).get("changed") or [])}
+            )
+            if changed:
+                lines.append(
+                    f"{name}: the product changed during {record.get('label')}: "
+                    + ", ".join(changed)
+                    + ". The run is valid and is in the verdict."
+                )
+    return lines
 
 
 def differences(baseline: list[dict], candidate: list[dict]) -> list[str]:
