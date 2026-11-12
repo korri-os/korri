@@ -633,8 +633,10 @@ plugin.
 The plugin's code never receives the secret: not in a handler's input, not in
 a response and not in a failure. korrid keeps it in
 `<private>/<plugin id>/credential` (folder mode 0700, file mode 0600, both set
-in code) and adds `Authorization: Bearer <secret>` to a turn request whose
-host is `credentialHost`. Bearer is the only form. A request to any other
+in code) and adds `Authorization: Bearer <secret>` to a turn request that is
+`https` to `credentialHost`. Bearer is the only form. A secret never leaves
+in clear text: a plugin may ask for a plain `http` URL on `credentialHost`,
+and korrid sends that request without the secret. A request to any other
 declared host carries no secret. On a redirect korrid adds the header again
 only while the next host is still `credentialHost`; once a redirect leaves
 that host, the request never carries the secret again. A request that starts

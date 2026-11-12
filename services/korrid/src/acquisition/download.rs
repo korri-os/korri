@@ -26,6 +26,10 @@ pub(super) struct DownloadEngine {
     /// Test-only DNS answers, so declared DNS names reach a loopback server.
     #[cfg(test)]
     names: std::collections::BTreeMap<String, IpAddr>,
+    /// Test-only: keep the shipped rule for a plugin's secret (HTTPS only)
+    /// while the loopback server speaks plain HTTP.
+    #[cfg(test)]
+    secrets_need_https: bool,
 }
 impl Default for DownloadEngine {
     fn default() -> Self {
@@ -37,6 +41,8 @@ impl Default for DownloadEngine {
             space: None,
             #[cfg(test)]
             names: Default::default(),
+            #[cfg(test)]
+            secrets_need_https: true,
         }
     }
 }
@@ -117,7 +123,32 @@ impl DownloadEngine {
             addresses: policy::AddressPolicy::AllowLoopback,
             space: None,
             names: Default::default(),
+            secrets_need_https: false,
         }
+    }
+
+    /// A test engine that treats a plugin's secret as shipped korrid does:
+    /// it goes over HTTPS or not at all.
+    #[cfg(test)]
+    pub(super) fn with_secrets_over_https_only(mut self) -> Self {
+        self.secrets_need_https = true;
+        self
+    }
+
+    /// The header that carries a plugin's secret on a request to `url`, when
+    /// that request may carry it: HTTPS to the secret's own host (ADR 0034).
+    /// A secret never leaves in clear text. Only a test's loopback server
+    /// gets it over plain HTTP, as it gets an artwork image over plain HTTP.
+    pub(super) fn secret_header(
+        &self,
+        credential: &crate::plugin_secrets::PluginCredential,
+        url: &Url,
+    ) -> Option<header::HeaderValue> {
+        #[cfg(test)]
+        if !self.secrets_need_https && !self.addresses.requires_https() {
+            return credential.authorization_over_test_http(url);
+        }
+        credential.authorization(url)
     }
 
     #[cfg(test)]
@@ -210,10 +241,11 @@ impl DownloadEngine {
         configure: impl Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
     ) -> Result<(Url, Response, bool), Failure> {
         policy::declared(&url, hosts)?;
-        // Only a request that starts on the secret's host carries it, and it
-        // is gone for good once a redirect leaves that host.
+        // Only a request that starts on the secret's host, over HTTPS,
+        // carries it, and it is gone for good once a redirect leaves that
+        // host.
         let mut credential =
-            credential.filter(|credential| credential.authorization(&url).is_some());
+            credential.filter(|credential| self.secret_header(credential, &url).is_some());
         for hops in 0..=5 {
             let client = self.client(&url).await?;
             let request = match form {
@@ -224,7 +256,8 @@ impl DownloadEngine {
                 None => client.get(url.clone()),
             };
             let mut request = configure(request.header(header::ACCEPT_ENCODING, "identity"));
-            let authorization = credential.and_then(|credential| credential.authorization(&url));
+            let authorization =
+                credential.and_then(|credential| self.secret_header(credential, &url));
             let credential_sent = authorization.is_some();
             match authorization {
                 Some(authorization) => {

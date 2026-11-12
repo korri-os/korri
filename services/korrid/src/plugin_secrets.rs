@@ -187,11 +187,27 @@ pub(crate) struct PluginCredential {
 
 impl PluginCredential {
     /// The `Authorization` header for a request to `url`, or `None` when
-    /// `url` is not on the declared host. A redirect hop asks again with its
-    /// own URL, so the secret follows a redirect only to the same host.
+    /// `url` is not HTTPS on the declared host. A secret never leaves in
+    /// clear text: a plain `http` request to the declared host gets none. A
+    /// redirect hop asks again with its own URL, so the secret follows a
+    /// redirect only to the same host.
     pub(crate) fn authorization(&self, url: &url::Url) -> Option<reqwest::header::HeaderValue> {
+        (url.scheme() == "https" && self.is_for(url)).then(|| self.header.clone())
+    }
+
+    /// As `authorization`, for a test's loopback server that speaks plain
+    /// HTTP. It does not exist outside tests, so shipped korrid cannot send
+    /// a secret over `http`.
+    #[cfg(test)]
+    pub(crate) fn authorization_over_test_http(
+        &self,
+        url: &url::Url,
+    ) -> Option<reqwest::header::HeaderValue> {
+        self.is_for(url).then(|| self.header.clone())
+    }
+
+    fn is_for(&self, url: &url::Url) -> bool {
         matches!(url.host(), Some(url::Host::Domain(host)) if host == self.host)
-            .then(|| self.header.clone())
     }
 
     /// Whether `other` holds the same secret for the same host: the artwork
@@ -399,6 +415,21 @@ mod tests {
             "https://93.184.216.34/api",
         ] {
             assert!(credential.authorization(&url(other)).is_none(), "{other}");
+            assert!(
+                credential
+                    .authorization_over_test_http(&url(other))
+                    .is_none(),
+                "{other}"
+            );
+        }
+        // Never in clear text: the declared host over plain `http` gets no
+        // header, on any port.
+        for plain in [
+            "http://www.steamgriddb.com/api/v2/grids/game/1",
+            "http://www.steamgriddb.com:443/api/v2/grids/game/1",
+            "http://WWW.SteamGridDB.com:8443/x",
+        ] {
+            assert!(credential.authorization(&url(plain)).is_none(), "{plain}");
         }
     }
 

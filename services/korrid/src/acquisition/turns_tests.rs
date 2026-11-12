@@ -629,6 +629,77 @@ async fn the_secret_follows_a_redirect_only_to_the_same_host() {
     );
 }
 
+/// Turn admission lets a plugin ask for `http`. The secret still never
+/// leaves in clear text: korrid adds it to an HTTPS request only.
+#[tokio::test]
+async fn the_secret_never_goes_to_its_host_over_plain_http() {
+    let server = HttpFixture::start([
+        ("/api", Route::ok("text/plain", "plain")),
+        (
+            "/denied",
+            Route {
+                status: 401,
+                ..Route::ok("text/plain", "no key")
+            },
+        ),
+    ]);
+    let handler = |path: &str| {
+        format!(
+            "{{'claims.search': (i) => i.responses.length ? [{claim}] : ({{_tag: 'HttpRequests', requests: [{{url: '{url}'}}]}})}}",
+            claim = claim("x", "i.responses[0].status + ':' + i.responses[0].text"),
+            url = server.url(HOST, path),
+        )
+    };
+    // The engine as shipped korrid has it for a secret, over the test server.
+    let shipped = engine().with_secrets_over_https_only();
+    let (context, _private) = context_with_secret(&handler("/api"));
+    let claims = turns::search(&shipped, &context, "q").await.unwrap();
+    // The request went to the secret's own host, and without the secret.
+    assert_eq!(claims[0].title, "200:plain");
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(host_of(&received[0]), HOST);
+    assert!(!carried_secret(&received[0]));
+    assert!(!received[0]
+        .headers
+        .iter()
+        .any(|header| header.starts_with("authorization")));
+    // A 401 to a request that carried no secret is the plugin's to read: it
+    // does not say the secret is wrong.
+    let (context, _private) = context_with_secret(&handler("/denied"));
+    let claims = turns::search(&shipped, &context, "q").await.unwrap();
+    assert_eq!(claims[0].title, "401:no key");
+    assert!(server
+        .received()
+        .iter()
+        .all(|request| !carried_secret(request)));
+
+    // The rule itself, with no network: HTTPS to the host, and nothing else.
+    let secrets_folder = tempfile::tempdir().unwrap();
+    let secrets = crate::plugin_secrets::PluginSecrets::new(secrets_folder.path());
+    secrets.set("@test:shop", SECRET).unwrap();
+    let credential = secrets.credential("@test:shop", HOST).unwrap().unwrap();
+    let url = |text: &str| url::Url::parse(text).unwrap();
+    for production in [DownloadEngine::default(), shipped] {
+        assert!(production
+            .secret_header(&credential, &url(&format!("https://{HOST}/api")))
+            .is_some());
+        for refused in [
+            format!("http://{HOST}/api"),
+            format!("http://{HOST}:443/api"),
+            "https://other.test/api".to_owned(),
+            "http://other.test/api".to_owned(),
+        ] {
+            assert!(
+                production
+                    .secret_header(&credential, &url(&refused))
+                    .is_none(),
+                "{refused}"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_plugin_with_a_secret_still_cannot_set_authorization_and_no_failure_names_the_secret() {
     let server = HttpFixture::start([("/api", Route::ok("text/plain", "ok"))]);
