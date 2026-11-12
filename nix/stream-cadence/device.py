@@ -391,6 +391,7 @@ class Session:
         self.revoke: dict | None = None
         self.cursor: str | None = None
         self.last_heartbeat = 0.0
+        self.last_game_check = 0.0
 
     def stop_source(self) -> None:
         if self.source:
@@ -501,8 +502,11 @@ class Session:
             )
             return {"run_folder": str(self.root), "source_pid": self.source.pid}
         if operation == "sample":
-            # A game that starts during a measure ends the measure: the person wins.
-            games()
+            # A game that starts during a measure ends the measure: the person
+            # wins. One look every two seconds keeps the check cheap.
+            if time.monotonic() - self.last_game_check >= 2:
+                games()
+                self.last_game_check = time.monotonic()
             if time.monotonic() - self.last_heartbeat >= 60:
                 wake(self.facts)
                 self.last_heartbeat = time.monotonic()
