@@ -1668,27 +1668,176 @@ async fn a_streamed_games_changes_and_this_devices_own_copy_do_not_mix() {
     assert!(launch.submit_one_launch(&key).1.is_some());
 }
 
+/// The place this device's stream viewer reads its values from.
+fn viewer_place() -> Value {
+    json!({ "layer": { "_tag": "Device" }, "scope": { "_tag": "Runner", "id": MOONLIGHT } })
+}
+
 #[tokio::test]
-async fn this_devices_stream_rows_are_written_to_this_device_at_once() {
+async fn this_devices_stream_rows_wait_as_changes_and_are_kept_on_this_device() {
     let (launch, calls) = streamed(shared_and_own(), this_device(), up());
     open_on_aka(&launch);
     settle().await;
     assert!(launch.change(CODEC, "\"av1\""));
     settle().await;
+    // A stream row is a change like any other: marked, counted, not written.
+    assert!(asked(&calls, SET).is_empty(), "a change is not a write");
+    let now = shown(&launch);
+    assert_eq!(tag(&launch.editor()), "Ready");
+    assert_eq!(value(&row(&now, "Codec")), Some("AV1".into()));
+    assert_eq!(changes(&now), [(CODEC.to_owned(), "H264".to_owned())]);
+    assert_eq!(
+        now.keep.as_ref().map(|keep| keep.label.as_str()),
+        Some("Keep 1 change")
+    );
+    assert!(launch.change(RENDER_SCALE, "2"));
+    let now = shown(&launch);
+    assert_eq!(
+        now.keep.as_ref().map(|keep| keep.label.as_str()),
+        Some("Keep 2 changes")
+    );
+    assert_eq!(value(&now.keep), Some("This game".into()));
+    // Back at its earlier value: the mark goes.
+    assert!(launch.change(CODEC, "\"h264\""));
+    assert_eq!(changes(&shown(&launch)).len(), 1);
+    assert!(launch.change(CODEC, "\"av1\""));
+
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
     let writes = asked(&calls, SET);
-    assert_eq!(writes.len(), 1);
-    assert!(writes[0].get("holder").is_none(), "this device keeps it");
+    assert_eq!(writes.len(), 2);
+    // aka's value goes to aka, in the place the person chose.
+    assert_eq!(writes[0]["holder"], json!("aka"));
+    assert_eq!(writes[0]["path"], setting("video.render-scale"));
     assert_eq!(
         writes[0]["place"],
-        json!({ "layer": { "_tag": "Device" }, "scope": { "_tag": "Runner", "id": MOONLIGHT } })
+        json!({ "layer": { "_tag": "Game", "id": "wario" }, "scope": { "_tag": "Any" } })
     );
-    assert_eq!(writes[0]["path"], setting("video.codec"));
+    // The stream value goes to this device, where its viewer reads it.
+    assert!(writes[1].get("holder").is_none(), "this device keeps it");
+    assert_eq!(writes[1]["place"], viewer_place());
+    assert_eq!(writes[1]["path"], setting("video.codec"));
+    assert_eq!(writes[1]["value"], json!("av1"));
+    assert_eq!(
+        writes[1]["expectedRevision"],
+        json!("device-1"),
+        "from this device's own snapshot"
+    );
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    let key = crate::surface::one_launch::game_key("wario", Some("aka"));
+    assert!(launch.submit_one_launch(&key).1.is_none());
+}
+
+#[tokio::test]
+async fn stream_values_stay_on_this_device_when_the_changes_are_for_this_launch() {
+    let (launch, calls) = streamed(shared_and_own(), this_device(), up());
+    open_on_aka(&launch);
+    settle().await;
+    assert!(launch.change(RENDER_SCALE, "2"));
+    assert!(launch.change("launch:keep", "launch"));
+    assert_eq!(
+        shown(&launch).keep.and_then(|keep| keep.description),
+        Some("They end when you stop playing.".into())
+    );
+    assert!(launch.change(CODEC, "\"av1\""));
+    let keep = shown(&launch).keep;
+    assert_eq!(
+        keep.as_ref().map(|keep| keep.label.as_str()),
+        Some("Keep 2 changes")
+    );
+    assert_eq!(value(&keep), Some("This launch".into()));
+    assert_eq!(
+        keep.and_then(|keep| keep.description),
+        Some("They end when you stop playing. Stream values stay on this device.".into())
+    );
+    // Only stream values are changed: nothing ends with the launch.
+    assert!(launch.change(RENDER_SCALE, "4"));
+    assert!(launch.change("launch:keep", "launch"));
+    assert_eq!(
+        shown(&launch).keep.and_then(|keep| keep.description),
+        Some("Stream values stay on this device.".into())
+    );
+    assert!(launch.change(RENDER_SCALE, "2"));
+    // Any other place keeps its own words.
+    assert!(launch.change("launch:keep", "game:wario"));
+    assert_eq!(
+        shown(&launch).keep.and_then(|keep| keep.description),
+        Some("Used every time you play this game.".into())
+    );
+    assert!(launch.change("launch:keep", "launch"));
+
+    // The game starts: the stream value is written to this device, and the
+    // launch carries aka's value.
+    assert_eq!(launch.close().await, Closing::Kept);
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    let writes = asked(&calls, SET);
+    assert_eq!(writes.len(), 1);
+    assert!(writes[0].get("holder").is_none());
+    assert_eq!(writes[0]["place"], viewer_place());
     assert_eq!(writes[0]["value"], json!("av1"));
-    // It is not a change that waits to be kept.
-    let now = shown(&launch);
-    assert!(now.changes.is_empty());
-    assert!(now.keep.is_none());
-    assert_eq!(tag(&launch.editor()), "Ready");
+    let key = crate::surface::one_launch::game_key("wario", Some("aka"));
+    let (ticket, values) = launch.submit_one_launch(&key);
+    assert_eq!(
+        serde_json::to_value(values.expect("one-launch values")).unwrap(),
+        json!({ "settings": { "video": { "render-scale": 2 } }, "modifiers": {} })
+    );
+    launch.complete_one_launch(ticket, true);
+    open_on_aka(&launch);
+    settle().await;
+    assert!(shown(&launch).changes.is_empty());
+    assert_eq!(asked(&calls, SET).len(), 1);
+}
+
+#[tokio::test]
+async fn a_stream_value_this_device_refuses_stops_the_start_and_stays_marked() {
+    for (code, state) in [
+        ("SettingsConflict", "Conflict"),
+        ("SettingsInvalid", "Error"),
+    ] {
+        let refuse = up();
+        let refusing = Arc::clone(&refuse);
+        let (korrid, calls) = answering(move |tag, payload| match tag {
+            SNAPSHOT if payload["holder"] == "aka" => ok_snapshot(shared_and_own().snapshot()),
+            SNAPSHOT => ok_snapshot(this_device().snapshot()),
+            _ if payload.get("holder").is_none()
+                && refusing.load(std::sync::atomic::Ordering::SeqCst) =>
+            {
+                refused(code, "This device said no.")
+            }
+            _ => written_ok(),
+        });
+        let launch = controller(korrid);
+        open_on_aka(&launch);
+        settle().await;
+        assert!(launch.change(CODEC, "\"av1\""));
+        assert!(launch.change("launch:keep", "launch"));
+        assert_eq!(launch.close().await, Closing::NotKept);
+        let editor = launch.editor();
+        assert_eq!(tag(&editor), state);
+        assert_eq!(
+            changes(&shown(&launch)),
+            [(CODEC.to_owned(), "H264".to_owned())]
+        );
+        if let SurfaceLaunchSettings::Error(problem) = &editor {
+            // This device refused, not aka.
+            assert_eq!(problem.message, "This device said no.");
+            assert_eq!(action_ids(&editor), [launch_id::RETRY, launch_id::CANCEL]);
+            // Retry writes it again, then the editor closes.
+            refuse.store(false, std::sync::atomic::Ordering::SeqCst);
+            assert!(launch.act(launch_id::RETRY));
+            settle().await;
+            assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+            assert_eq!(asked(&calls, SET).len(), 2);
+        } else {
+            // Reload reads this device again too.
+            let reads = asked(&calls, SNAPSHOT).len();
+            assert!(launch.act(launch_id::RELOAD));
+            settle().await;
+            assert_eq!(asked(&calls, SNAPSHOT).len(), reads + 2);
+            assert_eq!(tag(&launch.editor()), "Ready");
+            assert_eq!(changes(&shown(&launch)).len(), 1);
+        }
+    }
 }
 
 #[tokio::test]
@@ -1753,18 +1902,122 @@ async fn a_holder_that_cannot_be_reached_says_so_and_this_devices_rows_still_wor
     );
     assert!(launch.change(FRAMESKIP, "5"));
     assert!(shown(&launch).changes.is_empty());
-    // This device's own rows still work.
+    // This device's own rows still work: a change waits, marked.
     assert!(row(&problem.content, "Codec").is_some_and(|item| item.interaction.is_some()));
     assert!(launch.change(CODEC, "\"av1\""));
     settle().await;
-    assert_eq!(asked(&calls, SET).len(), 1);
+    assert!(asked(&calls, SET).is_empty());
     assert_eq!(tag(&launch.editor()), "Error");
+    assert_eq!(
+        changes(&shown(&launch)),
+        [(CODEC.to_owned(), "H264".to_owned())]
+    );
 
+    // aka answers again: its rows change again, and the stream change still waits.
     reachable.store(true, std::sync::atomic::Ordering::SeqCst);
     assert!(launch.act(launch_id::RETRY));
     settle().await;
     assert_eq!(tag(&launch.editor()), "Ready");
     assert!(row(&shown(&launch), "Frameskip").is_some_and(|item| item.interaction.is_some()));
+    assert_eq!(changes(&shown(&launch)).len(), 1);
+
+    // Closing keeps it on this device.
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    let writes = asked(&calls, SET);
+    assert_eq!(writes.len(), 1);
+    assert!(writes[0].get("holder").is_none(), "written to this device");
+}
+
+/// This device cannot say what its stream viewer has now, so the list has
+/// no stream row to show the change on.
+#[tokio::test]
+async fn a_stream_change_the_list_cannot_show_now_waits_and_is_not_in_the_way() {
+    let device_up = up();
+    let answers = Arc::clone(&device_up);
+    let (korrid, calls) = answering(move |tag, payload| match tag {
+        SNAPSHOT if payload["holder"] == "aka" => ok_snapshot(shared_and_own().snapshot()),
+        SNAPSHOT if answers.load(std::sync::atomic::Ordering::SeqCst) => {
+            ok_snapshot(this_device().snapshot())
+        }
+        SNAPSHOT => refused("SettingsUnavailable", "Launch settings could not be read."),
+        _ => written_ok(),
+    });
+    let launch = controller(korrid);
+    open_on_aka(&launch);
+    settle().await;
+    assert!(launch.change(CODEC, "\"av1\""));
+    assert_eq!(changes(&shown(&launch)).len(), 1);
+    device_up.store(false, std::sync::atomic::Ordering::SeqCst);
+    launch.refresh_device().await;
+    let now = shown(&launch);
+    assert!(!titles(&now).contains(&"Stream".to_owned()));
+    assert!(now.changes.is_empty());
+    assert!(now.keep.is_none());
+    // Nothing shown waits, so the game may start. Nothing is written.
+    assert_eq!(launch.close().await, Closing::Kept);
+    assert!(asked(&calls, SET).is_empty());
+    // The change shows again once this device answers.
+    device_up.store(true, std::sync::atomic::Ordering::SeqCst);
+    open_on_aka(&launch);
+    settle().await;
+    assert_eq!(
+        changes(&shown(&launch)),
+        [(CODEC.to_owned(), "H264".to_owned())]
+    );
+}
+
+/// aka cannot be reached and one of its changes waits. Closing still keeps
+/// this device's own stream value; aka's change stays with the game.
+#[tokio::test]
+async fn closing_with_the_holder_out_of_reach_keeps_this_devices_stream_values() {
+    let reachable = up();
+    let (launch, calls) = streamed(resolved_wario(), this_device(), Arc::clone(&reachable));
+    open_on_aka(&launch);
+    settle().await;
+    assert!(launch.change(FRAMESKIP, "5"));
+    reachable.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
+    assert_eq!(tag(&launch.editor()), "Error");
+    assert!(launch.act(launch_id::CANCEL));
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    let before = asked(&calls, SET).len();
+
+    open_on_aka(&launch);
+    settle().await;
+    assert_eq!(tag(&launch.editor()), "Error");
+    assert!(launch.change(CODEC, "\"av1\""));
+    assert_eq!(
+        changes(&shown(&launch)),
+        [
+            (FRAMESKIP.to_owned(), "3".to_owned()),
+            (CODEC.to_owned(), "H264".to_owned()),
+        ]
+    );
+    // A game start needs every change written, and aka's cannot be.
+    assert_eq!(launch.close().await, Closing::NotKept);
+    assert_eq!(asked(&calls, SET).len(), before);
+    assert_eq!(tag(&launch.editor()), "Error");
+    // The Close action writes what this device can keep, and leaves.
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    let writes = asked(&calls, SET);
+    assert_eq!(writes.len(), before + 1);
+    let last = writes.last().unwrap();
+    assert!(last.get("holder").is_none(), "written to this device");
+    assert_eq!(last["place"], viewer_place());
+    assert_eq!(last["value"], json!("av1"));
+
+    reachable.store(true, std::sync::atomic::Ordering::SeqCst);
+    open_on_aka(&launch);
+    settle().await;
+    assert_eq!(
+        changes(&shown(&launch)),
+        [(FRAMESKIP.to_owned(), "3".to_owned())]
+    );
 }
 
 #[tokio::test]

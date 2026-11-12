@@ -91,16 +91,24 @@ change without a new owner decision.
   starts from the runner chooser. A shared value goes to the any-runner
   place and a runner-only value to its runner's place. The CPU governor is
   one device value: it is kept on the device whatever place is chosen, or
-  named for one launch.
+  named for one launch. The game starts only when every change that waits
+  was written. When a write fails, the editor stays open in Error or
+  Conflict with its changes marked, and nothing starts.
 - **One-launch governor.** The limits helper sets the governor for the whole
   device. korrid applies the launch's governor when the game unit starts and
   puts the device's own back when it ends. A korrid restart also applies the
   device's own.
-- **The stream section.** The playing device's stream viewer values are
-  written to that device at once, in its device place for the viewer. They
-  are not part of the changes that wait to be kept, because that device has
-  no place for a streamed game and its viewer takes no one-launch values yet
-  (issue #395).
+- **The stream section.** The playing device's stream viewer values join
+  the changes that wait, like every other row. A changed stream row is
+  marked with its earlier value and counts in the keep control. It is
+  written when the editor closes or the game starts, and a write that fails
+  stops the start. It is always written to the playing device, in its device
+  place for the viewer, whatever place the keep control names. The value
+  describes that device, and that device has no game place and no one-launch
+  place for a streamed game's viewer (issue #395). When the changes are for
+  this launch, the keep control says that stream values stay on this
+  device. When the holder cannot be reached, the stream rows still change,
+  and the Close action still writes them.
 - **A runner choice for a streamed game.** The chooser reads the holder's
   runners. A holder with one runner selected prepares as before, with the
   viewer's display. A runner chosen for one launch uses `SelectedGameLaunch`,

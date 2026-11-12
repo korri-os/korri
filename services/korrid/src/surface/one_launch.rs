@@ -19,6 +19,24 @@ pub(crate) fn game_key(id: &str, host: Option<&str>) -> String {
     }
 }
 
+/// The device a value belongs to, and so where its change is kept.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Side {
+    /// The device that runs the game. Its change is kept in the place the
+    /// person chose, or goes with one launch.
+    Holder {
+        /// The runner a runner-only setting belongs to.
+        runner: Option<String>,
+    },
+    /// This device's own stream viewer. Its change is always kept on this
+    /// device, in the place the viewer reads: this device has no game place
+    /// and no one-launch place for a streamed game's viewer (issue #395).
+    Viewer {
+        /// The viewer: a runner of this device.
+        runner: String,
+    },
+}
+
 /// One changed row.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Change {
@@ -28,8 +46,7 @@ pub(crate) struct Change {
     pub path: Value,
     /// The value to use. Null: the plugin's own default.
     pub value: Value,
-    /// The runner a runner-only setting belongs to.
-    pub runner: Option<String>,
+    pub side: Side,
 }
 
 #[derive(Clone, Default)]
@@ -48,7 +65,8 @@ pub(crate) struct OneLaunch {
 }
 
 /// The changes as the values of one launch. A shared setting has no runner
-/// scope; a runner-only setting is keyed by its runner.
+/// scope; a runner-only setting is keyed by its runner. A stream viewer's
+/// value is no launch value: it is left out.
 pub(crate) fn launch_override(changes: &[Change]) -> Result<LaunchOverride, String> {
     let mut launch = LaunchOverride::default();
     let setting = |value: &Value| -> Result<Option<LaunchSettingValue>, String> {
@@ -66,13 +84,15 @@ pub(crate) fn launch_override(changes: &[Change]) -> Result<LaunchOverride, Stri
             .ok_or_else(|| "A limit is a whole percent.".to_owned())
     };
     for change in changes {
+        let Side::Holder { runner } = &change.side else {
+            continue;
+        };
         let path: LaunchPath =
             serde_json::from_value(change.path.clone()).map_err(|error| error.to_string())?;
         match path {
             LaunchPath::Setting { key } => match key.strip_prefix("plugin.") {
                 Some(rest) => {
-                    let runner = change
-                        .runner
+                    let runner = runner
                         .clone()
                         .ok_or("A runner-only setting needs its runner.")?;
                     set_leaf(
@@ -214,19 +234,25 @@ impl OneLaunch {
         self.submitted.insert(ticket, (game.into(), draft));
         (ticket, Some(launch))
     }
-    /// A launch took its values: they end with it.
+    /// A launch took its values: they end with it. A stream viewer's change
+    /// was not the launch's to carry, so it still waits.
     pub fn complete(&mut self, ticket: u64, success: bool) {
         let Some((game, draft)) = self.submitted.remove(&ticket) else {
             return;
         };
-        if success
-            && self
-                .pending
-                .get(&game)
-                .is_some_and(|current| current.version == draft.version)
-        {
-            self.pending.remove(&game);
+        if !success {
+            return;
         }
+        if let Some(current) = self
+            .pending
+            .get_mut(&game)
+            .filter(|current| current.version == draft.version)
+        {
+            current
+                .changes
+                .retain(|change| matches!(change.side, Side::Viewer { .. }));
+        }
+        self.settle(&game);
     }
 }
 
@@ -241,7 +267,18 @@ mod tests {
             row: "launch:row:setting:video.render-scale".into(),
             path: json!({"_tag":"Setting","payload":{"key":"video.render-scale"}}),
             value: json!(value),
-            runner: None,
+            side: Side::Holder { runner: None },
+        }
+    }
+    /// This device's stream viewer codec.
+    fn codec() -> Change {
+        Change {
+            row: "launch:stream:@korri:moonlight/moonlight#video.codec".into(),
+            path: json!({"_tag":"Setting","payload":{"key":"video.codec"}}),
+            value: json!("av1"),
+            side: Side::Viewer {
+                runner: "@korri:moonlight/moonlight".into(),
+            },
         }
     }
     fn for_launch(drafts: &mut OneLaunch) {
@@ -308,6 +345,25 @@ mod tests {
     }
 
     #[test]
+    fn a_launch_does_not_carry_a_stream_viewers_change_and_does_not_end_it() {
+        let mut drafts = OneLaunch::default();
+        drafts.set("game", codec());
+        for_launch(&mut drafts);
+        assert!(
+            drafts.submit("game").1.is_none(),
+            "a stream value alone is nothing to carry"
+        );
+        drafts.set("game", scale(4));
+        let (ticket, launch) = drafts.submit("game");
+        assert_eq!(
+            serde_json::to_value(launch.unwrap()).unwrap(),
+            json!({ "settings": { "video": { "render-scale": 4 } }, "modifiers": {} })
+        );
+        drafts.complete(ticket, true);
+        assert_eq!(drafts.changes("game"), [codec()]);
+    }
+
+    #[test]
     fn one_launch_values_have_no_runner_scope_and_runner_only_values_name_their_runner() {
         let launch = launch_override(&[
             scale(3),
@@ -315,37 +371,39 @@ mod tests {
                 row: "launch:row:setting:plugin.speed".into(),
                 path: json!({"_tag":"Setting","payload":{"key":"plugin.speed"}}),
                 value: json!(2),
-                runner: Some("@test:runner/main".into()),
+                side: Side::Holder {
+                    runner: Some("@test:runner/main".into()),
+                },
             },
             Change {
                 row: "launch:row:setting:video.vsync".into(),
                 path: json!({"_tag":"Setting","payload":{"key":"video.vsync"}}),
                 value: Value::Null,
-                runner: None,
+                side: Side::Holder { runner: None },
             },
             Change {
                 row: "launch:row:cpu.governor".into(),
                 path: json!({"_tag":"CpuGovernor"}),
                 value: json!("performance"),
-                runner: None,
+                side: Side::Holder { runner: None },
             },
             Change {
                 row: "launch:row:cpu.max".into(),
                 path: json!({"_tag":"CpuMax"}),
                 value: json!(60),
-                runner: None,
+                side: Side::Holder { runner: None },
             },
             Change {
                 row: "launch:row:service:@korri:sunshine/sunshine:setting:video.bitrate".into(),
                 path: json!({"_tag":"ServiceSetting","payload":{"id":"@korri:sunshine/sunshine","key":"video.bitrate"}}),
                 value: json!(20),
-                runner: None,
+                side: Side::Holder { runner: None },
             },
             Change {
                 row: "launch:row:modifier:@korri:gamescope/gamescope:enabled".into(),
                 path: json!({"_tag":"ModifierEnabled","payload":{"id":"@korri:gamescope/gamescope"}}),
                 value: json!(true),
-                runner: None,
+                side: Side::Holder { runner: None },
             },
         ])
         .unwrap();
@@ -363,7 +421,7 @@ mod tests {
             row: "launch:row:setting:plugin.speed".into(),
             path: json!({"_tag":"Setting","payload":{"key":"plugin.speed"}}),
             value: json!(2),
-            runner: None,
+            side: Side::Holder { runner: None },
         }])
         .is_err());
     }

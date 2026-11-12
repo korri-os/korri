@@ -50,7 +50,7 @@ producer the korrid port came from.
 | `launch:row:service:ID:setting:KEY` | `launch-settings set ID.KEY=VALUE [layer] [scope]`; `play GAME --set ID.KEY=VALUE` | Same service schema |
 | Default on a `launch:row:*` row | `launch-settings set KEY --default [layer] [scope]` | A Cleared setting: the plugin's own default holds |
 | `launch:keep` | `play GAME --set KEY=VALUE` (this launch); `--keep[=game\|device\|system:ID\|release:ID\|profile:ID]`; `launch-settings set KEY=VALUE [layer]` | The list writes when the editor closes; the CLI writes after the launch is accepted |
-| `launch:stream:RUNNER#KEY` | `launch-settings set --runner RUNNER KEY=VALUE` | This device's own stream viewer, at Device and that runner; written at once |
+| `launch:stream:RUNNER#KEY` | `launch-settings set --runner RUNNER KEY=VALUE` | This device's own stream viewer, at Device and that runner. The list writes it there when the editor closes, whatever place `launch:keep` names |
 | `launch:profile:pick` | `launch-settings profiles use ID --game GAME`; `use --none --game GAME` | Exact profile ID, including no-profile choice |
 | `launch:profile:new` | `launch-settings profiles new TITLE --game GAME` | Same profile creation |
 | `launch:profile:rename:ID` | `launch-settings profiles rename ID TITLE --game GAME` | Same `LaunchProfileSave` with `profileId`, trimmed title, 40-character limit and observed revision |

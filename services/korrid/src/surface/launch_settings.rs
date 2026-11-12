@@ -3,7 +3,8 @@
 //! The editor is one list (ADR 0066): a changed row waits as a change, and the
 //! changes are written when the editor closes, to the place the person chose.
 //! A streamed game's list is read from and written to the device that runs
-//! it. Every write is one typed `app.launch-settings.set` naming a place, a
+//! it; the rows of this device's own stream viewer are kept on this device.
+//! Every write is one typed `app.launch-settings.set` naming a place, a
 //! path and the revision of the snapshot it was made from. Each read and
 //! write has one generation, so a late reply changes nothing.
 
@@ -23,10 +24,10 @@ use super::{
     korrid::{ask, Korrid},
     launch_model::{
         active_profile_of, device_launch_from, launch_id,
-        list::{launch_list, LaunchList, ListInput, RowTarget, KEEP_LAUNCH},
+        list::{launch_list, LaunchList, ListInput, KEEP_LAUNCH},
         profile_from_pick, revision_of, DeviceLaunch, LaunchWrite, PendingSetting,
     },
-    one_launch::{game_key, Change, OneLaunch},
+    one_launch::{game_key, Change, OneLaunch, Side},
     Notify,
 };
 use crate::{
@@ -117,24 +118,51 @@ impl Subject {
     }
 }
 
-/// One close that writes: the changes, their place and the snapshot they
-/// were made from.
+/// The changes a close would write now, each with its place.
+#[derive(Default)]
+struct Waiting {
+    write: Vec<(Change, Value)>,
+    /// Other changes wait that the editor cannot write now: it is not Ready,
+    /// a write is on its way, or a keep that failed waits on Retry.
+    rest: bool,
+}
+
+/// One close that writes: the changes with their places, and the snapshots
+/// they were made from.
 struct Keeping {
     game: Subject,
-    layer: Value,
-    changes: Vec<Change>,
-    snapshot: Value,
+    writes: Vec<(Change, Value)>,
+    /// The snapshot of the device that runs the game.
+    holder: Value,
+    /// This device's own snapshot, for its stream viewer's values. Null when
+    /// no stream value is written.
+    viewer: Value,
     operation: u64,
 }
 
-/// What a close has to do with the changes that wait.
-enum Keep {
-    /// Nothing waits to be written.
-    Nothing,
-    Write(Keeping),
-    /// Changes wait, and the editor cannot write them now: it is not Ready,
-    /// or another write is on its way.
-    Cannot,
+/// Where a change is written.
+fn place_of(change: &Change, layer: Option<&Value>) -> Option<Value> {
+    match &change.side {
+        // Always this device, in the place its viewer reads.
+        Side::Viewer { runner } => Some(json!({
+            "layer": { "_tag": "Device" },
+            "scope": { "_tag": "Runner", "id": runner },
+        })),
+        Side::Holder { runner } => {
+            // The governor is one device value: only the device keeps it.
+            let layer = if change.path["_tag"] == "CpuGovernor" {
+                json!({ "_tag": "Device" })
+            } else {
+                layer?.clone()
+            };
+            // A shared value is kept for any runner, a runner-only value for its runner.
+            let scope = match runner {
+                Some(runner) => json!({ "_tag": "Runner", "id": runner }),
+                None => json!({ "_tag": "Any" }),
+            };
+            Some(json!({ "layer": layer, "scope": scope }))
+        }
+    }
 }
 
 /// How a close ended.
@@ -231,19 +259,25 @@ impl Inner {
             return;
         };
         let mut list = self.list_now(&game);
-        if self.snapshot.is_some() && !self.unreachable {
-            // A change whose row is gone, or whose value the device now has,
-            // could not be seen or set back.
-            let key = game.key();
-            let before = self.drafts.changes(&key).len();
-            self.drafts.retain(&key, |change| {
-                list.rows
+        // A change whose row is gone, or whose value its device now has,
+        // could not be seen or set back. Only what a device said now counts.
+        let holder_read = self.snapshot.is_some() && !self.unreachable;
+        let viewer_read = self.device_snapshot.is_some();
+        let key = game.key();
+        let before = self.drafts.changes(&key).len();
+        self.drafts.retain(&key, |change| {
+            let read = match change.side {
+                Side::Holder { .. } => holder_read,
+                Side::Viewer { .. } => viewer_read,
+            };
+            !read
+                || list
+                    .rows
                     .get(&change.row)
                     .is_some_and(|row| row.stored != change.value)
-            });
-            if self.drafts.changes(&key).len() != before {
-                list = self.list_now(&game);
-            }
+        });
+        if self.drafts.changes(&key).len() != before {
+            list = self.list_now(&game);
         }
         self.list = Some(list);
     }
@@ -330,16 +364,10 @@ impl Inner {
         self.editor = Some(SurfaceLaunchSettings::Ready(self.content(actions)));
     }
 
+    /// A call to the device that runs the game failed.
     fn failed(&mut self, failure: &RpcFailure, again: Again) {
-        self.again = Some(again);
         if failure.code == "SettingsConflict" {
-            self.build();
-            self.editor = Some(SurfaceLaunchSettings::Conflict(
-                SurfaceLaunchSettingsProblem {
-                    message: CONFLICT.into(),
-                    content: self.content(vec![reload_action(), close_action()]),
-                },
-            ));
+            self.show_failure(failure, again, None);
             return;
         }
         let holder = self
@@ -348,16 +376,112 @@ impl Inner {
             .and_then(|game| game.host.clone())
             .filter(|_| holder_did_not_answer(failure));
         self.unreachable = holder.is_some();
+        self.show_failure(
+            failure,
+            again,
+            holder.map(|holder| {
+                format!("{holder} cannot be reached. Its settings cannot change now.")
+            }),
+        );
+    }
+
+    /// A write to this device failed. What is known of the holder stands.
+    fn failed_here(&mut self, failure: &RpcFailure, again: Again) {
+        self.show_failure(failure, again, None);
+    }
+
+    /// Show a failed call: Conflict for a stale revision, or else Error with
+    /// `message`, or with korrid's own words.
+    fn show_failure(&mut self, failure: &RpcFailure, again: Again, message: Option<String>) {
+        self.again = Some(again);
         self.build();
-        self.editor = Some(SurfaceLaunchSettings::Error(SurfaceLaunchSettingsProblem {
-            message: match holder {
-                Some(holder) => {
-                    format!("{holder} cannot be reached. Its settings cannot change now.")
-                }
-                None => failure.message.clone(),
-            },
-            content: self.content(vec![retry_action(), close_action()]),
-        }));
+        self.editor = Some(if failure.code == "SettingsConflict" {
+            SurfaceLaunchSettings::Conflict(SurfaceLaunchSettingsProblem {
+                message: CONFLICT.into(),
+                content: self.content(vec![reload_action(), close_action()]),
+            })
+        } else {
+            SurfaceLaunchSettings::Error(SurfaceLaunchSettingsProblem {
+                message: message.unwrap_or_else(|| failure.message.clone()),
+                content: self.content(vec![retry_action(), close_action()]),
+            })
+        });
+    }
+
+    /// Whether a row of this side takes a change now, and a close writes it.
+    fn takes(&self, side: &Side) -> bool {
+        match (self.editor_tag(), side) {
+            ("Ready", _) => true,
+            // The holder's list could not be read. This device's own rows
+            // still work.
+            ("Error", Side::Viewer { .. }) => self.snapshot.is_none(),
+            _ => false,
+        }
+    }
+
+    /// The changes a close would write now. Changes of the device that runs
+    /// the game are not written when they are for this launch: the launch
+    /// carries them. A change the list does not show now waits out of sight:
+    /// it is not written and it is not in the way.
+    fn waiting(&self) -> Waiting {
+        let mut waiting = Waiting::default();
+        let Some(game) = &self.game else {
+            return waiting;
+        };
+        let key = game.key();
+        let layer = self.list.as_ref().and_then(|list| {
+            list.keep_places
+                .get(&list.keep_selected)
+                .and_then(|place| place.layer.as_ref())
+        });
+        // No list to say which place is the default: only the person's own
+        // choice of this launch counts.
+        let for_launch = match &self.list {
+            Some(_) => layer.is_none(),
+            None => self.drafts.keep(&key) == Some(KEEP_LAUNCH),
+        };
+        // A keep that failed is tried again by Retry, not by the next close.
+        let able = !self.busy && !matches!(self.again, Some(Again::Keep));
+        let shown = |change: &Change| {
+            self.list
+                .as_ref()
+                .is_none_or(|list| list.changes.iter().any(|shown| shown.id == change.row))
+        };
+        for change in self
+            .drafts
+            .changes(&key)
+            .iter()
+            .filter(|change| shown(change))
+        {
+            let read = match change.side {
+                Side::Holder { .. } if for_launch => continue,
+                Side::Holder { .. } => self.snapshot.is_some(),
+                Side::Viewer { .. } => self.device_snapshot.is_some(),
+            };
+            match place_of(change, layer).filter(|_| able && read && self.takes(&change.side)) {
+                Some(place) => waiting.write.push((change.clone(), place)),
+                None => waiting.rest = true,
+            }
+        }
+        waiting
+    }
+
+    /// The synchronous half of keeping: Saving shows at once. None: there is
+    /// nothing to write.
+    fn begin_keep(&mut self, writes: Vec<(Change, Value)>) -> Option<Keeping> {
+        let game = self.game.clone().filter(|_| !writes.is_empty())?;
+        self.generation += 1;
+        self.busy = true;
+        self.status = Some(SurfaceSettingsStatus::Saving {
+            setting_id: launch_id::KEEP.into(),
+        });
+        Some(Keeping {
+            game,
+            writes,
+            holder: self.snapshot.clone().unwrap_or(Value::Null),
+            viewer: self.device_snapshot.clone().unwrap_or(Value::Null),
+            operation: self.generation,
+        })
     }
 
     /// This device's own rows changed under an open editor: draw it again
@@ -878,8 +1002,8 @@ impl LaunchSettings {
         self.changed();
     }
 
-    /// One list row changed. A value of the device that runs the game waits
-    /// as a change; a value of this device's stream viewer is written now.
+    /// One list row changed: its value waits as a change until the editor
+    /// closes.
     fn change_row(self: &Arc<Self>, setting_id: &str, text: &str) -> bool {
         let (row, game) = {
             let inner = self.lock();
@@ -897,59 +1021,42 @@ impl LaunchSettings {
             self.problem(setting_id, INVALID);
             return true;
         };
-        match row.target {
-            RowTarget::Viewer(target) => {
-                if value == row.stored {
-                    return true;
-                }
-                let clear = value.is_null();
-                self.write_device(
-                    setting_id.into(),
-                    Some(Write::Set {
-                        target,
-                        value: (!clear).then_some(value),
-                        clear,
-                    }),
-                );
-            }
-            RowTarget::Holder { path, runner } => {
-                // Korri knows a shared setting's shape before any device does.
-                let shared = path["payload"]["key"]
-                    .as_str()
-                    .filter(|_| path["_tag"] == "Setting")
-                    .and_then(korri_settings_treaty::SharedSetting::from_path);
-                if let Some(shared) = shared.filter(|_| !value.is_null()) {
-                    if let Err(message) =
-                        crate::launch_settings::store::validate_property(&shared.property(), &value)
-                    {
-                        self.problem(setting_id, message);
-                        return true;
-                    }
-                }
-                let mut inner = self.lock();
-                if inner.busy || inner.editor_tag() != "Ready" {
-                    return true;
-                }
-                let key = game.key();
-                if value == row.stored {
-                    inner.drafts.remove(&key, setting_id);
-                } else {
-                    inner.drafts.set(
-                        &key,
-                        Change {
-                            row: setting_id.into(),
-                            path,
-                            value,
-                            runner,
-                        },
-                    );
-                }
-                inner.status = None;
-                inner.ready();
-                drop(inner);
-                self.changed();
+        // Korri knows a shared setting's shape before any device does.
+        let shared = row.path["payload"]["key"]
+            .as_str()
+            .filter(|_| row.path["_tag"] == "Setting")
+            .filter(|_| matches!(row.side, Side::Holder { .. }))
+            .and_then(korri_settings_treaty::SharedSetting::from_path);
+        if let Some(shared) = shared.filter(|_| !value.is_null()) {
+            if let Err(message) =
+                crate::launch_settings::store::validate_property(&shared.property(), &value)
+            {
+                self.problem(setting_id, message);
+                return true;
             }
         }
+        let mut inner = self.lock();
+        if inner.busy || !inner.takes(&row.side) {
+            return true;
+        }
+        let key = game.key();
+        if value == row.stored {
+            inner.drafts.remove(&key, setting_id);
+        } else {
+            inner.drafts.set(
+                &key,
+                Change {
+                    row: setting_id.into(),
+                    path: row.path,
+                    value,
+                    side: row.side,
+                },
+            );
+        }
+        inner.status = None;
+        inner.redraw();
+        drop(inner);
+        self.changed();
         true
     }
 
@@ -1059,8 +1166,18 @@ impl LaunchSettings {
             return true;
         }
         if action_id == launch_id::RELOAD {
-            let tag = self.lock().editor_tag();
+            let (tag, streamed) = {
+                let inner = self.lock();
+                (
+                    inner.editor_tag(),
+                    inner.game.as_ref().is_some_and(|game| game.host.is_some()),
+                )
+            };
             if tag != "Closed" {
+                if streamed {
+                    // Its list shows this device's stream section.
+                    self.spawn_refresh_device();
+                }
                 self.spawn_read(tag == "Ready");
             }
             return true;
@@ -1117,157 +1234,136 @@ impl LaunchSettings {
         true
     }
 
-    /// The synchronous half of keeping: what to write and where. Changes for
-    /// this launch are not written: they stay for the launch to carry.
-    fn begin_keep(&self) -> Keep {
-        let mut inner = self.lock();
-        let Some(game) = inner.game.clone() else {
-            return Keep::Nothing;
-        };
-        let key = game.key();
-        let changes = inner.drafts.changes(&key).to_vec();
-        if changes.is_empty() {
-            return Keep::Nothing;
-        }
-        let layer = match &inner.list {
-            Some(list) => list
-                .keep_places
-                .get(&list.keep_selected)
-                .and_then(|place| place.layer.clone()),
-            // No list to say which place is the default: only the person's
-            // own choice of this launch counts.
-            None if inner.drafts.keep(&key) == Some(KEEP_LAUNCH) => None,
-            None => return Keep::Cannot,
-        };
-        let Some(layer) = layer else {
-            return Keep::Nothing;
-        };
-        let snapshot = match inner.snapshot.clone() {
-            Some(snapshot) if !inner.busy && inner.editor_tag() == "Ready" => snapshot,
-            _ => return Keep::Cannot,
-        };
-        inner.generation += 1;
-        inner.busy = true;
-        inner.status = Some(SurfaceSettingsStatus::Saving {
-            setting_id: launch_id::KEEP.into(),
-        });
-        Keep::Write(Keeping {
-            game,
-            layer,
-            changes,
-            snapshot,
-            operation: inner.generation,
-        })
-    }
-
-    /// Write the changes one by one, each from the revision the last left.
-    /// A write that fails leaves the editor open, saying why; what was not
-    /// written stays a change.
+    /// Write the changes one by one, each from the revision the last write
+    /// to its device left. A write that fails leaves the editor open, saying
+    /// why; what was not written stays a change.
     async fn finish_keep(self: &Arc<Self>, keeping: Keeping) -> Closing {
         let Keeping {
             game,
-            layer,
-            changes,
-            mut snapshot,
+            writes,
+            mut holder,
+            mut viewer,
             operation,
         } = keeping;
         self.changed();
+        let key = game.key();
         let mut failure = None;
-        for change in changes {
-            // The governor is one device value: only the device keeps it.
-            let layer = if change.path["_tag"] == "CpuGovernor" {
-                json!({ "_tag": "Device" })
+        let mut wrote_here = false;
+        for (change, place) in writes {
+            let here = matches!(change.side, Side::Viewer { .. });
+            let (snapshot, host) = if here {
+                (&mut viewer, None)
             } else {
-                layer.clone()
-            };
-            // A shared value is kept for any runner, a runner-only value for its runner.
-            let scope = match &change.runner {
-                Some(runner) => json!({ "_tag": "Runner", "id": runner }),
-                None => json!({ "_tag": "Any" }),
+                (&mut holder, game.host.clone())
             };
             let clear = change.value.is_null();
             let result = self
                 .send(
                     Write::Set {
                         target: LaunchWrite {
-                            place: json!({ "layer": layer, "scope": scope }),
+                            place,
                             path: change.path.clone(),
                             encoder: super::launch_model::Encoder::Text,
                         },
                         value: (!clear).then(|| change.value.clone()),
                         clear,
                     },
-                    &snapshot,
-                    game.host.clone(),
+                    snapshot,
+                    host,
                 )
                 .await;
             match result {
                 LaunchSettingsWriteOutcome::Ok(revisions) => {
                     snapshot["revisions"] = serde_json::to_value(revisions).unwrap_or(Value::Null);
                     let mut inner = self.lock();
-                    inner.drafts.kept(&game.key(), &change);
-                    if operation == inner.generation {
-                        if let Some(current) = inner.snapshot.as_mut() {
-                            current["revisions"] = snapshot["revisions"].clone();
-                        }
+                    inner.drafts.kept(&key, &change);
+                    let current = if here {
+                        wrote_here = true;
+                        inner.device_snapshot.as_mut()
+                    } else if operation == inner.generation {
+                        inner.snapshot.as_mut()
+                    } else {
+                        None
+                    };
+                    if let Some(current) = current {
+                        current["revisions"] = snapshot["revisions"].clone();
                     }
                 }
                 LaunchSettingsWriteOutcome::Err(error) => {
-                    failure = Some(error);
+                    failure = Some((error, here));
                     break;
                 }
             }
         }
-        {
+        let closing = {
             let mut inner = self.lock();
             inner.busy = false;
             inner.status = None;
             // The person closed or read the editor again meanwhile: it is
             // theirs now. What was written is still written.
             let current = operation == inner.generation;
-            if let Some(failure) = failure.as_ref().filter(|_| current) {
-                inner.failed(failure, Again::Keep);
+            match &failure {
+                Some((failure, true)) if current => inner.failed_here(failure, Again::Keep),
+                Some((failure, false)) if current => inner.failed(failure, Again::Keep),
+                _ => {}
             }
-            if failure.is_some() || !current {
-                drop(inner);
-                self.changed();
-                return match failure {
-                    Some(_) => Closing::NotKept,
-                    None => Closing::Kept,
-                };
+            match failure {
+                Some(_) => Some(Closing::NotKept),
+                None if !current => Some(Closing::Kept),
+                None => None,
             }
+        };
+        if let Some(closing) = closing {
+            self.changed();
+            if wrote_here {
+                // The rows that stay show what this device has now.
+                self.spawn_refresh_device();
+            }
+            return closing;
         }
         self.cancel();
         self.spawn_refresh_device();
         Closing::Kept
     }
 
-    /// The game starts: the changes are written to the place the person
-    /// chose, then the editor closes (ADR 0066). The game may start only on
-    /// `Kept`. An editor that cannot write its changes stays as it is.
+    /// The game starts: the changes are written, then the editor closes
+    /// (ADR 0066). The game may start only on `Kept`. An editor that cannot
+    /// write every change that waits stays as it is and writes none.
     pub async fn close(self: &Arc<Self>) -> Closing {
-        match self.begin_keep() {
-            Keep::Write(keeping) => self.finish_keep(keeping).await,
-            Keep::Nothing => {
+        let keeping = {
+            let mut inner = self.lock();
+            let waiting = inner.waiting();
+            if waiting.rest {
+                return Closing::NotKept;
+            }
+            inner.begin_keep(waiting.write)
+        };
+        match keeping {
+            Some(keeping) => self.finish_keep(keeping).await,
+            None => {
                 self.cancel();
                 Closing::Kept
             }
-            Keep::Cannot => Closing::NotKept,
         }
     }
 
-    /// Close from an action: at once when there is nothing to write. An
-    /// editor that cannot write leaves without writing; its changes stay
+    /// Close from an action: at once when there is nothing to write. The
+    /// editor writes what it can and leaves; a change it cannot write stays
     /// with the game.
     fn spawn_close(self: &Arc<Self>) {
-        match self.begin_keep() {
-            Keep::Write(keeping) => {
+        let keeping = {
+            let mut inner = self.lock();
+            let waiting = inner.waiting();
+            inner.begin_keep(waiting.write)
+        };
+        match keeping {
+            Some(keeping) => {
                 let this = Arc::clone(self);
                 tokio::spawn(async move {
                     this.finish_keep(keeping).await;
                 });
             }
-            Keep::Nothing | Keep::Cannot => self.cancel(),
+            None => self.cancel(),
         }
     }
 

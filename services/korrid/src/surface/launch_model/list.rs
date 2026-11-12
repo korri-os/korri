@@ -6,28 +6,18 @@
 use korri_surface_treaty::SurfaceLaunchSettingsChange;
 
 use super::*;
-use crate::surface::one_launch::Change;
+use crate::surface::one_launch::{Change, Side};
 
 /// The keep value for changes that end with the next launch.
 pub const KEEP_LAUNCH: &str = "launch";
 
-/// Where a changed row's value goes.
-#[derive(Clone, Debug)]
-pub(crate) enum RowTarget {
-    /// A value of the device that runs the game. It waits as a change, then
-    /// is kept in the place the person chose.
-    Holder {
-        path: Value,
-        /// The runner a runner-only setting belongs to.
-        runner: Option<String>,
-    },
-    /// A value of this device's own stream viewer. It is written at once.
-    Viewer(LaunchWrite),
-}
-
+/// A row that takes a change. The change waits until the editor closes.
 #[derive(Clone, Debug)]
 pub(crate) struct ListRow {
-    pub target: RowTarget,
+    /// korrid's typed path (`LaunchPath`), as JSON.
+    pub path: Value,
+    /// The device the value belongs to.
+    pub side: Side,
     /// The value before any change. Null: the plugin's default.
     pub stored: Value,
     pub encoder: Encoder,
@@ -300,8 +290,8 @@ impl Builder<'_> {
             spec.id,
             item,
             ListRow {
-                target: RowTarget::Holder {
-                    path: spec.path,
+                path: spec.path,
+                side: Side::Holder {
                     runner: spec.runner,
                 },
                 stored: spec.stored,
@@ -352,7 +342,8 @@ impl Builder<'_> {
             id,
             item,
             ListRow {
-                target: RowTarget::Holder { path, runner: None },
+                path,
+                side: Side::Holder { runner: None },
                 stored,
                 encoder,
             },
@@ -608,7 +599,8 @@ fn runs_with_group(builder: &mut Builder, context: &Context) -> SurfaceSettingGr
 }
 
 /// This device's own stream viewer settings. They describe the playing
-/// device, so they stay with it and are written at once.
+/// device, so they stay with it: a change waits like any other row's, and is
+/// then kept on this device whatever place the person chose.
 fn stream_group(builder: &mut Builder, viewer: &Value) -> Option<SurfaceSettingGroup> {
     let context = Context::new(viewer, None);
     let mut items = Vec::new();
@@ -617,18 +609,16 @@ fn stream_group(builder: &mut Builder, viewer: &Value) -> Option<SurfaceSettingG
         .filter(|runner| field(runner, "choosable") != &json!(true))
     {
         let runner_id = str_of(runner, "id").unwrap_or("");
-        let place = json!({
-            "layer": { "_tag": "Device" },
-            "scope": { "_tag": "Runner", "id": runner_id },
-        });
         for section in sections_of(field(runner, "schema")) {
             for leaf in &section.leaves {
                 let id = launch_id::stream(runner_id, &leaf.path);
                 let path = setting_path(&leaf.path);
                 let stored = resolved_value(context.stream_resolved(runner_id, &path));
-                let (interaction, encoder, text) =
-                    list_interaction(&leaf.path, Some(leaf), &stored);
-                let said = "Saved on this device when you change it.";
+                let value = builder.mark(&id, &stored, &|value| {
+                    list_interaction(&leaf.path, Some(leaf), value).2
+                });
+                let (interaction, encoder, text) = list_interaction(&leaf.path, Some(leaf), &value);
+                let said = "Always kept on this device.";
                 items.push(SurfaceSettingItem {
                     value: Some(text),
                     description: Some(match &leaf.description {
@@ -643,11 +633,10 @@ fn stream_group(builder: &mut Builder, viewer: &Value) -> Option<SurfaceSettingG
                 builder.list.rows.insert(
                     id,
                     ListRow {
-                        target: RowTarget::Viewer(LaunchWrite {
-                            place: place.clone(),
-                            path,
-                            encoder: encoder.clone(),
-                        }),
+                        path,
+                        side: Side::Viewer {
+                            runner: runner_id.to_owned(),
+                        },
                         stored,
                         encoder,
                     },
@@ -751,10 +740,29 @@ fn keep_row(builder: &mut Builder, context: Option<&Context>) {
     if count == 0 {
         return;
     }
+    // A stream value is kept on this device whatever place is chosen. For
+    // this launch that is not what the place's own words say.
+    let stream = builder
+        .list
+        .changes
+        .iter()
+        .filter(|change| {
+            builder
+                .list
+                .rows
+                .get(&change.id)
+                .is_some_and(|row| matches!(row.side, Side::Viewer { .. }))
+        })
+        .count();
+    const STREAM_STAYS: &str = "Stream values stay on this device.";
     let chosen = places.iter().find(|(id, ..)| *id == selected);
     builder.list.keep = Some(SurfaceSettingItem {
         value: chosen.map(|(_, title, ..)| title.clone()),
-        description: chosen.map(|(_, _, note, _)| note.clone()),
+        description: chosen.map(|(_, _, note, layer)| match layer {
+            None if stream == count => STREAM_STAYS.into(),
+            None if stream > 0 => format!("{note} {STREAM_STAYS}"),
+            _ => note.clone(),
+        }),
         interaction: Some(choice_interaction(
             places
                 .iter()
