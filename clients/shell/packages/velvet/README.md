@@ -22,6 +22,7 @@ table and its capability map are in `docs/design/surfaces/velvet/DIRECTION.md`.
 | `drawings/` | The no-art cards, drawn at build time. `draw.ts` is the geometry (a shape names a palette place, never a colour), `palettes.ts` the colours, `build.ts` writes the two files below. `bun packages/velvet/drawings/build.ts` in `clients/shell`; `velvet-check` runs it and fails on any difference. |
 | `ui/drawings.slint`, `src/drawings.ts` | Generated. The view's side: `global Drawings`, every card's layers and every palette. The logic's side: each drawing's number, its title box and its ink rule. |
 | `src/systems.ts`, `src/drawings-slots.ts` | The machines Velvet has a drawing for; the palette's places. Shared by the logic and the build. |
+| `src/memo.ts` | The one rule for everything kept between calls: a kept answer is found by all it depends on, exactly, and forgetting it changes only time. Every module says there how to forget what it keeps. |
 | `src/fit.ts`, `src/measure.ts`, `src/words.ts` | Fitting caps titles and fact lines from the fonts' advance tables; words about time and size. |
 | `src/qr.ts` | The backup's QR code (own encoder, held equal to `qrcode` by test). |
 | `fonts/` | Big Shoulders ExtraBold (display, caps), Archivo semi-condensed 400 and 700; their OFL texts; `fonts/source/` the scripts that cut them. |
@@ -87,33 +88,47 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   every change at once (`Tokens.still`) and the stage never drifts.
   `displays: "main"`.
 - One catalog window. Home needs several lists and has one window and one
-  query at a time. `src/lists.ts` asks one after another (`recent` from the
-  start, `mostPlayed`, `korri`, `recent` from the end, `korri` from the end,
-  one a peer, then `recent` from the start again), tells the answers apart
-  by `catalog.query`, and keeps the few games each list shows. One question
-  an update. A pass is six questions and one more for each peer (six peers
-  at most); a library whose peers' games or unplayed games fill more than
-  one window adds a question for each further window (three for peers,
-  five for unplayed games), so 20 at the very most. A set asks for a
-  window of 60 and asks again `Around` the focused game near the window's
-  edge.
-- The resting window. Between passes Velvet leaves the window on the 60
-  newest games (`REST`). The treaty has no mark for "the library changed",
-  so that window is where Velvet sees a change: when a game in it says
-  something new (artwork arrived, it was played, it can be resumed), every
-  kept copy of that game is replaced at once (`refresh`) and the lists are
-  asked again, one question a publication. A publication that changes no
-  game asks nothing: a clock tick or a focus move costs no request. A game
-  outside the 60 is read again at the next change inside them, on the way
-  back from a set or from play, and when `systems` changes.
-- Not started. korrid sorts `recent` by last play and keeps Korri's order
-  among equals, so the unplayed games stand after the played ones in Korri's
-  order. The shelf and the row's slot take them from the windows already
-  kept. Only when those hold none does Velvet page back from the list's end
-  (`tail:N`, 200 games a page, five pages at most), so the first unplayed
-  game is found among the last 1,024. "See all" opens the set `Around` that
-  game and holds the focus at or after it; with more unplayed games than
-  that, the set pages back to the true first as the focus goes up.
+  query at a time. `src/lists.ts` asks one after another, one question an
+  update: `recent` from the start, `mostPlayed`, `recent` from the end,
+  `korri` from the start and from the end, the pages and the games around
+  the first one not yet started (below), one list a peer, then `recent`
+  from the start again, the window Velvet rests on. An answer belongs to the
+  question that asked for it: a page is known by the place in the order its
+  cursor stood at (Korri gives no cursor back), a game's surroundings by the
+  game. A pass is six questions in a small library and one more for each
+  peer (six at most), up to three pages for peers, and the questions of
+  "Not started". A set asks for a window of 60 and asks again `Around` the
+  focused game near the window's edge.
+- What a publication is. Velvet draws games that are not in the published
+  window (the pick may be the game played most, long ago), and the treaty
+  has no mark for "a game changed". So Velvet tells a publication by what it
+  can see. Its own answer: the window answers the question out, or
+  `focusedGame` names another game. The clock: `clockLabel` changed. Neither:
+  Korri changed something out of sight, and the lists are read again, each
+  once, which reads every game the home and the lobby draw; at most once in
+  ten seconds of Korri's time, the next publication after that reading what
+  came between. Its own answers and the clock ask nothing. A game in the
+  published window is replaced at once in every list that holds it
+  (`refresh`), with no question. An open set and the detail over it draw
+  from the published window itself.
+  What this cannot see: a change that arrives in the same publication as a
+  clock change or as one of Velvet's own answers waits for the next
+  publication that is neither. A revision mark on the catalog in the treaty
+  would close that and save the pass ("Asked of the shell").
+- Not started holds "the first one, in Korri's order" (contract section 5).
+  korrid sorts `recent` by the last session and keeps Korri's order among
+  equals, so the games with no session stand last there, in Korri's order.
+  `recent` from the start shows where they begin when fewer games were
+  played than it holds; `recent` from the end shows it when they all fit in
+  it. Else Velvet reads on from both ends, a page of 200 each in turn, each
+  page its own question: Korri's order from its start until a game with no
+  session comes, `recent` back from its end until a played game comes. The
+  first to show it ends both, so it costs twice the shorter way at most, and
+  there is no limit of pages. Then `recent` is read around that game: the
+  shelf, the row's last place, and where "See all" opens. Requests for a
+  pass (`test/fresh.test.ts`): 80 played then 300 unplayed, 8; 80 then
+  10,000, 8; 10,000 unplayed among the first of Korri's order, 7; every game
+  unplayed, 6; one unplayed game, 6; 3,000 played then 500 unplayed, 12.
 - "Now" is `model.publishedAt`. It can be a minute behind, so a session that
   ended after it is "Just now". Without it a fact is a date and the pick is
   the last game played. Dates are read in UTC (`getUTC*` only; a surface has
@@ -178,7 +193,8 @@ backdrop pixel differs from its neighbour by more than four levels.
 
 - **Pixels.** The shell keeps 24 MiB of decoded pixels for a surface. A
   stored poster is 600x900: 2.1 MiB. So a view asks for its pictures in
-  order of importance (`take`, `src/art.ts`: the hero, the focused game's
+  order of importance (`take`, `src/art.ts`, into the count the view makes
+  and hands down: the hero, the focused game's
   logo, then tiles from the focused one outwards, rows in sight first; in
   the library the shelves before the home's row, which has left the stage)
   and stops at 23 MiB. A tile over the budget shows its no-art card. A set is
@@ -277,6 +293,12 @@ Not Velvet's to change; reported to the coordinator.
 - Pictures at the size they are drawn. A grid of posters needs a fifth of
   the pixels the shell decodes for it. With that, a set could be six or
   seven across with every picture.
+- A mark in the treaty for "the catalog changed" (a revision on
+  `SurfaceCatalog`, or on each game). Without it Velvet cannot tell a
+  publication that changed a game out of its window from one that changed
+  nothing it reads, and reads its lists again after any publication it
+  cannot explain ("What a publication is"). A cursor echoed in the window
+  would also let an answer be matched to its page without counting places.
 - A treaty flag for "plays on another device". Velvet tells a peer's shelf
   by its section not being Korri's "Continue" or "This device".
 - The fixture catalog orders `mostPlayed` by `playCount`; korrid orders it by
@@ -327,7 +349,8 @@ last frames; `VELVET_PREVIEW_OUT=DIR` writes every preview state.
 | `contrast-gate` | The house's pairs; a title and its facts on any game's light. |
 | `touch-gate` | `activated` and `dragged` reach the root from every instance; the gesture rules; the way back. |
 | `scenarios` | Every scenario at six sizes: the focus convention, the pixel budget, the view's size, the view's keys; no negative number and no empty kind stands in for "none". |
-| `refresh` | A game Korri changes after the lists loaded shows on the stage, the row, the lobby and the detail; a quiet model asks nothing; one question an update; a game is one object in every list that holds it; the pixel budget goes to what is in sight. |
-| `fresh` | Not started with 0, 3, 60, 200 and 10,000 unplayed games, in libraries where they stand apart and where they stand last. |
+| `refresh` | A game Korri changes shows on the stage, the row, the lobby and the detail, in the published window or not (the reviewer's case: heroes for the pick outside it); one pass of questions after a publication Velvet cannot explain, none after its own answers or the clock; at most one pass in ten seconds; a game is one object in every list that holds it; the pixel budget goes to what is in sight. |
+| `fresh` | Not started with 0, 1, 3, 60, 200, 300 and 10,000 unplayed games, among the first of Korri's order and after every played one: the first one in the row, on the shelf and first in the set; each page asked once with its own cursor; the number of questions in each. |
+| `memo` | Every binding in `src/` that can change is named in an `onForget`; each selection answers the same with its memory warm, warm from another order, and empty; `update` and `view` at every step of every scenario and of generated plays. |
 | `poster` | The generated drawings and palettes: every card names ones that are there, its title fits its box, its ink stands out, and a card in a view is two numbers and its title. |
 | `plan`, `browse`, `touch`, `motion`, `words`, `qr` | The plan's invariants over a sweep of sizes; the owner's decisions as behaviour; launch settings as one list; the rest. |
