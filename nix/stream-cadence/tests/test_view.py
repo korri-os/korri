@@ -74,7 +74,7 @@ class DisplayRecord(unittest.TestCase):
         with self.assertRaises(ValueError):
             display_records("index,display_ns\n0,10\n1,10\n")
 
-    def gaps(self, shown, discarded=(), scored=(0, 100), requests=None) -> tuple:
+    def gaps(self, shown, discarded=(), scored=(0, 100), requests=None, booked=None) -> tuple:
         """Records as (time in refresh periods, ID, None, or a torn pair of IDs).
 
         Returns (gaps that lose an ID, gaps that lose none).
@@ -94,7 +94,8 @@ class DisplayRecord(unittest.TestCase):
             for _, ident in shown
         ]
         return capture_gaps(
-            rows, frames, set(discarded), PERIOD, scored[0] * PERIOD, scored[1] * PERIOD
+            rows, frames, set(discarded), PERIOD, scored[0] * PERIOD, scored[1] * PERIOD,
+            booked=booked,
         )
 
     def test_gap_that_loses_an_id_makes_the_record_incomplete(self):
@@ -167,11 +168,29 @@ class DisplayRecord(unittest.TestCase):
         self.assertEqual(self.gaps([(0, 1), (1, 2), (2, None), (4, 5), (5, 6)]), (1, 0))
         self.assertEqual(self.gaps([(0, 1), (1, 2), (2, None), (4, 3), (5, 4)]), (0, 1))
 
-    def test_only_gaps_inside_the_scored_time_count(self):
+    def test_gap_counts_when_any_part_of_it_is_in_the_scored_time(self):
         shown = [(0, 1), (2, 3), (3, 4), (4, 5), (6, 7), (7, 8)]
         self.assertEqual(self.gaps(shown), (2, 0))
-        self.assertEqual(self.gaps(shown, scored=(2, 5)), (0, 0))
-        self.assertEqual(self.gaps(shown, scored=(2, 7)), (1, 0))
+        # The second gap runs from 4 to 6 and crosses the scored end at 5.
+        self.assertEqual(self.gaps(shown, scored=(2, 5)), (1, 0))
+        # The first gap runs from 0 to 2 and crosses the scored start at 1.
+        self.assertEqual(self.gaps(shown, scored=(1, 3.5)), (1, 0))
+        # Wholly outside: before the start, after the end.
+        self.assertEqual(self.gaps(shown, scored=(2, 3.9)), (0, 0))
+        # A gap that loses no ID and crosses the end is counted as whole.
+        whole = [(0, 1), (1, 2), (2, 3), (4, 4), (5, 5)]
+        self.assertEqual(self.gaps(whole, scored=(0, 3)), (0, 1))
+
+    def test_gap_just_after_the_scored_end_counts_when_its_lost_id_is_booked_inside(self):
+        # score() books a lost ID by the sender's time. ID 5 was presented before
+        # the scored end at 3.5 and was due in the gap from 4 to 6, after the end.
+        shown = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 4), (6, 6), (7, 7)]
+        self.assertEqual(self.gaps(shown, scored=(0, 3.5)), (0, 0))
+        self.assertEqual(self.gaps(shown, scored=(0, 3.5), booked=lambda ident: ident == 5), (1, 0))
+        # A lost ID that is booked after the scored time belongs to no window.
+        self.assertEqual(self.gaps(shown, scored=(0, 3.5), booked=lambda ident: False), (0, 0))
+
+    def test_record_and_frames_must_match(self):
         with self.assertRaises(ValueError):
             capture_gaps([{"index": 0, "display_ns": 0}], [], [1], PERIOD, 0, 1)
 

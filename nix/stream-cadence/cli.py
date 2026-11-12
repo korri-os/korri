@@ -1032,7 +1032,19 @@ def view_case(
         scored = (origin + args.warmup * 1e9, origin + (args.warmup + duration) * 1e9)
         period = 1e9 / viewer_refresh
         # Display times and IDs decide a gap; the capture's request time does not.
-        gaps, repeats = capture_gaps(times, frames, discarded, period, scored[0], scored[1])
+        # A lost ID belongs to the window of its presentation at the sender, as
+        # score() books it; its place on the display can lie after the scored end.
+        booked_from, booked_to = to_seat(int(scored[0])), to_seat(int(scored[1]))
+
+        def booked(ident: int) -> bool:
+            return (
+                ident in presented
+                and booked_from <= to_sender(presented[ident]["present_ns"]) < booked_to
+            )
+
+        gaps, repeats = capture_gaps(
+            times, frames, discarded, period, scored[0], scored[1], booked=booked
+        )
         record["viewer"] = {
             "startup_ms": (origin - started["start_ns"]) / 1e6,
             "cpu_seconds_per_second": cpu_rate(

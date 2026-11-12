@@ -104,11 +104,19 @@ def capture_gaps(
     period_ns: float,
     start_ns: float,
     end_ns: float,
+    booked: Callable[[int], bool] | None = None,
 ) -> tuple[int, int]:
     """Gaps in the display record of the scored time: those that lose an ID, and the rest.
 
-    A gap is an interval above 1.5 refresh periods between two records that
-    both lie in the scored time. `rows` and `frames` are the whole record.
+    A gap is an interval above 1.5 refresh periods between two records. It
+    counts when any part of it lies in the scored time. `rows` and `frames`
+    are the whole record.
+
+    score() books a lost ID to a window by the sender's time, and the display
+    comes later. So a gap after the scored end also counts when it loses an
+    ID that `booked` places inside the scored time: without that, a frame
+    that the capture missed there would be one dropped frame of the viewer in
+    a valid run.
 
     The source counts its IDs up by one, so an ID is lost when it appears
     nowhere in the record and the sender did not discard it itself. The
@@ -143,19 +151,31 @@ def capture_gaps(
     incomplete = whole = 0
     for index in range(1, len(rows)):
         before, after = rows[index - 1]["display_ns"], rows[index]["display_ns"]
-        if before < start_ns or after > end_ns or after - before <= 1.5 * period_ns:
+        if after - before <= 1.5 * period_ns:
+            continue
+        inside = before < end_ns and after > start_ns
+        if not inside and (booked is None or before < end_ns):
             continue
         place = bisect.bisect_left(readable, index)
         older, newer = readable[max(0, place - 2) : place], readable[place : place + 2]
-        if not older or not newer:
-            incomplete += 1
-            continue
         spans = [(min(shown[at]), max(shown[at])) for at in older + newer]
-        in_order = all(a[0] <= b[0] and a[1] <= b[1] for a, b in zip(spans, spans[1:]))
-        if not in_order or any(
-            ident not in seen and ident not in discarded
-            for ident in range(spans[0][0] + 1, spans[-1][1])
-        ):
+        judged = bool(older and newer) and all(
+            a[0] <= b[0] and a[1] <= b[1] for a, b in zip(spans, spans[1:])
+        )
+        lost = (
+            [
+                ident
+                for ident in range(spans[0][0] + 1, spans[-1][1])
+                if ident not in seen and ident not in discarded
+            ]
+            if judged
+            else []
+        )
+        if not inside:
+            # After the scored end: only an ID that a scored window holds counts.
+            if booked is not None and any(booked(ident) for ident in lost):
+                incomplete += 1
+        elif not judged or lost:
             incomplete += 1
         else:
             whole += 1
