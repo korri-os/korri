@@ -23,7 +23,7 @@ use super::{
     korrid::{ask, Korrid},
     launch_model::{
         active_profile_of, device_launch_from, launch_id,
-        list::{launch_list, LaunchList, ListInput, RowTarget},
+        list::{launch_list, LaunchList, ListInput, RowTarget, KEEP_LAUNCH},
         profile_from_pick, revision_of, DeviceLaunch, LaunchWrite, PendingSetting,
     },
     one_launch::{game_key, Change, OneLaunch},
@@ -125,6 +125,26 @@ struct Keeping {
     changes: Vec<Change>,
     snapshot: Value,
     operation: u64,
+}
+
+/// What a close has to do with the changes that wait.
+enum Keep {
+    /// Nothing waits to be written.
+    Nothing,
+    Write(Keeping),
+    /// Changes wait, and the editor cannot write them now: it is not Ready,
+    /// or another write is on its way.
+    Cannot,
+}
+
+/// How a close ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Closing {
+    /// No change waits to be written. The editor is closed.
+    Kept,
+    /// A change could not be written. It stays marked, and an open editor
+    /// stays open and says why.
+    NotKept,
 }
 
 /// The holder did not answer: no reply, a reply that was not korrid's, or no
@@ -1097,28 +1117,41 @@ impl LaunchSettings {
         true
     }
 
-    /// The synchronous half of keeping: what to write and where. None: there
-    /// is nothing to write now. Changes for this launch stay for the launch
-    /// to carry; an editor that is not Ready closes without writing.
-    fn begin_keep(&self) -> Option<Keeping> {
+    /// The synchronous half of keeping: what to write and where. Changes for
+    /// this launch are not written: they stay for the launch to carry.
+    fn begin_keep(&self) -> Keep {
         let mut inner = self.lock();
-        if inner.busy || inner.editor_tag() != "Ready" {
-            return None;
-        }
-        let game = inner.game.clone()?;
-        let list = inner.list.as_ref()?;
-        let layer = list.keep_places.get(&list.keep_selected)?.layer.clone()?;
-        let changes = inner.drafts.changes(&game.key()).to_vec();
-        let snapshot = inner.snapshot.clone()?;
+        let Some(game) = inner.game.clone() else {
+            return Keep::Nothing;
+        };
+        let key = game.key();
+        let changes = inner.drafts.changes(&key).to_vec();
         if changes.is_empty() {
-            return None;
+            return Keep::Nothing;
         }
+        let layer = match &inner.list {
+            Some(list) => list
+                .keep_places
+                .get(&list.keep_selected)
+                .and_then(|place| place.layer.clone()),
+            // No list to say which place is the default: only the person's
+            // own choice of this launch counts.
+            None if inner.drafts.keep(&key) == Some(KEEP_LAUNCH) => None,
+            None => return Keep::Cannot,
+        };
+        let Some(layer) = layer else {
+            return Keep::Nothing;
+        };
+        let snapshot = match inner.snapshot.clone() {
+            Some(snapshot) if !inner.busy && inner.editor_tag() == "Ready" => snapshot,
+            _ => return Keep::Cannot,
+        };
         inner.generation += 1;
         inner.busy = true;
         inner.status = Some(SurfaceSettingsStatus::Saving {
             setting_id: launch_id::KEEP.into(),
         });
-        Some(Keeping {
+        Keep::Write(Keeping {
             game,
             layer,
             changes,
@@ -1130,7 +1163,7 @@ impl LaunchSettings {
     /// Write the changes one by one, each from the revision the last left.
     /// A write that fails leaves the editor open, saying why; what was not
     /// written stays a change.
-    async fn finish_keep(self: &Arc<Self>, keeping: Keeping) {
+    async fn finish_keep(self: &Arc<Self>, keeping: Keeping) -> Closing {
         let Keeping {
             game,
             layer,
@@ -1189,39 +1222,52 @@ impl LaunchSettings {
             let mut inner = self.lock();
             inner.busy = false;
             inner.status = None;
-            if operation != inner.generation {
-                drop(inner);
-                self.changed();
-                return;
-            }
-            if let Some(failure) = &failure {
+            // The person closed or read the editor again meanwhile: it is
+            // theirs now. What was written is still written.
+            let current = operation == inner.generation;
+            if let Some(failure) = failure.as_ref().filter(|_| current) {
                 inner.failed(failure, Again::Keep);
+            }
+            if failure.is_some() || !current {
                 drop(inner);
                 self.changed();
-                return;
+                return match failure {
+                    Some(_) => Closing::NotKept,
+                    None => Closing::Kept,
+                };
             }
         }
         self.cancel();
         self.spawn_refresh_device();
+        Closing::Kept
     }
 
-    /// The editor closes, or its game starts: the changes are written to the
-    /// place the person chose, then the editor closes (ADR 0066).
-    pub async fn close(self: &Arc<Self>) {
+    /// The game starts: the changes are written to the place the person
+    /// chose, then the editor closes (ADR 0066). The game may start only on
+    /// `Kept`. An editor that cannot write its changes stays as it is.
+    pub async fn close(self: &Arc<Self>) -> Closing {
         match self.begin_keep() {
-            Some(keeping) => self.finish_keep(keeping).await,
-            None => self.cancel(),
+            Keep::Write(keeping) => self.finish_keep(keeping).await,
+            Keep::Nothing => {
+                self.cancel();
+                Closing::Kept
+            }
+            Keep::Cannot => Closing::NotKept,
         }
     }
 
-    /// Close from an action: at once when there is nothing to write.
+    /// Close from an action: at once when there is nothing to write. An
+    /// editor that cannot write leaves without writing; its changes stay
+    /// with the game.
     fn spawn_close(self: &Arc<Self>) {
         match self.begin_keep() {
-            Some(keeping) => {
+            Keep::Write(keeping) => {
                 let this = Arc::clone(self);
-                tokio::spawn(async move { this.finish_keep(keeping).await });
+                tokio::spawn(async move {
+                    this.finish_keep(keeping).await;
+                });
             }
-            None => self.cancel(),
+            Keep::Nothing | Keep::Cannot => self.cancel(),
         }
     }
 

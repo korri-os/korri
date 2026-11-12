@@ -16,7 +16,7 @@ use super::{
     downloads::{DownloadGameRef, GameDownloads, ACQUISITION_POLL_INTERVAL},
     korrid::Korrid,
     launch_model::launch_id,
-    launch_settings::{LaunchSettings, LAUNCH_SETTINGS_ACTION_ID},
+    launch_settings::{Closing, LaunchSettings, LAUNCH_SETTINGS_ACTION_ID},
     launchables::driver::SessionStartResult,
     launchables::{
         driver::{Launchables, LaunchablesHooks},
@@ -675,8 +675,14 @@ impl Root {
         runner_id: Option<String>,
     ) -> Option<SessionStartResult> {
         // A launch from the chooser leaves any launch settings it was opened
-        // from. Its changes are kept first, as when the editor closes.
-        self.launch.close().await;
+        // from. Its changes are kept first, as when the editor closes. The
+        // editor is not read again for a chooser that closed to start a game:
+        // it closes, or it stays open to say what was not kept.
+        *self.runner_was_closed.lock().expect("runner poisoned") = true;
+        if self.launch.close().await == Closing::NotKept {
+            // Nothing starts with a change that was not kept.
+            return None;
+        }
         let current = self.launchables.state();
         if let Some(host) = host {
             // A streamed game starts through the stream lifecycle, which

@@ -795,14 +795,14 @@ async fn an_empty_library_is_empty_and_a_bad_surface_id_is_refused() {
 
 /// A hub whose korrid answers by call and keeps every request it got.
 fn recording_hub(
-    outcomes: HashMap<String, Value>,
+    outcomes: Outcomes,
 ) -> (
     Arc<SurfaceHub>,
     Arc<std::sync::Mutex<Vec<Value>>>,
     tempfile::TempDir,
 ) {
     let requests = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
-    let base = in_memory_korrid(Arc::new(std::sync::Mutex::new(outcomes)));
+    let base = in_memory_korrid(outcomes);
     let korrid = Korrid::new(Arc::new({
         let requests = Arc::clone(&requests);
         move |request: RpcRequest| {
@@ -865,7 +865,7 @@ async fn a_streamed_game_offers_its_holders_runners_and_launch_settings_and_asks
             "revisions": { "device": "d1", "games": "g1" }
         } }),
     );
-    let (hub, requests, _directory) = recording_hub(outcomes);
+    let (hub, requests, _directory) = recording_hub(Arc::new(std::sync::Mutex::new(outcomes)));
     let model = settled(&hub, "pico").await;
     let id = window_ids(&model).2[0].clone();
     hub.request(
@@ -969,6 +969,218 @@ async fn a_streamed_game_offers_its_holders_runners_and_launch_settings_and_asks
         asked("app.session.prepare").is_empty(),
         "nothing starts before the person chooses"
     );
+}
+
+/// The model once `ready` holds, or a panic that says what never came.
+async fn model_when(
+    hub: &Arc<SurfaceHub>,
+    what: &str,
+    ready: impl Fn(&SurfaceModel) -> bool,
+) -> SurfaceModel {
+    for _ in 0..200 {
+        let model = hub.model("pico").unwrap();
+        if ready(&model) {
+            return model;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("never: {what}")
+}
+
+/// ADR 0066: the changes are written when the game starts. A change that
+/// could not be written stops the start: the editor stays open and says why.
+#[tokio::test]
+async fn a_game_started_from_the_chooser_starts_only_when_every_change_was_kept() {
+    use korri_surface_treaty::{SurfaceLaunchSettings, SurfaceRunnerChoice};
+    let mut outcomes = idle_outcomes(0);
+    outcomes.insert(
+        "app.catalog.snapshot".into(),
+        json!({"_tag":"Ok","payload":{"games":[{
+        "id":"actraiser","title":"ActRaiser","host":"aka","supportsRunnerSelection":true,
+        "source":{"devicePublicKey":"aka-key","label":"aka","isLocal":false}}]}}),
+    );
+    outcomes.insert(
+        "app.local-games.routes".into(),
+        json!({ "_tag": "Ok", "payload": {
+            "gameId": "actraiser",
+            "routes": [
+                { "runnerId": "@korri:snes9x/snes9x", "systemId": "snes", "runnerBuild": "b", "program": "snes9x", "warnings": [] },
+                { "runnerId": "@simonwjackson:actraiser/actraiser", "systemId": "snes", "runnerBuild": "b", "program": "actraiser", "warnings": [] },
+            ],
+            "selection": { "_tag": "Choose" },
+            "systemRunners": {},
+            "revisions": { "device": "d1", "games": "g1" }
+        } }),
+    );
+    outcomes.insert(
+        "app.launch-settings.snapshot".into(),
+        json!({ "_tag": "Ok", "payload": {
+            "places": [{
+                "place": { "layer": { "_tag": "Game", "id": "actraiser" }, "scope": { "_tag": "Any" } },
+                "title": "ActRaiser", "body": {}, "editableKinds": ["runner", "cpu", "gpu"],
+            }],
+            "resolved": { "values": {} }, "runners": [], "runnerResolved": [],
+            "modifiers": [], "services": [], "profiles": [], "notices": [],
+            "routeLayers": { "_tag": "NeedsRunnerChoice" },
+            "revisions": { "device": "d1", "games": "g1" }
+        } }),
+    );
+    outcomes.insert(
+        "app.launch-settings.set".into(),
+        json!({ "_tag": "Err", "payload": { "code": "SettingsConflict", "message": "changed" } }),
+    );
+    let outcomes = Arc::new(std::sync::Mutex::new(outcomes));
+    let (hub, requests, _directory) = recording_hub(Arc::clone(&outcomes));
+    let asked = |tag: &str| -> Vec<Value> {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| call["_tag"] == tag)
+            .map(|call| call["payload"].clone())
+            .collect()
+    };
+    let starts = || {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| {
+                ["app.session.prepare", "app.local-games.launch.selected"]
+                    .contains(&call["_tag"].as_str().unwrap_or(""))
+            })
+            .count()
+    };
+    let act = |action_id: &str| {
+        hub.request(
+            "pico",
+            SurfaceRequest::RunAction {
+                action_id: action_id.into(),
+            },
+        )
+        .unwrap();
+    };
+    /// Launch once, with the first runner the chooser lists.
+    fn launch_once(model: &SurfaceModel) -> String {
+        let Some(SurfaceRunnerChoice::Ready(chooser)) = &model.runner_choice else {
+            panic!("the chooser is not ready")
+        };
+        chooser.routes[0]
+            .actions
+            .iter()
+            .find(|action| action.label == "Launch once")
+            .expect("Launch once")
+            .id
+            .clone()
+    }
+    let chooser_ready =
+        |model: &SurfaceModel| matches!(model.runner_choice, Some(SurfaceRunnerChoice::Ready(_)));
+
+    let id = window_ids(&settled(&hub, "pico").await).2[0].clone();
+    hub.request(
+        "pico",
+        SurfaceRequest::RunGameAction {
+            game_id: id,
+            action_id: "launch-settings".into(),
+        },
+    )
+    .unwrap();
+    model_when(&hub, "the editor opens", |model| {
+        matches!(model.launch_settings, Some(SurfaceLaunchSettings::Ready(_)))
+    })
+    .await;
+    hub.request(
+        "pico",
+        SurfaceRequest::ChangeSetting {
+            setting_id: "launch:row:cpu.max".into(),
+            value: "50".into(),
+        },
+    )
+    .unwrap();
+    let Some(SurfaceLaunchSettings::Ready(list)) = hub.model("pico").unwrap().launch_settings
+    else {
+        panic!("the editor is not ready")
+    };
+    assert_eq!(
+        list.keep.and_then(|keep| keep.value).as_deref(),
+        Some("This game")
+    );
+
+    // The holder refuses the write: the game does not start.
+    act("launch:runner");
+    let model = model_when(&hub, "the chooser opens", chooser_ready).await;
+    act(&launch_once(&model));
+    let model = model_when(&hub, "the editor says the change was not kept", |model| {
+        matches!(
+            model.launch_settings,
+            Some(SurfaceLaunchSettings::Conflict(_))
+        )
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(asked("app.launch-settings.set").len(), 1);
+    assert_eq!(
+        starts(),
+        0,
+        "nothing starts with a change that was not kept"
+    );
+    let Some(SurfaceLaunchSettings::Conflict(problem)) = hub.model("pico").unwrap().launch_settings
+    else {
+        panic!("the editor did not stay open: {:?}", model.launch_settings)
+    };
+    assert_eq!(
+        problem.content.changes.len(),
+        1,
+        "the change is still marked"
+    );
+
+    // An editor that still holds the change it could not write starts nothing.
+    act("launch:runner");
+    let model = model_when(&hub, "the chooser opens again", chooser_ready).await;
+    act(&launch_once(&model));
+    model_when(&hub, "the chooser closes", |model| {
+        matches!(
+            model.runner_choice,
+            Some(SurfaceRunnerChoice::Closed) | None
+        )
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(starts(), 0);
+    assert_eq!(asked("app.launch-settings.set").len(), 1);
+
+    // Read again, the holder takes the write: the game starts.
+    outcomes.lock().unwrap().insert(
+        "app.launch-settings.set".into(),
+        json!({ "_tag": "Ok", "payload": { "device": "d1", "games": "g2" } }),
+    );
+    act("launch:reload");
+    let model = model_when(&hub, "the editor is read again", |model| {
+        matches!(model.launch_settings, Some(SurfaceLaunchSettings::Ready(_)))
+    })
+    .await;
+    let Some(SurfaceLaunchSettings::Ready(list)) = model.launch_settings else {
+        unreachable!()
+    };
+    assert_eq!(list.changes.len(), 1);
+    act("launch:runner");
+    let model = model_when(&hub, "the chooser opens a third time", chooser_ready).await;
+    act(&launch_once(&model));
+    model_when(&hub, "the editor closes", |model| {
+        matches!(
+            model.launch_settings,
+            Some(SurfaceLaunchSettings::Closed) | None
+        )
+    })
+    .await;
+    for _ in 0..200 {
+        if starts() > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(asked("app.launch-settings.set").len(), 2);
+    assert_eq!(starts(), 1, "kept, so the game starts");
 }
 
 #[tokio::test]

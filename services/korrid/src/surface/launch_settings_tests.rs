@@ -17,7 +17,7 @@ use crate::surface::{
         cpu_steps, device_launch_from, governors, gpu_steps, launch_id, layer_key, Encoder,
         LaunchEncoded,
     },
-    launch_settings::LaunchSettings,
+    launch_settings::{Closing, LaunchSettings},
 };
 
 const MOONLIGHT: &str = "@korri:moonlight/moonlight";
@@ -1408,6 +1408,61 @@ async fn a_write_korrid_refuses_as_stale_asks_for_a_reload_and_keeps_the_change(
     assert!(launch.act(launch_id::CANCEL));
     assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
     assert_eq!(calls(&script, SET).len(), 2);
+}
+
+/// The game's start closes the editor through `close`, and starts only on
+/// `Kept`.
+#[tokio::test]
+async fn closing_for_a_game_start_says_whether_every_change_was_kept() {
+    // Nothing waits, then one change that the device takes.
+    let (launch, script) = opened(&resolved_wario(), None).await;
+    assert_eq!(launch.close().await, Closing::Kept);
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    launch.open("wario".into(), "Wario Land 4".into(), None, None);
+    settle().await;
+    assert!(launch.change(FRAMESKIP, "5"));
+    assert_eq!(launch.close().await, Closing::Kept);
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    assert_eq!(calls(&script, SET).len(), 1);
+
+    // Changes for this launch are not written: the launch carries them.
+    launch.open("wario".into(), "Wario Land 4".into(), None, None);
+    settle().await;
+    assert!(launch.change(FRAMESKIP, "7"));
+    assert!(launch.change("launch:keep", "launch"));
+    assert_eq!(launch.close().await, Closing::Kept);
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    assert_eq!(calls(&script, SET).len(), 1);
+    assert!(launch.submit_one_launch("wario").1.is_some());
+
+    for (code, state) in [
+        ("SettingsConflict", "Conflict"),
+        ("SettingsInvalid", "Error"),
+    ] {
+        let (korrid, script) = scripted();
+        push(&script, SNAPSHOT, ok_snapshot(resolved_wario().snapshot()));
+        push(&script, SET, refused(code, "refused"));
+        let launch = controller(korrid);
+        launch.open("wario".into(), "Wario Land 4".into(), None, None);
+        settle().await;
+        assert!(launch.change(FRAMESKIP, "5"));
+        assert!(launch.change("launch:row:cpu.max", "89"));
+        // The first write is refused: the editor stays open with both changes.
+        assert_eq!(launch.close().await, Closing::NotKept);
+        assert_eq!(tag(&launch.editor()), state);
+        assert_eq!(changes(&shown(&launch)).len(), 2);
+        assert_eq!(calls(&script, SET).len(), 1);
+        // A second start finds the changes still not written. It writes
+        // nothing and the editor stays as it is.
+        assert_eq!(launch.close().await, Closing::NotKept);
+        assert_eq!(tag(&launch.editor()), state);
+        assert_eq!(changes(&shown(&launch)).len(), 2);
+        assert_eq!(calls(&script, SET).len(), 1);
+        // The Close action still leaves, and the changes stay with the game.
+        assert!(launch.act(launch_id::CANCEL));
+        assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+        assert_eq!(launch.close().await, Closing::Kept, "no editor is open");
+    }
 }
 
 #[tokio::test]
