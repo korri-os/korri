@@ -260,7 +260,7 @@ class FixtureRenderer(PluginViewerInTheFixture):
                 "latency_ms": {"p50": 20.0, "p95": 22.0}, "capture_misses": 0,
                 "repeated_frames": 0, "late_frames": 0, "torn_frames": 0, "undecodable_frames": 0,
             }
-            facts = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0}
+            facts = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0, "viewer_ran": {"kind": "stand-in", "place": "fixture", "moonlight": "/viewer", "decode": "software"}}
             if renderer:
                 facts["viewer_fixture"] = {"renderer": renderer}
             return [
@@ -399,7 +399,7 @@ class CopiedProductViewer(PluginViewerInTheFixture):
             }
             facts = {
                 "valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0,
-                "viewer_ran": ran, "viewer_fixture": {"renderer": "gles2"},
+                "viewer_ran": dict(ran, decode="software"), "viewer_fixture": {"renderer": "gles2"},
             }
             return [
                 {"discovered": dict(facts), "source_counter": {"windows": [window]}, "viewer": {"startup_ms": 900.0}}
@@ -478,7 +478,7 @@ class ProductUnits(unittest.TestCase):
             }
             runs = []
             for n in range(5):
-                facts: dict = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0}
+                facts: dict = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0, "viewer_ran": {"kind": "stand-in", "place": "fixture", "moonlight": "/viewer", "decode": "software"}}
                 if changed is not None:
                     hit = changed if n == 2 else []
                     facts["product_units"] = {"sender": {"changed": hit}, "viewer": {"changed": hit}}
@@ -549,7 +549,7 @@ class WhichViewerAVerdictCompares(unittest.TestCase):
         }
         known = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0}
         if ran is not None:
-            known["viewer_ran"] = ran
+            known["viewer_ran"] = dict(ran, decode="software")
         return [
             {"discovered": {**known, **facts}, "source_counter": {"windows": [window]}, "viewer": {"startup_ms": 900.0}}
             for _ in range(5)
@@ -565,7 +565,9 @@ class WhichViewerAVerdictCompares(unittest.TestCase):
         self.assertRegex(lines[1], "^candidate viewer: stand-in .*cccc-moonlight-embedded-2.7.1.*in the fixture")
         self.assertRegex(lines[2], "different viewers")
         same = viewers(plugin, plugin)
-        self.assertEqual(len(same), 3)
+        self.assertEqual(len(same), 5)
+        self.assertIn("decode=software", same[3])
+        self.assertIn("decode=software", same[4])
         self.assertRegex(same[2], "same viewer")
 
     def test_a_viewer_whose_opengl_fell_back_to_software_is_not_silent(self):
@@ -609,7 +611,8 @@ class WhichViewerAVerdictCompares(unittest.TestCase):
         )
         self.assertRegex(viewers(old_plugin, old_plugin)[0], "plugin build-0123456789ab-test .*on the device's own display")
         self.assertRegex(viewers(old_stand_in, old_stand_in)[0], "stand-in .*cccc-moonlight-embedded-2.7.1.*in the fixture")
-        self.assertEqual(len(judge(old_stand_in, self.result(viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE)), 5)), 15)
+        with self.assertRaisesRegex(ValueError, "recorded before the tool kept decode"):
+            judge(old_stand_in, self.result(viewer_ran(None, "/nix/store/cccc-moonlight-embedded-2.7.1", FIXTURE)), 5)
 
 
 if __name__ == "__main__":

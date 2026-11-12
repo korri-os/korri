@@ -114,6 +114,7 @@ def conditions(record: dict) -> dict:
     values["sender_model"] = facts.get("model")
     values["sender_render_node"] = (facts.get("sender_fixture") or {}).get("render_node")
     values["viewer_model"] = (facts.get("viewer") or {}).get("model")
+    values["decode"] = (facts.get("viewer_ran") or {}).get("decode")
     # A game on the device changes the numbers of a private pair. A result from
     # before this record was kept ran with no game: the tool refused beside one.
     # The units are read at the start and at the end. A game that starts or ends
@@ -171,7 +172,10 @@ def viewer_of(record: dict) -> dict:
 
 def one_viewer(records: list[dict], name: str) -> dict:
     """The one viewer of a result; a result with more than one viewer is no result of a viewer."""
-    found = {json.dumps(viewer_of(record), sort_keys=True) for record in records}
+    found = {
+        json.dumps({key: value for key, value in viewer_of(record).items() if key not in ("decode", "requested_platform")}, sort_keys=True)
+        for record in records
+    }
     if len(found) != 1:
         raise ValueError(
             f"The {name} result has runs of more than one viewer: "
@@ -226,7 +230,11 @@ def viewers(baseline: list[dict], candidate: list[dict]) -> list[str]:
         )
     else:
         last = "The two results ran different viewers; every verdict below compares these two."
-    return ["baseline viewer: " + described(old), "candidate viewer: " + described(new), last]
+    paths = [
+        f"{label} picture: requested_platform={viewer_of(records[0]).get('requested_platform', 'not recorded')}, decode={viewer_of(records[0]).get('decode', 'not recorded')}"
+        for label, records in (("baseline", baseline), ("candidate", candidate))
+    ]
+    return ["baseline viewer: " + described(old), "candidate viewer: " + described(new), last, *paths]
 
 
 def product_changes(baseline: list[dict], candidate: list[dict]) -> list[str]:
@@ -365,6 +373,16 @@ def conditions_that_differ(old: list[dict], new: list[dict]) -> str | None:
     )
 
 
+def require_same_decode(records: list[dict]) -> None:
+    decodes = [(record["discovered"].get("viewer_ran") or {}).get("decode") for record in records]
+    if any(value is None for value in decodes):
+        raise ValueError("One result was recorded before the tool kept decode; record that result again.")
+    if any(value not in ("software", "vaapi") for value in decodes):
+        raise ValueError("The viewer decode is unknown in a run; a verdict needs a measured decode path in every run.")
+    if len(set(decodes)) != 1:
+        raise ValueError("The runs were not measured under the same conditions: decode differs (software and vaapi). Record both results with the same decode path.")
+
+
 def judge(
     baseline: list[dict],
     candidate: list[dict],
@@ -372,6 +390,7 @@ def judge(
     allow_different_conditions: bool = False,
 ) -> list[dict]:
     old, new = valid_runs(baseline, minimum), valid_runs(candidate, minimum)
+    require_same_decode(old + new)
     one_viewer(old, "baseline")
     one_viewer(new, "candidate")
     words = conditions_that_differ(old, new)

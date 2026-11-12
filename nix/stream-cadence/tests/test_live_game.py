@@ -253,7 +253,7 @@ class AGameThatStartsDuringARun(Device):
             }
             moments = {"sender_at_start": [], "viewer_at_start": [], "sender_at_end": [], "viewer_at_end": []}
             facts = {
-                "valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0,
+                "valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0, "viewer_ran": {"kind": "stand-in", "place": "fixture", "moonlight": "/viewer", "decode": "software"},
                 "live_game": {**moments, "input_devices_appeared": [], "input_devices_disappeared": [], **live},
             }
             return [

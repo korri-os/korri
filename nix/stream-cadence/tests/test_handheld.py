@@ -66,7 +66,7 @@ class Conditions(unittest.TestCase):
             "repeated_frames": 0, "late_frames": 0, "torn_frames": 0,
             "undecodable_frames": 0,
         }
-        known = {"valid": True, "model": "host A", "viewer": {"model": "host A"}, "max_capture_gaps": 0}
+        known = {"valid": True, "model": "host A", "viewer": {"model": "host A"}, "max_capture_gaps": 0, "viewer_ran": {"kind": "stand-in", "place": "fixture", "moonlight": "/viewer", "decode": "software"}}
         return [
             {
                 "discovered": {**known, **facts},
@@ -177,7 +177,7 @@ class Conditions(unittest.TestCase):
             }
             seat = {} if viewer_model is None else {"model": viewer_model}
             return {
-                "discovered": {"valid": True, "model": "host A", "viewer": seat},
+                "discovered": {"valid": True, "model": "host A", "viewer": seat, "viewer_ran": {"kind": "stand-in", "place": "fixture", "moonlight": "/viewer", "decode": "software"}},
                 "source_counter": {"windows": [window]},
                 "viewer": {"startup_ms": 900.0},
             }

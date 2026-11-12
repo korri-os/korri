@@ -98,6 +98,25 @@ def decode_started(log: str, known: bool | None = None) -> bool | None:
     return known
 
 
+def decode_path(log: str, requested_platform: str, render_nodes: list[str] | None) -> str:
+    """Observed decode, never inferred from an OpenGL render node alone.
+
+    ffmpeg.c uses the ordinary codec name for both software and VA-API.
+    The positive platform line (enabled by -verbose) disambiguates VA-API;
+    a failed VA display plus a successful ordinary decoder proves fallback.
+    """
+    codecs = re.findall(r"^Using FFmpeg decoder: (\S+)\s*$", log, re.MULTILINE)
+    ordinary = bool(codecs) and all(name in ("h264", "hevc", "av1", "libdav1d") for name in codecs)
+    vaapi = bool(re.search(r"^Platform X Window System \(VAAPI\)\s*$", log, re.MULTILINE))
+    failed = "No VA display found" in log
+    if vaapi:
+        return "vaapi" if ordinary and render_nodes and not failed else "unknown"
+    software = failed or requested_platform in ("sdl", "x11") or bool(
+        re.search(r"^Platform SDL.*software decoding", log, re.MULTILINE)
+    )
+    return "software" if ordinary and software else "unknown"
+
+
 def ticks(pid: int) -> int | None:
     try:
         fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
@@ -973,7 +992,7 @@ class Session:
                 # The guard can end the viewer after the last sample. The stop must
                 # say so, or a run could be valid with no reason recorded.
                 raise RuntimeError(self.ended)
-            return {"exit": code, "log": self.tail("viewer")}
+            return {"exit": code, "log": plain_text(self.root / "viewer.log")}
         if operation == "evidence":
             self.stop("capture")
             # The capture, a program of the run, wrote these: read them as plain files.
@@ -984,7 +1003,7 @@ class Session:
                     read_plain(rows) if os.path.lexists(rows) else b""
                 ).decode(),
                 "capture_log": self.tail("capture"),
-                "viewer_log": self.tail("viewer"),
+                "viewer_log": plain_text(self.root / "viewer.log"),
                 "viewer_earlier_log": self.tail("viewer.earlier"),
                 "fixture_log": self.tail("fixture"),
             }

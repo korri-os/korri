@@ -127,7 +127,7 @@ class WhatAVerdictMakesOfIt(unittest.TestCase):
         }
         runs = []
         for n in range(5):
-            facts: dict = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0}
+            facts: dict = {"valid": True, "model": "host", "viewer": {"model": "host"}, "max_capture_gaps": 0, "viewer_ran": {"kind": "stand-in", "place": "fixture", "moonlight": "/viewer", "decode": "software"}}
             if others is not None:
                 side = {"busy": others[n] + 0.03, "own": 0.015, "tool": 0.03, "other": others[n]}
                 facts["machine"] = {"sender": dict(side), "viewer": dict(side)}

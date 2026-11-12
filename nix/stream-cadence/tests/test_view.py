@@ -324,6 +324,7 @@ def run(latency: float, startup: float, valid: bool = True) -> dict:
     return {
         "discovered": {
             "valid": valid,
+            "viewer_ran": {"kind": "stand-in", "place": "fixture", "moonlight": "/viewer", "decode": "software"},
             "display": {"mode": {"width": 640, "height": 480}, "power": True},
             "sunshine_version": "1",
         },

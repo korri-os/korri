@@ -41,6 +41,7 @@ from score import (
     score,
     stamps,
 )
+from viewer import decode_path
 from sender import steady_refresh_mhz
 from verdict import (
     BASE,
@@ -1345,6 +1346,7 @@ def view_case(
             sender.request("pin", pin=pin)
             viewer.request("paired")
         request = [
+            "-verbose",
             "-width",
             str(width),
             "-height",
@@ -1396,6 +1398,9 @@ def view_case(
                 prepared["keydir"],
             ]
         facts["viewer_command"] = command
+        facts["viewer_ran"].update(
+            requested_platform=seat["platform"] if product else "sdl", decode="unknown"
+        )
         # The first start only locates the bar. The second start is the measure,
         # with the capture already running, so startup time is observable.
         viewer.request("start", command=command)
@@ -1430,10 +1435,15 @@ def view_case(
             if state["capture_exit"] is not None:
                 raise Refusal("Capture client exited during the measure; read capture.log")
             time.sleep(0.5)
-        viewer.request("stop")
+        finished = viewer.request("stop")
         # Whether the viewer's own OpenGL was on the graphics card: the render nodes
         # that it held open in any sample. None when no sample could read them.
-        facts["viewer_ran"]["render_nodes"] = viewer_render_nodes(samples)
+        facts["viewer_ran"]["render_nodes"] = viewer_render_nodes(
+            [row for row in samples if row["device_ns"] >= started["start_ns"]]
+        )
+        facts["viewer_ran"]["decode"] = decode_path(
+            finished["log"], facts["viewer_ran"]["requested_platform"], facts["viewer_ran"]["render_nodes"]
+        )
         if private_x:
             facts["viewer_isolation"] = isolation_record(
                 [row for row in samples if row["device_ns"] >= started["start_ns"]]
@@ -1583,6 +1593,10 @@ def view_case(
             # A refused run still keeps the viewer's own words.
             try:
                 shown = viewer.request("evidence")
+                if "viewer_ran" in facts:
+                    ran = facts["viewer_ran"]
+                    ran["render_nodes"] = viewer_render_nodes(samples)
+                    ran["decode"] = decode_path(shown["viewer_log"], ran.get("requested_platform", ""), ran["render_nodes"])
                 for name in ("viewer_log", "viewer_earlier_log", "capture_log", "fixture_log"):
                     (directory / name.replace("_", ".")).write_text(shown[name])
             except Exception:
