@@ -45,6 +45,15 @@ def end_with_agent() -> None:
         os._exit(127)
 
 
+def model() -> str | None:
+    """The device's own name for itself: the device tree's, else the firmware's."""
+    paths = (
+        Path("/proc/device-tree/model"),
+        Path("/sys/class/dmi/id/product_name"),
+    )
+    return next((path.read_text().strip("\0\n") for path in paths if path.exists()), None)
+
+
 def command(*args: str) -> str:
     result = subprocess.run(args, capture_output=True, text=True, timeout=20)
     if result.returncode:
@@ -207,15 +216,8 @@ def discover() -> dict:
     ports = set()
     for name in ("tcp", "tcp6"):
         ports.update(tcp_ports(Path("/proc/net", name).read_text(), inodes))
-    model_paths = (
-        Path("/proc/device-tree/model"),
-        Path("/sys/class/dmi/id/product_name"),
-    )
-    model = next(
-        (path.read_text().strip("\0\n") for path in model_paths if path.exists()), None
-    )
     facts = {
-        "model": model,
+        "model": model(),
         "architecture": os.uname().machine,
         # Two agents with one boot ID share one monotonic clock.
         "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),

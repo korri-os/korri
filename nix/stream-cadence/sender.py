@@ -26,10 +26,11 @@ import time
 from typing import TextIO
 import urllib.request
 
-from device import deferred_termination, end_with_agent, proc, scheduling, serve
+from device import deferred_termination, end_with_agent, model, scheduling, serve
 from discovery import encoder_probe, output, properties
 
 RUNS = Path("/tmp")
+RENDER_NODES = Path("/dev/dri")
 DISPLAY = "wayland-1"
 RENDERER = "gles2"
 APPLICATION = "Desktop"
@@ -38,10 +39,10 @@ APPLICATION = "Desktop"
 # (rtsp.h), and the UDP streams between them (stream.h).
 PORT_SPAN = range(-5, 22)
 WEB_UI_OFFSET = 1
-# Sunshine's built-in default, which a product Sunshine uses. The fixture never
-# takes a span that touches it: a product Sunshine that starts during a measure
-# must find its ports free.
-PRODUCT_BASE = 47989
+# Sunshine's built-in default. The fixture never takes a span that touches it,
+# so it stays out of the way of a Sunshine that runs with its default. It knows
+# nothing of a Sunshine that is configured for other ports.
+SUNSHINE_DEFAULT_BASE = 47989
 READY = "Configuration UI available at"
 
 
@@ -79,7 +80,7 @@ def port_base() -> int:
             base = probe.getsockname()[1]
         if (
             base + PORT_SPAN[-1] < 1 << 16
-            and abs(base - PRODUCT_BASE) >= len(PORT_SPAN)
+            and abs(base - SUNSHINE_DEFAULT_BASE) >= len(PORT_SPAN)
             and span_free(base)
         ):
             return base
@@ -89,7 +90,7 @@ def port_base() -> int:
 def render_nodes() -> list[str]:
     return [
         str(node)
-        for node in sorted(Path("/dev/dri").glob("renderD*"))
+        for node in sorted(RENDER_NODES.glob("renderD*"))
         if os.access(node, os.R_OK | os.W_OK)
     ]
 
@@ -164,15 +165,9 @@ def survivors(root: Path) -> list[int]:
 
 class Session:
     def __init__(self) -> None:
-        models = (
-            Path("/proc/device-tree/model"),
-            Path("/sys/class/dmi/id/product_name"),
-        )
         release = Path("/etc/os-release")
         self.facts: dict = {
-            "model": next(
-                (path.read_text().strip("\0\n") for path in models if path.exists()), None
-            ),
+            "model": model(),
             "architecture": os.uname().machine,
             # Two agents with one boot ID share one monotonic clock.
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
@@ -373,14 +368,17 @@ class Session:
             attempts.append(chosen)
             if "error" in chosen:
                 raise RuntimeError("The sender fixture did not start again: " + chosen["error"])
+        if not self.text("sunshine.crt").strip():
+            raise RuntimeError("The fixture's Sunshine wrote no certificate; the viewer cannot pin it.")
         self.facts.update(
             display=output(self.sway_message("-t", "get_outputs")),
             sunshine_version=chosen["sunshine_version"],
             working_encoders=chosen["working_encoders"],
             sunshine_port=chosen["port"],
             listening_tcp_ports=[chosen["port"]],
+            # Only the PIDs: the fixture's own children have no identity to restore.
             processes={
-                name: proc(self.processes[name].pid) for name in ("compositor", "sunshine")
+                name: {"pid": self.processes[name].pid} for name in ("compositor", "sunshine")
             },
             sender_fixture={
                 "application": APPLICATION,

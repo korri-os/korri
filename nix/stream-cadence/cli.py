@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from bar import BITS, Location, decode_rows, frame_ids, search
+from bar import BITS, Location, decode_rows, search
 from decode import decode
 from discovery import session_log
 from score import (
@@ -36,6 +36,7 @@ from score import (
     cpu_rate,
     display_records,
     feedback,
+    first_measured_frame,
     score,
     stamps,
 )
@@ -395,6 +396,21 @@ def fixture_stream(
     facts["stream_host"] = host
     remote.request("start", motion=motion)
     return host, port, facts["sender_fixture"]["application"]
+
+
+def plugin_enabled(code: int, status: str) -> bool:
+    """Whether `korri-plugin status` reports the viewer plugin as enabled.
+
+    The viewer's agent uses the plugin only when it is enabled (viewer.py:
+    plugin). An installed plugin that is switched off gets the copied viewer.
+    """
+    if code:
+        return False
+    try:
+        state = json.loads(status).get("desired", {}).get("state")
+    except (ValueError, AttributeError):
+        return False
+    return state == "Enabled"
 
 
 def viewer_stream_host(
@@ -792,6 +808,10 @@ def view_case(
             viewer_refresh = seat["display"]["refresh_hz"]
             width, height = args.resolution or (mode["width"], mode["height"])
         else:
+            if not paths["viewer"]:
+                raise Refusal(
+                    "The viewer's agent finds no enabled viewer plugin, and the tool copied no viewer. Run the measure again."
+                )
             viewer_refresh = args.viewer_refresh
             width, height = args.resolution or (1920, 1080)
         loopback = str(ipaddress.IPv4Address(socket.INADDR_LOOPBACK))
@@ -879,7 +899,9 @@ def view_case(
         if args.bitrate:
             request += ["-bitrate", str(args.bitrate)]
         if plugin:
-            # The arguments of korrid's linux_viewer (stream_args), with no input seat.
+            # The arguments of korrid's linux_viewer (stream_args), with no input
+            # seat and none of the plugin's rendered settings. The README lists
+            # every difference from a korrid launch.
             command = [
                 moonlight,
                 "stream",
@@ -972,22 +994,8 @@ def view_case(
             to_sender, sender_error = bridge(before, after)
             to_seat, seat_error = bridge(seat_before, seat_after)
             facts["bridge_uncertainty_ms"] = sender_error + seat_error
-        # The first frame of the measured start is a frame that the sender
-        # presented after that start. A picture left on the display by the
-        # locating start is older and does not count.
-        presented = feedback(motion_log)[0]
-        launched = to_seat(started["start_ns"])
-        first = next(
-            (
-                i
-                for i, frame in enumerate(frames)
-                if any(
-                    ident in presented
-                    and to_sender(presented[ident]["present_ns"]) >= launched
-                    for ident in frame_ids(frame)
-                )
-            ),
-            None,
+        first = first_measured_frame(
+            frames, feedback(motion_log)[0], to_seat(started["start_ns"]), to_sender
         )
         if first is None:
             raise Refusal("The measured viewer start showed no readable ID; read viewer.log")
@@ -1131,16 +1139,18 @@ def view(args: argparse.Namespace) -> int:
     )
     if args.sender_fixture:
         sender_agent = sender_agent.replace("/device.py", "/sender.py")
-    # A device with the viewer plugin uses that binary. Any other device gets a
-    # copy. The host that runs the tool is no Korri device: it also gets a sway.
-    installed = viewer_target is not None and (
-        subprocess.run(
+    # A device with the enabled viewer plugin uses that binary. Any other device
+    # gets a copy. The host that runs the tool is no Korri device: it also gets
+    # a sway.
+    installed = False
+    if viewer_target is not None:
+        status = subprocess.run(
             ["ssh", *viewer_options, viewer_target, "korri-plugin status @korri:moonlight"],
             capture_output=True,
+            text=True,
             timeout=30,
-        ).returncode
-        == 0
-    )
+        )
+        installed = plugin_enabled(status.returncode, status.stdout)
     seat_parts: tuple[str, ...] = ("capture",) if installed else ("capture", "viewer")
     if viewer_target is None:
         seat_parts += ("sway",)

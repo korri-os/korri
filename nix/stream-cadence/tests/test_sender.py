@@ -40,10 +40,10 @@ class SteadyMode(unittest.TestCase):
 
 
 class Ports(unittest.TestCase):
-    def test_port_base_has_the_whole_span_free_and_leaves_the_product_span(self):
+    def test_port_base_has_the_whole_span_free_and_leaves_sunshines_default_span(self):
         base = sender.port_base()
         self.assertTrue(sender.span_free(base))
-        self.assertGreaterEqual(abs(base - sender.PRODUCT_BASE), len(sender.PORT_SPAN))
+        self.assertGreaterEqual(abs(base - sender.SUNSHINE_DEFAULT_BASE), len(sender.PORT_SPAN))
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as taken:
             taken.bind(("", base + sender.PORT_SPAN[-1]))
             self.assertFalse(sender.span_free(base))

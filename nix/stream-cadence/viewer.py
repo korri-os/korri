@@ -36,6 +36,7 @@ from device import (
     end_with_agent,
     games,
     get_output,
+    model,
     proc,
     serve,
     sway,
@@ -157,13 +158,17 @@ class Session:
         # The shape that device.py's compositor helpers read.
         self.shell = {"processes": {"compositor": self.compositor}}
         connection = os.environ.get("SSH_CONNECTION", "").split()
+        installed = plugin() if self.compositor else None
         self.facts = {
+            "model": model(),
             "architecture": os.uname().machine,
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
             "clock_ticks_per_second": os.sysconf("SC_CLK_TCK"),
             "compositor": self.compositor,
-            "display": get_output(self.shell) if self.compositor else None,
-            "plugin": plugin() if self.compositor else None,
+            # Only the installed viewer uses the device's own display. The fixture
+            # has its own output, so it does not need exactly one product output.
+            "display": get_output(self.shell) if installed else None,
+            "plugin": installed,
             "platform": platform(),
             # The host that runs the tool, as this device reaches it: the far end
             # of the agent's own SSH connection. Absent with no SSH.
@@ -188,6 +193,9 @@ class Session:
             os.initgroups(self.compositor["user"], self.compositor["gid"])
         os.setgid(self.compositor["gid"])
         os.setuid(self.compositor["uid"])
+        # After the change of user, which clears it: the child ends with the
+        # agent, so a killed agent leaves no viewer on the real panel.
+        end_with_agent()
 
     def environment(self) -> dict[str, str]:
         assert self.root is not None

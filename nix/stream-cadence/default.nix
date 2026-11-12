@@ -120,6 +120,7 @@ let
           pkgs.ffmpeg
           pkgs.openssh
           pkgs.stdenv.cc
+          pkgs.openssl
           pkgs.python3Packages.ruff
           pkgs.python3Packages.mypy
         ];

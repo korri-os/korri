@@ -115,6 +115,25 @@ def capture_gaps(rows: list[dict[str, int]], period_ns: float) -> tuple[int, int
     return missed, repeats
 
 
+def first_measured_frame(
+    frames: list[Frame],
+    presented: dict[int, dict[str, int]],
+    launched_ns: int,
+    to_host: Callable[[int], int],
+) -> int | None:
+    """The index of the first output frame that belongs to a measured viewer start.
+
+    It is the first frame with an ID that the sender presented at or after
+    that start. A picture that an earlier start left on the display carries an
+    older ID and does not count. `launched_ns` and `to_host` share one clock.
+    """
+    for index, frame in enumerate(frames):
+        for ident in frame_ids(frame):
+            if ident in presented and to_host(presented[ident]["present_ns"]) >= launched_ns:
+                return index
+    return None
+
+
 def cpu_rate(
     samples: list[dict], start_ns: int, end_ns: int, ticks_per_second: int
 ) -> float | None:
@@ -182,8 +201,9 @@ def score(
     then also counts frames that repeat an ID and new IDs that arrive late.
 
     `source_period_ns` is the refresh period of a sender output that counts no
-    vblanks, as a headless output does. Its source misses come from the time
-    between two presentations.
+    vblanks, as a headless output does. Its source misses are then derived, not
+    counted: each gap above 1.5 periods between two presentations gives
+    round(gap / period) - 1 misses.
     """
     if max_unreadable_frames < 0:
         raise ValueError("max_unreadable_frames must be nonnegative")

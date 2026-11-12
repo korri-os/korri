@@ -73,6 +73,11 @@ def conditions(record: dict) -> dict:
     # Only the mode decides the sender's work; power state and name do not.
     if isinstance(values["display"], dict):
         values["display"] = values["display"].get("mode")
+    # Which machines did the work: two hosts or two devices are two conditions.
+    # A result from before a fact existed has no value for it.
+    values["sender_model"] = facts.get("model")
+    values["sender_render_node"] = (facts.get("sender_fixture") or {}).get("render_node")
+    values["viewer_model"] = (facts.get("viewer") or {}).get("model")
     return values
 
 
