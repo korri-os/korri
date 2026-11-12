@@ -247,7 +247,7 @@ A plugin that is switched off, or whose `korri-plugin status` fails, is not
 usable. A board with a non-empty device-tree compatibility property gets no
 fixture, whether korrid's chip table names its decoder or not. A machine
 with no board may use the stand-in. A product viewer fixture that requests
-PC VA-API is refused; see "PC VA-API fixture isolation".
+PC VA-API needs a private pair on the same device; see "PC VA-API fixture isolation".
 
 The agent runs as root, changes to the compositor's user with that user's
 groups, and starts the viewer with the arguments of korrid's `linux_viewer`
@@ -336,34 +336,33 @@ display's mode when it starts, and a display that cannot be read does not
 stop a fixture run.
 
 A board with a non-empty device-tree compatibility property hosts no fixture,
-with or without the plugin. The product viewer fixture currently runs only
-when korrid selects `x11`. A PC requesting `x11_vaapi` is refused, not changed
-to the software path. See "PC VA-API fixture isolation" for the failed proof.
+with or without the plugin. On a PC requesting `x11_vaapi`, the installed
+plugin and `--viewer-package` run in a private Xwayland inside the fixture's
+headless sway. Both halves must be on the same device. Namespace creation
+or joining that fails ends the run; no different picture path is substituted.
 
-**How the binary is started.** With the arguments of korrid's `linux_viewer`
-(`stream_args`: `-platform x11`, `-mapping`, `-windowed`,
-`-autowindowresize`) and its environment
+**How the binary is started.** With korrid's requested `-platform`,
+`-mapping`, `-windowed`, `-autowindowresize`, and environment
 (`KORRI_MOONLIGHT_DISABLE_GAMEPAD_QUIT`,
-`SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS`), with the differences of "The
-installed viewer on a handheld" and three more:
+`SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS`). Differences from a product launch
+are listed under "The installed viewer on a handheld". The measure also
+adds `-verbose` to identify the selected platform in the viewer's log.
 
-- `DISPLAY=:0` is left out. It names the X server of the device's own
-  compositor, and a fixture run must not reach it.
-- `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` name the fixture's compositor, and
-  `SDL_VIDEODRIVER=wayland` makes SDL use it.
-- The viewer's programs keep no supplementary group (with
-  `--viewer-renderer gles2`: only the groups that own a render node).
+For the PC product fixture, `DISPLAY=:0` and `SDL_VIDEODRIVER=x11` name
+**only the private X server**. A shared network namespace isolates abstract
+X sockets; a shared mount namespace isolates socket paths and X lock files.
+It is not the product's `:0`. `XDG_RUNTIME_DIR` and `WAYLAND_DISPLAY` name the
+fixture's own run directory and Wayland display. The namespace's only network
+interface is its own loopback. See "PC VA-API fixture isolation" below.
 
-**SDL on Wayland, not an Xwayland in the fixture.** With `-platform x11` the
-plugin's Moonlight uses its SDL system (korrid's comment in `stream_args`
-says so, and upstream's `platform_check` returns SDL for `x11` when SDL is
-built in). The plugin's SDL is sdl2-compat on SDL 3, and its closure holds
-`wayland`, `libxkbcommon` and `libdecor`: it has a Wayland video driver. So
-the binary runs on the fixture's compositor with no X server. An Xwayland in
-the fixture would add a process on a two-core device and would put a socket
-and a lock file under `/tmp` beside the product's `:0`. The cost: on ibuki
-the product's viewer shows through the product compositor's Xwayland, and
-the fixture does not measure that step.
+The stand-in stays `-platform sdl`, `SDL_VIDEODRIVER=wayland`, with no
+`DISPLAY` and no Xwayland. A product fixture requesting `x11` rather than
+`x11_vaapi` also keeps the earlier SDL-on-Wayland setup. These are different
+picture paths from today's product on a render-node PC.
+
+The fixture's programs keep only supplementary groups that own a render
+node. A PC product fixture additionally hides real input nodes, because the
+compositor user's primary group can own them.
 
 **The renderer of the fixture's compositor.** The default is gles2: the
 fixture's compositor draws on the device's render node, as the sender
@@ -1443,64 +1442,79 @@ can own real input nodes. Every product viewer in a fixture must use
 starting it. X11 keyboard/mouse events are not guarded by `viewonly` in
 upstream X11 setup, so a fixture must also have its own X server.
 
-A PC product viewer fixture is refused until a fully private X display is
-available. The refusal applies to the installed plugin and `--viewer-package`.
-It never silently substitutes SDL. The nixpkgs stand-in remains
-`-platform sdl`; on render-node PCs this is now a different picture path
-from the product, not a product decoder baseline.
+**What the product runs today.** korrid requests `x11_vaapi`, but the
+supplied plugin's FFmpeg builds have `--disable-xlib`, import
+`vaGetDisplayDRM` but not `vaGetDisplay`, and do not link `libva-x11`.
+FFmpeg therefore cannot open the VA display `":0"`. Moonlight falls back
+to SDL with software decode, presenting through X11 on Xwayland. This is
+[product bug #439](https://github.com/korri-os/korri/issues/439), not a
+fixture failure. The measure follows this actual product behavior. It does
+not require VA-API to succeed or hide the fallback. The fix belongs to the
+plugin, not to the measure.
 
+**How the private pair is isolated.** Root agents create one network namespace
+and one mount namespace for a same-device private pair. The sender agent
+creates them; the viewer agent checks their identities and joins them before
+starting any program. Both compositors, the private Sunshine, Xwayland and
+the viewer share the pair's network namespace. Only its loopback is brought
+up; no external address, interface, route or connection is made. Pairing and
+streaming stay on that loopback. The agents' own Sunshine API calls happen
+inside it too.
 
-**Namespace attempt, 2026-11-12: stopped after the short run.** A temporary
-prototype put both agents, both compositors, Sunshine and the viewer in one
-new network namespace and one new mount namespace. It brought up only that
-namespace's loopback. A private tmpfs over `/tmp` hid both X sockets and
-`.X0-lock`; hiding only the socket directory would leave the product's live
-lock and make Xwayland choose another display number. The viewer children
-also hid `/dev/input` behind their own empty tmpfs. The prototype left the
-binary and stream arguments unchanged.
+A private tmpfs over `/tmp` hides both `/tmp/.X11-unix` and `.X0-lock` from
+the product. Hiding only the socket directory would leave the product's
+live lock, making Xwayland choose another display number. Inside these
+namespaces, the fixture Xwayland takes `:0`. Neither its filesystem socket
+nor its abstract socket can be the product's. All run directories are
+created after the mount; both agents see them. The product's `/tmp` is not
+changed. `/dev/dri`, graphics drivers, `/proc` and thermal sensors stay
+visible. Viewer-side children also take a child-only mount namespace with
+an empty tmpfs over `/dev/input`, before dropping privileges.
 
-The private X server worked, but VA-API did not:
+The cost is another X server and a root-only namespace setup. This route
+cannot stream across two devices: the isolated loopback cannot reach the
+other device. Such PC product fixtures are refused before either stack
+starts. A namespace operation that fails also refuses the run, without a
+software or Wayland substitution. The stand-in remains SDL on Wayland and
+uses none of this namespace route.
 
-```
-[VAAPI @ ...] No VA display found for device :0.
-Couldn't open codec: h264_v4l2m2m
-Using FFmpeg decoder: h264
-```
+**The proof in each run.** `discovered.pair_namespace` records the agent PID
+and network/mount identities. `viewer_fixture.private_x_namespace` records
+whether this route ran. The agent reads the viewer's open files and Linux
+Unix-socket diagnostics in each sample. Peer socket inodes must join the
+viewer's actual X connection to an Xwayland descendant of the fixture
+compositor in the pair's network namespace. An X connection to any other
+server fails. `discovered.viewer_isolation` keeps the peer inodes, socket
+names, Xwayland PIDs and input-node list for the measured start. A run needs
+at least one positive X proof, no lost proof after that, and no open
+`/dev/input` node. Missing or failed evidence makes the run invalid. Startup
+samples before the first X connection remain evidence, not a failure.
 
-The supplied package's actual linked `libavutil.so.61` in
-`8pr35af429l2zlmlga9sx7ibbh11qcvx-ffmpeg-9.0.2-lib` contains the build option
-`--disable-xlib`, and no `vaGetDisplay` X11 symbol, while `vaGetDisplayDRM`
-is present. This is consistent with the X11 VA-API device being unavailable
-in that FFmpeg build. No driver override, binary patch or third route was
-attempted. The namespace prototype was not kept in the tool: it would still
-measure a software fallback, not prove the requested PC path.
+Every agent serves one run. Closing ends its children, removes its run
+directory and exits the agent. The kernel then removes the namespaces and
+their tmpfs files. The controller checks product services as before; the
+acceptance runs also check product Xwayland clients and namespace leftovers.
 
-The run was on aka, with the supplied copied product viewer. Socket evidence
-showed the viewer (PID 367069) connected to the private Xwayland (366941),
-not the product Xwayland (748147). The viewer's three X sockets paired with
-private `@/tmp/.X11-unix/X0` endpoints. Its open-file list had no `/dev/input`
-node. It ran as UID 56774, primary GID 1000, supplementary GID 303. The
-product Xwayland's three connected sockets were identical before, during and
-after. Product service PIDs/start times and `/dev/input` entries were unchanged.
-Neither agent reported remaining processes or directories. A separate scan
-found no process left in the private network namespace after the run.
+**The decode record and verdict.** Each run's `discovered.viewer_ran` keeps:
 
-This is **software fallback evidence only**, not a product-path baseline:
-
-| Short run, 10 scored seconds | Measured |
+| Field | Meaning |
 | --- | --- |
-| Sender presentation to display, p50 in two 5-second windows | 12.074 ms; 11.726 ms |
-| Dropped frames | 0 |
-| Viewer CPU seconds each second | 0.157289 |
-| Startup | 737.699 ms |
-| `machine.other`, sender; viewer | 1.1507%; 1.1505% of all CPUs |
-| Viewer render node | `renderD129` (OpenGL, not proof of hardware decode) |
-| Sender encoder | `h264_vaapi`, `renderD128` |
-| VA-API decode on the RX 7900 XT | Did not run |
+| `requested_platform` | korrid's request for a product viewer; `sdl` for the stand-in |
+| `decode` | `software`, `vaapi`, or `unknown`, from the measured start's log and render-node evidence |
+| `render_nodes` | The nodes held open during that start; OpenGL can open one even with software decode |
 
-The prototype's scorer printed `VALID`; that checked the recording, not
-VA-API. Do not use it as a product-path result. The two five-run base sets,
-their verdict and the queue set were **not measured**: the allowed namespace
-route failed VA-API initialization, so work stopped. Decode-path records and
-the verdict condition are not implemented yet. They remain required before
-a PC product fixture can be enabled.
+`No VA display found` followed by `Using FFmpeg decoder: h264` proves the
+current software fallback. The ordinary codec name alone is ambiguous:
+Moonlight also uses it with VA-API. A positive `Platform X Window System
+(VAAPI)` line plus an ordinary decoder and an open render node proves
+`vaapi`. Missing or contradictory evidence is `unknown`. Full viewer logs
+are retained, not only their last lines. Other hardware decoder families
+are not classified by this PC decoder record and remain `unknown`.
+
+`verdict` prints the requested platform and decode of each result. It refuses
+any run with `unknown`, a result recorded before `decode`, or any difference
+in decode within or between the two results. Even
+`--allow-different-conditions` cannot override this rule. After #439 is
+fixed, the next result can say `vaapi`; it will not compare silently with
+today's software baseline. The stand-in's SDL-on-Wayland path remains a
+different presentation path, even when both results decode in software.
