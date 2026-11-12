@@ -46,6 +46,14 @@ pub trait SaveRepository: Send + Sync {
     /// The hash must already be named by one of this person's stored records.
     fn put_object(&self, person: &str, hash: &str, input: &mut dyn Read) -> Result<(), SaveError>;
     fn complete(&self, person: &str, game: &str, id: &str) -> Result<bool, SaveError>;
+    /// The verified size of each object that this person's record `id` names
+    /// and the store holds, by object hash. Reads that one record only.
+    fn payload_sizes(
+        &self,
+        person: &str,
+        game: &str,
+        id: &str,
+    ) -> Result<std::collections::BTreeMap<String, u64>, SaveError>;
     /// Immutable snapshots this peer has already acknowledged holding.
     fn confirmed_snapshots(
         &self,

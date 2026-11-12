@@ -1143,6 +1143,34 @@ impl SaveRepository for NativeSaveStore {
         self.authorize_object(person, hash)?;
         self.verified_object(hash)
     }
+    fn payload_sizes(
+        &self,
+        person: &str,
+        game: &str,
+        id: &str,
+    ) -> Result<BTreeMap<String, u64>, SaveError> {
+        let _guard = lock()?;
+        hash_hex(id)?;
+        // The person's own record names these objects, which is the same
+        // authority `object` finds by reading every record of every game.
+        let record = self
+            .record_by_id(person, game, id)?
+            .ok_or(SaveError::Missing)?;
+        let mut sizes = BTreeMap::new();
+        for file in record.locations.iter().flat_map(|l| &l.files) {
+            if sizes.contains_key(&file.sha256) {
+                continue;
+            }
+            match self.verified_object(&file.sha256) {
+                Ok(object) => {
+                    sizes.insert(file.sha256.clone(), object.metadata().map_err(io)?.len());
+                }
+                Err(SaveError::Missing) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(sizes)
+    }
     fn put_object(&self, person: &str, hash: &str, input: &mut dyn Read) -> Result<(), SaveError> {
         {
             let _guard = lock()?;
@@ -1463,6 +1491,84 @@ mod observation_tests {
         assert!(store
             .complete(&person, "game", &snapshot_id(&record).unwrap())
             .unwrap());
+    }
+
+    fn record_of(game: &str, contents: &[&[u8]]) -> SnapshotRecord {
+        SnapshotRecord {
+            parents: vec![],
+            game_id: game.into(),
+            release_id: None,
+            runner_id: "runner".into(),
+            device: "22".repeat(32),
+            ended_at: "2026-10-21T00:00:00.000Z".into(),
+            duration_seconds: 1,
+            interrupted: false,
+            locations: vec![SnapshotLocation {
+                key: "saves".into(),
+                kind: SaveKind::Save,
+                files: contents
+                    .iter()
+                    .enumerate()
+                    .map(|(index, content)| SaveFile {
+                        path: format!("file-{index}"),
+                        sha256: super::super::record::hash(content),
+                        bytes: content.len() as u64,
+                    })
+                    .collect(),
+            }],
+        }
+    }
+
+    #[test]
+    fn payload_sizes_reports_only_the_objects_the_store_holds_for_one_record() {
+        let person = "11".repeat(32);
+        let root = tempfile::tempdir().unwrap();
+        let store = NativeSaveStore::new(root.path());
+        let record = record_of("game", &[b"held", b"absent!"]);
+        let id = store.put_record(&person, &record).unwrap();
+        let held = super::super::record::hash(b"held");
+        store
+            .put_object(&person, &held, &mut b"held".as_slice())
+            .unwrap();
+
+        assert_eq!(
+            store.payload_sizes(&person, "game", &id).unwrap(),
+            BTreeMap::from([(held, 4)])
+        );
+        // Another person's history does not answer for this record.
+        assert!(matches!(
+            store.payload_sizes(&"33".repeat(32), "game", &id),
+            Err(SaveError::Missing)
+        ));
+    }
+
+    #[test]
+    fn payload_sizes_reads_one_record_not_every_game() {
+        let person = "11".repeat(32);
+        let root = tempfile::tempdir().unwrap();
+        let store = NativeSaveStore::new(root.path());
+        let record = record_of("game", &[b"held"]);
+        let id = store.put_record(&person, &record).unwrap();
+        let held = super::super::record::hash(b"held");
+        store
+            .put_object(&person, &held, &mut b"held".as_slice())
+            .unwrap();
+        // An unreadable record in another game stops every whole-store scan.
+        let other = store
+            .put_record(&person, &record_of("other", &[b"x"]))
+            .unwrap();
+        let other_file = store
+            .game(&person, "other", false)
+            .unwrap()
+            .unwrap()
+            .join(format!("{}.json", hash_hex(&other).unwrap()));
+        fs::write(other_file, b"not a record").unwrap();
+        assert!(store.object(&person, &held).is_err());
+
+        assert_eq!(
+            store.payload_sizes(&person, "game", &id).unwrap(),
+            BTreeMap::from([(held, 4)])
+        );
     }
 
     #[test]

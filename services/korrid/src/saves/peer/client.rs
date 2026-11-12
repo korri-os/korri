@@ -308,27 +308,23 @@ impl SavePeerService {
         peer: &str,
         record: &SnapshotRecord,
     ) -> Result<(), PeerSaveError> {
-        for location in &record.locations {
-            for file in &location.files {
-                let (person_key, hash) = (person.to_owned(), file.sha256.clone());
-                let present = self
-                    .storage(
-                        move |repository| match repository.object(&person_key, &hash) {
-                            Ok(object) => Ok(Some(
-                                object
-                                    .metadata()
-                                    .map_err(|error| SaveError::Storage(error.to_string()))?
-                                    .len(),
-                            )),
-                            Err(SaveError::Missing) => Ok(None),
-                            Err(error) => Err(error),
-                        },
-                    )
-                    .await?;
-                if present.is_none() {
+        // One read of this record answers for all its files. Asking the store
+        // for each object made it read every record of every game per file.
+        let (person_key, game, id) = (
+            person.to_owned(),
+            record.game_id.clone(),
+            snapshot_id(record)?,
+        );
+        let mut held = self
+            .storage(move |repository| repository.payload_sizes(&person_key, &game, &id))
+            .await?;
+        for file in record.locations.iter().flat_map(|l| &l.files) {
+            match held.get(&file.sha256) {
+                Some(bytes) if *bytes == file.bytes => {}
+                Some(_) => return Err(PeerSaveError::Protocol),
+                None => {
                     self.download_object(person, peer, file).await?;
-                } else if present != Some(file.bytes) {
-                    return Err(PeerSaveError::Protocol);
+                    held.insert(file.sha256.clone(), file.bytes);
                 }
             }
         }
