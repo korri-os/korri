@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import heat  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -34,11 +35,11 @@ class Device(unittest.TestCase):
         self.peer = root / "peer"
         self.peer.write_text(f'#!/bin/sh\nexec {sys.executable} -B {TESTS / "host-peer.py"} "$@"\n')
         self.peer.chmod(0o755)
-        self.previous = (viewer.THERMAL, viewer.COMPATIBLE)
-        viewer.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "compatible"
+        self.previous = (heat.THERMAL, viewer.COMPATIBLE)
+        heat.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "compatible"
 
     def tearDown(self):
-        viewer.THERMAL, viewer.COMPATIBLE = self.previous
+        heat.THERMAL, viewer.COMPATIBLE = self.previous
         self.directory.cleanup()
 
     def session(self) -> viewer.Session:
@@ -233,12 +234,12 @@ def trips(*values: tuple[str, int]) -> dict:
 class TestMarginOnlyLowersTheEnd(DesktopChip):
     def test_a_margin_below_the_tools_own_is_not_taken(self):
         for zone in (trips(*RG353M), trips(("critical", 110000))):
-            normal = viewer.thermal_limits(zone)
+            normal = heat.thermal_limits(zone)
             for margin in (0, 1, 9999):
                 with self.subTest(margin=margin, critical=normal["critical"]):
-                    self.assertEqual(viewer.thermal_limits(zone, end_margin=margin), normal)
+                    self.assertEqual(heat.thermal_limits(zone, end_margin=margin), normal)
             self.assertLess(
-                viewer.thermal_limits(zone, end_margin=30000)["end_at"], normal["end_at"]
+                heat.thermal_limits(zone, end_margin=30000)["end_at"], normal["end_at"]
             )
 
     def test_the_agent_never_ends_later_than_its_own_rule(self):

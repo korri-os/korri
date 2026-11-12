@@ -21,6 +21,7 @@ from cli import (  # noqa: E402
 )
 from discovery import session_log  # noqa: E402
 import sender  # noqa: E402
+import heat  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -151,12 +152,12 @@ class NoSensors(unittest.TestCase):
 
     def setUp(self):
         self.sysfs = tempfile.TemporaryDirectory()
-        self.real = (viewer.THERMAL, viewer.COMPATIBLE)
-        viewer.THERMAL = Path(self.sysfs.name) / "thermal"
+        self.real = (heat.THERMAL, viewer.COMPATIBLE)
+        heat.THERMAL = Path(self.sysfs.name) / "thermal"
         viewer.COMPATIBLE = Path(self.sysfs.name) / "compatible"
 
     def tearDown(self):
-        viewer.THERMAL, viewer.COMPATIBLE = self.real
+        heat.THERMAL, viewer.COMPATIBLE = self.real
         self.sysfs.cleanup()
 
 

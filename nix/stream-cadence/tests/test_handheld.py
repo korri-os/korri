@@ -19,6 +19,7 @@ from cli import plugin_enabled  # noqa: E402
 from score import first_measured_frame  # noqa: E402
 import sender  # noqa: E402
 from verdict import differences, judge  # noqa: E402
+import heat  # noqa: E402
 import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -228,37 +229,37 @@ def zone(trips: list[tuple[str, int]], temp: int = 50000) -> dict:
 class HeatLimits(unittest.TestCase):
     def test_limits_come_from_the_devices_own_trip_points(self):
         self.assertEqual(
-            viewer.thermal_limits(zone(RG353M)),
+            heat.thermal_limits(zone(RG353M)),
             {"critical": 95000, "start_below": 70000, "end_at": 85000},
         )
         # Half-way from the last passive trip to the critical one is the lower limit here.
         self.assertEqual(
-            viewer.thermal_limits(zone(RG35XX_PRO)),
+            heat.thermal_limits(zone(RG35XX_PRO)),
             {"critical": 110000, "start_below": 60000, "end_at": 90000},
         )
         # Placeholder trips count as absent: only margins below the critical trip remain.
         self.assertEqual(
-            viewer.thermal_limits(zone(ACPI_ZONE)),
+            heat.thermal_limits(zone(ACPI_ZONE)),
             {"critical": 126950, "start_below": 106950, "end_at": 116950},
         )
-        self.assertIsNone(viewer.thermal_limits(zone([("passive", 70000)])))
-        self.assertIsNone(viewer.thermal_limits(zone([])))
+        self.assertIsNone(heat.thermal_limits(zone([("passive", 70000)])))
+        self.assertIsNone(heat.thermal_limits(zone([])))
 
     def test_a_test_margin_moves_only_the_end_limit(self):
-        limits = viewer.thermal_limits(zone(RG353M), end_margin=40000)
+        limits = heat.thermal_limits(zone(RG353M), end_margin=40000)
         self.assertEqual(limits["end_at"], 55000)
         self.assertEqual(limits["start_below"], 70000)
 
     def test_too_hot_names_the_zone_the_reading_and_the_devices_trip(self):
-        limits = {"thermal_zone0": viewer.thermal_limits(zone(RG353M))}
-        self.assertIsNone(viewer.too_hot([zone(RG353M, 69999)], limits, "start_below"))
-        refused = viewer.too_hot([zone(RG353M, 72222)], limits, "start_below")
+        limits = {"thermal_zone0": heat.thermal_limits(zone(RG353M))}
+        self.assertIsNone(heat.too_hot([zone(RG353M, 69999)], limits, "start_below"))
+        refused = heat.too_hot([zone(RG353M, 72222)], limits, "start_below")
         self.assertIn("cpu-thermal reads 72.2", refused)
         self.assertIn("does not start at or above 70.0", refused)
-        self.assertIsNone(viewer.too_hot([zone(RG353M, 84999)], limits, "end_at"))
-        self.assertIn("ends at 85.0", viewer.too_hot([zone(RG353M, 85000)], limits, "end_at"))
+        self.assertIsNone(heat.too_hot([zone(RG353M, 84999)], limits, "end_at"))
+        self.assertIn("ends at 85.0", heat.too_hot([zone(RG353M, 85000)], limits, "end_at"))
         # A zone with no critical trip point is recorded and never judged.
-        self.assertIsNone(viewer.too_hot([zone([], 99000)], {"thermal_zone0": None}, "end_at"))
+        self.assertIsNone(heat.too_hot([zone([], 99000)], {"thermal_zone0": None}, "end_at"))
 
     def test_busy_viewer_is_seen_after_the_whole_time_and_not_at_startup(self):
         # The short run on the RG353M: a start-up burst, then 0.15.
@@ -312,11 +313,11 @@ class HeatGuard(unittest.TestCase):
         self.peer = root / "peer"
         self.peer.write_text(f'#!/bin/sh\nexec {sys.executable} -B {TESTS / "host-peer.py"} "$@"\n')
         self.peer.chmod(0o755)
-        self.previous = (viewer.THERMAL, viewer.COMPATIBLE)
-        viewer.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "no-device-tree"
+        self.previous = (heat.THERMAL, viewer.COMPATIBLE)
+        heat.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "no-device-tree"
 
     def tearDown(self):
-        viewer.THERMAL, viewer.COMPATIBLE = self.previous
+        heat.THERMAL, viewer.COMPATIBLE = self.previous
         self.directory.cleanup()
 
     def session(self) -> viewer.Session:

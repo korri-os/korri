@@ -29,6 +29,7 @@ let
     fileset = pkgs.lib.fileset.unions [
       ./device.py
       ./discovery.py
+      ./heat.py
       ./sender.py
       ./viewer.py
     ];
