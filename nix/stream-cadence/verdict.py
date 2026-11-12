@@ -417,10 +417,19 @@ def machine_line(baseline: list[dict], candidate: list[dict]) -> str:
     return "what else ran on the machine, share of all CPUs: " + "; ".join(parts)
 
 
+# The smallest gap, as a share of all CPUs, between the two ranges of what
+# else ran that makes two results differ. A tool rule chosen without data: the
+# one loaded case (about 2.5 of 12 CPUs on aka, a gap near 20 points) moved the
+# delay by 8 ms, and a quiet aka reads about 3%. Revisit it when a result shows
+# a smaller gap with a clear effect on the numbers.
+MACHINE_SMALLEST_GAP = 0.05
+
+
 def machine_difference(old: list[dict], new: list[dict]) -> str | None:
     """Why the two results were not measured on an equally busy machine, or None.
 
-    The rule of a metric: two ranges that do not overlap differ. Another
+    The rule of a metric, with a smallest gap: two ranges differ when they do
+    not overlap and lie at least MACHINE_SMALLEST_GAP apart. Another
     load on the device moves every number of a pair, so a verdict between such
     results would judge that load. A result that has no record while the
     other has one was recorded before the tool kept it.
@@ -435,7 +444,8 @@ def machine_difference(old: list[dict], new: list[dict]) -> str | None:
                 "One result was recorded before the tool kept how busy the machine was "
                 "(machine); record that result again."
             )
-        if min(after) > max(before) or max(after) < min(before):
+        gap = max(min(after) - max(before), min(before) - max(after))
+        if gap >= MACHINE_SMALLEST_GAP - 1e-9:
             words.append(
                 f"on the {side} device what else ran took {share(before)} of all CPUs in the "
                 f"baseline and {share(after)} in the candidate"

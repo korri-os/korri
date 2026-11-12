@@ -1255,8 +1255,9 @@ CPUs. A product sender's agent does not look, so its device has no record.
 
 No run is stopped or made invalid for a busy machine. The protection is in
 `verdict`: it prints one line with the range of `other` in each result for
-each device, and it applies the rule of a metric to it. When the two ranges
-do not overlap, it refuses and says that the machine was busier in one
+each device, and it applies the rule of a metric to it, with a smallest
+gap. When the two ranges do not overlap and lie at least 5 percentage
+points of all CPUs apart, it refuses and says that the machine was busier in one
 result, with both ranges. `--allow-different-conditions` overrides the
 refusal, and the line stays. A result with no record, against one that has
 it, is refused as "recorded before the tool kept how busy the machine was".
@@ -1265,9 +1266,13 @@ it, is refused as "recorded before the tool kept how busy the machine was".
 what else ran on the machine, share of all CPUs: baseline: sender device 21.0%..24.0%, viewer device 21.0%..24.0%; candidate: sender device 0.4%..0.7%, viewer device 0.4%..0.7%
 ```
 
-The rule has no smallest gap: two quiet results whose ranges miss each
-other by a tenth of a percent are refused like a loaded one. How wide the
-range of a quiet aka is over five runs is not measured yet.
+The smallest gap of 5 points is a tool rule chosen without data. The one
+loaded case (another test at about 2.5 of aka's 12 CPUs, a gap near 20
+points) moved the delay by 8 ms, and a quiet aka reads about 3%. Without a
+smallest gap, two quiet results whose ranges miss each other by a tenth of
+a percent would refuse each other. Revisit the 5 points when a result shows
+a smaller gap with a clear effect on the numbers. How wide the range of a
+quiet aka is over five runs is not measured yet.
 
 Sets A and B themselves cannot be checked against this rule afterwards:
 their evidence holds the load average before and after each set and no CPU

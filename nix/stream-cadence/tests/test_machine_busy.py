@@ -158,6 +158,24 @@ class WhatAVerdictMakesOfIt(unittest.TestCase):
         self.assertIsNone(conditions_that_differ(one, other))
         self.assertRegex(machine_line(one, other), "what else ran.*0.4%..0.7%.*0.5%..0.9%")
 
+    def test_ranges_apart_by_less_than_the_smallest_gap_are_the_same_machine(self):
+        # Two quiet sets whose ranges miss each other by 1 point of all CPUs.
+        one = self.result([0.020, 0.025, 0.030, 0.022, 0.028])
+        other = self.result([0.040, 0.045, 0.050, 0.042, 0.048])
+        self.assertEqual(len(judge(one, other, 5)), 15)
+        self.assertIsNone(conditions_that_differ(one, other))
+        self.assertRegex(machine_line(one, other), "2.0%..3.0%.*4.0%..5.0%")
+
+    def test_ranges_apart_by_the_smallest_gap_or_more_are_refused(self):
+        # The same quiet set against one 6 points above it.
+        one = self.result([0.020, 0.025, 0.030, 0.022, 0.028])
+        other = self.result([0.090, 0.095, 0.100, 0.092, 0.098])
+        with self.assertRaises(ValueError) as refused:
+            judge(one, other, 5)
+        self.assertRegex(str(refused.exception), "machine was busier in one result")
+        self.assertIn("2.0%..3.0%", str(refused.exception))
+        self.assertIn("9.0%..10.0%", str(refused.exception))
+
     def test_a_result_from_before_the_fact_is_refused_and_the_refusal_says_so(self):
         old, new = self.result(None), self.result([0.004, 0.006, 0.005, 0.004, 0.007])
         with self.assertRaisesRegex(ValueError, "recorded before the tool kept how busy the machine was"):
