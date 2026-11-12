@@ -1411,3 +1411,40 @@ without contacting a device:
 ```
 
 The audit writes a new result and leaves the original recording and result unchanged.
+
+### PC VA-API fixture isolation
+
+The PC rule now follows korrid: only an absent compatibility property, on
+`x86_64`, with an existing `renderD` node whose non-empty suffix contains
+only ASCII digits requests `x11_vaapi`. An empty or unreadable property
+keeps `x11`. The handheld safety rule uses the board, not this platform name.
+
+The plugin source at `9363f21d62b528b115355ccc0e372a361edfc412` pins
+Moonlight `775444287305849ebdf4736c75298ad0713e2d5d`. In that source:
+
+- `src/main.c:344–391` puts `udev_init`, `evdev_init`, explicit input opens,
+  SDL controller initialization and CEC initialization in the **else** of
+  `config.viewonly`. `src/main.c:149–153` also skips `evdev_start/stop` in
+  view-only mode. `-viewonly` therefore disables enumeration and hotplug,
+  not only input forwarding. `src/input/udev.c:69–107` would otherwise scan
+  input devices and install a netlink watch. The shipped patches do not
+  change these branches.
+- `src/video/x11.c:73` uses `XOpenDisplay(NULL)`, which respects `DISPLAY`.
+  But `src/video/ffmpeg_vaapi.c:62` passes the literal `":0"` to FFmpeg's
+  VA-API device creation. No shipped patch changes that call. Setting a
+  private `DISPLAY=:N` alone does **not** isolate the decoder from the
+  product X server.
+
+The fixture's children on a Korri device take the product compositor's
+unprivileged user and primary group. Supplementary groups are restricted to
+render-node groups. This alone is not an input sandbox: the primary group
+can own real input nodes. Every product viewer in a fixture must use
+`-viewonly`, with no explicit input option; the agent checks this before
+starting it. X11 keyboard/mouse events are not guarded by `viewonly` in
+upstream X11 setup, so a fixture must also have its own X server.
+
+A PC product viewer fixture is refused until a fully private X display is
+available. The refusal applies to the installed plugin and `--viewer-package`.
+It never silently substitutes SDL. The nixpkgs stand-in remains
+`-platform sdl`; on render-node PCs this is now a different picture path
+from the product, not a product decoder baseline.

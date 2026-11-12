@@ -87,10 +87,11 @@ class PluginViewerInTheFixture(unittest.TestCase):
         peer.write_text(f'#!/bin/sh\nexec {sys.executable} -B {TESTS / "host-peer.py"} "$@"\n')
         peer.chmod(0o755)
         self.peer = peer
-        previous = (heat.THERMAL, viewer.COMPATIBLE)
-        heat.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "compatible"
+        previous = (heat.THERMAL, viewer.COMPATIBLE, viewer.RENDER_NODES)
+        heat.THERMAL, viewer.COMPATIBLE, viewer.RENDER_NODES = root / "thermal", root / "compatible", root / "dri"
         self.addCleanup(setattr, heat, "THERMAL", previous[0])
         self.addCleanup(setattr, viewer, "COMPATIBLE", previous[1])
+        self.addCleanup(setattr, viewer, "RENDER_NODES", previous[2])
         machine.power_supplies(self, root)
 
     def session(self) -> viewer.Session:
@@ -124,6 +125,33 @@ class PluginViewerInTheFixture(unittest.TestCase):
         self.assertNotIn("DISPLAY", environment)
         self.assertEqual(environment["HOME"], str(session.root / "home"))
         self.assertTrue(session.fixture)
+
+    def test_pc_product_fixture_refuses_before_it_can_contact_the_products_x_server(self):
+        for package in (None, "copied"):
+            with self.subTest(package=package):
+                session = self.session()
+                session.facts["plugin"] = dict(PLUGIN) if package is None else None
+                session.facts["platform"] = "x11_vaapi"
+                arguments = {}
+                if package:
+                    root = Path(self.directory.name) / package
+                    (root / "bin").mkdir(parents=True, exist_ok=True)
+                    (root / "bin/moonlight").touch()
+                    arguments["viewer_package"] = str(root)
+                with self.assertRaisesRegex(RuntimeError, "VA-API.*:0.*private"):
+                    self.prepare(session, plugin_viewer=True, **arguments)
+                self.assertIsNone(session.root)
+                self.assertEqual(session.processes, {})
+
+    def test_product_fixture_requires_viewonly_and_no_explicit_input_before_spawn(self):
+        session = self.session()
+        session.facts["plugin"] = dict(PLUGIN)
+        self.prepare(session, plugin_viewer=True)
+        for command in (["sleep", "60"], ["sleep", "60", "-viewonly", "-input", "/dev/input/event0"]):
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(RuntimeError, "view-only.*input"):
+                    session.handle({"operation": "start", "command": command})
+                self.assertNotIn("viewer", session.processes)
 
     def test_stand_in_keeps_its_environment(self):
         session = self.session()

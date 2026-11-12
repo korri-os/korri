@@ -724,6 +724,12 @@ class Session:
                         else f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."
                     )
                 )
+        if request["fixture"] and plugin_viewer and self.facts["platform"] == PICTURE_PATH_PC:
+            raise RuntimeError(
+                "The PC VA-API decoder hardcodes X display :0. A different DISPLAY does not "
+                "keep it off the product's X server. No fully private X display is available "
+                "for this fixture, so the product viewer does not start."
+            )
         self.fixture = bool(request["fixture"])
         self.plugin_viewer = plugin_viewer
         self.renderer = renderer
@@ -871,6 +877,12 @@ class Session:
                 )
             return {"log": without_pin(self.tail("pair"))}
         if operation == "start":
+            command = list(request["command"])
+            if self.fixture and self.plugin_viewer and (
+                "-viewonly" not in command
+                or any(arg.split("=", 1)[0] == "-input" for arg in command)
+            ):
+                raise RuntimeError("A product fixture viewer must be view-only, with no input option.")
             if self.ended:
                 raise RuntimeError(self.ended)
             # Each start writes its own log: what the guard and the validity gate
