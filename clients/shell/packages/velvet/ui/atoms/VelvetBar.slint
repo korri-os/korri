@@ -9,7 +9,7 @@ export component VelvetBar inherits Rectangle {
     in property <float> share;
     property <bool> travels: share < 0;
     property <float> phase: travels && !Tokens.still ? Math.mod(animation-tick() / 1.2s, 1) : 0.28;
-    height: Math.max(2px, Tokens.screen.k * 4px);
+    height: Math.max(Tokens.thin, Tokens.screen.k * Tokens.nip);
     border-radius: self.height / 2;
     background: Tokens.light-20;
     clip: true;

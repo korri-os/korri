@@ -15,7 +15,7 @@
  * under it is drawn inert (no target, no tap).
  */
 import type { SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { gameCard, NO_IMAGE, NO_MARQUEE, stageOf, type StageView } from "./art"
+import { beginPictures, gameCard, NO_IMAGE, NO_MARQUEE, stageOf, type StageView } from "./art"
 import { detailGame, detailView, focusedGame, homeExits, homeView, NO_PILL, pill, setExits, setView, type PillView } from "./browse"
 import { curtainLayout, curtainOf } from "./curtain"
 import { breakLines, fitCaps } from "./fit"
@@ -157,14 +157,15 @@ function curtainView(state: State, model: Model, p: Plan) {
       moreDown: line + layout.room < layout.lines.length,
       stepLine: steps === undefined ? "" : `Step ${now + 1} of ${steps.labels.length} · ${steps.labels[now] ?? ""}`,
       progress: spec.progress,
-      progressLine: spec.progressLine ?? "",
+      // Korri's own words about the progress stand; Velvet adds its count only when Korri says nothing.
+      progressLine: spec.words.length > 0 ? "" : spec.progressLine ?? "",
       stack: layout.stack,
     },
     kicker: kicker.lines,
     lines: layout.lines.slice(line, line + layout.room),
     steps: steps === undefined ? [] : steps.labels.map((label, index) => ({ label, state: index < steps.current ? "done" : index === steps.current ? "now" : "next" })),
     buttons: spec.buttons.map((button, index): PillView => pill(button.label, "curtain", `x:${index}`, index === at, {
-      note: button.note ?? "", quiet: index !== at, dim: button.dim === true, danger: button.danger === true,
+      note: button.note ?? "", quiet: !layout.stack && index !== at, dim: button.dim === true, danger: button.danger === true,
     })),
   }
 }
@@ -206,6 +207,7 @@ const screenOf = (p: Plan) => p
 let lastStageGame: string | undefined
 
 export function view(state: State, model: Model) {
+  beginPictures()
   const p = plan(state.size.width, state.size.height)
   const top = topLayer(state, model)
   const live = top === "screen"
@@ -217,7 +219,9 @@ export function view(state: State, model: Model) {
   // The stage: lit by the game in front of the person; dimmer the further from it.
   const lead = what === "detail" ? detailGame(state, model) : focusedGame(state, model) ?? (state.reported === null ? lists.pick : gameById(state.lists, model, state.reported) ?? lists.pick)
   const veil = page === "list" ? 0.86 : page === "set" ? 0.8 : page === "home" && state.depth === 2 ? 0.78 : page === "home" && state.depth === 1 ? 0.3 : 0
-  const stage: StageView = page === "empty" ? stageOf(undefined, 0, false) : stageOf(lead, veil, state.drift && top === "screen" && (page === "home" || page === "detail"))
+  // The keyboard and the curtain take the house: its lights go down further.
+  const taken = top === "curtain" || top === "keyboard"
+  const stage: StageView = page === "empty" ? stageOf(undefined, 0, false) : stageOf(lead, taken ? Math.max(veil, 0.84) : veil, state.drift && top === "screen" && (page === "home" || page === "detail"), page === "detail", page === "set" || page === "list" || (page === "home" && state.depth === 2))
   lastStageGame = lead?.id
   const sheet = state.sheet === undefined ? undefined : sheetPanel(state.sheet.kind, state, model)
   const exits = top !== "screen" ? {}
@@ -275,6 +279,7 @@ export function view(state: State, model: Model) {
 
 /** The gameplay overlay: Korri's controls over the running game, and Korri's status over those. */
 export function overlayView(state: State, model: Model) {
+  beginPictures()
   const p = plan(state.size.width, state.size.height)
   const top = topLayer(state, model)
   const overlay = model.presentation.kind === "gameplay-overlay" ? model.presentation : undefined

@@ -203,6 +203,9 @@ export struct Stage {
     light: int,
     art-shown: bool,
     art: image,
+    // The hero is cut to fill the stage (the detail). Else it keeps its own
+    // shape: a band across the top that falls off into the dark.
+    fill: bool,
     // The house lights over it all, 0 to 1 (the library and the pages dim the stage).
     veil: float,
     drift: bool,
@@ -360,6 +363,7 @@ export struct Detail {
     hero: bool,
     mark: Marquee,
     stack: bool,
+    badge: string,
     facts: Facts,
     note: string,
 }

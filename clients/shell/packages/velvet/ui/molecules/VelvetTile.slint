@@ -61,7 +61,9 @@ export component VelvetTile inherits Rectangle {
         height: root.height * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "")) ? 0.95 : (root.tile.focused || root.tile.lit) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
         animate width, height { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         clip: true;
-        opacity: !(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "")) ? 0 : root.rests ? Tokens.rows-dim : 1;
+        // In or out, never between for long: the renderer fades each part by itself, so a
+        // half-shown card would show its no-art card through its picture.
+        opacity: root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "") ? 1 : 0;
         animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
         background: root.tile.kind == "nav" ? Tokens.light-05 : Tokens.house-down;
         if root.tile.kind != "nav": VelvetPoster {
@@ -143,15 +145,16 @@ export component VelvetTile inherits Rectangle {
                 height: self.preferred-height;
                 alignment: center;
                 spacing: parent.height * 0.02;
+                visible: root.height >= Tokens.nav-words-from;
                 VelvetWords {
                     text: root.tile.label;
-                    size: Math.max(Tokens.screen.small * Tokens.unit * 0.8, root.height * 0.058);
+                    size: Math.max(Tokens.type-least, root.height * 0.058);
                     ink: Tokens.house-light;
                     strong: true;
                 }
                 VelvetWords {
                     text: root.tile.count;
-                    size: Math.max(Tokens.screen.small * Tokens.unit * 0.8, root.height * 0.058);
+                    size: Math.max(Tokens.type-least, root.height * 0.058);
                     ink: Tokens.usher;
                 }
             }
@@ -160,15 +163,23 @@ export component VelvetTile inherits Rectangle {
             x: parent.height * 0.035;
             y: parent.height * 0.035;
             text: root.tile.count;
-            size: Math.clamp(root.height * 0.05, 10px, 18px);
+            size: Math.clamp(root.height * 0.05, Tokens.tile-type-least, Tokens.tile-type-most);
         }
         if root.tile.kind == "game": VelvetBadge {
-            x: Math.max(5px, parent.height * 0.03);
+            x: Math.max(Tokens.inset-least, parent.height * 0.03);
             y: root.tile.badge-top ? self.x : parent.height - self.height - self.x;
             text: root.tile.badge;
-            size: Math.clamp(root.height * 0.045, 10px, 18px);
+            size: Math.clamp(root.height * 0.045, Tokens.tile-type-least, Tokens.tile-type-most);
             opacity: (root.tile.focused || root.tile.lit) && Tokens.ring && !root.inert && root.tile.badge != "" ? 1 : 0;
             animate opacity { duration: Tokens.t-meta; delay: (root.tile.focused || root.tile.lit) && Tokens.ring && !root.inert && root.tile.badge != "" ? Tokens.dwell : 0ms; easing: ease-out; }
+        }
+        // A tile on a row that is not the focused one steps back under a veil.
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: Tokens.velvet-55;
+            opacity: root.rests ? 1 : 0;
+            animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
         }
         VelvetEdge {
             width: parent.width;

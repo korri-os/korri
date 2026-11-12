@@ -24,9 +24,9 @@ export component VelvetEmpty inherits Rectangle {
     property <length> pad-x: Tokens.screen.pad-x * u;
     property <length> pad-y: Tokens.screen.pad-y * u;
     property <length> body: Tokens.screen.body * u;
-    property <length> text-w: wide ? self.width * 0.46 : Math.min(self.width - 2 * pad-x, 900px);
+    property <length> text-w: wide ? self.width * 0.46 : Math.min(self.width - 2 * pad-x, Tokens.measure-most);
     // The empty places: beside the words while width is plentiful, else under them.
-    property <length> ghost-h: wide ? Math.clamp(self.height * 0.34, 90px, 400px) : Math.clamp(Math.min(self.height * 0.26, (self.width - 2 * pad-x) / 3.4 / Tokens.tile-ratio), 50px, 360px);
+    property <length> ghost-h: wide ? Math.clamp(self.height * 0.34, Tokens.ghost-least, Tokens.ghost-most) : Math.clamp(Math.min(self.height * 0.26, (self.width - 2 * pad-x) / 3.4 / Tokens.tile-ratio), Tokens.ghost-least * 0.55, Tokens.ghost-most * 0.9);
     property <length> ghost-w: ghost-h * Tokens.tile-ratio;
     property <length> ghost-gap: ghost-w * 0.16;
     property <length> ghosts-w: 3 * ghost-w + 2 * ghost-gap;

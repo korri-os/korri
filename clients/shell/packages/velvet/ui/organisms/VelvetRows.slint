@@ -43,7 +43,7 @@ export component VelvetRows inherits Rectangle {
             y: 0;
             width: root.width;
             height: self.preferred-height;
-            spacing: Math.max(2px, root.size * 0.12);
+            spacing: Math.max(Tokens.thin, root.size * 0.12);
             for r in root.rows: VelvetRow {
                 it: r;
                 size: root.size;

@@ -82,16 +82,33 @@ export function fitCaps(text: string, width: number, height: number, max: number
     }
   }
   if (best === undefined) {
-    // Not even at the smallest size: keep the lines that fit and say more was there.
-    const lines = wrap(words, min, width)
+    // Not even at the smallest size. A word wider than the box breaks where the box
+    // ends; then the lines that fit are kept, and the last one says more was there.
+    const pieces = words.flatMap(word => split(word, min, width))
+    const lines = wrap(pieces, min, width)
     const room = Math.max(1, Math.floor(height / (min * DISPLAY_LINE)))
-    const kept = lines.slice(0, room).map(line => cut(line, min, width))
+    const kept = lines.slice(0, room)
     if (lines.length > room && kept.length > 0) kept[kept.length - 1] = cut(`${kept[kept.length - 1]}…`, min, width, true)
     best = { size: min, lines: kept.map(caps) }
   }
   if (fits.size > 2000) fits.clear()
   fits.set(key, best)
   return best
+}
+
+/** A word in pieces no wider than `width` at `size`: whole when it fits. */
+function split(word: string, size: number, width: number): string[] {
+  if (capsWidth(word) * size <= width) return [word]
+  const pieces: string[] = []
+  let piece = ""
+  for (const c of word) {
+    if (piece !== "" && capsWidth(piece + c) * size > width) {
+      pieces.push(piece)
+      piece = c
+    } else piece += c
+  }
+  if (piece !== "") pieces.push(piece)
+  return pieces
 }
 
 /** `line` cut to `width` at `size`, ending in an ellipsis when it was cut (or already ends in one). */

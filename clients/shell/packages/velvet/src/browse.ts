@@ -210,61 +210,82 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
   const depth = pick === undefined ? 0 : state.depth
   const hero = hasHero(pick)
   const onPick = live && !state.onMenu && depth === 0
-  const rowTiles: TileView[] = row.map((item, at) => {
+  // The mark's logo first, then the row's tiles from the focused one outwards (the pixel budget, src/art.ts).
+  const mark = pick === undefined ? NO_MARQUEE : marqueeOf(pick, {
+    width: hero ? plan.heroW : plan.textW, logoH: hero ? Math.round(plan.markH * 1.25) : plan.markH, title: hero ? plan.title : plan.pickTitle, fact: plan.fact,
+    mark: hero || !cardNames(pick), badge: true,
+  }, model.publishedAt, pickFactsOf(home, pick, model))
+  const rowGame = depth === 1 ? row[state.rowAt] : undefined
+  const rowMark = rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
+    ? marqueeOf(rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, lines: 2 }, model.publishedAt)
+    : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) }
+  const cards = pick === undefined || hero ? [] : [gameCard(pick)]
+  const rowTiles: TileView[] = row.map(() => NO_TILE)
+  for (const at of nearest(row.length, depth === 1 ? state.rowAt : 0)) {
+    const item = row[at]!
     const focused = live && !state.onMenu && depth === 1 && state.rowAt === at
-    if (item.kind === "all") return navTile("All games", String(state.lists.total), "row", `row:${at}`, focused, at)
+    if (item.kind === "all") rowTiles[at] = navTile("All games", String(state.lists.total), "row", `row:${at}`, focused, at)
     // The pick takes its place in the row once the row is the shelf.
-    const tile = gameTile(item.game, "row", `row:${at}`, focused, at)
-    return item.pick && depth === 0 ? { ...tile, shown: false } : tile
-  })
+    else if (item.pick && depth === 0) rowTiles[at] = { ...waitingTile("row", `row:${at}`, focused, at), shown: false }
+    else rowTiles[at] = gameTile(item.game, "row", `row:${at}`, focused, at)
+  }
   const shelfAtNow = shelfAt(state, shelves)
   const now = nowOf(state, model, shelves)
-  const rowGame = depth === 1 ? row[state.rowAt] : undefined
-  const pickFacts: FactView[] = pick === undefined ? [] : [
-    ...(home.why === "most" && pick.playCount !== undefined && pick.playCount > 0 ? [{ icon: "again", text: `${pick.playCount} times played`, strong: false }] : []),
-    ...factsOf(pick, model.publishedAt),
-  ]
+  // The shelves' tiles, the focused shelf first.
   const tiles: TileView[] = []
-  const heads = shelves.map((shelf, index) => {
+  const starts: number[] = []
+  for (const shelf of shelves) {
+    starts.push(tiles.length)
+    for (const _ of shelf.items) tiles.push(NO_TILE)
+  }
+  for (const index of nearest(shelves.length, shelfAtNow)) {
+    const shelf = shelves[index]!
     const region = shelfRegion(shelf.key)
     const column = columnOf(state, shelf)
     // A shelf off the stage holds its places and waits for its games.
-    const near = depth === 2 ? Math.abs(index - shelfAtNow) <= 2 : depth === 1 && index === 0
-    shelf.items.forEach((item, at) => {
+    const near = depth === 2 ? Math.abs(index - shelfAtNow) <= 1 : depth === 1 && index === 0
+    for (const at of nearest(shelf.items.length, column)) {
       const id = `${region}:${at}`
       const focused = live && !state.onMenu && depth === 2 && index === shelfAtNow && column === at
-      tiles.push({ ...(near ? shelfTile(item, region, id, focused, at) : waitingTile(region, id, focused, at)), shelf: index })
-    })
-    return { key: shelf.key, label: shelf.label, at: state.scrolled?.[region] ?? column, count: shelf.items.length }
-  })
+      tiles[starts[index]! + at] = { ...(near ? shelfTile(shelf.items[at]!, region, id, focused, at) : waitingTile(region, id, focused, at)), shelf: index }
+    }
+  }
+  const heads = shelves.map(shelf => ({ key: shelf.key, label: shelf.label, at: state.scrolled?.[shelfRegion(shelf.key)] ?? columnOf(state, shelf), count: shelf.items.length }))
   const rowAt = Math.max(0, Math.min(state.rowAt, Math.max(0, row.length - 1)))
   return {
     home: {
       shown: true,
       depth,
       hero,
-      mark: pick === undefined ? NO_MARQUEE : marqueeOf(pick, {
-        width: hero ? plan.heroW : plan.textW, logoH: hero ? Math.round(plan.markH * 1.25) : plan.markH, title: hero ? plan.title : plan.pickTitle, fact: plan.fact,
-        mark: hero || !cardNames(pick), badge: true,
-      }, model.publishedAt, pickFacts),
+      mark,
       play: pick === undefined ? NO_PILL : pill(pick.resumable === true ? "Resume" : "Play", "pick", "play", onPick, { icon: "play" }),
       menu: pill("Menu", "menu", "menu", live && state.onMenu, { icon: "menu", quiet: true }),
       clock: model.clockLabel ?? "",
       rowAt: state.scrolled?.row ?? rowAt,
-      rowMark: rowGame === undefined ? NO_MARQUEE : rowGame.kind === "game"
-        ? marqueeOf(rowGame.game, { width: plan.rowMarkW, logoH: Math.max(24, plan.rowMarkH - plan.fact * 3.2), title: Math.min(plan.title, Math.max(24, (plan.rowMarkH - plan.fact * 3.2) / 2)), fact: plan.fact, mark: true, badge: false, lines: 2 }, model.publishedAt)
-        : { ...NO_MARQUEE, key: "all", ...fitMark("Library", plan.rowMarkW, plan), facts: factLines([{ icon: "grid", text: gamesWords(state.lists.total), strong: false }], plan.fact, plan.rowMarkW) },
+      rowMark,
       shelfAt: shelfAtNow,
       libTitle: "LIBRARY",
       libCount: gamesWords(state.lists.total),
       nowTitle: now.title,
       nowFact: now.fact,
     },
-    cards: pick === undefined || hero ? [] : [gameCard(pick)],
+    cards,
     row: rowTiles,
     shelves: heads,
     shelfTiles: tiles,
   }
+}
+
+/** Places 0 to count - 1, the one nearest `from` first. */
+export function nearest(count: number, from: number): number[] {
+  return Array.from({ length: count }, (_, index) => index).sort((a, b) => Math.abs(a - from) - Math.abs(b - from) || a - b)
+}
+
+function pickFactsOf(home: ReturnType<typeof homeOf>, pick: Game, model: Model): FactView[] {
+  return [
+    ...(home.why === "most" && pick.playCount !== undefined && pick.playCount > 0 ? [{ icon: "again", text: `${pick.playCount} times played`, strong: false }] : []),
+    ...factsOf(pick, model.publishedAt),
+  ]
 }
 
 function fitMark(text: string, width: number, plan: Plan) {
@@ -437,7 +458,12 @@ export function setView(state: State, set: SetState, model: Model, plan: Plan, l
   for (let slot = 0; slot < pool; slot++) tiles.push(NO_TILE)
   const focusedAt = set.at - set.low
   if (window !== undefined) {
-    for (let place = from; place < Math.min(count, from + pool); place++) {
+    // The focused row asks for its pictures first, then the rows beside it (the pixel budget, src/art.ts).
+    const places: number[] = []
+    for (let place = from; place < Math.min(count, from + pool); place++) places.push(place)
+    const row = (place: number) => Math.floor(place / plan.columns)
+    places.sort((a, b) => Math.abs(row(a) - row(focusedAt)) - Math.abs(row(b) - row(focusedAt)) || a - b)
+    for (const place of places) {
       const game = window.window[set.low + place - window.firstIndex]
       const lit = live && !set.pill && place === focusedAt
       // Each place keeps its slot while it is near the view, so a row that scrolls keeps its tiles.
@@ -581,15 +607,15 @@ export function detailView(state: State, model: Model, plan: Plan, live: boolean
     ...(savesWords(game) === undefined ? [] : [{ icon: "save", text: savesWords(game)!, strong: false }]),
   ]
   const facts = [...factsOf(game, model.publishedAt, true), ...extra]
-  const width = hero ? plan.detailW : plan.textW
-  const mark: MarqueeView = marqueeOf(game, { width: hero ? plan.detailLogoW : plan.textW, logoH: hero ? plan.detailLogoH : plan.markH, title: hero ? plan.detailTitle : plan.pickTitle, fact: plan.detailFact, mark: hero || !cardNames(game), badge: true }, model.publishedAt, [])
+  const mark: MarqueeView = marqueeOf(game, { width: hero ? plan.detailLogoW : plan.textW, logoH: hero ? plan.detailLogoH : plan.markH, title: hero ? plan.detailTitle : plan.pickTitle, fact: plan.detailFact, mark: hero || !cardNames(game), badge: false }, model.publishedAt, [])
   return {
     detail: {
       shown: true,
       hero,
       mark,
       stack: detailStacks(buttons, plan),
-      facts: factLines(facts, plan.detailFact, hero ? plan.width - 2 * plan.padX : width),
+      badge: game.system ?? "",
+      facts: factLines(facts, plan.detailFact, plan.width - 2 * plan.padX, game.system === undefined ? 0 : plan.detailFact * (1.6 + textWidth(game.system, true))),
       note: downloadWords(game),
     },
     cards: hero ? [] : [gameCard(game)],

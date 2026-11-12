@@ -7,7 +7,7 @@ import { Tokens } from "../tokens.slint";
 export component VelvetQr inherits Rectangle {
     in property <image> code;
     background: Tokens.house-light;
-    border-radius: Tokens.screen.k * 8px;
+    border-radius: Tokens.screen.k * Tokens.type-least;
     Image {
         x: parent.width * 0.04;
         y: parent.height * 0.04;

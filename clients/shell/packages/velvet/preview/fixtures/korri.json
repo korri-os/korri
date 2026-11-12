@@ -1,0 +1,1740 @@
+{
+ "settings": [
+  {
+   "title": "Device",
+   "items": [
+    {
+     "id": "device-name",
+     "label": "Name",
+     "value": "mini",
+     "description": "What other devices call this one",
+     "interaction": {
+      "kind": "text",
+      "placeholder": "This device",
+      "maxLength": 64
+     }
+    }
+   ]
+  },
+  {
+   "title": "Controllers",
+   "items": [
+    {
+     "id": "host.preferences.playerCount",
+     "label": "Player seats",
+     "value": "2",
+     "description": "Shared by physical and remote controllers. Stop the game before changing.",
+     "interaction": {
+      "kind": "choice",
+      "choices": [
+       {
+        "value": "1",
+        "label": "1"
+       },
+       {
+        "value": "2",
+        "label": "2"
+       },
+       {
+        "value": "3",
+        "label": "3"
+       },
+       {
+        "value": "4",
+        "label": "4"
+       }
+      ],
+      "selected": "2"
+     }
+    }
+   ]
+  },
+  {
+   "title": "Plugins",
+   "items": [
+    {
+     "id": "plugin:@korri:steamgriddb",
+     "label": "SteamGridDB",
+     "value": "On",
+     "description": "Finds posters, heroes and logos for your games.",
+     "interaction": {
+      "kind": "choice",
+      "choices": [
+       {
+        "value": "on",
+        "label": "On"
+       },
+       {
+        "value": "off",
+        "label": "Off"
+       }
+      ],
+      "selected": "on"
+     }
+    },
+    {
+     "id": "plugin-credential:@korri:steamgriddb",
+     "label": "SteamGridDB API key",
+     "value": "Configured",
+     "description": "Sent only to www.steamgriddb.com.",
+     "interaction": {
+      "kind": "sensitiveText",
+      "placeholder": "Paste the key",
+      "maxLength": 256,
+      "clearLabel": "Clear key"
+     }
+    }
+   ]
+  },
+  {
+   "title": "Games",
+   "items": [
+    {
+     "id": "local-games",
+     "label": "On this device",
+     "value": "14 games",
+     "description": "Declared in catalog/library.yaml"
+    },
+    {
+     "id": "game-folder-rescan",
+     "label": "Rescan game folders",
+     "value": "2 folders",
+     "interaction": {
+      "kind": "action",
+      "actionId": "game-folder-rescan"
+     }
+    },
+    {
+     "id": "game-folder:roms",
+     "label": "/run/media/mini/roms",
+     "value": "Registered",
+     "interaction": {
+      "kind": "action",
+      "actionId": "game-folder-remove:roms",
+      "destructive": true,
+      "confirmation": {
+       "title": "Remove game folder?",
+       "message": "Korri will remove games it added from this folder. Edited or hand-authored games stay.",
+       "confirmLabel": "Remove folder"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "title": "System information",
+   "items": [
+    {
+     "id": "korrid-version",
+     "label": "korrid",
+     "value": "0.4.1"
+    }
+   ]
+  }
+ ],
+ "actions": [
+  {
+   "id": "controllers-permission",
+   "label": "Allow controllers",
+   "description": "Lets Korri read every connected gamepad",
+   "enabled": true
+  },
+  {
+   "id": "restart-korri",
+   "label": "Restart Korri",
+   "enabled": true
+  },
+  {
+   "id": "sleep",
+   "label": "Sleep",
+   "description": "Not while a game is running",
+   "enabled": false
+  },
+  {
+   "id": "power-off",
+   "label": "Power off",
+   "enabled": true,
+   "destructive": true
+  }
+ ],
+ "network": {
+  "connection": {
+   "_tag": "Wifi",
+   "ssid": "hummingbird-lake",
+   "strengthPercent": 72
+  },
+  "wifi": {
+   "_tag": "Available",
+   "scanning": false,
+   "networks": [
+    {
+     "id": "ap-hummingbird",
+     "ssid": "hummingbird-lake",
+     "strengthPercent": 72,
+     "secured": true,
+     "known": true
+    },
+    {
+     "id": "ap-attic",
+     "ssid": "Attic 5G",
+     "strengthPercent": 64,
+     "secured": true,
+     "known": false
+    },
+    {
+     "id": "ap-cafe",
+     "ssid": "cafe-guest",
+     "strengthPercent": 48,
+     "secured": false,
+     "known": false
+    },
+    {
+     "id": "ap-neighbour",
+     "ssid": "NETGEAR-7F3A",
+     "strengthPercent": 30,
+     "secured": true,
+     "known": false
+    }
+   ],
+   "attempt": {
+    "_tag": "Idle"
+   }
+  }
+ },
+ "buildLabel": "korri 0.4.1 \u00b7 9a1fb22",
+ "clockLabel": "21:47",
+ "networkFailed": {
+  "connection": {
+   "_tag": "Wifi",
+   "ssid": "hummingbird-lake",
+   "strengthPercent": 72
+  },
+  "wifi": {
+   "_tag": "Available",
+   "scanning": false,
+   "networks": [
+    {
+     "id": "ap-hummingbird",
+     "ssid": "hummingbird-lake",
+     "strengthPercent": 72,
+     "secured": true,
+     "known": true
+    },
+    {
+     "id": "ap-attic",
+     "ssid": "Attic 5G",
+     "strengthPercent": 64,
+     "secured": true,
+     "known": false
+    },
+    {
+     "id": "ap-cafe",
+     "ssid": "cafe-guest",
+     "strengthPercent": 48,
+     "secured": false,
+     "known": false
+    },
+    {
+     "id": "ap-neighbour",
+     "ssid": "NETGEAR-7F3A",
+     "strengthPercent": 30,
+     "secured": true,
+     "known": false
+    },
+    {
+     "id": "ap-printer",
+     "ssid": "DIRECT-42-HP OfficeJet",
+     "strengthPercent": 26,
+     "secured": true,
+     "known": false
+    },
+    {
+     "id": "ap-long",
+     "ssid": "the-very-long-network-name-xyz12",
+     "strengthPercent": 20,
+     "secured": true,
+     "known": false
+    },
+    {
+     "id": "ap-tv",
+     "ssid": "Living Room TV",
+     "strengthPercent": 14,
+     "secured": false,
+     "known": false
+    },
+    {
+     "id": "ap-far",
+     "ssid": "far-away",
+     "strengthPercent": 4,
+     "secured": true,
+     "known": true
+    }
+   ],
+   "attempt": {
+    "_tag": "Idle"
+   }
+  }
+ },
+ "runnerChoice": {
+  "_tag": "Warnings",
+  "gameTitle": "Wario Land 4",
+  "message": "Launched with settings warnings",
+  "routes": [
+   {
+    "runnerId": "retroarch-mgba",
+    "familyId": "retroarch",
+    "systemId": "gba",
+    "runnerBuild": "/nix/store/8n1x2-retroarch-1.19.1",
+    "program": "RetroArch mGBA",
+    "warnings": [
+     "video.shader \u00b7 retroarch-mgba \u00b7 1.19.1: the shader preset was not found and the default is used"
+    ],
+    "actions": [
+     {
+      "id": "runner:3:launch:0",
+      "label": "Launch once",
+      "enabled": true
+     },
+     {
+      "id": "runner:3:game:0",
+      "label": "Remember for this game",
+      "enabled": true
+     },
+     {
+      "id": "runner:3:system:0",
+      "label": "Remember for system gba",
+      "enabled": true
+     }
+    ]
+   },
+   {
+    "runnerId": "mgba-standalone",
+    "familyId": "retroarch",
+    "systemId": "gba",
+    "runnerBuild": "/nix/store/3k9qz-mgba-0.10.3",
+    "program": "mGBA",
+    "warnings": [],
+    "actions": [
+     {
+      "id": "runner:3:launch:1",
+      "label": "Launch once",
+      "enabled": true
+     },
+     {
+      "id": "runner:3:game:1",
+      "label": "Remember for this game",
+      "enabled": true
+     },
+     {
+      "id": "runner:3:system:1",
+      "label": "Remember for system gba",
+      "enabled": true
+     }
+    ]
+   }
+  ],
+  "saved": [],
+  "warnings": [
+   "audio.latency \u00b7 retroarch-mgba \u00b7 1.19.1: 32 ms is below what this device supports; 64 ms is used"
+  ],
+  "actions": [
+   {
+    "id": "runner:3:dismiss",
+    "label": "Done",
+    "enabled": true
+   }
+  ]
+ },
+ "launchSettings": {
+  "_tag": "Ready",
+  "gameTitle": "Wario Land 4",
+  "places": [
+   {
+    "id": "device/any",
+    "title": "Device",
+    "layer": {
+     "id": "device",
+     "title": "Device"
+    },
+    "scope": {
+     "kind": "any",
+     "label": "Any runner"
+    },
+    "groups": [
+     {
+      "title": "Runner",
+      "items": [
+       {
+        "id": "launch:set:device/any#runner",
+        "label": "Runner",
+        "value": "Inherit",
+        "description": "The most specific place that names an installed runner wins.",
+        "source": "mGBA from Game",
+        "scope": "shared",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "inherit",
+           "label": "Inherit"
+          },
+          {
+           "value": "retroarch/mgba",
+           "label": "mGBA"
+          },
+          {
+           "value": "retroarch/gpsp",
+           "label": "gpSP"
+          }
+         ],
+         "selected": "inherit"
+        }
+       }
+      ]
+     },
+     {
+      "title": "CPU",
+      "items": [
+       {
+        "id": "launch:set:device/any#cpu.min",
+        "label": "CPU min",
+        "value": "Inherit",
+        "description": "Applies at next launch. Sets the device's clock limits.",
+        "source": "33 % (0.60 GHz) from Device for mGBA",
+        "scope": "device",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "inherit",
+           "label": "Inherit"
+          },
+          {
+           "value": "0",
+           "label": "0 % (no floor)"
+          },
+          {
+           "value": "23",
+           "label": "23 % (0.41 GHz)"
+          },
+          {
+           "value": "33",
+           "label": "33 % (0.60 GHz)"
+          },
+          {
+           "value": "45",
+           "label": "45 % (0.82 GHz)"
+          },
+          {
+           "value": "61",
+           "label": "61 % (1.10 GHz)"
+          },
+          {
+           "value": "79",
+           "label": "79 % (1.42 GHz)"
+          },
+          {
+           "value": "89",
+           "label": "89 % (1.61 GHz)"
+          },
+          {
+           "value": "100",
+           "label": "100 % (1.80 GHz)"
+          }
+         ],
+         "selected": "inherit"
+        }
+       },
+       {
+        "id": "launch:set:device/any#cpu.max",
+        "label": "CPU max",
+        "value": "89 % (1.61 GHz)",
+        "description": "Applies at next launch. Sets the device's clock limits.",
+        "source": "61 % (1.10 GHz) from Profile Battery saver",
+        "scope": "device",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "inherit",
+           "label": "Inherit"
+          },
+          {
+           "value": "23",
+           "label": "23 % (0.41 GHz)"
+          },
+          {
+           "value": "33",
+           "label": "33 % (0.60 GHz)"
+          },
+          {
+           "value": "45",
+           "label": "45 % (0.82 GHz)"
+          },
+          {
+           "value": "61",
+           "label": "61 % (1.10 GHz)"
+          },
+          {
+           "value": "79",
+           "label": "79 % (1.42 GHz)"
+          },
+          {
+           "value": "89",
+           "label": "89 % (1.61 GHz)"
+          },
+          {
+           "value": "100",
+           "label": "100 % (1.80 GHz)"
+          }
+         ],
+         "selected": "89"
+        }
+       },
+       {
+        "id": "launch:set:device/any#cpu.governor",
+        "label": "CPU governor",
+        "value": "Inherit",
+        "description": "Applies at next launch.",
+        "source": "schedutil from Device (default)",
+        "scope": "device",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "inherit",
+           "label": "Inherit"
+          },
+          {
+           "value": "conservative",
+           "label": "conservative"
+          },
+          {
+           "value": "ondemand",
+           "label": "ondemand"
+          },
+          {
+           "value": "userspace",
+           "label": "userspace"
+          },
+          {
+           "value": "powersave",
+           "label": "powersave"
+          },
+          {
+           "value": "performance",
+           "label": "performance"
+          },
+          {
+           "value": "schedutil",
+           "label": "schedutil"
+          }
+         ],
+         "selected": "inherit"
+        }
+       }
+      ]
+     },
+     {
+      "title": "GPU",
+      "items": [
+       {
+        "id": "launch:set:device/any#gpu.min",
+        "label": "GPU min",
+        "value": "Inherit",
+        "description": "Applies at next launch. Sets the device's clock limits.",
+        "source": "0 % from Device (default)",
+        "scope": "device",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "inherit",
+           "label": "Inherit"
+          },
+          {
+           "value": "0",
+           "label": "0 % (no floor)"
+          },
+          {
+           "value": "25",
+           "label": "25 % (0.20 GHz)"
+          },
+          {
+           "value": "38",
+           "label": "38 % (0.30 GHz)"
+          },
+          {
+           "value": "50",
+           "label": "50 % (0.40 GHz)"
+          },
+          {
+           "value": "75",
+           "label": "75 % (0.60 GHz)"
+          },
+          {
+           "value": "88",
+           "label": "88 % (0.70 GHz)"
+          },
+          {
+           "value": "100",
+           "label": "100 % (0.80 GHz)"
+          }
+         ],
+         "selected": "inherit"
+        }
+       },
+       {
+        "id": "launch:set:device/any#gpu.max",
+        "label": "GPU max",
+        "value": "Inherit",
+        "description": "Applies at next launch. Sets the device's clock limits.",
+        "source": "75 % (0.60 GHz) from Game",
+        "scope": "device",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "inherit",
+           "label": "Inherit"
+          },
+          {
+           "value": "25",
+           "label": "25 % (0.20 GHz)"
+          },
+          {
+           "value": "38",
+           "label": "38 % (0.30 GHz)"
+          },
+          {
+           "value": "50",
+           "label": "50 % (0.40 GHz)"
+          },
+          {
+           "value": "75",
+           "label": "75 % (0.60 GHz)"
+          },
+          {
+           "value": "88",
+           "label": "88 % (0.70 GHz)"
+          },
+          {
+           "value": "100",
+           "label": "100 % (0.80 GHz)"
+          }
+         ],
+         "selected": "inherit"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "device/family:retroarch",
+    "title": "Device for family retroarch",
+    "layer": {
+     "id": "device",
+     "title": "Device"
+    },
+    "scope": {
+     "kind": "family",
+     "label": "Family retroarch"
+    },
+    "groups": [
+     {
+      "title": "Family retroarch \u00b7 Video",
+      "items": [
+       {
+        "id": "launch:set:device/family:retroarch#add-setting:video",
+        "label": "Add setting",
+        "value": "Choose a setting",
+        "description": "3 more settings Family retroarch offers here.",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "video.frameskip",
+           "label": "Frameskip"
+          },
+          {
+           "value": "video.color-correction",
+           "label": "Colour correction"
+          },
+          {
+           "value": "video.fps-limit",
+           "label": "FPS limit"
+          }
+         ],
+         "selected": ""
+        }
+       }
+      ]
+     },
+     {
+      "title": "Family retroarch \u00b7 Input",
+      "items": [
+       {
+        "id": "launch:set:device/family:retroarch#add-setting:input",
+        "label": "Add setting",
+        "value": "Choose a setting",
+        "description": "1 more setting Family retroarch offers here.",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "input.solar.level",
+           "label": "Solar sensor level"
+          }
+         ],
+         "selected": ""
+        }
+       }
+      ]
+     },
+     {
+      "title": "Family retroarch \u00b7 Language",
+      "items": [
+       {
+        "id": "launch:set:device/family:retroarch#add-setting:locale",
+        "label": "Add setting",
+        "value": "Choose a setting",
+        "description": "1 more setting Family retroarch offers here.",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "locale.language",
+           "label": "Language"
+          }
+         ],
+         "selected": ""
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "device/runner:retroarch/mgba",
+    "title": "Device for mGBA",
+    "layer": {
+     "id": "device",
+     "title": "Device"
+    },
+    "scope": {
+     "kind": "runner",
+     "label": "mGBA"
+    },
+    "groups": [
+     {
+      "title": "mGBA \u00b7 Video",
+      "items": [
+       {
+        "id": "launch:set:device/runner:retroarch/mgba#setting:video.color-correction",
+        "label": "Colour correction",
+        "source": "Off from mGBA (default)",
+        "scope": "shared",
+        "value": "On",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "inherit",
+           "label": "Inherit"
+          },
+          {
+           "value": "default",
+           "label": "Default"
+          },
+          {
+           "value": "true",
+           "label": "On"
+          },
+          {
+           "value": "false",
+           "label": "Off"
+          }
+         ],
+         "selected": "true"
+        }
+       },
+       {
+        "id": "launch:set:device/runner:retroarch/mgba#add-setting:video",
+        "label": "Add setting",
+        "value": "Choose a setting",
+        "description": "2 more settings mGBA offers here.",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "video.frameskip",
+           "label": "Frameskip"
+          },
+          {
+           "value": "video.fps-limit",
+           "label": "FPS limit"
+          }
+         ],
+         "selected": ""
+        }
+       }
+      ]
+     },
+     {
+      "title": "mGBA \u00b7 Input",
+      "items": [
+       {
+        "id": "launch:set:device/runner:retroarch/mgba#add-setting:input",
+        "label": "Add setting",
+        "value": "Choose a setting",
+        "description": "1 more setting mGBA offers here.",
+        "interaction": {
+         "kind": "choice",
+         "choices": [
+          {
+           "value": "input.solar.level",
+           "label": "Solar sensor level"
+          }
+         ],
+         "selected": ""
+        }
+       }
+      ]
+     },
+     {
+      "title": "mGBA \u00b7 Language",
+      "items": [
+       {
+        "id": "launch:set:device/runner:retroarch/mgba#setting:locale.language",
+        "label": "Language",
+        "source": "from Device for mGBA",
+        "scope": "device",
+        "value": "de",
+        "interaction": {
+         "kind": "text",
+         "placeholder": "Empty",
+         "allowEmpty": true
+        }
+       },
+       {
+        "id": "launch:set:device/runner:retroarch/mgba#clear:setting:locale.language",
+        "label": "Inherit Language",
+        "value": "Clear",
+        "description": "Takes the value set here away, so the value in force comes from elsewhere.",
+        "interaction": {
+         "kind": "action",
+         "actionId": "launch:set:device/runner:retroarch/mgba#clear:setting:locale.language"
+        }
+       },
+       {
+        "id": "launch:set:device/runner:retroarch/mgba#default:setting:locale.language",
+        "label": "Default Language",
+        "value": "Use",
+        "description": "mGBA's own default holds here, whatever less specific places set.",
+        "interaction": {
+         "kind": "action",
+         "actionId": "launch:set:device/runner:retroarch/mgba#default:setting:locale.language"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "profiles": [
+   {
+    "id": "battery",
+    "title": "Battery saver"
+   }
+  ],
+  "selectedProfileId": "battery",
+  "notes": [],
+  "actions": [
+   {
+    "id": "launch:reload",
+    "label": "Reload",
+    "enabled": true
+   },
+   {
+    "id": "launch:cancel",
+    "label": "Close",
+    "enabled": true
+   }
+  ]
+ },
+ "store": {
+  "results": {
+   "providers": {
+    "_tag": "Ready",
+    "providers": [
+     {
+      "id": "@korri:pico8",
+      "title": "PICO-8 BBS"
+     }
+    ]
+   },
+   "search": {
+    "_tag": "Ready",
+    "providerId": "@korri:pico8",
+    "query": "cel",
+    "entries": [
+     {
+      "id": "celeste_classic_2-5",
+      "title": "Celeste Classic 2",
+      "system": "PICO-8"
+     },
+     {
+      "id": "lighthouse-1",
+      "title": "The Legend of the Supercalifragilisticexpialidocious Lighthouse Keeper",
+      "system": "PICO-8"
+     },
+     {
+      "id": "wip-3",
+      "title": "untitled work in progress"
+     }
+    ]
+   },
+   "details": {
+    "_tag": "Ready",
+    "entry": {
+     "id": "celeste_classic_2-5",
+     "title": "Celeste Classic 2",
+     "system": "PICO-8"
+    },
+    "description": "Madeline climbs again, with a grappling hook this time.",
+    "get": {
+     "_tag": "Offer",
+     "actions": [
+      {
+       "id": "store:1:get",
+       "label": "Get",
+       "enabled": true
+      }
+     ]
+    }
+   }
+  },
+  "offer": {
+   "providers": {
+    "_tag": "Ready",
+    "providers": [
+     {
+      "id": "@korri:pico8",
+      "title": "PICO-8 BBS"
+     }
+    ]
+   },
+   "search": {
+    "_tag": "Ready",
+    "providerId": "@korri:pico8",
+    "query": "cel",
+    "entries": [
+     {
+      "id": "celeste_classic_2-5",
+      "title": "Celeste Classic 2",
+      "system": "PICO-8"
+     },
+     {
+      "id": "lighthouse-1",
+      "title": "The Legend of the Supercalifragilisticexpialidocious Lighthouse Keeper",
+      "system": "PICO-8"
+     },
+     {
+      "id": "wip-3",
+      "title": "untitled work in progress"
+     }
+    ]
+   },
+   "details": {
+    "_tag": "Ready",
+    "entry": {
+     "id": "celeste_classic_2-5",
+     "title": "Celeste Classic 2",
+     "system": "PICO-8"
+    },
+    "description": "Madeline climbs again, with a grappling hook this time.",
+    "get": {
+     "_tag": "Offer",
+     "actions": [
+      {
+       "id": "store:1:get",
+       "label": "Get",
+       "enabled": true
+      }
+     ]
+    }
+   }
+  },
+  "downloading": {
+   "providers": {
+    "_tag": "Ready",
+    "providers": [
+     {
+      "id": "@korri:pico8",
+      "title": "PICO-8 BBS"
+     }
+    ]
+   },
+   "search": {
+    "_tag": "Ready",
+    "providerId": "@korri:pico8",
+    "query": "cel",
+    "entries": [
+     {
+      "id": "celeste_classic_2-5",
+      "title": "Celeste Classic 2",
+      "system": "PICO-8"
+     },
+     {
+      "id": "lighthouse-1",
+      "title": "The Legend of the Supercalifragilisticexpialidocious Lighthouse Keeper",
+      "system": "PICO-8"
+     },
+     {
+      "id": "wip-3",
+      "title": "untitled work in progress"
+     }
+    ]
+   },
+   "details": {
+    "_tag": "Ready",
+    "entry": {
+     "id": "celeste_classic_2-5",
+     "title": "Celeste Classic 2",
+     "system": "PICO-8"
+    },
+    "description": "Madeline climbs again, with a grappling hook this time.",
+    "get": {
+     "_tag": "Working",
+     "kicker": "Downloading Celeste Classic 2",
+     "detail": "8 KB of 15.9 KB \u00b7 8 KB/s \u00b7 0:01 left",
+     "progress": {
+      "done": 8000,
+      "total": 15872
+     },
+     "actions": [
+      {
+       "id": "store:5:cancel",
+       "label": "Cancel",
+       "enabled": true
+      }
+     ]
+    }
+   }
+  },
+  "confirm": {
+   "providers": {
+    "_tag": "Ready",
+    "providers": [
+     {
+      "id": "@korri:pico8",
+      "title": "PICO-8 BBS"
+     }
+    ]
+   },
+   "search": {
+    "_tag": "Ready",
+    "providerId": "@korri:pico8",
+    "query": "cel",
+    "entries": [
+     {
+      "id": "celeste_classic_2-5",
+      "title": "Celeste Classic 2",
+      "system": "PICO-8"
+     },
+     {
+      "id": "lighthouse-1",
+      "title": "The Legend of the Supercalifragilisticexpialidocious Lighthouse Keeper",
+      "system": "PICO-8"
+     },
+     {
+      "id": "wip-3",
+      "title": "untitled work in progress"
+     }
+    ]
+   },
+   "details": {
+    "_tag": "Ready",
+    "entry": {
+     "id": "celeste_classic_2-5",
+     "title": "Celeste Classic 2",
+     "system": "PICO-8"
+    },
+    "description": "Madeline climbs again, with a grappling hook this time.",
+    "get": {
+     "_tag": "Confirm",
+     "kicker": "Download to this device",
+     "detail": "Celeste Classic 2, 15.9 KB",
+     "actions": [
+      {
+       "id": "store:3:download",
+       "label": "Download",
+       "enabled": true
+      },
+      {
+       "id": "store:3:cancel",
+       "label": "Cancel",
+       "enabled": true
+      }
+     ]
+    }
+   }
+  }
+ },
+ "identity": {
+  "idle": {
+   "localBackupAvailable": false,
+   "retiredPublicKeys": [],
+   "status": {
+    "_tag": "Idle"
+   }
+  },
+  "retired": {
+   "localBackupAvailable": false,
+   "retiredPublicKeys": [
+    "npub13h8y59c8ql6ctesyg4zq9xnu3zntx0vxc9uw5px2g8nmt6fajva29st0rt",
+    "npub1rv0azdehye6fnpm22r2754pe07w6j2x5ugdvqlasmakwugj4gyu70dny08"
+   ],
+   "status": {
+    "_tag": "Idle"
+   }
+  },
+  "backup": {
+   "localBackupAvailable": false,
+   "retiredPublicKeys": [],
+   "status": {
+    "_tag": "BackupReady",
+    "encryptedSecret": "ncryptsec1qpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzrqpzr"
+   }
+  },
+  "problem": {
+   "localBackupAvailable": false,
+   "retiredPublicKeys": [],
+   "status": {
+    "_tag": "Problem",
+    "message": "The password does not open this backup. Check it and try again."
+   }
+  },
+  "working": {
+   "localBackupAvailable": false,
+   "retiredPublicKeys": [],
+   "status": {
+    "_tag": "Working",
+    "operation": "Making a backup"
+   }
+  }
+ },
+ "onboarding": {
+  "settings": [
+   {
+    "title": "Device",
+    "items": [
+     {
+      "id": "device-name",
+      "label": "Name",
+      "value": "mini",
+      "description": "What other devices call this one",
+      "interaction": {
+       "kind": "text",
+       "placeholder": "This device",
+       "maxLength": 24
+      }
+     }
+    ]
+   }
+  ],
+  "network": {
+   "connection": {
+    "_tag": "Offline"
+   },
+   "wifi": {
+    "_tag": "Available",
+    "scanning": false,
+    "networks": [
+     {
+      "id": "net-home",
+      "ssid": "hummingbird-lake",
+      "strengthPercent": 82,
+      "secured": true,
+      "known": true
+     },
+     {
+      "id": "net-cafe",
+      "ssid": "Cafe Guest",
+      "strengthPercent": 54,
+      "secured": false,
+      "known": false
+     },
+     {
+      "id": "net-neighbour",
+      "ssid": "NETGEAR-5G-supercalifragilistic-extension",
+      "strengthPercent": 21,
+      "secured": true,
+      "known": false
+     }
+    ],
+    "attempt": {
+     "_tag": "Idle"
+    }
+   }
+  },
+  "onboarding": {
+   "controllers": [
+    {
+     "id": "pad-1",
+     "name": "Xbox Wireless Controller",
+     "heard": true
+    },
+    {
+     "id": "pad-2",
+     "name": "8BitDo Pro 2",
+     "heard": true
+    },
+    {
+     "id": "pad-3",
+     "name": "DualSense",
+     "heard": true
+    },
+    {
+     "id": "pad-4",
+     "name": "Retroid Pocket Mini built-in controls",
+     "heard": false
+    }
+   ]
+  }
+ },
+ "overlay": {
+  "plain": {
+   "kind": "gameplay-overlay",
+   "title": "Paused",
+   "controls": [
+    {
+     "id": "resume",
+     "label": "Continue",
+     "enabled": true,
+     "destructive": false,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     }
+    },
+    {
+     "id": "restart",
+     "label": "Restart",
+     "enabled": true,
+     "destructive": true,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     }
+    },
+    {
+     "id": "exit",
+     "label": "Exit",
+     "enabled": true,
+     "destructive": true,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     }
+    }
+   ],
+   "groups": []
+  },
+  "groups": {
+   "kind": "gameplay-overlay",
+   "title": "Paused",
+   "controls": [
+    {
+     "id": "resume",
+     "label": "Continue",
+     "enabled": true,
+     "destructive": false,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     }
+    },
+    {
+     "id": "exit",
+     "label": "Exit",
+     "enabled": true,
+     "destructive": true,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     }
+    }
+   ],
+   "groups": [
+    {
+     "id": "display",
+     "label": "Display",
+     "controls": [
+      {
+       "id": "fill-screen",
+       "label": "Fill screen",
+       "description": "Stretch the picture to the edges",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "toggle",
+        "value": false,
+        "trueLabel": "On",
+        "falseLabel": "Off"
+       }
+      },
+      {
+       "id": "screen-filter",
+       "label": "Screen filter",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "choice",
+        "value": "sharp",
+        "options": [
+         {
+          "value": "none",
+          "label": "None"
+         },
+         {
+          "value": "sharp",
+          "label": "Sharp"
+         },
+         {
+          "value": "scanlines",
+          "label": "Scanlines"
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "id": "sound",
+     "label": "Sound",
+     "controls": [
+      {
+       "id": "volume",
+       "label": "Volume",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "range",
+        "value": 60,
+        "min": 0,
+        "max": 100,
+        "step": 5
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "stream": {
+   "kind": "gameplay-overlay",
+   "controls": [
+    {
+     "id": "overlay:resume",
+     "label": "Resume",
+     "enabled": true,
+     "destructive": false,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     }
+    },
+    {
+     "id": "overlay:end",
+     "label": "End",
+     "enabled": true,
+     "destructive": true,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     },
+     "description": "Unsaved progress will be lost."
+    },
+    {
+     "id": "overlay:disconnect",
+     "label": "Disconnect",
+     "enabled": true,
+     "destructive": false,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     }
+    },
+    {
+     "id": "overlay:open-korri",
+     "label": "Open Korri",
+     "enabled": true,
+     "destructive": false,
+     "dismissOnSuccess": true,
+     "interaction": {
+      "kind": "command"
+     }
+    }
+   ],
+   "groups": [
+    {
+     "id": "plugin:retroarch",
+     "label": "RetroArch",
+     "controls": [
+      {
+       "id": "ra:save",
+       "label": "Save state",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "command"
+       }
+      },
+      {
+       "id": "ra:load",
+       "label": "Load state",
+       "enabled": false,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "command"
+       },
+       "disabledReason": "No saved state yet"
+      },
+      {
+       "id": "ra:shader",
+       "label": "Shader",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "choice",
+        "value": "crt",
+        "options": [
+         {
+          "value": "none",
+          "label": "None"
+         },
+         {
+          "value": "crt",
+          "label": "CRT"
+         },
+         {
+          "value": "lcd",
+          "label": "LCD"
+         }
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "id": "viewer:launch-7f3a:group",
+     "label": "Stream controls",
+     "controls": [
+      {
+       "id": "viewer:launch-7f3a:2:9:fill",
+       "label": "Crop to fill",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "toggle",
+        "value": false,
+        "trueLabel": "On",
+        "falseLabel": "Off"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:keyboard",
+       "label": "Toggle keyboard",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": true,
+       "interaction": {
+        "kind": "command"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:full-keyboard",
+       "label": "Full keyboard",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": true,
+       "interaction": {
+        "kind": "command"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:zoom",
+       "label": "Pan & zoom",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": true,
+       "interaction": {
+        "kind": "toggle",
+        "value": false,
+        "trueLabel": "On",
+        "falseLabel": "Off"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:mouse",
+       "label": "Mouse mode",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "choice",
+        "value": "2",
+        "options": [
+         {
+          "value": "0",
+          "label": "Multi touch"
+         },
+         {
+          "value": "1",
+          "label": "Absolute touch"
+         },
+         {
+          "value": "2",
+          "label": "Track pad(Natural/Double tap to drag)"
+         },
+         {
+          "value": "3",
+          "label": "Track pad(Gaming/Long press to drag)"
+         },
+         {
+          "value": "4",
+          "label": "Disabled"
+         },
+         {
+          "value": "5",
+          "label": "Absolute touch (left/right click swapped)"
+         }
+        ]
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:cursor",
+       "label": "Toggle local cursor",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": true,
+       "interaction": {
+        "kind": "command"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:rotate",
+       "label": "Rotate screen",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": true,
+       "interaction": {
+        "kind": "command"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:kbd-controller",
+       "label": "Keyboard as controller",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": true,
+       "interaction": {
+        "kind": "command"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:touch",
+       "label": "Touch sensitivity",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "command"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:sgsr-sharpness",
+       "label": "SGSR sharpness",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "range",
+        "value": 20,
+        "min": 0,
+        "max": 50,
+        "step": 1
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:sgsr-edge",
+       "label": "SGSR edge threshold",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "range",
+        "value": 8,
+        "min": 1,
+        "max": 32,
+        "step": 1
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:flip",
+       "label": "Flip A/B and X/Y",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "toggle",
+        "value": false,
+        "trueLabel": "On",
+        "falseLabel": "Off"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:rumble",
+       "label": "Rumble",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "toggle",
+        "value": true,
+        "trueLabel": "On",
+        "falseLabel": "Off"
+       }
+      },
+      {
+       "id": "viewer:launch-7f3a:2:9:pip",
+       "label": "Picture-in-picture",
+       "enabled": true,
+       "destructive": false,
+       "dismissOnSuccess": false,
+       "interaction": {
+        "kind": "toggle",
+        "value": false,
+        "trueLabel": "On",
+        "falseLabel": "Off"
+       }
+      }
+     ]
+    }
+   ],
+   "title": "Wario Land 4",
+   "batteryPercent": 82,
+   "streamHealth": {
+    "rttMs": 3,
+    "deliveredBitrateKbps": 20140,
+    "framesDropped": 0
+   }
+  }
+ },
+ "status": {
+  "steps": {
+   "_tag": "Busy",
+   "kicker": "Starting Hollow Knight",
+   "steps": {
+    "labels": [
+     "Checking saves",
+     "Downloading",
+     "Getting the game ready",
+     "Starting the game"
+    ],
+    "current": 2
+   },
+   "actions": [
+    {
+     "id": "cancel-launch",
+     "label": "Cancel",
+     "enabled": true
+    }
+   ],
+   "declineActionId": "cancel-launch",
+   "gameId": "hollow-knight"
+  },
+  "progress": {
+   "_tag": "Busy",
+   "kicker": "Downloading FEX rootfs",
+   "detail": "612 MB of 1.2 GB \u00b7 6.4 MB/s \u00b7 1:30 left",
+   "progress": {
+    "done": 612000000,
+    "total": 1160000000
+   },
+   "actions": [
+    {
+     "id": "acquisition:1:cancel",
+     "label": "Cancel",
+     "enabled": true
+    }
+   ],
+   "gameId": "hollow-knight"
+  },
+  "problem": {
+   "_tag": "Problem",
+   "kicker": "Could not start",
+   "reason": "zao did not answer in time. Check that it is awake and on the same network.",
+   "canRetry": true,
+   "gameId": "spelunky",
+   "gameTitle": "Spelunky"
+  },
+  "problemLong": {
+   "_tag": "Problem",
+   "kicker": "Catalog problem",
+   "reason": "local games: LocalRouteUnavailable: game average-day-in-america-by-bug has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game eggshell-66c0dfbd9ceda85a76e3e25b has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game eggshell-68c27d6be7c30cea4ebd4641 has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game eggshell-6a2ee4c46c21aa46014604d2 has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game eggshell-rust-spike has no installed Linux runner \u00b7 local games: LocalRouteUnavailable: game mega-man-rock-n-roll has no installed Linux runner",
+   "canRetry": true
+  },
+  "confirm": {
+   "_tag": "Confirm",
+   "kicker": "Needs a download",
+   "detail": "FEX rootfs and Proton-CachyOS, 1.5 GB",
+   "actions": [
+    {
+     "id": "acquisition:1:download",
+     "label": "Download",
+     "enabled": true
+    },
+    {
+     "id": "acquisition:1:cancel",
+     "label": "Cancel",
+     "enabled": true
+    }
+   ]
+  },
+  "running": {
+   "_tag": "Running",
+   "kicker": "Playing on zao",
+   "gameId": "oracle-of-seasons"
+  }
+ },
+ "gameActions": [
+  {
+   "id": "verify-files",
+   "label": "Verify files",
+   "description": "Check the game's files against the library",
+   "enabled": true
+  },
+  {
+   "id": "delete-save",
+   "label": "Delete save",
+   "description": "The save on this device is removed. Saves on zao stay.",
+   "enabled": true,
+   "destructive": true
+  },
+  {
+   "id": "copy-to-zao",
+   "label": "Copy to zao",
+   "description": "zao is not on the network",
+   "enabled": false
+  }
+ ]
+}

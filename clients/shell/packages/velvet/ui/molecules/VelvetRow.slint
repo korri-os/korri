@@ -46,7 +46,7 @@ export component VelvetRow inherits Rectangle {
     if root.target: Rectangle {
         width: root.width;
         height: root.height;
-        border-radius: Math.min(root.size * 0.55, 12px);
+        border-radius: Math.min(root.size * 0.55, Tokens.round-row);
         background: Tokens.house-light;
         opacity: root.it.focused && Tokens.ring && !root.inert ? 1 : 0;
         animate opacity { duration: Tokens.t-ring; easing: ease-in-out; }
@@ -152,7 +152,7 @@ export component VelvetRow inherits Rectangle {
                     x: 0;
                     y: (parent.height - self.height) / 2;
                     width: root.track-w;
-                    height: Math.max(3px, root.size * 0.2);
+                    height: Math.max(Tokens.rule, root.size * 0.2);
                     border-radius: self.height / 2;
                     background: root.lit ? Tokens.ink-quiet : Tokens.light-20;
                     Rectangle {

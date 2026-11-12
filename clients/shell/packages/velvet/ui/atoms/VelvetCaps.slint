@@ -11,7 +11,7 @@ export component VelvetCaps inherits Rectangle {
     // How many of the lines are set; under 0: all of them.
     in property <int> count: -1;
     property <int> shown: count < 0 ? lines.length : Math.min(count, lines.length);
-    in property <length> size: 24px;
+    in property <length> size: Tokens.type-default;
     in property <color> ink: Tokens.house-light;
     in property <bool> centred;
     // The block as set: its height from the first cap's top to the last baseline.

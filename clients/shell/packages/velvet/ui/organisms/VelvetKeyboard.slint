@@ -31,7 +31,7 @@ export component VelvetKeyboard inherits Rectangle {
     // What is being typed, and for what.
     Text {
         x: root.keys-x;
-        y: Math.max(4px, root.keys-y - root.draft-size * 2.3 - root.body * 3.4);
+        y: Math.max(Tokens.nip, root.keys-y - root.draft-size * 2.3 - root.body * 3.4);
         width: root.keys-w;
         height: root.body * 1.4;
         text: root.keyboard.name == "" ? root.keyboard.heading : root.keyboard.heading + ": " + root.keyboard.name;

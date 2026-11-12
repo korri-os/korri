@@ -1,7 +1,11 @@
 // VelvetStage: the dark house and what lights it. From the back: House
-// down; the stage light in the focused game's colour; the game's hero, cut
-// to fill the stage; the vignette every picture shares; and the house
-// lights (`veil`), which come up the further the person is from the game.
+// down; the stage light in the focused game's colour; the game's hero; the
+// vignette every picture shares; and the house lights (`veil`), which come
+// up the further the person is from the game.
+//
+// A hero keeps its own shape: a band across the top of the stage, as wide
+// as the window, that falls off into the dark at its foot. Only the detail
+// cuts it to fill the stage (`fill`).
 //
 // When focus moves to another game (a new `key`) the new light and the new
 // hero come in over the old ones, so the change is a crossfade with no dark
@@ -80,12 +84,12 @@ export component VelvetStage inherits Rectangle {
     }
     first := Image {
         property <bool> there: self.source.width > 1;
-        property <float> fit: self.there ? Math.max(root.width / (self.source.width * 1px), root.height / (self.source.height * 1px)) : 1;
+        property <float> fit: !self.there ? 1 : root.stage.fill ? Math.max(root.width / (self.source.width * 1px), root.height / (self.source.height * 1px)) : root.width / (self.source.width * 1px);
         property <float> grown: self.fit * (1 + Tokens.drift-scale * (root.turn ? 0 : root.push));
         width: self.source.width * 1px * self.grown;
         height: self.source.height * 1px * self.grown;
         x: (root.width - self.width) * 0.5 - root.width * 0.02 * (root.turn ? 0 : root.push);
-        y: (root.height - self.height) * 0.3 - root.height * 0.014 * (root.turn ? 0 : root.push);
+        y: root.stage.fill ? (root.height - self.height) * 0.3 - root.height * 0.014 * (root.turn ? 0 : root.push) : 0px;
         source: root.art-a;
         image-fit: fill;
         // Under the second while that one shows; gone when the second is still on its way.
@@ -94,16 +98,33 @@ export component VelvetStage inherits Rectangle {
     }
     second := Image {
         property <bool> there: self.source.width > 1;
-        property <float> fit: self.there ? Math.max(root.width / (self.source.width * 1px), root.height / (self.source.height * 1px)) : 1;
+        property <float> fit: !self.there ? 1 : root.stage.fill ? Math.max(root.width / (self.source.width * 1px), root.height / (self.source.height * 1px)) : root.width / (self.source.width * 1px);
         property <float> grown: self.fit * (1 + Tokens.drift-scale * (root.turn ? root.push : 0));
         width: self.source.width * 1px * self.grown;
         height: self.source.height * 1px * self.grown;
         x: (root.width - self.width) * 0.5 - root.width * 0.02 * (root.turn ? root.push : 0);
-        y: (root.height - self.height) * 0.3 - root.height * 0.014 * (root.turn ? root.push : 0);
+        y: root.stage.fill ? (root.height - self.height) * 0.3 - root.height * 0.014 * (root.turn ? root.push : 0) : 0px;
         source: root.art-b;
         image-fit: fill;
         opacity: root.turn && self.source.width > 1 ? 1 : 0;
         animate opacity { duration: Tokens.t-backdrop; easing: ease-in-out; }
+    }
+    // A band's foot sinks into a belt of dark, which lets go into the stage's light under it.
+    Rectangle {
+        property <length> band: (root.turn ? second.height : first.height);
+        y: self.band * 0.4;
+        width: parent.width;
+        height: self.band * 0.6 + 1px;
+        background: @linear-gradient(180deg, Tokens.clear 0%, Tokens.house-down 100%);
+        opacity: !root.stage.fill && (root.turn ? second.source.width > 1 : first.source.width > 1) ? 1 : 0;
+    }
+    Rectangle {
+        property <length> band: (root.turn ? second.height : first.height);
+        y: self.band;
+        width: parent.width;
+        height: self.band * 0.6;
+        background: @linear-gradient(180deg, Tokens.house-down 0%, Tokens.clear 100%);
+        opacity: !root.stage.fill && (root.turn ? second.source.width > 1 : first.source.width > 1) ? 1 : 0;
     }
     // A constant dimmer over the picture, then the shared vignette.
     Rectangle {

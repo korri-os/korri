@@ -51,6 +51,29 @@ export global Tokens {
     // How far a press may move before it is a drag and no longer a tap.
     out property <length> drag-start: 8px;
 
+    // ---- Floors and ceilings ----
+    // The plan scales everything with the window; these are the few sizes
+    // that do not scale, because under them a thing stops being readable or
+    // over them it stops being a line of text.
+    out property <length> thin: 2px;
+    out property <length> rule: 3px;
+    out property <length> nip: 4px;
+    out property <length> inset-least: 5px;
+    out property <length> type-least: 8px;
+    out property <length> type-default: 24px;
+    out property <length> tile-type-least: 10px;
+    out property <length> tile-type-most: 18px;
+    out property <length> sheet-pad-least: 14px;
+    out property <length> round-key: 10px;
+    out property <length> round-row: 12px;
+    out property <length> round-notice: 28px;
+    // A way-in tile shorter than this shows its sign alone.
+    out property <length> nav-words-from: 60px;
+    out property <length> measure-most: 900px;
+    out property <length> page-most: 980px;
+    out property <length> ghost-least: 90px;
+    out property <length> ghost-most: 400px;
+
     // ---- Colour ----
     out property <color> house-down: #040406;
     out property <color> house-light: #f3eee6;

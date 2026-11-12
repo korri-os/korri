@@ -8,7 +8,9 @@
 //
 // Layers, back to front: the stage (what lights the house), the page, a
 // sheet, the keyboard, the curtain, a notice. `layer` names the one that
-// holds focus; everything under it is drawn inert: no focus target, no tap.
+// holds focus; everything under it is inert: no focus target, no tap. A
+// sheet leaves its page in sight; the keyboard and the curtain take the
+// house, and the page comes back when they go.
 //
 // Input: one generic activation callback and one drag callback, no
 // per-control callbacks (ADR 0055). A tap or a click on a focus target
@@ -82,6 +84,8 @@ export component Surface inherits Window {
     in property <[Step]> curtain-steps;
     in property <[Pill]> curtain-buttons;
     in property <Notice> notice;
+    // The page is in sight: the keyboard and the curtain take the house.
+    property <bool> paged: layer == "screen" || layer == "sheet";
 
     // ---- The Tokens' inputs ----
     init => {
@@ -112,7 +116,7 @@ export component Surface inherits Window {
         height: root.height;
         stage: root.stage;
     }
-    if root.page == "home" && root.home.shown: VelvetBrowse {
+    if root.paged && root.page == "home" && root.home.shown: VelvetBrowse {
         width: root.width;
         height: root.height;
         home: root.home;
@@ -124,7 +128,7 @@ export component Surface inherits Window {
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }
     }
-    if root.page == "empty" && root.empty.shown: VelvetHouse {
+    if root.paged && root.page == "empty" && root.empty.shown: VelvetHouse {
         width: root.width;
         height: root.height;
         empty: root.empty;
@@ -134,7 +138,7 @@ export component Surface inherits Window {
         inert: root.layer != "screen";
         activated(target, at, released) => { root.activated(target, at, released); }
     }
-    if root.page == "set" && root.set.shown: VelvetSet {
+    if root.paged && root.page == "set" && root.set.shown: VelvetSet {
         width: root.width;
         height: root.height;
         set: root.set;
@@ -144,7 +148,7 @@ export component Surface inherits Window {
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }
     }
-    if root.page == "detail" && root.detail.shown: VelvetDetail {
+    if root.paged && root.page == "detail" && root.detail.shown: VelvetDetail {
         width: root.width;
         height: root.height;
         detail: root.detail;
@@ -153,7 +157,7 @@ export component Surface inherits Window {
         inert: root.layer != "screen";
         activated(target, at, released) => { root.activated(target, at, released); }
     }
-    if root.page == "list" && root.list.shown: VelvetList {
+    if root.paged && root.page == "list" && root.list.shown: VelvetList {
         width: root.width;
         height: root.height;
         page: root.list;
@@ -244,7 +248,7 @@ export component Overlay inherits Window {
     changed height => {
         Tokens.height = self.height;
     }
-    VelvetPaused {
+    if root.layer == "screen": VelvetPaused {
         width: root.width;
         height: root.height;
         title: root.title-lines;
@@ -252,7 +256,7 @@ export component Overlay inherits Window {
         clock: root.clock;
         facts: root.facts;
         rows: root.rows;
-        inert: root.layer != "screen" || root.leaving;
+        inert: root.leaving;
         activated(target, at, released) => { root.activated(target, at, released); }
     }
     if root.keyboard.shown: VelvetKeyboard {

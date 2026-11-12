@@ -60,7 +60,7 @@ export component VelvetSet inherits Rectangle {
     }
     if root.set.pill.shown && root.narrow: VelvetPill {
         x: root.pad-x;
-        y: root.head-y + root.head-h + 4px;
+        y: root.head-y + root.head-h + Tokens.nip;
         pill: root.set.pill;
         size: Tokens.screen.small * root.u;
         inert: root.inert;

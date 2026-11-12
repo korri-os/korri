@@ -21,12 +21,16 @@ export const NARROW_RATIO = 0.9
 export const EMPTY_WIDE_RATIO = 1.5
 /** How much a focused tile grows. Neighbours never move. */
 export const FOCUS_SCALE = 1.08
+/** A stored hero's usual shape: the room a narrow window keeps for its band. */
+export const HERO_RATIO = 3.1
 /** Every tile is a 2:3 portrait. */
 export const TILE_RATIO = 2 / 3
 /** Games in the row under the pick. */
 export const ROW_SLOTS = 4
-/** Games a lobby shelf shows before "See all". */
-export const SHELF_SLOTS = 6
+/** Games a lobby shelf shows before "See all": two shelves of posters are what the pixel budget holds. */
+export const SHELF_SLOTS = 5
+/** The most tiles a set shows across: two rows of posters are what the pixel budget holds (src/art.ts). */
+export const MOST_COLUMNS = 5
 /** A list page stands beside its panel only when the window is this wide for its height. */
 export const PANEL_BESIDE_RATIO = 1.25
 /** The keyboard's grid. */
@@ -195,8 +199,9 @@ export function plan(width: number, height: number): Plan {
   const rowMarkH = Math.max(0, rowY - padY - Math.round(Math.max(fs(40, 16), (rowH * (FOCUS_SCALE - 1)) / 2 + fs(18, 12))))
   const peek = rowY + Math.round(rowH * FOCUS_SCALE) + Math.round(rowGap * 2)
   const heroW = narrow ? W - 2 * padX : Math.round(W * 0.56)
-  const heroH = narrow ? Math.max(0, Math.round(stripY - padY * 2)) : posterH
-  const heroY = narrow ? padY : posterY
+  // A narrow window stacks: the hero's band (about 3.1 to 1) across the top, the words under it.
+  const heroY = narrow ? Math.round(W / HERO_RATIO + padY * 0.6) : posterY
+  const heroH = narrow ? Math.max(0, Math.round(stripY - padY - heroY)) : posterH
 
   // The library.
   const head = fs(48, 22)
@@ -212,7 +217,7 @@ export function plan(width: number, height: number): Plan {
   // A set.
   const wanted = clamp(Math.min(H * 0.34, (W * 0.24) / R), 96, 330)
   const gridGap = gapOf(wanted)
-  const columns = Math.max(2, Math.floor((W - 2 * padX + gridGap) / (wanted * R + gridGap)))
+  const columns = Math.min(MOST_COLUMNS, Math.max(2, Math.floor((W - 2 * padX + gridGap) / (wanted * R + gridGap))))
   const tileW = Math.floor((W - 2 * padX - (columns - 1) * gridGap) / columns)
   const tileH = Math.round(tileW / R)
   const gridInset = growOf(tileH) + halo

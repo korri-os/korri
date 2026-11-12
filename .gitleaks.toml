@@ -59,7 +59,4 @@ paths = [
   # Velvet's logic.js, for the same reason as Zone's: the minified bundle of
   # logic.ts (which is scanned) sets one-letter names beside `secret:`.
   '''clients/shell/packages/velvet/logic\.js$''',
-  # Velvet's preview scenarios carry a made-up backup secret (a fixed bech32
-  # string written by preview/scenarios.ts, never a real key).
-  '''clients/shell/packages/velvet/preview/scenarios/''',
 ]

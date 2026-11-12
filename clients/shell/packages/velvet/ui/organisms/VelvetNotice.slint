@@ -15,7 +15,7 @@ export component VelvetNotice inherits Rectangle {
     init => { in = true; }
     width: Math.min(row.preferred-width + size * 2.4, most);
     height: size * 4;
-    border-radius: Math.min(self.height / 2, 28px);
+    border-radius: Math.min(self.height / 2, Tokens.round-notice);
     background: Tokens.velvet-94;
     border-width: Tokens.hair;
     border-color: Tokens.light-20;

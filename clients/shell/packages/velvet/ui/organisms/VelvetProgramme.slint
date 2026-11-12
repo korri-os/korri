@@ -32,7 +32,7 @@ export component VelvetProgramme inherits Rectangle {
     property <length> fact: Tokens.screen.fact * u;
     property <bool> beside: Tokens.screen.panel-beside;
     property <bool> panelled: page.panel != "";
-    property <length> page-w: panelled || beside ? Tokens.screen.page-w * u : Math.min(self.width - 2 * pad-x, 980px);
+    property <length> page-w: panelled || beside ? Tokens.screen.page-w * u : Math.min(self.width - 2 * pad-x, Tokens.page-most);
     property <length> head-foot: (Tokens.screen.head-y + Tokens.screen.head-h) * u;
     property <length> sub-h: page.sub == "" ? 0px : sub.preferred-height + fact * 0.4;
     property <length> body-top: head-foot + sub-h + fact * 1.1;

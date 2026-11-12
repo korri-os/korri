@@ -13,8 +13,8 @@ export component VelvetSheet inherits Rectangle {
     in property <bool> inert;
     property <length> u: Tokens.unit;
     property <length> w: Tokens.screen.sheet-w * u;
-    property <length> pad-y: Math.max(14px, Tokens.screen.pad-y * u * 0.8);
-    property <length> pad-x: Math.max(8px, Tokens.screen.pad-x * u * 0.3);
+    property <length> pad-y: Math.max(Tokens.sheet-pad-least, Tokens.screen.pad-y * u * 0.8);
+    property <length> pad-x: Math.max(Tokens.type-least, Tokens.screen.pad-x * u * 0.3);
     // It comes in from the edge.
     property <bool> in;
     init => { in = true; }

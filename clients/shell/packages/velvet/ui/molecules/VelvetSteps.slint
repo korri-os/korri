@@ -11,7 +11,7 @@ export component VelvetSteps inherits Rectangle {
     in property <[Step]> steps;
     in property <string> line;
     in property <length> size: Tokens.screen.body * Tokens.unit;
-    property <length> gap: Math.max(2px, Math.min(size * 0.3, self.width * 0.012));
+    property <length> gap: Math.max(Tokens.thin, Math.min(size * 0.3, self.width * 0.012));
     property <length> seg: steps.length == 0 ? 0px : (self.width - (steps.length - 1) * gap) / steps.length;
     property <float> breath: Tokens.still ? 1 : 0.7 + 0.3 * Math.abs(Math.mod(animation-tick() / 900ms, 2) - 1);
     height: size * 2.4;
@@ -19,7 +19,7 @@ export component VelvetSteps inherits Rectangle {
         x: n * (root.seg + root.gap);
         y: 0;
         width: root.seg;
-        height: Math.max(3px, root.size * 0.22);
+        height: Math.max(Tokens.rule, root.size * 0.22);
         border-radius: self.height / 2;
         background: step.state == "next" ? Tokens.light-20 : Tokens.house-light;
         opacity: step.state == "now" ? root.breath : 1;

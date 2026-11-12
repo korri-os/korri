@@ -11,7 +11,7 @@ export component VelvetKeycap inherits Rectangle {
     in property <Key> key;
     in property <bool> inert;
     property <bool> lit: key.focused && Tokens.ring && !inert;
-    border-radius: Math.min(self.height * 0.22, 10px);
+    border-radius: Math.min(self.height * 0.22, Tokens.round-key);
     background: key.focused && Tokens.ring && !inert ? Tokens.house-light : key.lit ? Tokens.light-20 : Tokens.light-10;
     animate background { duration: Tokens.t-ring; easing: ease-in-out; }
     accessible-role: button;

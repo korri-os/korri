@@ -29,6 +29,7 @@ export component VelvetPick inherits Rectangle {
     in property <bool> stack;
     in property <bool> cinema;
     in property <Facts> foot-facts;
+    in property <string> foot-badge;
     in property <string> note;
     in property <bool> inert;
     property <length> u: Tokens.unit;
@@ -40,10 +41,12 @@ export component VelvetPick inherits Rectangle {
     property <length> box-y: (hero ? Tokens.screen.hero-y : Tokens.screen.text-y) * u;
     property <length> box-h: (hero ? Tokens.screen.hero-h : Tokens.screen.text-h) * u;
     property <length> gap: Tokens.screen.fact * u * 1.2;
-    // The buttons stand at the box's foot; the mark over them.
-    property <length> buttons-y: cinema && hero
-        ? Math.min(self.height * (narrow ? 0.72 : 0.78) - buttons-row.block, box-y + box-h - buttons-row.block)
-        : box-y + box-h - buttons-row.block;
+    // Wide: the buttons stand at the box's foot and the mark over them. Narrow: the
+    // words hang from the box's top and the buttons follow them.
+    property <length> top: cinema && narrow ? self.height * 0.3 : box-y;
+    property <length> buttons-y: narrow
+        ? top + mark-box.block + gap
+        : cinema && hero ? Math.min(self.height * 0.78 - buttons-row.block, box-y + box-h - buttons-row.block) : box-y + box-h - buttons-row.block;
     for card in root.cards: VelvetTile {
         x: Tokens.screen.poster-x * root.u;
         y: Tokens.screen.poster-y * root.u;
@@ -53,13 +56,13 @@ export component VelvetPick inherits Rectangle {
         fixed: true;
         inert: true;
     }
-    VelvetMarquee {
+    mark-box := VelvetMarquee {
         x: root.box-x;
-        y: root.narrow && !root.hero ? root.box-y : 0;
+        y: root.narrow ? root.top : 0;
         width: root.box-w;
-        height: root.narrow && !root.hero ? root.buttons-y - root.gap - root.box-y : root.buttons-y - root.gap;
+        height: root.narrow ? Math.max(0px, root.height - root.top) : root.buttons-y - root.gap;
         mq: root.mark;
-        foot: !(root.narrow && !root.hero);
+        foot: !root.narrow;
         prompt: root.cinema;
     }
     buttons-row := VelvetButtons {
@@ -86,6 +89,7 @@ export component VelvetPick inherits Rectangle {
         y: parent.height - Tokens.screen.pad-y * root.u - self.block;
         width: parent.width - 2 * Tokens.screen.pad-x * root.u;
         facts: root.foot-facts;
+        badge: root.foot-badge;
         size: Tokens.screen.detail-fact * root.u;
     }
 }
