@@ -35,18 +35,24 @@ from typing import TextIO
 from heat import END_MARGIN, must_end, no_start, thermal_limits, thermal_zones
 import device
 from device import (
+    append_log,
     batteries,
     deferred_termination,
     end_with_agent,
     games,
     get_output,
+    hand_over,
+    let_in,
     model,
     no_fixture_on_battery,
+    plain_text,
+    read_plain,
     proc,
     serve,
     sway,
     unit,
     wake,
+    write_new,
 )
 
 DISPLAY = "wayland-1"
@@ -252,13 +258,22 @@ class Session:
         # agent, so a killed agent leaves no viewer on the real panel.
         end_with_agent()
 
+    def home(self) -> Path:
+        """The one directory, with `rt`, in which the programs of a run write.
+
+        The agent owns the run directory and writes only there. It hands `home`
+        and `rt` to the programs' user and afterwards only reads in them.
+        """
+        assert self.root is not None
+        return self.root / "home"
+
     def environment(self) -> dict[str, str]:
         assert self.root is not None
         return {
-            "HOME": str(self.root),
+            "HOME": str(self.home()),
             "XDG_RUNTIME_DIR": str(self.root / "rt"),
-            "XDG_CACHE_HOME": str(self.root),
-            "TMPDIR": str(self.root),
+            "XDG_CACHE_HOME": str(self.home()),
+            "TMPDIR": str(self.home()),
             "PATH": os.environ.get("PATH", ""),
         }
 
@@ -299,11 +314,11 @@ class Session:
         assert self.root is not None
         if name in self.processes:
             raise RuntimeError(f"{name} already runs in this session")
-        log = (self.root / f"{name}.log").open("a")
+        log = append_log(self.root / f"{name}.log")
         self.logs[name] = log
         self.processes[name] = subprocess.Popen(
             args,
-            cwd=self.root,
+            cwd=self.home(),
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=log,
@@ -331,8 +346,7 @@ class Session:
 
     def tail(self, name: str) -> str:
         assert self.root is not None
-        path = self.root / f"{name}.log"
-        return path.read_text(errors="replace")[-8000:] if path.exists() else ""
+        return plain_text(self.root / f"{name}.log")[-8000:]
 
     def focus(self, pid: int) -> None:
         """Give the viewer the whole display, as korrid does after a launch."""
@@ -351,11 +365,7 @@ class Session:
         root = self.root
         if root is None or not self.hardware_path():
             return None
-        path = root / "viewer.log"
-        if not path.exists():
-            return None
-        with path.open(errors="replace") as log:
-            return decode_started(log.read(1 << 16))
+        return decode_started(plain_text(root / "viewer.log", 1 << 16))
 
     def end(self, reason: str, process: subprocess.Popen | None) -> None:
         """The guard's one action: stop the viewer at once and keep the reason."""
@@ -441,32 +451,33 @@ class Session:
         if self.compositor is None and not self.fixture:
             raise RuntimeError("A host with no Korri has no viewer plugin; only the fixture runs here.")
         self.root = Path(tempfile.mkdtemp(prefix="korri-stream-cadence-view-", dir="/tmp"))
-        runtime, keys = self.root / "rt", self.root / "keys"
+        runtime, keys = self.root / "rt", self.home() / "keys"
         runtime.mkdir(mode=0o700)
+        self.home().mkdir(mode=0o700)
         keys.mkdir(mode=0o700)
-        pin = self.root / "server.pem"
-        pin.write_text(request["server_certificate"])
-        owned = [self.root, runtime, keys, pin]
-        # A viewer that pairs by PIN makes its own key pair in this directory.
-        if request.get("certificate"):
-            (keys / "client.pem").write_text(request["certificate"])
-            key = keys / "key.pem"
-            key.touch(mode=0o600)
-            key.write_text(request["key"])
-            owned += [keys / "client.pem", key]
+        # The agent's own files stay in the run directory, which only it can
+        # change. The programs read them and cannot put a link in their place.
+        write_new(self.root / "server.pem", request["server_certificate"])
         if self.fixture:
-            config = self.root / "sway.conf"
-            config.write_text(
+            write_new(
+                self.root / "sway.conf",
                 f"output {OUTPUT} mode {int(request['width'])}x{int(request['height'])}"
                 f"@{float(request['refresh_hz']):g}Hz\n"
                 "default_border none\n"
                 "xwayland disable\n"
-                'for_window [title=".*"] fullscreen enable\n'
+                'for_window [title=".*"] fullscreen enable\n',
             )
-            owned.append(config)
+        handed = [keys, self.home(), runtime]
+        # A viewer that pairs by PIN makes its own key pair in its key directory.
+        # Else the agent puts the pair there now, while the directory is its own.
+        if request.get("certificate"):
+            write_new(keys / "client.pem", request["certificate"], 0o600)
+            write_new(keys / "key.pem", request["key"], 0o600)
+            handed = [keys / "client.pem", keys / "key.pem", *handed]
+        # The last step: from here on the agent writes nothing under home or rt.
         if self.compositor:
-            for path in owned:
-                os.chown(path, self.compositor["uid"], self.compositor["gid"])
+            hand_over(self.compositor["uid"], self.compositor["gid"], *handed)
+        let_in(self.root)
         if not self.fixture:
             wake(self.shell)
             self.last_wake = time.monotonic()
@@ -518,7 +529,7 @@ class Session:
         if self.root is None:
             raise RuntimeError("viewer session is not prepared")
         if operation == "probe":
-            frame = self.root / "probe.pgm"
+            frame = self.home() / "probe.pgm"
             result = subprocess.run(
                 [request["capture"], "probe", str(frame)],
                 env=self.capture_environment(),
@@ -529,7 +540,7 @@ class Session:
             )
             if result.returncode:
                 raise RuntimeError("capture probe failed: " + result.stderr.strip())
-            return {"pgm": base64.b64encode(gzip.compress(frame.read_bytes())).decode()}
+            return {"pgm": base64.b64encode(gzip.compress(read_plain(frame))).decode()}
         if operation == "capture":
             self.spawn(
                 "capture",
@@ -541,8 +552,8 @@ class Session:
                     str(int(request["lower"])),
                     repr(float(request["x"])),
                     repr(float(request["cell"])),
-                    str(self.root / "display.csv"),
-                    str(self.root / "display.rows"),
+                    str(self.home() / "display.csv"),
+                    str(self.home() / "display.rows"),
                 ],
                 self.capture_environment(),
             )
@@ -582,9 +593,9 @@ class Session:
             # Each start writes its own log: what the guard and the validity gate
             # read about decode belongs to this start alone.
             current = self.root / "viewer.log"
-            if current.exists():
-                with (self.root / "viewer.earlier.log").open("a") as earlier:
-                    earlier.write(current.read_text(errors="replace"))
+            if os.path.lexists(current):
+                with append_log(self.root / "viewer.earlier.log") as earlier:
+                    earlier.write(read_plain(current).decode(errors="replace"))
                 current.unlink()
             start = time.monotonic_ns()
             process = self.spawn("viewer", list(request["command"]), self.viewer_environment())
@@ -632,10 +643,13 @@ class Session:
             return {"exit": code, "log": self.tail("viewer")}
         if operation == "evidence":
             self.stop("capture")
-            times, rows = self.root / "display.csv", self.root / "display.rows"
+            # The capture, a program of the run, wrote these: read them as plain files.
+            times, rows = self.home() / "display.csv", self.home() / "display.rows"
             return {
-                "times": times.read_text() if times.exists() else "",
-                "rows": base64.b64encode(rows.read_bytes() if rows.exists() else b"").decode(),
+                "times": plain_text(times),
+                "rows": base64.b64encode(
+                    read_plain(rows) if os.path.lexists(rows) else b""
+                ).decode(),
                 "capture_log": self.tail("capture"),
                 "viewer_log": self.tail("viewer"),
                 "viewer_earlier_log": self.tail("viewer.earlier"),

@@ -45,6 +45,76 @@ def end_with_agent() -> None:
         os._exit(127)
 
 
+# Files in a run directory. On a Korri device the agent is root and the
+# programs it starts are not. The agent writes only in the run directory
+# itself, which it owns; the programs write in directories that the agent
+# hands to them, and the agent only reads there. Every open below follows no
+# link in the last part of the path, so no file outside the run directory is
+# read or written even where a program could place a link.
+
+
+def write_new(path: Path, text: str, mode: int = 0o644) -> None:
+    """Create a file of the agent's own. A name that exists, link or not, is not written."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, mode)
+    with os.fdopen(fd, "w") as stream:
+        stream.write(text)
+
+
+def append_log(path: Path) -> TextIO:
+    """Open a log of the agent's own for appending; a link in its place is an error."""
+    return os.fdopen(
+        os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644
+        ),
+        "a",
+    )
+
+
+def read_plain(path: Path, limit: int = -1) -> bytes:
+    """Read a plain file as it is. A link, a directory or a device in its place is an error."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise OSError(f"{path} is not a plain file")
+        return stream.read(limit)
+
+
+def plain_text(path: Path, limit: int = -1) -> str:
+    """The text of a plain file, or nothing when no file is there."""
+    try:
+        return read_plain(path, limit).decode(errors="replace")
+    except FileNotFoundError:
+        return ""
+
+
+def hand_over(uid: int, gid: int, *paths: Path) -> None:
+    """Give files or directories to the programs' user, never through a link."""
+    for path in paths:
+        os.chown(path, uid, gid, follow_symlinks=False)
+
+
+def let_in(directory: Path) -> None:
+    """Let every user pass through and list a directory of the agent's own."""
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        os.fchmod(fd, 0o755)
+    finally:
+        os.close(fd)
+
+
+def plain_bytes(root: Path) -> int:
+    """The size of the plain files under a directory; links are not followed."""
+    total = 0
+    for path in root.rglob("*"):
+        try:
+            found = path.lstat()
+        except OSError:
+            continue
+        if stat.S_ISREG(found.st_mode):
+            total += found.st_size
+    return total
+
+
 POWER_SUPPLY = Path("/sys/class/power_supply")
 
 

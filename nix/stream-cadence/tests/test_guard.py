@@ -104,6 +104,7 @@ def hardware_session(case: Device) -> viewer.Session:
     session = case.session()
     session.root = Path(tempfile.mkdtemp(prefix="cadence-guard-test-", dir=case.directory.name))
     (session.root / "rt").mkdir()
+    (session.root / "home").mkdir()
     session.fixture = True  # no product compositor to ask for focus
     return session
 

@@ -184,7 +184,8 @@ class PinPost(unittest.TestCase):
         session.root = Path(tempfile.mkdtemp(prefix="cadence-pin-test-", dir=self.directory.name))
         session.login = ("operator-of-the-run", "secret-of-the-run")
         session.facts["sunshine_port"] = self.server.server_address[1] - sender.WEB_UI_OFFSET
-        (session.root / "sunshine.crt").write_text(
+        (session.root / "home").mkdir()
+        (session.root / "home" / "sunshine.crt").write_text(
             (Path(self.directory.name) / certificate).read_text()
         )
         return session
@@ -440,7 +441,7 @@ class RenderNodeChoice(unittest.TestCase):
                     }
                 )
                 login = session.login
-                stored = json.loads((Path(built["facts"]["sender_fixture"]["run_folder"]) / "credentials.json").read_text())
+                stored = json.loads((Path(built["facts"]["sender_fixture"]["run_folder"]) / "home" / "credentials.json").read_text())
             finally:
                 sender.RENDER_NODES = previous
                 heat.THERMAL, viewer.COMPATIBLE = sensors

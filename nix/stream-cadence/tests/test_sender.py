@@ -89,6 +89,7 @@ class Cleanup(unittest.TestCase):
         session = sender.Session()
         session.root = root
         (root / "rt").mkdir()
+        (root / "home").mkdir()
         return session
 
     def test_close_ends_tracked_processes_and_removes_the_run_directory(self):

@@ -29,16 +29,23 @@ from typing import TextIO
 import urllib.request
 
 from device import (
+    append_log,
     batteries,
     deferred_termination,
     end_with_agent,
     games,
-    no_fixture_on_battery,
+    hand_over,
+    let_in,
     model,
+    no_fixture_on_battery,
+    plain_bytes,
+    plain_text,
     proc,
+    read_plain,
     scheduling,
     serve,
     unit,
+    write_new,
 )
 from discovery import encoder_probe, output, properties
 from heat import must_end, no_start, thermal_limits, thermal_zones
@@ -194,17 +201,22 @@ def credentials(name: str, password: str) -> str:
 
 
 def configuration(root: Path, base: int, node: str) -> str:
-    """Sunshine's own file format. No encoder is named: Sunshine probes hardware first."""
+    """Sunshine's own file format. No encoder is named: Sunshine probes hardware first.
+
+    Every file that Sunshine reads or writes lies in `home`, which its user
+    owns. This file itself lies beside `home`, where only the agent writes.
+    """
+    home = root / "home"
     values = {
         "port": base,
         "capture": "wlr",
         "adapter_name": node,
-        "file_apps": root / "apps.json",
-        "file_state": root / "state.json",
-        "credentials_file": root / "credentials.json",
-        "pkey": root / "sunshine.key",
-        "cert": root / "sunshine.crt",
-        "log_path": root / "sunshine.log",
+        "file_apps": home / "apps.json",
+        "file_state": home / "state.json",
+        "credentials_file": home / "credentials.json",
+        "pkey": home / "sunshine.key",
+        "cert": home / "sunshine.crt",
+        "log_path": home / "sunshine.log",
         "upnp": "disabled",
         "system_tray": "disabled",
         # A viewer measure sends no input; the fixture takes none.
@@ -282,11 +294,11 @@ class Session:
     def environment(self, **extra: str) -> dict[str, str]:
         assert self.root is not None
         return {
-            "HOME": str(self.root),
+            "HOME": str(self.home()),
             "XDG_RUNTIME_DIR": str(self.root / "rt"),
-            "XDG_CONFIG_HOME": str(self.root / "config"),
-            "XDG_CACHE_HOME": str(self.root),
-            "TMPDIR": str(self.root),
+            "XDG_CONFIG_HOME": str(self.home() / "config"),
+            "XDG_CACHE_HOME": str(self.home()),
+            "TMPDIR": str(self.home()),
             "PATH": os.environ.get("PATH", ""),
             **extra,
         }
@@ -300,11 +312,6 @@ class Session:
         # After the change of user, which clears it.
         end_with_agent()
 
-    def own(self, *paths: Path) -> None:
-        if self.identity:
-            for path in paths:
-                os.chown(path, self.identity["uid"], self.identity["gid"])
-
     def new_inputs(self) -> list[str]:
         """Input devices that appeared since the fixture started. None may be the fixture's."""
         return sorted(input_devices() - self.inputs)
@@ -313,11 +320,11 @@ class Session:
         assert self.root is not None
         if name in self.processes:
             raise RuntimeError(f"{name} already runs in this session")
-        log = (self.root / f"{name}.out").open("a")
+        log = append_log(self.root / f"{name}.out")
         self.logs[name] = log
         self.processes[name] = subprocess.Popen(
             args,
-            cwd=self.root,
+            cwd=self.home(),
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=log,
@@ -339,10 +346,23 @@ class Session:
         if log:
             log.close()
 
-    def text(self, name: str) -> str:
+    def home(self) -> Path:
+        """The one directory, with `rt`, in which the fixture's programs write.
+
+        The agent owns the run directory and writes only there. It hands `home`
+        and `rt` to the programs' user and afterwards only reads in them.
+        """
         assert self.root is not None
-        path = self.root / name
-        return path.read_text(errors="replace") if path.exists() else ""
+        return self.root / "home"
+
+    def text(self, name: str) -> str:
+        """A log of the agent's own, from the run directory."""
+        assert self.root is not None
+        return plain_text(self.root / name)
+
+    def written(self, name: str) -> str:
+        """A file that Sunshine wrote in `home`, read as a plain file."""
+        return plain_text(self.home() / name)
 
     def alive(self, name: str) -> bool:
         process = self.processes.get(name)
@@ -397,9 +417,10 @@ class Session:
             return attempt
         base = port_base()
         attempt["port"] = base
-        (self.root / "sunshine.conf").write_text(configuration(self.root, base, node))
-        self.own(self.root / "sunshine.conf")
-        (self.root / "sunshine.log").unlink(missing_ok=True)
+        # Each attempt gets a new file: whatever has that name is removed, not written.
+        (self.root / "sunshine.conf").unlink(missing_ok=True)
+        write_new(self.root / "sunshine.conf", configuration(self.root, base, node))
+        (self.home() / "sunshine.log").unlink(missing_ok=True)
         self.spawn(
             "sunshine",
             [self.sunshine, str(self.root / "sunshine.conf")],
@@ -412,11 +433,11 @@ class Session:
             ),
         )
         for _ in range(300):
-            log = self.text("sunshine.log")
+            log = self.written("sunshine.log")
             if READY in log or not self.alive("sunshine"):
                 break
             time.sleep(0.1)
-        log = self.text("sunshine.log")
+        log = self.written("sunshine.log")
         attempt.update(startup(log))
         if not self.alive("sunshine") or READY not in log:
             attempt["working_encoders"] = []
@@ -473,31 +494,40 @@ class Session:
                 "This user can open no render node in /dev/dri. The hidden compositor needs a GPU renderer: with a software renderer Sunshine captures one frame only."
             )
         self.root = Path(tempfile.mkdtemp(prefix="korri-stream-cadence-sender-", dir=RUNS))
-        (self.root / "rt").mkdir(mode=0o700)
-        (self.root / "config").mkdir(mode=0o700)
-        (self.root / "sway.conf").write_text(
+        runtime, home, config = self.root / "rt", self.home(), self.home() / "config"
+        runtime.mkdir(mode=0o700)
+        home.mkdir(mode=0o700)
+        config.mkdir(mode=0o700)
+        # The agent's own file stays in the run directory, which only it can change.
+        write_new(
+            self.root / "sway.conf",
             f"output * mode {width}x{height}@{hertz:.3f}Hz\n"
             "default_border none\n"
             "xwayland disable\n"
-            'for_window [title=".*"] fullscreen enable\n'
+            'for_window [title=".*"] fullscreen enable\n',
         )
-        (self.root / "apps.json").write_text(
-            json.dumps({"env": {}, "apps": [{"name": APPLICATION, "cmd": "", "image-path": ""}]})
+        # What Sunshine may write again goes into its home now, while that
+        # directory is still the agent's own.
+        write_new(
+            home / "apps.json",
+            json.dumps({"env": {}, "apps": [{"name": APPLICATION, "cmd": "", "image-path": ""}]}),
         )
         # The web UI login exists only to post the pairing PIN from this agent.
-        # It lives in this process and, hashed, in the private run directory.
+        # It lives in this process and, hashed, in Sunshine's private home.
         self.login = (secrets.token_hex(8), secrets.token_urlsafe(24))
-        stored = self.root / "credentials.json"
-        stored.touch(mode=0o600)
-        stored.write_text(credentials(*self.login))
-        self.own(
-            self.root,
-            self.root / "rt",
-            self.root / "config",
-            self.root / "sway.conf",
-            self.root / "apps.json",
-            stored,
-        )
+        write_new(home / "credentials.json", credentials(*self.login), 0o600)
+        # The last step: from here on the agent writes nothing under home or rt.
+        if self.identity:
+            hand_over(
+                self.identity["uid"],
+                self.identity["gid"],
+                home / "apps.json",
+                home / "credentials.json",
+                config,
+                home,
+                runtime,
+            )
+        let_in(self.root)
         # Prefer a hardware encoder: take the first render node on which Sunshine
         # finds one. Without one, take the first node that encodes at all.
         attempts: list[dict] = []
@@ -517,7 +547,7 @@ class Session:
             attempts.append(chosen)
             if "error" in chosen:
                 raise RuntimeError("The sender fixture did not start again: " + chosen["error"])
-        if not self.text("sunshine.crt").strip():
+        if not self.written("sunshine.crt").strip():
             raise RuntimeError("The fixture's Sunshine wrote no certificate; the viewer cannot pin it.")
         self.check()
         threading.Thread(target=self.guard, args=(self.root,), daemon=True).start()
@@ -542,7 +572,7 @@ class Session:
         )
         return {
             "facts": self.facts,
-            "server_certificate": self.text("sunshine.crt"),
+            "server_certificate": self.written("sunshine.crt"),
         }
 
     def pin(self, pin: str) -> dict:
@@ -550,7 +580,7 @@ class Session:
         assert self.root is not None and self.login is not None
         if not re.fullmatch(r"\d{4}", pin):
             raise ValueError("a pairing PIN has four digits")
-        context = ssl.create_default_context(cadata=self.text("sunshine.crt"))
+        context = ssl.create_default_context(cadata=self.written("sunshine.crt"))
         context.check_hostname = False
         # Sunshine's own certificate carries no key-usage extensions.
         context.verify_flags &= ~ssl.VERIFY_X509_STRICT
@@ -640,7 +670,7 @@ class Session:
             raise RuntimeError(
                 "motion source produced no presentation feedback; check the hidden compositor"
             )
-        self.cursor = (self.root / "sunshine.log").stat().st_size
+        self.cursor = len(read_plain(self.home() / "sunshine.log"))
         return {"run_folder": str(self.root), "source_pid": source.pid}
 
     def handle(self, request: dict) -> dict:
@@ -666,17 +696,15 @@ class Session:
             self.check()
             if not self.alive("source") or self.cursor is None:
                 raise RuntimeError("motion source stopped during streaming")
-            with (self.root / "sunshine.log").open(errors="replace") as log:
-                log.seek(self.cursor)
-                journal = log.read()
+            journal = read_plain(self.home() / "sunshine.log")[self.cursor :].decode(
+                errors="replace"
+            )
             return {"threads": scheduling(self.facts), "journal": journal}
         if operation == "evidence":
             self.stop("source")
             return {
                 "motion_log": self.text("source.out"),
-                "run_folder_bytes": sum(
-                    p.stat().st_size for p in self.root.rglob("*") if p.is_file()
-                ),
+                "run_folder_bytes": plain_bytes(self.root),
             }
         raise ValueError("unknown sender fixture operation")
 
@@ -706,7 +734,7 @@ class Session:
                 except ProcessLookupError:
                     pass
             if root.exists():
-                size = sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
+                size = plain_bytes(root)
             try:
                 shutil.rmtree(root)
             except Exception as error:
