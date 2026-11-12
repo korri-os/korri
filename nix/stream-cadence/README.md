@@ -606,7 +606,7 @@ alone, 60 scored seconds each. "Game" says whether a game ran on aka
 | 16 ms, 16 ms | same | no | 2 | 59.9 to 60.3 | 60.1 to 60.3 | 30.2 to 63.6 ms | 3 to 8 |
 | 16 ms, 17 ms | `--fps 63 --viewer-refresh 58.823` | yes | 1 | 60.8 | 56.6 | 62.2 to 63.9 ms | 250 |
 | 16 ms, 17 ms | same | no | 1 | 60.9 | 56.8 | 62.6 to 63.4 ms | 247 |
-| 15 ms, 16 ms | `--fps 67` | no | 6 | 62.0 to 64.4 | 60.1 to 60.6 | 57.3 to 63.2 ms | 87 to 294 |
+| 15 ms, 16 ms | `--fps 67`, and once the default | no | 7 | 61.3 to 64.4 | 59.5 to 60.6 | 57.3 to 63.2 ms | 87 to 294 |
 
 One more run of the 17 ms pair began with a game and ended with none; it is
 in no row.
@@ -623,7 +623,7 @@ What the tries show:
   p50 was 30 ms in two windows, 47 ms in the next two, and 64 ms in the
   last. The same viewer gives 30 or 64 ms by the moment of the window.
 - **A sender that is one millisecond faster fills the queue in every
-  window.** In all eight runs of the last three rows the delay p50 of every
+  window.** In all nine runs of the last three rows the delay p50 of every
   scored window is between 57.3 and 63.9 ms. `verdict` between two sets of
   three runs of the 15 ms pair says `equal` for each measured number.
 
@@ -645,13 +645,15 @@ What this default costs, and what is not known:
 - The delay is the delay of a full queue. A viewer that drops frames to
   catch up was not measured; the expectation that it shows a short delay
   here is not tested.
-- The sender's rate at 15 ms moved from 64.4 to 62.0 frames each second
-  over six runs while aka's load fell. The cause is not known.
-- Two of the six runs at 15 ms have one sender interval near 142 ms (8
+- The sender's rate at 15 ms moved from 64.4 to 61.3 frames each second
+  over seven runs in 25 minutes. The cause is not known. At 60.6 the sender
+  is no faster than the viewer and the queue is no longer sure; the result's
+  sender intervals show the rate (`tests/intervals.py`).
+- Two of the seven runs at 15 ms have one sender interval near 142 ms (8
   `source_misses` each). Sets A and B had no interval above 1.5 periods in
   44 453. Over that night, runs with a sender interval above 1.5 periods
   were: 1 of 10 with a 17 ms sender (35.9 ms, as a game ended), 2 of 9 with
-  a 16 ms sender (79 and 350 ms), 2 of 6 with a 15 ms sender. A set of three
+  a 16 ms sender (79 and 350 ms), 2 of 7 with a 15 ms sender. A set of three
   runs of the 17 ms pair (`--fps 60`) after the 15 ms sets, with no game,
   had none in 13 298 intervals. So a faster sender output may stall more
   often; the counts are too small to say. Such a run stays valid, and its
