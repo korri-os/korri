@@ -696,7 +696,10 @@ impl Launchables {
             let observing = matches!(
                 inner.state,
                 LaunchablesState::Loaded(Loaded {
-                    phase: Phase::Starting { .. } | Phase::Recovery | Phase::Choosing { .. },
+                    phase: Phase::Starting { .. }
+                        | Phase::Stopping { .. }
+                        | Phase::Recovery
+                        | Phase::Choosing { .. },
                     ..
                 })
             );
@@ -715,6 +718,7 @@ impl Launchables {
             LaunchablesState::Loaded(Loaded {
                 phase: Phase::Ready
                     | Phase::Starting { .. }
+                    | Phase::Stopping { .. }
                     | Phase::Recovery
                     | Phase::Choosing { .. }
                     | Phase::Launching {

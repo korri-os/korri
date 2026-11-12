@@ -203,7 +203,8 @@ pub trait LaunchUnitBackend: Send + Sync {
 
     /// Stops the unit from any live state. A backend must thaw a frozen
     /// unit itself before stopping it; callers never issue a thaw before
-    /// a stop.
+    /// a stop. Success may acknowledge a queued job, not completion; callers
+    /// must observe the exact unit before completing the session.
     fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
     fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
     fn thaw(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
@@ -1588,6 +1589,10 @@ impl SystemdLaunchUnitBackend {
             format!("--unit={unit}"),
             "--slice=korri-games.slice".into(),
             "--property=CPUWeight=100".into(),
+            // Steam's native shutdown allows 15s plus 5s before cleaning Wine
+            // leftovers. Keep margin for that cleanup and save-on-exit; this
+            // bounds only game termination, not after-hooks or save capture.
+            "--property=TimeoutStopSec=30s".into(),
         ];
         arguments.extend(self.sandbox_properties(launch_id, sandbox)?);
         arguments.extend(Self::process_environment(environment, sandbox.modifiers));
@@ -1941,7 +1946,11 @@ impl SystemdLaunchUnitBackend {
     }
 
     pub(super) fn stop_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
-        Self::unit_verb_arguments("stop", launch_id)
+        let mut arguments = Self::unit_verb_arguments("stop", launch_id)?;
+        // Acknowledge the job inside inputd's control budget. The session
+        // observer owns completion, including a later timeout/SIGKILL.
+        arguments.push("--no-block".into());
+        Ok(arguments)
     }
 
     pub(super) fn reset_failed_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
@@ -2743,6 +2752,10 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         // metadata only after the caller captured the failure.
         if failed {
             self.require_success(&self.systemctl, &Self::reset_failed_arguments(launch_id)?)?;
+        } else {
+            // A queued stop can still be running. Keep its diagnostics and
+            // exit-status inode until the completion journal consumes them.
+            return Ok(());
         }
         super::launch_diagnostics::cleanup(&self.diagnostics_root.join(launch_id)).map_err(
             |error| {
@@ -2886,6 +2899,71 @@ mod tests {
         let backend = SystemdLaunchUnitBackend::new(helper.clone(), helper, 1000, 2002).unwrap();
         let shell = SystemdShellUnit::new(backend, "korri-shell.service", false).unwrap();
         assert!(shell.window_pids().unwrap().is_empty());
+    }
+
+    #[test]
+    fn games_bound_stop_without_shortening_hooks() {
+        let backend = backend(1000);
+        let command = vec!["/bin/game".into()];
+        let environment = BTreeMap::new();
+        let game = backend
+            .launch_arguments(LAUNCH_ID, &command, &environment)
+            .unwrap();
+        assert!(game.contains(&"--property=TimeoutStopSec=30s".into()));
+        let hook = backend
+            .hook_arguments(
+                LAUNCH_ID,
+                0,
+                &command,
+                "true",
+                Duration::from_secs(60),
+                &environment,
+            )
+            .unwrap();
+        assert!(hook.contains(&"--property=RuntimeMaxSec=60000000us".into()));
+        assert!(hook.contains(&"--property=TimeoutStopSec=5s".into()));
+        assert!(!hook.contains(&"--property=TimeoutStopSec=30s".into()));
+    }
+
+    #[test]
+    fn stop_acknowledges_the_job_without_waiting_or_removing_live_diagnostics() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemctl");
+        // A blocking stop must fail this test, not hold up the test runner.
+        std::fs::write(
+            &helper,
+            concat!(
+                "#!/bin/sh\ncase \"$3\" in\n",
+                "show) printf 'LoadState=loaded\\nActiveState=deactivating\\n';;\n",
+                "stop) case \"$*\" in *--no-block*) exit 0;; *) exit 42;; esac;;\n",
+                "esac\n",
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut backend =
+            SystemdLaunchUnitBackend::new(helper.clone(), helper, 1000, 1000).unwrap();
+        backend.diagnostics_root = root.path().join("launches");
+        let directory = backend.diagnostics_root.join(LAUNCH_ID);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("stderr"), "still live").unwrap();
+        backend.stop(LAUNCH_ID).unwrap();
+        assert_eq!(backend.state(LAUNCH_ID).unwrap(), LaunchUnitState::Stopping);
+        assert!(directory.join("stderr").exists());
+        std::fs::write(
+            &backend.systemctl,
+            concat!(
+                "#!/bin/sh\ncase \"$3\" in\n",
+                "show) printf 'LoadState=loaded\\nActiveState=active\\n';;\n",
+                "stop) echo 'stop refused' >&2; exit 1;;\nesac\n",
+            ),
+        )
+        .unwrap();
+        let error = backend.stop(LAUNCH_ID).unwrap_err();
+        assert_eq!(error.kind, LaunchUnitErrorKind::Failed);
+        assert!(error.message.contains("stop refused"));
+        assert!(directory.join("stderr").exists());
     }
 
     #[test]

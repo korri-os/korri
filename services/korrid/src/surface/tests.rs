@@ -1852,6 +1852,117 @@ async fn a_second_declare_places_the_new_window_and_keeps_preferences() {
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn regular_poll_finishes_external_stops_without_a_surface_stop_request() {
+    for (initial_phase, far) in [("running", false), ("stopping", false), ("stopping", true)] {
+        let mut values = idle_outcomes(1);
+        let status = |phase: &str| {
+            json!({ "_tag": "Ok", "payload": { "active": {
+            "launchId": "exact", "gameId": if far { "remote" } else { "g00000" },
+            "host": if far { Some("peer") } else { None }, "phase": phase,
+            "initialHandoff": "observed"
+        } } })
+        };
+        values.insert("app.session.status".into(), status(initial_phase));
+        let (hub, outcomes, _directory) = hub_with(values);
+        settled(&hub, "pico").await;
+        outcomes
+            .lock()
+            .unwrap()
+            .insert("app.session.status".into(), status("stopping"));
+        for _ in 0..20 {
+            if matches!(
+                hub.model("pico").unwrap().status,
+                SurfaceStatus::Busy { .. }
+            ) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(matches!(hub.model("pico").unwrap().status,
+            SurfaceStatus::Busy { kicker, .. } if kicker == "Ending session…"));
+        outcomes.lock().unwrap().insert(
+            "app.session.status".into(),
+            json!({ "_tag": "Ok", "payload": {} }),
+        );
+        for _ in 0..20 {
+            if hub.model("pico").unwrap().status == SurfaceStatus::Browsing {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(
+            hub.model("pico").unwrap().status,
+            SurfaceStatus::Browsing,
+            "{initial_phase} far={far}"
+        );
+        assert!(hub
+            .root()
+            .launchables
+            .state()
+            .entries()
+            .iter()
+            .all(|entry| entry.session().is_none()));
+    }
+}
+
+#[tokio::test]
+async fn regular_poll_finishes_a_stop_after_the_surface_stop_poll_deadline() {
+    let mut values = idle_outcomes(1);
+    values.insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "active": {
+        "launchId": "exact", "gameId": "g00000", "phase": "running", "initialHandoff": "observed"
+    } } }),
+    );
+    values.insert(
+        "app.session.end".into(),
+        json!({ "_tag": "Ok", "payload": { "phase": "pending" } }),
+    );
+    let (hub, outcomes, _directory) = hub_with(values);
+    settled(&hub, "pico").await;
+    let entry = hub
+        .root()
+        .launchables
+        .state()
+        .entries()
+        .iter()
+        .find(|entry| entry.session().is_some())
+        .unwrap()
+        .clone();
+    hub.root().launchables.end_session(entry);
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": { "active": {
+        "launchId": "exact", "gameId": "g00000", "phase": "stopping"
+    } } }),
+    );
+    // This deadline uses std::time::Instant, so exercise its real clock.
+    // Let the dedicated eight-second stop poll expire. Only the regular
+    // observer is left to retire this exact session when its unit ends.
+    for _ in 0..24 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    outcomes.lock().unwrap().insert(
+        "app.session.status".into(),
+        json!({ "_tag": "Ok", "payload": {} }),
+    );
+    for _ in 0..20 {
+        if hub.model("pico").unwrap().status == SurfaceStatus::Browsing {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(hub.model("pico").unwrap().status, SurfaceStatus::Browsing);
+    assert!(hub
+        .root()
+        .launchables
+        .state()
+        .entries()
+        .iter()
+        .all(|entry| entry.session().is_none()));
+}
+
 #[tokio::test]
 async fn a_launch_request_reserves_and_starts_the_exact_local_game() {
     let mut outcomes = idle_outcomes(2);
