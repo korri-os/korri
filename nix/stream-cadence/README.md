@@ -244,21 +244,19 @@ refusal"); no handheld's panel is marked so today. (A private
 pair on one device never uses that device's display; see "The plugin's
 viewer in the fixture".)
 A plugin that is switched off, or whose `korri-plugin status` fails, is not
-usable. What happens then depends on the chip:
-
-- korrid's chip table names a hardware picture path for the device (every
-  handheld on the bench). The tool refuses the run and says why the plugin is
-  not usable. It never runs its software viewer there: that viewer decodes on
-  the CPU, it is not the product's picture path, and it heats a passive
-  device.
-- The table names none. The device gets the copied viewer and the fixture.
+usable. A board with a non-empty device-tree compatibility property gets no
+fixture, whether korrid's chip table names its decoder or not. A machine
+with no board may use the stand-in. A product viewer fixture that requests
+PC VA-API is refused; see "PC VA-API fixture isolation".
 
 The agent runs as root, changes to the compositor's user with that user's
 groups, and starts the viewer with the arguments of korrid's `linux_viewer`
 (`stream_args`). The `-platform` value comes from a copy of korrid's chip
-table in `viewer.py`. `tests/test_korrid_copy.py` reads korrid's file and
-fails when the two differ: the chips, each picture path, the default, the
-answer for an absent device tree, and whole-value comparison. The source
+table and PC candidate rule in `viewer.py`. `tests/test_korrid_copy.py`
+reads korrid's file and fails when the two differ: the chips, picture paths,
+default, architecture, render-node prefix and whole-value comparison. An
+unrecognised function shape fails closed, including changes to node existence,
+ASCII-digit validation, control flow or comparison operators. The source
 gate runs it, so the app build depends on it. The plugin's `moonlight` is one
 program and not a wrapper, so its CPU time is the viewer's.
 
@@ -337,9 +335,10 @@ compositor seat activity or asks it for focus; the agent only reads the
 display's mode when it starts, and a display that cannot be read does not
 stop a fixture run.
 
-It applies only where korrid's chip table gives the software picture path
-(`x11`). A device with a hardware picture path, and a board with a device
-tree, host no fixture, with or without the plugin.
+A board with a non-empty device-tree compatibility property hosts no fixture,
+with or without the plugin. The product viewer fixture currently runs only
+when korrid selects `x11`. A PC requesting `x11_vaapi` is refused, not changed
+to the software path. See "PC VA-API fixture isolation" for the failed proof.
 
 **How the binary is started.** With the arguments of korrid's `linux_viewer`
 (`stream_args`: `-platform x11`, `-mapping`, `-windowed`,
@@ -593,9 +592,10 @@ What the sets show:
 - Both viewers held `/dev/dri/renderD129` open: their OpenGL ran on a
   graphics card. The sender fixture used `renderD128`.
 
-The picture path of the fixture is the software one (`-platform x11`: SDL,
-FFmpeg's software decoder). It says nothing about a handheld's hardware
-picture path.
+Those historical fixture results used software decode (`-platform x11`:
+SDL, FFmpeg's software decoder). They are not the product's requested PC
+picture path after korrid's VA-API change. They also say nothing about a
+handheld's hardware picture path.
 
 ### The heat guard
 
@@ -1448,3 +1448,59 @@ available. The refusal applies to the installed plugin and `--viewer-package`.
 It never silently substitutes SDL. The nixpkgs stand-in remains
 `-platform sdl`; on render-node PCs this is now a different picture path
 from the product, not a product decoder baseline.
+
+
+**Namespace attempt, 2026-11-12: stopped after the short run.** A temporary
+prototype put both agents, both compositors, Sunshine and the viewer in one
+new network namespace and one new mount namespace. It brought up only that
+namespace's loopback. A private tmpfs over `/tmp` hid both X sockets and
+`.X0-lock`; hiding only the socket directory would leave the product's live
+lock and make Xwayland choose another display number. The viewer children
+also hid `/dev/input` behind their own empty tmpfs. The prototype left the
+binary and stream arguments unchanged.
+
+The private X server worked, but VA-API did not:
+
+```
+[VAAPI @ ...] No VA display found for device :0.
+Couldn't open codec: h264_v4l2m2m
+Using FFmpeg decoder: h264
+```
+
+The supplied package's actual linked `libavutil.so.61` in
+`8pr35af429l2zlmlga9sx7ibbh11qcvx-ffmpeg-9.0.2-lib` contains the build option
+`--disable-xlib`, and no `vaGetDisplay` X11 symbol, while `vaGetDisplayDRM`
+is present. This is consistent with the X11 VA-API device being unavailable
+in that FFmpeg build. No driver override, binary patch or third route was
+attempted. The namespace prototype was not kept in the tool: it would still
+measure a software fallback, not prove the requested PC path.
+
+The run was on aka, with the supplied copied product viewer. Socket evidence
+showed the viewer (PID 367069) connected to the private Xwayland (366941),
+not the product Xwayland (748147). The viewer's three X sockets paired with
+private `@/tmp/.X11-unix/X0` endpoints. Its open-file list had no `/dev/input`
+node. It ran as UID 56774, primary GID 1000, supplementary GID 303. The
+product Xwayland's three connected sockets were identical before, during and
+after. Product service PIDs/start times and `/dev/input` entries were unchanged.
+Neither agent reported remaining processes or directories. A separate scan
+found no process left in the private network namespace after the run.
+
+This is **software fallback evidence only**, not a product-path baseline:
+
+| Short run, 10 scored seconds | Measured |
+| --- | --- |
+| Sender presentation to display, p50 in two 5-second windows | 12.074 ms; 11.726 ms |
+| Dropped frames | 0 |
+| Viewer CPU seconds each second | 0.157289 |
+| Startup | 737.699 ms |
+| `machine.other`, sender; viewer | 1.1507%; 1.1505% of all CPUs |
+| Viewer render node | `renderD129` (OpenGL, not proof of hardware decode) |
+| Sender encoder | `h264_vaapi`, `renderD128` |
+| VA-API decode on the RX 7900 XT | Did not run |
+
+The prototype's scorer printed `VALID`; that checked the recording, not
+VA-API. Do not use it as a product-path result. The two five-run base sets,
+their verdict and the queue set were **not measured**: the allowed namespace
+route failed VA-API initialization, so work stopped. Decode-path records and
+the verdict condition are not implemented yet. They remain required before
+a PC product fixture can be enabled.
