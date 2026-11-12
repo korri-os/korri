@@ -648,7 +648,12 @@ host that echoes the request's `Authorization` header does, korrid does not
 pass that response on, the operation fails as `ProviderFailed` with a
 diagnostic that names the host and never the value, and the artwork pass
 records the game as `no-match`, so it is not asked about again until the
-secret changes.
+secret changes. The check finds the secret in three forms: as it is, after
+JSON string escapes are decoded (`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`,
+`\t`, `\uXXXX`; so also in an object key, at any depth, and in a body that is
+not JSON as a whole), and after percent-encoding is decoded once, also inside
+a JSON string. It does not find any other encoding, such as base64, hex, or
+percent-encoding applied twice.
 
 Today korrid supplies the secret to the turns of `game-assets.candidates`
 (ADR 0032). The turns of an acquisition provider carry no secret: no provider
@@ -668,8 +673,9 @@ cannot write. The answer is
 `SensitiveSettingResult { status }`: `Configured` or `NotConfigured`, never
 the value. `set` needs a plugin that is turned on and declares a secret on
 this device, a value that is not empty after trimming, at most 256 bytes, and
-that an HTTP header can carry. `clear` answers for any plugin id, because
-removing a plugin keeps its secret. `SettingsSnapshot.plugins[].credential`
+that an HTTP header can carry in one fixed form: ASCII characters only, and
+no line break or other control character. `clear` answers for any plugin id,
+because removing a plugin keeps its secret. `SettingsSnapshot.plugins[].credential`
 carries the same status for a plugin that declares a secret and is absent for
 every other plugin.
 

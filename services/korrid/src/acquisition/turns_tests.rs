@@ -478,9 +478,14 @@ const SECRET: &str = "sgdb-very-secret-value";
 /// A provider whose plugin declares a secret for `HOST` and may also reach
 /// `other.test`, with the secret set as a person would set it.
 fn context_with_secret(handlers: &str) -> (ProviderContext, tempfile::TempDir) {
+    context_with_the_secret(SECRET, handlers)
+}
+
+/// As `context_with_secret`, for a secret a person could also have set.
+fn context_with_the_secret(secret: &str, handlers: &str) -> (ProviderContext, tempfile::TempDir) {
     let private = tempfile::tempdir().unwrap();
     let secrets = crate::plugin_secrets::PluginSecrets::new(private.path());
-    secrets.set("@test:shop", SECRET).unwrap();
+    secrets.set("@test:shop", secret).unwrap();
     let credential = secrets.credential("@test:shop", HOST).unwrap().unwrap();
     let mut context = context(handlers);
     context.hosts = Arc::new(vec![HOST.into(), "other.test".into()]);
@@ -844,4 +849,183 @@ async fn a_response_that_repeats_the_secret_is_never_given_to_the_plugin() {
         claims[0].title
     );
     assert!(!claims[0].title.contains(SECRET));
+}
+
+/// A handler that asks for `urls` and, if it were ever called with their
+/// responses, would hand everything it was given back as the claim's title.
+fn handing_back(urls: &[String]) -> String {
+    format!(
+        "{{'claims.search': (i) => i.responses.length ? [{claim}] : ({{_tag: 'HttpRequests', requests: [{requests}]}})}}",
+        claim = claim("x", "JSON.stringify(i.responses)"),
+        requests = urls
+            .iter()
+            .map(|url| format!("{{url: '{url}'}}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
+}
+
+/// The secret can come back escaped: `JSON.parse` in the plugin would turn
+/// `\"`, `\\`, `\/` and `\uXXXX` back into it, and a percent-encoded header
+/// is one `decodeURIComponent` away. korrid compares those forms too.
+#[tokio::test]
+async fn an_escaped_echo_of_the_secret_is_never_given_to_the_plugin() {
+    let server = HttpFixture::start([("/plain", Route::ok("application/json", r#"{"ok":true}"#))]);
+    let echoing = |path: &str, echo: Echo| {
+        server.route(path, Route::ok("application/json", "{}").echoing(echo));
+        server.url(HOST, path)
+    };
+    let quoted = r#"sgdb"quoted"value"#;
+    let backslashed = r"sgdb\back\slash";
+    let slashed = "sgdb/with/slashes";
+    for (name, secret, url) in [
+        (
+            "a quote, escaped by JSON",
+            quoted,
+            echoing("/body", Echo::Body),
+        ),
+        (
+            "a backslash, escaped by JSON",
+            backslashed,
+            echoing("/body", Echo::Body),
+        ),
+        (
+            "a slash written as \\/",
+            slashed,
+            echoing("/slashes", Echo::BodySlashEscaped),
+        ),
+        (
+            "every character as \\uXXXX",
+            SECRET,
+            echoing("/unicode", Echo::BodyUnicodeEscaped),
+        ),
+        ("an object key", SECRET, echoing("/key", Echo::Key)),
+        (
+            "an object key with escapes",
+            quoted,
+            echoing("/key", Echo::Key),
+        ),
+        (
+            "a percent-encoded header",
+            SECRET,
+            echoing("/header", Echo::HeaderPercentEncoded),
+        ),
+        (
+            "a percent-encoded header, quotes",
+            quoted,
+            echoing("/header", Echo::HeaderPercentEncoded),
+        ),
+    ] {
+        // A normal response from the same host passes with this secret.
+        let (context, _private) =
+            context_with_the_secret(secret, &handing_back(&[server.url(HOST, "/plain")]));
+        let claims = turns::search(&engine(), &context, "q").await.unwrap();
+        assert!(claims[0].title.contains("ok"), "{name}");
+
+        let before = server.received().len();
+        let (context, _private) = context_with_the_secret(secret, &handing_back(&[url]));
+        let error = turns::search(&engine(), &context, "q").await.unwrap_err();
+        // The handler was not called with it: its answer would have been `Ok`.
+        assert_eq!(
+            error,
+            ProviderError::CredentialRepeated { host: HOST.into() },
+            "{name}"
+        );
+        let failure = error.rpc();
+        for text in [format!("{error:?}"), failure.message] {
+            assert!(!text.contains(secret), "{name}: {text}");
+        }
+        // A real echo: the request carried the secret, and nothing in what
+        // the server sent back holds it as it is.
+        let request = &server.received()[before];
+        assert!(
+            request
+                .headers
+                .contains(&format!("authorization: bearer {}", secret.to_lowercase())),
+            "{name}"
+        );
+    }
+}
+
+/// The comparison does not depend on korrid being able to parse the body. A
+/// body nested deeper than korrid's JSON parser allows is still JSON to the
+/// plugin, and JSON inside another text is one `JSON.parse` away.
+#[tokio::test]
+async fn an_escaped_echo_is_found_in_a_body_korrid_cannot_parse() {
+    let escaped: String = SECRET
+        .chars()
+        .map(|character| format!("\\u{:04x}", character as u32))
+        .collect();
+    let deep = format!("{}\"{escaped}\"{}", "[".repeat(200), "]".repeat(200));
+    assert!(serde_json::from_str::<serde_json::Value>(&deep).is_err());
+    let wrapped = format!("callback({{\"auth\":\"{escaped}\"}});");
+    let server = HttpFixture::start([]);
+    server.route("/deep", Route::ok("application/json", deep));
+    server.route("/wrapped", Route::ok("text/javascript", wrapped));
+    // The premise: the plugin's own `JSON.parse` reads the deep body and
+    // gets the value back.
+    let digging = format!(
+        "{{'claims.search': (i) => {{ if (!i.responses.length) return {{_tag: 'HttpRequests', requests: [{{url: '{url}'}}]}}; let value = JSON.parse(i.responses[0].text); while (Array.isArray(value)) value = value[0]; return [{claim}]; }}}}",
+        url = server.url(HOST, "/deep"),
+        claim = claim("x", "value"),
+    );
+    let mut without_a_secret = context_with_secret(&digging).0;
+    without_a_secret.credential = None;
+    let claims = turns::search(&engine(), &without_a_secret, "q")
+        .await
+        .unwrap();
+    assert_eq!(claims[0].title, SECRET);
+
+    for path in ["/deep", "/wrapped"] {
+        let (context, _private) = context_with_secret(&handing_back(&[server.url(HOST, path)]));
+        assert_eq!(
+            turns::search(&engine(), &context, "q").await.unwrap_err(),
+            ProviderError::CredentialRepeated { host: HOST.into() },
+            "{path}"
+        );
+    }
+}
+
+/// The comparison is one pass for each form over a body that is at most
+/// 512 KiB, so a large honest answer costs little and still passes.
+#[tokio::test]
+async fn a_large_json_body_with_escapes_passes_the_guard_quickly() {
+    // Just under the 512 KiB bound, full of escapes and percent signs.
+    let entry = r#"{"name":"Wario Land 4 \/ \u30ef\u30ea\u30aa \"EU\"","url":"https:\/\/cdn.test\/a%20b%2Fc.png","note":"100% \\ done"},"#;
+    let mut body = String::from(r#"{"success":true,"data":["#);
+    while body.len() + entry.len() < 500 * 1024 {
+        body.push_str(entry);
+    }
+    body.push_str(r#"{"name":"last"}]}"#);
+    assert!(body.len() > 480 * 1024 && body.len() < 512 * 1024);
+    assert!(serde_json::from_str::<serde_json::Value>(&body).is_ok());
+    let server = HttpFixture::start([]);
+    server.route("/large", Route::ok("application/json", body.clone()));
+    let handlers = format!(
+        "{{'claims.search': (i) => i.responses.length ? [{claim}] : ({{_tag: 'HttpRequests', requests: [{{url: '{url}'}}]}})}}",
+        claim = claim("x", "String(i.responses[0].text.length)"),
+        url = server.url(HOST, "/large"),
+    );
+    let (context, _private) = context_with_secret(&handlers);
+    let claims = turns::search(&engine(), &context, "q").await.unwrap();
+    assert_eq!(claims[0].title, body.chars().count().to_string());
+
+    // The guard alone, on the same body: every form is compared.
+    let credential = context.credential.as_deref().unwrap();
+    let started = std::time::Instant::now();
+    assert!(!credential.appears_in(&body));
+    let elapsed = started.elapsed();
+    // About 35 ms in a test build. The limit only has to catch a
+    // comparison that is not linear.
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "the guard took {elapsed:?} for {} bytes",
+        body.len()
+    );
+    // And it still finds the secret at the very end of such a body.
+    let escaped: String = SECRET
+        .chars()
+        .map(|character| format!("\\u{:04x}", character as u32))
+        .collect();
+    assert!(credential.appears_in(&format!("{body}\"{escaped}\"")));
 }

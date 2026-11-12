@@ -23,12 +23,24 @@ pub(super) struct Route {
 }
 
 /// Where a route repeats the request's `Authorization` header.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) enum Echo {
     /// In a response header.
     Header,
+    /// In a response header, every byte percent-encoded.
+    HeaderPercentEncoded,
     /// In a JSON body, which replaces the route's own body.
     Body,
+    /// In a JSON body, with every `/` written as `\/`, as PHP writes it.
+    BodySlashEscaped,
+    /// In a JSON body, with every character of it written as `\uXXXX`.
+    BodyUnicodeEscaped,
+    /// As an object key of a JSON body.
+    Key,
+}
+
+fn percent_encoded(text: &str) -> String {
+    text.bytes().map(|byte| format!("%{byte:02X}")).collect()
 }
 
 impl Route {
@@ -152,16 +164,44 @@ impl HttpFixture {
                         unsized_body: false,
                         echo_authorization: None,
                     });
-                    match route.echo_authorization {
-                        Some(Echo::Header) => route.headers.push((
-                            "X-Request-Authorization".into(),
-                            authorization.clone().unwrap_or_default(),
-                        )),
+                    let sent = authorization.clone().unwrap_or_default();
+                    let body_with = |value: serde_json::Value| {
+                        serde_json::json!({
+                            "success": true,
+                            "data": [],
+                            "request": { "headers": { "Authorization": value } },
+                        })
+                        .to_string()
+                    };
+                    match route.echo_authorization.clone() {
+                        Some(Echo::Header) => {
+                            route.headers.push(("X-Request-Authorization".into(), sent))
+                        }
+                        Some(Echo::HeaderPercentEncoded) => route
+                            .headers
+                            .push(("X-Request-Authorization".into(), percent_encoded(&sent))),
                         Some(Echo::Body) => {
+                            route.body = body_with(serde_json::json!(authorization)).into_bytes()
+                        }
+                        Some(Echo::BodySlashEscaped) => {
+                            route.body = body_with(serde_json::json!(authorization))
+                                .replace('/', "\\/")
+                                .into_bytes()
+                        }
+                        Some(Echo::BodyUnicodeEscaped) => {
+                            let escaped: String = sent
+                                .chars()
+                                .map(|character| format!("\\u{:04x}", character as u32))
+                                .collect();
+                            route.body = body_with(serde_json::json!("PLACEHOLDER"))
+                                .replace("PLACEHOLDER", &escaped)
+                                .into_bytes()
+                        }
+                        Some(Echo::Key) => {
                             route.body = serde_json::json!({
                                 "success": true,
                                 "data": [],
-                                "request": { "headers": { "Authorization": authorization } },
+                                "seen": { sent: true },
                             })
                             .to_string()
                             .into_bytes()
