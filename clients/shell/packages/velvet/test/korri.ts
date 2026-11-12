@@ -100,9 +100,11 @@ export class Play {
   constructor(model: any, width = 1280, height = 720, stored: Record<string, string> = {}) {
     this.take(model)
     this.publish()
+    // As the shell starts a surface: the model, `init`, then `Resized` before the first view.
+    // (No `KorriPublished` here: the shell sends one with each model Korri pushes, and to
+    // Velvet a push that shows nothing new means Korri changed something out of sight.)
     this.state = globalThis.surface.init(this.model, stored)
     this.deliver({ _tag: "Resized", width, height })
-    this.deliver({ _tag: "KorriPublished" })
   }
 
   private take(model: any): void {

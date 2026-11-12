@@ -275,3 +275,155 @@ describe("a game is one object in every list that holds it", () => {
     }
   })
 })
+
+/**
+ * Velvet draws games that are not in the window Korri publishes: the pick
+ * may be the game played most, long ago. The treaty has no mark for "a game
+ * changed", so Velvet tells a publication by what it can see (src/lists.ts,
+ * "What a publication is"): its own answer, the clock, or neither. After one
+ * that is neither it reads its lists again, each once, and that reads every
+ * game the home and the lobby draw. A set and the detail over it draw from
+ * the published window itself.
+ */
+describe("a game Velvet draws changes outside the published window", () => {
+  const base = art()
+  const NOW: number = base.publishedAt
+  const DAY = 86_400_000
+  const { systems: _systems, ...rest } = base
+  const hero = (id: string) => ({ role: "hero", url: `preview/art/hero-${id}.png`, width: 1920, height: 620, color: "#b0452a" })
+  const poster = (id: string) => ({ role: "poster", url: `preview/art/poster-${id}.png`, width: 600, height: 900, color: "#804020" })
+  /**
+   * 80 played games, all older than a week, `g0` played longest ago and most
+   * (the pick, and not among the 60 newest); then 30 unplayed games; then 8
+   * games on another device.
+   */
+  const games = (): any[] => [
+    ...Array.from({ length: 80 }, (_, i) => ({ id: `g${i}`, title: `Game ${String(i).padStart(2, "0")}`, section: "This device", lastPlayedAt: NOW - (8 + (79 - i)) * DAY, playCount: 3, totalPlaytimeSeconds: i === 0 ? 900_000 : 1000 + i })),
+    ...Array.from({ length: 30 }, (_, i) => ({ id: `u${i}`, title: `Fresh ${String(i).padStart(2, "0")}`, section: "This device" })),
+    ...Array.from({ length: 8 }, (_, i) => ({ id: `z${i}`, title: `Zao ${i}`, section: "zao", lastPlayedAt: NOW - (200 + i) * DAY, playCount: 1, totalPlaytimeSeconds: 60 })),
+  ]
+  const library = (list: any[] = games()) => ({ ...rest, catalog: { _tag: "Ready", games: list } })
+  const withMedia = (ids: readonly string[], media: (id: string) => any) => library(games().map(game => (ids.includes(game.id) ? { ...game, media: [media(game.id)] } : game)))
+  const moves = (run: Play): string[] => (run.requests as any[]).filter(request => request._tag === "MoveCatalog").map(move => `${move.query.order}${move.query.section ? `@${move.query.section}` : ""}:${move.from._tag}`)
+  const tile = (run: Play, list: string, label: string) => (run.view[list] as any[]).find(entry => entry.shown && entry.label === label)
+  /** One pass over the lists: each asked once, the resting window last. */
+  const ONE_PASS = ["mostPlayed:Start", "recent:End", "korri:Start", "korri:End", "korri:After", "recent:Around", "recent@zao:Start", "recent:Start"]
+
+  test("the reviewer's case: heroes arrive for g0 to g7, and the pick shows its own", () => {
+    const run = new Play(library())
+    expect(run.view.home.mark.key).toBe("g0")
+    expect(run.state.lists.kept.recent!.some(game => game.id === "g0")).toBe(false)
+    expect(run.view.stage.artShown).toBe(false)
+    const before = moves(run).length
+    run.swap(withMedia(["g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7"], hero))
+    expect(run.view.stage.artShown).toBe(true)
+    expect(run.view.stage.key).toBe("preview/art/hero-g0.png")
+    // One pass: each list once (the published window is the first answer), one question an update.
+    expect(moves(run).slice(before)).toEqual(ONE_PASS)
+    expect(run.mostMovesInOneUpdate).toBeLessThanOrEqual(1)
+  })
+
+  test("after the batch, sixty clock publications ask nothing", () => {
+    const run = new Play(library())
+    const batch = withMedia(["g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7"], hero)
+    run.swap(batch)
+    const settled = moves(run).length
+    for (let minute = 1; minute <= 60; minute++) run.swap({ ...batch, publishedAt: NOW + minute * MINUTE, clockLabel: `clock ${minute}` })
+    expect(moves(run).length - settled).toBe(0)
+  })
+
+  test("sixty clock publications ask nothing, and neither do Velvet's own answers", () => {
+    const run = new Play(library())
+    // The first pass: each list once. Its seven answers start nothing more.
+    expect(moves(run)).toEqual(["recent:Start", ...ONE_PASS])
+    const settled = moves(run).length
+    for (let minute = 1; minute <= 60; minute++) run.swap({ ...library(), publishedAt: NOW + minute * MINUTE, clockLabel: `clock ${minute}` })
+    expect(moves(run).length - settled).toBe(0)
+    // Focus moves: each is a FocusGame and Korri's answer to it.
+    run.press("down", "right", "right", "down", "right", "down", "up", "up", "up")
+    expect(moves(run).length - settled).toBe(0)
+  })
+
+  test("art for a game on each list drawn: the row, Lately, Not started, another device's shelf", () => {
+    const run = new Play(library(), 1280, 720)
+    run.press("down", "down")
+    // g79 is the newest (the row and Lately), u2 is not started, z1 plays on zao: none of the last two is in the resting window.
+    expect(run.state.lists.kept.recent!.some(game => game.id === "u2" || game.id === "z1")).toBe(false)
+    const before = moves(run).length
+    run.swap(withMedia(["g79", "u2", "z1"], poster))
+    expect(tile(run, "homeRow", "Game 79").artKind).toBe("poster")
+    expect(tile(run, "shelfTiles", "Game 79").artKind).toBe("poster")
+    expect(tile(run, "shelfTiles", "Fresh 02").artKind).toBe("poster")
+    expect(moves(run).slice(before)).toEqual(ONE_PASS)
+    run.press("down", "down")
+    expect(tile(run, "shelfTiles", "Zao 1").artKind).toBe("poster")
+  })
+
+  test("the open detail of the pick shows its art when it arrives", () => {
+    const run = new Play(library())
+    run.press("confirm")
+    expect(run.view.page).toBe("detail")
+    expect(run.view.detail.mark.key).toBe("g0")
+    expect(run.view.stage.artShown).toBe(false)
+    run.swap(withMedia(["g0"], hero))
+    expect(run.view.stage.artShown).toBe(true)
+  })
+
+  test("an open set draws from the published window: its art shows with no question", () => {
+    const run = new Play(library(), 1280, 720)
+    run.press("down", "down", "right", "right", "right", "right", "right", "confirm")
+    expect(run.view.page).toBe("set")
+    const before = moves(run).length
+    run.swap(withMedia(["g78"], poster))
+    expect(tile(run, "setTiles", "Game 78").artKind).toBe("poster")
+    expect(moves(run).length - before).toBe(0)
+  })
+
+  test("batches that follow close on each other are read at most once in ten seconds of Korri's time", () => {
+    const run = new Play(library())
+    const first = withMedia(["g0"], hero)
+    run.swap(first)
+    const settled = moves(run).length
+    // Two seconds later the next batch: u2 is not started, in no window Velvet rests on.
+    const second = { ...withMedia(["g0", "u2"], hero), publishedAt: NOW + 2_000 }
+    run.swap(second)
+    expect(moves(run).length - settled).toBe(0)
+    expect(run.state.lists.unread).toBe(true)
+    // Any publication ten seconds on reads it, once.
+    run.swap({ ...second, publishedAt: NOW + 12_000, clockLabel: "later" })
+    expect(moves(run).slice(settled)).toEqual(ONE_PASS)
+    expect(run.state.lists.unread).toBe(false)
+    expect(run.state.lists.kept.fresh!.find(game => game.id === "u2")!.media!.length).toBe(1)
+    run.swap({ ...second, publishedAt: NOW + 60_000, clockLabel: "later still" })
+    expect(moves(run).length - settled).toBe(ONE_PASS.length)
+  })
+
+  test("a publication that comes while a question is out and is not its answer is read after the pass", () => {
+    const run = new Play(library())
+    const settled = moves(run).length
+    // The pass for one batch is under way when the next batch comes: Korri publishes it without moving the window.
+    const real = globalThis.surface.update
+    let cut = false
+    globalThis.surface.update = (state: any, message: any, model: any) => {
+      const out = real(state, message, model)
+      // After the pass's second question (the end of the recent order), another batch arrives.
+      if (!cut && out.requests.some((request: any) => request._tag === "MoveCatalog" && request.from._tag === "End")) {
+        cut = true
+        out.state = real(out.state, { _tag: "KorriPublished" }, model).state
+      }
+      return out
+    }
+    try {
+      run.swap(withMedia(["g0"], hero))
+    } finally {
+      globalThis.surface.update = real
+    }
+    expect(cut).toBe(true)
+    expect(moves(run).slice(settled)).toEqual(ONE_PASS)
+    expect(run.state.lists.unread).toBe(true)
+    // It is read at the next publication ten seconds on.
+    run.swap({ ...withMedia(["g0"], hero), publishedAt: NOW + 11_000, clockLabel: "later" })
+    expect(moves(run).length - settled).toBe(2 * ONE_PASS.length)
+    expect(run.state.lists.unread).toBe(false)
+  })
+})

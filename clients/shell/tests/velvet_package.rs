@@ -276,13 +276,13 @@ fn start(root: &Path, model: &Value, width: u32, height: u32) -> (engine::Engine
             &BTreeMap::new(),
         ))
         .unwrap();
-    // The shell's Resized comes before the first view.
+    // The shell's Resized comes before the first view. (No KorriPublished here: the shell
+    // sends one with each model Korri pushes, not with the one a surface starts on.)
     deliver(
         &mut engine,
         &mut korri,
         json!({"_tag": "Resized", "width": width, "height": height}),
     );
-    deliver(&mut engine, &mut korri, json!({"_tag": "KorriPublished"}));
     (engine, korri)
 }
 

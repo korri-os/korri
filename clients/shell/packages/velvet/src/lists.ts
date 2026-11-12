@@ -30,11 +30,12 @@
  * Korri changes games Velvet already holds: artwork is stored after the
  * library is found, a few games a pass; a game is played, becomes resumable,
  * gets a download. On every publication, every kept game that stands in the
- * published window is replaced by the window's (`refresh`, by id), and when
- * one of them differed, or the window Velvet rests on shows other games, the
- * lists are read again, each once. The treaty has no mark that says "the
- * library changed", so a change is seen only in the window Korri publishes;
- * that is why Velvet rests on the games it shows most (the newest sixty).
+ * published window is replaced by the window's (`refresh`, by id). For the
+ * games that are not in it, see "What a publication is", below: the lists
+ * are read again, each once, after a publication that Velvet did not cause
+ * and the clock does not explain, at most once in ten seconds of Korri's
+ * time. A publication that is Velvet's own answer, or the clock, asks
+ * nothing.
  *
  * The lists also go stale when the library's systems change (`stampOf`),
  * when a game was just played, and when a set held the window. While a set
@@ -71,6 +72,8 @@ const MOST_PEERS = 6
 const PAGE = 200
 /** Games read around the first one not yet started: the shelf's, and one more to know there are more. */
 const FRESH_COUNT = 24
+/** The lists are read again for a reason Velvet cannot see at most this often, in Korri's time. */
+const REREAD_MS = 10_000
 
 const query = (order: CatalogQuery["order"], extra: Partial<CatalogQuery> = {}): CatalogQuery => ({ text: "", order, ...extra })
 const RECENT = query("recent")
@@ -94,7 +97,7 @@ const BASE: readonly Want[] = [
   { key: "ends", query: KORRI, from: { at: "end" }, count: PAGE },
 ]
 
-export const LISTS_START: Lists = { kept: {}, total: 0, peers: [], peerTotals: {}, waited: 0, read: [], stamp: "", backs: [], scans: [], tails: [] }
+export const LISTS_START: Lists = { kept: {}, total: 0, peers: [], peerTotals: {}, waited: 0, read: [], stamp: "", backs: [], scans: [], tails: [], unread: false }
 
 const played = (game: Game): boolean => game.lastPlayedAt !== undefined
 const unplayed = (game: Game): boolean => game.lastPlayedAt === undefined
@@ -339,6 +342,39 @@ function peersIn(games: readonly Game[], known: readonly string[]): string[] {
   return out.slice(0, MOST_PEERS)
 }
 
+// ---- What a publication is ----
+//
+// Velvet draws games that are not in the window Korri publishes (the pick may be the game
+// played most, years ago). Korri changes such a game (its artwork is stored, it is played on
+// another device) and the publication that says so shows Velvet nothing: the treaty has no
+// mark for "a game changed". So Velvet tells publications apart by what it can see:
+//
+//   the answer to its own question   the window answers the question out
+//   the answer to its own FocusGame  `focusedGame` names another game than before
+//   the clock                        `clockLabel` changed
+//   anything else                    Korri changed something Velvet cannot see: the lists
+//                                    are read again (`unread`), which reads every game the
+//                                    home and the lobby draw
+//
+// A change that comes in the same publication as one of the first three is not seen until
+// the next publication of the last kind.
+
+/** Korri published: what it said of the clock and the focus is kept, and a publication Velvet cannot explain marks the lists unread. */
+export function hearLists(lists: Lists, model: Model): Lists {
+  const said = { clock: model.clockLabel ?? "", focus: model.focusedGame?.gameId ?? "" }
+  const before = lists.heard
+  if (before === undefined || before.clock !== said.clock || before.focus !== said.focus) return { ...lists, heard: said }
+  const catalog = model.catalog
+  if (catalog._tag !== "Ready" || lists.unread) return lists
+  // Nothing is read yet, or this is the answer to the question out.
+  if (lists.read.length === 0 || (lists.asked !== undefined && answers(catalog, lists.asked))) return lists
+  return { ...lists, unread: true }
+}
+
+/** Whether the lists may be read again now, by Korri's time: at most once in REREAD_MS. */
+const rereadDue = (lists: Lists, publishedAt: number | undefined): boolean =>
+  lists.rereadAt === undefined || publishedAt === undefined || publishedAt < lists.rereadAt || publishedAt - lists.rereadAt >= REREAD_MS
+
 /**
  * The lists after Korri published, and the next question when one is due.
  * `free`: the home or the lobby holds the window (no set is open).
@@ -358,7 +394,7 @@ function settleNow(lists: Lists, model: Model, free: boolean): { readonly lists:
   const catalog = model.catalog
   if (catalog._tag === "Empty") {
     const empty = lists.total === 0 && lists.asked === undefined && lists.read.length > 0 && Object.keys(lists.kept).length === 0
-    return empty ? { lists } : { lists: { ...LISTS_START, read: [REST.key], stamp: stampOf(model) } }
+    return empty ? { lists } : { lists: { ...LISTS_START, read: [REST.key], stamp: stampOf(model), ...(lists.heard === undefined ? {} : { heard: lists.heard }) } }
   }
   if (catalog._tag !== "Ready") return { lists }
   let next = lists
@@ -368,13 +404,17 @@ function settleNow(lists: Lists, model: Model, free: boolean): { readonly lists:
   // Every kept game Korri published again is as it is now.
   const fresh = refresh(next, catalog.window)
   next = fresh.lists
-  // A pass is over, and Korri published on its own. What the window says now decides.
+  // A pass is over, and Korri published.
   if (resting(next)) {
     // The window is not the one Velvet rests on (a set held it): read the lists again.
     if (!answers(catalog, REST)) next = staleLists(next)
-    // The resting window's games changed (artwork came, a game was played), or other games
-    // stand in it now: so may every other list. This window is the first answer of the new pass.
-    else if (fresh.changed || !sameOrder(next.kept[REST.key], catalog.window)) next = staleLists(next)
+    else {
+      // The resting window shows other games, or one of its games says something new: it is
+      // kept as it is now, and what the other lists hold may have changed with it.
+      if (!sameOrder(next.kept[REST.key], catalog.window)) next = { ...next, kept: { ...next.kept, [REST.key]: canonical(next, catalog.window) }, total: catalog.total, unread: true }
+      else if (fresh.changed && !next.unread) next = { ...next, unread: true }
+      if (next.unread && rereadDue(next, model.publishedAt)) next = { ...staleLists(next), ...(model.publishedAt === undefined ? {} : { rereadAt: model.publishedAt }) }
+    }
   }
   // The answer to the question out.
   if (next.asked !== undefined && answers(catalog, next.asked)) next = keep(next, next.asked, catalog)
@@ -440,8 +480,8 @@ export function tickLists(lists: Lists): { readonly lists: Lists; readonly reque
 /** The lists are to be read again, from the first (a game was just played). The kept ones show meanwhile. */
 export function staleLists(lists: Lists): Lists {
   const { asked, found, earliest, ...rest } = lists
-  const pristine = asked === undefined && found === undefined && earliest === undefined && lists.read.length === 0 && lists.backs.length === 0 && lists.scans.length === 0 && lists.tails.length === 0
-  return pristine ? lists : { ...rest, read: [], backs: [], scans: [], tails: [], waited: 0 }
+  const pristine = asked === undefined && found === undefined && earliest === undefined && lists.read.length === 0 && !lists.unread && lists.backs.length === 0 && lists.scans.length === 0 && lists.tails.length === 0
+  return pristine ? lists : { ...rest, read: [], backs: [], scans: [], tails: [], waited: 0, unread: false }
 }
 
 /**

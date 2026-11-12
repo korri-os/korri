@@ -26,7 +26,7 @@ import type { SurfaceButton, SurfaceMessage as Message, SurfaceModel as Model } 
 import { detailButtons, detailGame, dragHome, dragSet, focusedGame, openSet, pressDetail, pressHome, pressSet, setSorts, setWindow, settleSet, tapHome, tapSet, type Step } from "./browse"
 import { curtainLayout, curtainOf, type CurtainSpec } from "./curtain"
 import { keyAt, keyGrid, keyInPlace, keyMove } from "./keys"
-import { homeOf, LISTS_START, refresh, settleLists, shelvesOf, staleLists, tickLists } from "./lists"
+import { hearLists, homeOf, LISTS_START, refresh, settleLists, shelvesOf, staleLists, tickLists } from "./lists"
 import { clearEntry, commitEntry, entryHeading, onboardingSteps, screenPanel, sheetPanel, shown } from "./pages"
 import { plan, type Plan } from "./plan"
 import { lastAttempt, rejectedEntry, sameAttempt } from "./settings"
@@ -474,6 +474,9 @@ function published(state: State, model: Model): State {
   // Back from a game: what was played changed, so the home's lists are read again.
   const browsing = model.status._tag === "Browsing"
   if (browsing !== next.wasBrowsing) next = { ...next, wasBrowsing: browsing, lists: browsing ? staleLists(next.lists) : next.lists }
+  // What this publication is, to the lists: an answer, the clock, or a change Velvet cannot see (src/lists.ts).
+  const heard = hearLists(next.lists, model)
+  if (heard !== next.lists) next = { ...next, lists: heard }
   return next
 }
 
