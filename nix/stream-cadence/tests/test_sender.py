@@ -16,6 +16,8 @@ from cli import (  # noqa: E402
     Refusal,
     Remote,
     endpoint,
+    fixture_rate,
+    pair_rate,
     parser,
     view,
     viewer_stream_host,
@@ -40,6 +42,34 @@ class SteadyMode(unittest.TestCase):
                 self.assertLess(period_ms - 1, 1000 / rate)
         self.assertEqual(sender.steady_refresh_mhz(60), 58823)
         self.assertEqual(sender.steady_refresh_mhz(50), 50000)
+
+
+class PairRate(unittest.TestCase):
+    """The default rate of a private pair: frames arrive faster than the viewer can show them."""
+
+    def test_sender_output_is_one_millisecond_faster_than_the_viewer_fixtures_output(self):
+        for refresh in (50, 58.823, 59.94, 60, 90, 120, 144):
+            with self.subTest(refresh=refresh):
+                # wlroots arms the viewer fixture's frame timer with this integer division.
+                viewer_ms = 1_000_000 // round(refresh * 1000)
+                rate = pair_rate(refresh)
+                sender_ms = 1_000_000 // sender.steady_refresh_mhz(rate)
+                self.assertEqual(sender_ms, viewer_ms - 1)
+                # Sunshine takes every frame: the stream's period is not above the output's.
+                self.assertLessEqual(1000 / rate, sender_ms)
+        # At 60 the viewer fixture's output is a 16 ms output. A 17 ms sender starves
+        # it, and a 16 ms sender is as fast as it within the machine's load.
+        self.assertEqual(pair_rate(60), 67)
+        self.assertEqual(sender.steady_refresh_mhz(pair_rate(60)), 66666)
+        self.assertEqual(sender.steady_refresh_mhz(pair_rate(58.823)), 62500)
+
+    def test_only_a_private_pair_with_no_requested_rate_gets_it(self):
+        self.assertEqual(fixture_rate(None, 60.0, fixture_viewer=True), 67)
+        # A real panel has its own clock: the sender is asked for the panel's rate.
+        self.assertEqual(fixture_rate(None, 59.98, fixture_viewer=False), 59.98)
+        # A requested rate is kept as it is.
+        self.assertEqual(fixture_rate(60.0, 60.0, fixture_viewer=True), 60.0)
+        self.assertEqual(fixture_rate(30.0, 60.0, fixture_viewer=False), 30.0)
 
 
 class Ports(unittest.TestCase):

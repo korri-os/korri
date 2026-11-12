@@ -397,6 +397,39 @@ def fixture_stream(
     return host, facts["sunshine_port"], facts["sender_fixture"]["application"]
 
 
+def pair_rate(viewer_refresh: float) -> float:
+    """The stream rate at which the sender fixture is a little faster than the viewer fixture.
+
+    Both fixtures show on a headless output, which commits on a timer of whole
+    milliseconds (sender.py: steady_refresh_mhz). The viewer fixture's output
+    rounds its period down; the sender's rounds the stream's period up. At
+    the same requested rate the sender is then one millisecond slower, the
+    viewer always waits for a frame, and a viewer that queues frames shows no
+    queue. With the same period on both sides the two rates are equal within
+    what the machine's load changes, and a queue fills in 4 s or in 50 s.
+
+    This rate gives the sender's output a period one millisecond shorter than
+    the viewer's. Frames then arrive faster than the viewer can show them, in
+    every run, and a viewer that queues has a full queue. The cost is frames
+    that someone must drop: the difference of the two rates.
+    """
+    viewer_ms = 1_000_000 // round(viewer_refresh * 1000)
+    # A one-millisecond output cannot be made faster; no viewer fixture runs at 1000 Hz.
+    return float(math.ceil(1000 / max(1, viewer_ms - 1)))
+
+
+def fixture_rate(requested: float | None, viewer_refresh: float, fixture_viewer: bool) -> float:
+    """The stream rate to ask of the sender fixture.
+
+    A requested rate is kept. A private pair gets the rate that can fill the
+    viewer's queue. An installed viewer shows on a real panel with its own
+    clock, so the sender is asked for that panel's rate.
+    """
+    if requested is not None:
+        return requested
+    return pair_rate(viewer_refresh) if fixture_viewer else viewer_refresh
+
+
 def plugin_enabled(code: int, status: str) -> bool:
     """Whether `korri-plugin status` reports the viewer plugin as enabled.
 
@@ -855,7 +888,7 @@ def view_case(
         if args.sender_fixture:
             # The fixture's display exists for this stream alone: the requested
             # size, at the steady refresh nearest below the requested rate.
-            fps = args.fps if args.fps is not None else viewer_refresh
+            fps = fixture_rate(args.fps, viewer_refresh, fixture_viewer=plugin is None)
             built = sender.request(
                 "prepare",
                 sway=paths["sway"],
