@@ -23,6 +23,7 @@ import socket
 import ssl
 import subprocess
 import tempfile
+import threading
 import time
 from typing import TextIO
 import urllib.request
@@ -38,6 +39,8 @@ from device import (
     unit,
 )
 from discovery import encoder_probe, output, properties
+from heat import must_end, no_start, thermal_limits, thermal_zones
+from viewer import GUARD_PERIOD, PICTURE_PATH_DEFAULT, platform
 
 RUNS = Path("/tmp")
 RENDER_NODES = Path("/dev/dri")
@@ -252,7 +255,17 @@ class Session:
         self.facts["fixture_user"] = (
             self.identity["user"] if self.identity else pwd.getpwuid(os.geteuid()).pw_name
         )
-        self.inputs: set[str] = set()
+        # The heat guard, with the rules of the viewer's agent (heat.py): no start
+        # on a hot host, an end near its critical trip, a stop when it cannot read.
+        zones = thermal_zones()
+        self.limits = {zone["zone"]: thermal_limits(zone) for zone in zones}
+        self.facts["thermal"] = [dict(zone, limits=self.limits[zone["zone"]]) for zone in zones]
+        self.facts["heat_guarded"] = any(self.limits.values())
+        self.hardware_path = platform() != PICTURE_PATH_DEFAULT
+        # Why the guard stopped the fixture, once it did.
+        self.ended: str | None = None
+        # Taken again when the fixture prepares; here so that a close is never blind.
+        self.inputs: set[str] = input_devices()
         self.last_game_check = 0.0
         self.root: Path | None = None
         self.sway = ""
@@ -434,6 +447,9 @@ class Session:
                 "would make input devices there that the product's input stack sees. The "
                 "sender fixture does not start."
             )
+        refused = no_start(thermal_zones(), self.limits, self.hardware_path)
+        if refused:
+            raise RuntimeError(refused)
         self.inputs = input_devices()
         self.sway, self.sunshine = str(request["sway"]), str(request["sunshine"])
         width, height = int(request["width"]), int(request["height"])
@@ -491,6 +507,7 @@ class Session:
         if not self.text("sunshine.crt").strip():
             raise RuntimeError("The fixture's Sunshine wrote no certificate; the viewer cannot pin it.")
         self.check()
+        threading.Thread(target=self.guard, args=(self.root,), daemon=True).start()
         self.facts.update(
             display=output(self.sway_message("-t", "get_outputs")),
             sunshine_version=chosen["sunshine_version"],
@@ -544,7 +561,33 @@ class Session:
             raise RuntimeError("Sunshine refused the pairing PIN: " + json.dumps(answer))
         return {}
 
+    def end(self, reason: str) -> None:
+        """The guard's one action: stop the fixture's programs at once and keep the reason."""
+        self.ended = reason
+        for process in list(self.processes.values()):
+            if process.poll() is None:
+                process.terminate()
+
+    def guard(self, root: Path) -> None:
+        """Watch the host's heat on its own thread while this fixture runs."""
+        while self.root == root and self.ended is None:
+            try:
+                reason = must_end(thermal_zones(), self.limits)
+            except Exception as error:
+                # A guard that fails is blind. It stops the run and says so.
+                reason = f"The heat guard failed and cannot watch the run: {error!r}."
+            if reason:
+                self.end(reason)
+                return
+            time.sleep(GUARD_PERIOD)
+
     def check(self) -> None:
+        if self.ended is None:
+            unsafe = must_end(thermal_zones(), self.limits)
+            if unsafe:
+                self.end(unsafe)
+        if self.ended:
+            raise RuntimeError(self.ended)
         for name in ("compositor", "sunshine"):
             if not self.alive(name):
                 raise RuntimeError(

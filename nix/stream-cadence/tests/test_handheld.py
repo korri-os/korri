@@ -421,6 +421,9 @@ class RenderNodeChoice(unittest.TestCase):
                 )
                 program.chmod(0o755)
             previous, sender.RENDER_NODES = sender.RENDER_NODES, dri
+            # No thermal zone and no device tree, whatever machine runs the tests.
+            sensors = (heat.THERMAL, viewer.COMPATIBLE)
+            heat.THERMAL, viewer.COMPATIBLE = Path(temporary) / "thermal", Path(temporary) / "dt"
             session = sender.Session()
             try:
                 built = session.handle(
@@ -437,6 +440,7 @@ class RenderNodeChoice(unittest.TestCase):
                 stored = json.loads((Path(built["facts"]["sender_fixture"]["run_folder"]) / "credentials.json").read_text())
             finally:
                 sender.RENDER_NODES = previous
+                heat.THERMAL, viewer.COMPATIBLE = sensors
                 restore = session.close()
             started = [
                 json.loads(line) for line in (peers / "arguments.log").read_text().splitlines()
@@ -472,9 +476,10 @@ class RenderNodeChoice(unittest.TestCase):
         self.assertTrue(restore["pass"], restore)
 
     def test_no_render_node_is_refused_before_anything_starts(self):
-        previous = sender.RENDER_NODES
+        previous, sensors = sender.RENDER_NODES, (heat.THERMAL, viewer.COMPATIBLE)
         with tempfile.TemporaryDirectory() as temporary:
             sender.RENDER_NODES = Path(temporary)
+            heat.THERMAL, viewer.COMPATIBLE = Path(temporary) / "thermal", Path(temporary) / "dt"
             session = sender.Session()
             try:
                 with self.assertRaisesRegex(RuntimeError, "no render node"):
@@ -484,6 +489,7 @@ class RenderNodeChoice(unittest.TestCase):
                     )
             finally:
                 sender.RENDER_NODES = previous
+                heat.THERMAL, viewer.COMPATIBLE = sensors
             self.assertIsNone(session.root)
             self.assertTrue(session.close()["pass"])
 

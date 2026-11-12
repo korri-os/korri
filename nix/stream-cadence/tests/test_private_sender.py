@@ -9,7 +9,9 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import heat  # noqa: E402
 import sender  # noqa: E402
+import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
 
@@ -35,10 +37,29 @@ class Machine(unittest.TestCase):
         self.uinput = root / "uinput"
         self.real = (sender.RENDER_NODES, sender.INPUT_DEVICES, sender.UINPUT)
         sender.RENDER_NODES, sender.INPUT_DEVICES, sender.UINPUT = dri, self.inputs, self.uinput
+        # No thermal zone and no device tree, whatever machine runs the tests.
+        self.sensors = (heat.THERMAL, viewer.COMPATIBLE)
+        heat.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "compatible"
 
     def tearDown(self):
         sender.RENDER_NODES, sender.INPUT_DEVICES, sender.UINPUT = self.real
+        heat.THERMAL, viewer.COMPATIBLE = self.sensors
         self.directory.cleanup()
+
+    def zone(self, millidegrees: int | None) -> Path:
+        """One thermal zone with the RG353M's trip points and this temperature."""
+        zone = heat.THERMAL / "thermal_zone0"
+        zone.mkdir(parents=True, exist_ok=True)
+        (zone / "type").write_text("cpu-thermal\n")
+        for n, (kind, value) in enumerate(
+            [("passive", 70000), ("passive", 75000), ("critical", 95000)]
+        ):
+            (zone / f"trip_point_{n}_type").write_text(kind + "\n")
+            (zone / f"trip_point_{n}_temp").write_text(f"{value}\n")
+        fresh = heat.THERMAL / "fresh-temp"
+        fresh.write_text("\n" if millidegrees is None else f"{millidegrees}\n")
+        fresh.replace(zone / "temp")
+        return zone
 
     def session(self) -> sender.Session:
         made = sender.Session()
@@ -111,6 +132,64 @@ class NoInputDevice(Machine):
         )
         for key in ("mouse", "keyboard", "controller"):
             self.assertEqual(values[key], "disabled")
+
+
+class SenderHeatGuard(Machine):
+    def test_fixture_does_not_start_on_a_hot_host(self):
+        self.zone(72222)
+        session = self.session()
+        with self.assertRaisesRegex(RuntimeError, "device is hot.*72.2.*70.0"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+        self.assertFalse((self.peers / "arguments.log").exists())
+
+    def test_fixture_does_not_start_when_the_guard_cannot_read(self):
+        self.zone(None)
+        session = self.session()
+        with self.assertRaisesRegex(RuntimeError, "cannot read.*does not start"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+
+    def test_running_fixture_is_stopped_near_the_critical_trip(self):
+        self.zone(50000)
+        session = self.session()
+        facts = self.prepare(session)["facts"]
+        self.assertTrue(facts["heat_guarded"])
+        self.assertEqual(facts["thermal"][0]["limits"]["end_at"], 85000)
+        session.check()
+        sunshine, compositor = session.processes["sunshine"], session.processes["compositor"]
+        self.zone(86000)
+        # The guard's own thread stops the fixture; no request is needed for it.
+        self.assertIsNotNone(sunshine.wait(timeout=5))
+        self.assertIsNotNone(compositor.wait(timeout=5))
+        with self.assertRaisesRegex(RuntimeError, "cpu-thermal reads 86.0.*ends at 85.0"):
+            session.check()
+        self.assertTrue(session.close()["pass"])
+
+    def test_running_fixture_is_stopped_when_the_guard_goes_blind(self):
+        self.zone(50000)
+        session = self.session()
+        self.prepare(session)
+        sunshine = session.processes["sunshine"]
+        self.zone(None)
+        self.assertIsNotNone(sunshine.wait(timeout=5))
+        with self.assertRaisesRegex(RuntimeError, "cannot read.*run ends"):
+            session.check()
+
+    def test_host_with_no_zone_and_no_hardware_picture_path_runs_unguarded(self):
+        session = self.session()
+        facts = self.prepare(session)["facts"]
+        self.assertFalse(facts["heat_guarded"])
+        self.assertEqual(facts["thermal"], [])
+        session.check()
+        self.assertTrue(session.close()["pass"])
+
+    def test_hardware_path_device_with_no_zone_does_not_host_the_fixture(self):
+        viewer.COMPATIBLE.write_bytes(b"vendor,board\0rockchip,rk3566\0")
+        session = self.session()
+        with self.assertRaisesRegex(RuntimeError, "no thermal zone with a critical trip point"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
 
 
 class NoRoot(Machine):
