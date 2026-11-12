@@ -1639,6 +1639,10 @@ def view(args: argparse.Namespace) -> int:
     def part(paths: list[str], mark: str, program: str = "") -> str:
         return next((path + program for path in paths if mark in path), "")
 
+    # A product viewer package for a device with no plugin: named on this host,
+    # copied like the other pieces, and run in the viewer fixture. Checked
+    # before any device is asked.
+    copied = product_package(args.viewer_package) if args.viewer_package else None
     sender_agent, sender_paths = built(
         sender_target,
         sender_options,
@@ -1658,9 +1662,6 @@ def view(args: argparse.Namespace) -> int:
             timeout=30,
         )
         installed = plugin_enabled(status.returncode, status.stdout)
-    # A product viewer package for a device with no plugin: named on this host,
-    # copied like the other pieces, and run in the viewer fixture.
-    copied = product_package(args.viewer_package) if args.viewer_package else None
     if copied:
         refused = copied_viewer_refusal(installed)
         if refused:

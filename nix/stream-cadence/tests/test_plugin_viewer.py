@@ -291,6 +291,29 @@ class CopiedProductViewer(PluginViewerInTheFixture):
         with self.assertRaisesRegex(Refusal, "bin/moonlight"):
             product_package(str(package))
 
+    def test_view_refuses_a_bad_package_before_it_asks_any_device(self):
+        self.package()
+        asked: list = []
+
+        def no_device(*command, **options):
+            asked.append(command)
+            raise AssertionError("a device was asked")
+
+        for name in ("execute", "tools"):
+            previous = getattr(cli, name)
+            setattr(cli, name, no_device)
+            self.addCleanup(setattr, cli, name, previous)
+        previous_run = cli.subprocess.run
+        cli.subprocess.run = no_device
+        self.addCleanup(setattr, cli.subprocess, "run", previous_run)
+        args = parser().parse_args(
+            ["view", "--sender", "root@aka", "--sender-fixture", "--viewer", "root@aka",
+             "--viewer-package", self.directory.name, "--out", self.directory.name + "/out"]
+        )
+        with self.assertRaisesRegex(Refusal, "--viewer-package.*store path"):
+            cli.view(args)
+        self.assertEqual(asked, [])
+
     def test_it_is_for_a_device_with_no_plugin(self):
         self.assertIsNone(copied_viewer_refusal(plugin=False))
         self.assertRegex(copied_viewer_refusal(plugin=True), "--viewer-package.*plugin.*installed")
