@@ -34,7 +34,7 @@ def device_tree() -> None:
 
 
 def supply(directory: Path, name: str, kind: str, scope: str | None = None) -> None:
-    """One entry as the kernel shows it: a type, and a scope for a peripheral's battery."""
+    """One entry as the kernel shows it. No rule reads it: a laptop's battery must not decide."""
     entry = directory / name
     entry.mkdir(parents=True)
     (entry / "type").write_text(kind + "\n")

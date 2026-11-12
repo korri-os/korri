@@ -36,7 +36,7 @@ from heat import END_MARGIN, must_end, no_start, thermal_limits, thermal_zones
 import device
 from device import (
     append_log,
-    batteries,
+    device_tree,
     deferred_termination,
     end_with_agent,
     games,
@@ -45,8 +45,7 @@ from device import (
     let_in,
     live_games,
     model,
-    no_fixture_on_handheld,
-    passive_handheld,
+    no_fixture_on_device_tree,
     plain_text,
     read_plain,
     proc,
@@ -240,10 +239,9 @@ class Session:
             "platform": chosen,
             # korrid's chip table names a hardware picture path for this device.
             "hardware_picture_path": chosen != PICTURE_PATH_DEFAULT,
-            # The device's own batteries. With one and a device tree the tool
-            # takes the device for a passive handheld; a laptop has no device tree.
-            "batteries": batteries(),
-            "passive_handheld": passive_handheld(),
+            # With a device tree the tool takes the device for a passive handheld,
+            # which hosts no fixture.
+            "device_tree": device_tree(),
             # The host that runs the tool, as this device reaches it: the far end
             # of the agent's own SSH connection. Absent with no SSH.
             "controller_address": connection[0] if connection else None,
@@ -488,9 +486,8 @@ class Session:
                 f"{self.facts['plugin_missing']}."
             )
         if request["fixture"]:
-            # A handheld outside korrid's chip table would still get the software
-            # viewer. A battery with a device tree marks every one of them.
-            handheld = no_fixture_on_handheld("viewer fixture")
+            # korrid's chip table does not name every handheld's chip.
+            handheld = no_fixture_on_device_tree("viewer fixture")
             if handheld:
                 raise RuntimeError(
                     handheld + f" Its viewer plugin is not usable: {self.facts['plugin_missing']}."

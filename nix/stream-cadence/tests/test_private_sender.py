@@ -203,29 +203,29 @@ class SenderHeatGuard(Machine):
         self.assertIsNone(session.root)
 
 
-class NotOnAPassiveHandheld(Machine):
-    def test_sender_fixture_never_starts_on_a_device_with_a_battery_and_a_device_tree(self):
-        machine.supply(self.supplies, "axp20x-battery", "Battery")
+class NotOnADeviceTree(Machine):
+    def test_sender_fixture_never_starts_on_the_r36t_max(self):
+        # Its chip is not in korrid's table, its kernel shows no power supply, and it is cool.
+        viewer.COMPATIBLE.write_bytes(b"aislpc,r36t-max\0rockchip,rk3326\0")
         machine.device_tree()
+        self.zone(50000)
         session = self.session()
         facts = session.handle({"operation": "discover"})
-        self.assertEqual(facts["batteries"], ["axp20x-battery"])
-        self.assertIs(facts["passive_handheld"], True)
+        self.assertFalse(facts["hardware_picture_path"])
+        self.assertEqual(list(self.supplies.glob("*")), [])
+        self.assertIs(facts["device_tree"], True)
         with self.assertRaisesRegex(
-            RuntimeError,
-            "battery \\(axp20x-battery\\) and a device tree.*passive handheld runs only its installed viewer.*sender fixture does not start",
+            RuntimeError, "device tree.*runs only its installed viewer.*sender fixture does not start"
         ):
             self.prepare(session)
         self.assertIsNone(session.root)
         self.assertFalse((self.peers / "arguments.log").exists())
 
-    def test_a_laptop_has_a_battery_and_no_device_tree_and_hosts_the_fixture(self):
+    def test_a_laptop_has_no_device_tree_and_hosts_the_fixture(self):
         machine.supply(self.supplies, "AC", "Mains")
         machine.supply(self.supplies, "BAT0", "Battery")
         session = self.session()
-        facts = session.handle({"operation": "discover"})
-        self.assertEqual(facts["batteries"], ["BAT0"])
-        self.assertIs(facts["passive_handheld"], False)
+        self.assertIs(session.handle({"operation": "discover"})["device_tree"], False)
         self.prepare(session)
         self.assertTrue(session.close()["pass"])
 
@@ -235,12 +235,6 @@ class NotOnAPassiveHandheld(Machine):
         with self.assertRaisesRegex(RuntimeError, "The device is hot"):
             self.prepare(self.session())
         self.assertFalse((self.peers / "arguments.log").exists())
-
-    def test_a_controllers_battery_does_not_stop_the_fixture(self):
-        machine.supply(self.supplies, "controller_battery", "Battery", scope="Device")
-        session = self.session()
-        self.prepare(session)
-        self.assertTrue(session.close()["pass"])
 
 
 class NotOnAHandheld(Machine):

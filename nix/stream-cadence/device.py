@@ -120,45 +120,26 @@ POWER_SUPPLY = Path("/sys/class/power_supply")
 DEVICE_TREE = Path("/proc/device-tree")
 
 
-def batteries() -> list[str]:
-    """The device's own batteries.
+def device_tree() -> bool:
+    """Whether the kernel has a device tree: the tool then takes the device for a passive handheld.
 
-    A battery of a peripheral, such as a controller, has scope "Device" and is
-    not the device's own. A supply whose type cannot be read counts as a
-    battery: the fixtures stay off a handheld that the tool cannot classify.
+    Every Korri handheld has one. Nothing else marks them all: korrid's chip
+    table does not name every chip, and a handheld's kernel can show no power
+    supply at all. A server, a desktop or a laptop with ACPI firmware has no
+    device tree; its fans and thermal zones are what the heat guard is for.
     """
-    found = []
-    for supply in sorted(POWER_SUPPLY.glob("*")):
-        try:
-            kind = (supply / "type").read_text().strip()
-            scope = supply / "scope"
-            peripheral = scope.exists() and scope.read_text().strip() == "Device"
-        except OSError:
-            found.append(supply.name)
-            continue
-        if kind == "Battery" and not peripheral:
-            found.append(supply.name)
-    return found
+    return DEVICE_TREE.is_dir()
 
 
-def passive_handheld() -> bool:
-    """A battery of its own and a device tree: the tool takes the device for a passive handheld.
-
-    A laptop has a battery too, but its firmware gives no device tree. It has
-    fans, and thermal zones that the heat guard reads; that guard decides there.
-    """
-    return bool(batteries()) and DEVICE_TREE.is_dir()
-
-
-def no_fixture_on_handheld(fixture: str) -> str | None:
+def no_fixture_on_device_tree(fixture: str) -> str | None:
     """Why a fixture must not start on this device, or None. The rule of both agents."""
-    if not passive_handheld():
+    if not device_tree():
         return None
     return (
-        f"This device has a battery ({', '.join(batteries())}) and a device tree: the tool "
-        "takes it for a passive handheld. A fixture is a software load, and such a device "
-        "has no fan to carry it. A passive handheld runs only its installed viewer. "
-        f"The {fixture} does not start here."
+        f"This device has a device tree ({DEVICE_TREE}): the tool takes it for a passive "
+        "handheld. A fixture is a software load, and such a device has no fan to carry it. "
+        "A device with a device tree runs only its installed viewer; an ARM board on "
+        f"mains power is refused by the same rule. The {fixture} does not start here."
     )
 
 
