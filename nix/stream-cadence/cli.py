@@ -824,6 +824,11 @@ def view_case(
             viewer_refresh = seat["display"]["refresh_hz"]
             width, height = args.resolution or (mode["width"], mode["height"])
         else:
+            if seat.get("hardware_picture_path"):
+                # Before the sender starts: a handheld never gets the software viewer.
+                raise Refusal(
+                    f"The viewer device's chip has a hardware picture path ({seat['platform']}), and its viewer plugin is not usable: {seat.get('plugin_missing')}. The tool does not run its software viewer on such a device."
+                )
             if not paths["viewer"]:
                 raise Refusal(
                     "The viewer's agent finds no enabled viewer plugin, and the tool copied no viewer. Run the measure again."

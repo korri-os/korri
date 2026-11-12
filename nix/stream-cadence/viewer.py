@@ -183,23 +183,30 @@ def battery() -> list[dict]:
     return rows
 
 
-def plugin() -> dict | None:
-    """The enabled viewer plugin's files, as its manifest declares them."""
-    status = subprocess.run(
-        ["korri-plugin", "status", PLUGIN], capture_output=True, text=True, timeout=20
-    )
+def plugin() -> tuple[dict | None, str | None]:
+    """The enabled viewer plugin's files, as its manifest declares them, or why it is not usable."""
+    try:
+        status = subprocess.run(
+            ["korri-plugin", "status", PLUGIN], capture_output=True, text=True, timeout=20
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return None, f"korri-plugin status did not run: {error}"
     if status.returncode:
-        return None
+        return None, (
+            f"korri-plugin status ended with {status.returncode}: "
+            + (status.stderr.strip() or status.stdout.strip())[-500:]
+        )
     installed = json.loads(status.stdout)
-    if installed.get("desired", {}).get("state") != "Enabled":
-        return None
+    state = installed.get("desired", {}).get("state")
+    if state != "Enabled":
+        return None, f"the plugin's desired state is {state}, not Enabled"
     files = json.loads((Path(installed["package"]) / "manifest.json").read_text())["files"]
     return {
         "package": installed["package"],
         "release_version": installed.get("provenance", {}).get("release_version"),
         "moonlight": files["moonlight"],
         "mapping": files["mapping"],
-    }
+    }, None
 
 
 # korrid's choice of picture path: platform_from_path in
@@ -221,9 +228,11 @@ def picture_path(compatible: bytes) -> str:
     return PICTURE_PATH_DEFAULT
 
 
+COMPATIBLE = Path("/proc/device-tree/compatible")
+
+
 def platform() -> str:
-    path = Path("/proc/device-tree/compatible")
-    return picture_path(path.read_bytes() if path.exists() else b"")
+    return picture_path(COMPATIBLE.read_bytes() if COMPATIBLE.exists() else b"")
 
 
 PIN_LINE = r"(PIN on the target PC: )(\d{4})\b"
@@ -261,7 +270,8 @@ class Session:
         # The shape that device.py's compositor helpers read.
         self.shell = {"processes": {"compositor": self.compositor}}
         connection = os.environ.get("SSH_CONNECTION", "").split()
-        installed = plugin() if self.compositor else None
+        installed, missing = plugin() if self.compositor else (None, "this host has no Korri")
+        chosen = platform()
         self.facts: dict = {
             "model": model(),
             "architecture": os.uname().machine,
@@ -272,7 +282,11 @@ class Session:
             # has its own output, so it does not need exactly one product output.
             "display": get_output(self.shell) if installed else None,
             "plugin": installed,
-            "platform": platform(),
+            # Why no installed viewer is usable; a status that fails is not "absent".
+            "plugin_missing": missing,
+            "platform": chosen,
+            # korrid's chip table names a hardware picture path for this device.
+            "hardware_picture_path": chosen != PICTURE_PATH_DEFAULT,
             # The host that runs the tool, as this device reaches it: the far end
             # of the agent's own SSH connection. Absent with no SSH.
             "controller_address": connection[0] if connection else None,
@@ -399,8 +413,8 @@ class Session:
                 time.sleep(0.1)
 
     def hardware_path(self) -> bool:
-        """Whether this run shows the installed viewer on a hardware picture path."""
-        return not self.fixture and self.facts["platform"] != PICTURE_PATH_DEFAULT
+        """Whether this device has a hardware picture path. Only the installed viewer runs there."""
+        return bool(self.facts["hardware_picture_path"])
 
     def hardware_decode(self) -> bool | None:
         root = self.root
@@ -463,6 +477,15 @@ class Session:
             self.limits = {
                 zone["zone"]: thermal_limits(zone, self.end_margin) for zone in thermal_zones()
             }
+        if request["fixture"] and self.hardware_path():
+            # The fixture viewer decodes in software. On a handheld that is not the
+            # product's picture path, and it heats a passive device.
+            raise RuntimeError(
+                f"This device's chip has a hardware picture path ({self.facts['platform']}) in "
+                "korrid's table. The tool does not run its software viewer on such a device: "
+                "only the installed viewer plugin runs there. The plugin is not usable: "
+                f"{self.facts['plugin_missing']}."
+            )
         self.fixture = bool(request["fixture"])
         if self.compositor is None and not self.fixture:
             raise RuntimeError("A host with no Korri has no viewer plugin; only the fixture runs here.")
