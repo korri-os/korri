@@ -360,17 +360,25 @@ nix run .#stream-cadence -- view --sender local --viewer operator@viewer \
 
 `--sender-fixture` gives the measure a private sender. The sender target
 then needs no product Sunshine, no certificate socket and no product
-display. On a Korri device a `korri-game-*` unit still refuses the start and
-ends a run.
+display.
 
-`--allow-live-game` switches that one rule off for a run, to find out whether
-a private pair can run while a person plays on the device. The tool accepts
-it only for a private pair: `--sender-fixture`, the fixture viewer, and no
-battery and no hardware picture path on either device. Every other rule
-stays on. The result names the game units that were live at the start and at
-the end of the run (`discovered.live_game`), without their command lines.
-What the pair costs the player is not measured: the tool reads nothing of the
-game, so a person must watch it.
+**A game does not stop a private pair.** A private pair is the sender
+fixture with the fixture viewer. It uses neither the device's display nor the
+product Sunshine, so a `korri-game-*` unit neither refuses its start nor ends
+its run. Every other rule stays on. Everything that uses the device's display
+or the product Sunshine keeps the refusal: `run`, `view` against a product
+sender, and the installed viewer with any sender.
+
+The evidence for this is one trial on aka on 2026-11-11: a 10 s run and a
+60 s run of the pair while the owner played a game there and watched. Both
+runs were valid, the product PIDs and `/dev/input` were unchanged, and the
+owner noticed nothing in the game. What the pair costs a player is not
+measured: the tool reads nothing of the game. One person, one game and one
+device is not proof for another game or device.
+
+Every result names the game units that were live on each device at the start
+and at the end of the run (`discovered.live_game`), without their command
+lines.
 
 **Where the fixtures run.** Both fixtures, sender and viewer, are for a
 machine on mains power with no hardware picture path: a server or a desktop.
@@ -466,7 +474,8 @@ root, as for a product measure. Then:
   Its Sunshine has `mouse`, `keyboard` and `controller` off. A new entry
   under `/dev/input` during a run ends the run and fails the restore check
   (`restore.new_input_devices`), whoever made it.
-- A `korri-game-*` unit refuses the start and ends a run.
+- A `korri-game-*` unit does not stop the fixture; the result names the
+  units that are live (see above).
 - The tool itself asks the fixture's Sunshine nothing. With both targets on
   one device the stream uses loopback, which a device's firewall admits.
 - The product's Sunshine, compositor and korrid are not read by the

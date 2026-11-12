@@ -1,4 +1,4 @@
-"""The private pair beside a live game: only by an explicit option, and on record.
+"""The private pair beside a live game: it runs, and the result says so.
 
 A stand-in `systemctl` on PATH answers `list-units` with the units that the
 test names, so the real game check of both agents runs. Whether an agent is
@@ -15,8 +15,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cli import Refusal, live_game_refusal, parser, view  # noqa: E402
-import device  # noqa: E402
+from cli import parser  # noqa: E402
 import heat  # noqa: E402
 import machine  # noqa: E402
 import sender  # noqa: E402
@@ -103,41 +102,17 @@ class Device(unittest.TestCase):
         )
 
 
-class WithoutTheOption(Device):
-    def test_a_live_game_refuses_the_start_and_ends_a_run(self):
-        self.units.write_text(LINE)
-        self.assertEqual(device.live_games(), [GAME])
-        with self.assertRaisesRegex(RuntimeError, "korri-game-\\* unit is active"):
-            self.prepare_sender(self.sender_session())
-        with self.assertRaisesRegex(RuntimeError, "korri-game-\\* unit is active"):
-            self.prepare_viewer(self.viewer_session())
-        # A game that starts while the pair runs ends it.
-        self.units.write_text("")
-        pair = self.sender_session()
-        self.prepare_sender(pair)
-        self.units.write_text(LINE)
-        pair.last_game_check = 0.0
-        with self.assertRaisesRegex(RuntimeError, "korri-game-\\* unit is active"):
-            pair.check()
-        watched = self.viewer_session()
-        self.units.write_text("")
-        self.prepare_viewer(watched)
-        self.units.write_text(LINE)
-        watched.last_game_check = 0.0
-        with self.assertRaisesRegex(RuntimeError, "korri-game-\\* unit is active"):
-            watched.handle({"operation": "sample"})
+class APrivatePairBesideAGame(Device):
+    """A private pair does not use the device's display, so a game does not stop it."""
 
-
-class WithTheOption(Device):
     def test_the_pair_runs_beside_a_game_and_the_result_names_the_units(self):
         self.units.write_text(LINE)
         pair = self.sender_session()
-        built = self.prepare_sender(pair, allow_game=True)
+        built = self.prepare_sender(pair)
         self.assertEqual(built["facts"]["live_games_at_start"], [GAME])
-        pair.last_game_check = 0.0
         pair.check()
         watched = self.viewer_session()
-        prepared = self.prepare_viewer(watched, allow_game=True)
+        prepared = self.prepare_viewer(watched, private_pair=True)
         self.assertEqual(prepared["live_games"], [GAME])
         watched.last_game_check = 0.0
         watched.handle({"operation": "sample"})
@@ -149,69 +124,54 @@ class WithTheOption(Device):
         # Unit names only: no command line of the game is kept.
         self.assertNotIn("secret-argument", json.dumps([built, prepared, closed]))
 
+    def test_a_pair_with_no_game_records_that_too(self):
+        pair = self.sender_session()
+        self.assertEqual(self.prepare_sender(pair)["facts"]["live_games_at_start"], [])
+        watched = self.viewer_session()
+        self.assertEqual(self.prepare_viewer(watched, private_pair=True)["live_games"], [])
+        self.assertEqual(pair.close()["live_games"], [])
+        self.assertEqual(watched.close()["live_games"], [])
+
     def test_every_other_rule_stays_on(self):
         self.units.write_text(LINE)
-        # A battery, a hot host and an open uinput still refuse the sender fixture.
-        machine.supply(device.POWER_SUPPLY, "BAT0", "Battery")
-        with self.assertRaisesRegex(RuntimeError, "battery"):
-            self.prepare_sender(self.sender_session(), allow_game=True)
-        with self.assertRaisesRegex(RuntimeError, "battery"):
-            self.prepare_viewer(self.viewer_session(), allow_game=True)
-        for entry in (device.POWER_SUPPLY / "BAT0").iterdir():
-            entry.unlink()
-        (device.POWER_SUPPLY / "BAT0").rmdir()
         sender.UINPUT.touch()
         with self.assertRaisesRegex(RuntimeError, "uinput"):
-            self.prepare_sender(self.sender_session(), allow_game=True)
+            self.prepare_sender(self.sender_session())
         sender.UINPUT.unlink()
         # The input-device watch still ends a run.
         pair = self.sender_session()
-        self.prepare_sender(pair, allow_game=True)
+        self.prepare_sender(pair)
         (sender.INPUT_DEVICES / "event9").touch()
         with self.assertRaisesRegex(RuntimeError, "New input devices"):
             pair.check()
 
-    def test_the_installed_viewer_never_runs_beside_a_game(self):
+
+class WhatUsesTheDisplayStillRefuses(Device):
+    def test_fixture_viewer_of_a_product_sender_refuses_and_ends_for_a_game(self):
+        # Not a private pair: the stream comes from the product Sunshine.
+        self.units.write_text(LINE)
+        with self.assertRaisesRegex(RuntimeError, "korri-game-\\* unit is active"):
+            self.prepare_viewer(self.viewer_session())
+        self.units.write_text("")
         watched = self.viewer_session()
-        with self.assertRaisesRegex(RuntimeError, "only .* fixture"):
+        self.prepare_viewer(watched)
+        self.units.write_text(LINE)
+        watched.last_game_check = 0.0
+        with self.assertRaisesRegex(RuntimeError, "korri-game-\\* unit is active"):
+            watched.handle({"operation": "sample"})
+
+    def test_installed_viewer_refuses_for_a_game_also_with_a_private_sender(self):
+        self.units.write_text(LINE)
+        watched = self.viewer_session()
+        with self.assertRaisesRegex(RuntimeError, "korri-game-\\* unit is active"):
             watched.handle(
-                {"operation": "prepare", "fixture": False, "server_certificate": "public", "allow_game": True}
+                {"operation": "prepare", "fixture": False, "server_certificate": "public", "private_pair": True}
             )
         self.assertIsNone(watched.root)
 
-
-class TheOptionIsRefusedElsewhere(unittest.TestCase):
-    plain = {"batteries": [], "hardware_picture_path": False, "plugin": None}
-
-    def test_only_for_two_fixtures_on_a_mains_device_with_no_hardware_path(self):
-        ok = dict(sender_fixture=True, sender=self.plain, viewer=self.plain)
-        self.assertIsNone(live_game_refusal(**ok))
-        cases = {
-            "--sender-fixture": dict(ok, sender_fixture=False),
-            "installed viewer": dict(ok, viewer=dict(self.plain, plugin={"moonlight": "/x"})),
-            "viewer .* battery": dict(ok, viewer=dict(self.plain, batteries=["BAT0"])),
-            "sender .* battery": dict(ok, sender=dict(self.plain, batteries=["BAT0"])),
-            "viewer .* hardware picture path": dict(
-                ok, viewer=dict(self.plain, hardware_picture_path=True)
-            ),
-            "sender .* hardware picture path": dict(
-                ok, sender=dict(self.plain, hardware_picture_path=True)
-            ),
-        }
-        for words, case in cases.items():
-            with self.subTest(case=words):
-                self.assertRegex(live_game_refusal(**case), words)
-
-    def test_the_tool_refuses_the_option_without_the_sender_fixture_before_anything(self):
-        args = parser().parse_args(
-            ["view", "--sender", "operator@sender", "--viewer", "operator@viewer", "--allow-live-game"]
-        )
-        self.assertTrue(args.allow_live_game)
-        with self.assertRaisesRegex(Refusal, "--allow-live-game.*--sender-fixture"):
-            view(args)
-        self.assertFalse(
-            parser().parse_args(["view", "--sender", "a", "--viewer", "b"]).allow_live_game
-        )
+    def test_no_option_switches_the_refusal_off(self):
+        with self.assertRaises(SystemExit):
+            parser().parse_args(["view", "--sender", "a", "--viewer", "b", "--allow-live-game"])
 
 
 if __name__ == "__main__":

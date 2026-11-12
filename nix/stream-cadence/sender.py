@@ -12,8 +12,8 @@ fixture's programs the product compositor's user. The agent owns the run
 directory and writes only there; the programs write in `home` and `rt`.
 
 The fixture does not start on a handheld or a laptop (a hardware picture
-path, or a battery), on a hot host, where its Sunshine could make an input
-device, or while a game runs on a Korri device.
+path, or a battery), on a hot host, or where its Sunshine could make an input
+device. A game on a Korri device does not stop it; the result names the game.
 """
 
 import base64
@@ -43,7 +43,6 @@ from device import (
     batteries,
     deferred_termination,
     end_with_agent,
-    games,
     hand_over,
     let_in,
     live_games,
@@ -66,7 +65,6 @@ RUNS = Path("/tmp")
 RENDER_NODES = Path("/dev/dri")
 INPUT_DEVICES = Path("/dev/input")
 UINPUT = Path("/dev/uinput")
-GAME_CHECK_SECONDS = 2.0
 DISPLAY = "wayland-1"
 RENDERER = "gles2"
 APPLICATION = "Desktop"
@@ -320,8 +318,6 @@ class Session:
         self.inputs: set[str] = input_devices()
         # A Korri device: the agent is root there and took the compositor's user.
         self.watch_games = self.identity is not None
-        self.allow_game = False
-        self.last_game_check = 0.0
         self.root: Path | None = None
         self.sway = ""
         self.sunshine = ""
@@ -532,16 +528,10 @@ class Session:
     def prepare(self, request: dict) -> dict:
         if self.root is not None:
             raise RuntimeError("sender fixture already prepared")
-        # On a Korri device a game has the machine: the fixture does not start.
-        # Only the tool's explicit option lets the pair run beside one, and the
-        # result then names the units that were live.
-        self.allow_game = bool(request.get("allow_game"))
-        if self.watch_games:
-            if self.allow_game:
-                self.facts["live_games_at_start"] = live_games()
-            else:
-                games()
-            self.last_game_check = time.monotonic()
+        # A game on the device does not stop the fixture: it uses neither the
+        # device's display nor the product Sunshine. A game changes the pair's
+        # numbers, so the result names the units that are live.
+        self.facts["live_games_at_start"] = live_games() if self.watch_games else []
         # Stock Sunshine makes a virtual mouse and keyboard when it starts, and a
         # touch screen and a pen tablet for each client, all through uinput. The
         # product's input stack would see them. The fixture runs only where its
@@ -722,14 +712,6 @@ class Session:
                 f"New input devices appeared while the fixture ran: {', '.join(appeared)}. "
                 "The fixture must make none; the run ends."
             )
-        if (
-            self.watch_games
-            and not self.allow_game
-            and time.monotonic() - self.last_game_check >= GAME_CHECK_SECONDS
-        ):
-            # A game that starts during a measure ends the measure: the person wins.
-            games()
-            self.last_game_check = time.monotonic()
 
     def start(self, request: dict) -> dict:
         assert self.root is not None
@@ -835,15 +817,15 @@ class Session:
                     break
                 time.sleep(0.1)
         self.root = None
-        live: dict = {}
-        if self.watch_games and self.allow_game:
-            # The run was allowed beside a game: which units are live at its end.
+        # Which game units are live at the end of the run; none on a host with no Korri.
+        live: list[str] = []
+        if self.watch_games:
             try:
-                live["live_games"] = live_games()
+                live = live_games()
             except Exception as error:
                 errors.append(f"live games: {error}")
         return {
-            **live,
+            "live_games": live,
             "pass": not errors
             and not remaining
             and not fails_restore(others, self.user_id())

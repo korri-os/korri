@@ -412,26 +412,6 @@ def plugin_enabled(code: int, status: str) -> bool:
     return state == "Enabled"
 
 
-def live_game_refusal(sender_fixture: bool, sender: dict, viewer: dict) -> str | None:
-    """Why --allow-live-game is not accepted for this run, or None.
-
-    Only a private pair may run beside a game: both ends are fixtures, on a
-    device with no battery and no hardware picture path. `sender` and `viewer`
-    are what the two agents discovered.
-    """
-    option = "--allow-live-game"
-    if not sender_fixture:
-        return f"{option} is accepted only with --sender-fixture: the product sender uses the display that the game has."
-    if viewer.get("plugin"):
-        return f"{option} is not accepted with the installed viewer: it shows on the device's own display, which the game has. Only the fixture viewer may run beside a game."
-    for end, facts in (("sender", sender), ("viewer", viewer)):
-        if facts.get("batteries"):
-            return f"{option} is not accepted: the {end} device has a battery ({', '.join(facts['batteries'])}), and no fixture runs there."
-        if facts.get("hardware_picture_path"):
-            return f"{option} is not accepted: the {end} device has a hardware picture path, and no fixture runs there."
-    return None
-
-
 def viewer_stream_host(
     given: str | None,
     *,
@@ -838,11 +818,16 @@ def view_case(
         # Before the sender fixture or anything else starts: a viewer device that
         # is hot, or that the heat guard cannot read, gets no run.
         viewer.request("check")
-        if args.allow_live_game:
-            refused = live_game_refusal(args.sender_fixture, facts, seat)
-            if refused:
-                raise Refusal(refused)
-            facts["live_game"] = {"allowed": True}
+        # Which game units ran on each device at the start and at the end. A
+        # product sender and an installed viewer refuse beside a game, so only a
+        # private pair can name one. A game changes the numbers: verdict compares
+        # this fact.
+        facts["live_game"] = {
+            "sender_at_start": [],
+            "viewer_at_start": [],
+            "sender_at_end": [],
+            "viewer_at_end": [],
+        }
         same_clock = seat["boot_id"] == facts["boot_id"]
         plugin = seat["plugin"]
         if plugin:
@@ -878,11 +863,9 @@ def view_case(
                 width=width,
                 height=height,
                 fps=fps,
-                allow_game=args.allow_live_game,
             )
             facts.update(built["facts"])
-            if args.allow_live_game:
-                facts["live_game"]["sender_at_start"] = facts.pop("live_games_at_start", None)
+            facts["live_game"]["sender_at_start"] = facts.pop("live_games_at_start", [])
             refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
         else:
             refresh = min(facts["display"]["refresh_hz"], viewer_refresh)
@@ -927,10 +910,11 @@ def view_case(
                 if args.test_heat_end_margin is None
                 else round(args.test_heat_end_margin * 1000)
             ),
-            allow_game=args.allow_live_game,
+            # A private pair: the sender is a fixture. With the fixture viewer it
+            # runs beside a game.
+            private_pair=args.sender_fixture,
         )
-        if args.allow_live_game:
-            facts["live_game"]["viewer_at_start"] = prepared.get("live_games")
+        facts["live_game"]["viewer_at_start"] = prepared.get("live_games", [])
         moonlight = plugin["moonlight"] if plugin else paths["viewer"] + "/bin/moonlight"
         if args.sender_fixture:
             # Pairing replaces the certificate grant. The viewer binary of this
@@ -1175,9 +1159,8 @@ def view_case(
             except Exception as error:
                 facts[name] = dict(failed, errors=[str(error)])
         if "live_game" in facts:
-            # The run was allowed beside a game: the units that were live at its end.
-            facts["live_game"]["sender_at_end"] = facts["restore"].get("live_games")
-            facts["live_game"]["viewer_at_end"] = facts["viewer_restore"].get("live_games")
+            facts["live_game"]["sender_at_end"] = facts["restore"].get("live_games", [])
+            facts["live_game"]["viewer_at_end"] = facts["viewer_restore"].get("live_games", [])
         restored = facts["restore"]["pass"] and facts["viewer_restore"]["pass"]
         if not restored:
             facts["valid"] = False
@@ -1208,8 +1191,6 @@ def view(args: argparse.Namespace) -> int:
             f"The target {LOCAL} is the host that runs the tool, with no root. It can host the sender fixture only: add --sender-fixture."
         )
     args.ssh_target = sender_target
-    if args.allow_live_game and not args.sender_fixture:
-        raise Refusal(live_game_refusal(False, {}, {}))
 
     def built(
         target: str | None, options: list[str], extra: tuple[str, ...]
@@ -1554,11 +1535,6 @@ def parser() -> argparse.ArgumentParser:
     watch.add_argument("--stream-host", help="sender address as this host reaches it")
     watch.add_argument(
         "--viewer-stream-host", help="sender address as the viewer reaches it"
-    )
-    watch.add_argument(
-        "--allow-live-game",
-        action="store_true",
-        help="let a private pair (--sender-fixture and the fixture viewer) run while a korri-game-* unit is active on the device; the result names the units; what the pair costs the player is not measured",
     )
     watch.add_argument("--fps", type=positive)
     watch.add_argument(
