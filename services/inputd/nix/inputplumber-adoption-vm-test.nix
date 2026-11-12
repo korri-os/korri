@@ -73,6 +73,17 @@ pkgs.testers.runNixOSTest {
       };
     };
     systemd.services.inputplumber.environment.LOG_LEVEL = lib.mkForce "debug";
+    # The pinned daemon passes /devices/... (without /sys) to udevadm info.
+    # Normalize only that argument in this guest, then use the real udevadm:
+    # the admission property below must come from udev, not a canned reply.
+    systemd.services.inputplumber.path = lib.mkBefore [
+      (pkgs.writeShellScriptBin "udevadm" ''
+        if test "$#" -eq 2 && test "$1" = info && [[ "$2" == /devices/* ]]; then
+          exec ${pkgs.systemd}/bin/udevadm info --path="/sys$2"
+        fi
+        exec ${pkgs.systemd}/bin/udevadm "$@"
+      '')
+    ];
     systemd.services.korri-inputd.wantedBy = lib.mkForce [ ];
     systemd.services.adoption-profile = {
       wantedBy = [ "multi-user.target" ];
