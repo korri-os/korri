@@ -100,13 +100,14 @@ export component VelvetCurtain inherits Rectangle {
             line: root.curtain.step-line;
             size: root.body;
         }
-        if root.curtain.progress > -2: Rectangle {
+        if root.curtain.progress == "indeterminate" || root.curtain.progress == "measured": Rectangle {
             height: root.curtain.progress-line == "" ? root.body * 0.6 : root.body * 2.2;
             VelvetBar {
                 x: parent.width * 0.2;
                 y: root.body * 0.2;
                 width: parent.width * 0.6;
-                share: root.curtain.progress;
+                travels: root.curtain.progress == "indeterminate";
+                share: root.curtain.progress-share;
             }
             if root.curtain.progress-line != "": Text {
                 x: 0;

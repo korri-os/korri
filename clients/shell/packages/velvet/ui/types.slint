@@ -232,9 +232,10 @@ export struct Row {
     value: string,
     // Under the label: Korri's description, a source, why it is dim.
     note: string,
-    // "", "check", "more", "step", "busy", "lock", "on", "off".
+    // "none", "check", "more", "step", "busy", "lock", "on", "off".
     mark: string,
-    // Wi-Fi bars, 0 to 4; -1: none.
+    // A network's strength: whether the row shows it, and its bars, 0 to 4.
+    signal: bool,
     bars: int,
     dim: bool,
     danger: bool,
@@ -286,8 +287,10 @@ export struct Curtain {
     more-up: bool,
     more-down: bool,
     step-line: string,
-    // Measured progress, 0 to 1; -1: under way with no known end; -2: none.
-    progress: float,
+    // "none", "indeterminate" (under way, no end Korri knows) or "measured".
+    progress: string,
+    // How far, 0 to 1, when it is measured.
+    progress-share: float,
     progress-line: string,
     stack: bool,
 }

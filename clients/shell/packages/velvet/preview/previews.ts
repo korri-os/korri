@@ -52,7 +52,10 @@ const one = (component: string, props: string) => `${component} { ${props} }`
     { name: "Short", body: one("VelvetBadge", 'x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: "GBA";') },
     { name: "Long", body: one("VelvetBadge", 'x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; text: "Nintendo 64";') },
   ])
-  add("atoms", "VelvetBar", [0.5, 1, 0.04].map((share, index) => ({ name: ["Half", "Full", "Started"][index]!, body: one("VelvetBar", `x: parent.width * 0.2; y: parent.height / 2; width: parent.width * 0.6; share: ${share};`) })))
+  add("atoms", "VelvetBar", [
+    ...[0.5, 1, 0.04].map((share, index) => ({ name: ["Half", "Full", "Started"][index]!, body: one("VelvetBar", `x: parent.width * 0.2; y: parent.height / 2; width: parent.width * 0.6; share: ${share};`) })),
+    { name: "UnderWay", body: one("VelvetBar", "x: parent.width * 0.2; y: parent.height / 2; width: parent.width * 0.6; travels: true;") },
+  ])
   add("atoms", "VelvetCaps", [
     { name: "Title", body: one("VelvetCaps", `x: Tokens.screen.pad-x * ${U}; y: parent.height * 0.3; width: parent.width - 2 * self.x; lines: ["EMBER", "ROAD"]; size: Tokens.screen.title * ${U};`) },
     { name: "Centred", body: one("VelvetCaps", `x: Tokens.screen.pad-x * ${U}; y: parent.height * 0.3; width: parent.width - 2 * self.x; lines: ["COULD NOT START"]; size: Tokens.screen.head * ${U}; centred: true;`) },

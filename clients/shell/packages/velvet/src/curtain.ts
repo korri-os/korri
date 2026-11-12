@@ -37,6 +37,17 @@ export interface CurtainButton {
   readonly act: Act
 }
 
+/** Whether work is under way, and how far it is when Korri measures it. */
+export type Progress =
+  | { readonly kind: "none" }
+  /** Under way, with no end Korri knows. */
+  | { readonly kind: "indeterminate" }
+  /** `fraction` of the way, 0 to 1. */
+  | { readonly kind: "measured"; readonly fraction: number }
+
+const NO_PROGRESS: Progress = { kind: "none" }
+const UNDER_WAY: Progress = { kind: "indeterminate" }
+
 export interface CurtainSpec {
   /** Names the layer: a new key puts focus on `first` and the words at their top. */
   readonly key: string
@@ -47,8 +58,7 @@ export interface CurtainSpec {
   readonly game?: Game
   readonly words: readonly string[]
   readonly steps?: SurfaceSteps
-  /** 0 to 1; -1: under way with no known end; -2: none. */
-  readonly progress: number
+  readonly progress: Progress
   readonly progressLine?: string
   readonly buttons: readonly CurtainButton[]
   readonly first: number
@@ -94,7 +104,10 @@ function statusCurtain(state: State, model: Model): CurtainSpec | undefined {
         key: `busy:${status.kicker}:${status.gameId ?? ""}`, kind: "busy", kicker: status.kicker, ...named,
         words: status.detail === undefined ? [] : [status.detail],
         ...(status.steps === undefined || status.steps.labels.length === 0 ? {} : { steps: status.steps }),
-        progress: progress === undefined ? (status.steps === undefined ? -1 : -2) : progress.total === undefined || progress.total <= 0 ? -1 : Math.max(0, Math.min(1, progress.done / progress.total)),
+        // Steps say where the work is; with neither steps nor a measure the bar only says it is under way.
+        progress: progress === undefined ? (status.steps === undefined ? UNDER_WAY : NO_PROGRESS)
+          : progress.total === undefined || progress.total <= 0 ? UNDER_WAY
+            : { kind: "measured", fraction: Math.max(0, Math.min(1, progress.done / progress.total)) },
         ...(progress === undefined ? {} : { progressLine: progress.total === undefined ? `${bytes(progress.done)} so far` : `${bytes(progress.done)} of ${bytes(progress.total)}` }),
         buttons: actionButtons(actions), first: firstOf(actions, decline),
         back: decline === undefined ? "swallow" : run(decline),
@@ -102,36 +115,36 @@ function statusCurtain(state: State, model: Model): CurtainSpec | undefined {
     }
     case "Confirm":
       return {
-        key: `confirm:${status.kicker}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: -2,
+        key: `confirm:${status.kicker}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
         buttons: actionButtons(status.actions), first: firstOf(status.actions, decline), back: decline === undefined ? "swallow" : run(decline),
       }
     case "ChooseSave": {
       const sides: CurtainButton[] = status.sides.map(side => ({ label: side.device, note: `${saved(side.endedAt, model.publishedAt)}, ${duration(side.durationSeconds)} session`, act: run(side.actionId) }))
       return {
-        key: `saves:${status.gameId}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: -2,
+        key: `saves:${status.gameId}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
         buttons: [...sides, ...actionButtons(status.actions)], first: firstOf(status.actions, decline, sides.length), column: true,
         back: decline === undefined ? "swallow" : run(decline),
       }
     }
     case "Paused":
       return {
-        key: `paused:${status.kicker}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: -2,
+        key: `paused:${status.kicker}`, kind: "ask", kicker: status.kicker, ...named, words: status.detail === undefined ? [] : [status.detail], progress: NO_PROGRESS,
         buttons: actionButtons(status.actions), first: firstOf(status.actions, decline), back: decline === undefined ? "swallow" : run(decline),
       }
     case "Running":
-      return { key: `running:${status.gameId ?? ""}`, kind: "running", kicker: status.kicker, ...named, words: [], progress: -2, buttons: [], first: 0, back: "swallow" }
+      return { key: `running:${status.gameId ?? ""}`, kind: "running", kicker: status.kicker, ...named, words: [], progress: NO_PROGRESS, buttons: [], first: 0, back: "swallow" }
     case "Ended": {
       const dismiss = send({ _tag: "Dismiss" })
       return {
         key: `ended:${status.reason}`, kind: "problem", kicker: status.kicker, ...(status.gameTitle === undefined ? named : { ...named, name: status.gameTitle }),
-        words: [status.reason], progress: -2, buttons: [{ label: "Dismiss", act: dismiss }], first: 0, back: dismiss,
+        words: [status.reason], progress: NO_PROGRESS, buttons: [{ label: "Dismiss", act: dismiss }], first: 0, back: dismiss,
       }
     }
     case "Problem": {
       const dismiss = send({ _tag: "Dismiss" })
       return {
         key: `problem:${status.kicker}:${status.reason}`, kind: "problem", kicker: status.kicker, ...(status.gameTitle === undefined ? named : { ...named, name: status.gameTitle }),
-        words: [status.reason], progress: -2,
+        words: [status.reason], progress: NO_PROGRESS,
         buttons: [{ label: "Dismiss", act: dismiss }, ...(status.canRetry ? [{ label: "Try again", act: send({ _tag: "Retry" }) }] : [])], first: 0, back: dismiss,
       }
     }
@@ -148,7 +161,7 @@ function identityCurtain(state: State, model: Model): CurtainSpec | undefined {
   const flow = state.identity
   if (flow.f === "disposition") {
     return {
-      key: "identity:disposition", kind: "ask", kicker: "This device's records", progress: -2,
+      key: "identity:disposition", kind: "ask", kicker: "This device's records", progress: NO_PROGRESS,
       words: ["Transfer keeps this device's play history, saves and settings under the new identity.", "Delete removes them from this device."],
       buttons: [
         { label: "Cancel", act: IDLE },
@@ -164,7 +177,7 @@ function identityCurtain(state: State, model: Model): CurtainSpec | undefined {
       ? send({ _tag: "SwitchIdentityFromBackup", encryptedSecret: source.encryptedSecret, password: source.password, disposition: flow.disposition, trustLossConfirmed: true })
       : send({ _tag: "SwitchIdentityToNip46", bunkerUri: source.bunkerUri, disposition: flow.disposition, trustLossConfirmed: true })
     return {
-      key: "identity:trust", kind: "ask", kicker: "Switch identity?", progress: -2,
+      key: "identity:trust", kind: "ask", kicker: "Switch identity?", progress: NO_PROGRESS,
       words: ["Your other devices stop trusting this one until you approve it again."],
       buttons: [{ label: "Cancel", act: IDLE }, { label: "Switch", danger: true, act: seq(request, IDLE) }], first: 0, back: IDLE,
     }
@@ -174,11 +187,11 @@ function identityCurtain(state: State, model: Model): CurtainSpec | undefined {
   const dismiss = seq(send({ _tag: "DismissIdentityStatus" }), IDLE)
   switch (status._tag) {
     case "Working":
-      return { key: `identity:working:${status.operation}`, kind: "busy", kicker: status.operation, words: [], progress: -1, buttons: [], first: 0, back: "swallow" }
+      return { key: `identity:working:${status.operation}`, kind: "busy", kicker: status.operation, words: [], progress: UNDER_WAY, buttons: [], first: 0, back: "swallow" }
     case "Problem":
-      return { key: `identity:problem:${status.message}`, kind: "problem", kicker: "That did not work", words: [status.message], progress: -2, buttons: [{ label: "Dismiss", act: dismiss }], first: 0, back: dismiss }
+      return { key: `identity:problem:${status.message}`, kind: "problem", kicker: "That did not work", words: [status.message], progress: NO_PROGRESS, buttons: [{ label: "Dismiss", act: dismiss }], first: 0, back: dismiss }
     case "Switched":
-      return { key: `identity:switched:${status.ownerPublicKey}`, kind: "ask", kicker: "Identity switched", words: ["This device now belongs to", shortKey(status.ownerPublicKey)], progress: -2, buttons: [{ label: "Done", act: dismiss }], first: 0, back: dismiss }
+      return { key: `identity:switched:${status.ownerPublicKey}`, kind: "ask", kicker: "Identity switched", words: ["This device now belongs to", shortKey(status.ownerPublicKey)], progress: NO_PROGRESS, buttons: [{ label: "Done", act: dismiss }], first: 0, back: dismiss }
     default:
       return undefined
   }
@@ -188,7 +201,7 @@ function askCurtain(state: State): CurtainSpec | undefined {
   const ask = state.ask
   if (ask === undefined) return undefined
   return {
-    key: `ask:${ask.spec.title}:${ask.spec.buttons.length}`, kind: "ask", kicker: ask.spec.title, words: ask.spec.lines, progress: -2,
+    key: `ask:${ask.spec.title}:${ask.spec.buttons.length}`, kind: "ask", kicker: ask.spec.title, words: ask.spec.lines, progress: NO_PROGRESS,
     buttons: ask.spec.buttons.map(button => ({ label: button.label, ...(button.danger === true ? { danger: true } : {}), act: seq({ t: "ask", ask: CLOSED }, button.act) })),
     first: 0, back: { t: "ask", ask: CLOSED },
   }
@@ -233,7 +246,7 @@ export function curtainLayout(spec: CurtainSpec, plan: Plan): CurtainLayout {
     spec.name === undefined ? 0 : plan.body * 1.2,
     plan.kicker * 2 + (spec.kind === "problem" ? plan.body * 1.8 : 0),
     spec.steps === undefined ? 0 : plan.body * 2.4,
-    spec.progress > -2 ? plan.body * 2 : 0,
+    spec.progress.kind === "none" ? 0 : plan.body * 2,
     buttons,
   ].filter(part => part > 0)
   const fixed = fixedParts.reduce((sum, part) => sum + part, 0) + gap * fixedParts.length + plan.padY * 2

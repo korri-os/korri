@@ -66,13 +66,13 @@ export const sortWords = (order: string): string => (order === "recent" ? "recen
 function sortSheet(state: State, model: Model): PanelSpec {
   const set = state.set
   const rows: RowSpec[] = [head("o:sort", "Sort")]
-  for (const [order, label] of SORTS) rows.push({ id: `o:${order}`, kind: "row", label, mark: set?.order === order ? "check" : "", press: { t: "sort", order } })
+  for (const [order, label] of SORTS) rows.push({ id: `o:${order}`, kind: "row", label, ...(set?.order === order ? { mark: "check" as const } : {}), press: { t: "sort", order } })
   // Every game can be narrowed to one system; a shelf's own set is already one thing.
   const systems = (model.systems ?? []).filter(system => system.total > 0)
   if (set?.key === "every" && systems.length > 0) {
     rows.push(head("o:show", "Show"))
-    rows.push({ id: "o:all", kind: "row", label: "Every system", mark: set.systemId === undefined ? "check" : "", press: { t: "sort", systemId: null } })
-    for (const system of systems) rows.push({ id: `o:sys:${system.systemId}`, kind: "row", label: system.system, value: String(system.total), mark: set.systemId === system.systemId ? "check" : "", press: { t: "sort", systemId: system.systemId } })
+    rows.push({ id: "o:all", kind: "row", label: "Every system", ...(set.systemId === undefined ? { mark: "check" as const } : {}), press: { t: "sort", systemId: null } })
+    for (const system of systems) rows.push({ id: `o:sys:${system.systemId}`, kind: "row", label: system.system, value: String(system.total), ...(set.systemId === system.systemId ? { mark: "check" as const } : {}), press: { t: "sort", systemId: system.systemId } })
   }
   return { key: "sheet:sort", title: "Sort and filter", rows, buttons: [], back: CLOSE, first: `o:${set?.order ?? "recent"}` }
 }
@@ -304,7 +304,7 @@ function onboardingPanel(state: State, model: Model): PanelSpec {
       const controllers = model.onboarding?.controllers ?? []
       const rows: RowSpec[] = controllers.length === 0
         ? [note("c:none", "No controller is connected yet.")]
-        : controllers.map(controller => ({ id: `c:${controller.id}`, kind: "row" as const, label: controller.name, value: controller.heard ? "Heard" : "Waiting", mark: controller.heard ? "check" as const : "" as const, rests: true }))
+        : controllers.map(controller => ({ id: `c:${controller.id}`, kind: "row" as const, label: controller.name, value: controller.heard ? "Heard" : "Waiting", ...(controller.heard ? { mark: "check" as const } : {}), rests: true }))
       return { ...base, title: "Controllers", sub: "Press a button on each controller you will play with.", rows, buttons: [next(anyHeard(model))], first: "b:next" }
     }
     case "wifi": {

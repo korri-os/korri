@@ -126,7 +126,7 @@ export interface RowSpec {
   readonly label: string
   readonly value?: string
   readonly note?: string
-  readonly mark?: "" | "check" | "more" | "step" | "busy" | "lock" | "on" | "off"
+  readonly mark?: "check" | "more" | "step" | "busy" | "lock" | "on" | "off"
   readonly bars?: number
   readonly dim?: boolean
   readonly danger?: boolean

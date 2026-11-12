@@ -86,7 +86,7 @@ export component VelvetSet inherits Rectangle {
             text: root.set.now-fact;
         }
     }
-    if root.set.state == "": VelvetGrid {
+    if root.set.state == "ready": VelvetGrid {
         x: 0;
         y: Tokens.screen.lib-top * root.u;
         width: parent.width;
@@ -98,7 +98,7 @@ export component VelvetSet inherits Rectangle {
         activated(target, at, released) => { root.activated(target, at, released); }
         dragged(region, by) => { root.dragged(region, by); }
     }
-    if root.set.state != "": VelvetWords {
+    if root.set.state == "loading" || root.set.state == "none": VelvetWords {
         x: root.pad-x;
         y: Tokens.screen.lib-top * root.u + root.fact;
         width: parent.width - 2 * root.pad-x;

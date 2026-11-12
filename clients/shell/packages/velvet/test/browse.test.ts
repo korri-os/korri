@@ -281,3 +281,23 @@ describe("no art, no hole", () => {
     expect(bare.view.stage.artShown).toBe(false)
   })
 })
+
+describe("progress is a state, not a number", () => {
+  const curtain = (name: string) => {
+    const scene = scenario(name)
+    const run = new Play(scene.models[0])
+    for (const step of scene.steps) run.step(step, scene.models)
+    return run.view.curtain
+  }
+  test("none, under way with no known end, and measured", () => {
+    expect(curtain("problem").progress).toBe("none")
+    expect(curtain("busy-steps").progress).toBe("none")
+    expect(curtain("busy-plain").progress).toBe("indeterminate")
+    expect(curtain("identity-working").progress).toBe("indeterminate")
+    const measured = curtain("busy-progress")
+    expect(measured.progress).toBe("measured")
+    expect(measured.progressShare).toBeGreaterThan(0)
+    expect(measured.progressShare).toBeLessThanOrEqual(1)
+    expect(curtain("busy-plain").progressShare).toBe(0)
+  })
+})

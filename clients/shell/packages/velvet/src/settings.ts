@@ -49,15 +49,17 @@ export function actionRow(id: string, action: SurfaceAction, run: Act): RowSpec 
   }
 }
 
-export function choiceIndex(item: SurfaceSettingItem): number {
-  if (item.interaction?.kind !== "choice") return -1
+/** The place of the choice in force among a choice's values; undefined when none is (or the item is no choice). */
+export function choiceIndex(item: SurfaceSettingItem): number | undefined {
+  if (item.interaction?.kind !== "choice") return undefined
   const selected = item.interaction.selected
-  return item.interaction.choices.findIndex(choice => choice.value === selected)
+  const at = item.interaction.choices.findIndex(choice => choice.value === selected)
+  return at < 0 ? undefined : at
 }
 
 /** A choice Korri publishes with none of its values chosen. */
 export const isPick = (item: SurfaceSettingItem): boolean =>
-  item.interaction?.kind === "choice" && item.interaction.choices.length > 0 && choiceIndex(item) < 0
+  item.interaction?.kind === "choice" && item.interaction.choices.length > 0 && choiceIndex(item) === undefined
 
 export function numberRange(range: { readonly min?: number; readonly max?: number }): string | undefined {
   if (range.min !== undefined && range.max !== undefined) return `${range.min} to ${range.max}`
@@ -120,7 +122,7 @@ export function settingRows(item: SurfaceSettingItem, status: SurfaceSettingsSta
           }
           break
         }
-        const at = choiceIndex(item)
+        const at = choiceIndex(item) ?? 0
         const stepTo = (direction: -1 | 1): Act => {
           if (saving) return NONE
           const next = (at + direction + count) % count
@@ -259,7 +261,7 @@ export function wifiRows(model: Pick<Model, "network">): RowSpec[] {
         : send({ _tag: "ConnectWifi", networkId: item.id })
     rows.push({
       id, kind: "row", label: item.ssid, value, bars: barsOf(item.strengthPercent),
-      mark: item.ssid === on ? "check" : joining && attempt.ssid === item.ssid ? "busy" : item.secured && !item.known ? "lock" : "",
+      ...(item.ssid === on ? { mark: "check" as const } : joining && attempt.ssid === item.ssid ? { mark: "busy" as const } : item.secured && !item.known ? { mark: "lock" as const } : {}),
       press,
     })
     if (attempt._tag === "Failed" && attempt.ssid === item.ssid) rows.push({ id: `${id}:problem`, kind: "problem", label: attempt.message })

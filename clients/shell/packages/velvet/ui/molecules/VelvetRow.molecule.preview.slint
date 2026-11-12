@@ -6,25 +6,25 @@ import { VelvetPreview } from "../preview-frame.slint";
 import { VelvetRow } from "VelvetRow.slint";
 
 export component Focused inherits VelvetPreview {
-    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "Name", value: "mini", note: "What other devices call this one", mark: "more", bars: -1, focus-id: "s:device-name", focused: true }; }
+    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "Name", value: "mini", note: "What other devices call this one", mark: "more", focus-id: "s:device-name", focused: true }; }
 }
 
 export component Rest inherits VelvetPreview {
-    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "Name", value: "mini", note: "What other devices call this one", mark: "more", bars: -1, focus-id: "s:device-name" }; }
+    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "Name", value: "mini", note: "What other devices call this one", mark: "more", focus-id: "s:device-name" }; }
 }
 
 export component Head inherits VelvetPreview {
-    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "head", label: "Device", bars: -1 }; }
+    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "head", label: "Device", mark: "none" }; }
 }
 
 export component Range inherits VelvetPreview {
-    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "range", label: "Volume", value: "60", bars: -1, share: 0.6, focus-id: "c:volume" }; }
+    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "range", label: "Volume", value: "60", mark: "none", share: 0.6, focus-id: "c:volume" }; }
 }
 
 export component Network inherits VelvetPreview {
-    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "hummingbird-lake", value: "Connected", mark: "check", bars: 3, focus-id: "w:net:ap-hummingbird" }; }
+    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "hummingbird-lake", value: "Connected", mark: "check", signal: true, bars: 3, focus-id: "w:net:ap-hummingbird" }; }
 }
 
 export component Secret inherits VelvetPreview {
-    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "SteamGridDB API key", value: "Configured", note: "Sent only to www.steamgriddb.com.", mark: "lock", bars: -1, focus-id: "s:plugin-credential:@korri:steamgriddb" }; }
+    VelvetRow { x: Tokens.screen.pad-x * Tokens.unit; y: parent.height / 2 - self.height / 2; width: Math.min(parent.width - 2 * self.x, Tokens.screen.page-w * Tokens.unit); it: { kind: "row", label: "SteamGridDB API key", value: "Configured", note: "Sent only to www.steamgriddb.com.", mark: "lock", focus-id: "s:plugin-credential:@korri:steamgriddb" }; }
 }

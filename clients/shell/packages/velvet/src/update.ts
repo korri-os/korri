@@ -70,11 +70,18 @@ export function start(model: Model, preferences: Readonly<Record<string, string>
 
 // ---- Panels: focus ----
 
-const focusable = (row: RowSpec): boolean => (row.kind === "row" || row.kind === "range") && (row.press !== undefined || row.step !== undefined || row.rests === true)
+/**
+ * Whether a row takes the focus: a row or a range that does something when
+ * pressed or stepped, or that only holds the focus so its note can be read.
+ * The one rule for both sides: `update` moves the focus by it and `view`
+ * marks the targets by it, so what is drawn as a target is what a press
+ * can reach.
+ */
+export const takesFocus = (row: RowSpec): boolean => (row.kind === "row" || row.kind === "range") && (row.press !== undefined || row.step !== undefined || row.rests === true)
 
 /** Where a panel's focus is: on the kept row or button, else by its place, else where the panel opens. */
 export function panelFocus(panel: PanelSpec, kept: PanelState | undefined): PanelState {
-  const rows = panel.rows.filter(focusable)
+  const rows = panel.rows.filter(takesFocus)
   const ids = [...rows.map(row => row.id), ...panel.buttons.map(button => button.id)]
   if (ids.length === 0) return { focus: "", at: 0 }
   if (kept !== undefined && ids.includes(kept.focus)) {
@@ -94,7 +101,7 @@ export function panelFocus(panel: PanelSpec, kept: PanelState | undefined): Pane
 export const panelStacks = (p: Plan): boolean => p.stack
 
 function panelPress(state: State, panel: PanelSpec, button: SurfaceButton, p: Plan): Step {
-  const rows = panel.rows.filter(focusable)
+  const rows = panel.rows.filter(takesFocus)
   const kept = panelFocus(panel, state.panels[panel.key])
   const put = (next: PanelState): Step => ({ state: { ...state, panels: { ...state.panels, [panel.key]: next }, candidate: next.focus === state.candidate?.rowId ? state.candidate : undefined } })
   if (button === "back") return { state, act: panel.back }
@@ -136,9 +143,9 @@ function panelPress(state: State, panel: PanelSpec, button: SurfaceButton, p: Pl
 }
 
 function panelTap(state: State, panel: PanelSpec, target: string, at: number | undefined, released: boolean): Step | undefined {
-  const row = panel.rows.find(candidate => candidate.id === target && focusable(candidate))
+  const row = panel.rows.find(candidate => candidate.id === target && takesFocus(candidate))
   if (row !== undefined) {
-    const next: State = { ...state, panels: { ...state.panels, [panel.key]: { focus: row.id, at: panel.rows.filter(focusable).indexOf(row) } } }
+    const next: State = { ...state, panels: { ...state.panels, [panel.key]: { focus: row.id, at: panel.rows.filter(takesFocus).indexOf(row) } } }
     if (at !== undefined && row.slide !== undefined) return { state: next, act: row.slide(at, released) }
     return row.press === undefined ? { state: next } : { state: next, act: row.press }
   }

@@ -127,7 +127,7 @@ export component VelvetRow inherits Rectangle {
                 vertical-alignment: center;
                 overflow: elide;
             }
-            if root.it.bars >= 0: VerticalLayout {
+            if root.it.signal: VerticalLayout {
                 alignment: center;
                 VelvetSignal {
                     bars: root.it.bars;
@@ -185,7 +185,7 @@ export component VelvetRow inherits Rectangle {
                     overflow: elide;
                 }
             }
-            if root.it.mark != "": VerticalLayout {
+            if root.it.mark != "none" && root.it.mark != "": VerticalLayout {
                 alignment: center;
                 horizontal-stretch: 0;
                 VelvetIcon {

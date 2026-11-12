@@ -506,7 +506,7 @@ export function setView(state: State, set: SetState, model: Model, plan: Plan, l
       rows: Math.ceil(count / plan.columns),
       nowTitle: focused?.title ?? "",
       nowFact: focused === undefined ? "" : ago(focused.lastPlayedAt, model.publishedAt),
-      state: waiting ? "loading" : count === 0 ? "none" : "",
+      state: waiting ? "loading" : count === 0 ? "none" : "ready",
       words: waiting ? "Finding these games." : count === 0 ? "No game is here yet." : "",
     },
     tiles,

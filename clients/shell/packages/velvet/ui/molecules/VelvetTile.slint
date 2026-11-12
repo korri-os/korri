@@ -40,7 +40,7 @@ export component VelvetTile inherits Rectangle {
     // worked out here (README, "What the interpreter taught us").
     property <bool> lit: tile.shown && ((tile.focus-id != "" && tile.focused) || tile.lit) && Tokens.ring && !inert;
     // Focused, it grows from its foot; arriving, it comes in a little small and clears.
-    property <bool> ready: tile.shown && (tile.poster.shown || tile.kind != "game" || tile.art-kind != "");
+    property <bool> ready: tile.shown && (tile.poster.shown || tile.kind != "game" || tile.art-kind != "none");
     accessible-role: button;
     accessible-label: tile.label;
     accessible-item-selectable: tile.shown && tile.focus-id != "" && !inert;
@@ -60,13 +60,13 @@ export component VelvetTile inherits Rectangle {
         // An animated binding names its inputs itself (the component's `in` properties, the tokens,
         // its own geometry), never a property worked out from them: the shell's Slint can lose
         // the value of an animated binding that reads a derived property.
-        width: root.width * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
-        height: root.height * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
+        width: root.width * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
+        height: root.height * (!(root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none")) ? 0.95 : (root.tile.shown && ((root.tile.focus-id != "" && root.tile.focused) || root.tile.lit)) && Tokens.ring && !root.inert && !root.fixed ? Tokens.focus-scale : 1);
         animate width, height { duration: Tokens.t-focus; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         clip: true;
         // In or out, never between for long: the renderer fades each part by itself, so a
         // half-shown card would show its no-art card through its picture.
-        opacity: root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "") ? 1 : 0;
+        opacity: root.tile.shown && (root.tile.poster.shown || root.tile.kind != "game" || root.tile.art-kind != "none") ? 1 : 0;
         animate opacity { duration: Tokens.t-focus; easing: ease-in-out; }
         background: root.tile.kind == "nav" ? Tokens.light-05 : Tokens.house-down;
         if root.tile.kind != "nav": VelvetPoster {

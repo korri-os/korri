@@ -25,7 +25,7 @@ import { entryHeading, screenPanel, sheetPanel, shown } from "./pages"
 import { plan, type Plan } from "./plan"
 import { qrDataUrl } from "./qr"
 import type { PanelSpec, RowSpec, State } from "./types"
-import { emptyAt, emptyButtons, panelFocus, panelStacks, topLayer } from "./update"
+import { emptyAt, emptyButtons, panelFocus, panelStacks, takesFocus, topLayer } from "./update"
 import { caps } from "./words"
 
 interface RowView {
@@ -43,14 +43,13 @@ interface RowView {
   readonly focusRegion?: string
 }
 
-const isTarget = (row: RowSpec): boolean => (row.kind === "row" || row.kind === "range") && (row.press !== undefined || row.step !== undefined || row.rests === true)
 
 function rowView(row: RowSpec, region: string, focus: string, live: boolean): RowView {
   const base = {
-    kind: row.kind, label: row.label, value: row.value ?? "", note: row.note ?? "", mark: row.mark ?? "", bars: row.bars ?? -1,
+    kind: row.kind, label: row.label, value: row.value ?? "", note: row.note ?? "", mark: row.mark ?? "none", signal: row.bars !== undefined, bars: row.bars ?? 0,
     dim: row.dim === true, danger: row.danger === true, share: row.share ?? 0,
   }
-  return isTarget(row) ? { ...base, focusId: row.id, focused: live && row.id === focus, focusRegion: region } : { ...base, focusId: "" }
+  return takesFocus(row) ? { ...base, focusId: row.id, focused: live && row.id === focus, focusRegion: region } : { ...base, focusId: "" }
 }
 
 const NO_SHEET = { shown: false }
@@ -90,7 +89,7 @@ function pageView(panel: PanelSpec, state: State, p: Plan, live: boolean) {
       step: panel.step ?? 0,
       steps: panel.steps ?? 0,
       stack: panelStacks(p),
-      panel: side?.kind ?? "",
+      panel: side?.kind ?? "none",
       panelTitle: side?.title ?? "",
       qr: side?.qr === undefined ? NO_IMAGE : { $image: qrOf(side.qr) },
     },
@@ -116,7 +115,7 @@ function chunk(text: string, size: number): string {
 }
 
 function panelExits(panel: PanelSpec): Record<string, Record<string, { to: string; entry: string }>> {
-  const rows = panel.rows.some(isTarget)
+  const rows = panel.rows.some(takesFocus)
   return rows && panel.buttons.length > 0 ? { rows: { down: { to: "buttons", entry: "active" } }, buttons: { up: { to: "rows", entry: "remembered" } } } : {}
 }
 
@@ -161,7 +160,9 @@ function curtainView(state: State, model: Model, p: Plan) {
       moreUp: line > 0,
       moreDown: line + layout.room < layout.lines.length,
       stepLine: steps === undefined ? "" : `Step ${now + 1} of ${steps.labels.length} · ${steps.labels[now] ?? ""}`,
-      progress: spec.progress,
+      // The union, as plain properties for the view: its kind, and the share when it is measured.
+      progress: spec.progress.kind,
+      progressShare: spec.progress.kind === "measured" ? spec.progress.fraction : 0,
       // Korri's own words about the progress stand; Velvet adds its count only when Korri says nothing.
       progressLine: spec.words.length > 0 ? "" : spec.progressLine ?? "",
       stack: layout.stack,

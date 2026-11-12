@@ -11,6 +11,8 @@
  *    picture over.
  *  - Size: a view stays under 96 kB of JSON. It holds what is on screen
  *    and the rows beside it, never the library.
+ *  - State is said in words: no negative number and no empty kind stands
+ *    for "none" or "under way" anywhere in a view.
  *  - The view's top-level keys are the ones main.slint takes.
  *
  * Where a press goes on the drawn screen is judged by
@@ -70,6 +72,20 @@ function check(run: Play, name: string, at: string, known: Map<string, [number, 
   }
   expect(bytes, `${where}: ${(bytes / MIB).toFixed(1)} MiB of pictures`).toBeLessThanOrEqual(SHELL_KEEPS)
   expect(JSON.stringify(view).length, `${where}: view bytes`).toBeLessThanOrEqual(VIEW_BYTES)
+  // State is said in words, never by a number out of range or an empty kind.
+  const sentinels: string[] = []
+  const walk = (value: unknown, path: string): void => {
+    if (typeof value === "number" && value < 0) sentinels.push(`${path} = ${value}`)
+    else if (Array.isArray(value)) value.forEach((item, index) => walk(item, `${path}[${index}]`))
+    else if (value !== null && typeof value === "object") {
+      for (const [key, inner] of Object.entries(value)) {
+        if ((key === "kind" || key === "state" || key === "progress" || key === "artKind" || key === "panel" || key === "mark") && inner === "") sentinels.push(`${path}.${key} is empty`)
+        walk(inner, `${path}.${key}`)
+      }
+    }
+  }
+  walk(view, "view")
+  expect(sentinels, where).toEqual([])
   const taken = inputs(run.overlay ? overlaySource : surfaceSource)
   for (const key of Object.keys(view)) {
     if (key === "focusPlan") continue

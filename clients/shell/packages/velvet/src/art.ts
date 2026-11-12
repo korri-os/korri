@@ -80,7 +80,7 @@ export const NO_IMAGE: Image = { $image: "data:image/png;base64,iVBORw0KGgoAAAAN
 export interface TileView {
   readonly shown: boolean
   readonly kind: "game" | "nav" | "system"
-  readonly artKind: "" | "poster" | "cover" | "logo"
+  readonly artKind: "none" | "poster" | "cover" | "logo"
   readonly art: Image
   readonly artW: number
   readonly artH: number
@@ -105,7 +105,7 @@ export interface TileView {
 }
 
 export const NO_TILE: TileView = {
-  shown: false, kind: "game", artKind: "", art: NO_IMAGE, artW: 0, artH: 0, field: 0, capLines: [], capSize: 0,
+  shown: false, kind: "game", artKind: "none", art: NO_IMAGE, artW: 0, artH: 0, field: 0, capLines: [], capSize: 0,
   poster: NO_POSTER, badge: "", badgeTop: false, label: "", count: "", at: 0, shelf: 0, rests: false,
 }
 
@@ -152,7 +152,7 @@ function gameBase(game: Game): TileView {
 /** A game's tile as this view may show it: its picture when the budget has room, else its no-art card. */
 function budgeted(game: Game): TileView {
   const base = gameBase(game)
-  return base.artKind === "" || take(base.art.$image, base.artW, base.artH) ? base : cardBase(game)
+  return base.artKind === "none" || take(base.art.$image, base.artW, base.artH) ? base : cardBase(game)
 }
 
 /** A game's tile on a shelf, in the row or in a set. The system's badge shows on the focused one only. */
