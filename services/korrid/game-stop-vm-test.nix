@@ -176,7 +176,7 @@ pkgs.testers.runNixOSTest {
         machine.fail("pgrep -f '^/nix/store/[^ ]*/bin/sleep 1000$'")
 
     with subtest("a queued stop acknowledges promptly and kills a game that ignores SIGTERM after 30 seconds"):
-        start("hung", "trap \"\" TERM INT HUP; touch /home/korri/hung-ready; while :; do sleep 1; done")
+        start("hung", "trap \"\" TERM INT HUP; ${pkgs.coreutils}/bin/touch /home/korri/hung-ready; while :; do ${pkgs.coreutils}/bin/sleep 1; done")
         machine.wait_until_succeeds("test -f /home/korri/hung-ready", timeout=30)
         assert machine.succeed("systemctl show -P TimeoutStopUSec hung").strip() == "30s"
         started = time.monotonic()
@@ -194,7 +194,7 @@ pkgs.testers.runNixOSTest {
         machine.succeed("systemctl reset-failed hung")
 
     with subtest("a legitimate save-on-exit longer than Steam's 20 second cleanup can finish"):
-        script = "trap 'sleep 21; printf saved > /home/korri/exit-save; exit 0' TERM; touch /home/korri/saving-ready; while :; do sleep 1; done"
+        script = "trap '${pkgs.coreutils}/bin/sleep 21; printf saved > /home/korri/exit-save; exit 0' TERM; ${pkgs.coreutils}/bin/touch /home/korri/saving-ready; while :; do ${pkgs.coreutils}/bin/sleep 1; done"
         start("saving", script)
         machine.wait_until_succeeds("test -f /home/korri/saving-ready", timeout=30)
         elapsed = stop_seconds("saving")
