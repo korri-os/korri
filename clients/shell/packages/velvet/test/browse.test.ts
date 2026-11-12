@@ -265,7 +265,8 @@ describe("no art, no hole", () => {
       for (const tile of [...view.homeRow, ...view.shelfTiles, ...view.setTiles, ...view.homeCards] as any[]) {
         if (tile.kind !== "game" || !tile.shown || tile.label === "") continue
         expect(tile.poster.shown, `${name}: ${tile.label}`).toBe(true)
-        expect(tile.poster.layers.length, `${name}: ${tile.label}`).toBeGreaterThan(0)
+        expect(Number.isInteger(tile.poster.drawing), `${name}: ${tile.label}`).toBe(true)
+        expect(tile.poster.lines.length, `${name}: ${tile.label}`).toBeGreaterThan(0)
       }
     }
   })

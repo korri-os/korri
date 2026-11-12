@@ -27,7 +27,7 @@ describe("artwork published after the lists loaded", () => {
   test("a hero shows on the stage; the row, the lobby and the detail get their pictures", () => {
     const run = new Play(bare())
     expect(run.view.stage.artShown).toBe(false)
-    expect((run.view.homeRow as any[]).every(tile => tile.artKind === "none")).toBe(true)
+    expect((run.view.homeRow as any[]).filter(tile => tile.kind === "game" && tile.shown).every(tile => tile.artKind === "none")).toBe(true)
     run.swap(art())
     expect(run.view.home.mark.key).toBe("ember-road")
     expect(run.view.stage.artShown).toBe(true)

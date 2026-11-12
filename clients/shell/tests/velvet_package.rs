@@ -24,7 +24,8 @@
 //! - A system's set shows only that system's games, over the fixture
 //!   korrid's catalog (it filters `MoveCatalog` by `query.systemId`).
 //! - Budgets: logic.js loads well inside one call's budget; every `view()`
-//!   over 10,000 games stays under 50 ms on a slow device's clock.
+//!   over 10,000 games stays under 50 ms on a slow device's clock, the first
+//!   sight of a screen and its cards included.
 //!
 //! `VELVET_FRAMES=DIR` (with `VELVET_SIZES`, `VELVET_ONLY`) writes each
 //! scenario's last frame as a PNG; `VELVET_PREVIEW_OUT=DIR` writes every
@@ -848,20 +849,21 @@ const SLOW_FACTOR: f64 = 28.0;
 /// One call's budget on the device (contract A5).
 const CALL_BUDGET_MS: f64 = 50.0;
 
-/// A call that draws cards for the first time may take this many budgets,
-/// once a drawing (README, "Limits").
-const FIRST_SIGHT_BUDGETS: f64 = 3.0;
+/// Fresh engines the tour runs on: a call's time is its median over them, so
+/// one busy moment of this machine does not decide it.
+const TIMED_ENGINES: usize = 7;
 
 /// Every `view()` over 10,000 games stays under 50 ms on the slow device's
-/// clock: the home, a move along the row, the lobby, a move along and down
-/// its shelves, sets and moves through them (which re-ask the window), the
-/// sort sheet, the detail, an idle Tick. Each is timed on the thread's CPU
-/// clock; its median times SLOW_FACTOR must stay under the budget.
+/// clock (contract A5: a call over the budget is a performance defect, with
+/// no exception for the first sight of anything). The tour: the home, along
+/// the row, the lobby, along and down its shelves, a set and moves through
+/// it (which re-ask the window), the sort sheet, the detail, an idle Tick.
 ///
-/// The tour runs first untimed. A no-art card's drawing is made once a
-/// system and variant and then kept (src/poster.ts); the first sight of
-/// one costs about a third of a millisecond here. That pass is judged by
-/// its own rule: no single call over FIRST_SIGHT_BUDGETS budgets.
+/// The tour runs twice on each of TIMED_ENGINES fresh engines. The first
+/// run is the first sight of every screen and every card on the way; the
+/// second is the same screens again. Each single call, in both runs, is
+/// held to the one budget: its median over the engines, on the thread's CPU
+/// clock, times SLOW_FACTOR.
 #[test]
 fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     let root = package();
@@ -869,27 +871,28 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
     let mut model = home["models"][0].clone();
     let examples = model["catalog"]["games"].as_array().unwrap().clone();
     model["catalog"] = json!({"_tag": "Ready", "games": catalog::games(&examples, 10_000)});
-    let (mut engine, mut korri) = start(&root, &model, 640, 480);
-    engine.view().unwrap();
-    let mut times: BTreeMap<&str, Vec<u64>> = BTreeMap::new();
-    let mut first: BTreeMap<&str, u64> = BTreeMap::new();
-    let mut bytes = 0;
     let json_only = std::env::var_os("VELVET_VIEW_JSON").is_some();
-    let mut tour = |engine: &mut engine::Engine, korri: &mut Korri, keep: bool| {
+    // One entry a call of the two runs: what it is, and its time on each engine.
+    let mut calls: Vec<(&'static str, Vec<u64>)> = Vec::new();
+    let mut bytes = 0;
+    for engine_number in 0..TIMED_ENGINES {
+        let (mut engine, mut korri) = start(&root, &model, 640, 480);
+        engine.view().unwrap();
+        let mut at = 0;
         let mut timed =
             |engine: &mut engine::Engine, korri: &mut Korri, what: &'static str, press: &str| {
                 step(engine, korri, &home, press);
                 let started = korri_shell::budget_clock::BudgetClock::ThreadCpu.start();
                 let view = engine.view().unwrap();
                 let took = started.elapsed().as_nanos() as u64;
-                if keep {
-                    times.entry(what).or_default().push(took);
-                } else {
-                    let worst = first.entry(what).or_default();
-                    *worst = (*worst).max(took);
+                if engine_number == 0 {
+                    calls.push((what, Vec::new()));
                 }
+                assert_eq!(calls[at].0, what, "the tour is the same on every engine");
+                calls[at].1.push(took);
+                at += 1;
                 bytes = bytes.max(view.to_string().len());
-                if json_only {
+                if json_only && engine_number == 0 {
                     // The same view again: only its JSON, both ways.
                     let again = korri_shell::budget_clock::BudgetClock::ThreadCpu.start();
                     engine.view().unwrap();
@@ -900,68 +903,80 @@ fn view_calls_stay_well_inside_the_budget_on_a_slow_clock() {
                     );
                 }
             };
-        timed(engine, korri, "into the row", "down");
-        for _ in 0..4 {
-            timed(engine, korri, "along the row", "right");
+        for _run in 0..2 {
+            timed(&mut engine, &mut korri, "into the row", "down");
+            for _ in 0..4 {
+                timed(&mut engine, &mut korri, "along the row", "right");
+            }
+            for _ in 0..4 {
+                timed(&mut engine, &mut korri, "along the row", "left");
+            }
+            timed(&mut engine, &mut korri, "into the lobby", "down");
+            for _ in 0..5 {
+                timed(&mut engine, &mut korri, "along a shelf", "right");
+            }
+            timed(&mut engine, &mut korri, "into a set", "confirm");
+            for _ in 0..30 {
+                timed(&mut engine, &mut korri, "down a set", "down");
+            }
+            for _ in 0..6 {
+                timed(&mut engine, &mut korri, "along a set", "right");
+            }
+            timed(&mut engine, &mut korri, "the sort sheet", "options");
+            timed(&mut engine, &mut korri, "the sort sheet", "down");
+            timed(&mut engine, &mut korri, "the sort sheet", "back");
+            timed(&mut engine, &mut korri, "the detail", "confirm");
+            timed(&mut engine, &mut korri, "out of the detail", "back");
+            timed(&mut engine, &mut korri, "out of the set", "back");
+            for _ in 0..3 {
+                timed(&mut engine, &mut korri, "down the shelves", "down");
+            }
+            timed(&mut engine, &mut korri, "an idle tick", "wait 3");
+            for _ in 0..4 {
+                timed(&mut engine, &mut korri, "back home", "back");
+            }
         }
-        for _ in 0..4 {
-            timed(engine, korri, "along the row", "left");
-        }
-        timed(engine, korri, "into the lobby", "down");
-        for _ in 0..5 {
-            timed(engine, korri, "along a shelf", "right");
-        }
-        timed(engine, korri, "into a set", "confirm");
-        for _ in 0..30 {
-            timed(engine, korri, "down a set", "down");
-        }
-        for _ in 0..6 {
-            timed(engine, korri, "along a set", "right");
-        }
-        timed(engine, korri, "the sort sheet", "options");
-        timed(engine, korri, "the sort sheet", "down");
-        timed(engine, korri, "the sort sheet", "back");
-        timed(engine, korri, "the detail", "confirm");
-        timed(engine, korri, "out of the detail", "back");
-        timed(engine, korri, "out of the set", "back");
-        for _ in 0..3 {
-            timed(engine, korri, "down the shelves", "down");
-        }
-        timed(engine, korri, "an idle tick", "wait 3");
-        for _ in 0..4 {
-            timed(engine, korri, "back home", "back");
-        }
-    };
-    // Two tours for the first sight of every card on the way, then three that count.
-    for round in 0..5 {
-        tour(&mut engine, &mut korri, round >= 2);
     }
-    eprintln!("the largest view: {bytes} bytes");
+    eprintln!(
+        "the largest view: {bytes} bytes; {} calls a tour, {TIMED_ENGINES} engines",
+        calls.len() / 2
+    );
     let limit = (CALL_BUDGET_MS * 1_000_000.0 / SLOW_FACTOR) as u64;
-    let mut over = Vec::new();
-    for (what, list) in &times {
-        let mut sorted = list.clone();
+    let median = |times: &Vec<u64>| {
+        let mut sorted = times.clone();
         sorted.sort();
-        let median = sorted[sorted.len() / 2];
-        eprintln!(
-            "{what}: median {median} CPU ns, worst {} (limit {limit}; about {:.1} ms on the device); first sight {} ({:.1} ms)",
-            sorted.last().unwrap(),
-            median as f64 * SLOW_FACTOR / 1_000_000.0,
-            first[what],
-            first[what] as f64 * SLOW_FACTOR / 1_000_000.0
-        );
-        if median > limit {
-            over.push(format!("{what}: median {median} CPU ns over {limit}"));
-        }
-        if first[what] as f64 > limit as f64 * FIRST_SIGHT_BUDGETS {
+        sorted[sorted.len() / 2]
+    };
+    let device = |ns: u64| ns as f64 * SLOW_FACTOR / 1_000_000.0;
+    // Every call against the budget; a line a kind of call for the record.
+    let half = calls.len() / 2;
+    let mut over = Vec::new();
+    let mut kinds: BTreeMap<&str, [Vec<u64>; 2]> = BTreeMap::new();
+    for (index, (what, times)) in calls.iter().enumerate() {
+        let run = usize::from(index >= half);
+        let took = median(times);
+        kinds.entry(what).or_default()[run].push(took);
+        if took > limit {
             over.push(format!(
-                "{what}: {} CPU ns at first sight, over {FIRST_SIGHT_BUDGETS} budgets",
-                first[what]
+                "{what} (call {} of the {} run): {took} CPU ns, about {:.1} ms on the device, over the {CALL_BUDGET_MS} ms budget",
+                index % half + 1,
+                if run == 0 { "first" } else { "second" },
+                device(took)
             ));
         }
     }
+    for (what, runs) in &kinds {
+        let worst = |list: &Vec<u64>| *list.iter().max().unwrap();
+        eprintln!(
+            "{what}: first sight median {:.1} ms, worst call {:.1} ms; again median {:.1} ms, worst call {:.1} ms (on the device; budget {CALL_BUDGET_MS} ms)",
+            device(median(&runs[0])),
+            device(worst(&runs[0])),
+            device(median(&runs[1])),
+            device(worst(&runs[1]))
+        );
+    }
     assert!(over.is_empty(), "{over:#?}");
-    assert!(bytes < 64_000, "a view of {bytes} bytes");
+    assert!(bytes < 32_000, "a view of {bytes} bytes");
 }
 
 /// VELVET_FRAMES=DIR draws each scenario's last frame (VELVET_ONLY=a,b; all

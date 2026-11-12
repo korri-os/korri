@@ -616,7 +616,7 @@ let
     };
 
     velvet-check = {
-      description = "Run Velvet's native package checks: its gates, plan, behaviour and contrast tests, typecheck, and the freshness of logic.js, the scenarios and the previews.";
+      description = "Run Velvet's native package checks: its gates, plan, behaviour and contrast tests, typecheck, and the freshness of logic.js, the drawings, the scenarios and the previews.";
       usageSuffix = " -- [bun test arguments]";
       runtimeInputs = [
         pkgs.bun
@@ -640,11 +640,12 @@ let
           exit 1
         fi
         # The scenarios and the previews are written from the logic: they must be the ones committed.
+        bun packages/velvet/drawings/build.ts >/dev/null
         bun packages/velvet/preview/scenarios.ts >/dev/null
         bun packages/velvet/preview/previews.ts >/dev/null
-        if ! git diff --quiet -- packages/velvet/preview/scenarios packages/velvet/preview/art/qr.png packages/velvet/ui packages/velvet/pages; then
-          git --no-pager diff --stat -- packages/velvet/preview/scenarios packages/velvet/preview/art/qr.png packages/velvet/ui packages/velvet/pages >&2
-          echo "Velvet's scenarios or previews are stale: run bun packages/velvet/preview/scenarios.ts and bun packages/velvet/preview/previews.ts in clients/shell" >&2
+        if ! git diff --quiet -- packages/velvet/preview/scenarios packages/velvet/preview/art/qr.png packages/velvet/ui packages/velvet/pages packages/velvet/src/drawings.ts; then
+          git --no-pager diff --stat -- packages/velvet/preview/scenarios packages/velvet/preview/art/qr.png packages/velvet/ui packages/velvet/pages packages/velvet/src/drawings.ts >&2
+          echo "Velvet's drawings, scenarios or previews are stale: run bun packages/velvet/drawings/build.ts, bun packages/velvet/preview/scenarios.ts and bun packages/velvet/preview/previews.ts in clients/shell" >&2
           exit 1
         fi
       '';

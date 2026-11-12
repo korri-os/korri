@@ -15,8 +15,8 @@ export const LAYER_SUFFIX: Readonly<Record<Layer, string>> = {
   atoms: "atom", molecules: "molecule", organisms: "organism", templates: "template", pages: "page",
 }
 
-/** The shared definitions every layer may import: the tokens global and the view's struct types. */
-export const FOUNDATION = ["ui/tokens.slint", "ui/types.slint"] as const
+/** The shared definitions every layer may import: the tokens global, the view's struct types, and the no-art cards' drawings (data, written by drawings/build.ts). */
+export const FOUNDATION = ["ui/tokens.slint", "ui/types.slint", "ui/drawings.slint"] as const
 
 export const stripComments = (source: string): string =>
   source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")

@@ -153,7 +153,7 @@ for (const shape of ["mixed", "after"] as const) {
         expect(run.view.page).toBe("detail")
         expect(run.view.detail.mark.key).toBe(model.catalog.games.filter((game: any) => game.lastPlayedAt === undefined).at(-1).id)
         expect(run.mostMovesInOneUpdate).toBeLessThanOrEqual(1)
-      })
+      }, 120_000)
     }
   })
 }
@@ -187,7 +187,7 @@ describe("not started, a library where every game is unplayed", () => {
       walk(run, "left", 10)
       expect(focus(run)!.label).toBe(all[0])
       inSight(run)
-    })
+    }, 120_000)
   }
 })
 

@@ -97,10 +97,10 @@ describe("the plan and the views agree", () => {
     for (const [name] of fields) expect(new RegExp(`(?<![\\w-])${name}:`).test(literal), name).toBe(true)
   })
 
-  test("every struct is declared once, in ui/types.slint", () => {
+  test("every struct the view sends is declared once, in ui/types.slint (the drawings' own layer stands with its data)", () => {
     const declared = [...types.matchAll(/export struct (\w+)/g)].map(match => match[1]!)
     expect(new Set(declared).size).toBe(declared.length)
-    const elsewhere = files.filter(file => file !== "ui/types.slint" && /\bstruct\s+\w+\s*\{/.test(stripComments(read(file))))
+    const elsewhere = files.filter(file => file !== "ui/types.slint" && file !== "ui/drawings.slint" && /\bstruct\s+\w+\s*\{/.test(stripComments(read(file))))
     expect(elsewhere).toEqual([])
   })
 })

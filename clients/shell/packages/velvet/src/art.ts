@@ -17,6 +17,7 @@
 import type { SurfaceMedia, SurfaceMediaRole } from "../../../../../contracts/generated/surface"
 import { gelHue, hsl, parseHex, stageLight, toHsl } from "./colour"
 import { breakLines, fitCaps, textWidth } from "./fit"
+import { sameGame } from "./lists"
 import { NO_POSTER, posterFor, posterView, type PosterView } from "./poster"
 import type { Game } from "./types"
 import { ago, caps, playtime } from "./words"
@@ -77,37 +78,52 @@ export interface Image {
  */
 export const NO_IMAGE: Image = { $image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=" }
 
+/**
+ * A tile in a view. Only `shown` is always there: a view sends what a tile
+ * of its kind draws and no more, because every value a view holds is read on
+ * every call (the call budget). A field left out keeps what the tile's list
+ * row held before (the shell converts from the previous value), so a field
+ * is left out only where the views do not read it for this kind:
+ *
+ *   game          kind, artKind, art, poster (the no-art card, always, under
+ *                 the picture), label; for a cover: field, capLines, capSize;
+ *                 for a logo: field
+ *   nav, system   kind, poster, label, count
+ *   a target      focusId, focused, focusRegion
+ *   focused, lit  badge, badgeTop (the badge shows on no other tile)
+ *   on a shelf    shelf, rests; in the row: rests; in a set: lit
+ *   nothing here  shown: false and no focus id
+ */
 export interface TileView {
   readonly shown: boolean
-  readonly kind: "game" | "nav" | "system"
-  readonly artKind: "none" | "poster" | "cover" | "logo"
-  readonly art: Image
-  readonly artW: number
-  readonly artH: number
-  readonly field: number
-  readonly capLines: readonly string[]
-  readonly capSize: number
-  readonly poster: PosterView
-  readonly badge: string
-  readonly badgeTop: boolean
-  readonly label: string
-  readonly count: string
-  readonly at: number
+  readonly kind?: "game" | "nav" | "system"
+  readonly artKind?: "none" | "poster" | "cover" | "logo"
+  readonly art?: Image
+  readonly field?: number
+  readonly capLines?: readonly string[]
+  readonly capSize?: number
+  readonly poster?: PosterView
+  readonly badge?: string
+  readonly badgeTop?: boolean
+  readonly label?: string
+  readonly count?: string
+  readonly at?: number
   /** The shelf it stands on, in the lobby. */
-  readonly shelf: number
+  readonly shelf?: number
   readonly focusId?: string
   readonly focused?: boolean
   readonly focusRegion?: string
   /** Drawn as focused though it is no focus target (a set's tiles). */
   readonly lit?: boolean
   /** On a row that is not the focused one: it steps back under a veil. */
-  readonly rests: boolean
+  readonly rests?: boolean
 }
 
-export const NO_TILE: TileView = {
-  shown: false, kind: "game", artKind: "none", art: NO_IMAGE, artW: 0, artH: 0, field: 0, capLines: [], capSize: 0,
-  poster: NO_POSTER, badge: "", badgeTop: false, label: "", count: "", at: 0, shelf: 0, rests: false,
-}
+/** A place with nothing in it. */
+export const NO_TILE: TileView = { shown: false, focusId: "" }
+
+/** A place that is drawn and holds no game yet. */
+const BLANK: TileView = { shown: true, kind: "game", artKind: "none", art: NO_IMAGE, poster: NO_POSTER, label: "" }
 
 /** A field for a card that composes a picture: the picture's hue (the title's gel without one), deep. */
 function fieldOf(colour: string | undefined, title: string): number {
@@ -119,53 +135,76 @@ function fieldOf(colour: string | undefined, title: string): number {
   return hsl(gelHue(title), 0.34, 0.2)
 }
 
-const bases = new WeakMap<Game, TileView>()
-const cards = new WeakMap<Game, TileView>()
-
-/** A game's no-art card as a tile, without focus or place. */
-function cardBase(game: Game): TileView {
-  let base = cards.get(game)
-  if (base === undefined) {
-    const paper = posterFor(game.title, game.systemId)
-    base = { ...NO_TILE, shown: true, kind: "game", poster: posterView(paper), label: game.title, badgeTop: paper.badgeTop }
-    cards.set(game, base)
-  }
-  return base
+/** A game's tile, made once: as its no-art card, and with its picture (the same when it has none). */
+interface Made {
+  readonly game: Game
+  readonly card: TileView
+  readonly art: TileView
+  /** The picture's address and stored size, for the pixel budget; "" with none. */
+  readonly url: string
+  readonly width: number
+  readonly height: number
+  /** Where the focus badge sits: on the card, and over the picture. */
+  readonly cardBadgeTop: boolean
+  readonly artBadgeTop: boolean
 }
 
-/** A game's tile with its picture, without focus or place. The no-art card is always under it. */
-function gameBase(game: Game): TileView {
-  const known = bases.get(game)
-  if (known !== undefined) return known
+// By id, and kept while Korri says the same of the game: Korri sends every game anew with
+// every model (a focus move publishes one), and a tile is not made again for that.
+const made = new Map<string, Made>()
+
+function madeOf(game: Game): Made {
+  const known = made.get(game.id)
+  if (known !== undefined && (known.game === game || sameGame(known.game, game))) return known
+  const paper = posterFor(game.title, game.systemId)
+  const card: TileView = { shown: true, kind: "game", artKind: "none", art: NO_IMAGE, poster: posterView(paper), label: game.title }
   const poster = mediaOf(game, "poster")
   const logo = mediaOf(game, "logo")
-  let base = cardBase(game)
-  if (poster !== undefined) base = { ...base, artKind: "poster", art: { $image: poster.url }, artW: poster.width, artH: poster.height, badgeTop: false }
+  let next: Made = { game, card, art: card, url: "", width: 0, height: 0, cardBadgeTop: paper.badgeTop, artBadgeTop: paper.badgeTop }
+  if (poster !== undefined) next = { ...next, art: { ...card, artKind: "poster", art: { $image: poster.url } }, url: poster.url, width: poster.width, height: poster.height, artBadgeTop: false }
   else if (game.coverArtUrl !== undefined && game.coverArtUrl !== "") {
     const fit = fitCaps(game.title, 52, 24, 12, 4.2)
-    base = { ...base, artKind: "cover", art: { $image: game.coverArtUrl }, artW: COVER_SIDE, artH: COVER_SIDE, field: fieldOf(mediaOf(game, "hero")?.color, game.title), capLines: fit.lines, capSize: fit.size, badgeTop: true }
-  } else if (logo !== undefined) base = { ...base, artKind: "logo", art: { $image: logo.url }, artW: logo.width, artH: logo.height, field: fieldOf(logo.color ?? mediaOf(game, "hero")?.color, game.title), badgeTop: false }
-  bases.set(game, base)
-  return base
+    next = {
+      ...next, art: { ...card, artKind: "cover", art: { $image: game.coverArtUrl }, field: fieldOf(mediaOf(game, "hero")?.color, game.title), capLines: fit.lines, capSize: fit.size },
+      url: game.coverArtUrl, width: COVER_SIDE, height: COVER_SIDE, artBadgeTop: true,
+    }
+  } else if (logo !== undefined) {
+    next = { ...next, art: { ...card, artKind: "logo", art: { $image: logo.url }, field: fieldOf(logo.color ?? mediaOf(game, "hero")?.color, game.title) }, url: logo.url, width: logo.width, height: logo.height, artBadgeTop: false }
+  }
+  if (made.size > 1200) made.clear()
+  made.set(game.id, next)
+  return next
 }
 
 /** A game's tile as this view may show it: its picture when the budget has room, else its no-art card. */
-function budgeted(game: Game): TileView {
-  const base = gameBase(game)
-  return base.artKind === "none" || take(base.art.$image, base.artW, base.artH) ? base : cardBase(game)
+function budgeted(game: Game): { readonly view: TileView; readonly badgeTop: boolean } {
+  const tile = madeOf(game)
+  return tile.url === "" || take(tile.url, tile.width, tile.height) ? { view: tile.art, badgeTop: tile.artBadgeTop } : { view: tile.card, badgeTop: tile.cardBadgeTop }
 }
 
-/** A game's tile on a shelf, in the row or in a set. The system's badge shows on the focused one only. */
+/** A game's tile on a shelf or in the row. The system's badge shows on the focused one only. */
 export function gameTile(game: Game, region: string, focusId: string, focused: boolean, at: number): TileView {
-  return { ...budgeted(game), focusId, focused, focusRegion: region, at, badge: focused ? game.system ?? "" : "" }
+  const { view, badgeTop } = budgeted(game)
+  return focused
+    ? { ...view, focusId, focused, focusRegion: region, at, badge: game.system ?? "", badgeTop }
+    : { ...view, focusId, focused, focusRegion: region, at }
 }
 
-/** A game's card where it is no focus target (the pick's card, a set's tile). */
-export const gameCard = (game: Game): TileView => budgeted(game)
+/** A game's card where it is no focus target (the pick's card). */
+export const gameCard = (game: Game): TileView => budgeted(game).view
+
+/** A game's picture in a set, at its place: no focus target (its mark is), lit when its mark has the focus. */
+export function setTile(game: Game, at: number, lit: boolean): TileView {
+  const { view, badgeTop } = budgeted(game)
+  return lit ? { ...view, at, lit, badge: game.system ?? "", badgeTop } : { ...view, at, lit }
+}
+
+/** A place in a set whose game Korri has not sent yet. */
+export const blankTile = (at: number): TileView => ({ ...BLANK, at, lit: false })
 
 /** A way further in: "All games", "See all", "A to Z". */
 export function navTile(label: string, count: string, region: string, focusId: string, focused: boolean, at: number): TileView {
-  return { ...NO_TILE, shown: true, kind: "nav", label, count, focusId, focused, focusRegion: region, at }
+  return { shown: true, kind: "nav", poster: NO_POSTER, label, count, focusId, focused, focusRegion: region, at }
 }
 
 const systems = new Map<string, TileView>()
@@ -175,7 +214,7 @@ export function systemTile(systemId: string, system: string, count: string, regi
   const key = `${systemId}\u0000${system}`
   let base = systems.get(key)
   if (base === undefined) {
-    base = { ...NO_TILE, shown: true, kind: "system", poster: posterView(posterFor(system, systemId)), label: system }
+    base = { shown: true, kind: "system", poster: posterView(posterFor(system, systemId)), label: system }
     if (systems.size > 200) systems.clear()
     systems.set(key, base)
   }
@@ -184,7 +223,7 @@ export function systemTile(systemId: string, system: string, count: string, regi
 
 /** A place on a shelf that waits for its game (off the stage, or not yet answered). */
 export const waitingTile = (region: string, focusId: string, focused: boolean, at: number): TileView =>
-  ({ ...NO_TILE, shown: true, focusId, focused, focusRegion: region, at })
+  ({ ...BLANK, focusId, focused, focusRegion: region, at })
 
 // ---- The stage ----
 
@@ -222,25 +261,24 @@ export interface FactView {
   readonly strong: boolean
 }
 
+/** A line of facts: how many, and that many of its four places (a place past `count` is not sent, and not read). */
 export interface FactLineView {
   readonly count: number
-  readonly a: FactView
-  readonly b: FactView
-  readonly c: FactView
-  readonly d: FactView
+  readonly a?: FactView
+  readonly b?: FactView
+  readonly c?: FactView
+  readonly d?: FactView
 }
 
 /** Up to three lines of up to four facts: fixed places, no list (ui/types.slint says why). */
 export interface FactsView {
   readonly count: number
-  readonly first: FactLineView
-  readonly second: FactLineView
-  readonly third: FactLineView
+  readonly first?: FactLineView
+  readonly second?: FactLineView
+  readonly third?: FactLineView
 }
 
-const NO_FACT: FactView = { icon: "", text: "", strong: false }
-const NO_LINE: FactLineView = { count: 0, a: NO_FACT, b: NO_FACT, c: NO_FACT, d: NO_FACT }
-export const NO_FACTS: FactsView = { count: 0, first: NO_LINE, second: NO_LINE, third: NO_LINE }
+export const NO_FACTS: FactsView = { count: 0 }
 
 export interface MarqueeView {
   readonly key: string
@@ -305,10 +343,16 @@ export function factLines(facts: readonly FactView[], size: number, width: numbe
     line.push(fact)
     used += need
   }
-  const row = (line: readonly FactView[] | undefined): FactLineView =>
-    line === undefined ? NO_LINE : { count: line.length, a: line[0] ?? NO_FACT, b: line[1] ?? NO_FACT, c: line[2] ?? NO_FACT, d: line[3] ?? NO_FACT }
-  const kept = lines.filter(line => line.length > 0)
-  return { count: kept.length, first: row(kept[0]), second: row(kept[1]), third: row(kept[2]) }
+  // Only the lines and the facts there are: the views read no place past a count.
+  const row = (line: readonly FactView[]): FactLineView => {
+    const [a, b, c, d] = line
+    return d !== undefined ? { count: 4, a, b, c, d } : c !== undefined ? { count: 3, a, b, c } : b !== undefined ? { count: 2, a, b } : { count: 1, a }
+  }
+  const [first, second, third] = lines.filter(line => line.length > 0)
+  if (first === undefined) return NO_FACTS
+  if (second === undefined) return { count: 1, first: row(first) }
+  if (third === undefined) return { count: 2, first: row(first), second: row(second) }
+  return { count: 3, first: row(first), second: row(second), third: row(third) }
 }
 
 export interface MarqueeBox {

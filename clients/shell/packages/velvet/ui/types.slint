@@ -87,25 +87,14 @@ export struct Screen {
     pause-w: float,
 }
 
-// One filled path of a no-art card, in the card's 60 x 90 box.
-export struct Layer {
-    d: string,
-    c: int,
-    o: float,
-    e: bool,
-}
-
-// The no-art card (src/poster.ts): its paths and its fitted title.
+// The no-art card (src/poster.ts): its drawing and its palette, by their numbers in
+// ui/drawings.slint, and its fitted title.
 export struct Poster {
     shown: bool,
-    layers: [Layer],
+    drawing: int,
+    palette: int,
     lines: [string],
     size: float,
-    tx: float,
-    ty: float,
-    tw: float,
-    th: float,
-    top: bool,
     ink: int,
 }
 

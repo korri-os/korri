@@ -22,7 +22,7 @@
  * launches. Back closes each level.
  */
 import type { CatalogQuery, SurfaceCatalog, SurfaceModel as Model } from "../../../../../contracts/generated/surface"
-import { factLines, factsOf, gameCard, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, systemTile, titleLines, waitingTile, type FactView, type MarqueeView, type TileView } from "./art"
+import { blankTile, factLines, factsOf, gameCard, gameTile, hasHero, marqueeOf, mediaOf, navTile, NO_IMAGE, NO_MARQUEE, NO_TILE, setTile, systemTile, titleLines, waitingTile, type FactView, type MarqueeView, type TileView } from "./art"
 import { fitCaps, textWidth } from "./fit"
 import { gridMove, lineMove } from "./focus"
 import { homeOf, sameQuery, shelvesOf, type ShelfItem, type ShelfSpec } from "./lists"
@@ -241,7 +241,7 @@ export function homeView(state: State, model: Model, plan: Plan, live: boolean) 
   const starts: number[] = []
   shelves.forEach((shelf, index) => {
     starts.push(tiles.length)
-    for (let at = 0; at < shelf.items.length; at++) tiles.push({ shown: false, focusId: "", at, shelf: index } as unknown as TileView)
+    for (let at = 0; at < shelf.items.length; at++) tiles.push(NO_TILE)
   })
   for (const index of nearest(shelves.length, shelfAtNow)) {
     if (!shelfShown(depth, index, shelfAtNow)) continue
@@ -504,7 +504,7 @@ export function setView(state: State, set: SetState, model: Model, plan: Plan, l
       const game = window.window[set.low + place - window.firstIndex]
       const lit = live && !set.pill && place === focusedAt
       // Each place keeps its slot while it is near the view, so a row that scrolls keeps its tiles.
-      tiles[place % pool] = game === undefined ? { ...NO_TILE, shown: true, at: place } : { ...gameCard(game), at: place, lit, badge: lit ? game.system ?? "" : "" } as TileView
+      tiles[place % pool] = game === undefined ? blankTile(place) : setTile(game, place, lit)
     }
   }
   // A focus target for each place a tile is sent for: the rows in sight and one more each way.
