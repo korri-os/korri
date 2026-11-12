@@ -262,6 +262,7 @@ class Session:
         self.facts["thermal"] = [dict(zone, limits=self.limits[zone["zone"]]) for zone in zones]
         self.facts["heat_guarded"] = any(self.limits.values())
         self.hardware_path = platform() != PICTURE_PATH_DEFAULT
+        self.facts["hardware_picture_path"] = self.hardware_path
         # Why the guard stopped the fixture, once it did.
         self.ended: str | None = None
         # Taken again when the fixture prepares; here so that a close is never blind.
@@ -446,6 +447,13 @@ class Session:
                 f"The user {self.facts['fixture_user']} can open {UINPUT}. A stock Sunshine "
                 "would make input devices there that the product's input stack sees. The "
                 "sender fixture does not start."
+            )
+        if self.hardware_path:
+            # Whatever its temperature: a handheld is a viewer, never a sender.
+            raise RuntimeError(
+                "This device's chip has a hardware picture path in korrid's table: it is a "
+                "handheld. A compositor, a Sunshine and an encoder are too much load for it, "
+                "so the sender fixture does not start here."
             )
         refused = no_start(thermal_zones(), self.limits, self.hardware_path)
         if refused:

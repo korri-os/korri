@@ -187,9 +187,22 @@ class SenderHeatGuard(Machine):
     def test_hardware_path_device_with_no_zone_does_not_host_the_fixture(self):
         viewer.COMPATIBLE.write_bytes(b"vendor,board\0rockchip,rk3566\0")
         session = self.session()
-        with self.assertRaisesRegex(RuntimeError, "no thermal zone with a critical trip point"):
+        with self.assertRaisesRegex(RuntimeError, "hardware picture path.*does not start"):
             self.prepare(session)
         self.assertIsNone(session.root)
+
+
+class NotOnAHandheld(Machine):
+    def test_sender_fixture_never_starts_on_a_chip_with_a_hardware_picture_path(self):
+        # Cool, with every trip point readable: the heat rule alone would let it start.
+        self.zone(40000)
+        viewer.COMPATIBLE.write_bytes(b"vendor,board\0rockchip,rk3566\0")
+        session = self.session()
+        self.assertTrue(session.handle({"operation": "discover"})["hardware_picture_path"])
+        with self.assertRaisesRegex(RuntimeError, "hardware picture path.*sender fixture does not start"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+        self.assertFalse((self.peers / "arguments.log").exists())
 
 
 class NoRoot(Machine):
