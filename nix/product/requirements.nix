@@ -30,8 +30,9 @@ let
       "stun.cloudflare.com:3478"
       "stun.l.google.com:19302"
     ];
-    # Every product device opens Pico.
-    surfaceId = "pico";
+    # Every product device opens Velvet (#424). Pico and Zone stay installed
+    # and selectable: the shell lists every other installed surface after it.
+    surfaceId = "velvet";
     korridAddress = "[::]:39217";
     publishers = {
       "@korri" = {

@@ -42,6 +42,10 @@ summarised at the end of this file.
 | `mania/` | Sonic Mania menus | Black zone cards on a mint ground, three mode tabs, action row | Under review; refined 2026-10-19 from the user's reference screenshots (mint ground with orbit rings, black parallelograms, pink focus, uncropped covers, HERE/ZAO tag row) |
 | `wallet/` | Digital passes | Vertical stack, one pass pulled forward, places as gates | Under review |
 
+Built from a direction that was drawn outside this folder (its mockup holds
+real box art): Velvet, `velvet/DIRECTION.md`, the surface every product device
+opens since 2026-11 (`clients/shell/packages/velvet`).
+
 Built surfaces, for the comparison: Pico (`surfaces/pico`, layered screens with
 cartridges on a shelf) and Boxbuster (`surfaces/boxbuster`, fixed camera spots
 in a 3D store). A modern-console / streaming direction is planned as a
