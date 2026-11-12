@@ -1,4 +1,4 @@
-//! Idle polling never selects or recovers a far session.
+//! Idle polling never selects or recovers a streamed session.
 use super::{cache::Cache, *};
 use crate::*;
 use std::time::Duration;
@@ -214,7 +214,7 @@ mod tests {
         host.claim_save_owner();
         let (state, _) = app_states(host.clone());
         let invite: Invite = serde_json::from_value(serde_json::json!({
-            "inviteId":"", "devicePublicKey":"far", "deviceLabel":"Far", "personName":"Person",
+            "inviteId":"", "devicePublicKey":"holder", "deviceLabel":"Holder", "personName":"Person",
             "session":{"launchId":"exact", "title":"Game", "phase":"running"}
         }))
         .unwrap();
@@ -256,7 +256,7 @@ mod tests {
             .lock()
             .unwrap()
             .replace(vec![serde_json::from_value(serde_json::json!({
-                "inviteId":"", "devicePublicKey":"far", "deviceLabel":"Far", "personName":"Person",
+                "inviteId":"", "devicePublicKey":"holder", "deviceLabel":"Holder", "personName":"Person",
                 "session":{"launchId":"next", "phase":"running"}
             }))
             .unwrap()]);

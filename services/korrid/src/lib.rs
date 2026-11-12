@@ -869,7 +869,7 @@ pub struct SessionResumeRequest {
     pub expected_launch_id: Option<String>,
 }
 
-/// Local stream-viewer effects. They never change the far game's execution.
+/// Local stream-viewer effects. They never change the streamed game's execution.
 /// Grounded in LinuxStreamViewer's background and stop effects.
 #[typeshare]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -6106,7 +6106,7 @@ fn start_local_server_for_platform(
     .start();
     let server_federation_wake = federation_wake.clone();
     let server_upstream = upstream.clone();
-    // As on Linux, a selected far session is polled so that its end stops the
+    // As on Linux, a selected streamed session is polled so that its end stops the
     // exact viewer, even while the shell is paused behind it.
     let watched_upstream = has_viewer.then(|| upstream.clone());
     let (stop, stopped) = oneshot::channel();

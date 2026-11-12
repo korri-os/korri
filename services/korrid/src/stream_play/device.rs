@@ -77,7 +77,7 @@ pub(crate) fn registry(
     registry.with_linux_viewer(viewer)
 }
 
-/// Polls the selected far session so its end stops this device's viewer.
+/// Polls the selected streamed session so its end stops this device's viewer.
 pub(crate) fn spawn_watch(
     peers: upstreams::UpstreamRegistry,
     on_failure: impl Fn(String) + Send + 'static,
@@ -152,11 +152,11 @@ pub(crate) async fn dispatch(
             let local = host
                 .catalog_snapshot_for(host.owner_public_key().as_deref())
                 .await;
-            let far = peers.catalog_snapshot().await;
-            let outcome = match (local, far) {
-                (Ok(mut local), Ok(mut far)) => {
-                    local.games.append(&mut far.games);
-                    if let Some(mut failures) = far.failures.take() {
+            let streamed = peers.catalog_snapshot().await;
+            let outcome = match (local, streamed) {
+                (Ok(mut local), Ok(mut streamed)) => {
+                    local.games.append(&mut streamed.games);
+                    if let Some(mut failures) = streamed.failures.take() {
                         local
                             .failures
                             .get_or_insert_with(Vec::new)
@@ -175,7 +175,7 @@ pub(crate) async fn dispatch(
                         });
                     CatalogSnapshotOutcome::Ok(local)
                 }
-                (Err(_), Ok(far)) => CatalogSnapshotOutcome::Ok(far),
+                (Err(_), Ok(streamed)) => CatalogSnapshotOutcome::Ok(streamed),
                 (Err(error), Err(_)) => CatalogSnapshotOutcome::Err(error),
             };
             Some(RpcResponse::CatalogSnapshot(outcome))
@@ -315,7 +315,7 @@ mod tests {
     };
     use serde_json::json;
 
-    fn holder(root: &Path, label: &str) -> host::HostRuntime {
+    fn host_runtime(root: &Path, label: &str) -> host::HostRuntime {
         let config = root.join("host.toml");
         std::fs::write(&config, format!("label = \"{label}\"\n[[games]]\nid = \"{label}-game\"\ntitle = \"{label} Game\"\ncommand = [\"game\"]\n")).unwrap();
         let runtime = host::HostRuntime::from_paths_with_backend(
@@ -331,7 +331,7 @@ mod tests {
     #[tokio::test]
     async fn host_shell_keeps_local_catalog_host_labels_launchable() {
         let root = tempfile::tempdir().unwrap();
-        let runtime = holder(root.path(), "local");
+        let runtime = host_runtime(root.path(), "local");
         let (mut state, _) = crate::app_states(runtime);
         state.remote = Some(upstreams::UpstreamRegistry::new(Vec::new()));
         let request = serde_json::from_value(
@@ -352,20 +352,20 @@ mod tests {
 
     #[tokio::test]
     async fn host_shell_lists_peer_games_and_launches_through_the_injected_viewer() {
-        let far_root = tempfile::tempdir().unwrap();
-        let far = holder(far_root.path(), "far");
+        let holder_root = tempfile::tempdir().unwrap();
+        let holder = host_runtime(holder_root.path(), "holder");
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let router = crate::plain_host_routers_for_tests(far.clone()).0;
+        let router = crate::plain_host_routers_for_tests(holder.clone()).0;
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
         let viewer = TestLinuxStreamViewer::default();
         let peers = upstreams::UpstreamRegistry::new(vec![upstreams::UpstreamHostConfig::native(
-            "far",
+            "holder",
             format!("http://{address}"),
         )])
         .with_linux_viewer(Arc::new(viewer.clone()));
         let local_root = tempfile::tempdir().unwrap();
-        let local = holder(local_root.path(), "local");
+        let local = host_runtime(local_root.path(), "local");
         let (mut state, _) = crate::app_states(local);
         state.remote = Some(peers);
         let request =
@@ -380,9 +380,9 @@ mod tests {
         assert!(catalog
             .games
             .iter()
-            .any(|game| game.id == "far-game" && !game.source.is_local));
+            .any(|game| game.id == "holder-game" && !game.source.is_local));
         let request = serde_json::from_value(
-            json!({"_tag":"app.session.prepare","payload":{"gameId":"far-game","host":"far"}}),
+            json!({"_tag":"app.session.prepare","payload":{"gameId":"holder-game","host":"holder"}}),
         )
         .unwrap();
         let response = crate::dispatch(&state, &AuthorizationContext::LocalSurfaceHost, request)
@@ -413,7 +413,7 @@ mod tests {
             "a game without plugin controls must report an empty list: {controls:?}"
         );
         assert!(matches!(
-            far.session_status().await.unwrap(),
+            holder.session_status().await.unwrap(),
             host::control::HostSessionStatus::Running { .. }
                 | host::control::HostSessionStatus::FocusFailed { .. }
         ));
@@ -421,41 +421,43 @@ mod tests {
     }
     #[tokio::test]
     async fn simultaneous_local_and_peer_launches_admit_exactly_one_selection() {
-        let far_root = tempfile::tempdir().unwrap();
-        let far = holder(far_root.path(), "far");
+        let holder_root = tempfile::tempdir().unwrap();
+        let holder = host_runtime(holder_root.path(), "holder");
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let entered = Arc::new(tokio::sync::Semaphore::new(0));
         let release = Arc::new(tokio::sync::Semaphore::new(0));
         let gate = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let (arrived, resume) = (entered.clone(), release.clone());
-        let router = crate::plain_host_routers_for_tests(far)
-            .0
-            .layer(axum::middleware::from_fn(
-                move |request: axum::extract::Request, next: axum::middleware::Next| {
-                    let (arrived, resume, gate) = (arrived.clone(), resume.clone(), gate.clone());
-                    async move {
-                        if gate.swap(false, std::sync::atomic::Ordering::SeqCst) {
-                            arrived.add_permits(1);
-                            resume.acquire().await.unwrap().forget();
+        let router =
+            crate::plain_host_routers_for_tests(holder)
+                .0
+                .layer(axum::middleware::from_fn(
+                    move |request: axum::extract::Request, next: axum::middleware::Next| {
+                        let (arrived, resume, gate) =
+                            (arrived.clone(), resume.clone(), gate.clone());
+                        async move {
+                            if gate.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                                arrived.add_permits(1);
+                                resume.acquire().await.unwrap().forget();
+                            }
+                            next.run(request).await
                         }
-                        next.run(request).await
-                    }
-                },
-            ));
+                    },
+                ));
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
         let peers = upstreams::UpstreamRegistry::new(vec![upstreams::UpstreamHostConfig::native(
-            "far",
+            "holder",
             format!("http://{address}"),
         )]);
         let local_root = tempfile::tempdir().unwrap();
-        let (mut state, _) = crate::app_states(holder(local_root.path(), "local"));
+        let (mut state, _) = crate::app_states(host_runtime(local_root.path(), "local"));
         state.remote = Some(peers);
         let remote_state = state.clone();
         let peer_state = state.clone();
         let remote = tokio::spawn(async move {
             crate::dispatch(&remote_state, &AuthorizationContext::LocalSurfaceHost,
-            serde_json::from_value(json!({"_tag":"app.session.prepare", "payload":{"gameId":"far-game","host":"far"}})).unwrap()).await.unwrap()
+            serde_json::from_value(json!({"_tag":"app.session.prepare", "payload":{"gameId":"holder-game","host":"holder"}})).unwrap()).await.unwrap()
         });
         entered.acquire().await.unwrap().forget();
         let mut local = tokio::spawn(async move {
@@ -499,18 +501,19 @@ mod tests {
     #[tokio::test]
     async fn idle_host_does_not_adopt_an_unselected_peers_live_session() {
         // Merely observing the directory is not selecting a session.
-        let far_root = tempfile::tempdir().unwrap();
-        let far = holder(far_root.path(), "far");
-        let prepared = far.prepare("far-game", None, None).await.unwrap();
+        let holder_root = tempfile::tempdir().unwrap();
+        let holder = host_runtime(holder_root.path(), "holder");
+        let prepared = holder.prepare("holder-game", None, None).await.unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let far_router = crate::plain_host_routers_for_tests(far).0;
-        let server = tokio::spawn(async move { axum::serve(listener, far_router).await.unwrap() });
-        let config = upstreams::UpstreamHostConfig::native("far", format!("http://{address}"));
+        let holder_router = crate::plain_host_routers_for_tests(holder).0;
+        let server =
+            tokio::spawn(async move { axum::serve(listener, holder_router).await.unwrap() });
+        let config = upstreams::UpstreamHostConfig::native("holder", format!("http://{address}"));
         let peers = upstreams::UpstreamRegistry::new(vec![config]);
         assert!(peers.stream_play_launch_id().is_none());
         let local_root = tempfile::tempdir().unwrap();
-        let (mut state, _) = crate::app_states(holder(local_root.path(), "local"));
+        let (mut state, _) = crate::app_states(host_runtime(local_root.path(), "local"));
         state.remote = Some(peers);
         let response = crate::dispatch(
             &state,
@@ -539,7 +542,7 @@ mod tests {
 
     struct SelectedSessionFixture {
         state: AppState,
-        far: host::HostRuntime,
+        holder: host::HostRuntime,
         viewer: TestLinuxStreamViewer,
         units: Arc<InMemoryLaunchUnitBackend>,
         launch: String,
@@ -553,39 +556,39 @@ mod tests {
     }
     impl SelectedSessionFixture {
         async fn new() -> Self {
-            let far_root = tempfile::tempdir().unwrap();
-            let config = far_root.path().join("host.toml");
-            std::fs::write(&config, "label = \"far\"\n[[games]]\nid = \"far-game\"\ntitle = \"Far Game\"\ncommand = [\"game\"]\n").unwrap();
+            let holder_root = tempfile::tempdir().unwrap();
+            let config = holder_root.path().join("host.toml");
+            std::fs::write(&config, "label = \"holder\"\n[[games]]\nid = \"streamed-game\"\ntitle = \"Streamed Game\"\ncommand = [\"game\"]\n").unwrap();
             let units = Arc::new(InMemoryLaunchUnitBackend::default());
-            let far = host::HostRuntime::from_paths_with_backend(
+            let holder = host::HostRuntime::from_paths_with_backend(
                 &config,
                 None,
-                far_root.path().join("private"),
+                holder_root.path().join("private"),
                 units.clone(),
             )
             .with_compositor(Arc::new(SelectedSessionFocus));
-            far.claim_save_owner();
+            holder.claim_save_owner();
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
-            let router = crate::plain_host_routers_for_tests(far.clone()).0;
+            let router = crate::plain_host_routers_for_tests(holder.clone()).0;
             let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
             let viewer = TestLinuxStreamViewer::default();
             let peers =
                 upstreams::UpstreamRegistry::new(vec![upstreams::UpstreamHostConfig::native(
-                    "far",
+                    "holder",
                     format!("http://{address}"),
                 )])
                 .with_linux_viewer(Arc::new(viewer.clone()));
             let local_root = tempfile::tempdir().unwrap();
-            let (mut state, _) = crate::app_states(holder(local_root.path(), "local"));
+            let (mut state, _) = crate::app_states(host_runtime(local_root.path(), "local"));
             state.remote = Some(peers);
             let response = crate::dispatch(
                 &state,
                 &AuthorizationContext::LocalSurfaceHost,
                 RpcRequest::SessionPrepare(SessionPrepareRequest {
                     viewer_display: None,
-                    game_id: "far-game".into(),
-                    host: Some("far".into()),
+                    game_id: "streamed-game".into(),
+                    host: Some("holder".into()),
                 }),
             )
             .await
@@ -599,12 +602,12 @@ mod tests {
             units.set_window_pids(&launch, [9100].into());
             Self {
                 state,
-                far,
+                holder,
                 viewer,
                 units,
                 launch,
                 server,
-                _roots: vec![far_root, local_root],
+                _roots: vec![holder_root, local_root],
             }
         }
         async fn call(
@@ -635,7 +638,7 @@ mod tests {
         f.units.complete_live();
         // Exercise the real holder's terminal status encoding, not the peer fixture.
         assert!(
-            matches!(crate::host_session_status_outcome(f.far.session_status().await),
+            matches!(crate::host_session_status_outcome(f.holder.session_status().await),
             SessionStatusOutcome::Err(RpcFailure { code, .. }) if code == "SessionCompleted")
         );
         let response = f
@@ -674,7 +677,10 @@ mod tests {
             let status = f.call(&context, "app.session.status", None).await;
             assert_eq!(status["outcome"]["_tag"], "Ok", "{context:?}: {status}");
             assert_eq!(status["outcome"]["payload"]["active"]["launchId"], f.launch);
-            assert_eq!(status["outcome"]["payload"]["active"]["gameId"], "far-game");
+            assert_eq!(
+                status["outcome"]["payload"]["active"]["gameId"],
+                "streamed-game"
+            );
             let before = f.viewer.calls();
             for tag in ["app.session.leave", "app.session.resume", "app.session.end"] {
                 for (expected, code) in [
@@ -701,7 +707,7 @@ mod tests {
             assert_eq!(leave["outcome"]["payload"]["launchId"], f.launch);
             assert_eq!(leave["outcome"]["payload"]["state"], "frozen");
             assert!(matches!(
-                f.far.session_status().await.unwrap(),
+                f.holder.session_status().await.unwrap(),
                 host::control::HostSessionStatus::Frozen { .. }
             ));
             let resume = f
@@ -779,7 +785,7 @@ mod tests {
         assert_eq!(f.viewer.calls(), before);
         assert!(f.state.remote.as_ref().unwrap().has_selected_session());
         assert!(matches!(
-            f.far.session_status().await.unwrap(),
+            f.holder.session_status().await.unwrap(),
             host::control::HostSessionStatus::Running { .. }
                 | host::control::HostSessionStatus::FocusFailed { .. }
         ));

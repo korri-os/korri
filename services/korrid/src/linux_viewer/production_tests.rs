@@ -285,7 +285,7 @@ esac
             height: 720
         })
     );
-    // The Linux viewer still requests its local 1280x720, not the far size.
+    // The Linux viewer still requests its local 1280x720, not the holder's size.
     viewer
         .start(
             launch,

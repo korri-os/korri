@@ -148,8 +148,8 @@ mod tests {
         }
     }
     #[derive(Debug)]
-    struct FarFocus;
-    impl crate::host::CompositorControl for FarFocus {
+    struct HolderFocus;
+    impl crate::host::CompositorControl for HolderFocus {
         fn tree(&self) -> Result<String, String> {
             Ok(r#"{"nodes":[{"id":2,"pid":9100,"focused":true}]}"#.into())
         }
@@ -161,30 +161,30 @@ mod tests {
     #[tokio::test]
     async fn stream_play_brain_refuses_peer_controls_but_local_controls_still_reach_the_holder() {
         let root = tempfile::tempdir().unwrap();
-        let far_config = root.path().join("host.toml");
+        let holder_config = root.path().join("host.toml");
         std::fs::write(
-            &far_config,
-            "label = \"far\"\n[[games]]\nid = \"game\"\ntitle = \"Game\"\ncommand = [\"game\"]\n",
+            &holder_config,
+            "label = \"holder\"\n[[games]]\nid = \"game\"\ntitle = \"Game\"\ncommand = [\"game\"]\n",
         )
         .unwrap();
         let units = Arc::new(InMemoryLaunchUnitBackend::default());
         let holder = HostRuntime::from_paths_with_backend(
-            &far_config,
+            &holder_config,
             None,
-            root.path().join("far-private"),
+            root.path().join("holder-private"),
             units.clone(),
         )
-        .with_compositor(Arc::new(FarFocus));
+        .with_compositor(Arc::new(HolderFocus));
         holder.claim_save_owner();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let router = crate::plain_host_routers_for_tests(holder.clone()).0;
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
         let upstream = crate::upstreams::UpstreamRegistry::new(vec![
-            crate::upstreams::UpstreamHostConfig::native("far", format!("http://{address}")),
+            crate::upstreams::UpstreamHostConfig::native("holder", format!("http://{address}")),
         ]);
         let launch = upstream
-            .prepare_stream("game", Some("far"))
+            .prepare_stream("game", Some("holder"))
             .await
             .unwrap()
             .session

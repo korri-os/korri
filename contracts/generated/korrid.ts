@@ -1936,7 +1936,7 @@ export interface SessionViewerDisplayRequest {
 }
 
 /**
- * Local stream-viewer effects. They never change the far game's execution.
+ * Local stream-viewer effects. They never change the streamed game's execution.
  * Grounded in LinuxStreamViewer's background and stop effects.
  */
 export enum SessionViewerAction {

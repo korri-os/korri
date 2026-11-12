@@ -59,7 +59,7 @@ public class KorriStreamViewerBoundaryTest {
 
     @Test
     @Config(qualifiers = "w1088dp-h981dp-xhdpi")
-    public void streamIntentUsesTheFarDisplayOrFallsBackToTheScreen() {
+    public void streamIntentUsesTheHolderDisplayOrFallsBackToTheScreen() {
         android.app.Application app = RuntimeEnvironment.getApplication();
         for (int[] display : new int[][] {{640, 480}, {1848, 2448}}) {
             Intent intent = new Intent();

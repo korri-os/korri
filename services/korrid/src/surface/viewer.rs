@@ -1,4 +1,4 @@
-//! Presentation projection of the exact local viewer, never far-session controls.
+//! Presentation projection of the exact local viewer, never streamed-session controls.
 use std::time::{Duration, Instant};
 
 use korri_surface_treaty::{

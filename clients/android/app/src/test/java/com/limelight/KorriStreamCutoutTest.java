@@ -179,7 +179,7 @@ public class KorriStreamCutoutTest {
     }
 
     /**
-     * Game as KorriStreamViewer opens it for a selected far launch: a
+     * Game as KorriStreamViewer opens it for a selected streamed launch: a
      * 1920x1080 stream, which is not this screen's native size.
      */
     private static org.robolectric.android.controller.ActivityController<Game> startViewer(String scaleMode)

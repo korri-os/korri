@@ -110,7 +110,7 @@ peer game or to declare a viewer:
 2. [upstreams.rs:1018–1059](../../services/korrid/src/upstreams.rs) prepares
    the selected peer route, receives the real launch ID, and calls
    `viewer.start(launch_id, moonlight_address)`. On viewer-start failure it
-   compensates by stopping that exact far launch (1064–1086).
+   compensates by stopping that exact streamed launch (1064–1086).
 3. [LinuxStreamViewer:33–56](../../services/korrid/src/linux_viewer.rs) owns
    start, status, background, resume/focus and stop by **exact launch ID**.
    It forbids selecting a viewer merely by process name/address or latest state.
@@ -126,13 +126,13 @@ peer game or to declare a viewer:
    ([production.rs:554–657](../../services/korrid/src/linux_viewer/production.rs)).
    Its app selector is the name `Korri Stream` (345–354), not a numeric ID.
 
-### The far-session watch solves one direction, not both
+### The streamed-session watch solves one direction, not both
 
 [Embedded startup:5526–5531,5595–5604](../../services/korrid/src/lib.rs)
 already starts `watched_upstream` whenever a viewer is supplied.
 [spawn_watch:80–91](../../services/korrid/src/stream_play/device.rs) polls the
 selected peer once per second, including while the shell is behind the viewer.
-When the **far game ends**, [upstreams.rs:1249–1282](../../services/korrid/src/upstreams.rs)
+When the **streamed game ends**, [upstreams.rs:1249–1282](../../services/korrid/src/upstreams.rs)
 stops the exact viewer and clears selection. The webOS edge could implement
 that stop with a confirmed close of its owned Moonlight instance, followed by
 a confirmed return of the existing shell to the foreground. It need not wait
@@ -143,11 +143,11 @@ But this does **not** detect the user disconnecting in Moonlight:
 | Event | Existing observation and consequence |
 | --- | --- |
 | Actual haku game exits / exact Korri session ends | Native session poll can drive viewer stop and return to Zone. This part is grounded. |
-| Moonlight Disconnect | Moonlight returns to its launcher; its process and the far Korri game remain live. No stream-ended signal reaches the TV's korrid. |
+| Moonlight Disconnect | Moonlight returns to its launcher; its process and the streamed Korri game remain live. No stream-ended signal reaches the TV's korrid. |
 | Moonlight Quit game | Moonlight sends GameStream quit. Sunshine [nvhttp.cpp:1004–1026][sun-cancel] terminates its streams and its own selected app. The reviewed app has an empty command, so it is a capture placeholder, not the game process korrid owns. No native Korri session-end notification is implemented by that handler. Do not equate it with `app.session.end`. |
-| Moonlight process closes / shell is manually foregrounded while far game remains live | [recover_viewer:1099–1127](../../services/korrid/src/upstreams.rs) restarts a stopped viewer or refocuses a backgrounded one while the far phase still requests running. Merely reporting `Stopped` or `Backgrounded` would restart/refocus Moonlight, not perform a deliberate quit. |
+| Moonlight process closes / shell is manually foregrounded while streamed game remains live | [recover_viewer:1099–1127](../../services/korrid/src/upstreams.rs) restarts a stopped viewer or refocuses a backgrounded one while the holder phase still requests running. Merely reporting `Stopped` or `Backgrounded` would restart/refocus Moonlight, not perform a deliberate quit. |
 
-Therefore the existing watch supports **far-game-ended → return**, not the full
+Therefore the existing watch supports **streamed-game-ended → return**, not the full
 **Moonlight-stream-ended → return** requirement. A new UI meaning for quit,
 a real stream-lifecycle producer, or a changed Moonlight is still a decision.
 Do not invent a stream-end timeout, parse another app's logs, or turn Sunshine's
@@ -244,7 +244,7 @@ question at a time, starting with what quit must mean. No new schema is proposed
 
 | Decision | Grounded options, cost and recommendation | Treaty / wire impact |
 | --- | --- | --- |
-| What must quit observe? | **Original requirement:** Moonlight Disconnect/stream failure must return to Zone. Installed v1.6.36 exports no such signal. **Narrower option:** return only when the far Korri game ends; its existing poll is sufficient, but Disconnect stays in Moonlight and the full M4 check is not met. **Another option:** expose an exact stream-end producer from Sunshine or change Moonlight to exit/return on end; this adds cross-deployable work and may change the chosen pin. **Recommendation:** do not relabel the narrower route as M4 complete. Keep the full exit requirement blocked until the owner chooses a signal/exit route. | Far-session-end handling needs no new wire. New Sunshine stream lifecycle metadata would need a producer and native treaty review. A changed Moonlight launch/exit contract changes that external interface; it need not change SurfaceModel. No fields are invented here. |
+| What must quit observe? | **Original requirement:** Moonlight Disconnect/stream failure must return to Zone. Installed v1.6.36 exports no such signal. **Narrower option:** return only when the streamed Korri game ends; its existing poll is sufficient, but Disconnect stays in Moonlight and the full M4 check is not met. **Another option:** expose an exact stream-end producer from Sunshine or change Moonlight to exit/return on end; this adds cross-deployable work and may change the chosen pin. **Recommendation:** do not relabel the narrower route as M4 complete. Keep the full exit requirement blocked until the owner chooses a signal/exit route. | Streamed-session-end handling needs no new wire. New Sunshine stream lifecycle metadata would need a producer and native treaty review. A changed Moonlight launch/exit contract changes that external interface; it need not change SurfaceModel. No fields are invented here. |
 | Pairing | **One-time Moonlight PIN:** [pair.dialog.c:60–79][ml-pin-ui] shows the PIN; [worker/pairing.c:16–29][ml-pin-worker] runs `gs_pair`. No private-key access by Korri, but user action and access to haku's existing Sunshine PIN submission path are required. The plugin does not advertise Sunshine's admin-web port, so do not assume LAN access to it. **Existing korrid provisioning:** submit this installed client's **public** `client.pem` using `app.moonlight.certificate.provision`; the broker/adapter already exists, but there is no approved cross-app certificate export or TV CLI flow. Public-cert export does not require copying `key.pem`. **Separate new korrid identity:** not usable by installed Moonlight; launch params do not let it select that key directory. **Recommendation:** use the app's PIN flow once if the existing host PIN path is available. Otherwise ask about a public-certificate export/provision operation, not private-key sharing. | PIN uses existing protocols; no Korri schema/wire change. Provision request already has `hostUuid`, `clientCertificate`; reply has `serverCertificate` ([lib.rs:229–249](../../services/korrid/src/lib.rs)). Its local-control listener is explicitly unsupported (3155–3187); do not claim a shipped `korri` provisioning CLI. Any cross-app export/configuration remains unresolved, not an invented file path. |
 | Numeric app ID source | **Reviewed producer calculation:** `1820356324`, after checking haku runs that app configuration; simple and no secret, but tied to the name/default image and version. **Runtime `/applist`:** authoritative, but requires an authorized GameStream client identity; do not read Moonlight's private key to query it. **New native metadata:** no client key transfer, but adds a host producer/wire. **Recommendation:** first verify the reviewed deterministic value against haku's actual installed app list; use that grounded case without a TV mapping schema. | Calculation needs no wire change. Publishing app ID from korrid would be a native wire change. |
 | Existing app ownership and return | **Refuse warm Moonlight:** no loss of another user's stream; requires the user to quit it before first play. **Automatically close/relaunch it:** could end an unrelated stream; not authorized by the chosen viewer contract. **Recommendation:** refuse pre-existing Moonlight and bind an observed new process/instance to the Korri launch. Prove close targeting and return-to-same-shell on the B7 before wiring. App-ID-only observation is not exact-instance authority. | An in-memory process/launch association is edge state, not a new persisted schema. B7 lifecycle/close API evidence is missing. New persistent process records are not justified. |
@@ -261,7 +261,7 @@ Candidate design once those decisions and TV contracts are resolved:
   existing `host_uuid` and `host_app_id` fields. Bind only the observed newly
   launched instance to the exact Korri launch. Do not claim a successful Luna
   request proves first-frame playback.
-- Reuse the existing far-session watcher for far-end cleanup. Stop only the
+- Reuse the existing streamed-session watcher for holder-side cleanup. Stop only the
   owned exact instance and confirm the original shell is foregrounded. Keep
   errors explicit so the core's existing compensation path remains authoritative.
 - Do not implement the separate local stream-end direction until its real
@@ -271,7 +271,7 @@ Candidate design once those decisions and TV contracts are resolved:
   rejection, unavailable service, malformed/oversize output, timeout, mismatched
   identity, close-versus-stop, foreground confirmation, repeated stop, and no
   mutation of an unrelated instance. Add an embedded real-RPC regression that
-  far-session end invokes the viewer and does not restart it.
+  streamed-session end invokes the viewer and does not restart it.
 
 No implementation is common to all unresolved exit/ownership routes beyond
 what already exists. Extracting helpers or exporting a new platform API now
@@ -352,7 +352,7 @@ Do not print capabilities, private keys or entire private-state files.
 
 The actual M4 acceptance must select a real haku game in Zone, show that exact
 game with sound and working controls, and exercise the **chosen** quit path
-back to the same Zone process. Test far-game-end and viewer-disconnect as
+back to the same Zone process. Test streamed-game-end and viewer-disconnect as
 separate cases. Check a second game launch, launch failure compensation and
 that no haku game remains unintentionally live. A manual Moonlight selector
 trial is not this acceptance.

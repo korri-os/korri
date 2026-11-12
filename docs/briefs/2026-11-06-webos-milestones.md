@@ -81,7 +81,7 @@ UI. Each milestone ends in something the owner can check on the TV.
   LS2 role binds to it, normal launch works (70 games), and
   `korri-webos media-test` opens NDL with no role edit.
 - **First real stream (2026-11-08, `wip/webos-viewer-appversion` 651261748,
-  host aka).** Zone's PLAY drives the whole chain: far launch, embedded
+  host aka).** Zone's PLAY drives the whole chain: streamed launch, embedded
   identity, public serverinfo, native attestation, certificate provisioning
   with no PIN, authenticated serverinfo, app list (`Korri Stream` = 1820356324),
   transport launch, then READY. The TV's display capture shows the game full

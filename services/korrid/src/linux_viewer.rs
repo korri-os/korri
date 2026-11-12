@@ -59,7 +59,7 @@ pub struct ViewerShapeSnapshot {
     pub ready: bool,
 }
 
-/// Controls a viewer by the same exact launch ID used by the far korrid.
+/// Controls a viewer by the same exact launch ID used by the holder's korrid.
 /// Implementations must never select a viewer by process name, address, or
 /// "most recent" state when an exact launch ID is supplied. Every successful
 /// mutation must return only after the requested runtime state is confirmed.
@@ -101,7 +101,7 @@ pub trait LinuxStreamViewer: Send + Sync {
         None
     }
 
-    /// Android follows the far composition; Linux retains its local size.
+    /// Android follows the holder's composition; Linux retains its local size.
     fn start<'a>(
         &'a self,
         launch_id: &'a str,

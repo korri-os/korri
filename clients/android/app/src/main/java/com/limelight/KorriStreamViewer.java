@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static com.limelight.KorriStreamViewerState.Phase;
 
-/** Native platform effects only. Rust selects, authorizes and controls the far launch. */
+/** Native platform effects only. Rust selects, authorizes and controls the streamed launch. */
 public final class KorriStreamViewer {
     public static final String EXTRA_GENERATION = "KorriViewerGeneration";
     private static final long START_TIMEOUT_MS = 45_000;
@@ -114,7 +114,7 @@ public final class KorriStreamViewer {
 
     /**
      * Temporary rule until stream size becomes a cascading setting: a Korri
-     * viewer offers the screen's own resolution to the far korrid. Landscape pair (long side first), the form of
+     * viewer offers the screen's own resolution to the holder's korrid. Landscape pair (long side first), the form of
      * {@code prefConfig.width/height}; Game inverts it in portrait.
      */
     static int[] screenStreamSize(Context context) {
@@ -161,7 +161,7 @@ public final class KorriStreamViewer {
                 LimeLog.warning("Exact Android viewer start failed: phase=" + current.state.phase()
                         + " error=" + error.getClass().getSimpleName());
                 // A failed start must release its own viewer before Rust performs
-                // compensation on the far exact launch. Never target another ID.
+                // compensation on the exact streamed launch. Never target another ID.
                 // Service teardown can run on the main thread while it joins
                 // Rust. Do not make that thread wait on its own Activity callbacks.
                 // Retirement is failure, never a confirmed stopped viewer.
@@ -444,7 +444,7 @@ public final class KorriStreamViewer {
         }
     }
 
-    /** The far launch fixes the stream size; Game applies portrait inversion. */
+    /** The streamed launch fixes the stream size; Game applies portrait inversion. */
     static void putStreamSize(Intent intent, Context context, int width, int height) {
         int[] size = width > 0 && height > 0
                 ? new int[] {width, height}

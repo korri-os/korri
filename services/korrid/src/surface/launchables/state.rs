@@ -145,7 +145,7 @@ pub fn is_local_catalog_session(session: &ActiveSession, entries: &[Entry]) -> b
 
 /// Native peer status qualifies the session's host. Local ACKs can also
 /// carry a host label, so retain the exact local source evidence first.
-fn has_far_session(entries: &[Entry]) -> bool {
+fn has_streamed_session(entries: &[Entry]) -> bool {
     entries.iter().any(|entry| {
         entry.session().is_some_and(|session| {
             session.host.is_some() && !is_local_catalog_session(session, entries)
@@ -374,7 +374,7 @@ fn ready_from(state: Loaded, message: impl Into<String>) -> LaunchablesState {
     })
 }
 
-fn retire_failed_far_session(mut state: Loaded, failure: &RpcFailure) -> LaunchablesState {
+fn retire_failed_streamed_session(mut state: Loaded, failure: &RpcFailure) -> LaunchablesState {
     state.content.entries = without_sessions(&state.content.entries);
     state.content.unavailable_session_status = None;
     ready_from(state, format!("{}: {}", failure.code, failure.message))
@@ -592,8 +592,8 @@ impl LaunchablesState {
             .map(|message| LaunchNotice::Catalog { message });
         if let Some(session) = session {
             if let SessionStatusOutcome::Err(failure) = session {
-                if failure.code == "HostLaunchFailed" && has_far_session(previous_entries) {
-                    return retire_failed_far_session(
+                if failure.code == "HostLaunchFailed" && has_streamed_session(previous_entries) {
+                    return retire_failed_streamed_session(
                         Loaded {
                             phase: Phase::Ready,
                             content: Content::with_entries(entries, notice),
@@ -653,8 +653,8 @@ impl LaunchablesState {
         let failure = status_failure(status).cloned();
         let payload = match status {
             SessionStatusOutcome::Err(error) => {
-                if error.code == "HostLaunchFailed" && has_far_session(&state.entries) {
-                    return retire_failed_far_session(
+                if error.code == "HostLaunchFailed" && has_streamed_session(&state.entries) {
+                    return retire_failed_streamed_session(
                         Loaded {
                             phase: Phase::Ready,
                             content: state,
@@ -1082,9 +1082,9 @@ impl LaunchablesState {
                 match failure {
                     Some(failure)
                         if failure.code == "HostLaunchFailed"
-                            && has_far_session(&loaded.content.entries) =>
+                            && has_streamed_session(&loaded.content.entries) =>
                     {
-                        retire_failed_far_session(loaded, failure)
+                        retire_failed_streamed_session(loaded, failure)
                     }
                     None => LaunchablesState::Loaded(loaded),
                     Some(failure)
@@ -1173,16 +1173,16 @@ impl LaunchablesState {
             return LaunchablesState::Loading;
         };
         if let SessionStatusOutcome::Err(failure) = status {
-            // A returned far launch is terminal, not an unavailable read.
+            // A returned streamed launch is terminal, not an unavailable read.
             // Local startup failures keep their existing exact-cleanup flow.
             if failure.code == "HostLaunchFailed"
                 && matches!(
                     loaded.phase,
                     Phase::Ready | Phase::Launching { .. } | Phase::Recovery
                 )
-                && has_far_session(&loaded.content.entries)
+                && has_streamed_session(&loaded.content.entries)
             {
-                return retire_failed_far_session(loaded, failure);
+                return retire_failed_streamed_session(loaded, failure);
             }
         }
         if let SessionStatusOutcome::Ok(payload) = status {

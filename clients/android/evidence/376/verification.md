@@ -124,7 +124,7 @@ Device test: `clients/android/app/build/outputs/apk/androidTest/debug/app-debug-
 The phone owner allowed a short run with no backup. No install occurred: the Fold7 was absent from `adb devices`,
 and connecting to `100.110.243.2:38683` failed. The phone was released immediately. Its installed build is unchanged;
 the installed revision was not checked. No app data was read, backed up, cleared or changed.
-SSH to aka failed with `Permission denied (publickey)`. The test instead checks the far exact launch through the phone's korrid session status.
+SSH to aka failed with `Permission denied (publickey)`. The test instead checks the exact streamed launch through the phone's korrid session status.
 
 The prepared script is `.cache/overlay-376/run-phone-once.sh`. From this worktree, after confirming the phone is free:
 

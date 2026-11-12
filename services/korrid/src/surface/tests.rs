@@ -1713,7 +1713,7 @@ mod overlay {
         })
         .await
         .unwrap();
-        // The brain (and its surface hub) outlive Android activities. The far
+        // The brain (and its surface hub) outlive Android activities. The
         // holder now reports no active session, as after quitting the game.
         outcomes.lock().unwrap().insert(
             "app.session.status".into(),
@@ -1743,7 +1743,7 @@ mod overlay {
     }
 
     #[tokio::test]
-    async fn failed_far_overlay_returns_to_catalog_with_one_dismissible_launch_notice() {
+    async fn failed_streamed_overlay_returns_to_catalog_with_one_dismissible_launch_notice() {
         for path in ["status", "resume", "watch"] {
             let mut outcomes = idle_outcomes(2);
             outcomes.get_mut("app.catalog.snapshot").unwrap()["payload"]["games"][1]["source"] =
@@ -1890,7 +1890,7 @@ mod overlay {
             super::acquisition_gate::push(
                 &script,
                 "app.session.resume",
-                json!({"_tag":"Err", "payload":{"code":code,"message":"far launch ended"}}),
+                json!({"_tag":"Err", "payload":{"code":code,"message":"streamed launch ended"}}),
             );
             let exits = Arc::new(std::sync::Mutex::new(Vec::new()));
             let observed = exits.clone();
@@ -1905,7 +1905,7 @@ mod overlay {
             assert_eq!(
                 *exits.lock().unwrap(),
                 vec![if code == "HostLaunchFailed" {
-                    OverlayExit::SessionFailed("far launch ended".into())
+                    OverlayExit::SessionFailed("streamed launch ended".into())
                 } else {
                     OverlayExit::SessionEnded
                 }],

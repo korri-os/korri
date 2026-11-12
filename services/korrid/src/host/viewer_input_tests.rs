@@ -117,7 +117,7 @@ async fn stream_play_local_buttons_reach_seats_only_while_the_viewer_is_focused(
             })
             .unwrap();
     };
-    viewer.start(launch, "far", None).await.unwrap();
+    viewer.start(launch, "holder", None).await.unwrap();
     assert!(compositor
         .0
         .lock()

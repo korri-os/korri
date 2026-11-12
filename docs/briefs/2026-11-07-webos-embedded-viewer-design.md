@@ -44,8 +44,8 @@ Verified:
   injects `production_viewer` and the authenticated certificate broker into
   `UpstreamRegistry`. It wraps the viewer with `viewer_with_local_input`.
   [`upstreams.rs::prepare_stream`](../../services/korrid/src/upstreams.rs)
-  prepares the selected peer game, retains its **exact far launch ID**, then
-  starts the local viewer. If viewer start fails, it stops that same far launch;
+  prepares the selected peer game, retains its **exact streamed launch ID**, then
+  starts the local viewer. If viewer start fails, it stops that same streamed launch;
   uncertain compensation remains an error, not an invented successful end.
 - [`linux_viewer.rs::LinuxStreamViewer`](../../services/korrid/src/linux_viewer.rs)
   defines `start`, `status`, `background`, `resume_and_focus`, `stop` by exact
@@ -110,12 +110,12 @@ This is shared behavior, not a TV pairing invention:
 There are two independent observations:
 
 - [`stream_play/device.rs::spawn_watch`](../../services/korrid/src/stream_play/device.rs)
-  polls the **selected far Korri session** every second.
+  polls the **selected streamed Korri session** every second.
   [`UpstreamRegistry::session_status_resolved`](../../services/korrid/src/upstreams.rs)
-  stops the exact local viewer and clears selection when that far launch ends.
+  stops the exact local viewer and clears selection when that streamed launch ends.
 - Local viewer exit is an actual completed unit. **It does not necessarily mean
-  that the far Korri game ended.** In particular, `recover_viewer` in
-  `upstreams.rs` starts a `Stopped` viewer again while an owned far launch is
+  that the streamed Korri game ended.** In particular, `recover_viewer` in
+  `upstreams.rs` starts a `Stopped` viewer again while an owned streamed launch is
   still selected. Merely returning `Stopped` is not a quit-to-Zone implementation.
   Stream-player participation has its own stop/leave logic. Do not conflate
   joining an existing stream with starting the selected peer game.
@@ -127,7 +127,7 @@ Home tap to the exact panel action;
 `toggle_panel_exact` through
 [`inputd/korrid_client.rs`](../../services/inputd/src/korrid_client.rs).
 `app.session.leave` freezes the exact game and focuses the shell; for a selected
-native peer, `session_freezer_resolved` freezes the far launch and backgrounds
+native peer, `session_freezer_resolved` freezes the streamed launch and backgrounds
 the local viewer with compensation on failure.
 [`host/viewer_input.rs`](../../services/korrid/src/host/viewer_input.rs) returns
 input to the shell. [`overlay_intent.rs`](../../services/korrid/src/overlay_intent.rs)
@@ -147,7 +147,7 @@ Verified current path:
 
 - [`android/viewer.rs`](../../services/korrid/src/android/viewer.rs) implements
   the same exact-launch viewer trait through JNI. The embedded korrid selects,
-  authorizes and controls the far launch.
+  authorizes and controls the streamed launch.
   [`KorridServer.java`](../../clients/android/app/src/main/java/com/simonwjackson/korri/korrid/KorridServer.java)
   delegates platform viewer effects to
   [`KorriStreamViewer.java`](../../clients/android/app/src/main/java/com/limelight/KorriStreamViewer.java).
@@ -255,7 +255,7 @@ research. The following integration is a proposal, not a shipped adapter.**
   Resolve exactly one `Korri Stream` through the authenticated app list, as
   Android does. That app ID is the transport, not the selected game's ID.
   Do not persist a TV app-ID mapping or hardcode yesterday's calculated ID.
-- korrid owns one child handle for the exact far launch. Spawn without a shell;
+- korrid owns one child handle for the exact streamed launch. Spawn without a shell;
   retain/reap the child and its termination result. An owned handle, not a
   process-name search or reused naked PID, authorizes stop. Bound start/stop,
   output and shutdown; ensure the child cannot outlive korrid. Do not pass the
@@ -265,14 +265,14 @@ research. The following integration is a proposal, not a shipped adapter.**
   `fork` success. common-c's connection callback and first accepted decode unit
   are useful observations, but neither proves a visible hardware first frame.
   The adapter must not claim exact success without the agreed readiness signal.
-  Start failure reaps this child before existing far-launch compensation runs.
+  Start failure reaps this child before existing streamed-launch compensation runs.
 - On disconnect or fatal decode failure the viewer tears down common-c, audio
   and media resources, then exits/reports once. `LiStopConnection` must run
   outside common-c callbacks; callbacks wake the owning control thread (the
   pinned [Moonlight connection callbacks][mt-connection] follow this shape).
 - **A local exit must enter an explicit exact-session transition before normal
   polling can restart it.** Reuse Android's user-leave path for an intentional
-  leave: exact `app.session.leave`, freeze the owned far game, hand input back
+  leave: exact `app.session.leave`, freeze the owned streamed game, hand input back
   to the shell and show the existing overlay/catalog behavior. End remains
   existing `app.session.end`, not GameStream `/cancel` as a second game-stop
   authority. The stopped-viewer recovery branch above needs a regression test
@@ -281,7 +281,7 @@ research. The following integration is a proposal, not a shipped adapter.**
   the current reconnect behavior is still an owner decision.
 - `stop(launch)` confirms this child's exit and resource release. It is
   idempotent for that retired exact launch and never targets a replacement.
-  Far-session completion follows the existing watch → stop → clear selection
+  Streamed-session completion follows the existing watch → stop → clear selection
   path. Background/resume must implement the existing confirmed semantics;
   whether to retain the media pipeline behind the graphics plane or release
   and reconnect it (Android's pattern) depends on the first experiments.
@@ -354,7 +354,7 @@ No decision below is implemented or encoded as an illustrative schema.
 3. **Exit intent:** intentional Leave follows the Android exact-leave precedent;
    End follows exact session end. Decide user-facing quit semantics and the
    unexpected disconnect policy before changing reconnect behavior. A stopped
-   child alone is not sufficient evidence to stop the far game.
+   child alone is not sufficient evidence to stop the streamed game.
 4. **Play keys:** choose the remote mapping and the local overlay/quit key from
    real physical events. LG's system Home may go to the TV launcher; do not
    assume it arrives at our app. Do not steal Back from Zone based on a guess.
@@ -397,14 +397,14 @@ expansion, root media test, vendor-library replacement or installed-app keys.
    pinned HTTPS. Confirm one `Korri Stream`; never use a guessed app ID or PIN.
    Check wrong/missing pin refusal without logging cert/session/key material.
 6. **First real stream (M4).** Select a haku game in Zone. Observe its exact
-   far launch, the owned viewer child, visible hardware-decoded video, sound
+   streamed launch, the owned viewer child, visible hardware-decoded video, sound
    and real remote/pad input. This is the first M4 playback claim. Record the
    source SHA, artifact hashes, first-frame/start/stop latency, RSS and CPU.
 7. **Quit/return before overlay polish.** Exercise chosen Leave and End
-   separately; confirm the same Zone process returns, exact far state agrees,
+   separately; confirm the same Zone process returns, exact holder state agrees,
    input is neutral, media/audio resources are gone where required, and the
    watcher does not restart a quit viewer. Repeat with a second game. Then
-   test far-game-end, viewer crash, network loss, start rejection, stale launch
+   test streamed-game-end, viewer crash, network loss, start rejection, stale launch
    completion and killing the owned korrid. Never target another launch.
 8. **M5.** Deliver the chosen local host action through korrid, show the existing
    gameplay overlay, Resume and End. Confirm no gameplay input leaks during

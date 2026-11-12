@@ -77,7 +77,7 @@ a representative game or release.
 | `surface-model.ts`, `use-launchables.ts`: cancel startup / pending launch | **Gap in excluded `play.rs`** | Existing `SessionCancel` RPC; CLI has no cancel command. `end` is not an alias for reservation cancellation |
 | `SurfaceRoot.tsx`: choose among launch locations | `--device NAME_OR_KEY play GAME` for an owner device | Remote worker owns signed peer session authorization; device selection is not a streaming-route flag |
 | `shared-play.ts`: view invitations / Play on stream / Dismiss invitation | **Gap in excluded session area (`play.rs`)** | Existing `InvitesList`, `InvitesStreamPlay`, `InvitesDismiss` RPCs; no CLI verbs |
-| `shared-play.ts`: leave stream / cancel stream connection | `leave` after viewer exists; **gap for in-flight connection cancellation** | Portal waits for `InvitesStreamPlay` then leaves its exact viewer; it never ends the far game |
+| `shared-play.ts`: leave stream / cancel stream connection | `leave` after viewer exists; **gap for in-flight connection cancellation** | Portal waits for `InvitesStreamPlay` then leaves its exact viewer; it never ends the streamed game |
 | `overlay/live-overlay-controller.ts`: Resume / End | `resume`; `end --yes` | Same exact-session operations |
 | `overlay/live-overlay-controller.ts`: plugin actions, toggles, choices, ranges | **Gap in excluded `play.rs`** | Existing `SessionControls`, `SessionControlInvoke` RPCs; no CLI commands |
 | `overlay/live-overlay-controller.ts`: Open Korri / dismiss overlay | No stored change | Local presentation/navigation, not a daemon setting |

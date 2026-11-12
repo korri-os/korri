@@ -54,7 +54,7 @@ initializing the ARM library. The built APK was also inspected with `dexdump`.
 |---|---|
 | `nix run .#korrid-check -- --types-only`, then `check-treaty.sh --check` | Pass; regeneration changed no additional treaty files. |
 | korrid `cargo fmt --check` | Pass. |
-| `cargo test --lib surface::overlay::live_overlay_tests` | 2 pass: local dispatch/readback, no far invoke, core controls. |
+| `cargo test --lib surface::overlay::live_overlay_tests` | 2 pass: local dispatch/readback, no holder invoke, core controls. |
 | `cargo test --lib surface::viewer::tests` | 1 pass: projection, invalid values, receipt/sample stale clearing. |
 | `cargo test --lib surface::tests::overlay` | 6 pass, including root clock propagation. |
 | korrid `cargo clippy --lib --tests` | Pass, with existing warnings. |

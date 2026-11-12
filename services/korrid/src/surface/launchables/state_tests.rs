@@ -1079,7 +1079,7 @@ fn terminal_resume_returns_to_library_with_only_failure_noticed() {
         let resuming = LaunchablesState::begin_return(content(&running).clone(), session);
         let ended = resuming.with_resume_outcome(Some(&crate::RpcFailure {
             code: code.into(),
-            message: "far launch ended".into(),
+            message: "streamed launch ended".into(),
         }));
         assert_eq!(tag(&ended), "Ready");
         assert!(
@@ -1092,7 +1092,7 @@ fn terminal_resume_returns_to_library_with_only_failure_noticed() {
         if code == "HostLaunchFailed" {
             assert_eq!(
                 notice(&ended).unwrap().message(),
-                "HostLaunchFailed: far launch ended"
+                "HostLaunchFailed: streamed launch ended"
             );
         } else {
             assert!(notice(&ended).is_none(), "{code}");
@@ -1101,7 +1101,7 @@ fn terminal_resume_returns_to_library_with_only_failure_noticed() {
 }
 
 #[test]
-fn terminal_far_status_returns_to_library_with_only_failure_noticed() {
+fn terminal_streamed_status_returns_to_library_with_only_failure_noticed() {
     for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
         let running = ready().with_session_status(&status(json!({"_tag":"Ok", "payload": {
             "active": {"launchId":"exact", "gameId":"skate3", "host":"aka", "phase":"running"}
@@ -1142,7 +1142,7 @@ fn terminal_far_status_returns_to_library_with_only_failure_noticed() {
 }
 
 #[test]
-fn catalog_refresh_keeps_a_terminal_far_failure_as_a_launch_notice() {
+fn catalog_refresh_keeps_a_terminal_streamed_failure_as_a_launch_notice() {
     let failure = status(json!({"_tag":"Err", "payload": {
         "code":"HostLaunchFailed", "message":"game unit failed: [redacted]"
     }}));
@@ -1158,7 +1158,7 @@ fn catalog_refresh_keeps_a_terminal_far_failure_as_a_launch_notice() {
     );
 }
 
-mod terminal_far_review {
+mod terminal_streamed_review {
     use super::*;
 
     fn catalog() -> CatalogSnapshotOutcome {
@@ -1190,7 +1190,7 @@ mod terminal_far_review {
         status(json!({"_tag":"Err", "payload":{"code":"StatusTimeout", "message":"timeout"}}))
     }
     #[test]
-    fn mixed_catalog_retires_only_the_known_far_failure() {
+    fn mixed_catalog_retires_only_the_known_streamed_failure() {
         let remote = running(false);
         let loaded = LaunchablesState::from_sources(
             &catalog(),
@@ -1201,7 +1201,7 @@ mod terminal_far_review {
         );
         assert!(
             loaded.is_ready(),
-            "a local game must not turn a far failure into Recovery"
+            "a local game must not turn a streamed failure into Recovery"
         );
         assert!(loaded
             .entries()
@@ -1249,7 +1249,7 @@ mod terminal_far_review {
         assert!(content(&resumed).unavailable_session_status.is_some());
     }
     #[test]
-    fn far_failure_clears_a_stale_observation_fence_for_status_and_resume() {
+    fn streamed_failure_clears_a_stale_observation_fence_for_status_and_resume() {
         let mut loaded = running(false).loaded().unwrap().clone();
         loaded.content.unavailable_session_status = Some(timeout());
         let fenced = LaunchablesState::Loaded(loaded);
@@ -1272,7 +1272,7 @@ mod terminal_far_review {
                 .all(|entry| entry.session().is_none()));
             assert!(
                 content(&ended).unavailable_session_status.is_none(),
-                "terminal far failure must remove the prepare fence"
+                "terminal streamed failure must remove the prepare fence"
             );
         }
     }

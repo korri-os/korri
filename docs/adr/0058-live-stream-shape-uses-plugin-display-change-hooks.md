@@ -41,7 +41,7 @@ Every gamescope package shipped with this change carries the hook.
 ## Grounding and limits
 
 - `PluginDisplay` supplies width and height today.
-- `SessionPrepared.display` and `KORRI_LIVE_DISPLAY` describe the far size.
+- `SessionPrepared.display` and `KORRI_LIVE_DISPLAY` describe the size of the holder's display.
 - `host/display_placement.rs` already changes and reads back unwatched modes.
 - `host/hooks.rs` and `LaunchUnitBackend::run_hook` provide the existing
   runtime-user execution boundary.

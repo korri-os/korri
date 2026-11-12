@@ -20,14 +20,14 @@ impl CompositorControl for GameFocus {
 }
 
 #[tokio::test]
-async fn far_plugin_controls_reach_the_overlay_and_invoke_the_holder_plugin() {
+async fn streamed_plugin_controls_reach_the_overlay_and_invoke_the_holder_plugin() {
     let root = tempfile::tempdir().unwrap();
     crate::config::test_fixtures::gba(root.path());
     std::fs::create_dir(root.path().join("roms")).unwrap();
     std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
     let plugins = crate::plugin_test_fixtures::installed(root.path());
     let config = root.path().join("host.toml");
-    std::fs::write(&config, "label = \"far\"\ngames = []\n").unwrap();
+    std::fs::write(&config, "label = \"holder\"\ngames = []\n").unwrap();
     let units = Arc::new(InMemoryLaunchUnitBackend::default());
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     socket
@@ -49,19 +49,19 @@ async fn far_plugin_controls_reach_the_overlay_and_invoke_the_holder_plugin() {
     let router = crate::plain_host_routers_for_tests(holder.clone()).0;
     let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     let peers = upstreams::UpstreamRegistry::new(vec![upstreams::UpstreamHostConfig::native(
-        "far",
+        "holder",
         format!("http://{address}"),
     )])
     .with_linux_viewer(Arc::new(TestLinuxStreamViewer::default()));
     let launch = peers
-        .prepare_stream(crate::config::test_fixtures::GBA_ID, Some("far"))
+        .prepare_stream(crate::config::test_fixtures::GBA_ID, Some("holder"))
         .await
         .unwrap()
         .session
         .launch_id;
     units.set_window_pids(&launch, [9100].into());
     // The desktop OverlayController expects a frozen session. The Android
-    // controller uses these same controls while Leave keeps the far game live.
+    // controller uses these same controls while Leave keeps the streamed game live.
     holder.session_freeze(&launch).await.unwrap();
     let expected_controls = holder.session_controls(&launch).await.unwrap();
 

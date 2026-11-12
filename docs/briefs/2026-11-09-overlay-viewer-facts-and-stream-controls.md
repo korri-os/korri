@@ -6,7 +6,7 @@ including #376 and #377). Line numbers below refer to that revision.
 `legacy:` citations refer to read-only `0e4cec9da3d77e6578b8a01a5d83420ba0d98e62`.
 
 The phone's korrid combines its **local** viewer observations with the exact
-far session's title and plugin controls. Pico and Zone receive facts and the
+streamed session's title and plugin controls. Pico and Zone receive facts and the
 existing gameplay-control vocabulary, never Android operations. The strip
 exists only with the gameplay overlay and has no focus targets.
 
@@ -32,7 +32,7 @@ inventory readable:
 | Time | `services/korrid/src/surface/root.rs:257–272`: `clock_label()` returns a local-time `String`, `h:mm AM/PM`, hour 1–12, minute 00–59; empty on conversion failure. Refresh at `:900–913`. Existing `SurfaceModel.clock_label: Option<String>` (`T:1364–1366`). | Phone's clock, not aka's. No touch dependency. Overlay currently loses it: `surface/overlay.rs:192` sets `None`, and `surface/mod.rs:305–308` returns that model instead of root facts. Reuse the root clock, not another clock field. |
 | Phone battery | `clients/android/app/src/main/java/com/simonwjackson/korri/korrid/KorridNetwork.java:53–56` already reads Android's sticky `ACTION_BATTERY_CHANGED`, but **only** exposes `EXTRA_PLUGGED > 0` as `external_power: bool`. There is no phone battery percentage producer in current Korri. Extract percentage from Android `BatteryManager.BATTERY_PROPERTY_CAPACITY` (integer percent 0–100; unsupported/error is not a percentage). API source: [BatteryManager](https://developer.android.com/reference/android/os/BatteryManager#BATTERY_PROPERTY_CAPACITY), [getIntProperty](https://developer.android.com/reference/android/os/BatteryManager#getIntProperty(int)). | Battery-capable local device only, not controller battery (`ControllerHandler.java:1132–1165`). No touch dependency. Read the Android property at the viewer boundary; do not infer percentage from external power. |
 | Stream health | RTT: `D:1800,1849–1850`, `MoonBridge.java:505–506`; native `clients/android/app/src/main/jni/moonlight-core/simplejni.c:295–303` packs two unsigned 32-bit integers, RTT and variance in ms, into a Java `long`; `-1` means unavailable. Network-lost frames: `VideoStats.java:9–13`, `D:1761–1768,1834–1835`: integer `framesLost / totalFrames * 100`, normally 0–100%, over the last two windows. Display drops: existing `frameDropped` decisions at `D:1274–1463`, not a published counter. Current bandwidth: `D:1803–1814,1836–1847` uses UID **RX+TX byte deltas**, a Java `float` displayed as K/s or M/s. It is not stream video bitrate and assumes roughly one-second sampling. | Local decoder/connection only; no touch dependency. Stats windows turn over roughly each second (`D:1780–1785,1864–1867`), but structured publication does not exist. Formatting/callback is gated by `enablePerfOverlay`; #378 must not enable Moonlight's HUD to obtain facts. See measurement correction below. |
-| Game name | `services/korrid/src/lib.rs:635–641`: exact `ActiveSession.title: Option<String>`; `SessionControls.title` at `:372–376` already reaches `SurfaceGameplayOverlayPresentation.title` through `surface/overlay.rs:150–164`. Arbitrary string; no numeric range or length restriction in those types. | Far session fact, already available locally. **Not** `G.EXTRA_APP_NAME`: `V:324–337,357–365` selects Sunshine's transport app, “Korri Stream”, not the game. No new title producer or treaty field. |
+| Game name | `services/korrid/src/lib.rs:635–641`: exact `ActiveSession.title: Option<String>`; `SessionControls.title` at `:372–376` already reaches `SurfaceGameplayOverlayPresentation.title` through `surface/overlay.rs:150–164`. Arbitrary string; no numeric range or length restriction in those types. | Streamed session fact, already available locally. **Not** `G.EXTRA_APP_NAME`: `V:324–337,357–365` selects Sunshine's transport app, “Korri Stream”, not the game. No new title producer or treaty field. |
 
 ### Measurement correction before implementation
 
@@ -134,9 +134,9 @@ settings writes. `applyLivePrefs()` must not overwrite stream-local changes.
    plugin-control discovery. No static Android checklist in Pico or Zone.
 4. Inject this local fact/effect reader into the overlay controller, following
    the internal fact-reader precedent in `surface/korrid.rs:1–7,35–51`.
-   `OverlayController.refresh` currently reads far session status and plugin
+   `OverlayController.refresh` currently reads streamed session status and plugin
    controls (`surface/overlay.rs:388–497`); merge local observations without
-   moving them to the far session. A roughly one-second local refresh while
+   moving them to the streamed session. A roughly one-second local refresh while
    the overlay is open follows the decoder's existing cadence. It must not
    poll aka for every stats sample or wait for plugin discovery before showing
    local facts. Clear failed/stale observations, cancel on overlay destruction,
@@ -148,10 +148,10 @@ settings writes. `applyLivePrefs()` must not overwrite stream-local changes.
    `surface/mod.rs:69–98,133–140`). No new publication RPC is needed for this
    pull path. `Root.perform` already delivers requests to `OverlayController`
    (`surface/root.rs:1513–1525`). Add local-viewer dispatch there alongside
-   core/plugin dispatch, before `invoke_plugin` sends anything to the far
+   core/plugin dispatch, before `invoke_plugin` sends anything to the streamed
    session. Reuse existing value validation and failure vocabulary
    (`services/korrid/src/lib.rs:394–430`). Do **not** send local operations to
-   `app.session.control.invoke`: that path controls the far game's plugin
+   `app.session.control.invoke`: that path controls the streamed game's plugin
    and enforces its authority. A watching person may change their own viewer
    without gaining permission to change the game.
 6. Republish observed runtime values after success, including coupled changes

@@ -311,7 +311,7 @@ struct SelectedRemoteSession {
     launch_id: String,
     viewer: Option<SelectedViewer>,
     /// Local viewer intent, using its existing Running/Backgrounded/Stopped
-    /// lifecycle. Independent of the far game's execution phase.
+    /// lifecycle. Independent of the streamed game's execution phase.
     viewer_target: LinuxViewerStatus,
 }
 
@@ -322,13 +322,13 @@ enum FreezerVerb {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RecoveredFarPhase {
+enum RecoveredHolderPhase {
     Running,
     Frozen,
     FocusFailed,
 }
 
-impl RecoveredFarPhase {
+impl RecoveredHolderPhase {
     fn parse(phase: Option<&str>) -> Result<Self, UpstreamError> {
         match phase {
             Some("running") => Ok(Self::Running),
@@ -336,15 +336,15 @@ impl RecoveredFarPhase {
             Some("focus-failed") => Ok(Self::FocusFailed),
             Some("stopping") => Err(viewer_error(
                 "NativeViewerRecoveryIncomplete",
-                "far launch is stopping; viewer recovery is blocked",
+                "streamed launch is stopping; viewer recovery is blocked",
             )),
             Some(other) => Err(viewer_error(
                 "NativeViewerRecoveryIncomplete",
-                format!("far launch has unknown phase {other:?}"),
+                format!("streamed launch has unknown phase {other:?}"),
             )),
             None => Err(viewer_error(
                 "NativeViewerRecoveryIncomplete",
-                "far launch has no recoverable phase",
+                "streamed launch has no recoverable phase",
             )),
         }
     }
@@ -1103,15 +1103,15 @@ impl UpstreamRegistry {
             }
             Ok(UpstreamSessionStop::StopPending { .. }) => Err(viewer_error(
                 "ViewerStartCompensationUncertain",
-                format!("{start_error}; far stop is pending"),
+                format!("{start_error}; holder stop is pending"),
             )),
             Ok(other) => Err(viewer_error(
                 "ViewerStartCompensationUncertain",
-                format!("{start_error}; far stop returned {other:?}"),
+                format!("{start_error}; holder stop returned {other:?}"),
             )),
             Err(error) => Err(viewer_error(
                 "ViewerStartCompensationUncertain",
-                format!("{start_error}; far stop failed: {error}"),
+                format!("{start_error}; holder stop failed: {error}"),
             )),
         }
     }
@@ -1119,7 +1119,7 @@ impl UpstreamRegistry {
     async fn recover_viewer(
         &self,
         selected: &SelectedRemoteSession,
-        far_phase: RecoveredFarPhase,
+        holder_phase: RecoveredHolderPhase,
     ) -> Result<(), UpstreamError> {
         let Some(viewer) = &selected.viewer else {
             return Ok(());
@@ -1128,7 +1128,7 @@ impl UpstreamRegistry {
             return Ok(());
         }
         let viewer_backgrounded = selected.viewer_target == LinuxViewerStatus::Backgrounded
-            || far_phase.viewer_backgrounded();
+            || holder_phase.viewer_backgrounded();
         let mut recovering = selected.clone();
         let result = match self.viewer.status(&selected.launch_id).await {
             Ok(LinuxViewerStatus::Running) if viewer_backgrounded => {
@@ -1193,7 +1193,7 @@ impl UpstreamRegistry {
         if let Some(selected) = self.selected() {
             if !self.retire_selected_if_revoked(&selected)? {
                 let status = match self.selected_status(&selected).await {
-                    // A failed far launch is terminal too. Prepare retires it
+                    // A failed streamed launch is terminal too. Prepare retires it
                     // without turning its diagnostic into a new launch refusal.
                     Err(UpstreamError::Tagged { code, .. }) if code == "HostLaunchFailed" => {
                         UpstreamSessionStatus::SessionStatus { active: None }
@@ -1247,7 +1247,7 @@ impl UpstreamRegistry {
         }
     }
 
-    /// Far terminal status is authoritative, but the exact local viewer must
+    /// Terminal status from the holder is authoritative, but the exact local viewer must
     /// also be stopped before another launch can replace this selection.
     async fn retire_ended_selection(
         &self,
@@ -1309,7 +1309,7 @@ impl UpstreamRegistry {
                         return Err(UpstreamError::SelectedRemoteSessionReplaced);
                     }
                     if selected.viewer.is_some() {
-                        let phase = RecoveredFarPhase::parse(active.phase.as_deref())?;
+                        let phase = RecoveredHolderPhase::parse(active.phase.as_deref())?;
                         self.recover_viewer(&selected, phase).await?;
                         let _ = self.synchronize_shape(&selected).await;
                     }
@@ -1462,7 +1462,7 @@ impl UpstreamRegistry {
         Ok(client)
     }
 
-    /// Android Leave holds input in its Surface host, not the far cgroup freezer.
+    /// Android Leave holds input in its Surface host, not the holder's cgroup freezer.
     /// Validate the exact selected launch using the real peer before publishing Home.
     pub async fn session_leave_live(
         &self,
@@ -1486,12 +1486,12 @@ impl UpstreamRegistry {
         let _mutation = registry.remote_prepare_mutation.lock().await;
         let selected = registry.exact_live_selection(expected).await?;
         if selected.viewer_target == LinuxViewerStatus::Stopped {
-            // Disconnect retains the exact far identity, not a decoder. Renew
+            // Disconnect retains the exact holder identity, not a decoder. Renew
             // its route and restart only this viewer when the person resumes.
             let mut resumed = selected.clone();
             resumed.viewer_target = LinuxViewerStatus::Running;
             registry
-                .recover_viewer(&resumed, RecoveredFarPhase::Running)
+                .recover_viewer(&resumed, RecoveredHolderPhase::Running)
                 .await?;
         } else {
             registry
@@ -1668,8 +1668,8 @@ impl UpstreamRegistry {
         match result {
             Ok(result) => {
                 let viewer_phase = match verb {
-                    FreezerVerb::Freeze => RecoveredFarPhase::Frozen,
-                    FreezerVerb::Thaw => RecoveredFarPhase::Running,
+                    FreezerVerb::Freeze => RecoveredHolderPhase::Frozen,
+                    FreezerVerb::Thaw => RecoveredHolderPhase::Running,
                 };
                 match self.recover_viewer(&selected, viewer_phase).await {
                     Ok(()) => Ok(result),
@@ -1683,7 +1683,7 @@ impl UpstreamRegistry {
                             Ok(_) => Err(viewer_error(
                                 "ViewerControlFailed",
                                 format!(
-                                    "local viewer {} failed for the exact launch and the far change was compensated: {error}",
+                                    "local viewer {} failed for the exact launch and the holder change was compensated: {error}",
                                     match verb {
                                         FreezerVerb::Freeze => "background",
                                         FreezerVerb::Thaw => "resume and focus",
@@ -1693,7 +1693,7 @@ impl UpstreamRegistry {
                             Err(compensation_error) => Err(viewer_error(
                                 "ViewerControlCompensationUncertain",
                                 format!(
-                                    "local viewer {} failed for the exact launch: {error}; far compensation failed: {compensation_error}",
+                                    "local viewer {} failed for the exact launch: {error}; holder compensation failed: {compensation_error}",
                                     match verb {
                                         FreezerVerb::Freeze => "background",
                                         FreezerVerb::Thaw => "resume and focus",
@@ -1822,7 +1822,7 @@ impl UpstreamRegistry {
                     unreachable!("native_host_by_route_key returned a legacy client")
                 };
                 let status = host.native_session_status().await?;
-                let far_outcome = match active_session(&status) {
+                let holder_outcome = match active_session(&status) {
                     Some(active) if active.launch_id == selected.launch_id => {
                         match client.session_stop(&selected.launch_id, force).await {
                             Ok(outcome) => outcome,
@@ -1849,7 +1849,7 @@ impl UpstreamRegistry {
                     None => UpstreamSessionStop::NothingToStop {},
                 };
                 if matches!(
-                    far_outcome,
+                    holder_outcome,
                     UpstreamSessionStop::Stopped { .. } | UpstreamSessionStop::NothingToStop {}
                 ) {
                     if let Err(error) = self.viewer.stop(&selected.launch_id).await {
@@ -1861,7 +1861,7 @@ impl UpstreamRegistry {
                     }
                     self.clear_selected_if(selected);
                 }
-                return Ok(far_outcome);
+                return Ok(holder_outcome);
             }
             SelectedRemoteRoute::Legacy { label } => {
                 let host = self.legacy_host_by_label(label).ok_or_else(|| {
@@ -1947,7 +1947,7 @@ impl UpstreamRegistry {
                 .peer_is_revoked(device_public_key)
                 .map_err(|_| UpstreamError::SourcePeerNotFound)?
             {
-                // Revocation is not evidence that the old far execution or
+                // Revocation is not evidence that the old holder execution or
                 // its exact local viewer stopped. Keep a viewer-backed
                 // selection tracked until stop can confirm both sides ended.
                 if selected.viewer.is_none() {
@@ -2327,7 +2327,7 @@ mod tests {
         if let Some(code) = state.terminal_error.lock().unwrap().clone() {
             let failure = RpcFailure {
                 code,
-                message: "far launch ended".into(),
+                message: "streamed launch ended".into(),
             };
             match &request {
                 crate::RpcRequest::SessionStatus(_) => {
@@ -2523,9 +2523,9 @@ mod tests {
         use crate::launcher::plugin_launch::PluginDisplay;
         use crate::linux_viewer::{ViewerShapeSnapshot, ViewerSnapshot};
         use crate::live_display::{SessionViewerDisplay, ViewerDisplayEvent};
-        let (url, far) = exact_native_server(false).await;
+        let (url, holder) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
             .with_linux_viewer(Arc::new(viewer.clone()));
         registry.prepare_stream("game", None).await.unwrap();
         let selected = registry.selected().unwrap();
@@ -2545,7 +2545,7 @@ mod tests {
             }),
             ..Default::default()
         }));
-        far.shape_replies.lock().unwrap().extend([
+        holder.shape_replies.lock().unwrap().extend([
             SessionViewerDisplay {
                 display: PluginDisplay {
                     width: 1920,
@@ -2582,7 +2582,7 @@ mod tests {
         observed.shape.as_mut().unwrap().ready = true;
         viewer.set_snapshot(Some(observed));
         registry.synchronize_shape(&selected).await.unwrap();
-        let requests = far.shape_requests.lock().unwrap();
+        let requests = holder.shape_requests.lock().unwrap();
         assert_eq!(requests.len(), 3);
         assert!(
             matches!(&requests[1].event, ViewerDisplayEvent::Report{display,..} if display.width==2448 && display.height==1848)
@@ -2643,7 +2643,7 @@ mod tests {
     #[tokio::test]
     async fn selected_native_gameplay_controls_forward_values_and_typed_refusals() {
         let (url, state) = exact_native_server(false).await;
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)]);
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)]);
         let launch = registry
             .prepare_stream("game", None)
             .await
@@ -2700,7 +2700,7 @@ mod tests {
     #[tokio::test]
     async fn gameplay_controls_never_target_an_unselected_launch_or_a_stream_players_holder() {
         let (url, state) = exact_native_server(false).await;
-        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)]);
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)]);
         assert!(
             matches!(registry.session_controls("absent").await, SessionControlsOutcome::Err(f) if f.reason == SessionControlFailureReason::StaleSession)
         );
@@ -3636,23 +3636,23 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn terminal_far_status_retires_starter_after_viewer_disconnect() {
+    async fn terminal_streamed_status_retires_starter_after_viewer_disconnect() {
         for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
-            let (url, far) = exact_native_server(false).await;
+            let (url, holder) = exact_native_server(false).await;
             let viewer = TestLinuxStreamViewer::default();
-            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
                 .with_linux_viewer(Arc::new(viewer.clone()));
             registry.prepare_stream("game", None).await.unwrap();
-            viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
+            viewer.seed(&holder.launch_id, LinuxViewerStatus::Stopped);
             // The disconnect wins the first poll, while the holder still says running.
             viewer.fail_next(LinuxViewerAction::Start, "disconnected");
             assert!(registry.session_status().await.is_err());
-            far.end_with(code);
+            holder.end_with(code);
             let outcome = registry.session_status().await;
             if code == "HostLaunchFailed" {
                 assert!(
                     matches!(outcome, Err(UpstreamError::Tagged { code, message })
-                    if code == "HostLaunchFailed" && message == "far launch ended")
+                    if code == "HostLaunchFailed" && message == "streamed launch ended")
                 );
             } else {
                 assert!(
@@ -3675,20 +3675,20 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn terminal_far_resume_retires_selection_instead_of_recovering_viewer() {
+    async fn terminal_streamed_resume_retires_selection_instead_of_recovering_viewer() {
         for code in ["SessionCompleted", "NoActiveSession", "HostLaunchFailed"] {
-            let (url, far) = exact_native_server(false).await;
+            let (url, holder) = exact_native_server(false).await;
             let viewer = TestLinuxStreamViewer::default();
-            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
                 .with_linux_viewer(Arc::new(viewer.clone()));
             registry.prepare_stream("game", None).await.unwrap();
-            viewer.seed(&far.launch_id, LinuxViewerStatus::Stopped);
-            far.end_with(code);
-            let outcome = registry.session_thaw(Some(&far.launch_id)).await;
+            viewer.seed(&holder.launch_id, LinuxViewerStatus::Stopped);
+            holder.end_with(code);
+            let outcome = registry.session_thaw(Some(&holder.launch_id)).await;
             if code == "HostLaunchFailed" {
                 assert!(
                     matches!(outcome, Err(UpstreamError::Tagged { code, message })
-                    if code == "HostLaunchFailed" && message == "far launch ended")
+                    if code == "HostLaunchFailed" && message == "streamed launch ended")
                 );
             } else {
                 assert!(
@@ -3701,7 +3701,7 @@ command = ["native-game"]
                 Ok(UpstreamSessionStatus::SessionStatus { active: None })
             ));
             assert!(matches!(
-                registry.session_thaw(Some(&far.launch_id)).await,
+                registry.session_thaw(Some(&holder.launch_id)).await,
                 Err(UpstreamError::NoActiveSession)
             ));
             assert!(!registry.has_selected_session(), "{code}");
@@ -3717,13 +3717,13 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn terminal_far_watch_delivers_only_failure_once_and_allows_prepare() {
+    async fn terminal_streamed_watch_delivers_only_failure_once_and_allows_prepare() {
         for code in ["HostLaunchFailed", "SessionCompleted", "NoActiveSession"] {
-            let (url, far) = exact_native_server(false).await;
-            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+            let (url, holder) = exact_native_server(false).await;
+            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
                 .with_linux_viewer(Arc::new(TestLinuxStreamViewer::default()));
             registry.prepare_stream("game", None).await.unwrap();
-            far.end_with(code);
+            holder.end_with(code);
             let notices = Arc::new(std::sync::Mutex::new(Vec::new()));
             let observed = notices.clone();
             let watch = crate::stream_play::device::spawn_watch(registry.clone(), move |message| {
@@ -3742,7 +3742,7 @@ command = ["native-game"]
             if code == "HostLaunchFailed" {
                 assert_eq!(
                     notices,
-                    ["upstream returned HostLaunchFailed: far launch ended"]
+                    ["upstream returned HostLaunchFailed: streamed launch ended"]
                 );
             } else {
                 assert!(notices.is_empty(), "{code}");
@@ -3752,18 +3752,22 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn terminal_far_launch_admits_new_prepare_after_viewer_cleanup() {
+    async fn terminal_streamed_launch_admits_new_prepare_after_viewer_cleanup() {
         for code in ["HostLaunchFailed", "SessionCompleted", "NoActiveSession"] {
             for status in [LinuxViewerStatus::Stopped, LinuxViewerStatus::Running] {
-                let (url, far) = exact_native_server(false).await;
+                let (url, holder) = exact_native_server(false).await;
                 let viewer = TestLinuxStreamViewer::default();
-                let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
-                    .with_linux_viewer(Arc::new(viewer.clone()));
+                let registry =
+                    UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
+                        .with_linux_viewer(Arc::new(viewer.clone()));
                 registry.prepare_stream("game", None).await.unwrap();
-                viewer.seed(&far.launch_id, status);
-                far.end_with(code);
+                viewer.seed(&holder.launch_id, status);
+                holder.end_with(code);
                 registry.prepare_stream("game", None).await.expect(code);
-                assert_eq!(far.active_phase.lock().unwrap().as_deref(), Some("running"));
+                assert_eq!(
+                    holder.active_phase.lock().unwrap().as_deref(),
+                    Some("running")
+                );
                 let actions: Vec<_> = viewer.calls().into_iter().map(|c| c.action).collect();
                 assert_eq!(
                     actions
@@ -3791,18 +3795,18 @@ command = ["native-game"]
     #[tokio::test]
     async fn terminal_prepare_keeps_selection_until_viewer_cleanup_is_confirmed() {
         for action in [LinuxViewerAction::Status, LinuxViewerAction::Stop] {
-            let (url, far) = exact_native_server(false).await;
+            let (url, holder) = exact_native_server(false).await;
             let viewer = TestLinuxStreamViewer::default();
-            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("far", url)])
+            let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("holder", url)])
                 .with_linux_viewer(Arc::new(viewer.clone()));
             registry.prepare_stream("game", None).await.unwrap();
-            far.end_with("HostLaunchFailed");
+            holder.end_with("HostLaunchFailed");
             viewer.fail_next(action, "viewer unavailable");
             assert!(matches!(registry.prepare_stream("game", None).await,
                 Err(UpstreamError::Tagged { code, .. }) if code == "NativeViewerRecoveryIncomplete"));
             assert!(registry.has_selected_session());
             assert_eq!(
-                far.terminal_error.lock().unwrap().as_deref(),
+                holder.terminal_error.lock().unwrap().as_deref(),
                 Some("HostLaunchFailed")
             );
             assert_eq!(
@@ -3818,7 +3822,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn native_prepare_preserves_the_far_composed_display() {
+    async fn native_prepare_preserves_the_holder_composed_display() {
         let prepared: crate::game_routes::SelectedGameLaunch =
             serde_json::from_value(serde_json::json!({
                 "session": {"gameId": "game", "launchId": "exact",
@@ -3833,7 +3837,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn native_prepare_starts_one_exact_viewer_with_the_far_composed_display() {
+    async fn native_prepare_starts_one_exact_viewer_with_the_holder_composed_display() {
         use crate::launcher::plugin_launch::PluginDisplay;
         for composed in [
             None,
@@ -3887,7 +3891,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn failed_viewer_start_stops_the_exact_far_launch_before_prepare_fails() {
+    async fn failed_viewer_start_stops_the_exact_streamed_launch_before_prepare_fails() {
         let (native_url, state) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
         viewer.fail_next(LinuxViewerAction::Start, "viewer failed");
@@ -3916,7 +3920,7 @@ command = ["native-game"]
             registry.prepare_stream("game", None).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerStartCompensationUncertain"
-                    && message.contains("far stop is pending")
+                    && message.contains("holder stop is pending")
         ));
         assert_eq!(
             registry
@@ -3929,7 +3933,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn android_leave_resume_and_disconnect_never_freeze_or_stop_the_far_game() {
+    async fn android_leave_resume_and_disconnect_never_freeze_or_stop_the_streamed_game() {
         let (native_url, state) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
@@ -4064,7 +4068,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn freeze_thaw_and_stop_control_the_same_viewer_only_after_far_confirmation() {
+    async fn freeze_thaw_and_stop_control_the_same_viewer_only_after_holder_confirmation() {
         let (native_url, state) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
@@ -4181,7 +4185,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn freeze_viewer_failure_thaws_the_exact_far_launch() {
+    async fn freeze_viewer_failure_thaws_the_exact_streamed_launch() {
         let (native_url, state) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
@@ -4193,7 +4197,7 @@ command = ["native-game"]
             registry.session_freeze(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerControlFailed"
-                    && message.contains("far change was compensated")
+                    && message.contains("holder change was compensated")
         ));
         assert_eq!(
             state.active_phase.lock().unwrap().as_deref(),
@@ -4206,7 +4210,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn thaw_viewer_failure_refreezes_the_exact_far_launch() {
+    async fn thaw_viewer_failure_refreezes_the_exact_streamed_launch() {
         let (native_url, state) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
@@ -4222,7 +4226,7 @@ command = ["native-game"]
             registry.session_thaw(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerControlFailed"
-                    && message.contains("far change was compensated")
+                    && message.contains("holder change was compensated")
         ));
         assert_eq!(
             state.active_phase.lock().unwrap().as_deref(),
@@ -4235,7 +4239,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn viewer_failure_and_far_compensation_failure_report_uncertainty() {
+    async fn viewer_failure_and_holder_compensation_failure_report_uncertainty() {
         let (native_url, state) = exact_native_server(false).await;
         let viewer = TestLinuxStreamViewer::default();
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
@@ -4248,7 +4252,7 @@ command = ["native-game"]
             registry.session_freeze(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerControlCompensationUncertain"
-                    && message.contains("far compensation failed")
+                    && message.contains("holder compensation failed")
         ));
         assert_eq!(
             state.active_phase.lock().unwrap().as_deref(),
@@ -4278,7 +4282,7 @@ command = ["native-game"]
             registry.session_thaw(Some(&prepared.session.launch_id)).await,
             Err(UpstreamError::Tagged { code, message })
                 if code == "ViewerControlCompensationUncertain"
-                    && message.contains("far compensation failed")
+                    && message.contains("holder compensation failed")
         ));
         assert_eq!(
             state.active_phase.lock().unwrap().as_deref(),
@@ -4291,7 +4295,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn lost_far_stop_confirmation_keeps_the_exact_viewer_live_and_tracked() {
+    async fn lost_holder_stop_confirmation_keeps_the_exact_viewer_live_and_tracked() {
         let (native_url, task) = abortable_native_server("zao", "neverball").await;
         let viewer = TestLinuxStreamViewer::default();
         let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)])
@@ -4355,7 +4359,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn recovery_restores_only_the_explicitly_selected_far_launch_viewer() {
+    async fn recovery_restores_only_the_explicitly_selected_streamed_launch_viewer() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
             .prepare_stream("game", None)
@@ -4392,7 +4396,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn recovery_correlates_far_freeze_with_the_exact_running_viewer() {
+    async fn recovery_correlates_holder_freeze_with_the_exact_running_viewer() {
         let (native_url, state) = exact_native_server(false).await;
         let client = NativeClient::new(native_url.clone());
         client.prepare_stream("game", None).await.unwrap();
@@ -4998,7 +5002,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn far_launch_end_stops_the_exact_live_viewer_and_clears_the_route() {
+    async fn streamed_launch_end_stops_the_exact_live_viewer_and_clears_the_route() {
         let (native_url, state) = exact_native_server(false).await;
         NativeClient::new(native_url.clone())
             .prepare_stream("game", None)

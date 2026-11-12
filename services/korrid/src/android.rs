@@ -500,7 +500,7 @@ fn provision_result(
 }
 
 /// A semantic local Leave action from the exact native viewer. The same
-/// authenticated RPC performs selection checks and publishes Home without freezing the far game.
+/// authenticated RPC performs selection checks and publishes Home without freezing the streamed game.
 #[no_mangle]
 pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_leaveViewer(
     mut env: JNIEnv,

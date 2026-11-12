@@ -985,7 +985,7 @@ async fn revoked_selected_controls_report_unavailable_not_a_remote_stop() {
             ),
             "{operation}: {result:?}"
         );
-        // Revocation cannot prove that the far launch or its local viewer
+        // Revocation cannot prove that the streamed launch or its local viewer
         // stopped. The viewer-backed selection stays tracked and unavailable.
         assert!(matches!(
             registry.session_status().await,

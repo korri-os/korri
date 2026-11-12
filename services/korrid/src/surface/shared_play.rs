@@ -900,7 +900,7 @@ impl SharedPlayController {
             op,
             device_label: invite.device_label.clone(),
         });
-        // Cancel cannot cancel a far session. Once the daemon's request
+        // Cancel cannot cancel a streamed session. Once the daemon's request
         // settles, Leave retires only this device's exact viewer.
         let outcome = super::korrid::ask!(
             self.korrid,

@@ -326,7 +326,7 @@ impl OverlayController {
         model
     }
 
-    /// Local observations never wait for far plugin discovery or mutate far authority.
+    /// Local observations never wait for holder plugin discovery or mutate holder authority.
     pub async fn refresh_viewer(&self) -> bool {
         let generation = {
             let mut inner = self.lock();
@@ -871,7 +871,7 @@ mod live_overlay_tests {
     use super::*;
 
     #[tokio::test]
-    async fn viewer_controls_apply_locally_read_back_and_never_invoke_far_session() {
+    async fn viewer_controls_apply_locally_read_back_and_never_invoke_streamed_session() {
         use crate::linux_viewer::{
             test_backend::TestLinuxStreamViewer, LinuxViewerStatus, ViewerSnapshot,
         };
@@ -895,7 +895,7 @@ mod live_overlay_tests {
             ..Default::default()
         }));
         let korrid = Korrid::new(Arc::new(|_| {
-            panic!("a local viewer operation must never invoke far RPC")
+            panic!("a local viewer operation must never invoke holder RPC")
         }))
         .with_viewer(Some(viewer.clone()));
         let overlay = OverlayController::new(

@@ -22,14 +22,14 @@ Verified on aka, 2026-11-09:
   `LaunchComposition.display` (`launcher/linux_plugin.rs`), which comes from
   the live Sway output (`host/compositor_focus.rs` `display_from_outputs`).
   `Placement.width/height` comes from the static `KORRID_DISPLAYS` facts.
-- The far korrid prepares and starts the game **before** the viewer connects
+- The holder's korrid prepares and starts the game **before** the viewer connects
   to Sunshine (`upstreams.rs`: `prepare_stream`, then `viewer.start`). So
   Sunshine's per-session client size arrives too late to size the game.
 
 ## Decision
 
-The streaming device tells the far korrid the picture size it will show, in
-the prepare call. When the far device's main display is unwatched, the far
+The streaming device tells the holder's korrid the picture size it will show, in
+the prepare call. When the holder's main display is unwatched, the holder's
 korrid sets that display to the client's shape before the game starts, and
 puts it back when the shell takes the display again.
 
@@ -48,7 +48,7 @@ puts it back when the shell takes the display again.
    resolution at stream start (default display mode, long side first, with
    Game's portrait inversion), not the Moonlight resolution setting. The
    viewer passes the same size to `Game` as `EXTRA_WIDTH`/`EXTRA_HEIGHT`, so
-   the far display and the stream request agree. This is temporary: stream
+   the holder's display and the stream request agree. This is temporary: stream
    size is meant to become a cascading setting.
    `upstreams.rs` passes it to `prepare_stream`. A joiner (`stream_play`)
    sends nothing and keeps the starter's shape.
@@ -158,5 +158,5 @@ Joiners share the viewer start path, but stream-play returns `ActiveSession`,
 which has no composed display; they keep their existing size request. No second
 wire field is added for them.
 
-This fixes the request mismatch, not encoder capability negotiation. A far
-unwatched display shaped beyond its encoder's limits can still fail to encode.
+This fixes the request mismatch, not encoder capability negotiation. An unwatched
+holder display shaped beyond its encoder's limits can still fail to encode.

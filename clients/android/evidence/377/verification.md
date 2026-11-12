@@ -1,4 +1,4 @@
-# #377: far-session plugin gameplay controls
+# #377: streamed-session plugin gameplay controls
 
 Base: `2d59dabda` (includes #376). Runtime commit: `d366651ae`.
 No Game.java, Surface host, Slint backend,
@@ -40,14 +40,14 @@ Before forwarding, the new empty-control regression failed with:
 `Unavailable: The selected peer does not expose live gameplay controls.`
 
 After forwarding but before preserving the composed runner ID, the new real
-plugin regression reached the far holder but the overlay had zero plugin groups.
+plugin regression reached the holder but the overlay had zero plugin groups.
 
 After both fixes, the real-plugin regression passes. It launches the existing
 mGBA plugin fixture over a real loopback native RPC server and uses the real
 local dispatch, registry, OverlayController and RetroArch UDP executor. Both
 brain and holder local modes receive the declared menu/quit group. Invoking
 Open RetroArch menu sends and verifies `GET_STATUS`, `MENU_TOGGLE`, `GET_STATUS`
-at the far executor. Unknown controls and invalid values retain their typed
+at the holder's executor. Unknown controls and invalid values retain their typed
 refusals. The desktop test uses its existing frozen overlay policy; it does not
 claim physical Android verification.
 

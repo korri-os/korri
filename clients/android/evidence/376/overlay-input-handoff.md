@@ -8,7 +8,7 @@ The supplied log is consistent with that order: main-window focus at 23:05:16.33
 
 The Surface-release callback now resets the Android source's cached device registrations even if the main window already has focus. Its next sample declares and initializes that controller again. Slint's overlay component is also hidden before being dropped, removing its shown-component reference before renderer release.
 
-Disconnect and End stop the viewer; Open Korri backgrounds it. Both `stopAndAwait` and `background` finish their Game activities through `finishActivities`, so all three release the same hosted Surface and use the repaired handoff. No session presentation, far-game state or input-hold policy changed. No PiP behavior changed.
+Disconnect and End stop the viewer; Open Korri backgrounds it. Both `stopAndAwait` and `background` finish their Game activities through `finishActivities`, so all three release the same hosted Surface and use the repaired handoff. No session presentation, streamed-game state or input-hold policy changed. No PiP behavior changed.
 
 ## Checks
 

@@ -8,7 +8,7 @@ status: accepted
 as Steam and Xbox have; without it Korri "doesn't feel like a product". On
 Linux, Home froze the game with the cgroup freezer, dimmed its window and
 raised the shell (verified on the RG353M, 2026-11-04). On Android in Korri
-mode, Home froze the game on the far device and returned to the Korri screen.
+mode, Home froze the game on the holder and returned to the Korri screen.
 Moonlight's own see-through overlay (`overlay.html`) opened only outside Korri
 mode, had fixed buttons and no data from korrid.
 

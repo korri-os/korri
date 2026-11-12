@@ -1,4 +1,4 @@
-//! Playing on a stream never grants control over the far session.
+//! Playing on a stream never grants control over the streamed session.
 use super::*;
 use crate::{
     stream_play::{StreamPlayEndCause, StreamPlayEnded},
@@ -193,8 +193,11 @@ impl UpstreamRegistry {
             if let Some(active) =
                 active_session(status).filter(|a| a.launch_id == selected.launch_id)
             {
-                self.recover_viewer(selected, RecoveredFarPhase::parse(active.phase.as_deref())?)
-                    .await?;
+                self.recover_viewer(
+                    selected,
+                    RecoveredHolderPhase::parse(active.phase.as_deref())?,
+                )
+                .await?;
                 return Ok(status.clone());
             }
         }

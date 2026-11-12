@@ -35,8 +35,8 @@ but could not select one on another device.
   use `TestLinuxStreamViewer`. The adapter reads occupied local seats from
   inputd. No PIN or direct portal-to-peer RPC is added.
 - Local control follows that same selected route. The device that started
-  a far session can control it. A device playing on its stream controls
-  only its viewer; the far holder retains session authority.
+  a streamed session can control it. A device playing on its stream controls
+  only its viewer; the holder retains session authority.
 
 ## Considered options
 

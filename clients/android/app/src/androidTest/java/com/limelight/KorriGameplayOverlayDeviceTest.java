@@ -107,7 +107,7 @@ public class KorriGameplayOverlayDeviceTest {
             awaitPresentation("catalog");
             assertLive(launch);
             screenshot("disconnected");
-            snapshot("disconnected-far-session", status());
+            snapshot("disconnected-streamed-session", status());
             assertEquals("Stopped", KorridServer.viewerStatus(launch));
             assertEquals("Ok", rpc("app.session.resume", new JSONObject().put("expectedLaunchId", launch)).getString("_tag"));
             awaitViewer(launch, "Running");
@@ -125,7 +125,7 @@ public class KorriGameplayOverlayDeviceTest {
                 String code = ended.getJSONObject("payload").getString("code");
                 assertTrue("End status failed: " + code, code.equals("NoActiveSession") || code.equals("SessionCompleted"));
             } else assertEquals("Ok", ended.getString("_tag"));
-            assertNull("End must remove the exact far session", active(ended));
+            assertNull("End must remove the exact streamed session", active(ended));
             snapshot("ended", ended);
             screenshot("ended");
             android.util.Log.i("KorriOverlayProof", "PASS: two Resume cycles, Open Korri, Disconnect, reconnect, End; exact launch=" + launch);
@@ -208,7 +208,7 @@ public class KorriGameplayOverlayDeviceTest {
 
     private void assertLive(String launch) throws Exception {
         JSONObject active = active(status());
-        assertNotNull("The far launch disappeared", active);
+        assertNotNull("The streamed launch disappeared", active);
         assertEquals(launch, active.getString("launchId"));
         assertEquals("running", active.getString("phase"));
     }
