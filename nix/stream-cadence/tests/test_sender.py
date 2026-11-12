@@ -10,7 +10,15 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cli import LOCAL, Refusal, Remote, endpoint, parser, view  # noqa: E402
+from cli import (  # noqa: E402
+    LOCAL,
+    Refusal,
+    Remote,
+    endpoint,
+    parser,
+    view,
+    viewer_stream_host,
+)
 from discovery import session_log  # noqa: E402
 import sender  # noqa: E402
 import viewer  # noqa: E402
@@ -209,6 +217,36 @@ class LocalTarget(unittest.TestCase):
         target, options = endpoint("operator@device:2222", [])
         self.assertEqual(target, "operator@device")
         self.assertEqual(options[-2:], ["-p", "2222"])
+
+    def test_remote_viewer_reaches_a_local_sender_at_the_far_end_of_its_ssh_link(self):
+        def chosen(given=None, **facts) -> str:
+            values = dict(
+                same_clock=False,
+                sender_is_this_host=True,
+                controller_address="link-address",
+                sender_host="sender",
+                loopback="loopback",
+            )
+            return viewer_stream_host(given, **{**values, **facts})
+
+        self.assertEqual(chosen(), "link-address")
+        self.assertEqual(chosen("given"), "given")
+        self.assertEqual(chosen(same_clock=True), "loopback")
+        self.assertEqual(chosen(sender_is_this_host=False), "sender")
+        # Never the viewer's own loopback: with no SSH link the tool asks.
+        with self.assertRaisesRegex(Refusal, "--viewer-stream-host"):
+            chosen(controller_address=None)
+
+    def test_viewer_agent_reports_the_far_end_of_its_ssh_connection(self):
+        previous = os.environ.get("SSH_CONNECTION")
+        try:
+            os.environ["SSH_CONNECTION"] = "192.0.2.7 50000 192.0.2.1 22"
+            self.assertEqual(viewer.Session("/unused/sway").facts["controller_address"], "192.0.2.7")
+            del os.environ["SSH_CONNECTION"]
+            self.assertIsNone(viewer.Session("/unused/sway").facts["controller_address"])
+        finally:
+            if previous is not None:
+                os.environ["SSH_CONNECTION"] = previous
 
     def test_local_sender_needs_the_fixture(self):
         args = parser().parse_args(["view", "--sender", LOCAL, "--viewer", LOCAL])

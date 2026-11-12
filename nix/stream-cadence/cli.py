@@ -397,6 +397,34 @@ def fixture_stream(
     return host, port, facts["sender_fixture"]["application"]
 
 
+def viewer_stream_host(
+    given: str | None,
+    *,
+    same_clock: bool,
+    sender_is_this_host: bool,
+    controller_address: str | None,
+    sender_host: str,
+    loopback: str,
+) -> str:
+    """The sender's address as the viewer reaches it."""
+    if given:
+        return given
+    if same_clock:
+        # A viewer on the sender's own machine reaches Sunshine on IPv4
+        # loopback, where Sunshine's wildcard listener answers.
+        return loopback
+    if not sender_is_this_host:
+        return sender_host
+    # The sender is this host and the viewer is elsewhere. The viewer reaches
+    # this host at the far end of its agent's SSH connection, so the stream
+    # takes the link that the viewer's SSH target names.
+    if not controller_address:
+        raise Refusal(
+            "The viewer's agent reports no SSH connection to this host. Give the sender's address as the viewer reaches it with --viewer-stream-host."
+        )
+    return controller_address
+
+
 def stop_client(client: subprocess.Popen | None) -> None:
     if client and client.poll() is None:
         client.send_signal(signal.SIGINT)
@@ -802,9 +830,14 @@ def view_case(
                 args, sender, facts, certificate, paths["motion"]
             )
             key = (args.keydir / "key.pem").read_text()
-        # A viewer on the sender's own machine reaches Sunshine on IPv4 loopback,
-        # where Sunshine's wildcard listener answers.
-        viewer_host = args.viewer_stream_host or (loopback if same_clock else host)
+        viewer_host = viewer_stream_host(
+            args.viewer_stream_host,
+            same_clock=same_clock,
+            sender_is_this_host=args.ssh_target is None,
+            controller_address=seat.get("controller_address"),
+            sender_host=host,
+            loopback=loopback,
+        )
         prepared = viewer.request(
             "prepare",
             fixture=plugin is None,

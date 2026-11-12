@@ -135,6 +135,7 @@ class Session:
             self.sway = self.compositor["exe"]
         # The shape that device.py's compositor helpers read.
         self.shell = {"processes": {"compositor": self.compositor}}
+        connection = os.environ.get("SSH_CONNECTION", "").split()
         self.facts = {
             "architecture": os.uname().machine,
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
@@ -143,6 +144,9 @@ class Session:
             "display": get_output(self.shell) if self.compositor else None,
             "plugin": plugin() if self.compositor else None,
             "platform": platform(),
+            # The host that runs the tool, as this device reaches it: the far end
+            # of the agent's own SSH connection. Absent with no SSH.
+            "controller_address": connection[0] if connection else None,
         }
         self.root: Path | None = None
         self.fixture = False
