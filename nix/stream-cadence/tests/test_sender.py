@@ -184,12 +184,17 @@ class HostViewer(unittest.TestCase):
                     session.handle({"operation": "pair", "command": command}), {"pin": "4321"}
                 )
                 (keys / "admitted").touch()
-                self.assertIn("Succesfully paired", session.handle({"operation": "paired"})["log"])
+                words = session.handle({"operation": "paired"})["log"]
+                self.assertIn("Succesfully paired", words)
+                self.assertNotIn("4321", words)
                 (keys / "admitted").unlink()
                 (keys / "refused").touch()
                 session.handle({"operation": "pair", "command": command})
-                with self.assertRaisesRegex(RuntimeError, "did not pair"):
+                with self.assertRaisesRegex(RuntimeError, "did not pair") as refused:
                     session.handle({"operation": "paired"})
+                # Moonlight's words reach the result; the PIN stays in the run directory.
+                self.assertIn("Failed to pair to server", str(refused.exception))
+                self.assertNotIn("4321", str(refused.exception))
             finally:
                 restore = session.close()
             self.assertTrue(restore["pass"], restore)

@@ -109,10 +109,18 @@ def platform() -> str:
     return "x11"
 
 
+PIN_LINE = r"(PIN on the target PC: )(\d{4})\b"
+
+
 def pairing_pin(text: str) -> str | None:
     """The PIN that Moonlight prints and then waits for the sender to admit."""
-    found = re.search(r"PIN on the target PC: (\d{4})\b", text)
-    return found.group(1) if found else None
+    found = re.search(PIN_LINE, text)
+    return found.group(2) if found else None
+
+
+def without_pin(text: str) -> str:
+    """Moonlight's pairing words for a reply or an error. The PIN stays in the run directory."""
+    return re.sub(PIN_LINE, r"\1[not shown]", text)
 
 
 def product_compositor() -> dict:
@@ -374,7 +382,9 @@ class Session:
                 if pairing.poll() is not None:
                     break
                 time.sleep(0.1)
-            raise RuntimeError("The viewer printed no pairing PIN: " + self.tail("pair"))
+            raise RuntimeError(
+                "The viewer printed no pairing PIN: " + without_pin(self.tail("pair"))
+            )
         if operation == "paired":
             waiting = self.processes.get("pair")
             if waiting is None:
@@ -386,8 +396,10 @@ class Session:
             finished = waiting.poll() is not None
             code = self.stop("pair")
             if not finished or code:
-                raise RuntimeError(f"The viewer did not pair ({code}): " + self.tail("pair"))
-            return {"log": self.tail("pair")}
+                raise RuntimeError(
+                    f"The viewer did not pair ({code}): " + without_pin(self.tail("pair"))
+                )
+            return {"log": without_pin(self.tail("pair"))}
         if operation == "start":
             start = time.monotonic_ns()
             process = self.spawn("viewer", list(request["command"]), self.viewer_environment())

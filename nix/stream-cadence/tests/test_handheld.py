@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import sender  # noqa: E402
+import viewer  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
 FIXTURES = TESTS / "fixtures" / "sender"
@@ -20,6 +21,14 @@ KORRID_VIEWER = Path(
         TESTS.parents[2] / "services/korrid/src/linux_viewer/production.rs",
     )
 )
+
+
+class PairingWords(unittest.TestCase):
+    def test_pin_never_leaves_in_moonlights_words(self):
+        words = "Please enter the following PIN on the target PC: 4321\nFailed to pair to server\n"
+        self.assertEqual(viewer.pairing_pin(words), "4321")
+        self.assertNotIn("4321", viewer.without_pin(words))
+        self.assertIn("Failed to pair to server", viewer.without_pin(words))
 
 
 class Login(unittest.TestCase):
