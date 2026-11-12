@@ -8,6 +8,7 @@ certificate socket: the viewer pairs through Sunshine's own PIN.
 """
 
 import base64
+import hashlib
 import ipaddress
 import json
 import math
@@ -104,6 +105,20 @@ def startup(log: str) -> dict:
         # Sunshine names its own CPU encoder kind "software".
         "hardware_encoder": bool(working) and all(kind != "software" for kind in kinds),
     }
+
+
+def credentials(name: str, password: str) -> str:
+    """Sunshine's credentials file, as its save_user_creds writes it (httpcommon.cpp).
+
+    Sunshine stores SHA-256 of password and salt as upper-case hex, last byte
+    first. The agent writes the file itself, so the login is never an argument
+    that another user can read from the process list.
+    """
+    salt = secrets.token_hex(8)
+    digest = hashlib.sha256((password + salt).encode()).digest()
+    return json.dumps(
+        {"username": name, "salt": salt, "password": digest[::-1].hex().upper()}
+    )
 
 
 def configuration(root: Path, base: int, node: str) -> str:
@@ -334,20 +349,11 @@ class Session:
             json.dumps({"env": {}, "apps": [{"name": APPLICATION, "cmd": "", "image-path": ""}]})
         )
         # The web UI login exists only to post the pairing PIN from this agent.
+        # It lives in this process and, hashed, in the private run directory.
         self.login = (secrets.token_hex(8), secrets.token_urlsafe(24))
-        (self.root / "sunshine.conf").write_text(configuration(self.root, port_base(), nodes[0]))
-        created = subprocess.run(
-            [self.sunshine, str(self.root / "sunshine.conf"), "--creds", *self.login],
-            cwd=self.root,
-            env=self.environment(),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            preexec_fn=end_with_agent,
-        )
-        if created.returncode:
-            raise RuntimeError("Sunshine did not store the web UI login: " + created.stderr[-2000:])
+        stored = self.root / "credentials.json"
+        stored.touch(mode=0o600)
+        stored.write_text(credentials(*self.login))
         # Prefer a hardware encoder: take the first render node on which Sunshine
         # finds one. Without one, take the first node that encodes at all.
         attempts: list[dict] = []
