@@ -146,7 +146,21 @@ class Cleanup(unittest.TestCase):
             self.assertEqual(remote.process.returncode, 0)
 
 
-class HostViewer(unittest.TestCase):
+class NoSensors(unittest.TestCase):
+    """A host with no thermal zone and no device tree, whatever machine runs the tests."""
+
+    def setUp(self):
+        self.sysfs = tempfile.TemporaryDirectory()
+        self.real = (viewer.THERMAL, viewer.COMPATIBLE)
+        viewer.THERMAL = Path(self.sysfs.name) / "thermal"
+        viewer.COMPATIBLE = Path(self.sysfs.name) / "compatible"
+
+    def tearDown(self):
+        viewer.THERMAL, viewer.COMPATIBLE = self.real
+        self.sysfs.cleanup()
+
+
+class HostViewer(NoSensors):
     """A host with no Korri: the calling user, a supplied sway, no Korri unit."""
 
     def program(self, directory: Path) -> str:
@@ -216,7 +230,7 @@ class HostViewer(unittest.TestCase):
         self.assertIsNone(viewer.pairing_pin("Failed to pair to server: 12345\n"))
 
 
-class LocalTarget(unittest.TestCase):
+class LocalTarget(NoSensors):
     def test_local_names_this_host_and_other_values_stay_ssh_targets(self):
         self.assertEqual(endpoint(LOCAL, ["UserKnownHostsFile=/x"]), (None, []))
         target, options = endpoint("operator@device:2222", [])

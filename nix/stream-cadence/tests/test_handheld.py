@@ -331,14 +331,18 @@ class HeatGuard(unittest.TestCase):
         self.peer = root / "peer"
         self.peer.write_text(f'#!/bin/sh\nexec {sys.executable} -B {TESTS / "host-peer.py"} "$@"\n')
         self.peer.chmod(0o755)
-        self.previous, viewer.THERMAL = viewer.THERMAL, root / "thermal"
+        self.previous = (viewer.THERMAL, viewer.COMPATIBLE)
+        viewer.THERMAL, viewer.COMPATIBLE = root / "thermal", root / "no-device-tree"
 
     def tearDown(self):
-        viewer.THERMAL = self.previous
+        viewer.THERMAL, viewer.COMPATIBLE = self.previous
         self.directory.cleanup()
 
     def read(self, millidegrees: int) -> None:
-        (self.thermal / "temp").write_text(f"{millidegrees}\n")
+        # In one step, as sysfs answers: the guard's thread must never see half a write.
+        fresh = self.thermal.with_name("fresh-temp")
+        fresh.write_text(f"{millidegrees}\n")
+        fresh.replace(self.thermal / "temp")
 
     def prepare(self, session: viewer.Session, **extra) -> dict:
         return session.handle(
@@ -359,7 +363,10 @@ class HeatGuard(unittest.TestCase):
             self.assertFalse(self.prepare(session)["hardware_path"])
             self.read(61234)
             sample = session.handle({"operation": "sample"})
-            self.assertEqual(sample["thermal"], {"cpu-thermal": 61234})
+            self.assertEqual(
+                sample["thermal"],
+                [{"zone": "thermal_zone0", "type": "cpu-thermal", "temp": 61234}],
+            )
             self.assertIsNone(sample["hardware_decode"])
         finally:
             self.assertTrue(session.close()["pass"])

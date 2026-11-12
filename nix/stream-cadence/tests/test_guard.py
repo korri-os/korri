@@ -42,7 +42,10 @@ class Device(unittest.TestCase):
         self.directory.cleanup()
 
     def read(self, millidegrees: int) -> None:
-        (self.zone / "temp").write_text(f"{millidegrees}\n")
+        # In one step, as sysfs answers: the guard's thread must never see half a write.
+        fresh = self.zone.with_name("fresh-temp")
+        fresh.write_text(f"{millidegrees}\n")
+        fresh.replace(self.zone / "temp")
 
     def prepare(self, session: viewer.Session, **extra) -> dict:
         return session.handle(
@@ -139,6 +142,110 @@ class EachStartHasItsOwnLog(Device):
             time.sleep(0.5)
             # The validity gate needs True; the locating start's line must not supply it.
             self.assertIsNone(session.handle({"operation": "sample"})["hardware_decode"])
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+
+class DesktopChip(Device):
+    chip = b"vendor,board\0vendor,chip\0"
+
+    def running(self, session: viewer.Session):
+        self.prepare(session)
+        session.handle({"operation": "start", "command": ["sleep", "60"]})
+        session.handle({"operation": "sample"})
+        return session.processes["viewer"]
+
+
+class AGuardThatCannotReadStopsTheRun(DesktopChip):
+    def ended(self, break_it, words: str) -> None:
+        session = viewer.Session(str(self.peer))
+        try:
+            process = self.running(session)
+            break_it()
+            # The guard's own thread stops the viewer.
+            self.assertIsNotNone(process.wait(timeout=5))
+            with self.assertRaisesRegex(RuntimeError, words):
+                session.handle({"operation": "sample"})
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+    def test_temperature_that_is_no_number(self):
+        self.ended(lambda: (self.zone / "temp").write_text("\n"), "cannot read.*cpu-thermal")
+
+    def test_temperature_file_that_cannot_be_read(self):
+        def broken():
+            (self.zone / "temp").unlink()
+            (self.zone / "temp").mkdir()
+
+        self.ended(broken, "cannot read.*cpu-thermal")
+
+    def test_zone_that_is_gone(self):
+        def gone():
+            for path in self.zone.iterdir():
+                path.unlink()
+            self.zone.rmdir()
+
+        self.ended(gone, "cannot read.*thermal_zone0")
+
+    def test_trip_point_that_cannot_be_read_does_not_kill_the_guard(self):
+        def broken():
+            (self.zone / "trip_point_2_type").unlink()
+            (self.zone / "trip_point_2_type").mkdir()
+
+        self.ended(broken, "cannot read.*cpu-thermal")
+
+    def test_run_does_not_start_when_the_guard_cannot_read(self):
+        (self.zone / "temp").write_text("not a number\n")
+        session = viewer.Session(str(self.peer))
+        with self.assertRaisesRegex(RuntimeError, "cannot read.*does not start"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+        self.assertTrue(session.close()["pass"])
+
+    def test_zone_with_no_critical_trip_may_be_unreadable(self):
+        # Recorded and never judged: its temperature decides nothing.
+        other = self.zone.with_name("thermal_zone1")
+        other.mkdir()
+        (other / "type").write_text("board-sensor\n")
+        (other / "temp").write_text("\n")
+        session = viewer.Session(str(self.peer))
+        try:
+            self.prepare(session)
+            sample = session.handle({"operation": "sample"})
+            self.assertIn(None, [zone["temp"] for zone in sample["thermal"]])
+        finally:
+            self.assertTrue(session.close()["pass"])
+
+
+class ADeviceWithNoThermalZone(Device):
+    def empty(self) -> None:
+        for path in self.zone.iterdir():
+            path.unlink()
+        self.zone.rmdir()
+
+    def test_hardware_path_device_with_no_zone_does_not_run(self):
+        self.empty()
+        session = viewer.Session(str(self.peer))
+        with self.assertRaisesRegex(RuntimeError, "no thermal zone with a critical trip point"):
+            self.prepare(session)
+        self.assertIsNone(session.root)
+
+    def test_hardware_path_device_whose_zones_have_no_critical_trip_does_not_run(self):
+        (self.zone / "trip_point_2_type").write_text("passive\n")
+        session = viewer.Session(str(self.peer))
+        with self.assertRaisesRegex(RuntimeError, "no thermal zone with a critical trip point"):
+            self.prepare(session)
+
+    def test_other_device_with_no_zone_runs_unguarded_and_says_so(self):
+        self.empty()
+        viewer.COMPATIBLE.write_bytes(b"vendor,board\0vendor,chip\0")
+        session = viewer.Session(str(self.peer))
+        try:
+            facts = session.handle({"operation": "discover"})
+            self.assertEqual(facts["thermal"], [])
+            self.assertFalse(facts["heat_guarded"])
+            self.prepare(session)
+            self.assertEqual(session.handle({"operation": "sample"})["thermal"], [])
         finally:
             self.assertTrue(session.close()["pass"])
 

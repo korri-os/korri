@@ -759,9 +759,9 @@ def heat_range(samples: list[dict], guarded: set[str]) -> str:
     """The lowest and highest temperature of each guarded thermal zone in a run's samples."""
     zones: dict[str, list[int]] = {}
     for row in samples:
-        for name, value in (row.get("thermal") or {}).items():
-            if name in guarded:
-                zones.setdefault(name, []).append(value)
+        for zone in row.get("thermal") or []:
+            if zone["zone"] in guarded and zone["temp"] is not None:
+                zones.setdefault(f"{zone['type']} ({zone['zone']})", []).append(zone["temp"])
     return ", ".join(
         f"{name} {min(values) / 1000:.1f}..{max(values) / 1000:.1f} C"
         for name, values in zones.items()
@@ -1098,7 +1098,7 @@ def view_case(
         heat = heat_range(
             samples,
             {
-                zone["type"]
+                zone["zone"]
                 for zone in (facts.get("viewer") or {}).get("thermal", [])
                 if zone.get("limits")
             },

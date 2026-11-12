@@ -62,26 +62,62 @@ DECODE_STARTED = re.compile(r"first frame from decoder format=\S+ \(DRM_PRIME=(Y
 
 
 def thermal_zones() -> list[dict]:
-    """Each thermal zone with its temperature and trip points, in millidegrees Celsius."""
+    """Each thermal zone with its temperature and trip points, in millidegrees Celsius.
+
+    No zone is dropped. What cannot be read is None (`temp`, or `trips` as a
+    whole), and `unreadable` says why: the guard must know that it is blind.
+    """
     zones = []
     for zone in sorted(THERMAL.glob("thermal_zone*")):
+        row: dict = {
+            "zone": zone.name,
+            "type": zone.name,
+            "temp": None,
+            "trips": None,
+            "unreadable": None,
+        }
         try:
-            row: dict = {
-                "zone": zone.name,
-                "type": (zone / "type").read_text().strip(),
-                "temp": int((zone / "temp").read_text()),
-                "trips": [],
-            }
-        except (OSError, ValueError):
-            continue
-        for kind in sorted(zone.glob("trip_point_*_type")):
-            try:
-                value = int(kind.with_name(kind.name[: -len("type")] + "temp").read_text())
-            except (OSError, ValueError):
-                continue
-            row["trips"].append({"type": kind.read_text().strip(), "temp": value})
+            row["type"] = (zone / "type").read_text().strip()
+            row["trips"] = [
+                {
+                    "type": kind.read_text().strip(),
+                    "temp": int(kind.with_name(kind.name[: -len("type")] + "temp").read_text()),
+                }
+                for kind in sorted(zone.glob("trip_point_*_type"))
+            ]
+        except (OSError, ValueError) as error:
+            row["trips"] = None
+            row["unreadable"] = f"its trip points: {error}"
+        try:
+            row["temp"] = int((zone / "temp").read_text())
+        except (OSError, ValueError) as error:
+            row["unreadable"] = row["unreadable"] or f"its temperature: {error}"
         zones.append(row)
     return zones
+
+
+def blind(zones: list[dict], limits: dict[str, dict | None]) -> str | None:
+    """Why the guard cannot judge a zone that it must judge, or None.
+
+    `limits` holds every zone that the agent found at its start. A zone that
+    has a limit must still be there with a temperature. A zone whose trip
+    points cannot be read could hold a critical one, so it blinds the guard
+    too. A zone with readable trip points and no critical one decides nothing.
+    """
+    now = {zone["zone"]: zone for zone in zones}
+    for name, limit in limits.items():
+        if name not in now:
+            if limit:
+                return f"The heat guard cannot read {name}: the zone is gone."
+            continue
+    for zone in zones:
+        judged = limits.get(zone["zone"])
+        if zone["trips"] is None or (judged and zone["temp"] is None):
+            return (
+                f"The heat guard cannot read {zone['type']} ({zone['zone']}): "
+                f"{zone['unreadable']}."
+            )
+    return None
 
 
 def thermal_limits(zone: dict, end_margin: int = END_MARGIN) -> dict | None:
@@ -95,6 +131,8 @@ def thermal_limits(zone: dict, end_margin: int = END_MARGIN) -> dict | None:
     Trip points at or below zero, and passive trips not below the critical
     one, are placeholders and count as absent.
     """
+    if zone["trips"] is None:
+        return None
     critical = min(
         (trip["temp"] for trip in zone["trips"] if trip["type"] == "critical" and trip["temp"] > 0),
         default=None,
@@ -122,7 +160,7 @@ def too_hot(zones: list[dict], limits: dict[str, dict | None], rule: str) -> str
     """Why the device is too hot under one rule (start_below or end_at), or None."""
     for zone in zones:
         limit = limits.get(zone["zone"])
-        if limit and zone["temp"] >= limit[rule]:
+        if limit and zone["temp"] is not None and zone["temp"] >= limit[rule]:
             return (
                 f"{zone['type']} reads {zone['temp'] / 1000:.1f} °C. "
                 + (
@@ -295,6 +333,9 @@ class Session:
         self.end_margin = END_MARGIN
         self.limits = {zone["zone"]: thermal_limits(zone) for zone in zones}
         self.facts["thermal"] = [dict(zone, limits=self.limits[zone["zone"]]) for zone in zones]
+        # Whether any zone gives the guard a limit. A device with a hardware
+        # picture path does not run without one.
+        self.facts["heat_guarded"] = any(self.limits.values())
         # Why the guard ended the viewer, once it did.
         self.ended: str | None = None
         self.root: Path | None = None
@@ -426,6 +467,13 @@ class Session:
         with path.open(errors="replace") as log:
             return decode_started(log.read(1 << 16))
 
+    def unsafe(self, zones: list[dict], then: str) -> str | None:
+        """Why a running viewer must stop for heat: the guard is blind, or the device is hot."""
+        unseen = blind(zones, self.limits)
+        if unseen:
+            return unseen + " " + then
+        return too_hot(zones, self.limits, "end_at")
+
     def end(self, reason: str, process: subprocess.Popen | None) -> None:
         """The guard's one action: stop the viewer at once and keep the reason."""
         self.ended = reason
@@ -441,23 +489,27 @@ class Session:
         used: deque[tuple[float, int]] = deque()
         rate = os.sysconf("SC_CLK_TCK")
         while process.poll() is None and self.ended is None:
-            reason = too_hot(thermal_zones(), self.limits, "end_at")
-            if reason is None and self.hardware_path():
-                if self.hardware_decode() is False:
-                    reason = (
-                        "The viewer's log says that hardware decode did not start. "
-                        "A software fallback is not the product's picture path."
-                    )
-                spent = ticks(process.pid)
-                if spent is not None:
-                    used.append((time.monotonic(), spent))
-                    load = busy(used, rate)
-                    if reason is None and load is not None and load > BUSY_RATE:
+            try:
+                reason = self.unsafe(thermal_zones(), "The run ends.")
+                if reason is None and self.hardware_path():
+                    if self.hardware_decode() is False:
                         reason = (
-                            f"The viewer used {load:.2f} CPU seconds each second for "
-                            f"{BUSY_SECONDS:g} s. A viewer with hardware decode stays far "
-                            f"below {BUSY_RATE:g}; the run ends before the device heats."
+                            "The viewer's log says that hardware decode did not start. "
+                            "A software fallback is not the product's picture path."
                         )
+                    spent = ticks(process.pid)
+                    if spent is not None:
+                        used.append((time.monotonic(), spent))
+                        load = busy(used, rate)
+                        if reason is None and load is not None and load > BUSY_RATE:
+                            reason = (
+                                f"The viewer used {load:.2f} CPU seconds each second for "
+                                f"{BUSY_SECONDS:g} s. A viewer with hardware decode stays far "
+                                f"below {BUSY_RATE:g}; the run ends before the device heats."
+                            )
+            except Exception as error:
+                # A guard that fails is blind. It stops the run and says so.
+                reason = f"The heat guard failed and cannot watch the run: {error!r}."
             if reason:
                 self.end(reason, process)
                 return
@@ -468,7 +520,16 @@ class Session:
             games()
         if self.root is not None:
             raise RuntimeError("viewer session already prepared")
-        hot = too_hot(thermal_zones(), self.limits, "start_below")
+        zones = thermal_zones()
+        unseen = blind(zones, self.limits)
+        if unseen:
+            raise RuntimeError(unseen + " A run does not start.")
+        if self.hardware_path() and not self.facts["heat_guarded"]:
+            raise RuntimeError(
+                "This device has a hardware picture path and no thermal zone with a critical "
+                "trip point. The heat guard has no limit for it, so a run does not start."
+            )
+        hot = too_hot(zones, self.limits, "start_below")
         if hot:
             raise RuntimeError("The device is hot. " + hot + " Let it cool, then run again.")
         if request.get("test_end_margin") is not None:
@@ -651,9 +712,9 @@ class Session:
             capture = self.processes.get("capture")
             zones = thermal_zones()
             if self.ended is None:
-                hot = too_hot(zones, self.limits, "end_at")
-                if hot:
-                    self.end(hot, viewer)
+                unsafe = self.unsafe(zones, "The run ends.")
+                if unsafe:
+                    self.end(unsafe, viewer)
             if self.ended:
                 raise RuntimeError(self.ended)
             return {
@@ -662,7 +723,11 @@ class Session:
                 "viewer_exit": viewer.poll() if viewer else None,
                 "capture_exit": capture.poll() if capture else None,
                 "battery": battery(),
-                "thermal": {zone["type"]: zone["temp"] for zone in zones},
+                # By zone, not by type: two zones can share a type.
+                "thermal": [
+                    {"zone": zone["zone"], "type": zone["type"], "temp": zone["temp"]}
+                    for zone in zones
+                ],
                 "hardware_decode": self.hardware_decode(),
             }
         if operation == "stop":
