@@ -90,13 +90,47 @@ This checks the real initialization-failure branch, not streamed playback.
 The Rust argv regression separately checks that no `-input` can make that SDL
 fallback exit, and that an interactive viewer does not get `-viewonly`.
 
+## Landing dependency: do not land the selection on its own
+
+The currently published Moonlight fixes the VA-API destination rectangle to
+windowed setup's stream dimensions. On ibuki, a 1920x1080 stream in a
+3840x2160 fullscreen window therefore occupies one quarter of the pixel area.
+A stream larger than the output is clipped. **The korrid selection must not
+land before the corrected plugin and its catalog pin.**
+
+`https://github.com/korri-os/plugins/pull/8` patches the native presentation
+handler to query the actual X11 window size for each presentation. Its real-X11
+regression check covers unequal stream/output sizes and repeated resizes. It
+leaves korrid's window/focus policy and the decoder dimensions unchanged.
+
+After the plugins change merges, run `plugin-repository.yml` for the exact
+merged source SHA/tag and `korri-plugin-moonlight` selection. Publish that
+passed dry run through `plugin-publish.yml`. Then update the actual published
+catalog URL and content hash in `nix/product/published-plugins.nix`, and land
+that pin together with the korrid selection. Until publication, that pin is
+blocked. Do not add a source-recipe or raw-cache bypass.
+
+## Timeout-test evidence
+
+The bootstrap timeout test body is byte-identical before and after this change
+(SHA-256 `338a037981c3b7d714fbafeb128a0df51a7e69a17f0a619dd13dc3d1a1c66378`).
+On unzen, the unchanged baseline test passed, and five normal focused candidate
+runs each passed all 15 tests. A controlled 200 ms startup delay applied only
+to the test's `systemd-run` helper reproduced the same missing-arguments-file
+`NotFound` failure on both baseline and candidate: its deadline is 50 ms.
+This proves that the pre-existing test can fail this way under delayed helper
+startup. The cause of the original workstation failure remains **inferred,
+not proven**; no original scheduling trace was captured. The VA-API platform
+selection is not called by this test. No timeout or production behavior was
+changed to conceal the failure.
+
 ## Target acceptance (parent, before landing)
 
 No deployment is part of this change. On ibuki, verify the new viewer command
 uses `-platform x11_vaapi`, the log reports `X Window System (VAAPI)`, video
 engine activity increases, and controller input reaches aka. Check fullscreen
-with stream dimensions different from the output: upstream's X11 renderer
-keeps its initial drawing dimensions rather than handling window resize events.
+with stream dimensions different from the output using the corrected plugin;
+the currently published X11 renderer keeps its initial drawing dimensions.
 Force an invalid libva driver in a scoped test to check SDL software playback
 and controllers. The absence of `-input` is required for that forced-failure
 test.
