@@ -2113,6 +2113,160 @@ async fn a_holder_that_cannot_be_reached_says_so_and_this_devices_rows_still_wor
     assert!(writes[0].get("holder").is_none(), "written to this device");
 }
 
+/// The values of the last write this device took for its stream viewer.
+fn kept_here(calls: &Calls) -> Vec<Value> {
+    asked(calls, SET)
+        .into_iter()
+        .filter(|write| write.get("holder").is_none())
+        .map(|write| {
+            assert_eq!(write["place"], viewer_place());
+            write["value"].clone()
+        })
+        .collect()
+}
+
+/// aka is lost while the editor closes. This device's stream values are its
+/// own: they are still written, and their rows still work in that Error.
+#[tokio::test]
+async fn a_holder_lost_while_the_editor_closes_does_not_stop_this_devices_stream_values() {
+    let reachable = up();
+    let (launch, calls) = streamed(resolved_wario(), this_device(), Arc::clone(&reachable));
+    open_on_aka(&launch);
+    settle().await;
+    assert!(launch.change(FRAMESKIP, "5"));
+    assert!(launch.change(CODEC, "\"av1\""));
+    reachable.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
+    let editor = launch.editor();
+    let SurfaceLaunchSettings::Error(problem) = &editor else {
+        panic!("{}", tag(&editor))
+    };
+    assert_eq!(
+        problem.message,
+        "aka cannot be reached. Its settings cannot change now."
+    );
+    // aka's write failed. The stream value was written all the same.
+    assert_eq!(kept_here(&calls), [json!("av1")]);
+    assert_eq!(
+        changes(&problem.content),
+        [(FRAMESKIP.to_owned(), "3".to_owned())]
+    );
+
+    // The stream rows still take changes in that Error.
+    assert!(row(&problem.content, "Codec").is_some_and(|item| item.interaction.is_some()));
+    assert!(launch.change(CODEC, "\"h265\""));
+    assert_eq!(tag(&launch.editor()), "Error");
+    assert_eq!(
+        changes(&shown(&launch)),
+        [
+            (FRAMESKIP.to_owned(), "3".to_owned()),
+            (CODEC.to_owned(), "H264".to_owned()),
+        ]
+    );
+    // A game start writes the stream value, and still does not start: aka's
+    // change is not written.
+    assert_eq!(launch.close().await, Closing::NotKept);
+    assert_eq!(kept_here(&calls), [json!("av1"), json!("h265")]);
+    assert_eq!(tag(&launch.editor()), "Error");
+    assert_eq!(
+        changes(&shown(&launch)),
+        [(FRAMESKIP.to_owned(), "3".to_owned())]
+    );
+    // A second Close writes a stream value that waits, then leaves.
+    assert!(launch.change(CODEC, "\"av1\""));
+    let to_aka = asked(&calls, SET).len() - kept_here(&calls).len();
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    assert_eq!(
+        kept_here(&calls),
+        [json!("av1"), json!("h265"), json!("av1")]
+    );
+    assert_eq!(
+        asked(&calls, SET).len() - kept_here(&calls).len(),
+        to_aka,
+        "aka is not asked again without Retry"
+    );
+    // aka's change still waits with the game.
+    reachable.store(true, std::sync::atomic::Ordering::SeqCst);
+    open_on_aka(&launch);
+    settle().await;
+    assert_eq!(
+        changes(&shown(&launch)),
+        [(FRAMESKIP.to_owned(), "3".to_owned())]
+    );
+}
+
+/// aka refuses a stale write. That is aka's Conflict: this device's stream
+/// values are written, and their rows still work.
+#[tokio::test]
+async fn a_holders_conflict_does_not_stop_this_devices_stream_values() {
+    let (korrid, calls) = answering(move |tag, payload| match tag {
+        SNAPSHOT if payload["holder"] == "aka" => ok_snapshot(resolved_wario().snapshot()),
+        SNAPSHOT => ok_snapshot(this_device().snapshot()),
+        _ if payload["holder"] == "aka" => refused("SettingsConflict", "changed"),
+        _ => written_ok(),
+    });
+    let launch = controller(korrid);
+    open_on_aka(&launch);
+    settle().await;
+    assert!(launch.change(FRAMESKIP, "5"));
+    assert!(launch.change(CODEC, "\"av1\""));
+    assert_eq!(launch.close().await, Closing::NotKept);
+    assert_eq!(tag(&launch.editor()), "Conflict");
+    assert_eq!(kept_here(&calls), [json!("av1")]);
+    assert_eq!(
+        changes(&shown(&launch)),
+        [(FRAMESKIP.to_owned(), "3".to_owned())]
+    );
+    assert!(launch.change(CODEC, "\"h265\""));
+    assert_eq!(tag(&launch.editor()), "Conflict");
+    assert_eq!(changes(&shown(&launch)).len(), 2);
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    assert_eq!(kept_here(&calls), [json!("av1"), json!("h265")]);
+    assert_eq!(asked(&calls, SET).len(), 3, "aka was asked once");
+}
+
+/// This device refuses its own stream value. The next Close leaves without
+/// asking again; aka's change is written all the same.
+#[tokio::test]
+async fn a_stream_value_this_device_refuses_does_not_stop_the_holders_changes() {
+    let (korrid, calls) = answering(move |tag, payload| match tag {
+        SNAPSHOT if payload["holder"] == "aka" => ok_snapshot(resolved_wario().snapshot()),
+        SNAPSHOT => ok_snapshot(this_device().snapshot()),
+        _ if payload.get("holder").is_none() => refused("SettingsInvalid", "This device said no."),
+        _ => written_ok(),
+    });
+    let launch = controller(korrid);
+    open_on_aka(&launch);
+    settle().await;
+    assert!(launch.change(CODEC, "\"av1\""));
+    assert!(launch.change(FRAMESKIP, "5"));
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
+    let editor = launch.editor();
+    let SurfaceLaunchSettings::Error(problem) = &editor else {
+        panic!("{}", tag(&editor))
+    };
+    assert_eq!(problem.message, "This device said no.");
+    assert_eq!(
+        changes(&problem.content),
+        [(CODEC.to_owned(), "H264".to_owned())]
+    );
+    let writes = asked(&calls, SET);
+    assert_eq!(writes.len(), 2);
+    assert_eq!(writes[1]["holder"], json!("aka"));
+    assert_eq!(writes[1]["value"], json!(5));
+    // Close leaves. It does not ask this device again; Retry would.
+    assert!(launch.act(launch_id::CANCEL));
+    settle().await;
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
+    assert_eq!(asked(&calls, SET).len(), 2);
+}
+
 /// This device cannot say what its stream viewer has now, so the list has
 /// no stream row to show the change on.
 #[tokio::test]
@@ -2179,10 +2333,6 @@ async fn closing_with_the_holder_out_of_reach_keeps_this_devices_stream_values()
             (CODEC.to_owned(), "H264".to_owned()),
         ]
     );
-    // A game start needs every change written, and aka's cannot be.
-    assert_eq!(launch.close().await, Closing::NotKept);
-    assert_eq!(asked(&calls, SET).len(), before);
-    assert_eq!(tag(&launch.editor()), "Error");
     // The Close action writes what this device can keep, and leaves.
     assert!(launch.act(launch_id::CANCEL));
     settle().await;
@@ -2193,6 +2343,20 @@ async fn closing_with_the_holder_out_of_reach_keeps_this_devices_stream_values()
     assert!(last.get("holder").is_none(), "written to this device");
     assert_eq!(last["place"], viewer_place());
     assert_eq!(last["value"], json!("av1"));
+
+    // A game start writes it too, and does not start: aka's change waits.
+    open_on_aka(&launch);
+    settle().await;
+    assert!(launch.change(CODEC, "\"h265\""));
+    assert_eq!(launch.close().await, Closing::NotKept);
+    assert_eq!(asked(&calls, SET).len(), before + 2);
+    assert_eq!(tag(&launch.editor()), "Error");
+    assert_eq!(
+        changes(&shown(&launch)),
+        [(FRAMESKIP.to_owned(), "3".to_owned())]
+    );
+    assert!(launch.act(launch_id::CANCEL));
+    assert_eq!(launch.editor(), SurfaceLaunchSettings::Closed);
 
     reachable.store(true, std::sync::atomic::Ordering::SeqCst);
     open_on_aka(&launch);

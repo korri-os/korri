@@ -119,8 +119,12 @@ change without a new owner decision.
   describes that device, and that device has no game place and no one-launch
   place for a streamed game's viewer (issue #395). When the changes are for
   this launch, the keep control says that stream values stay on this
-  device. When the holder cannot be reached, the stream rows still change,
-  and the Close action still writes them.
+  device. The stream rows work whatever happened to the holder. They still
+  change while the holder's list is in Error or Conflict. A close or a game
+  start still writes them when a write to the holder fails or cannot be
+  tried. The holder's own changes then stay marked and waiting, and the
+  game does not start. A stream value that the playing device itself
+  refuses is tried again by Retry, not by the next close.
 - **A runner choice for a streamed game.** The chooser reads the holder's
   runners. A holder with one runner selected prepares as before, with the
   viewer's display. A runner chosen for one launch uses `SelectedGameLaunch`,

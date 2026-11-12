@@ -98,7 +98,11 @@ enum Again {
     Read,
     Write(String, Box<Write>),
     /// Close again: write the changes that are left.
-    Keep,
+    Keep {
+        /// A write to this device failed. The next close does not ask this
+        /// device again; only Retry does.
+        here: bool,
+    },
 }
 
 pub type OpenRunners = Arc<dyn Fn() + Send + Sync>;
@@ -122,8 +126,9 @@ impl Subject {
 #[derive(Default)]
 struct Waiting {
     write: Vec<(Change, Value)>,
-    /// Other changes wait that the editor cannot write now: it is not Ready,
-    /// a write is on its way, or a keep that failed waits on Retry.
+    /// Other changes wait that the editor cannot write now: the holder's
+    /// while its list is not Ready, this device's after it refused one, or
+    /// any while a write is on its way.
     rest: bool,
 }
 
@@ -132,6 +137,9 @@ struct Waiting {
 struct Keeping {
     game: Subject,
     writes: Vec<(Change, Value)>,
+    /// Close the editor once every write is done. False: a game start that
+    /// leaves other changes unwritten, so the editor stays to show them.
+    leave: bool,
     /// The snapshot of the device that runs the game.
     holder: Value,
     /// This device's own snapshot, for its stream viewer's values. Null when
@@ -416,12 +424,12 @@ impl Inner {
 
     /// Whether a row of this side takes a change now, and a close writes it.
     fn takes(&self, side: &Side) -> bool {
-        match (self.editor_tag(), side) {
-            ("Ready", _) => true,
-            // The holder's list could not be read. This device's own rows
-            // still work.
-            ("Error", Side::Viewer { .. }) => self.snapshot.is_none(),
-            _ => false,
+        match side {
+            // The holder's rows change only in a list that is read and not
+            // in doubt.
+            Side::Holder { .. } => self.editor_tag() == "Ready",
+            // This device's own rows work whatever happened to the holder.
+            Side::Viewer { .. } => matches!(self.editor_tag(), "Ready" | "Error" | "Conflict"),
         }
     }
 
@@ -446,8 +454,9 @@ impl Inner {
             Some(_) => layer.is_none(),
             None => self.drafts.keep(&key) == Some(KEEP_LAUNCH),
         };
-        // A keep that failed is tried again by Retry, not by the next close.
-        let able = !self.busy && !matches!(self.again, Some(Again::Keep));
+        // A write this device refused is tried again by Retry, not by the
+        // next close. A holder that failed does not stop this device's part.
+        let refused_here = matches!(self.again, Some(Again::Keep { here: true }));
         let shown = |change: &Change| {
             self.list
                 .as_ref()
@@ -459,12 +468,13 @@ impl Inner {
             .iter()
             .filter(|change| shown(change))
         {
-            let read = match change.side {
+            let able = match change.side {
                 Side::Holder { .. } if for_launch => continue,
                 Side::Holder { .. } => self.snapshot.is_some(),
-                Side::Viewer { .. } => self.device_snapshot.is_some(),
+                Side::Viewer { .. } => self.device_snapshot.is_some() && !refused_here,
             };
-            match place_of(change, layer).filter(|_| able && read && self.takes(&change.side)) {
+            match place_of(change, layer).filter(|_| !self.busy && able && self.takes(&change.side))
+            {
                 Some(place) => waiting.write.push((change.clone(), place)),
                 None => waiting.rest = true,
             }
@@ -474,7 +484,7 @@ impl Inner {
 
     /// The synchronous half of keeping: Saving shows at once. None: there is
     /// nothing to write.
-    fn begin_keep(&mut self, writes: Vec<(Change, Value)>) -> Option<Keeping> {
+    fn begin_keep(&mut self, writes: Vec<(Change, Value)>, leave: bool) -> Option<Keeping> {
         let game = self.game.clone().filter(|_| !writes.is_empty())?;
         self.generation += 1;
         self.busy = true;
@@ -484,6 +494,7 @@ impl Inner {
         Some(Keeping {
             game,
             writes,
+            leave,
             holder: self.snapshot.clone().unwrap_or(Value::Null),
             viewer: self.device_snapshot.clone().unwrap_or(Value::Null),
             operation: self.generation,
@@ -501,6 +512,15 @@ impl Inner {
                     content: self.content(problem.content.actions),
                     ..problem
                 }));
+            }
+            Some(SurfaceLaunchSettings::Conflict(problem)) => {
+                self.build();
+                self.editor = Some(SurfaceLaunchSettings::Conflict(
+                    SurfaceLaunchSettingsProblem {
+                        content: self.content(problem.content.actions),
+                        ..problem
+                    },
+                ));
             }
             other => self.editor = other,
         }
@@ -1208,7 +1228,7 @@ impl LaunchSettings {
             match again {
                 Again::Read => self.spawn_read(false),
                 Again::Write(setting_id, send) => self.write(setting_id, *send),
-                Again::Keep => self.spawn_close(),
+                Again::Keep { .. } => self.spawn_close(),
             }
             return true;
         }
@@ -1244,27 +1264,34 @@ impl LaunchSettings {
     }
 
     /// Write the changes one by one, each from the revision the last write
-    /// to its device left. A write that fails leaves the editor open, saying
-    /// why; what was not written stays a change.
+    /// to its device left. The two devices do not wait on each other: a
+    /// write one of them fails stops the rest of its own writes only. A
+    /// failed write leaves the editor open, saying why; what was not written
+    /// stays a change.
     async fn finish_keep(self: &Arc<Self>, keeping: Keeping) -> Closing {
         let Keeping {
             game,
             writes,
+            leave,
             mut holder,
             mut viewer,
             operation,
         } = keeping;
         self.changed();
         let key = game.key();
-        let mut failure = None;
+        let mut holder_failure = None;
+        let mut here_failure = None;
         let mut wrote_here = false;
         for (change, place) in writes {
             let here = matches!(change.side, Side::Viewer { .. });
-            let (snapshot, host) = if here {
-                (&mut viewer, None)
+            let (snapshot, host, failure) = if here {
+                (&mut viewer, None, &mut here_failure)
             } else {
-                (&mut holder, game.host.clone())
+                (&mut holder, game.host.clone(), &mut holder_failure)
             };
+            if failure.is_some() {
+                continue;
+            }
             let clear = change.value.is_null();
             let result = self
                 .send(
@@ -1298,37 +1325,44 @@ impl LaunchSettings {
                         current["revisions"] = snapshot["revisions"].clone();
                     }
                 }
-                LaunchSettingsWriteOutcome::Err(error) => {
-                    failure = Some((error, here));
-                    break;
-                }
+                LaunchSettingsWriteOutcome::Err(error) => *failure = Some(error),
             }
         }
-        let closing = {
+        let failed = holder_failure.is_some() || here_failure.is_some();
+        let stays = {
             let mut inner = self.lock();
             inner.busy = false;
             inner.status = None;
             // The person closed or read the editor again meanwhile: it is
             // theirs now. What was written is still written.
             let current = operation == inner.generation;
-            match &failure {
-                Some((failure, true)) if current => inner.failed_here(failure, Again::Keep),
-                Some((failure, false)) if current => inner.failed(failure, Again::Keep),
-                _ => {}
+            if current {
+                let again = Again::Keep {
+                    here: here_failure.is_some(),
+                };
+                match (&holder_failure, &here_failure) {
+                    // The holder's failure is the one shown: its changes
+                    // are the ones a game start waits for.
+                    (Some(failure), _) => inner.failed(failure, again),
+                    (None, Some(failure)) => inner.failed_here(failure, again),
+                    // Other changes still wait: the editor shows them.
+                    (None, None) if !leave => inner.redraw(),
+                    (None, None) => {}
+                }
             }
-            match failure {
-                Some(_) => Some(Closing::NotKept),
-                None if !current => Some(Closing::Kept),
-                None => None,
-            }
+            failed || !current || !leave
         };
-        if let Some(closing) = closing {
+        if stays {
             self.changed();
             if wrote_here {
                 // The rows that stay show what this device has now.
                 self.spawn_refresh_device();
             }
-            return closing;
+            return if failed {
+                Closing::NotKept
+            } else {
+                Closing::Kept
+            };
         }
         self.cancel();
         self.spawn_refresh_device();
@@ -1337,18 +1371,23 @@ impl LaunchSettings {
 
     /// The game starts: the changes are written, then the editor closes
     /// (ADR 0066). The game may start only on `Kept`. An editor that cannot
-    /// write every change that waits stays as it is and writes none.
+    /// write every change that waits writes what it can and stays open.
     pub async fn close(self: &Arc<Self>) -> Closing {
-        let keeping = {
+        let (keeping, rest) = {
             let mut inner = self.lock();
             let waiting = inner.waiting();
-            if waiting.rest {
-                return Closing::NotKept;
-            }
-            inner.begin_keep(waiting.write)
+            (inner.begin_keep(waiting.write, !waiting.rest), waiting.rest)
         };
         match keeping {
-            Some(keeping) => self.finish_keep(keeping).await,
+            Some(keeping) => {
+                let closing = self.finish_keep(keeping).await;
+                if rest {
+                    Closing::NotKept
+                } else {
+                    closing
+                }
+            }
+            None if rest => Closing::NotKept,
             None => {
                 self.cancel();
                 Closing::Kept
@@ -1363,7 +1402,7 @@ impl LaunchSettings {
         let keeping = {
             let mut inner = self.lock();
             let waiting = inner.waiting();
-            inner.begin_keep(waiting.write)
+            inner.begin_keep(waiting.write, true)
         };
         match keeping {
             Some(keeping) => {
