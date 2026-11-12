@@ -27,8 +27,21 @@ export struct FrameView {
 export component PicoScreenShell inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
+    // Room kept between the body and the floor for what a page holds still
+    // there (launch settings' keep row); `pinned-y` is where it stands.
+    in property <length> pinned-room: 0;
+    // The body draws a bar down its right edge when it holds more than it shows.
+    in property <bool> marks;
     out property <length> body-y: bar.y + bar.height + (frame.track.length > 0 ? 6 * Tokens.p : 0) + Tokens.u;
-    out property <length> body-h: floor.y - Tokens.u - body-y;
+    out property <length> body-h: max(0, floor.y - Tokens.u - body-y - pinned-room);
+    // Right under a body shorter than its room; over the floor under a longer one.
+    out property <length> pinned-y: body-y + min(body-h, body.natural) + Tokens.u;
+    // The bar cut the place or left it out (a long game's title). A page that
+    // then says the place itself sets `says-place`: the bar shows it whole or not at all.
+    in property <bool> says-place;
+    out property <bool> place-cut: bar.place-cut;
+    out property <length> body-x: 2 * Tokens.u;
+    out property <length> body-w: root.width - 4 * Tokens.u;
     // What the body holds reports its focused control here.
     public function show(left: length, top: length, wide: length, tall: length) {
         body.show(left, top, wide, tall);
@@ -41,6 +54,7 @@ export component PicoScreenShell inherits Rectangle {
         sep: frame.sep;
         label: frame.label;
         clock: frame.clock;
+        whole-or-none: root.says-place;
     }
     if frame.track.length > 0 : PicoStepTrack { x: 2 * Tokens.u; y: bar.y + bar.height + 3 * Tokens.p; width: root.width - 4 * Tokens.u; steps: frame.track; }
     body := PicoScroll { 
@@ -48,6 +62,7 @@ export component PicoScreenShell inherits Rectangle {
         y: body-y;
         width: root.width - 4 * Tokens.u;
         height: body-h;
+        marks: root.marks;
         @children
     }
     floor := PicoButtonBar { activated(target, at, released) => { root.activated(target, at, released); } 

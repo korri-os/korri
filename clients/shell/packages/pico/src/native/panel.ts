@@ -6,7 +6,7 @@
  * PicoIdentityDialog.
  */
 import type { SurfaceIdentityManagement } from "../model"
-import { picoLaunchScope, picoLaunchShown, type PicoLaunchView } from "../pico-launch-view"
+import type { PicoLaunchView } from "../pico-launch-view"
 import {
   PICO_IDENTITY_BACKUP_ACTION,
   PICO_IDENTITY_SWITCH_LOCAL_ACTION,
@@ -41,6 +41,10 @@ export interface RowView {
   readonly description: string
   readonly source: string
   readonly deviceOnly: boolean
+  /** The earlier value of a row changed and not kept yet (launch settings); "" for none. */
+  readonly was: string
+  /** The description wraps onto as many lines as it needs (launch settings: it says why a row cannot change). */
+  readonly wrap: boolean
   /** fact, action, cycle, step, pick, text, network */
   readonly kind: string
   readonly focused: boolean
@@ -93,6 +97,8 @@ export function rowView(row: PicoSettingRowView, focused: boolean, focusId?: str
     description: row.description ?? "",
     source: row.source ?? "",
     deviceOnly: row.deviceOnly === true,
+    was: row.was ?? "",
+    wrap: false,
     kind: control.kind,
     focused,
     ...(focusId === undefined ? {} : { focusId }),
@@ -136,6 +142,8 @@ interface PanelParts {
   readonly beside: boolean
   readonly rows: readonly RowView[]
   readonly focusedRow: number
+  /** The row the cursor is on, by its place; -1 when it is on no row. */
+  readonly cursor: number
   readonly targets: Target<Act>[]
 }
 
@@ -176,6 +184,7 @@ function panelParts(
     beside,
     rows: stacked(rows),
     focusedRow: Math.max(0, rows.findIndex(row => row.focused)),
+    cursor: rows.findIndex(row => row.focused),
     targets,
   }
 }
@@ -186,7 +195,17 @@ const panelView = (parts: PanelParts) => ({
   beside: parts.beside,
   rows: parts.rows,
   focusedRow: parts.focusedRow,
+  cursor: parts.cursor,
 })
+
+/** No row: what the panel's keep row holds while there is none. */
+const NO_ROW: RowView = {
+  section: "", label: "", value: "", description: "", source: "", deviceOnly: false, was: "", wrap: false, kind: "fact", focused: false,
+  warn: false, state: "idle", stateText: "", segments: [], bars: 0, locked: false, chips: [], platesBefore: 0, linesBefore: 0,
+}
+
+/** What only launch settings fill: where the game runs, and the keep row under the list. */
+const NO_LAUNCH = { where: "", hasKeep: false, keep: NO_ROW }
 
 const EMPTY_PANEL = {
   spines: [] as ButtonView[],
@@ -194,9 +213,10 @@ const EMPTY_PANEL = {
   beside: false,
   rows: [] as RowView[],
   focusedRow: 0,
-  scopes: [] as ButtonView[],
+  cursor: -1,
   notes: [] as string[],
   message: "",
+  ...NO_LAUNCH,
 }
 
 /** A confirmation Korri attached to an action: red when destructive, else
@@ -327,13 +347,20 @@ function question(
     const row = settings.groups.flatMap(group => group.rows).find(candidate => candidate.id === asking.settingId)
     if (row?.control.kind !== "pick") return undefined
     const options = row.control.options
+    // A list with a value in force (launch settings' keep row): the row's words are about that value, not about the list.
+    const message = row.control.selected === undefined ? row.description ?? "" : ""
     const placed = cardTargets(
-      card({ tone: "ask", kicker: "CHOOSE ONE", title: row.label, message: row.description ?? "", actions: [...options.map(option => button(option.label)), button("CANCEL")] }),
+      card({ tone: "ask", kicker: "CHOOSE ONE", title: row.label, message, actions: [...options.map(option => button(option.label)), button("CANCEL")] }),
       [...options.map(option => `pick:${option.value}`), "cancel"],
       [...options.map(option => [nav({ _tag: "PickedChoice", value: option.value })]), [nav({ _tag: "CancelledPicker" })]],
       focused,
     )
-    return { key: `pick:${asking.settingId}`, screen: { targets: placed.targets, view: { card: placed.card } } }
+    // A list with a value in force (launch settings' keep row) opens on it.
+    const selected = row.control.selected
+    return {
+      key: `pick:${asking.settingId}`,
+      screen: { targets: placed.targets, ...(selected === undefined ? {} : { fallback: `pick:${selected}` }), view: { card: placed.card } },
+    }
   }
   if (asking._tag === "EditingText" || asking._tag === "ConfirmingClear") {
     const edited = picoTextSettingFrom(settings, asking.settingId)
@@ -442,32 +469,61 @@ export function settingsScreen(ctx: Ctx, layer: Settings): Screen {
       card: empty
         ? card({ tone: "tell", kicker: "NOTHING TO SET", message: "Korri has no settings to show on this device." })
         : NO_CARD,
-      panel: { ...panelView(parts), scopes: [], notes: [], message: problem === undefined ? "" : problem.message },
+      panel: { ...panelView(parts), notes: [], message: problem === undefined ? "" : problem.message, ...NO_LAUNCH },
     },
   }
 }
 
 // ---- Launch settings ----
 
+/** A launch row as the card draws it: only the focused row says where its
+ * value stays and what it does (or why it cannot change), and those words
+ * wrap, so every row's plate stays in sight and no reason is cut. */
+function launchRow(row: PicoSettingRowView, focused: boolean, focusId: string): RowView {
+  const view = rowView(row, focused, focusId)
+  return { ...view, wrap: true, ...(focused ? {} : { description: "", source: "" }) }
+}
+
+/** A screen under this many virtual pixels high holds about one row: where the game runs leaves the card. */
+export const PICO_LAUNCH_SHORT = 200
+/** The floor row holds a readout between its lead and its hints from this many virtual pixels of width. */
+export const PICO_LAUNCH_READOUT_WIDTH = 240
+
+/**
+ * Where "Runs on aka" stands: at the card's top; on a short, wide screen
+ * (1024x240) on the floor row, which has the width and is always in sight,
+ * so the card's few lines go to rows.
+ */
+export const launchWhereOnFloor = (plan: { readonly width: number; readonly height: number }): boolean =>
+  plan.height < PICO_LAUNCH_SHORT && plan.width >= PICO_LAUNCH_READOUT_WIDTH
+
+/**
+ * A game's launch settings (ADR 0066): one card, every setting once under
+ * its section's caption, the keep row under the card while a row is
+ * changed, and Korri's first action (RELOAD, or RETRY when it reports an
+ * error) on the floor.
+ */
 export function launchScreen(ctx: Ctx, launch: PicoLaunchView, layer: Settings): Screen {
-  const { s, korri, model, plan } = ctx
+  const { s, korri, plan } = ctx
+  const where = (launch.runsOn ?? "").toUpperCase()
+  const onFloor = launchWhereOnFloor(plan)
   const focused = s.focus
   const clock = korri.clockLabel ?? ""
   const title = launch.gameTitle ?? "LAUNCH SETTINGS"
-  const shown = picoLaunchShown(launch, layer.scope)
   const asked = question(ctx, launch.settings, layer, "LAUNCH SETTINGS")
-  const reload = launch.actions.find(action => action.id.endsWith(":reload") || action.label.toUpperCase() === "RELOAD")
-  const leadAct: Act | undefined = reload === undefined || !reload.enabled ? undefined : [nav({ _tag: "PressedLaunchAction", actionId: reload.id })]
+  // The floor's lead: Korri's first action that is not Close (Back closes).
+  const lead = launch.actions.find(action => action.id !== launch.closeActionId)
+  const leadAct: Act | undefined = lead === undefined || !lead.enabled ? undefined : [nav({ _tag: "PressedLaunchAction", actionId: lead.id })]
   const base = frame({
     place: launch.gameTitle ?? "",
     label: "LAUNCH SETTINGS",
     clock,
+    readout: onFloor ? where : "",
     hints: [A("SELECT"), B("BACK")],
-    hasLead: reload !== undefined,
+    hasLead: lead !== undefined,
     leadKind: "plain",
-    lead: button((reload?.label ?? "RELOAD").toUpperCase(), { ...mark("lead", focused), disabled: reload?.enabled !== true }),
+    lead: button((lead?.label ?? "RELOAD").toUpperCase(), { ...mark("lead", focused), disabled: lead?.enabled !== true }),
   })
-  void model
   if (asked !== undefined && asked.screen.view["page"] === "editor") {
     return { key: `launch:${asked.key}`, targets: asked.screen.targets ?? [], ...(asked.screen.fallback === undefined ? {} : { fallback: asked.screen.fallback }), view: { ...asked.screen.view, card: NO_CARD } }
   }
@@ -479,7 +535,8 @@ export function launchScreen(ctx: Ctx, launch: PicoLaunchView, layer: Settings):
       view: { page: "settings", frame: base, panel: { ...EMPTY_PANEL }, ...asked.screen.view },
     }
   }
-  if (launch.phase === "Conflict" || launch.phase === "Error" || launch.phase === "Loading") {
+  // Korri is reading, reports a conflict, or could not read anything: its words and its answers.
+  if (launch.phase === "Conflict" || launch.phase === "Loading" || (launch.phase === "Error" && launch.rows.length === 0)) {
     const answers = launch.actions.filter(action => action.enabled)
     const placed = cardTargets(
       launch.phase === "Loading"
@@ -501,31 +558,47 @@ export function launchScreen(ctx: Ctx, launch: PicoLaunchView, layer: Settings):
       view: { page: "settings", frame: { ...base, hasLead: false }, panel: { ...EMPTY_PANEL }, card: placed.card },
     }
   }
-  const beside = plan.spinesBeside
-  const parts = panelParts(shown, layer.group, focused, beside, 20)
-  const current = launch.layers[Math.max(0, Math.min(layer.group, launch.layers.length - 1))]
-  const scopeAt = picoLaunchScope(current, layer.scope)
-  const scopes = (current?.scopes ?? []).map((scope, i) => {
-    const id = `scope:${i}`
-    parts.targets.push({
-      id,
-      region: "scopes", box: beside ? { x: 20 + i * 10, y: 10, w: 9, h: 8 } : { x: i * 10, y: 10, w: 9, h: 8 },
-      act: [nav({ _tag: "ChoseLaunchScope", scope: i })],
-      enter: [nav({ _tag: "ChoseLaunchScope", scope: i })],
-    })
-    return button(scope.label.toUpperCase(), { lit: i === scopeAt, ...mark(id, focused) })
+  const targets: Target<Act>[] = []
+  const rows = launch.rows.map((row, i) => {
+    const id = `row:${row.id}`
+    const act = rowAct(row)
+    targets.push({ id, region: "rows", box: { x: 0, y: 10 + i * 10, w: 100, h: 8 }, ...(act === undefined ? {} : { act }) })
+    return launchRow(row, focused === id, id)
   })
-  if (leadAct !== undefined) parts.targets.push({ id: "lead", region: "floor", box: { x: 0, y: 1000, w: 10, h: 8 }, act: leadAct })
+  const kept = launch.keep
+  const keepId = kept === undefined ? "" : `row:${kept.id}`
+  if (kept !== undefined) {
+    const act = rowAct(kept)
+    targets.push({ id: keepId, region: "keep", box: { x: 0, y: 900, w: 100, h: 8 }, ...(act === undefined ? {} : { act }) })
+  }
+  if (leadAct !== undefined) targets.push({ id: "lead", region: "floor", box: { x: 0, y: 1000, w: 10, h: 8 }, act: leadAct })
+  // The cursor starts on the first row; under an error, on Korri's answer to it (RETRY).
+  const first = launch.rows[0]
+  const fallback = launch.phase === "Error" && leadAct !== undefined ? "lead" : first !== undefined ? `row:${first.id}` : leadAct !== undefined ? "lead" : undefined
   return {
     key: "launch",
-    targets: parts.targets,
-    active: { spines: `spine:${parts.spineTone}`, scopes: `scope:${scopeAt}` },
-    fallback: `row:${shown.groups[parts.spineTone]?.rows[0]?.id ?? ""}`,
+    targets,
+    ...(fallback === undefined ? {} : { fallback }),
     view: {
       page: "settings",
       frame: base,
-      card: NO_CARD,
-      panel: { ...panelView(parts), scopes, notes: launch.notes, message: "" },
+      // Ready with no row is no fault: Korri has nothing to set for this game.
+      card: launch.rows.length === 0
+        ? card({ tone: "tell", kicker: "NOTHING TO SET", title, message: "Korri has no launch settings to show for this game." })
+        : NO_CARD,
+      panel: {
+        spines: [],
+        spineTone: 0,
+        beside: false,
+        rows: stacked(rows),
+        focusedRow: Math.max(0, rows.findIndex(row => row.focused)),
+        cursor: rows.findIndex(row => row.focused),
+        notes: launch.notes,
+        message: launch.phase === "Error" ? launch.message ?? "" : "",
+        where: onFloor ? "" : where,
+        hasKeep: kept !== undefined,
+        keep: kept === undefined ? NO_ROW : launchRow(kept, focused === keepId, keepId),
+      },
     },
   }
 }

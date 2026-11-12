@@ -13,7 +13,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { SurfaceModel } from "../src/model"
 import { fixtureGameActions, fixtureModel, fixtureOverlay, fixtureOverlayStream } from "../test/fixtures/fixture-host"
-import { launchSettingsFixtures, withLaunchSettings } from "../test/fixtures/launch-settings"
+import { launchFixtures, withLaunchSettings } from "../test/fixtures/launch-settings"
 import {
   failedSettingsModel,
   fixtureGame,
@@ -153,8 +153,17 @@ export const SCENARIOS: readonly Scenario[] = [
   { name: "settings-plugins", ref: "PicoSettings.page/PluginsHub", model: { ...pluginModels.repositories, fixtureGameActions: actions }, keys: [...toSettings, "Right"] },
   { name: "settings-identity", ref: "PicoSettings.page/IdentityActions", model: { ...base, settings: [], identityManagement: { localBackupAvailable: true, retiredPublicKeys: [], status: { _tag: "Idle" } } }, keys: toSettings },
   // Launch settings and the runner picker
-  { name: "launch-default", ref: "PicoLaunchSettings.page/default", model: { ...withLaunchSettings(base, launchSettingsFixtures.ready), fixtureGameActions: actions } },
-  { name: "launch-loading", ref: "PicoLaunchSettings.page/Loading", model: { ...withLaunchSettings(base, launchSettingsFixtures.loading as never), fixtureGameActions: actions } },
+  // The one list (ADR 0066), from hand-written models that follow the treaty. Written after the cut: only Loading has a Caliper reference.
+  { name: "launch-default", ref: "PicoLaunchSettings.page/Local", model: { ...withLaunchSettings(base, launchFixtures.local), fixtureGameActions: actions } },
+  { name: "launch-changes", ref: "PicoLaunchSettings.page/Changes", model: { ...withLaunchSettings(base, launchFixtures.changes), fixtureGameActions: actions } },
+  { name: "launch-streamed", ref: "PicoLaunchSettings.page/Streamed", model: { ...withLaunchSettings(base, launchFixtures.streamed), fixtureGameActions: actions }, keys: ["Down", "Down", "Down", "Down", "Down"] },
+  { name: "launch-unreachable", ref: "PicoLaunchSettings.page/Unreachable", model: { ...withLaunchSettings(base, launchFixtures.unreachable), fixtureGameActions: actions } },
+  { name: "launch-long", ref: "PicoLaunchSettings.page/Long", model: { ...withLaunchSettings(base, launchFixtures.long), fixtureGameActions: actions }, keys: ["Down", "Down", "Down", "Down", "Down"] },
+  { name: "launch-korri", ref: "PicoLaunchSettings.page/KorriOnly", model: { ...withLaunchSettings(base, launchFixtures.korriOnly), fixtureGameActions: actions } },
+  { name: "launch-empty", ref: "PicoLaunchSettings.page/Empty", model: { ...withLaunchSettings(base, launchFixtures.empty), fixtureGameActions: actions } },
+  { name: "launch-loading", ref: "PicoLaunchSettings.page/Loading", model: { ...withLaunchSettings(base, launchFixtures.loading), fixtureGameActions: actions } },
+  { name: "launch-conflict", ref: "PicoLaunchSettings.page/Conflict", model: { ...withLaunchSettings(base, launchFixtures.conflict), fixtureGameActions: actions } },
+  { name: "launch-error", ref: "PicoLaunchSettings.page/Error", model: { ...withLaunchSettings(base, launchFixtures.error), fixtureGameActions: actions } },
   { name: "runner-ready", ref: "PicoRunnerPicker.page/Ready", model: { ...base, runnerChoice: { ...runnerChoice, _tag: "Ready" } } },
   // The store
   { name: "store-providers", ref: "PicoStore.page/default", model: { ...base, store: storeFixture() }, keys: toStore },

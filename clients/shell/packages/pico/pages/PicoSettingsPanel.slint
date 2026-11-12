@@ -1,9 +1,9 @@
 import { P8 } from "../ui/palette.slint";
 import { Tokens } from "../ui/tokens.slint";
 import { PicoPara } from "../ui/atoms/PicoPara.slint";
+import { PicoBadge } from "../ui/atoms/PicoBadge.slint";
 import { ButtonView } from "../ui/atoms/PicoRow.slint";
 import { PicoSettingRow, RowView } from "../ui/molecules/PicoSettingRow.slint";
-import { PicoScopeTabs } from "../ui/molecules/PicoScopeTabs.slint";
 import { PicoPanelScreen } from "../ui/templates/PicoPanelScreen.slint";
 
 export struct PanelView {
@@ -12,17 +12,29 @@ export struct PanelView {
     beside: bool,
     rows: [RowView],
     focused-row: int,
-    scopes: [ButtonView],
+    // The row the cursor is on, by its place; -1 when it is on no row.
+    cursor: int,
     notes: [string],
     message: string,
+    // Launch settings (ADR 0066): where the game runs, in Korri's words, and
+    // the keep row PicoSettings holds under the body while a row is changed.
+    where: string,
+    has-keep: bool,
+    keep: RowView,
 }
 
-// One group of settings in its spine's card: a launch layer's runner tabs
-// and notes, Korri's word on a failed save, and the rows.
+// One group of settings in its spine's card: where a game runs (launch
+// settings), Korri's word on a failure, its notes, and the rows.
 export component PicoSettingsPanel inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     callback reveal(left: length, top: length, wide: length, tall: length);
     in property <PanelView> panel;
+    // The place the status bar had to cut, said whole at the card's top (a long game's title).
+    in property <string> title;
+    // The height of the region that scrolls the panel. The first row brings
+    // what stands over it (the title, where the game runs, Korri's words)
+    // into sight with it when the region holds both.
+    in property <length> room;
     min-height: screen.min-height;
     preferred-height: screen.preferred-height;
     screen := PicoPanelScreen {  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); } 
@@ -33,9 +45,28 @@ export component PicoSettingsPanel inherits Rectangle {
         spines: panel.spines;
         beside: panel.beside;
         spine-tone: panel.spine-tone;
-        if panel.scopes.length > 0 : PicoScopeTabs {  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  scopes: panel.scopes; tone: P8.spine(panel.spine-tone); }
-        if panel.message != "" : PicoPara { text: panel.message; font-size: Tokens.sm; color: P8.shell-warn; }
+        if root.title != "" : PicoPara { text: root.title; font-size: Tokens.md; color: P8.ink-dark; }
+        if panel.where != "" : HorizontalLayout { alignment: start; PicoBadge { chip: { text: panel.where, kind: "info" }; } }
+        // Korri's word on a failure, as a note on a warning plate (the contrast gate's roles).
+        if panel.message != "" : Rectangle {
+            background: P8.shell-warn;
+            min-height: words.preferred-height + 4 * Tokens.p;
+            preferred-height: self.min-height;
+            max-height: self.min-height;
+            words := PicoPara { x: 2 * Tokens.p; y: 2 * Tokens.p; width: parent.width - 4 * Tokens.p; text: panel.message; font-size: Tokens.sm; color: P8.note("warn"); }
+        }
         for note in panel.notes : PicoPara { text: note; font-size: Tokens.sm; color: P8.ink-dark; }
-        for item in panel.rows : PicoSettingRow { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  item: item; }
+        for item[i] in panel.rows : PicoSettingRow { activated(target, at, released) => { root.activated(target, at, released); } 
+            reveal(left, top, wide, tall) => {
+                if (i == 0 && top + tall - root.absolute-position.y <= root.room - 2 * Tokens.u) {
+                    // One virtual pixel inside the panel: a place on its very edge may round to outside the region.
+                    root.reveal(left, root.absolute-position.y + Tokens.p, wide, top + tall - root.absolute-position.y - Tokens.p);
+                } else {
+                    root.reveal(left, top, wide, tall);
+                }
+            }
+            item: item;
+            cursor: panel.cursor == i;
+        }
     }
 }

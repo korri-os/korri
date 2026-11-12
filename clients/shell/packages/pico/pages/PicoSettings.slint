@@ -6,11 +6,14 @@ import { PicoChoicePicker } from "../ui/organisms/PicoChoicePicker.slint";
 import { PicoTextEditor, EditorView } from "../ui/organisms/PicoTextEditor.slint";
 import { PicoIdentityDialog, IdentityView } from "../ui/organisms/PicoIdentityDialog.slint";
 import { PicoScreenShell, FrameView } from "../ui/templates/PicoScreenShell.slint";
+import { PicoSettingRow } from "../ui/molecules/PicoSettingRow.slint";
 import { PicoSettingsPanel, PanelView } from "PicoSettingsPanel.slint";
 
 // Settings: the groups, a question asked over them, Pico's editor for text,
 // and the identity dialog. `mode`: "panel", "modal", "choice", "editor" or
-// "identity". Launch settings draws the same, with its own frame.
+// "identity". Launch settings draws the same, with its own frame, a bar
+// that says more rows stand above or below (`marks`), and its keep row held
+// still under the body, over the floor, while a row is changed.
 export component PicoSettings inherits Rectangle {
     callback activated(target: string, at: float, released: bool);
     in property <FrameView> frame;
@@ -19,16 +22,35 @@ export component PicoSettings inherits Rectangle {
     in property <EditorView> editor;
     in property <IdentityView> identity;
     in property <string> mode: "panel";
+    in property <bool> marks;
+    // The card says the frame's place whole when the bar had to cut it (launch settings: a long game's title).
+    in property <bool> says-place;
+    property <bool> keeping: mode == "panel" && panel.has-keep;
     shell := PicoScreenShell {  activated(target, at, released) => { root.activated(target, at, released); } 
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
         frame: frame;
-        if mode == "panel" : PicoSettingsPanel {  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  panel: panel; }
+        marks: root.marks;
+        says-place: root.says-place;
+        // The keep row's room: the row and a gap over the floor.
+        pinned-room: root.keeping ? keep.height + Tokens.u : 0;
+        if mode == "panel" : PicoSettingsPanel {  activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  panel: panel; title: root.says-place && shell.place-cut ? frame.place : ""; room: shell.body-h; }
         if mode == "modal" : PicoModal { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; card: card; }
         if mode == "choice" : PicoChoicePicker { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  min-height: self.preferred-height; choices: card; }
         if mode == "editor" : PicoTextEditor { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  editor: editor; }
         if mode == "identity" : PicoIdentityDialog { activated(target, at, released) => { root.activated(target, at, released); }  reveal(left, top, wide, tall) => { shell.show(left, top, wide, tall); }  identity: identity; }
+    }
+    // Always present, shown by its data: the row updates in place. It stands
+    // outside the body, so it is always in sight and never covers a row.
+    keep := PicoSettingRow { activated(target, at, released) => { root.activated(target, at, released); } 
+        visible: root.keeping;
+        x: shell.body-x;
+        y: shell.pinned-y;
+        width: shell.body-w;
+        item: panel.keep;
+        primary: true;
+        ink: P8.ink-quiet;
     }
 }

@@ -33,7 +33,7 @@ export const PICO_TREE: Record<Layer, readonly string[]> = {
   molecules: [
     "PicoButtonBar", "PicoCard", "PicoCart", "PicoChoiceRow", "PicoControllerRow", "PicoControlRow", "PicoEmptySlot",
     "PicoGameFacts", "PicoInviteNotice", "PicoInviteRow", "PicoKeyboard", "PicoNetworkMarks", "PicoNetworkRow",
-    "PicoNotice", "PicoQueryField", "PicoResultRow", "PicoScopeTabs", "PicoSettingRow", "PicoSetupHeading",
+    "PicoNotice", "PicoQueryField", "PicoResultRow", "PicoSettingRow", "PicoSetupHeading",
     "PicoStarterPack", "PicoStatRun", "PicoStatusBar", "PicoStreamPlayers", "PicoTabs", "PicoTextField",
   ],
   organisms: [
@@ -48,6 +48,13 @@ export const PICO_TREE: Record<Layer, readonly string[]> = {
     "PicoGameDetail", "PicoHome", "PicoLaunchSettings", "PicoLibrary", "PicoOnboarding", "PicoOverlay",
     "PicoRunnerPicker", "PicoSettingsPanel", "PicoSettings", "PicoShowcase", "PicoStore",
   ],
+}
+
+/**
+ * React components Pico no longer draws, and why. None has a .slint file.
+ */
+export const REMOVED: Readonly<Record<string, { readonly layer: Layer; readonly why: string }>> = {
+  PicoScopeTabs: { layer: "molecules", why: "The runner scope tabs of a launch settings layer: launch settings are one list now (ADR 0066), with no layers and no scopes." },
 }
 
 /** React components that became part of another Slint component, and why. */

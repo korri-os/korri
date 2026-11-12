@@ -3,7 +3,8 @@
  * (surfaces/pico/test/decomposition-gate.test.ts):
  *
  * - every React component is one Slint component at the same layer, in its
- *   own file, unless MERGED says where it went and why;
+ *   own file, unless MERGED says where it went and why, or REMOVED says
+ *   why Pico no longer draws it (then no file of that name is left);
  * - every .slint file under ui/ and pages/ declares exactly one component,
  *   named as the file, and nothing that is not in the tree or ADDED;
  * - every component has a preview file beside it that imports it and draws
@@ -21,7 +22,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { basename, dirname, join } from "node:path"
-import { ADDED, FOLDER, LAYERS, type Layer, MERGED, PICO_TREE, SUFFIX } from "./inventory"
+import { ADDED, FOLDER, LAYERS, type Layer, MERGED, PICO_TREE, REMOVED, SUFFIX } from "./inventory"
 import { code, components, exists, imports, read, rel, ROOT, slintFiles, stringsBlanked } from "./slint-source"
 
 /** A global's pure functions (they compute, they do not write). */
@@ -51,6 +52,16 @@ describe("the React tree, one Slint component each", () => {
         expect(components(read(file))).toEqual([name])
       })
     }
+  }
+})
+
+describe("a component Pico no longer draws", () => {
+  for (const [name, gone] of Object.entries(REMOVED)) {
+    test(`${gone.layer}/${name} has no file and a stated reason`, () => {
+      expect(gone.why.length).toBeGreaterThan(0)
+      expect(exists(join(ROOT, FOLDER[gone.layer], `${name}.slint`))).toBe(false)
+      expect(PICO_TREE[gone.layer].includes(name)).toBe(false)
+    })
   }
 })
 

@@ -33,8 +33,6 @@ export type PicoMessage =
   // A game's launch settings. Its rows send the Settings messages.
   /** Reload, Retry or Close, as Korri published them. */
   | { readonly _tag: "PressedLaunchAction"; readonly actionId: string }
-  /** A runner scope tab in a layer's card. */
-  | { readonly _tag: "ChoseLaunchScope"; readonly scope: number }
   // Home
   | { readonly _tag: "ToggledHomeMenu" }
   | { readonly _tag: "ChoseMenuFind" }

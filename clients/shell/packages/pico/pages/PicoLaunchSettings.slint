@@ -6,7 +6,12 @@ import { FrameView } from "../ui/templates/PicoScreenShell.slint";
 import { PicoSettings } from "PicoSettings.slint";
 import { PanelView } from "PicoSettingsPanel.slint";
 
-// A game's launch settings: its layers as spines, a runner tab row in each
-// card, RELOAD on the floor, and the same questions Settings asks.
+// A game's launch settings (ADR 0066): one card that holds every setting
+// once under its section's caption, the keep row held under it while a row
+// is changed, RELOAD (or RETRY) on the floor, and the same questions
+// Settings asks. The list says when more rows stand above or below, and the
+// card says the game's title whole when the status bar had to cut it.
 export component PicoLaunchSettings inherits PicoSettings {
+    marks: true;
+    says-place: true;
 }

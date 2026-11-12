@@ -22,7 +22,7 @@ type FocusPlan = Record<string, Partial<Record<string, Exit>>>
 
 const MODELS = [
   "home-ready", "home-playing-now", "home-downloading", "home-problem", "home-error", "store-results", "store-entry",
-  "store-providers", "launch-default", "runner-ready", "setup-hello", "setup-wifi", "setup-pads", "overlay-default", "overlay-stream",
+  "store-providers", "launch-default", "launch-changes", "launch-unreachable", "launch-long", "runner-ready", "setup-hello", "setup-wifi", "setup-pads", "overlay-default", "overlay-stream",
   "settings-wifi", "settings-identity", "settings-plugins",
 ]
 /** Spines above the rows, and beside them. */

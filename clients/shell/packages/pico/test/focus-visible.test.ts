@@ -28,7 +28,7 @@ import { walkStates } from "./walk-plan"
 
 const MODELS = [
   "home-ready", "home-playing-now", "home-downloading", "home-problem", "home-error", "store-results", "store-entry",
-  "store-providers", "launch-default", "runner-ready", "setup-hello", "setup-wifi", "setup-pads", "overlay-default", "overlay-stream",
+  "store-providers", "launch-default", "launch-changes", "launch-unreachable", "launch-long", "runner-ready", "setup-hello", "setup-wifi", "setup-pads", "overlay-default", "overlay-stream",
   "settings-wifi", "settings-identity", "settings-plugins",
   // Korri reports a display larger than the window: Pico must fit the window.
   "home-big-display",

@@ -5,26 +5,40 @@ import { PicoPaletteBar } from "../atoms/PicoPaletteBar.slint";
 
 // The header: where you are, in two words (the place in white, where in it
 // in the accent, a breadcrumb mark between when it is a path), the clock,
-// and the palette under them. The place yields first on a narrow bar.
+// and the palette under them. The place yields first: it leaves a narrow
+// bar, and on any bar it is cut before the label loses a letter (a long
+// game's title over LAUNCH SETTINGS).
 export component PicoStatusBar {
     in property <string> place;
     in property <bool> sep;
     in property <string> label;
     in property <string> clock;
+    // What holds the bar says the place whole when the bar cannot (launch
+    // settings' card): then the place leaves the bar instead of being cut.
+    in property <bool> whole-or-none;
     property <length> line: Tokens.snap(Tokens.lg * 1.1);
-    property <bool> show-place: place != "" && root.width >= 75 * Tokens.sm * 4 / 7;
+    property <length> gap: Tokens.lg * 2 / 7;
+    // The room the place may take: what the label, the mark and the clock leave.
+    property <length> place-room: root.width - label-text.preferred-width - gap - (sep ? mark.preferred-width + gap : 0) - (clock != "" ? time.preferred-width + 2 * Tokens.u : 0);
+    // A place with room for under three of its letters says nothing: it leaves.
+    property <bool> show-place: place != "" && root.width >= 75 * Tokens.sm * 4 / 7 && place-room >= (whole-or-none ? place-text.preferred-width : 3 * Tokens.lg);
+    property <length> place-w: min(place-text.preferred-width, max(0, place-room));
+    // The bar does not say the place whole: what holds the bar may say it instead.
+    out property <bool> place-cut: place != "" && (!show-place || place-w < place-text.preferred-width);
     height: line + 2 * Tokens.p + 3 * Tokens.p;
     place-text := Text {
         x: 0;
         y: Tokens.snap((line - Tokens.lg) / 2);
+        width: place-w;
         height: Tokens.lg;
         visible: show-place;
         text: place;
         font-size: Tokens.lg;
         color: P8.ink;
+        overflow: elide;
     }
     mark := Text {
-        x: place-text.preferred-width + Tokens.lg * 2 / 7;
+        x: place-w + gap;
         y: place-text.y;
         height: Tokens.lg;
         visible: show-place && sep;
@@ -32,8 +46,8 @@ export component PicoStatusBar {
         font-size: Tokens.lg;
         color: P8.ink;
     }
-    property <length> label-x: !show-place ? 0 : sep ? mark.x + mark.preferred-width + Tokens.lg * 2 / 7 : place-text.preferred-width + Tokens.lg * 2 / 7;
-    Text {
+    property <length> label-x: !show-place ? 0 : sep ? mark.x + mark.preferred-width + gap : place-w + gap;
+    label-text := Text {
         x: label-x;
         y: place-text.y;
         width: max(0, root.width - self.x - (clock != "" ? time.preferred-width + 2 * Tokens.u : 0));

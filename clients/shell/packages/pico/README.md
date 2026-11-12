@@ -13,19 +13,54 @@ The web Pico (`surfaces/pico/`) was removed in the same cut. Its state, view
 helpers, fixtures and behaviour tests moved here unchanged except for their
 imports.
 
-## Shared launch settings
+## Launch settings (ADR 0066)
 
-Pico reads the same launch editor model as Zone. Korri supplies the shared
-sections, runner scopes, device-only marks, one-launch values and Keep targets.
-The existing layer spines and scope tabs show them without a second backend.
-Keep displays the retained value, then opens Pico's existing picker with Game
-first. Other published places remain reachable by scrolling the picker.
+A game's launch settings are one list, the same for a game that runs here and
+a game that another device runs. Pico reads `groups`, `changes`, `keep` and
+`runsOn` (`src/pico-launch-view.ts`) and nothing of the old places: no layer
+spines and no runner scope tabs.
 
-`test/shared-launch-settings.test.ts` covers touch and button requests at four
-container sizes. Its JSON fixture is a subset of the real controller export
-from korrid's `one_launch_editor_is_ephemeral_and_keep_writes_only_the_chosen_value`
-test. Rows, IDs and choices are unchanged. It is editor data, not evidence that
-the fixture game supports a particular renderer option.
+- One card holds every setting once. The first row of a setting section
+  stands under the section's caption (VIDEO, AUDIO, STREAM).
+- A chip at the card's top says where the game runs, in Korri's words. On a
+  short, wide screen (1024x240) the floor row says it instead, beside the
+  lead: it has the width and is always in sight (`launchWhereOnFloor` in
+  `src/native/panel.ts`). The status bar shows the game's title whole or not
+  at all; when it cannot, the card says the title whole over the chip.
+- A changed row says its earlier value under its plate, after a yellow WAS
+  chip, focused or not.
+- Only the focused row says where its value stays (`source`) and Korri's
+  `description`. Those words wrap. The focused row also says whole, under
+  its plate, a label or value the plate had to cut.
+- A row with no `interaction` is a fact: it takes the cursor, and its
+  description says why it cannot change.
+- The keep row shows only while `changes` is not empty. It stands under the
+  body and over the floor, outside the scroll, so it is always in sight and
+  never covers a row. Its plate is yellow: the screen's one filled control.
+  A press opens Pico's list of the places on the one in force; the place
+  chosen goes to `ChangeSetting` with the keep row's id.
+- The floor's lead is Korri's first action that is not Close: RELOAD, or
+  RETRY when Korri reports an error. Back runs Close.
+- An error that still carries rows (the device that runs the game cannot be
+  reached) keeps the list: Korri's message stands on a red plate at the
+  card's top, the cursor starts on RETRY, and this device's own rows still
+  change. Loading, a conflict, and an error with no rows are Pico's cards, as
+  before.
+- A bar down the body's right edge says the list holds more than it shows.
+- Focus: `rows`, then `keep`, then the `floor`. The list also names the row
+  the cursor is on (`panel.cursor`), so a row far out of sight comes back
+  into it.
+
+At 320x240 the body holds about one row with its lines. The card's first
+lines (the title, where the game runs, Korri's message) then stand above the
+first row and leave the view when the cursor is on a row; a finger scrolls
+them back. Under an error the cursor starts on RETRY with them in view.
+
+`test/fixtures/launch-settings.ts` holds hand-written models that follow the
+treaty (korrid does not publish this model yet). `test/launch-settings.test.ts`
+covers the view, the focus rules and the scroll rule.
+`bun preview/launch-previews.ts` writes the page's preview states from the
+views `logic.ts` makes of those models.
 
 ## Layout
 
@@ -97,7 +132,7 @@ the fixture game supports a particular renderer option.
 - **Regions and exits (contract 8.4).** Every focus target belongs to a
   region (`src/native/focus.ts`): `floor`, `menu`, `invites`, `shelf`,
   `grid`, `hero`, `resume`, `card`, `stage`, `sections`, `orders`, `keys`,
-  `results`, `search`, `play`, `actions`, `spines`, `scopes`, `rows`, `answers`,
+  `results`, `search`, `play`, `actions`, `spines`, `rows`, `keep`, `answers`,
   `list`, `pack`, `go`. Inside a region a press moves to the nearest target
   ahead. Leaving one follows `picoExits` in `src/pico-display-plan.ts`,
   which the plan computes per size (spines beside the rows or above them).
@@ -137,7 +172,7 @@ Ported from the web Pico's gates and run with `bun test`:
 | `layout-plan` | The plan from the window alone at the five sizes; the grid's rows and the spines' arrangement drawn as the plan says and moved through by it; a resize keeps the cursor. |
 | `focus-convention` | On the logic alone, at 320x240 and 1280x720: every entry with `focused` names its region, one active target per region at most, every exit leads to a region the view has, and every press that leaves a region goes where `focusPlan` says. |
 | `pico-touch` | Activated moves focus and confirms; stale ids and attract; the highlight hides and shows; hints; ranges at the finger; Dragged walks and pages as the d-pad does. |
-| `focus-visible` | Every focus target the logic reaches (breadth-first over every button, on 17 models and one with a 1920x1080 display, with `Resized` at each size) is drawn inside the window at those five sizes. `test/walk-plan.ts` runs the same walk on the logic alone first: each model walks, at each size, only as far as its last target no earlier model reached, and the probes run side by side (`PICO_WALK_JOBS`, `PICO_FOCUS_STATES`). |
+| `focus-visible` | Every focus target the logic reaches (breadth-first over every button, on 21 models and one with a 1920x1080 display, with `Resized` at each size) is drawn inside the window at those five sizes. `test/walk-plan.ts` runs the same walk on the logic alone first: each model walks, at each size, only as far as its last target no earlier model reached, and the probes run side by side (`PICO_WALK_JOBS`, `PICO_FOCUS_STATES`). |
 
 The last two run the shell's headless probe
 (`clients/shell/examples/surface-probe.rs`); build it with

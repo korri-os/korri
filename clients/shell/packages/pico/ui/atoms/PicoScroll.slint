@@ -55,8 +55,9 @@ export component PicoScroll inherits Rectangle {
             if (top < 0 || top > content.height) {
                 return;
             }
-            if (top < min(scroll, limit) + margin) {
-                flick.content-y = -max(0, top - margin);
+            // A control taller than the region shows its top: its foot is what scrolls out.
+            if (top < min(scroll, limit) + margin || want-tall > root.height - 2 * margin) {
+                flick.content-y = -min(limit, max(0, top - margin));
             } else if (top + want-tall > min(scroll, limit) + root.height - margin) {
                 flick.content-y = -min(limit, top + want-tall - root.height + margin);
             }

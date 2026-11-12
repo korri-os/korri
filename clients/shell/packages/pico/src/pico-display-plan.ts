@@ -153,9 +153,9 @@ const to = (region: string, entry: Entry) => ({ to: region, entry })
  *   library. `card`: a notice's or question's answers. `stage`: the
  *   buttons of a launch or a download under way.
  * - Find: `sections` over `orders` over the `keys`, then the `results`.
- * - A panel: `spines` and `rows`, with launch settings' `scopes` over the
- *   rows. Beside, the spines are a column left of the rows; above, they
- *   are tabs.
+ * - A panel: `spines` and `rows`. Beside, the spines are a column left of
+ *   the rows; above, they are tabs. Launch settings have no spines: their
+ *   one list of `rows`, then the `keep` row under it while a row is changed.
  * - `keys` over `answers` in the editor; setup's `list`, `pack` answers,
  *   `answers` and `go`, top to bottom; the store's `search` over its
  *   `results`; a game's `play` (its first answer) over its other
@@ -164,18 +164,15 @@ const to = (region: string, entry: Entry) => ({ to: region, entry })
 export function picoExits(spinesBeside: boolean): ExitChoices {
   const spines = spinesBeside
     ? { right: [to("rows", "first")] }
-    : { down: [to("scopes", "active"), to("rows", "first")] }
-  const scopes = spinesBeside
-    ? { left: [to("spines", "active")], down: [to("rows", "first")] }
-    : { up: [to("spines", "active")], down: [to("rows", "first")] }
+    : { down: [to("rows", "first")] }
   const rows = spinesBeside
-    ? { left: [to("spines", "active")], up: [to("scopes", "active")], down: [to("floor", "first")] }
-    : { up: [to("scopes", "active"), to("spines", "active")], down: [to("floor", "first")] }
+    ? { left: [to("spines", "active")], down: [to("keep", "first"), to("floor", "first")] }
+    : { up: [to("spines", "active")], down: [to("keep", "first"), to("floor", "first")] }
   return {
     floor: {
       up: [
         to("menu", "remembered"), to("shelf", "active"), to("grid", "remembered"), to("resume", "remembered"),
-        to("hero", "first"), to("card", "remembered"), to("rows", "remembered"), to("invites", "remembered"),
+        to("hero", "first"), to("card", "remembered"), to("keep", "first"), to("rows", "remembered"), to("invites", "remembered"),
       ],
     },
     menu: { down: [to("floor", "first")] },
@@ -202,8 +199,8 @@ export function picoExits(spinesBeside: boolean): ExitChoices {
     play: { down: [to("actions", "first"), to("card", "first")] },
     actions: { up: [to("play", "first")], down: [to("card", "first")] },
     spines,
-    scopes,
     rows,
+    keep: { up: [to("rows", "remembered")], down: [to("floor", "first")] },
     answers: { up: [to("keys", "remembered"), to("pack", "remembered"), to("list", "remembered")], down: [to("go", "first")] },
     list: { down: [to("pack", "first"), to("answers", "first"), to("go", "first")] },
     pack: { up: [to("list", "remembered")], down: [to("answers", "first"), to("go", "first")] },

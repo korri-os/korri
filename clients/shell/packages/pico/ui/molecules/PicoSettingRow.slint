@@ -3,6 +3,7 @@ import { Tokens, Cycle } from "../tokens.slint";
 import { PicoTap } from "../atoms/PicoTap.slint";
 import { PicoReveal } from "../atoms/PicoReveal.slint";
 import { PicoLine } from "../atoms/PicoLine.slint";
+import { PicoPara } from "../atoms/PicoPara.slint";
 import { PicoBadge, ChipView } from "../atoms/PicoBadge.slint";
 import { PicoSegments, SegmentView } from "../atoms/PicoSegments.slint";
 import { PicoNetworkMarks } from "PicoNetworkMarks.slint";
@@ -15,6 +16,11 @@ export struct RowView {
     description: string,
     source: string,
     device-only: bool,
+    // Launch settings (ADR 0066): the earlier value of a row changed and not
+    // kept yet ("" for none); and `wrap`: the description wraps, and the
+    // focused row says whole the label or value its plate had to cut.
+    was: string,
+    wrap: bool,
     kind: string,
     focused: bool,
     // A focus target in this view: only then is `focused` current.
@@ -34,7 +40,13 @@ export struct RowView {
 
 // Its caption, the plate with label and value (a choice shown whole, a long
 // one between arrows, a network's marks), then where the value comes from,
-// what it does, and Korri's word on the last change.
+// what it does, and Korri's word on the last change. A row changed and not
+// kept yet says its earlier value under the plate, after a yellow WAS chip.
+// With `wrap`, the description takes as many lines as it needs and stands
+// over where the value stays, and the focused row says whole, under its
+// plate, the label or value the plate cut.
+// `primary` fills the plate yellow at rest: launch settings' keep row, the
+// screen's one filled control.
 export component PicoSettingRow {
     callback activated(target: string, at: float, released: bool);
     // A focus target, for screen readers and the shell's probe: the
@@ -48,11 +60,29 @@ export component PicoSettingRow {
     in property <color> ink: P8.ink-dark;
     in property <length> plate-h: Tokens.md + 8 * Tokens.p;
     in property <length> line-h: Tokens.sm * 1.5;
+    in property <bool> primary;
+    // The cursor is on this row, as its list says it. A row far out of sight
+    // may hear of its own data late; its list's word brings it into sight.
+    in property <bool> cursor;
     // The highlight: hidden while touch is in use (Tokens.ring); the focus stays.
     property <bool> ring: item.target && item.focused && Tokens.ring;
     property <bool> under: item.source != "" || item.device-only;
     property <length> top: item.section != "" ? line-h : 0;
-    height: top + plate-h + (under ? line-h : 0) + (item.description != "" ? line-h : 0) + (item.state-text != "" && item.state != "saving" ? line-h : 0);
+    // What a line box adds to its glyphs: wrapped words keep it over and under them.
+    property <length> lead: line-h - Tokens.sm;
+    // The earlier value's line: as many lines as its words need beside the chip.
+    property <length> was-h: item.was == "" ? 0 : max(line-h, was-words.preferred-height + lead);
+    // The description: one line, or as many as it needs when it wraps.
+    property <length> says-h: item.description == "" ? 0 : item.wrap ? says.preferred-height + lead : line-h;
+    // What the plate had to cut: the value has at most 60% of the plate, the
+    // label what the value leaves.
+    label-measure := Text { visible: false; text: item.label; font-size: Tokens.md; }
+    // The value's words and arrows want more than the share the plate gives them.
+    property <bool> value-cut: item.segments.length == 0 && value.preferred-width > plate.width * 60% + Tokens.p / 2;
+    property <bool> label-cut: label-measure.preferred-width > label-text.width;
+    property <bool> telling: item.wrap && item.target && item.focused && (label-cut || value-cut);
+    property <length> whole-h: telling ? whole.preferred-height + lead : 0;
+    height: top + plate-h + whole-h + was-h + (under ? line-h : 0) + says-h + (item.state-text != "" && item.state != "saving" ? line-h : 0);
     if item.section != "" : PicoLine { x: 0; y: 0; width: root.width; line-height: line-h; text: item.section; color: ink; }
     plate := Rectangle {
         x: 0;
@@ -61,16 +91,16 @@ export component PicoSettingRow {
         height: plate-h - 2 * Tokens.p;
         // Always present, shown by the row's data: a row updates in place.
         Rectangle { visible: root.ring; x: Tokens.drop-sm; y: Tokens.drop-sm; width: parent.width; height: parent.height; background: Cycle.now; }
-        Rectangle { background: root.ring ? P8.pick : P8.ink-dark; }
-        property <color> value-ink: root.ring ? P8.pick-mark : P8.ink-quiet;
-        Text {
+        Rectangle { background: root.ring ? P8.pick : root.primary ? P8.go : P8.ink-dark; }
+        property <color> value-ink: root.ring || root.primary ? P8.pick-mark : P8.ink-quiet;
+        label-text := Text {
             x: 3 * Tokens.p;
             y: (parent.height - Tokens.md) / 2;
             width: max(0, parent.width - 8 * Tokens.p - value.width);
             height: Tokens.md;
             text: item.label;
             font-size: Tokens.md;
-            color: root.ring ? P8.pick-ink : item.warn ? P8.warn : item.kind == "fact" ? P8.ink-dim : P8.ink;
+            color: root.ring || root.primary ? P8.pick-ink : item.warn ? P8.warn : item.kind == "fact" ? P8.ink-dim : P8.ink;
             overflow: elide;
         }
         value := HorizontalLayout {
@@ -88,11 +118,42 @@ export component PicoSettingRow {
             if item.state == "saving" : PicoBadge { y: (Tokens.md - self.height) / 2; chip: { text: "SAVING", kind: "info" }; }
         }
     }
+    // Always present, shown by the row's data: a row updates in place.
+    whole := PicoPara {
+        visible: root.telling;
+        x: 0;
+        y: top + plate-h + Tokens.snap((line-h - Tokens.sm) / 2);
+        width: root.width;
+        text: !root.telling ? "" : label-cut && value-cut ? item.label + "\n" + item.value : label-cut ? item.label : item.value;
+        font-size: Tokens.sm;
+        color: ink;
+    }
+    was-chip := PicoBadge { visible: item.was != ""; x: 0; y: top + plate-h + whole-h + (line-h - self.height) / 2; chip: { text: "WAS", kind: "go" }; }
+    was-words := PicoPara {
+        visible: item.was != "";
+        x: was-chip.width + 2 * Tokens.p;
+        y: top + plate-h + whole-h + Tokens.snap((line-h - Tokens.sm) / 2);
+        width: max(0, root.width - self.x);
+        text: item.was;
+        font-size: Tokens.sm;
+        color: ink;
+    }
+    says := PicoPara {
+        visible: item.wrap && item.description != "";
+        x: 0;
+        y: top + plate-h + whole-h + was-h + Tokens.snap((line-h - Tokens.sm) / 2);
+        width: root.width;
+        text: item.wrap ? item.description : "";
+        font-size: Tokens.sm;
+        color: ink;
+    }
     VerticalLayout {
         x: 0;
-        y: top + plate-h;
+        y: top + plate-h + whole-h + was-h;
         width: root.width;
         height: root.height - self.y;
+        // A wrapped description (why a row cannot change) stands first, over where the value stays.
+        if item.description != "" && item.wrap : Rectangle { height: says-h; }
         if under : HorizontalLayout {
             height: line-h;
             spacing: 2 * Tokens.p;
@@ -100,9 +161,10 @@ export component PicoSettingRow {
             if item.source != "" : PicoLine { line-height: line-h; text: item.source; color: ink; }
             if item.device-only : PicoBadge { y: (line-h - self.height) / 2; chip: { text: "DEVICE-ONLY", kind: "info" }; }
         }
-        if item.description != "" : PicoLine { line-height: line-h; text: item.description; color: ink; }
+        if item.description != "" && !item.wrap : PicoLine { line-height: line-h; text: item.description; color: ink; }
         if item.state-text != "" && item.state != "saving" : PicoLine { line-height: line-h; text: item.state-text; color: item.state == "problem" ? P8.warn : P8.pick-mark; }
     }
-    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: plate.x; y: plate.y; width: plate.width; height: plate.height; focused: (item.target && item.focused); }
+    // The plate, and with `wrap` the lines under it too: the focused row's words come into sight with it.
+    PicoReveal { reveal(left, top, wide, tall) => { root.reveal(left, top, wide, tall); }  x: plate.x; y: plate.y; width: plate.width; height: item.wrap ? root.height - plate.y : plate.height; focused: (item.target && item.focused) || root.cursor; }
     PicoTap { activated(target, at, released) => { root.activated(target, at, released); }  x: 0; y: 0; width: root.width; height: root.height; target: item.target ? item.focus-id : ""; }
 }

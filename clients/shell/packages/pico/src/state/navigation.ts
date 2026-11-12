@@ -118,10 +118,6 @@ export interface Settings {
   readonly question: SettingsQuestion
   /** Which settings group shows. Settings opens on the first; closing it forgets. */
   readonly group: number
-  /** In launch settings, which runner scope the layer's card shows, by its
-   * place in the layer: any runner first. It holds across spines, so the
-   * same runner shows on the next layer. */
-  readonly scope: number
 }
 
 /** The attract screen. `activity` counts presses and focus moves; the idle
@@ -178,7 +174,7 @@ export function topLayer(nav: PicoNavigation): TopLayer {
   return "Home"
 }
 
-export const SETTINGS: Settings = { question: { _tag: "None" }, group: 0, scope: 0 }
+export const SETTINGS: Settings = { question: { _tag: "None" }, group: 0 }
 
 const HOME: Home = { mode: "shelf", selectedGameId: undefined, menu: "Closed", focusOnReturn: "None", aim: undefined }
 

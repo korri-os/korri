@@ -314,7 +314,6 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
 
     // Settings
     case "ChoseSettingsGroup":
-      if (nav.launch !== undefined) return stay({ ...nav, launch: { ...nav.launch, group: message.group } })
       return stay(nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, group: message.group } })
     case "PressedSettingAction": {
       if (message.actionId.startsWith("identity:")) {
@@ -337,8 +336,6 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       if (question?._tag !== "ConfirmingAction") return stay(nav)
       return ask(withQuestion(nav, { _tag: "None" }), { _tag: "RunAction", actionId: question.actionId })
     }
-    case "ChoseLaunchScope":
-      return stay(nav.launch === undefined ? nav : { ...nav, launch: { ...nav.launch, scope: message.scope } })
     case "OpenedPicker":
       return pickRow(korri, message.settingId) === undefined
         ? stay(nav)
@@ -659,8 +656,8 @@ const textRow = (korri: SurfaceModel, settingId: string): PicoTextSettingRowView
 }
 
 /**
- * Korri opened or closed a game's launch settings. Opening starts on the
- * first spine with no question; closing forgets both.
+ * Korri opened or closed a game's launch settings. Opening starts with no
+ * question; closing forgets it.
  */
 function settleLaunch(nav: PicoNavigation, korri: SurfaceModel): PicoNavigation {
   const open = launchOpen(korri)

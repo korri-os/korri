@@ -40,7 +40,12 @@ export type PicoSettingControl =
       readonly current: number
     }
   | { readonly kind: "step"; readonly next: string; readonly current: string }
-  | { readonly kind: "pick"; readonly options: readonly { readonly value: string; readonly label: string }[] }
+  | {
+      readonly kind: "pick"
+      readonly options: readonly { readonly value: string; readonly label: string }[]
+      /** The value in force, when Korri names one (launch settings' keep row): the list opens on it. */
+      readonly selected?: string
+    }
   | {
       readonly kind: "text"
       readonly sensitive: boolean
@@ -79,6 +84,9 @@ export interface PicoSettingRowView {
   readonly source?: string
   /** Korri says the value stays on this device. */
   readonly deviceOnly?: boolean
+  /** The earlier value in Korri's words, while the row is changed and not
+   * kept yet (launch settings, ADR 0066). */
+  readonly was?: string
   readonly control: PicoSettingControl
   /** What Korri says about this row right now. A `problem` is a settings
    * failure the player dismisses; `failed` is Korri's record of the last
