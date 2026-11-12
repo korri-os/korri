@@ -73,7 +73,7 @@ class NoSoftwareViewerOnAHandheld(Device):
         facts = session.handle({"operation": "discover"})
         self.assertEqual(facts["platform"], "v4l2request")
         self.assertTrue(facts["hardware_picture_path"])
-        with self.assertRaisesRegex(RuntimeError, "hardware picture path.*software viewer"):
+        with self.assertRaisesRegex(RuntimeError, "board with a device tree.*viewer fixture does not start"):
             self.prepare(session)
         # Nothing was started and no directory was made.
         self.assertIsNone(session.root)
@@ -398,7 +398,7 @@ class NoFixtureOnABoard(Desktop):
         self.read(50000)
         session = self.session()
         facts = session.handle({"operation": "discover"})
-        self.assertFalse(facts["hardware_picture_path"])
+        self.assertTrue(facts["hardware_picture_path"])
         self.assertEqual(list(self.supplies.glob("*")), [])
         self.assertEqual(facts["board"], ["aislpc,r36t-max", "rockchip,rk3326"])
         with self.assertRaisesRegex(

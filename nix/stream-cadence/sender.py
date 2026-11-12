@@ -62,11 +62,9 @@ from discovery import encoder_probe, output, properties
 from heat import must_end, no_start, thermal_limits, thermal_zones
 from viewer import (
     GUARD_PERIOD,
-    PICTURE_PATH_DEFAULT,
     board,
     board_names,
     no_fixture_on_board,
-    platform,
 )
 
 RUNS = Path("/tmp")
@@ -324,7 +322,7 @@ class Session:
         self.limits = {zone["zone"]: thermal_limits(zone) for zone in zones}
         self.facts["thermal"] = [dict(zone, limits=self.limits[zone["zone"]]) for zone in zones]
         self.facts["heat_guarded"] = any(self.limits.values())
-        self.hardware_path = platform() != PICTURE_PATH_DEFAULT
+        self.hardware_path = bool(board())
         self.facts["hardware_picture_path"] = self.hardware_path
         # The names of the board in its device tree; none for a machine that is
         # no such board, None for a board that could not be read.
@@ -602,13 +600,6 @@ class Session:
             else INPUT_RECORD
         )
         self.facts["input_rule"] = self.input_rule
-        if self.hardware_path:
-            # Whatever its temperature: a handheld is a viewer, never a sender.
-            raise RuntimeError(
-                "This device's chip has a hardware picture path in korrid's table: it is a "
-                "handheld. A compositor, a Sunshine and an encoder are too much load for it, "
-                "so the sender fixture does not start here."
-            )
         refused = no_fixture_on_board("sender fixture") or no_start(
             thermal_zones(), self.limits, self.hardware_path
         )

@@ -8,6 +8,7 @@ that keep a software viewer away from a handheld.
 It imports only the standard library and viewer.py.
 """
 
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -37,7 +38,22 @@ def korrid_picture_paths(source: str) -> dict:
     whole value with `==`, as viewer.py compares it.
     """
     body = source.split("fn platform_from_path", 1)[1].split("\n}\n", 1)[0]
+    # Fail closed on any unrecognised logic. The fingerprint ignores comments,
+    # whitespace and string values only; those values are parsed and compared
+    # below. A changed operator, return, predicate, or ordering needs review.
+    shape = re.sub(r"//[^\n]*", "", body)
+    shape = re.sub(r'"[^"]*"', '"VALUE"', shape)
+    shape = re.sub(r"\s+", "", shape)
+    if hashlib.sha256(shape.encode()).hexdigest() != "617f165609a576416304436ef5286eb343fae12de24b399c098ad2beb4af3fe1":
+        raise ValueError("cannot parse korrid's platform_from_path: rule shape changed")
     head, table = body.split("let mut values", 1)
+    pc = re.search(
+        r'architecture == "([^"]+)".*?strip_prefix\("([^"]+)"\).*?'
+        r'return if render_node \{ "([^"]+)" \} else \{ "([^"]+)" \}',
+        head, re.DOTALL,
+    )
+    if pc is None:
+        raise ValueError("cannot read korrid's PC candidate rule")
     branches: list[tuple[set[bytes], str]] = []
     chips: set[bytes] = set()
     default = None
@@ -51,6 +67,7 @@ def korrid_picture_paths(source: str) -> dict:
             default = token.group(2)
     return {
         "branches": branches,
+        "pc": pc.groups(),
         "default": default,
         "early": re.findall(r'return "([^"]+)"', head),
         "whole": len(re.findall(r'b"[^"]+"', table)) == len(re.findall(r'value == b"[^"]+"', table))
@@ -75,9 +92,12 @@ class KorridCopy(unittest.TestCase):
 
     def test_a_device_tree_that_is_absent_gets_korrids_answer(self):
         korrid = korrid_picture_paths(KORRID_VIEWER.read_text())
-        # korrid returns before its table for a file that is absent or unreadable.
-        self.assertGreaterEqual(len(korrid["early"]), 2, "cannot read korrid's early returns")
-        self.assertEqual(set(korrid["early"]), {viewer.PICTURE_PATH_DEFAULT})
+        self.assertEqual(korrid["early"], [viewer.PICTURE_PATH_DEFAULT])
+        self.assertEqual(
+            korrid["pc"],
+            (viewer.PICTURE_PATH_PC_ARCH, viewer.PICTURE_PATH_PC_RENDER_PREFIX,
+             viewer.PICTURE_PATH_PC, viewer.PICTURE_PATH_DEFAULT),
+        )
         self.assertEqual(viewer.picture_path(b""), viewer.PICTURE_PATH_DEFAULT)
 
     def test_chips_are_compared_as_whole_values_on_both_sides(self):
@@ -98,18 +118,31 @@ class KorridCopy(unittest.TestCase):
         changes = {
             "a chip": ('b"rockchip,rk3566"', 'b"rockchip,rk3568"'),
             "the answer for an absent device tree": (
-                'ErrorKind::NotFound => return "x11"',
-                'ErrorKind::NotFound => return "v4l2request"',
+                'return if render_node { "x11_vaapi" } else { "x11" }',
+                'return if render_node { "x11" } else { "x11" }',
             ),
-            "a prefix match": (
-                'value == b"qcom,sm8550"',
-                'value.starts_with(b"qcom,sm8550")',
-            ),
+            "the architecture": ('architecture == "x86_64"', 'architecture == "aarch64"'),
+            "the node prefix": ('strip_prefix("renderD")', 'strip_prefix("card")'),
         }
         for what, (old, new) in changes.items():
             with self.subTest(change=what):
                 self.assertIn(old, source)
                 self.assertNotEqual(korrid_picture_paths(source.replace(old, new)), same)
+
+    def test_unknown_rule_shapes_fail_instead_of_looking_like_an_unchanged_copy(self):
+        source = KORRID_VIEWER.read_text()
+        for old, new in (
+            ('value == b"qcom,sm8550"', 'value.starts_with(b"qcom,sm8550")'),
+            ('&& entry.path().exists()', ''),
+            ('!suffix.is_empty() &&', ''),
+            ('suffix.bytes().all(|b| b.is_ascii_digit())', 'true'),
+            ('architecture == "x86_64"', 'architecture != "x86_64"'),
+            ('Err(error) if error.kind()', 'Err(error) if other.kind()'),
+        ):
+            with self.subTest(change=old):
+                self.assertIn(old, source)
+                with self.assertRaisesRegex(ValueError, "cannot parse"):
+                    korrid_picture_paths(source.replace(old, new))
 
 
 if __name__ == "__main__":

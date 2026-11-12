@@ -202,7 +202,7 @@ class SenderHeatGuard(Machine):
     def test_hardware_path_device_with_no_zone_does_not_host_the_fixture(self):
         viewer.COMPATIBLE.write_bytes(b"vendor,board\0rockchip,rk3566\0")
         session = self.session()
-        with self.assertRaisesRegex(RuntimeError, "hardware picture path.*does not start"):
+        with self.assertRaisesRegex(RuntimeError, "board with a device tree.*does not start"):
             self.prepare(session)
         self.assertIsNone(session.root)
 
@@ -217,7 +217,7 @@ class NotOnABoard(Machine):
         self.zone(50000)
         session = self.session()
         facts = session.handle({"operation": "discover"})
-        self.assertFalse(facts["hardware_picture_path"])
+        self.assertTrue(facts["hardware_picture_path"])
         self.assertEqual(list(self.supplies.glob("*")), [])
         self.assertEqual(facts["board"], ["aislpc,r36t-max", "rockchip,rk3326"])
         with self.assertRaisesRegex(
@@ -271,7 +271,7 @@ class NotOnAHandheld(Machine):
         viewer.COMPATIBLE.write_bytes(b"vendor,board\0rockchip,rk3566\0")
         session = self.session()
         self.assertTrue(session.handle({"operation": "discover"})["hardware_picture_path"])
-        with self.assertRaisesRegex(RuntimeError, "hardware picture path.*sender fixture does not start"):
+        with self.assertRaisesRegex(RuntimeError, "board with a device tree.*sender fixture does not start"):
             self.prepare(session)
         self.assertIsNone(session.root)
         self.assertFalse((self.peers / "arguments.log").exists())

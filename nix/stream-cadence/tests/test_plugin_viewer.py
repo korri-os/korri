@@ -149,7 +149,7 @@ class PluginViewerInTheFixture(unittest.TestCase):
         (zone / "temp").write_text("40000\n")
         session = self.session()
         session.facts["plugin"] = dict(PLUGIN)
-        with self.assertRaisesRegex(RuntimeError, "hardware picture path.*no fixture"):
+        with self.assertRaisesRegex(RuntimeError, "board with a device tree.*viewer fixture does not start"):
             self.prepare(session, plugin_viewer=True)
         self.assertIsNone(session.root)
 

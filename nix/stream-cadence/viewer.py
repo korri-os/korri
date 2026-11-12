@@ -162,6 +162,9 @@ PICTURE_PATHS: tuple[tuple[tuple[bytes, ...], str], ...] = (
     ((b"rockchip,rk3566", b"allwinner,sun50i-h700"), "v4l2request"),
 )
 PICTURE_PATH_DEFAULT = "x11"
+PICTURE_PATH_PC_ARCH = "x86_64"
+PICTURE_PATH_PC_RENDER_PREFIX = "renderD"
+PICTURE_PATH_PC = "x11_vaapi"
 
 
 def picture_path(compatible: bytes) -> str:
@@ -171,6 +174,31 @@ def picture_path(compatible: bytes) -> str:
         if any(chip in values for chip in chips):
             return name
     return PICTURE_PATH_DEFAULT
+
+
+def picture_path_from_path(path: Path, architecture: str, dri: Path) -> str:
+    """korrid's rule, including absent versus empty or unreadable compatibility.
+
+    /proc/device-tree is the kernel's link to /sys/firmware/devicetree/base.
+    Only a missing property allows the PC candidate check, not an empty one.
+    """
+    try:
+        compatible = path.read_bytes()
+    except FileNotFoundError:
+        if architecture == PICTURE_PATH_PC_ARCH:
+            try:
+                if any(
+                    re.fullmatch(re.escape(PICTURE_PATH_PC_RENDER_PREFIX) + r"[0-9]+", node.name)
+                    and node.exists()
+                    for node in dri.iterdir()
+                ):
+                    return PICTURE_PATH_PC
+            except OSError:
+                pass
+        return PICTURE_PATH_DEFAULT
+    except OSError:
+        return PICTURE_PATH_DEFAULT
+    return picture_path(compatible)
 
 
 COMPATIBLE = Path("/proc/device-tree/compatible")
@@ -202,7 +230,7 @@ def board_names(value: bytes | None) -> list[str] | None:
 
 def platform() -> str:
     # A board that cannot be read gets no viewer and no fixture (board_unread).
-    return picture_path(board() or b"")
+    return picture_path_from_path(COMPATIBLE, os.uname().machine, RENDER_NODES)
 
 
 def board_unread() -> str | None:
@@ -363,8 +391,8 @@ class Session:
             # Why no installed viewer is usable; a status that fails is not "absent".
             "plugin_missing": missing,
             "platform": chosen,
-            # korrid's chip table names a hardware picture path for this device.
-            "hardware_picture_path": chosen != PICTURE_PATH_DEFAULT,
+            # The safety rule belongs to the board, not the PC VA-API candidate.
+            "hardware_picture_path": bool(board()),
             # The names of the board in its device tree; none for a machine that
             # is no such board. A board hosts no fixture; `no_fixture` says why.
             "board": board_names(board()),
@@ -683,19 +711,6 @@ class Session:
                 "The plugin's viewer in the fixture needs the fixture and an enabled viewer "
                 "plugin. This agent found no enabled viewer plugin: "
                 f"{self.facts['plugin_missing']}."
-            )
-        if request["fixture"] and self.hardware_path():
-            # A viewer in the fixture decodes in software. On a handheld that is not
-            # the product's picture path, and it heats a passive device.
-            raise RuntimeError(
-                f"This device's chip has a hardware picture path ({self.facts['platform']}) in "
-                "korrid's table. Such a device hosts no fixture: the tool runs no software "
-                "viewer there, and its installed viewer plugin runs only on its own display. "
-                + (
-                    ""
-                    if self.facts["plugin"]
-                    else f"The plugin is not usable: {self.facts['plugin_missing']}."
-                )
             )
         if request["fixture"]:
             # korrid's chip table does not name every handheld's chip.
