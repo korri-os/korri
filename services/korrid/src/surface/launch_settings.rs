@@ -187,6 +187,10 @@ impl Inner {
             .unwrap_or_default();
         SurfaceLaunchSettingsContent {
             game_title: Some(self.game_title.clone()),
+            runs_on: None,
+            groups: Vec::new(),
+            changes: Vec::new(),
+            keep: None,
             places: self
                 .editor_rows
                 .as_ref()

@@ -923,12 +923,41 @@ pub struct SurfaceLaunchProfile {
     pub title: String,
 }
 
+/// One row the person changed and has not kept yet (ADR 0066). `id` is the
+/// row's id. `was` is the earlier value as display text, such as "4x".
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceLaunchSettingsChange {
+    pub id: String,
+    pub was: String,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SurfaceLaunchSettingsContent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_title: Option<String>,
+    /// Where the game runs, in Korri's words: "Runs here", "Runs on aka".
+    /// The same list serves a local and a streamed game (ADR 0066).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_on: Option<String>,
+    /// The one list (ADR 0066): each setting once, grouped by setting
+    /// section, with the value the next launch would use. A row Korri cannot
+    /// change now (its device cannot be reached, or the runner cannot honour
+    /// the setting) has no interaction, and its `description` says why. Every
+    /// row id goes unchanged to `ChangeSetting`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<SurfaceSettingGroup>,
+    /// The rows changed and not kept yet. A row is in the list at most once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changes: Vec<SurfaceLaunchSettingsChange>,
+    /// Where the changes are kept. Present only while `changes` is not
+    /// empty. A choice row: this launch, this game, every game, then the
+    /// other places. Its id goes unchanged to `ChangeSetting`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep: Option<SurfaceSettingItem>,
     /// Empty while Loading, and when Korri could not read them.
     pub places: Vec<SurfaceLaunchSettingsPlace>,
     pub profiles: Vec<SurfaceLaunchProfile>,

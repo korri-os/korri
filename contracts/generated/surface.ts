@@ -482,18 +482,12 @@ export interface SurfaceLaunchProfile {
 }
 
 /**
- * The layer a launch settings place belongs to. `id` is opaque; `title` is
- * display text.
+ * One row the person changed and has not kept yet (ADR 0066). `id` is the
+ * row's id. `was` is the earlier value as display text, such as "4x".
  */
-export interface SurfaceLaunchSettingsLayer {
+export interface SurfaceLaunchSettingsChange {
 	id: string;
-	title: string;
-}
-
-/** Which runners a place applies to. `label` is display text. */
-export interface SurfaceLaunchSettingsScope {
-	kind: SurfaceLaunchSettingsScopeKind;
-	label: string;
+	was: string;
 }
 
 /** One device fact or setting. Korri owns truth and allowed interactions. */
@@ -530,6 +524,21 @@ export interface SurfaceSettingGroup {
 }
 
 /**
+ * The layer a launch settings place belongs to. `id` is opaque; `title` is
+ * display text.
+ */
+export interface SurfaceLaunchSettingsLayer {
+	id: string;
+	title: string;
+}
+
+/** Which runners a place applies to. `label` is display text. */
+export interface SurfaceLaunchSettingsScope {
+	kind: SurfaceLaunchSettingsScopeKind;
+	label: string;
+}
+
+/**
  * One place of a game's launch settings: a layer (Device, a System, the
  * Game, a Release, a Profile) limited to a runner scope (any runner, one
  * runner family, one runner). For each value the most specific place that
@@ -562,6 +571,27 @@ export interface SurfaceLaunchSettingsPlace {
 
 export interface SurfaceLaunchSettingsContent {
 	gameTitle?: string;
+	/**
+	 * Where the game runs, in Korri's words: "Runs here", "Runs on aka".
+	 * The same list serves a local and a streamed game (ADR 0066).
+	 */
+	runsOn?: string;
+	/**
+	 * The one list (ADR 0066): each setting once, grouped by setting
+	 * section, with the value the next launch would use. A row Korri cannot
+	 * change now (its device cannot be reached, or the runner cannot honour
+	 * the setting) has no interaction, and its `description` says why. Every
+	 * row id goes unchanged to `ChangeSetting`.
+	 */
+	groups?: SurfaceSettingGroup[];
+	/** The rows changed and not kept yet. A row is in the list at most once. */
+	changes?: SurfaceLaunchSettingsChange[];
+	/**
+	 * Where the changes are kept. Present only while `changes` is not
+	 * empty. A choice row: this launch, this game, every game, then the
+	 * other places. Its id goes unchanged to `ChangeSetting`.
+	 */
+	keep?: SurfaceSettingItem;
 	/** Empty while Loading, and when Korri could not read them. */
 	places: SurfaceLaunchSettingsPlace[];
 	profiles: SurfaceLaunchProfile[];
