@@ -8522,7 +8522,7 @@ command = ["game-one"]
 
     #[tokio::test]
     async fn local_end_resolves_only_failed_or_absent_blocked_journal_units() {
-        for failed in [false, true] {
+        for (failed, exact) in [(false, false), (true, false), (false, true), (true, true)] {
             let root = tempfile::tempdir().unwrap();
             let config = root.path().join("host.toml");
             std::fs::write(&config, "label = \"zao\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game-one\"]\n").unwrap();
@@ -8588,7 +8588,11 @@ command = ["game-one"]
                 );
                 backend.complete_live();
             }
-            let ended = rpc_body(local, r#"{"_tag":"app.session.end","payload":{}}"#).await;
+            let request = serde_json::json!({
+                "_tag": "app.session.end",
+                "payload": if exact { serde_json::json!({"expectedLaunchId": id}) } else { serde_json::json!({}) },
+            });
+            let ended = rpc_body(local, &request.to_string()).await;
             assert_eq!(ended["outcome"]["payload"]["phase"], "ended", "{ended}");
         }
     }

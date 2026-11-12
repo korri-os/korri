@@ -282,9 +282,16 @@ fn control(context: &Context, action: &str) -> Result<Output, CliError> {
         {
             return Ok(library::finish(response));
         }
-        // There is no live identity in this status outcome. The local-only
-        // recovery branch can select only a failed state or an absent journal
-        // unit under host authority; it cannot target a live replacement.
+        // A partial status can still carry the exact identity. Pin it before
+        // consent, including when a peer requires expectedLaunchId. Without
+        // one, only local host authority may select an ended journal unit.
+        let expected_launch_id = match &response {
+            RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) => status
+                .active
+                .as_ref()
+                .map(|active| active.launch_id.clone()),
+            _ => None,
+        };
         prompt::confirm(
             &format!(
                 "Resolve the failed or blocked host session? Observed: {}",
@@ -293,7 +300,7 @@ fn control(context: &Context, action: &str) -> Result<Output, CliError> {
             context.yes,
         )?;
         let response = context.rpc(&RpcRequest::SessionEnd(SessionEndRequest {
-            expected_launch_id: None,
+            expected_launch_id,
             force: None,
         }))?;
         let human = match &response {
