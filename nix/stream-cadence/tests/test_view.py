@@ -190,6 +190,22 @@ class DisplayRecord(unittest.TestCase):
         # A lost ID that is booked after the scored time belongs to no window.
         self.assertEqual(self.gaps(shown, scored=(0, 3.5), booked=lambda ident: False), (0, 0))
 
+    def test_gap_that_cannot_be_judged_counts_after_the_scored_end_as_inside_it(self):
+        # The records around the gap are out of order, so no lost ID can be named.
+        shown = [(0, 1), (1, 3), (2, 2), (4, 5), (5, 6)]
+        self.assertEqual(self.gaps(shown), (1, 0))
+        # After the scored end at 1.5 it counts when an ID around it is booked inside.
+        self.assertEqual(self.gaps(shown, scored=(0, 1.5), booked=lambda ident: ident <= 4), (1, 0))
+        # With every ID around it booked later, it belongs to no window.
+        self.assertEqual(self.gaps(shown, scored=(0, 1.5), booked=lambda ident: False), (0, 0))
+        # No readable record after it: the IDs before it decide.
+        tail = [(0, 1), (1, 2), (2, 3), (4, None), (5, None)]
+        self.assertEqual(self.gaps(tail, scored=(0, 1.5), booked=lambda ident: ident == 3), (1, 0))
+        self.assertEqual(self.gaps(tail, scored=(0, 1.5), booked=lambda ident: False), (0, 0))
+        # The blank frames after a stream's end, far from any ID, belong to no window.
+        blank = [(0, 1), (1, 2), (2, None), (3, None), (5, None), (6, None)]
+        self.assertEqual(self.gaps(blank, scored=(0, 1.5), booked=lambda ident: False), (0, 0))
+
     def test_record_and_frames_must_match(self):
         with self.assertRaises(ValueError):
             capture_gaps([{"index": 0, "display_ns": 0}], [], [1], PERIOD, 0, 1)

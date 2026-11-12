@@ -5,7 +5,7 @@ A discarded submission is not a presentation and can never be a capture miss.
 """
 
 import bisect
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 import csv
 import math
 import re
@@ -116,7 +116,8 @@ def capture_gaps(
     comes later. So a gap after the scored end also counts when it loses an
     ID that `booked` places inside the scored time: without that, a frame
     that the capture missed there would be one dropped frame of the viewer in
-    a valid run.
+    a valid run. A gap there that cannot be judged counts when any ID that the
+    records around it span is booked inside the scored time.
 
     The source counts its IDs up by one, so an ID is lost when it appears
     nowhere in the record and the sender did not discard it itself. The
@@ -172,8 +173,14 @@ def capture_gaps(
             else []
         )
         if not inside:
-            # After the scored end: only an ID that a scored window holds counts.
-            if booked is not None and any(booked(ident) for ident in lost):
+            # After the scored end a gap counts for an ID that a scored window
+            # holds: a lost one when the gap can be judged. When it cannot, any
+            # ID that the records around it span could be the lost one.
+            around = [ident for span in spans for ident in span]
+            candidates: Iterable[int] = (
+                lost if judged else range(min(around), max(around) + 1) if around else []
+            )
+            if booked is not None and any(booked(ident) for ident in candidates):
                 incomplete += 1
         elif not judged or lost:
             incomplete += 1
