@@ -47,6 +47,10 @@ pub struct Report {
     pub ports: crate::firewall::Ports,
     /// Exact DNS names a provider plugin may reach (ADR 0016). Empty: no network.
     pub hosts: Vec<String>,
+    /// The one host that receives the plugin's secret (ADR 0034). Absent: the
+    /// plugin declares no secret.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_host: Option<String>,
     pub packages: BTreeMap<String, PathBuf>,
     pub files: BTreeMap<String, PathBuf>,
     pub entry: String,
@@ -172,6 +176,12 @@ struct Manifest {
     ports: crate::firewall::Ports,
     #[serde(default)]
     hosts: Vec<String>,
+    #[serde(
+        default,
+        rename = "credentialHost",
+        deserialize_with = "required_credential_host"
+    )]
+    credential_host: Option<String>,
     #[serde(default)]
     requires: Vec<PathBuf>,
     #[serde(default, rename = "requiresReleases")]
@@ -192,6 +202,13 @@ pub struct ReleaseRequirement {
 }
 
 fn required_release_label<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
+}
+
+/// `credentialHost` is one host name or absent, never `null`.
+fn required_credential_host<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error> {
     String::deserialize(deserializer).map(Some)
@@ -304,6 +321,7 @@ fn parse_manifest(bytes: &[u8]) -> Result<Manifest, String> {
     }
     manifest.ports.validate()?;
     validate_hosts(&manifest.hosts)?;
+    validate_credential_host(manifest.credential_host.as_deref(), &manifest.hosts)?;
     if manifest.requires.len() + manifest.requires_releases.len() > crate::dependencies::MAX_PLUGINS
     {
         return Err("too many required plugins".into());
@@ -367,6 +385,28 @@ pub fn validate_hosts(hosts: &[String]) -> Result<(), String> {
         return Err("hosts must contain at most 128 distinct lowercase DNS names of at least two labels, with no wildcard, port, scheme, trailing dot or IP literal".into());
     }
     Ok(())
+}
+
+/// ADR 0034: the host that receives the plugin's secret is one of the hosts
+/// the plugin may reach. korrid sends the secret to no other host.
+pub fn validate_credential_host(
+    credential_host: Option<&str>,
+    hosts: &[String],
+) -> Result<(), String> {
+    match credential_host {
+        Some(host) if !hosts.iter().any(|declared| declared == host) => {
+            Err("credentialHost must be one of the declared hosts".into())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The approval sentence for a plugin secret (ADR 0034, "Approval"): the
+/// person sees which host gets the key before approval.
+fn credential_warning(credential_host: Option<&str>) -> String {
+    credential_host.map_or(String::new(), |host| {
+        format!(" PLUGIN SECRET: this plugin uses one secret that you enter in Settings, such as an API key. Korri keeps it on this device and sends it only to {host}. The plugin's code never receives it.")
+    })
 }
 
 pub fn manifest_namespace(package: &Path) -> Result<String, String> {
@@ -1302,6 +1342,7 @@ fn report_from(
         .any(|unit| unit.user.as_deref() == Some("root"));
     let mut warning = authority_warning(&native_units);
     warning.push_str(&native_rule_warning(&manifest.files)?);
+    warning.push_str(&credential_warning(manifest.credential_host.as_deref()));
     let mut report = Report {
         id,
         publisher: None,
@@ -1325,6 +1366,7 @@ fn report_from(
         native_units,
         ports: manifest.ports,
         hosts: manifest.hosts,
+        credential_host: manifest.credential_host,
         packages: manifest.packages,
         files: manifest.files,
         entry: manifest.entry,
@@ -1436,6 +1478,77 @@ mod approval_tests {
             unit,
             &snapshot(package)?,
         )
+    }
+
+    #[test]
+    fn a_declared_secret_names_one_declared_host_and_the_approval_says_which() {
+        let directory = tempfile::tempdir().unwrap();
+        let with_secret = |hosts: &str, credential: &str| {
+            provider_report(&provider_package(
+                directory.path(),
+                Some(&format!("{hosts},\"credentialHost\":{credential}")),
+                true,
+            ))
+        };
+        let hosts = r#"["www.steamgriddb.com","cdn2.steamgriddb.com"]"#;
+        let plain =
+            provider_report(&provider_package(directory.path(), Some(hosts), true)).unwrap();
+        assert_eq!(plain.credential_host, None);
+        assert!(!plain.warning.contains("PLUGIN SECRET"));
+        assert!(serde_json::to_value(&plain)
+            .unwrap()
+            .get("credential_host")
+            .is_none());
+
+        let secret = with_secret(hosts, r#""www.steamgriddb.com""#).unwrap();
+        assert_eq!(
+            secret.credential_host.as_deref(),
+            Some("www.steamgriddb.com")
+        );
+        assert_eq!(
+            serde_json::to_value(&secret).unwrap()["credential_host"],
+            serde_json::json!("www.steamgriddb.com")
+        );
+        // One sentence names the receiving host, and no other host.
+        assert!(
+            secret
+                .warning
+                .contains("sends it only to www.steamgriddb.com."),
+            "{}",
+            secret.warning
+        );
+        assert!(!secret.warning.contains("cdn2.steamgriddb.com"));
+        // The manifest bytes bind the declaration: a secret, or another
+        // receiving host, is another approval.
+        assert_ne!(plain.approval, secret.approval);
+        let other = with_secret(hosts, r#""cdn2.steamgriddb.com""#).unwrap();
+        assert_ne!(secret.approval, other.approval);
+
+        for invalid in [
+            // Not one of the declared hosts.
+            r#""api.example.com""#,
+            // One host, a string.
+            r#"["www.steamgriddb.com"]"#,
+            "null",
+            "true",
+            r#""""#,
+            r#""https://www.steamgriddb.com""#,
+            r#""WWW.steamgriddb.com""#,
+        ] {
+            assert!(with_secret(hosts, invalid).is_err(), "{invalid}");
+        }
+        // A secret needs the host list it is part of.
+        let package = provider_package(directory.path(), None, true);
+        fs::write(
+            package.join("manifest.json"),
+            r#"{"publisher":{"namespace":"@test"},"entry":"plugin.ts","sources":["plugin.ts"],"credentialHost":"www.steamgriddb.com"}"#,
+        )
+        .unwrap();
+        let error = provider_report(&package).err().unwrap();
+        assert!(
+            error.contains("credentialHost must be one of the declared hosts"),
+            "{error}"
+        );
     }
 
     fn provider_package(directory: &Path, hosts: Option<&str>, providers: bool) -> PathBuf {

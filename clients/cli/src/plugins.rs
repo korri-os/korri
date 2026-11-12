@@ -4,7 +4,7 @@ use crate::{
     output::{self, Output},
     plugin_author, prompt, settings_input,
 };
-use clap::{Arg, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use korrid::{plugin_admin::*, *};
 use std::io::{self, IsTerminal};
 
@@ -49,6 +49,27 @@ impl Module for Plugins {
                     .about("Revoke a publisher pin; its plugins can no longer start")
                     .arg(Arg::new("namespace").required(true)),
             );
+        command = command.subcommand(
+            Command::new("credential")
+                .about("Show, set or clear the secret a plugin uses, such as an API key; never show its value")
+                .subcommand_required(true)
+                .subcommand(Command::new("show").arg(Arg::new("id").value_name("PLUGIN_ID")))
+                .subcommand(
+                    Command::new("set")
+                        .arg(Arg::new("id").value_name("PLUGIN_ID"))
+                        .arg(
+                            Arg::new("credential-stdin")
+                                .long("credential-stdin")
+                                .action(ArgAction::SetTrue)
+                                .help("Read the secret from one private stdin line; otherwise use hidden terminal input"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("clear")
+                        .about("Remove the stored secret")
+                        .arg(Arg::new("id").value_name("PLUGIN_ID")),
+                ),
+        );
         for author in plugin_author::commands() {
             command = command.subcommand(author);
         }
@@ -93,6 +114,7 @@ impl Module for Plugins {
                 RpcRequest::PluginRevokePublisher(PluginRevokePublisherRequest { namespace })
             }
             Some(("install", args)) => return install(args, context),
+            Some(("credential", args)) => return credential(args, context),
             Some((action @ ("on" | "off"), args)) => {
                 RpcRequest::PluginSetEnabled(PluginSetEnabledRequest {
                     id: settings_input::required(args, "id", "Exact plugin ID")?,
@@ -121,12 +143,84 @@ impl Module for Plugins {
             },
             _ => {
                 return Err(CliError::usage(
-                    "Choose plugins list, review, install, on, off or repositories.",
+                    "Choose plugins list, review, install, on, off, credential or repositories.",
                 ))
             }
         };
         Ok(result(context.rpc(&request)?))
     }
+}
+/// The plugin's secret row (ADR 0034). The value goes to korrid over the
+/// selected device's RPC and is never printed; every answer is a status.
+fn credential(args: &ArgMatches, context: &Context) -> Result<Output, CliError> {
+    use config::settings::SecretSettingStatus;
+    let (action, args) = args
+        .subcommand()
+        .ok_or_else(|| CliError::usage("Choose plugins credential show, set or clear."))?;
+    let plugin_id = settings_input::required(args, "id", "Exact plugin ID")?;
+    let request = match action {
+        "show" => RpcRequest::SettingsSnapshot(SettingsSnapshotRequest {}),
+        "set" => RpcRequest::CredentialSet(CredentialSetRequest {
+            plugin_id: plugin_id.clone(),
+            token: settings_input::private_line(
+                args.get_flag("credential-stdin"),
+                "Plugin secret",
+            )?,
+        }),
+        "clear" => {
+            prompt::confirm("Remove this plugin's stored secret?", context.yes)?;
+            RpcRequest::CredentialClear(CredentialClearRequest {
+                plugin_id: plugin_id.clone(),
+            })
+        }
+        _ => {
+            return Err(CliError::usage(
+                "Choose plugins credential show, set or clear.",
+            ))
+        }
+    };
+    let response = context.rpc(&request)?;
+    let status = match &response {
+        RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(settings)) => {
+            match settings
+                .plugins
+                .iter()
+                .find(|plugin| plugin.id == plugin_id)
+            {
+                Some(plugin) => match plugin.credential {
+                    Some(status) => Some(status),
+                    None => {
+                        return Ok(Output::one(
+                            response,
+                            format!("{} does not use a secret.", output::text(&plugin_id)),
+                        ))
+                    }
+                },
+                None => {
+                    return Ok(Output::one(
+                        response,
+                        format!(
+                            "{} is not turned on on this device.",
+                            output::text(&plugin_id)
+                        ),
+                    ))
+                }
+            }
+        }
+        RpcResponse::CredentialSet(SensitiveSettingOutcome::Ok(result))
+        | RpcResponse::CredentialClear(SensitiveSettingOutcome::Ok(result)) => Some(result.status),
+        _ => None,
+    };
+    let human = match status {
+        Some(SecretSettingStatus::Configured) => {
+            format!("{} secret: configured", output::text(&plugin_id))
+        }
+        Some(SecretSettingStatus::NotConfigured) => {
+            format!("{} secret: not configured", output::text(&plugin_id))
+        }
+        None => output::unknown("Plugin secret", &response),
+    };
+    Ok(Output::one(response, human))
 }
 fn source_command(name: &'static str) -> Command {
     Command::new(name)

@@ -81,6 +81,7 @@ impl Fixture {
             sources: vec!["plugin.ts".into()],
             requires,
             hosts: vec![],
+            credential_host: None,
         }
     }
 
@@ -136,6 +137,7 @@ fn package(root: &Path, name: &str, keys: &[&str]) -> EnabledPackage {
         sources: vec!["plugin.ts".into()],
         requires: Vec::new(),
         hosts: vec![],
+        credential_host: None,
     }
 }
 

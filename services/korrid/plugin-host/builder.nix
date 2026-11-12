@@ -26,6 +26,9 @@ let
       # ADR 0016: exact DNS names a provider plugin may reach. The host validates
       # them, binds them in the approval digest and enforces them in korrid.
       hosts ? [ ],
+      # ADR 0034: the one host, also in `hosts`, that receives the plugin's
+      # secret. korrid adds the secret itself; the plugin never sees it.
+      credentialHost ? null,
     }:
     let
       releases = builtins.filter (item: builtins.isAttrs item && !lib.isDerivation item) requires;
@@ -79,6 +82,9 @@ let
           // lib.optionalAttrs (releases != [ ]) { requiresReleases = releases; }
           // lib.optionalAttrs (hosts != [ ]) {
             inherit hosts;
+          }
+          // lib.optionalAttrs (credentialHost != null) {
+            inherit credentialHost;
           }
         )
       );
@@ -143,6 +149,9 @@ let
         && builtins.match "([a-z0-9]([a-z0-9-]*[a-z0-9])?[.])+[a-z0-9]([a-z0-9-]*[a-z0-9])?" host != null
       ) hosts
     ) "plugin hosts must name at most 128 distinct lowercase DNS names";
+    assert lib.assertMsg (
+      credentialHost == null || (builtins.isString credentialHost && builtins.elem credentialHost hosts)
+    ) "plugin credentialHost must be one of the plugin's hosts";
     pkgs.runCommand "korri-plugin"
       {
         nativeBuildInputs = [ pkgs.python3 ];

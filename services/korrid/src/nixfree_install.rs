@@ -354,6 +354,7 @@ pub fn install_archive(
         sources: manifest.sources,
         requires: Vec::new(),
         hosts: manifest.hosts,
+        credential_host: manifest.credential_host,
     })
 }
 
@@ -376,11 +377,24 @@ struct Manifest {
     ports: serde_json::Value,
     #[serde(default)]
     hosts: Vec<String>,
+    /// ADR 0034: one host name, never `null`.
+    #[serde(
+        default,
+        rename = "credentialHost",
+        deserialize_with = "credential_host"
+    )]
+    credential_host: Option<String>,
     #[serde(default)]
     requires: Vec<String>,
     #[serde(default, rename = "requiresReleases")]
     #[allow(dead_code)]
     requires_releases: Vec<serde_json::Value>,
+}
+
+fn credential_host<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    <String as serde::Deserialize>::deserialize(deserializer).map(Some)
 }
 
 fn read_manifest(package: &Path) -> Result<Manifest, InstallError> {
@@ -407,6 +421,16 @@ fn read_manifest(package: &Path) -> Result<Manifest, InstallError> {
                 "manifest has {field}"
             )));
         }
+    }
+    // The secret goes to one of the hosts the plugin may reach (ADR 0034).
+    if manifest
+        .credential_host
+        .as_ref()
+        .is_some_and(|host| !manifest.hosts.contains(host))
+    {
+        return Err(InstallError::Archive(
+            "credentialHost must be one of the declared hosts".into(),
+        ));
     }
     Ok(manifest)
 }

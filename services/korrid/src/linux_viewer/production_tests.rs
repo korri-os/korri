@@ -495,6 +495,7 @@ fn linux_viewer_settings_use_local_device_and_matching_game_system_selected_prof
             sources: vec!["plugin.ts".into()],
             requires: vec![],
             hosts: vec![],
+            credential_host: None,
         },
     ])
     .unwrap();

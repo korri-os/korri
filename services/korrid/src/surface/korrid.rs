@@ -301,6 +301,28 @@ impl Korrid {
             SensitiveSettingOutcome
         )
     }
+    pub async fn set_plugin_credential(
+        &self,
+        plugin_id: String,
+        token: String,
+    ) -> SensitiveSettingOutcome {
+        call!(
+            self,
+            Mapping::SettingWrite,
+            CredentialSet,
+            crate::CredentialSetRequest { plugin_id, token },
+            SensitiveSettingOutcome
+        )
+    }
+    pub async fn clear_plugin_credential(&self, plugin_id: String) -> SensitiveSettingOutcome {
+        call!(
+            self,
+            Mapping::SettingWrite,
+            CredentialClear,
+            crate::CredentialClearRequest { plugin_id },
+            SensitiveSettingOutcome
+        )
+    }
     pub async fn library_folders_snapshot(&self) -> LibraryFoldersSnapshotOutcome {
         call!(
             self,

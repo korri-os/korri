@@ -39,6 +39,7 @@ producer the korrid port came from.
 | `plugin-publisher-revoke:NAMESPACE` (`revokeActionId`) | `plugins revoke NAMESPACE [--yes]` | Same selected-device publisher pin; confirmation is required unless `--yes`; config-bound keys cannot be revoked |
 | `plugin-publishers:status` (`PUBLISHERS_STATUS_ROW`, read-only) | `plugins publishers` | Publisher-list empty or failure status; no stored change |
 | `plugin-toggle:ID` | `plugins on ID` / `plugins off ID` | Stale approval requires review and explicit reapproval |
+| `plugin-credential:ID` set / clear | `plugins credential set ID --credential-stdin` / `plugins credential clear ID`; `plugins credential show ID` | Private input; never show the secret. Only a plugin that declares a secret has the row (ADR 0034). A person's other device may set it with `--device` |
 | `launch-device:cpu.min`, `cpu.max`, `gpu.min`, `gpu.max` | `launch-settings set KEY=PERCENT` | Same Device/Any place |
 | `launch-device:cpu.governor` | `launch-settings set cpu.governor=VALUE` | Device/Any only, when advertised |
 | `launch:row:cpu.min`, `cpu.max`, `gpu.min`, `gpu.max` | `launch-settings set KEY=PERCENT [layer] [scope]`; `play GAME --set KEY=PERCENT` | The list shows the value in force; the CLI names the place |

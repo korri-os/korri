@@ -42,6 +42,7 @@ pub(super) fn package(variable: &str, id: &str) -> EnabledPackage {
         sources: manifest.sources,
         requires: vec![],
         hosts: manifest.hosts,
+        credential_host: None,
     }
 }
 

@@ -28,6 +28,7 @@ fn context(handlers: &str) -> ProviderContext {
         provider_id: "@test:shop".into(),
         source: Arc::new(crate::script::source::SourceSnapshot::plugin(&source).unwrap()),
         hosts: Arc::new(vec![HOST.into()]),
+        credential: None,
     }
 }
 
@@ -465,5 +466,204 @@ async fn a_final_download_admits_a_bounded_form_post_and_a_strict_filename() {
         "filename: '..'",
     ] {
         failed(admitted(fields).await.unwrap_err());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A plugin's secret (ADR 0034)
+// ---------------------------------------------------------------------------
+
+const SECRET: &str = "sgdb-very-secret-value";
+
+/// A provider whose plugin declares a secret for `HOST` and may also reach
+/// `other.test`, with the secret set as a person would set it.
+fn context_with_secret(handlers: &str) -> (ProviderContext, tempfile::TempDir) {
+    let private = tempfile::tempdir().unwrap();
+    let secrets = crate::plugin_secrets::PluginSecrets::new(private.path());
+    secrets.set("@test:shop", SECRET).unwrap();
+    let credential = secrets.credential("@test:shop", HOST).unwrap().unwrap();
+    let mut context = context(handlers);
+    context.hosts = Arc::new(vec![HOST.into(), "other.test".into()]);
+    context.credential = Some(Arc::new(credential));
+    (context, private)
+}
+
+fn carried_secret(request: &super::http_fixture::Received) -> bool {
+    let bearer = format!("authorization: bearer {SECRET}");
+    assert!(
+        request
+            .headers
+            .iter()
+            .filter(|header| header.starts_with("authorization:"))
+            .all(|header| *header == bearer),
+        "an authorization header that is not korrid's: {:?}",
+        request.headers
+    );
+    request.headers.contains(&bearer)
+}
+
+fn host_of(request: &super::http_fixture::Received) -> String {
+    request
+        .headers
+        .iter()
+        .find_map(|header| header.strip_prefix("host: "))
+        .and_then(|host| host.split(':').next())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn the_secret_goes_as_a_bearer_header_to_its_own_host_and_to_no_other() {
+    let server = HttpFixture::start([
+        ("/api/search", Route::ok("application/json", "{}")),
+        ("/image.png", Route::ok("text/plain", "image")),
+    ]);
+    // One turn asks the secret's host and the plugin's other declared host.
+    // The handler answers with everything it was given, so the test can see
+    // that no part of its input holds the secret.
+    let handlers = format!(
+        "{{'claims.search': (input) => input.responses.length
+            ? [{claim}]
+            : ({{_tag: 'HttpRequests', requests: [{{url: '{api}'}}, {{url: '{image}'}}]}})}}",
+        claim = claim("x", "JSON.stringify(input)"),
+        api = server.url(HOST, "/api/search"),
+        image = server.url("other.test", "/image.png"),
+    );
+    let (context, _private) = context_with_secret(&handlers);
+    let claims = turns::search(&engine(), &context, "q").await.unwrap();
+    let received = server.received();
+    assert_eq!(
+        received
+            .iter()
+            .map(|request| (host_of(request), carried_secret(request)))
+            .collect::<Vec<_>>(),
+        vec![(HOST.to_owned(), true), ("other.test".to_owned(), false)]
+    );
+    // The plugin's code saw both responses and never the secret.
+    assert!(claims[0].title.contains("\"responses\""));
+    assert!(!claims[0].title.contains(SECRET));
+    assert!(!claims[0].title.to_lowercase().contains("authorization"));
+
+    // Without a secret, the same plugin's requests carry no such header.
+    let mut plain = context.clone();
+    plain.credential = None;
+    let before = server.received().len();
+    turns::search(&engine(), &plain, "q").await.unwrap();
+    assert!(server.received()[before..]
+        .iter()
+        .all(|request| !carried_secret(request)));
+}
+
+#[tokio::test]
+async fn the_secret_follows_a_redirect_only_to_the_same_host() {
+    let server = HttpFixture::start([("/answer", Route::ok("text/plain", "done"))]);
+    server.route("/same", Route::redirect("/answer"));
+    server.route(
+        "/away",
+        Route::redirect(&server.url("other.test", "/answer")),
+    );
+    // Away and back: the redirect left the host, so the secret is gone.
+    server.route(
+        "/away-and-back",
+        Route::redirect(&server.url("other.test", "/back")),
+    );
+    server.route("/back", Route::redirect(&server.url(HOST, "/answer")));
+    let handler = |host: &str, path: &str| {
+        format!(
+            "{{'claims.search': (i) => i.responses.length ? [{claim}] : ({{_tag: 'HttpRequests', requests: [{{url: '{url}'}}]}})}}",
+            claim = claim("x", "i.responses[0].text"),
+            url = server.url(host, path),
+        )
+    };
+    let hops = |handlers: String| {
+        let server = &server;
+        async move {
+            let (context, _private) = context_with_secret(&handlers);
+            let before = server.received().len();
+            let claims = turns::search(&engine(), &context, "q").await.unwrap();
+            assert_eq!(claims[0].title, "done");
+            server.received()[before..]
+                .iter()
+                .map(|request| {
+                    (
+                        host_of(request),
+                        request.path.clone(),
+                        carried_secret(request),
+                    )
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+    let own = HOST.to_owned();
+    let other = "other.test".to_owned();
+    assert_eq!(
+        hops(handler(HOST, "/same")).await,
+        vec![
+            (own.clone(), "/same".to_owned(), true),
+            (own.clone(), "/answer".to_owned(), true)
+        ]
+    );
+    assert_eq!(
+        hops(handler(HOST, "/away")).await,
+        vec![
+            (own.clone(), "/away".to_owned(), true),
+            (other.clone(), "/answer".to_owned(), false)
+        ]
+    );
+    assert_eq!(
+        hops(handler(HOST, "/away-and-back")).await,
+        vec![
+            (own.clone(), "/away-and-back".to_owned(), true),
+            (other.clone(), "/back".to_owned(), false),
+            (own.clone(), "/answer".to_owned(), false)
+        ]
+    );
+    // A request that starts on another host never gains the secret, also
+    // when that host redirects to the secret's host.
+    assert_eq!(
+        hops(handler("other.test", "/back")).await,
+        vec![
+            (other, "/back".to_owned(), false),
+            (own, "/answer".to_owned(), false)
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_plugin_with_a_secret_still_cannot_set_authorization_and_no_failure_names_the_secret() {
+    let server = HttpFixture::start([("/api", Route::ok("text/plain", "ok"))]);
+    let asking = |headers: &str| {
+        format!(
+            "{{'claims.search': (i) => i.responses.length ? [] : ({{_tag: 'HttpRequests', requests: [{{url: '{url}', headers: {headers}}}]}})}}",
+            url = server.url(HOST, "/api"),
+        )
+    };
+    for headers in [
+        "{Authorization: 'Bearer mine'}",
+        "{authorization: 'Bearer mine'}",
+        "{'Proxy-Authorization': 'mine'}",
+    ] {
+        let (context, _private) = context_with_secret(&asking(headers));
+        let error = turns::search(&engine(), &context, "q").await.unwrap_err();
+        assert_eq!(failed(error), "refused or invalid request header");
+    }
+    assert!(server.received().is_empty());
+
+    // Every way a turn with the secret can fail: the diagnostic and the
+    // person's copy say nothing of the secret.
+    let throwing = format!(
+        "{{'claims.search': (i) => {{ if (i.responses.length) throw new Error('bad ' + JSON.stringify(i)); return {{_tag: 'HttpRequests', requests: [{{url: '{url}'}}]}}; }}}}",
+        url = server.url(HOST, "/api"),
+    );
+    let unreachable = format!(
+        "{{'claims.search': () => ({{_tag: 'HttpRequests', requests: [{{url: 'http://{HOST}:1/api'}}]}})}}"
+    );
+    for handlers in [throwing, unreachable] {
+        let (context, _private) = context_with_secret(&handlers);
+        let error = turns::search(&engine(), &context, "q").await.unwrap_err();
+        let failure = error.rpc();
+        for text in [format!("{error:?}"), failure.code, failure.message] {
+            assert!(!text.contains(SECRET), "{text}");
+        }
     }
 }

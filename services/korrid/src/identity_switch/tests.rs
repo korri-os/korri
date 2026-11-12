@@ -499,3 +499,51 @@ fn replace_journal(root: &Path, bytes: Vec<u8>) {
 fn mode(path: &Path, value: u32) {
     fs::set_permissions(path, fs::Permissions::from_mode(value)).unwrap();
 }
+
+/// ADR 0034, "Owner and devices": a plugin secret follows the choice the
+/// person makes for the play log.
+#[test]
+fn plugin_secrets_follow_the_data_choice_and_the_step_can_run_again() {
+    use super::coordinator::apply_data_disposition;
+    use crate::plugin_secrets::PluginSecrets;
+    let old_owner = "a".repeat(64);
+    let new_owner = "b".repeat(64);
+    for disposition in [DataDisposition::Transfer, DataDisposition::Delete] {
+        let private = tempfile::tempdir().unwrap();
+        let secrets = PluginSecrets::new(private.path());
+        secrets.set("@korri:steamgriddb", "first-secret").unwrap();
+        secrets.set("@other:art", "second-secret").unwrap();
+        // A plugin's other state and korrid's own state are not secrets.
+        let attempts = private.path().join("@korri:steamgriddb/attempts.json");
+        fs::write(&attempts, b"{}").unwrap();
+        let assets = private.path().join("game-assets");
+        fs::create_dir(&assets).unwrap();
+        fs::write(assets.join("assignments.json"), b"{}").unwrap();
+
+        // Twice: a switch that resumes from its journal runs the step again.
+        for _ in 0..2 {
+            apply_data_disposition(private.path(), disposition, &old_owner, &new_owner).unwrap();
+        }
+
+        let kept = disposition == DataDisposition::Transfer;
+        assert_eq!(
+            secrets.read("@korri:steamgriddb").unwrap(),
+            kept.then(|| "first-secret".to_owned()),
+            "{disposition:?}"
+        );
+        assert_eq!(
+            secrets.read("@other:art").unwrap(),
+            kept.then(|| "second-secret".to_owned()),
+            "{disposition:?}"
+        );
+        assert_eq!(
+            private
+                .path()
+                .join("@korri:steamgriddb/credential")
+                .exists(),
+            kept
+        );
+        assert!(attempts.exists());
+        assert!(assets.join("assignments.json").exists());
+    }
+}

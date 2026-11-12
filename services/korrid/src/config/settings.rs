@@ -53,6 +53,8 @@ pub struct ReadablePluginSetting {
     pub id: String,
     pub title: String,
     pub enabled: bool,
+    /// The plugin declares a secret (`credentialHost`, ADR 0034).
+    pub declares_secret: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -132,6 +134,7 @@ pub fn read_with_registry_source(
         .into_iter()
         .map(|id| ReadablePluginSetting {
             enabled: enabled.contains(&id),
+            declares_secret: registry.plugin_credential_host(id).is_some(),
             id: id.into(),
             title: registry.plugin_title(id).unwrap_or(id).into(),
         })

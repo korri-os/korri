@@ -490,6 +490,7 @@ fn plugin_new_builds_and_admits_the_generated_runner() {
             sources: manifest.sources,
             requires: manifest.requires,
             hosts: manifest.hosts,
+            credential_host: None,
         },
     ])
     .unwrap();

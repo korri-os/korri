@@ -29,6 +29,8 @@ pub enum PluginSecretError {
     Empty,
     #[error("the secret is too long")]
     TooLong,
+    #[error("the secret has a character a request cannot carry")]
+    Unsendable,
     #[error("private state root is unavailable")]
     Storage,
 }
@@ -68,6 +70,8 @@ impl PluginSecrets {
         if secret.len() > MAX_SECRET_BYTES {
             return Err(PluginSecretError::TooLong);
         }
+        // korrid sends it as a request header and as nothing else.
+        bearer(secret)?;
         DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -96,6 +100,47 @@ impl PluginSecrets {
         Ok((!secret.is_empty()).then(|| secret.to_owned()))
     }
 
+    /// The plugin's secret, bound to the one host that receives it. `None`
+    /// when it is not set: then korrid does not call the plugin's handler
+    /// that needs it (ADR 0034, "No secret, no call").
+    // The artwork operation (ADR 0032) is the caller; it lands next.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn credential(
+        &self,
+        plugin_id: &str,
+        host: &str,
+    ) -> Result<Option<PluginCredential>, PluginSecretError> {
+        let Some(secret) = self.read(plugin_id)? else {
+            return Ok(None);
+        };
+        Ok(Some(PluginCredential {
+            host: host.to_owned(),
+            header: bearer(&secret)?,
+        }))
+    }
+
+    /// Every plugin folder that holds a secret, by plugin id. An identity
+    /// switch keeps or deletes each one (ADR 0034, "Owner and devices").
+    pub(crate) fn plugins_with_a_secret(&self) -> Result<Vec<String>, PluginSecretError> {
+        let entries = match fs::read_dir(&self.private_root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(_) => return Err(PluginSecretError::Storage),
+        };
+        let mut plugins = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|_| PluginSecretError::Storage)?;
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if valid_plugin_id(&name) && entry.path().join(CREDENTIAL_FILE_NAME).exists() {
+                plugins.push(name);
+            }
+        }
+        plugins.sort();
+        Ok(plugins)
+    }
+
     /// Delete the plugin's secret. Deleting one that is already gone succeeds,
     /// so a step that runs twice is safe.
     pub fn clear(&self, plugin_id: &str) -> Result<SecretSettingStatus, PluginSecretError> {
@@ -119,6 +164,34 @@ impl PluginSecrets {
             return Err(PluginSecretError::InvalidPluginId);
         }
         Ok(self.private_root.join(plugin_id))
+    }
+}
+
+/// `Authorization: Bearer <secret>`, the only form korrid sends (ADR 0034).
+/// The value is marked sensitive, so no `Debug` of a request prints it.
+fn bearer(secret: &str) -> Result<reqwest::header::HeaderValue, PluginSecretError> {
+    let mut header = reqwest::header::HeaderValue::from_str(&format!("Bearer {secret}"))
+        .map_err(|_| PluginSecretError::Unsendable)?;
+    header.set_sensitive(true);
+    Ok(header)
+}
+
+/// A plugin's secret with the one declared host that receives it. It has no
+/// `Debug` and no accessor for the value: the only thing it gives is the
+/// header for a request to that host.
+#[derive(Clone)]
+pub(crate) struct PluginCredential {
+    host: String,
+    header: reqwest::header::HeaderValue,
+}
+
+impl PluginCredential {
+    /// The `Authorization` header for a request to `url`, or `None` when
+    /// `url` is not on the declared host. A redirect hop asks again with its
+    /// own URL, so the secret follows a redirect only to the same host.
+    pub(crate) fn authorization(&self, url: &url::Url) -> Option<reqwest::header::HeaderValue> {
+        matches!(url.host(), Some(url::Host::Domain(host)) if host == self.host)
+            .then(|| self.header.clone())
     }
 }
 
@@ -271,6 +344,75 @@ mod tests {
         );
         secrets.set(PLUGIN, "kept").unwrap();
         assert_eq!(secrets.read(PLUGIN), Ok(Some("kept".into())));
+    }
+
+    #[test]
+    fn a_secret_a_header_cannot_carry_is_refused_and_changes_nothing() {
+        let private = tempfile::tempdir().unwrap();
+        let secrets = PluginSecrets::new(private.path());
+        secrets.set(PLUGIN, "kept").unwrap();
+        for unsendable in ["line\nbreak", "nul\0byte", "delete\u{7f}char"] {
+            assert_eq!(
+                secrets.set(PLUGIN, unsendable),
+                Err(PluginSecretError::Unsendable)
+            );
+        }
+        assert_eq!(secrets.read(PLUGIN), Ok(Some("kept".into())));
+    }
+
+    #[test]
+    fn a_credential_gives_its_header_to_its_host_only_and_never_prints() {
+        let private = tempfile::tempdir().unwrap();
+        let secrets = PluginSecrets::new(private.path());
+        assert!(secrets
+            .credential(PLUGIN, "www.steamgriddb.com")
+            .unwrap()
+            .is_none());
+        secrets.set(PLUGIN, "very-secret-value").unwrap();
+        let credential = secrets
+            .credential(PLUGIN, "www.steamgriddb.com")
+            .unwrap()
+            .unwrap();
+        let url = |text: &str| url::Url::parse(text).unwrap();
+        let header = credential
+            .authorization(&url("https://www.steamgriddb.com/api/v2/grids/game/1"))
+            .unwrap();
+        assert_eq!(header.to_str().unwrap(), "Bearer very-secret-value");
+        assert!(header.is_sensitive());
+        assert!(!format!("{header:?}").contains("very-secret-value"));
+        // The host is compared as the URL parser normalises it.
+        assert!(credential
+            .authorization(&url("https://WWW.SteamGridDB.com:8443/x"))
+            .is_some());
+        for other in [
+            "https://cdn2.steamgriddb.com/grid/a.png",
+            "https://steamgriddb.com/api",
+            "https://www.steamgriddb.com.example.org/api",
+            "https://example.org/?next=www.steamgriddb.com",
+            "https://93.184.216.34/api",
+        ] {
+            assert!(credential.authorization(&url(other)).is_none(), "{other}");
+        }
+    }
+
+    #[test]
+    fn plugins_with_a_secret_lists_only_folders_that_hold_one() {
+        let private = tempfile::tempdir().unwrap();
+        let secrets = PluginSecrets::new(private.path().join("not-made-yet"));
+        assert_eq!(secrets.plugins_with_a_secret(), Ok(Vec::new()));
+        let secrets = PluginSecrets::new(private.path());
+        secrets.set("@other:art", "two").unwrap();
+        secrets.set(PLUGIN, "one").unwrap();
+        secrets.set("@gone:cleared", "three").unwrap();
+        secrets.clear("@gone:cleared").unwrap();
+        // korrid's other private state is not a plugin folder.
+        fs::create_dir_all(private.path().join("identity")).unwrap();
+        fs::write(private.path().join("identity/credential"), b"x").unwrap();
+        fs::create_dir_all(private.path().join("game-assets")).unwrap();
+        assert_eq!(
+            secrets.plugins_with_a_secret(),
+            Ok(vec![PLUGIN.to_owned(), "@other:art".to_owned()])
+        );
     }
 
     #[test]

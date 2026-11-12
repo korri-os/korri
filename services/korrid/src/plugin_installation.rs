@@ -27,6 +27,10 @@ pub struct EnabledPackage {
     pub requires: Vec<PathBuf>,
     /// The manifest's declared provider hosts (ADR 0016), as the host verified them.
     pub hosts: Vec<String>,
+    /// The manifest's `credentialHost` (ADR 0034), as the host verified it:
+    /// the one declared host that receives the plugin's secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_host: Option<String>,
 }
 
 pub fn encode(selections: &[EnabledPackage]) -> Result<Vec<u8>, String> {

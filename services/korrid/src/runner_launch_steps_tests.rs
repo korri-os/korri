@@ -38,6 +38,7 @@ async fn launch_progress(observe_handoff: bool) {
             ],
             requires: vec![],
             hosts: vec![],
+            credential_host: None,
         },
     ])
     .unwrap();

@@ -355,6 +355,20 @@ export interface CatalogSnapshot {
 export interface CatalogSnapshotRequest {
 }
 
+/** Delete one plugin's secret from this device (ADR 0034). */
+export interface CredentialClearRequest {
+	pluginId: string;
+}
+
+/**
+ * Set one plugin's secret on this device (ADR 0034). The answer carries the
+ * status, never the value.
+ */
+export interface CredentialSetRequest {
+	pluginId: string;
+	token: string;
+}
+
 /** Legacy `DetailsRequest`. */
 export interface DetailsRequest {
 	providerId: string;
@@ -1537,10 +1551,20 @@ export interface PluginSetEnabledRequest {
 	enabled: boolean;
 }
 
+export enum SecretSettingStatus {
+	Configured = "Configured",
+	NotConfigured = "NotConfigured",
+}
+
 export interface PluginSetting {
 	id: string;
 	title: string;
 	enabled: boolean;
+	/**
+	 * Present when the plugin declares a secret (ADR 0034): whether the
+	 * person has set it on this device. Never the value.
+	 */
+	credential?: SecretSettingStatus;
 }
 
 /** Named plugin settings operations share the nested settings vocabulary. */
@@ -1767,11 +1791,6 @@ export interface SelectedGameLaunchRequest {
 	 * never forwards: it answers for its own games.
 	 */
 	holder?: string;
-}
-
-export enum SecretSettingStatus {
-	Configured = "Configured",
-	NotConfigured = "NotConfigured",
 }
 
 export interface SensitiveSettingResult {
@@ -2369,6 +2388,8 @@ export type RpcRequest =
 	| { _tag: "system.settings.update", payload: SettingsUpdateRequest }
 	| { _tag: "system.settings.steamgriddbCredential.set", payload: SteamGridDbCredentialSetRequest }
 	| { _tag: "system.settings.steamgriddbCredential.clear", payload: SteamGridDbCredentialClearRequest }
+	| { _tag: "system.settings.credential.set", payload: CredentialSetRequest }
+	| { _tag: "system.settings.credential.clear", payload: CredentialClearRequest }
 	| { _tag: "system.identity.status", payload: IdentityStatusRequest }
 	| { _tag: "system.identity.owner-binding.snapshot", payload: OwnerBindingRequest }
 	| { _tag: "system.identity.owner-binding.start", payload: OwnerBindingRequest }
@@ -2469,6 +2490,8 @@ export type RpcResponse =
 	| { _tag: "system.settings.update", outcome: SettingsUpdateOutcome }
 	| { _tag: "system.settings.steamgriddbCredential.set", outcome: SensitiveSettingOutcome }
 	| { _tag: "system.settings.steamgriddbCredential.clear", outcome: SensitiveSettingOutcome }
+	| { _tag: "system.settings.credential.set", outcome: SensitiveSettingOutcome }
+	| { _tag: "system.settings.credential.clear", outcome: SensitiveSettingOutcome }
 	| { _tag: "system.identity.status", outcome: IdentityStatusOutcome }
 	| { _tag: "system.identity.owner-binding.snapshot", outcome: OwnerBindingOutcome }
 	| { _tag: "system.identity.owner-binding.start", outcome: OwnerBindingOutcome }

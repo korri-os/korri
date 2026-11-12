@@ -132,6 +132,7 @@ const RELEASE_ROW: &str = "plugin-release:";
 const INSPECT_ACTION: &str = "plugin-inspect:";
 const REVIEW_ACTION: &str = "plugin-review:";
 const TOGGLE_SETTING: &str = "plugin-toggle:";
+const CREDENTIAL_SETTING: &str = "plugin-credential:";
 const TRUST_ACTION: &str = "plugin-trust:";
 const REVIEW_PUBLISHER_ROW: &str = "plugin-review-publisher:";
 const PUBLISHER_ROW: &str = "plugin-publisher:";
@@ -184,6 +185,14 @@ pub fn review_action_id(target: &ReleaseTarget) -> String {
 }
 pub fn toggle_setting_id(plugin_id: &str) -> String {
     format!("{TOGGLE_SETTING}{}", enc(plugin_id))
+}
+/// The row where a person enters a plugin's secret (ADR 0034, "Entry").
+pub fn credential_setting_id(plugin_id: &str) -> String {
+    format!("{CREDENTIAL_SETTING}{}", enc(plugin_id))
+}
+/// The plugin a secret row belongs to.
+pub fn credential_plugin_from(setting_id: &str) -> Option<String> {
+    dec(setting_id.strip_prefix(CREDENTIAL_SETTING)?).filter(|id| !id.is_empty())
 }
 pub fn trust_action_id(target: &ReleaseTarget, namespace: &str) -> String {
     format!("{TRUST_ACTION}{}:{}", release_key(target), enc(namespace))
@@ -1210,10 +1219,68 @@ fn publishers_group(
     })
 }
 
+/// The row where a person enters or clears the plugin's secret. The surface
+/// gets the status only, never the value.
+fn credential_row(plugin: &PluginSetting, editable: bool) -> Option<SurfaceSettingItem> {
+    let configured = plugin.credential? == crate::config::settings::SecretSettingStatus::Configured;
+    Some(SurfaceSettingItem {
+        value: Some(
+            if configured {
+                "Configured"
+            } else {
+                "Not configured"
+            }
+            .into(),
+        ),
+        description: Some(
+            "Korri keeps it on this device and sends it only to the host you approved.".into(),
+        ),
+        interaction: editable.then(|| SurfaceSettingInteraction::SensitiveText {
+            placeholder: Some("Paste API key".into()),
+            max_length: Some(256),
+            clear_label: configured.then(|| "Clear saved key".into()),
+        }),
+        ..item(
+            credential_setting_id(&plugin.id),
+            format!("{} API key", plugin.title),
+        )
+    })
+}
+
 /// Settings groups for plugins: Plugins, Official plugins, each added
 /// repository, removed repositories' installs, other installs, Publishers.
-/// `installed` is `SettingsSnapshot.plugins`, used only for titles.
+/// `installed` is `SettingsSnapshot.plugins`: titles, and for a plugin that
+/// declares a secret, its secret row after the plugin's own rows. `editable`
+/// is `SettingsSnapshot.editableSettingIds`.
 pub fn plugin_setting_groups(
+    facts: &PluginFacts,
+    installed: Option<&[PluginSetting]>,
+    editable: &[String],
+) -> Vec<SurfaceSettingGroup> {
+    let mut groups = plugin_groups(facts, installed);
+    for plugin in installed.unwrap_or(&[]) {
+        let id = credential_setting_id(&plugin.id);
+        let Some(row) = credential_row(plugin, editable.contains(&id)) else {
+            continue;
+        };
+        let toggle = toggle_setting_id(&plugin.id);
+        // After the last row of this plugin: its toggle, or its review rows.
+        let place = groups.iter_mut().find_map(|group| {
+            let first = group.items.iter().position(|item| item.id == toggle)?;
+            let rows = 1 + group.items[first + 1..]
+                .iter()
+                .take_while(|item| item.id.starts_with(REVIEW_PUBLISHER_ROW))
+                .count();
+            Some((group, first + rows))
+        });
+        if let Some((group, at)) = place {
+            group.items.insert(at, row);
+        }
+    }
+    groups
+}
+
+fn plugin_groups(
     facts: &PluginFacts,
     installed: Option<&[PluginSetting]>,
 ) -> Vec<SurfaceSettingGroup> {

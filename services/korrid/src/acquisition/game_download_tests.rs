@@ -33,6 +33,7 @@ async fn text(
                 headers: &[("accept".into(), "text/html".into())],
                 timeout: None,
                 form: None,
+                credential: None,
             },
             &hosts(),
         )
@@ -86,6 +87,7 @@ async fn provider_requests_reach_only_declared_hosts_on_every_hop() {
                 headers: &[],
                 timeout: None,
                 form: None,
+                credential: None,
             },
             &private,
         )
@@ -99,6 +101,7 @@ async fn provider_requests_reach_only_declared_hosts_on_every_hop() {
                 headers: &[],
                 timeout: None,
                 form: None,
+                credential: None,
             },
             &[],
         )
@@ -487,6 +490,7 @@ async fn every_acquisition_request_and_hop_carries_korris_user_agent() {
                 headers: &[("user-agent".into(), "Plugin/2".into())],
                 timeout: None,
                 form: None,
+                credential: None,
             },
             &hosts(),
         )

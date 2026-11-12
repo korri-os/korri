@@ -331,6 +331,39 @@ pub async fn recover_pending_identity_switch(
     complete_commit(&storage, &journal, &signer, None).await
 }
 
+/// What the person chose for their data on this device: the play log, and
+/// every plugin secret (ADR 0034, "Owner and devices"). `Transfer` keeps each
+/// secret for the new owner; `Delete` removes each one. Every step can run
+/// again, so a switch that resumes from its journal repeats it safely.
+pub(super) fn apply_data_disposition(
+    private_root: &Path,
+    disposition: DataDisposition,
+    old_owner_public_key: &str,
+    new_owner_public_key: &str,
+) -> Result<(), String> {
+    let play_log = PlayLogStore::new(private_root);
+    match disposition {
+        DataDisposition::Transfer => play_log
+            .transfer_person_records(old_owner_public_key, new_owner_public_key)
+            .map_err(|error| error.to_string()),
+        DataDisposition::Delete => {
+            play_log
+                .delete_person_records(old_owner_public_key)
+                .map_err(|error| error.to_string())?;
+            let secrets = crate::plugin_secrets::PluginSecrets::new(private_root);
+            for plugin_id in secrets
+                .plugins_with_a_secret()
+                .map_err(|error| error.to_string())?
+            {
+                secrets
+                    .clear(&plugin_id)
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        }
+    }
+}
+
 async fn complete_commit(
     storage: &IdentitySwitchStorage,
     journal: &IdentitySwitchJournal,
@@ -371,18 +404,12 @@ async fn complete_commit(
     };
     let old_statement = owned_statement(&old_identity)?;
     let new_statement = owned_statement(&new_identity)?;
-    let play_log = PlayLogStore::new(&storage.live_private_root());
-    match journal.data_disposition() {
-        DataDisposition::Transfer => play_log
-            .transfer_person_records(
-                &old_statement.owner_public_key,
-                &new_statement.owner_public_key,
-            )
-            .map_err(|error| error.to_string())?,
-        DataDisposition::Delete => play_log
-            .delete_person_records(&old_statement.owner_public_key)
-            .map_err(|error| error.to_string())?,
-    }
+    apply_data_disposition(
+        &storage.live_private_root(),
+        journal.data_disposition(),
+        &old_statement.owner_public_key,
+        &new_statement.owner_public_key,
+    )?;
     let (active_local_key, _) = signer.status().await?;
     signer
         .activate(

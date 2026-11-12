@@ -53,6 +53,7 @@ fn installed(root: &Path, runtime_resolve: Option<&str>) -> PluginRegistry {
         sources: vec!["plugin.ts".into()],
         requires: Vec::new(),
         hosts: vec![],
+        credential_host: None,
     }])
     .unwrap()
 }

@@ -4565,7 +4565,7 @@ mod plugin_repositories {
 
     #[test]
     fn official_only_shows_not_set_up_and_the_add_row() {
-        let groups = plugin_setting_groups(&repositories(vec![], json!([])), Some(&[]));
+        let groups = plugin_setting_groups(&repositories(vec![], json!([])), Some(&[]), &[]);
         assert_eq!(
             groups
                 .iter()
@@ -4577,14 +4577,14 @@ mod plugin_repositories {
         assert_eq!(groups[0].items[0].value.as_deref(), Some("Not set up yet"));
         assert!(groups[0].items[0].interaction.is_none());
         assert_eq!(groups[0].items[1].id, ADD_REPOSITORY_SETTING);
-        let loading = plugin_setting_groups(&PluginFacts::default(), None);
+        let loading = plugin_setting_groups(&PluginFacts::default(), None, &[]);
         assert_eq!(loading.len(), 1);
         assert_eq!(loading[0].items[0].value.as_deref(), Some("Checking…"));
     }
 
     #[test]
     fn an_added_repository_lists_its_plugins_and_ends_with_remove() {
-        let groups = plugin_setting_groups(&retro_facts(), Some(&[]));
+        let groups = plugin_setting_groups(&retro_facts(), Some(&[]), &[]);
         let retro = group(&groups, "retro.example/plugins");
         assert_eq!(
             retro
@@ -4616,11 +4616,227 @@ mod plugin_repositories {
         );
     }
 
+    const ART: &str = "@korri:steamgriddb";
+
+    fn installed_plugins(credential: Option<&str>) -> Vec<crate::PluginSetting> {
+        from(json!([
+            { "id": "@ada:netplay", "title": "Netplay", "enabled": true },
+            { "id": ART, "title": "SteamGridDB", "enabled": true, "credential": credential },
+        ]))
+    }
+
+    fn art_facts() -> PluginFacts {
+        let mut facts = retro_facts();
+        let Read::Ready(repositories) = &mut facts.repositories else {
+            unreachable!()
+        };
+        repositories.other_installs =
+            from(json!([{ "id": ART, "title": "SteamGridDB", "enabled": true }]));
+        facts
+    }
+
+    #[test]
+    fn a_plugin_that_declares_a_secret_gets_a_secret_row_after_its_own_row() {
+        let row = credential_setting_id(ART);
+        assert_eq!(row, "plugin-credential:%40korri%3Asteamgriddb");
+        assert_eq!(credential_plugin_from(&row).as_deref(), Some(ART));
+        assert_eq!(credential_plugin_from("plugin-credential:"), None);
+        assert_eq!(credential_plugin_from(&toggle_setting_id(ART)), None);
+        // The plugin controller leaves the row to the settings writer.
+        assert!(!is_plugin_setting_id(&row));
+
+        let groups = plugin_setting_groups(
+            &art_facts(),
+            Some(&installed_plugins(Some("NotConfigured"))),
+            &[row.clone()],
+        );
+        let other = group(&groups, OTHER_GROUP);
+        assert_eq!(
+            other
+                .items
+                .iter()
+                .map(|item| item.id.clone())
+                .collect::<Vec<_>>(),
+            vec![toggle_setting_id(ART), row.clone()]
+        );
+        let secret = &other.items[1];
+        assert_eq!(secret.label, "SteamGridDB API key");
+        assert_eq!(secret.value.as_deref(), Some("Not configured"));
+        assert_eq!(
+            serde_json::to_value(&secret.interaction).unwrap(),
+            json!({ "kind": "sensitiveText", "placeholder": "Paste API key", "maxLength": 256 })
+        );
+        // A plugin without a secret has no such row.
+        assert!(!groups
+            .iter()
+            .flat_map(|group| &group.items)
+            .any(|item| item.id.starts_with("plugin-credential:") && item.id != row));
+
+        // Once set, the row says so and offers the clear action.
+        let groups = plugin_setting_groups(
+            &art_facts(),
+            Some(&installed_plugins(Some("Configured"))),
+            &[row.clone()],
+        );
+        let secret = &group(&groups, OTHER_GROUP).items[1];
+        assert_eq!(secret.value.as_deref(), Some("Configured"));
+        assert_eq!(
+            serde_json::to_value(&secret.interaction).unwrap(),
+            json!({ "kind": "sensitiveText", "placeholder": "Paste API key", "maxLength": 256,
+                "clearLabel": "Clear saved key" })
+        );
+
+        // A caller that may not write sees the status and no interaction.
+        let groups = plugin_setting_groups(
+            &art_facts(),
+            Some(&installed_plugins(Some("Configured"))),
+            &[],
+        );
+        let secret = &group(&groups, OTHER_GROUP).items[1];
+        assert_eq!(secret.value.as_deref(), Some("Configured"));
+        assert!(secret.interaction.is_none());
+
+        // No declared secret: no row.
+        let groups = plugin_setting_groups(&art_facts(), Some(&installed_plugins(None)), &[]);
+        assert_eq!(group(&groups, OTHER_GROUP).items.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_secret_row_sets_and_clears_through_korrid_and_the_model_never_holds_the_value() {
+        const SECRET: &str = "surface-row-test-not-a-real-secret";
+        let row = credential_setting_id(ART);
+        let (korrid, script) = scripted();
+        for (tag, outcome) in idle_outcomes(0) {
+            // These two are answered below, as a device with the plugin does.
+            if tag != "system.settings.snapshot" && tag != "system.plugins.repositories" {
+                push(&script, &tag, outcome);
+            }
+        }
+        push(
+            &script,
+            "system.settings.snapshot",
+            json!({ "_tag": "Ok", "payload": { "revision": "r1", "playerCount": 4,
+                "editableSettingIds": [row],
+                "plugins": [{ "id": ART, "title": "SteamGridDB", "enabled": true, "credential": "NotConfigured" }],
+                "steamGridDbCredential": "NotConfigured" } }),
+        );
+        push(
+            &script,
+            "system.plugins.repositories",
+            json!({ "_tag": "Ok", "payload": { "userAdded": [], "repositoryInstalls": [],
+                "otherInstalls": [{ "id": ART, "title": "SteamGridDB", "enabled": true }] } }),
+        );
+        push(
+            &script,
+            "system.plugins.publishers",
+            json!({ "_tag": "Ok", "payload": { "entries": [] } }),
+        );
+        for (tag, status) in [
+            ("system.settings.credential.set", "Configured"),
+            ("system.settings.credential.clear", "NotConfigured"),
+        ] {
+            push(
+                &script,
+                tag,
+                json!({ "_tag": "Ok", "payload": { "status": status } }),
+            );
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let intent = Arc::new(crate::overlay_intent::OverlayIntent::default());
+        let hub = SurfaceHub::new(
+            korrid,
+            directory.path().join("private"),
+            intent.subscribe(),
+            Arc::default(),
+        );
+        let secret_row = |model: &SurfaceModel| {
+            model
+                .settings
+                .iter()
+                .flat_map(|group| &group.items)
+                .find(|item| item.id == row)
+                .cloned()
+        };
+        let mut found = None;
+        for _ in 0..300 {
+            found = secret_row(&hub.model("pico").unwrap());
+            if found.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let found = found.expect("the plugin's secret row");
+        assert!(matches!(
+            found.interaction,
+            Some(SurfaceSettingInteraction::SensitiveText { .. })
+        ));
+
+        let calls_of = |tag: &str| {
+            script
+                .lock()
+                .unwrap()
+                .calls
+                .iter()
+                .filter(|(called, _)| called == tag)
+                .map(|(_, payload)| payload.clone())
+                .collect::<Vec<_>>()
+        };
+        let wait_for = |tag: &'static str| {
+            let calls_of = &calls_of;
+            async move {
+                for _ in 0..300 {
+                    if !calls_of(tag).is_empty() {
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                panic!("korrid never got {tag}")
+            }
+        };
+        hub.request(
+            "pico",
+            SurfaceRequest::ChangeSetting {
+                setting_id: row.clone(),
+                value: SECRET.into(),
+            },
+        )
+        .unwrap();
+        wait_for("system.settings.credential.set").await;
+        assert_eq!(
+            calls_of("system.settings.credential.set"),
+            vec![json!({ "pluginId": ART, "token": SECRET })]
+        );
+        // An empty value is the row's clear action.
+        for _ in 0..300 {
+            if hub.model("pico").unwrap().settings_status == SurfaceSettingsStatus::Idle {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        hub.request(
+            "pico",
+            SurfaceRequest::ChangeSetting {
+                setting_id: row.clone(),
+                value: String::new(),
+            },
+        )
+        .unwrap();
+        wait_for("system.settings.credential.clear").await;
+        assert_eq!(
+            calls_of("system.settings.credential.clear"),
+            vec![json!({ "pluginId": ART })]
+        );
+        assert_eq!(calls_of("system.settings.credential.set").len(), 1);
+        // The model a surface gets never carries the value.
+        let model = serde_json::to_string(&hub.model("pico").unwrap()).unwrap();
+        assert!(!model.contains(SECRET));
+    }
+
     #[test]
     fn an_inspected_release_becomes_review_and_turn_on_whose_question_is_the_report() {
         let report = inspection("Trusted", json!([]));
         let facts = with_review(retro_facts(), &chiptune(), report.clone());
-        let groups = plugin_setting_groups(&facts, Some(&[]));
+        let groups = plugin_setting_groups(&facts, Some(&[]), &[]);
         let row = group(&groups, "retro.example/plugins")
             .items
             .iter()
@@ -4650,7 +4866,7 @@ mod plugin_repositories {
     fn a_new_publisher_is_trusted_first_with_its_key_in_the_question() {
         let report = inspection("New", json!([]));
         let facts = with_review(retro_facts(), &chiptune(), report);
-        let groups = plugin_setting_groups(&facts, Some(&[]));
+        let groups = plugin_setting_groups(&facts, Some(&[]), &[]);
         let row = group(&groups, "retro.example/plugins")
             .items
             .iter()
@@ -4675,7 +4891,7 @@ mod plugin_repositories {
     #[test]
     fn a_stale_approval_shows_needs_review() {
         let facts = with_needs_review(retro_facts(), "@ada:netplay", false);
-        let groups = plugin_setting_groups(&facts, Some(&[]));
+        let groups = plugin_setting_groups(&facts, Some(&[]), &[]);
         let row = &group(&groups, "retro.example/plugins").items[0];
         assert_eq!(row.value.as_deref(), Some("Needs review"));
         assert_eq!(
@@ -4691,7 +4907,7 @@ mod plugin_repositories {
             { "namespace": "@korri", "fingerprint": "k", "state": "Bound", "installed": [] },
             { "namespace": "@ada", "fingerprint": "a", "state": "Trusted", "installed": ["@ada:netplay"] }
         ] })));
-        let groups = plugin_setting_groups(&facts, Some(&[]));
+        let groups = plugin_setting_groups(&facts, Some(&[]), &[]);
         let publishers = groups.last().unwrap();
         assert_eq!(publishers.title, PUBLISHERS_GROUP);
         assert!(publishers.items[0].interaction.is_none());

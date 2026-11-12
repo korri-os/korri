@@ -161,7 +161,8 @@ pub(crate) async fn update(
                 .map_err(settings_failure)?;
                 let sensitive = config::settings::read_sensitive(&brain.private_state_root)
                     .map_err(settings_failure)?;
-                settings_snapshot(readable, sensitive)
+                settings_snapshot(readable, sensitive, &brain.private_state_root)
+                    .map_err(settings_failure)?
             }
         };
         if snapshot.revision != request.expected_revision {

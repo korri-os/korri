@@ -98,6 +98,7 @@ fn core_package(root: &Path, name: &str, source: String) -> EnabledPackage {
         ],
         requires: Vec::new(),
         hosts: vec![],
+        credential_host: None,
     }
 }
 
@@ -146,7 +147,49 @@ pub fn installed(root: &Path) -> PluginRegistry {
         ],
         requires: Vec::new(),
         hosts: vec![],
+        credential_host: None,
     }])
+    .unwrap()
+}
+
+/// The id of the artwork plugin fixture (ADR 0032).
+pub const ART_PLUGIN_ID: &str = "@korri:steamgriddb";
+
+/// An installed artwork plugin: `source` is its `plugin.ts`, `hosts` the
+/// hosts it may reach and `credential_host` the one that receives its secret
+/// (ADR 0034).
+pub fn art_package(
+    root: &Path,
+    source: &str,
+    hosts: &[&str],
+    credential_host: Option<&str>,
+) -> EnabledPackage {
+    let package = root.join("plugin-steamgriddb");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(package.join("plugin.ts"), source).unwrap();
+    fs::write(
+        package.join("manifest.json"),
+        r#"{"entry":"plugin.ts","sources":["plugin.ts"]}"#,
+    )
+    .unwrap();
+    EnabledPackage {
+        id: ART_PLUGIN_ID.into(),
+        package,
+        files: BTreeMap::new(),
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
+        requires: Vec::new(),
+        hosts: hosts.iter().map(|host| (*host).to_owned()).collect(),
+        credential_host: credential_host.map(str::to_owned),
+    }
+}
+
+/// The mGBA core of `installed` beside one artwork plugin.
+pub fn installed_with_art(root: &Path, art: EnabledPackage) -> PluginRegistry {
+    PluginRegistry::from_installed(vec![
+        core_package(root, "mgba", GENERATED_CORE.to_owned()),
+        art,
+    ])
     .unwrap()
 }
 
@@ -182,6 +225,7 @@ pub fn steam(root: &Path) -> PluginRegistry {
             sources: vec!["plugin.ts".into()],
             requires: vec![],
             hosts: vec![],
+            credential_host: None,
             files: keys
                 .into_iter()
                 .map(|key| (key.into(), directory.join(key)))
@@ -200,6 +244,7 @@ pub fn steam(root: &Path) -> PluginRegistry {
         sources: vec!["plugin.ts".into()],
         requires,
         hosts: vec![],
+        credential_host: None,
     });
     PluginRegistry::from_installed(dependencies).unwrap()
 }

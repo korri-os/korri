@@ -41,6 +41,31 @@ let
       ];
     };
   };
+  # ADR 0034: one secret, for one of the plugin's own hosts.
+  secretHosts = [
+    "www.steamgriddb.com"
+    "cdn2.steamgriddb.com"
+  ];
+  withSecret = mkPlugin {
+    inherit publisher source;
+    plugin = {
+      hosts = secretHosts;
+      credentialHost = "www.steamgriddb.com";
+    };
+  };
+  invalidCredentialHost =
+    credentialHost:
+    !(builtins.tryEval (
+      builtins.seq
+        (mkPlugin {
+          inherit publisher source;
+          plugin = _: {
+            hosts = secretHosts;
+            inherit credentialHost;
+          };
+        }).outPath
+        true
+    )).success;
   dependencies = import ./dependency-fixtures.nix { inherit pkgs mkPlugin; };
   invalidRequirement =
     requires:
@@ -70,6 +95,9 @@ assert invalidRequirement [
   dependencies.runner
 ];
 assert invalidRequirement (pkgs.lib.replicate 129 dependencies.runner);
+assert invalidCredentialHost "api.example.com";
+assert invalidCredentialHost [ "www.steamgriddb.com" ];
+assert invalidCredentialHost true;
 pkgs.runCommand "korri-plugin-builder-check"
   {
     nativeBuildInputs = [
@@ -80,6 +108,10 @@ pkgs.runCommand "korri-plugin-builder-check"
   ''
     jq -e '.packages == {} and .files == {} and .services == {} and (has("requiresReleases") | not)' ${sourceOnly}/manifest.json
     jq -e '.requiresReleases == [{"id":"@runtime:fake08","repository":"https://example.invalid/catalog.json"},{"id":"@runtime:solarus","repository":"https://example.invalid/catalog.json","release":"v1"}] and (has("requires") | not)' ${releasePack}/manifest.json
+    # A secret's host is in the manifest only when the plugin declares one,
+    # so a package without a secret keeps its manifest bytes and approval.
+    jq -e '.credentialHost == "www.steamgriddb.com" and .hosts == ["www.steamgriddb.com","cdn2.steamgriddb.com"]' ${withSecret}/manifest.json
+    jq -e '(has("credentialHost") | not) and (has("hosts") | not)' ${sourceOnly}/manifest.json
     test -f ${nested}/manifest.json
     test -f ${nested}/plugin.ts
     test -f ${nested}/src/prefix.ts

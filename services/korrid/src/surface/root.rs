@@ -1148,6 +1148,10 @@ impl Root {
                 .settings
                 .as_ref()
                 .map(|settings| settings.plugins.as_slice()),
+            facts
+                .settings
+                .as_ref()
+                .map_or(&[], |settings| settings.editable_setting_ids.as_slice()),
         ));
         facts.launch_settings = self.launch.device_groups();
         let settings = settings_from(&facts);

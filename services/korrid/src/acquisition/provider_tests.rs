@@ -130,6 +130,7 @@ fn package(root: &Path, name: &str, source: &str, hosts: Vec<String>) -> Enabled
         sources: vec!["plugin.ts".into()],
         requires: vec![],
         hosts,
+        credential_host: None,
     }
 }
 

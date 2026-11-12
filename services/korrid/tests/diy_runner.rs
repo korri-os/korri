@@ -28,6 +28,7 @@ fn installed(root: &Path) -> PluginRegistry {
         sources: vec!["plugin.ts".into()],
         requires: Vec::new(),
         hosts: vec![],
+        credential_host: None,
     }])
     .unwrap()
 }
@@ -169,6 +170,7 @@ fn hello_needs_no_authored_ids_or_launch_handler() {
         sources: vec!["plugin.ts".into()],
         requires: vec![],
         hosts: vec![],
+        credential_host: None,
     }])
     .unwrap();
     assert_eq!(

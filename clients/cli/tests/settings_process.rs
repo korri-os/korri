@@ -274,6 +274,16 @@ const EARLY_REJECTIONS: &[(&[&str], &str)] = &[
     ),
     (&["metadata", "key", "set", "--json"], MISSING_PRIVATE_INPUT),
     (
+        &[
+            "plugins",
+            "credential",
+            "set",
+            "@korri:steamgriddb",
+            "--json",
+        ],
+        MISSING_PRIVATE_INPUT,
+    ),
+    (
         &["saves", "restore", "game", "snapshot", "--json"],
         MISSING_INPUT,
     ),
@@ -398,6 +408,108 @@ fn settings_metadata_never_prints_the_credential() {
             "private-token\n",
         ),
         &response,
+        0,
+    );
+    server.done();
+}
+
+#[test]
+fn plugins_credential_sends_the_secret_once_and_shows_only_its_status() {
+    const PLUGIN: &str = "@korri:steamgriddb";
+    let configured =
+        RpcResponse::CredentialSet(SensitiveSettingOutcome::Ok(SensitiveSettingResult {
+            status: config::settings::SecretSettingStatus::Configured,
+        }));
+    let server = RpcServer::start(vec![exchange(
+        RpcRequest::CredentialSet(CredentialSetRequest {
+            plugin_id: PLUGIN.into(),
+            token: "private-token".into(),
+        }),
+        configured.clone(),
+    )]);
+    assert_json(
+        &server.run(
+            &[
+                "plugins",
+                "credential",
+                "set",
+                PLUGIN,
+                "--credential-stdin",
+                "--json",
+            ],
+            "private-token\n",
+        ),
+        &configured,
+        0,
+    );
+    server.done();
+
+    // The words a person reads name the plugin and the status, nothing more.
+    let server = RpcServer::start(vec![exchange(
+        RpcRequest::CredentialSet(CredentialSetRequest {
+            plugin_id: PLUGIN.into(),
+            token: "private-token".into(),
+        }),
+        configured,
+    )]);
+    let output = server.run(
+        &["plugins", "credential", "set", PLUGIN, "--credential-stdin"],
+        "private-token\n",
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let human = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(human.trim(), "@korri:steamgriddb secret: configured");
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("private-token"));
+    server.done();
+
+    // Show reads the settings snapshot, which carries a status only.
+    let mut snapshot = settings();
+    snapshot.plugins = vec![
+        PluginSetting {
+            id: PLUGIN.into(),
+            title: "SteamGridDB".into(),
+            enabled: true,
+            credential: Some(config::settings::SecretSettingStatus::NotConfigured),
+        },
+        PluginSetting {
+            id: "@korri:mgba".into(),
+            title: "mGBA".into(),
+            enabled: true,
+            credential: None,
+        },
+    ];
+    let snapshot = RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(snapshot));
+    for (plugin, words) in [
+        (PLUGIN, "@korri:steamgriddb secret: not configured"),
+        ("@korri:mgba", "@korri:mgba does not use a secret."),
+        ("@gone:art", "@gone:art is not turned on on this device."),
+    ] {
+        let server = RpcServer::start(vec![exchange(
+            RpcRequest::SettingsSnapshot(SettingsSnapshotRequest {}),
+            snapshot.clone(),
+        )]);
+        let output = server.run(&["plugins", "credential", "show", plugin], "");
+        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), words);
+        server.done();
+    }
+
+    let cleared =
+        RpcResponse::CredentialClear(SensitiveSettingOutcome::Ok(SensitiveSettingResult {
+            status: config::settings::SecretSettingStatus::NotConfigured,
+        }));
+    let server = RpcServer::start(vec![exchange(
+        RpcRequest::CredentialClear(CredentialClearRequest {
+            plugin_id: PLUGIN.into(),
+        }),
+        cleared.clone(),
+    )]);
+    assert_json(
+        &server.run(
+            &["plugins", "credential", "clear", PLUGIN, "--yes", "--json"],
+            "",
+        ),
+        &cleared,
         0,
     );
     server.done();
@@ -1015,6 +1127,14 @@ fn settings_invalid_private_input_and_rejected_secret_arguments_are_never_echoed
             "--json",
         ],
         vec!["metadata", "key", "set", "private-token", "--json"],
+        vec![
+            "plugins",
+            "credential",
+            "set",
+            "@korri:steamgriddb",
+            "private-token",
+            "--json",
+        ],
         vec![
             "identity",
             "backup",

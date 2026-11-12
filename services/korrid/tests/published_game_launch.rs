@@ -60,6 +60,7 @@ fn published_mgba_route_and_launch_prepare() {
         sources: manifest.sources.clone(),
         requires: Vec::new(),
         hosts: vec![],
+        credential_host: None,
     }])
     .expect("current Core must admit the published declaration and source graph");
 

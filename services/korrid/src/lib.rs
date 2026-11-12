@@ -1157,6 +1157,10 @@ pub struct PluginSetting {
     pub id: String,
     pub title: String,
     pub enabled: bool,
+    /// Present when the plugin declares a secret (ADR 0034): whether the
+    /// person has set it on this device. Never the value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<config::settings::SecretSettingStatus>,
 }
 
 #[typeshare]
@@ -1186,6 +1190,35 @@ pub struct SteamGridDbCredentialSetRequest {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SteamGridDbCredentialClearRequest {}
+
+/// Set one plugin's secret on this device (ADR 0034). The answer carries the
+/// status, never the value.
+#[typeshare]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialSetRequest {
+    pub plugin_id: String,
+    pub token: String,
+}
+
+impl std::fmt::Debug for CredentialSetRequest {
+    /// A request can reach a log through `Debug`; the secret must not.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CredentialSetRequest")
+            .field("plugin_id", &self.plugin_id)
+            .field("token", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Delete one plugin's secret from this device (ADR 0034).
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialClearRequest {
+    pub plugin_id: String,
+}
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1680,6 +1713,10 @@ pub enum RpcRequest {
     SteamGridDbCredentialSet(SteamGridDbCredentialSetRequest),
     #[serde(rename = "system.settings.steamgriddbCredential.clear")]
     SteamGridDbCredentialClear(SteamGridDbCredentialClearRequest),
+    #[serde(rename = "system.settings.credential.set")]
+    CredentialSet(CredentialSetRequest),
+    #[serde(rename = "system.settings.credential.clear")]
+    CredentialClear(CredentialClearRequest),
     #[serde(rename = "system.identity.status")]
     IdentityStatus(IdentityStatusRequest),
     #[serde(rename = "system.identity.owner-binding.snapshot")]
@@ -1893,6 +1930,10 @@ pub enum RpcResponse {
     SteamGridDbCredentialSet(SensitiveSettingOutcome),
     #[serde(rename = "system.settings.steamgriddbCredential.clear")]
     SteamGridDbCredentialClear(SensitiveSettingOutcome),
+    #[serde(rename = "system.settings.credential.set")]
+    CredentialSet(SensitiveSettingOutcome),
+    #[serde(rename = "system.settings.credential.clear")]
+    CredentialClear(SensitiveSettingOutcome),
     #[serde(rename = "system.identity.status")]
     IdentityStatus(IdentityStatusOutcome),
     #[serde(rename = "system.identity.owner-binding.snapshot")]
@@ -2076,6 +2117,13 @@ impl AppState {
         match &self.mode {
             ServerMode::Brain(brain) => &brain.private_state_root,
             ServerMode::Host(host) => host.private_state_root(),
+        }
+    }
+    /// The plugins the settings of this device speak about, in either mode.
+    fn settings_registry_source(&self) -> plugin_policy::RegistrySource {
+        match &self.mode {
+            ServerMode::Brain(brain) => brain.registry_source.clone(),
+            ServerMode::Host(host) => host.settings_registry_source(),
         }
     }
     fn record_overlay_intent(&self, outcome: &SessionTransitionOutcome) {
@@ -4296,8 +4344,11 @@ async fn dispatch(
                     &brain.registry_source,
                 )
                 .and_then(|readable| {
-                    config::settings::read_sensitive(&brain.private_state_root)
-                        .map(|sensitive| settings_snapshot(readable, sensitive))
+                    config::settings::read_sensitive(&brain.private_state_root).and_then(
+                        |sensitive| {
+                            settings_snapshot(readable, sensitive, &brain.private_state_root)
+                        },
+                    )
                 })
                 .map(SettingsSnapshotOutcome::Ok)
                 .unwrap_or_else(|error| SettingsSnapshotOutcome::Err(settings_failure(error))),
@@ -4355,8 +4406,15 @@ async fn dispatch(
                 RpcResponse::SettingsUpdate(
                     outcome
                         .and_then(|readable| {
-                            config::settings::read_sensitive(&brain.private_state_root)
-                                .map(|sensitive| settings_snapshot(readable, sensitive))
+                            config::settings::read_sensitive(&brain.private_state_root).and_then(
+                                |sensitive| {
+                                    settings_snapshot(
+                                        readable,
+                                        sensitive,
+                                        &brain.private_state_root,
+                                    )
+                                },
+                            )
                         })
                         .map(SettingsUpdateOutcome::Ok)
                         .unwrap_or_else(|error| {
@@ -4440,6 +4498,16 @@ async fn dispatch(
                     }),
                 ),
             }
+        }
+        // ADR 0034: a plugin's secret is set wherever the plugin runs, so
+        // both modes answer.
+        RpcRequest::CredentialSet(request) => RpcResponse::CredentialSet(set_plugin_credential(
+            state,
+            &request.plugin_id,
+            Some(&request.token),
+        )),
+        RpcRequest::CredentialClear(request) => {
+            RpcResponse::CredentialClear(set_plugin_credential(state, &request.plugin_id, None))
         }
         RpcRequest::IdentityStatus(_) => {
             let outcome = match &state.identity_switch {
@@ -4769,6 +4837,13 @@ async fn dispatch(
         RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(snapshot))
         | RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Ok(snapshot)) => {
             snapshot.editable_setting_ids = editable_setting_ids(state, authorization);
+            snapshot
+                .editable_setting_ids
+                .extend(editable_credential_ids(
+                    state,
+                    authorization,
+                    &snapshot.plugins,
+                ));
             stream_play::person_name::device::enrich(state, authorization, snapshot).await;
         }
         _ => {}
@@ -4823,6 +4898,39 @@ fn applied(response: PluginAdminResponse) -> Option<plugin_admin::PluginChangeAp
         PluginAdminResponse::Applied(payload) => Some(payload),
         _ => None,
     }
+}
+
+/// The secret row of each plugin that declares a secret, when this caller may
+/// both set and clear it. The same probe as `editable_setting_ids`, in either
+/// mode: a plugin's secret is set wherever the plugin runs (ADR 0034).
+fn editable_credential_ids(
+    state: &AppState,
+    context: &authorization::AuthorizationContext,
+    plugins: &[PluginSetting],
+) -> Vec<String> {
+    let permitted = |request: &RpcRequest| {
+        authorization::authorize(context, request).is_ok()
+            && (!matches!(
+                context,
+                authorization::AuthorizationContext::LocalSurfaceHost
+            ) || state
+                .surface_host_access
+                .as_ref()
+                .is_none_or(|access| access.permits(request)))
+    };
+    plugins
+        .iter()
+        .filter(|plugin| plugin.credential.is_some())
+        .filter(|plugin| {
+            permitted(&RpcRequest::CredentialSet(CredentialSetRequest {
+                plugin_id: plugin.id.clone(),
+                token: String::new(),
+            })) && permitted(&RpcRequest::CredentialClear(CredentialClearRequest {
+                plugin_id: plugin.id.clone(),
+            }))
+        })
+        .map(|plugin| surface::plugins::credential_setting_id(&plugin.id))
+        .collect()
 }
 
 /// Support comes from the implemented handlers, not the list of stored values.
@@ -4886,6 +4994,54 @@ fn editable_setting_ids(
     ids
 }
 
+/// Keep (`Some`) or delete (`None`) one plugin's secret on this device. A
+/// secret is kept only for a plugin that declares one here; a clear works for
+/// any plugin id, because removing a plugin keeps its secret (ADR 0034,
+/// "Removal"). The answer and every failure carry a status or fixed words,
+/// never the value.
+fn set_plugin_credential(
+    state: &AppState,
+    plugin_id: &str,
+    token: Option<&str>,
+) -> SensitiveSettingOutcome {
+    use plugin_secrets::PluginSecretError;
+    let failure = |code: &str, message: &str| {
+        SensitiveSettingOutcome::Err(RpcFailure {
+            code: code.into(),
+            message: message.into(),
+        })
+    };
+    let secrets = plugin_secrets::PluginSecrets::new(state.private_state_root());
+    let result = match token {
+        Some(token) => {
+            let declares_a_secret = state
+                .settings_registry_source()
+                .registry()
+                .map(|registry| registry.plugin_credential_host(plugin_id).is_some());
+            match declares_a_secret {
+                Ok(true) => secrets.set(plugin_id, token),
+                Ok(false) => {
+                    return failure("SettingsInvalid", "This plugin does not use a secret.")
+                }
+                Err(_) => {
+                    return failure(
+                        "SettingsCandidateInvalid",
+                        "Korri cannot read the plugins on this device.",
+                    )
+                }
+            }
+        }
+        None => secrets.clear(plugin_id),
+    };
+    match result {
+        Ok(status) => SensitiveSettingOutcome::Ok(SensitiveSettingResult { status }),
+        Err(error @ PluginSecretError::Storage) => {
+            failure("SettingsStorageUnavailable", &error.to_string())
+        }
+        Err(error) => failure("SettingsInvalid", &error.to_string()),
+    }
+}
+
 fn local_settings_required() -> RpcFailure {
     RpcFailure {
         code: "OperationUnsupported".into(),
@@ -4894,11 +5050,35 @@ fn local_settings_required() -> RpcFailure {
     }
 }
 
+/// The secret status of each plugin that declares a secret, by plugin id.
+fn plugin_credentials(
+    private_state_root: &Path,
+    settings: &config::settings::ReadableSettings,
+) -> Result<
+    std::collections::BTreeMap<String, config::settings::SecretSettingStatus>,
+    config::settings::SettingsError,
+> {
+    let secrets = plugin_secrets::PluginSecrets::new(private_state_root);
+    settings
+        .plugins
+        .iter()
+        .filter(|plugin| plugin.declares_secret)
+        .map(|plugin| {
+            secrets
+                .status(&plugin.id)
+                .map(|status| (plugin.id.clone(), status))
+                .map_err(|error| config::settings::SettingsError::Storage(error.to_string()))
+        })
+        .collect()
+}
+
 fn settings_snapshot(
     settings: config::settings::ReadableSettings,
     sensitive: config::settings::SensitiveSettings,
-) -> SettingsSnapshot {
-    SettingsSnapshot {
+    private_state_root: &Path,
+) -> Result<SettingsSnapshot, config::settings::SettingsError> {
+    let mut credentials = plugin_credentials(private_state_root, &settings)?;
+    Ok(SettingsSnapshot {
         revision: settings.revision,
         device_name: settings.device_name,
         person_name: None,
@@ -4909,13 +5089,14 @@ fn settings_snapshot(
             .plugins
             .into_iter()
             .map(|plugin| PluginSetting {
+                credential: credentials.remove(&plugin.id),
                 id: plugin.id,
                 title: plugin.title,
                 enabled: plugin.enabled,
             })
             .collect(),
         steam_grid_db_credential: sensitive.steam_grid_db_credential,
-    }
+    })
 }
 
 fn job_outcome(

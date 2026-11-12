@@ -72,6 +72,7 @@ impl Fixture {
                 sources: vec!["plugin.ts".into()],
                 requires: vec![],
                 hosts: vec![],
+                credential_host: None,
                 files: BTreeMap::from([("run".into(), package.join("run"))]),
             }])
             .unwrap();
@@ -569,6 +570,7 @@ async fn package_games_resolve_content_path_offline_and_become_unavailable_when_
         sources: vec!["plugin.ts".into()],
         requires: vec![],
         hosts: vec![],
+        credential_host: None,
         files: BTreeMap::from([("cartridges".into(), package.join("cartridges"))]),
     };
     let mut missing = pack.clone();
@@ -591,6 +593,7 @@ async fn package_games_resolve_content_path_offline_and_become_unavailable_when_
         sources: vec!["plugin.ts".into()],
         requires: vec![],
         hosts: vec![],
+        credential_host: None,
         files: BTreeMap::from([("run".into(), runner_package.join("run"))]),
     };
     let registry = plugin::PluginRegistry::from_installed(vec![pack, runner.clone()]).unwrap();

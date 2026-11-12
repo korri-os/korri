@@ -294,6 +294,10 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SettingsUpdate(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SteamGridDbCredentialSet(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SteamGridDbCredentialClear(_) => PeerPolicy::OwnerDeviceOnly,
+        // ADR 0034: a person's other device may set a device's plugin secret.
+        RpcRequest::CredentialSet(_) | RpcRequest::CredentialClear(_) => {
+            PeerPolicy::OwnerDeviceOnly
+        }
         RpcRequest::OwnerBindingSnapshot(_) | RpcRequest::OwnerBindingStart(_) => {
             PeerPolicy::LocalSurfaceHostOnly
         }
@@ -390,6 +394,8 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::LaunchProfileSelect(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_)
+            | RpcRequest::CredentialSet(_)
+            | RpcRequest::CredentialClear(_)
             | RpcRequest::IdentityBackupExport(_)
             | RpcRequest::IdentityLocalSwitch(_)
             | RpcRequest::IdentityNip46Switch(_)
@@ -1401,6 +1407,18 @@ mod tests {
                 Owner,
             ),
             (
+                request(
+                    serde_json::json!({"_tag":"system.settings.credential.set","payload":{"pluginId":"@korri:steamgriddb","token":"t"}}),
+                ),
+                Owner,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.settings.credential.clear","payload":{"pluginId":"@korri:steamgriddb"}}),
+                ),
+                Owner,
+            ),
+            (
                 request(serde_json::json!({"_tag":"system.identity.status","payload":{}})),
                 Local,
             ),
@@ -1435,7 +1453,7 @@ mod tests {
                 Local,
             ),
         ];
-        assert_eq!(cases.len(), 31);
+        assert_eq!(cases.len(), 33);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
             assert_eq!(

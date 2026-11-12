@@ -476,6 +476,7 @@ mod seed_tests {
             native_units: Default::default(),
             ports: Default::default(),
             hosts: Vec::new(),
+            credential_host: None,
             packages: Default::default(),
             files: Default::default(),
             entry: "plugin.ts".into(),

@@ -431,6 +431,7 @@ mod tests {
                 sources: vec!["plugin.ts".into()],
                 requires: vec![],
                 hosts: vec![],
+                credential_host: None,
                 files: BTreeMap::from([("program".into(), std::env::current_exe().unwrap())]),
             },
         ])

@@ -98,6 +98,8 @@ impl SurfaceHostPermission {
             | RpcRequest::SettingsUpdate(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_)
+            | RpcRequest::CredentialSet(_)
+            | RpcRequest::CredentialClear(_)
             | RpcRequest::OwnerBindingStart(_)
             | RpcRequest::IdentityBackupExport(_)
             | RpcRequest::IdentityLocalSwitch(_)

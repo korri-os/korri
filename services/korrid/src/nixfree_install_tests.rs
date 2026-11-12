@@ -237,6 +237,43 @@ fn store_installs_and_enables_replacing_an_earlier_release() {
     assert_eq!(enabled[0].hosts, vec!["hh3.gbdev.io".to_string()]);
 }
 
+#[test]
+fn store_keeps_the_host_that_receives_a_secret_and_refuses_one_outside_hosts() {
+    let nar = nar_of(&[
+        (
+            "manifest.json",
+            &manifest(
+                r#","hosts":["www.steamgriddb.com","cdn2.steamgriddb.com"],"credentialHost":"www.steamgriddb.com""#,
+            ),
+        ),
+        ("plugin.ts", b"x"),
+    ]);
+    let f = fixture_with(&nar, "", true);
+    let dir = tempfile::tempdir().unwrap();
+    let store = AndroidPluginStore::new(dir.path());
+    store.install(&f.archive, &release(&f), &f.key).unwrap();
+    let enabled = store.read().unwrap();
+    assert_eq!(
+        enabled[0].credential_host.as_deref(),
+        Some("www.steamgriddb.com")
+    );
+
+    let nar = nar_of(&[
+        (
+            "manifest.json",
+            &manifest(
+                r#","hosts":["cdn2.steamgriddb.com"],"credentialHost":"www.steamgriddb.com""#,
+            ),
+        ),
+        ("plugin.ts", b"x"),
+    ]);
+    let f = fixture_with(&nar, "", true);
+    let dir = tempfile::tempdir().unwrap();
+    let store = AndroidPluginStore::new(dir.path());
+    assert!(store.install(&f.archive, &release(&f), &f.key).is_err());
+    assert!(store.read().unwrap().is_empty());
+}
+
 /// The stop rule of the Android workflow: the reader must accept a real
 /// archive that Nix signed. Set the three variables to run it, for example
 /// from `nix/tasks` on a builder after `nix copy --to file://…` and

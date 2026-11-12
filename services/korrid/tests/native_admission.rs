@@ -20,6 +20,7 @@ fn package(root: &Path, name: &str, exports: &str, files: &[&str]) -> EnabledPac
         sources: vec!["plugin.ts".into()],
         requires: Vec::new(),
         hosts: vec![],
+        credential_host: None,
     }
 }
 

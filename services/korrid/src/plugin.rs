@@ -986,6 +986,14 @@ impl PluginRegistry {
             .map_or(&[], |package| package.hosts.as_slice())
     }
 
+    /// The one host that receives an installed plugin's secret (ADR 0034).
+    /// `None`: the plugin declares no secret.
+    pub fn plugin_credential_host(&self, plugin_id: &str) -> Option<&str> {
+        self.installed
+            .get(plugin_id)
+            .and_then(|package| package.credential_host.as_deref())
+    }
+
     pub fn plugin_source(
         &self,
         plugin_id: &str,

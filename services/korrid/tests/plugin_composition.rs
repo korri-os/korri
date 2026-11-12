@@ -86,6 +86,7 @@ fn package_with_files(
         files,
         requires: Vec::new(),
         hosts: vec![],
+        credential_host: None,
     }
 }
 fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchComposition) {

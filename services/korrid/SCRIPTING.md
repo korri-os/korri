@@ -606,6 +606,64 @@ not exactly in the owning plugin's list, both for provider turns and for the
 game download. An empty list means no network. The SSRF and redirect policy in
 `acquisition/policy.rs` still applies to every hop.
 
+#### Plugin secret
+
+ADR 0034 records the decision. A plugin that needs one secret that korrid
+uses for it, such as an API key, names the one host that receives it:
+
+```nix
+{
+  hosts = [ "www.steamgriddb.com" "cdn2.steamgriddb.com" ];
+  credentialHost = "www.steamgriddb.com";
+}
+```
+
+`credentialHost` is one string and must be one of `hosts`. The builder copies
+it into `manifest.json` as `credentialHost` and omits the key when the plugin
+declares no secret, so a package without a secret keeps its manifest bytes
+and approval. The administrator validates it, binds it in the approval digest
+through the manifest bytes, adds one sentence to the report's `warning` that
+names the receiving host, shows it as the report field `credential_host`, and
+projects it into `enabled-packages` as `EnabledPackage.credential_host`
+(absent when none). korrid reads it only from that projection. One secret per
+plugin.
+
+The plugin's code never receives the secret: not in a handler's input, not in
+a response and not in a failure. korrid keeps it in
+`<private>/<plugin id>/credential` (folder mode 0700, file mode 0600, both set
+in code) and adds `Authorization: Bearer <secret>` to a turn request whose
+host is `credentialHost`. Bearer is the only form. A request to any other
+declared host carries no secret. On a redirect korrid adds the header again
+only while the next host is still `credentialHost`; once a redirect leaves
+that host, the request never carries the secret again. A request that starts
+on another host never gains it. The game download and the artwork image
+download never carry it. A plugin still cannot set `authorization` itself.
+
+Today korrid supplies the secret to the turns of `game-assets.candidates`
+(ADR 0032). The turns of an acquisition provider carry no secret: no provider
+in scope uses one.
+
+A person enters the secret in the plugin's own row in Settings
+(`plugin-credential:<plugin id>`, a `sensitiveText` row of at most 256
+characters with a clear action), or with `korri plugins credential set ID`.
+Both use `system.settings.credential.set { pluginId, token }` and
+`system.settings.credential.clear { pluginId }`. Both are `OwnerDeviceOnly`
+and both answer in host mode and in brain mode, so a person's other device
+can set a handheld's secret over the peer wire. The answer is
+`SensitiveSettingResult { status }`: `Configured` or `NotConfigured`, never
+the value. `set` needs a plugin that is turned on and declares a secret on
+this device, a value that is not empty after trimming, at most 256 bytes, and
+that an HTTP header can carry. `clear` answers for any plugin id, because
+removing a plugin keeps its secret. `SettingsSnapshot.plugins[].credential`
+carries the same status for a plugin that declares a secret and is absent for
+every other plugin.
+
+The secret stays on the device where the person entered it. At an identity
+switch it follows the person's choice for the play log: `transfer` keeps
+every plugin's `credential` file for the new owner, and `delete` removes each
+one. No log, diagnostic, failure text, readable config or RPC answer contains
+the secret.
+
 #### Request and response turns
 
 A handler cannot fetch. It returns either its result or the HTTP requests it
@@ -673,7 +731,8 @@ adds no cookie session, authorization, host wildcard, or resource-limit change
 `User-Agent: Korri/<korrid version>` on every acquisition request and
 redirect hop; a request's own `user-agent` header replaces it. korrid refuses `cookie`,
 `set-cookie`, `authorization`, `proxy-authorization` and `host` request
-headers.
+headers. A plugin cannot set `authorization`; korrid adds it from the plugin
+secret (see "Plugin secret").
 
 korrid follows redirects itself (at most 5, no https to http, every hop
 host-checked), so a response never has a 3xx status. An HTTP error status is a

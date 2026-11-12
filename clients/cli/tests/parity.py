@@ -41,6 +41,7 @@ MAPPINGS = {
     "plugin-publisher-revoke:": "plugins revoke NAMESPACE",
     "plugin-publishers:status": "plugins publishers (read-only status)",
     "plugin-toggle:": "plugins on|off ID",
+    "plugin-credential:": "plugins credential show|set|clear ID",
     "launch-device:": "launch-settings set KEY=VALUE",
     "launch:row:": "launch-settings set KEY=VALUE [layer and scope]; play GAME --set KEY=VALUE",
     "launch:stream:": "launch-settings set --runner ID KEY=VALUE",

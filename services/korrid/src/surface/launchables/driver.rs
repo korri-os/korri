@@ -864,6 +864,28 @@ impl Launchables {
             });
             return;
         }
+        // A plugin's secret row: an empty value clears, as its clear action
+        // sends. The value goes to korrid and is never kept here.
+        if let Some(plugin_id) = crate::surface::plugins::credential_plugin_from(&setting_id) {
+            tokio::spawn(async move {
+                let result = if value.trim().is_empty() {
+                    this.korrid.clear_plugin_credential(plugin_id).await
+                } else {
+                    this.korrid.set_plugin_credential(plugin_id, value).await
+                };
+                this.lock().settings_busy = false;
+                match result {
+                    SensitiveSettingOutcome::Err(failure) => {
+                        this.settings_problem(&setting_id, &failure.message)
+                    }
+                    SensitiveSettingOutcome::Ok(_) => {
+                        this.publish_settings_status(SurfaceSettingsStatus::Idle);
+                        this.load(false, None).await;
+                    }
+                }
+            });
+            return;
+        }
         let revision = self
             .lock()
             .facts

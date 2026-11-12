@@ -54,6 +54,9 @@ pub(super) struct TextRequest<'a> {
     pub headers: &'a [(String, String)],
     pub timeout: Option<Duration>,
     pub form: Option<&'a str>,
+    /// The owning plugin's secret (ADR 0034). korrid adds it on each hop to
+    /// the secret's own host, and on no other.
+    pub credential: Option<&'a crate::plugin_secrets::PluginCredential>,
 }
 
 /// The game download a `FinalDownload` names (ADR 0030 Change 2). With a
@@ -176,7 +179,7 @@ impl DownloadEngine {
 
     async fn response(&self, value: &str, offset: u64) -> Result<Response, Failure> {
         let url = Url::parse(value).map_err(|_| Failure::UnsafeUrl)?;
-        self.send(url, policy::Hosts::Any, None, |request| {
+        self.send(url, policy::Hosts::Any, None, None, |request| {
             if offset > 0 {
                 request.header(header::RANGE, format!("bytes={offset}-"))
             } else {
@@ -184,22 +187,29 @@ impl DownloadEngine {
             }
         })
         .await
-        .map(|(_, response)| response)
+        .map(|(_, response, _)| response)
     }
 
     /// One GET, or one form POST for a provider turn or game download, with manual
     /// redirects. Every hop passes the SSRF policy and, for provider traffic,
     /// the owning plugin's declared hosts. After a POST, 301, 302 and 303
     /// continue as a GET with no body and 307 and 308 repeat the POST, as
-    /// browsers do (RFC 9110 section 15.4).
+    /// browsers do (RFC 9110 section 15.4). A plugin's secret is added again
+    /// on each hop, and only on a hop to the secret's own host (ADR 0034).
+    /// The last value says whether the answering hop carried it.
     async fn send(
         &self,
         mut url: Url,
         hosts: policy::Hosts<'_>,
         mut form: Option<&str>,
+        credential: Option<&crate::plugin_secrets::PluginCredential>,
         configure: impl Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
-    ) -> Result<(Url, Response), Failure> {
+    ) -> Result<(Url, Response, bool), Failure> {
         policy::declared(&url, hosts)?;
+        // Only a request that starts on the secret's host carries it, and it
+        // is gone for good once a redirect leaves that host.
+        let mut credential =
+            credential.filter(|credential| credential.authorization(&url).is_some());
         for hops in 0..=5 {
             let client = self.client(&url).await?;
             let request = match form {
@@ -209,7 +219,15 @@ impl DownloadEngine {
                     .body(body.to_owned()),
                 None => client.get(url.clone()),
             };
-            let request = configure(request.header(header::ACCEPT_ENCODING, "identity"));
+            let mut request = configure(request.header(header::ACCEPT_ENCODING, "identity"));
+            let authorization = credential.and_then(|credential| credential.authorization(&url));
+            let credential_sent = authorization.is_some();
+            match authorization {
+                Some(authorization) => {
+                    request = request.header(header::AUTHORIZATION, authorization)
+                }
+                None => credential = None,
+            }
             let response = request.send().await.map_err(|error| {
                 if error.is_timeout() {
                     Failure::Stalled
@@ -218,7 +236,7 @@ impl DownloadEngine {
                 }
             })?;
             if !response.status().is_redirection() {
-                return Ok((url, response));
+                return Ok((url, response, credential_sent));
             }
             if matches!(response.status().as_u16(), 301..=303) {
                 form = None;
@@ -242,11 +260,12 @@ impl DownloadEngine {
         hosts: &[String],
     ) -> Result<TextResponse, Failure> {
         let work = async {
-            let (url, mut response) = self
+            let (url, mut response, _) = self
                 .send(
                     request.url,
                     policy::Hosts::Only(hosts),
                     request.form,
+                    request.credential,
                     |mut builder| {
                         for (name, value) in request.headers {
                             builder = builder.header(name, value);
@@ -307,11 +326,13 @@ impl DownloadEngine {
         mut progress: impl FnMut(Progress),
     ) -> Result<DownloadedGame, Failure> {
         let url = Url::parse(&request.url).map_err(|_| Failure::UnsafeUrl)?;
-        let (_, mut response) = self
+        // The game download never carries a plugin's secret.
+        let (_, mut response, _) = self
             .send(
                 url,
                 policy::Hosts::Only(hosts),
                 request.form.as_deref(),
+                None,
                 |b| b,
             )
             .await?;

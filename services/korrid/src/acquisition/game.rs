@@ -217,6 +217,9 @@ impl GameAcquisition {
                 provider_id: provider_id.to_owned(),
                 source: Arc::new(source),
                 hosts: Arc::new(registry.plugin_hosts(owner).to_vec()),
+                // No acquisition provider uses a secret (ADR 0034 has one
+                // real case, the artwork operation).
+                credential: None,
             },
             owner.to_owned(),
         ))

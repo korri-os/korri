@@ -439,3 +439,7 @@ async fn host_count_does_not_expand_peer_lan_or_private_control_authority() {
 #[cfg(test)]
 #[path = "settings_editability_tests.rs"]
 mod settings_editability_tests;
+
+#[cfg(test)]
+#[path = "plugin_credential_tests.rs"]
+mod plugin_credential_tests;

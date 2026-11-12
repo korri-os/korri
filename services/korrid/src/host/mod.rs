@@ -1038,7 +1038,7 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
-    fn settings_registry_source(&self) -> plugin_policy::RegistrySource {
+    pub(crate) fn settings_registry_source(&self) -> plugin_policy::RegistrySource {
         #[cfg(test)]
         if let Some(DynamicHostSource::Selected(_, registry)) = &self.dynamic {
             return plugin_policy::RegistrySource::Selected(Arc::clone(registry));
@@ -1056,7 +1056,8 @@ impl HostRuntime {
             .map_err(crate::settings_failure)?;
             let sensitive = crate::config::settings::read_sensitive(&runtime.private_state_root)
                 .map_err(crate::settings_failure)?;
-            Ok(crate::settings_snapshot(readable, sensitive))
+            crate::settings_snapshot(readable, sensitive, &runtime.private_state_root)
+                .map_err(crate::settings_failure)
         })
         .await
         .map_err(host_worker_failure)?
@@ -1086,7 +1087,8 @@ impl HostRuntime {
             .map_err(crate::settings_failure)?;
             let sensitive = crate::config::settings::read_sensitive(&runtime.private_state_root)
                 .map_err(crate::settings_failure)?;
-            Ok(crate::settings_snapshot(readable, sensitive))
+            crate::settings_snapshot(readable, sensitive, &runtime.private_state_root)
+                .map_err(crate::settings_failure)
         })
         .await
         .map_err(host_worker_failure)?
@@ -1158,7 +1160,8 @@ impl HostRuntime {
                                         .into(),
                             });
                         }
-                        Ok(crate::settings_snapshot(readable, sensitive))
+                        crate::settings_snapshot(readable, sensitive, &runtime.private_state_root)
+                            .map_err(crate::settings_failure)
                     }
                     Err(error) => {
                         // Only compensate the runtime when the file is still
@@ -2702,6 +2705,7 @@ esac
                 sources: vec!["plugin.ts".into()],
                 requires: vec![],
                 hosts: vec![],
+                credential_host: None,
                 files: std::collections::BTreeMap::from([("run".into(), package.join("run"))]),
             },
         ])

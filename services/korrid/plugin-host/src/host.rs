@@ -2988,6 +2988,7 @@ impl Host {
                 sources: report.sources,
                 requires: report.requires,
                 hosts: report.hosts,
+                credential_host: report.credential_host,
             })
             .collect();
         #[cfg(test)]
@@ -3369,6 +3370,7 @@ mod tests {
             native_units: BTreeMap::new(),
             ports: Ports::default(),
             hosts: Vec::new(),
+            credential_host: None,
             packages: BTreeMap::new(),
             files: BTreeMap::new(),
             entry: "plugin.ts".into(),

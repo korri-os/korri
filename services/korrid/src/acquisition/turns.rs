@@ -211,6 +211,9 @@ pub(super) struct ProviderContext {
     pub provider_id: String,
     pub source: std::sync::Arc<crate::script::source::SourceSnapshot>,
     pub hosts: std::sync::Arc<Vec<String>>,
+    /// The plugin's secret, when it declares one (ADR 0034). The handler
+    /// never receives it: korrid adds it to a request to its one host.
+    pub credential: Option<std::sync::Arc<crate::plugin_secrets::PluginCredential>>,
 }
 
 enum Turn<T> {
@@ -273,6 +276,7 @@ async fn run<T>(
                         headers: &request.headers,
                         timeout: request.timeout,
                         form: request.form.as_deref(),
+                        credential: context.credential.as_deref(),
                     },
                     &context.hosts,
                 )
