@@ -504,6 +504,22 @@ class Session:
         self.last_heartbeat = 0.0
         self.last_game_check = 0.0
 
+    def source_files(self, uid: int, gid: int) -> Path:
+        """Make the run directory and return the source's own directory in it.
+
+        The agent is root and the source is not. The agent keeps the run
+        directory and has the source's log there. The source's user gets
+        `home` for what the source writes, so it can place no link where the
+        agent writes or reads (see "Files in a run directory" above).
+        """
+        self.root = Path(tempfile.mkdtemp(prefix="korri-stream-cadence-", dir="/tmp"))
+        home = self.root / "home"
+        home.mkdir(mode=0o700)
+        self.source_log = append_log(self.root / "motion.log")
+        hand_over(uid, gid, home)
+        let_in(self.root)
+        return home
+
     def stop_source(self) -> None:
         if self.source:
             if self.source.poll() is None:
@@ -551,9 +567,9 @@ class Session:
             self.last_heartbeat = time.monotonic()
             if self.root is not None:
                 raise RuntimeError("source session already started")
-            self.root = Path(
-                tempfile.mkdtemp(prefix="korri-stream-cadence-", dir="/tmp")
-            )
+            compositor = self.facts["processes"]["compositor"]
+            home = self.source_files(compositor["uid"], compositor["gid"])
+            assert self.root is not None
             journal = command(
                 "journalctl",
                 "-u",
@@ -565,7 +581,6 @@ class Session:
                 "--no-pager",
             )
             self.cursor = journal.split("-- cursor: ", 1)[1].strip()
-            compositor = self.facts["processes"]["compositor"]
             env = dict(compositor["environment"])
             env["WAYLAND_DISPLAY"] = env.get(
                 "WAYLAND_DISPLAY", env.get("KORRI_WAYLAND_DISPLAY", "")
@@ -574,8 +589,8 @@ class Session:
             env.update(
                 CADENCE_WIDTH=str(display["rect"]["width"]),
                 CADENCE_HEIGHT=str(display["rect"]["height"]),
-                XDG_CACHE_HOME=str(self.root),
-                TMPDIR=str(self.root),
+                XDG_CACHE_HOME=str(home),
+                TMPDIR=str(home),
             )
 
             def restrict() -> None:
@@ -583,11 +598,9 @@ class Session:
                 os.setgid(compositor["gid"])
                 os.setuid(compositor["uid"])
 
-            os.chown(self.root, compositor["uid"], compositor["gid"])
-            self.source_log = (self.root / "motion.log").open("w")
             self.source = subprocess.Popen(
                 [request["motion"], "-f"],
-                cwd=self.root,
+                cwd=home,
                 env=env,
                 stdout=self.source_log,
                 stderr=subprocess.STDOUT,
@@ -597,10 +610,9 @@ class Session:
             for _ in range(100):
                 if self.source.poll() is not None:
                     raise RuntimeError(
-                        "motion source exited: "
-                        + (self.root / "motion.log").read_text()
+                        "motion source exited: " + plain_text(self.root / "motion.log")
                     )
-                if "PRESENT " in (self.root / "motion.log").read_text():
+                if "PRESENT " in plain_text(self.root / "motion.log"):
                     break
                 time.sleep(0.1)
             else:
@@ -642,10 +654,8 @@ class Session:
             if self.root is None:
                 raise RuntimeError("no run folder")
             return {
-                "motion_log": (self.root / "motion.log").read_text(),
-                "run_folder_bytes": sum(
-                    p.stat().st_size for p in self.root.rglob("*") if p.is_file()
-                ),
+                "motion_log": read_plain(self.root / "motion.log").decode(),
+                "run_folder_bytes": plain_bytes(self.root),
             }
         if operation == "close":
             return self.close()
@@ -667,11 +677,7 @@ class Session:
             except Exception as error:
                 errors.append("certificate revocation: " + str(error))
         root = self.root
-        size = (
-            sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
-            if root and root.exists()
-            else 0
-        )
+        size = plain_bytes(root) if root and root.exists() else 0
         if root:
             try:
                 shutil.rmtree(root)

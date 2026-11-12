@@ -531,6 +531,13 @@ opened without following a link, so a program of the run cannot send a root
 agent to a file outside. The viewer's agent keeps the same layout: the
 viewer's keys and caches and the capture's record are in `home`.
 
+The product sender's agent (`device.py`) has the same layout: `motion.log`
+is the agent's, in the run directory, and the frame-ID source has `home`
+for its own files. Before, that root agent gave the whole run directory to
+the compositor's user and then wrote and read `motion.log` there through
+calls that follow a link. `run` and `view` against a product sender have
+not run since this change; a test with no product covers the files only.
+
 **Cleanup.** Each child of the agent ends when the agent dies, however it
 dies. Each program of the fixture starts in a session of its own. `close`
 stops the source, Sunshine and the compositor, then looks for any process
