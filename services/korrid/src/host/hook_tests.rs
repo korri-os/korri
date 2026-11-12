@@ -24,6 +24,7 @@ struct RecordingBackend {
     game_sandbox: Mutex<Option<super::systemd_unit::LaunchSandbox>>,
     hook_sandboxes: Mutex<Vec<super::systemd_unit::LaunchSandbox>>,
     fail_game: Mutex<bool>,
+    pending_stop: Mutex<bool>,
     exit_unknown: Mutex<bool>,
     interrupt_step_once: Mutex<Option<String>>,
     hooks: Mutex<Vec<(String, Duration, BTreeMap<String, String>)>>,
@@ -110,7 +111,11 @@ impl LaunchUnitBackend for RecordingBackend {
     }
     fn stop(&self, _: &str) -> Result<(), LaunchUnitError> {
         self.events.lock().unwrap().push("stop".into());
-        *self.unit.lock().unwrap() = None;
+        if *self.pending_stop.lock().unwrap() {
+            self.unit.lock().unwrap().as_mut().unwrap().1 = LaunchUnitState::Stopping;
+        } else {
+            *self.unit.lock().unwrap() = None;
+        }
         Ok(())
     }
     fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError> {
@@ -284,6 +289,7 @@ fn after_steps_receive_exit_failure_stop_and_restart_results_and_exact_launch_id
         "exited",
         "failed",
         "stopped",
+        "timeout-stopped",
         "restart-exited",
         "restart-failed",
         "restart-stopped",
@@ -318,7 +324,25 @@ fn after_steps_receive_exit_failure_stop_and_restart_results_and_exact_launch_id
             if result.ends_with("failed") {
                 *backend.fail_game.lock().unwrap() = true;
             }
-            if result == "stopped" {
+            if result == "timeout-stopped" {
+                *backend.pending_stop.lock().unwrap() = true;
+                assert!(matches!(
+                    first.stop(&launched.launch_id),
+                    HostSessionStop::AlreadyStopping { .. }
+                ));
+                assert!(matches!(first.status(), HostSessionStatus::Stopping { .. }));
+                assert_eq!(backend.hooks.lock().unwrap().len(), 1);
+                *backend.pending_stop.lock().unwrap() = false;
+                *backend.fail_game.lock().unwrap() = true;
+                assert!(matches!(
+                    first.status(),
+                    HostSessionStatus::Completed { .. }
+                ));
+                assert!(matches!(
+                    first.status(),
+                    HostSessionStatus::Completed { .. }
+                ));
+            } else if result == "stopped" {
                 assert!(matches!(
                     first.stop(&launched.launch_id),
                     HostSessionStop::Completed { .. }

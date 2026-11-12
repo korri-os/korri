@@ -82,8 +82,10 @@ pkgs.testers.runNixOSTest {
     import shlex
     import time
 
-    def unit(name):
-        return f"systemd-run --unit={name} --uid=1000 --gid=1000 --service-type=exec -p PrivatePIDs=yes -p KillMode=control-group -p TimeoutStopSec=8"
+    # Keep the game value aligned with the generated-unit property regression
+    # in systemd_unit.rs. Hooks and this test's control retain their own bounds.
+    def unit(name, stop_timeout=30):
+        return f"systemd-run --unit={name} --uid=1000 --gid=1000 --service-type=exec -p PrivatePIDs=yes -p KillMode=control-group -p TimeoutStopSec={stop_timeout}"
 
     def start(name, script, native=False, temporary=False):
         request = {
@@ -152,7 +154,7 @@ pkgs.testers.runNixOSTest {
             machine.succeed(f"systemctl thaw {name}; systemctl kill --signal=KILL {name}")
 
     with subtest("control: a namespace init without a signal handler waits for the timeout"):
-        machine.succeed(unit("bare") + " ${pkgs.coreutils}/bin/sleep 1000")
+        machine.succeed(unit("bare", stop_timeout=8) + " ${pkgs.coreutils}/bin/sleep 1000")
         machine.wait_until_succeeds("systemctl is-active bare")
         elapsed = stop_seconds("bare")
         result = machine.succeed("systemctl show bare -p Result --value").strip()
@@ -172,6 +174,33 @@ pkgs.testers.runNixOSTest {
         elapsed = stop_seconds("game")
         assert elapsed < 4, elapsed
         machine.fail("pgrep -f '^/nix/store/[^ ]*/bin/sleep 1000$'")
+
+    with subtest("a queued stop acknowledges promptly and kills a game that ignores SIGTERM after 30 seconds"):
+        start("hung", "trap \"\" TERM INT HUP; touch /home/korri/hung-ready; while :; do sleep 1; done")
+        machine.wait_until_succeeds("test -f /home/korri/hung-ready", timeout=30)
+        assert machine.succeed("systemctl show -P TimeoutStopUSec hung").strip() == "30s"
+        started = time.monotonic()
+        machine.succeed("systemctl --no-ask-password stop hung --no-block")
+        acknowledged = time.monotonic() - started
+        assert acknowledged < 2, acknowledged
+        assert machine.succeed("systemctl show -P ActiveState hung").strip() == "deactivating"
+        machine.wait_until_succeeds("test \"$(systemctl show -P ActiveState hung)\" = failed", timeout=40)
+        elapsed = time.monotonic() - started
+        assert 29 <= elapsed < 40, elapsed
+        assert machine.succeed("systemctl show -P Result hung").strip() == "timeout"
+        assert machine.succeed("systemctl show -P ExecMainStatus hung").strip() == "9"
+        assert machine.succeed("systemctl show -P MainPID hung").strip() == "0"
+        print(f"hung stop: acknowledged={acknowledged:.3f}s, killed={elapsed:.3f}s")
+        machine.succeed("systemctl reset-failed hung")
+
+    with subtest("a legitimate save-on-exit longer than Steam's 20 second cleanup can finish"):
+        script = "trap 'sleep 21; printf saved > /home/korri/exit-save; exit 0' TERM; touch /home/korri/saving-ready; while :; do sleep 1; done"
+        start("saving", script)
+        machine.wait_until_succeeds("test -f /home/korri/saving-ready", timeout=30)
+        elapsed = stop_seconds("saving")
+        assert 20 <= elapsed < 30, elapsed
+        machine.succeed("test \"$(cat /home/korri/exit-save)\" = saved")
+        print(f"save-on-exit stop: {elapsed:.3f}s")
 
     with subtest("the unit keeps the game's exit status"):
         start("status", "exit 7")
