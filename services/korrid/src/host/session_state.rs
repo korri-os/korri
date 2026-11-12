@@ -3048,7 +3048,11 @@ impl HostSessionControl {
                     }
                 }
                 Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
-                    let _ = self.fail_active(state, launch_id, error.message);
+                    if matches!(state, ActiveState::Stopping { .. }) {
+                        self.complete_failed_stop(state, launch_id);
+                    } else {
+                        let _ = self.fail_active(state, launch_id, error.message);
+                    }
                 }
                 Err(_) => *state = ActiveState::RecoveryBlocked,
             }
@@ -4011,6 +4015,9 @@ impl HostSessionControl {
                         Ok(LaunchUnitState::Stopping) => {
                             return HostSessionStop::AlreadyStopping { launch_id };
                         }
+                        Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                            return self.complete_failed_stop(&mut state, launch_id);
+                        }
                         _ => {}
                     }
                 }
@@ -4030,6 +4037,9 @@ impl HostSessionControl {
                     | LaunchUnitState::FreezerTransition
                     | LaunchUnitState::Stopping,
                 ) => HostSessionStop::AlreadyStopping { launch_id },
+                Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                    self.complete_failed_stop(&mut state, launch_id)
+                }
                 Err(_) => {
                     *state = ActiveState::RecoveryBlocked;
                     HostSessionStop::RecoveryBlocked
@@ -4112,6 +4122,24 @@ fn status_from_state(state: &ActiveState) -> HostSessionStatus {
 }
 
 impl HostSessionControl {
+    fn complete_failed_stop(&self, state: &mut ActiveState, launch_id: String) -> HostSessionStop {
+        // A unit that fails while stopping (including TimeoutStopSec's
+        // SIGKILL) has ended the requested session. Keep the snapshot marked
+        // interrupted: forceful termination cannot promise a final save flush.
+        // Crashes observed while running still use fail_active.
+        if self.clear_failed_unit(&launch_id).is_err()
+            || self.complete_active_snapshot(true).is_err()
+        {
+            *state = ActiveState::RecoveryBlocked;
+            HostSessionStop::RecoveryBlocked
+        } else {
+            *state = ActiveState::Completed {
+                launch_id: launch_id.clone(),
+            };
+            HostSessionStop::Completed { launch_id }
+        }
+    }
+
     fn complete_stop(&self, state: &mut ActiveState, launch_id: String) -> HostSessionStop {
         if self.complete_active().is_err() {
             *state = ActiveState::RecoveryBlocked;
@@ -6840,7 +6868,7 @@ printf '[{{"success":true}}]'
         );
         assert_eq!(
             SystemdLaunchUnitBackend::stop_arguments(id).unwrap(),
-            ["--system", "--no-ask-password", "stop", unit]
+            ["--system", "--no-ask-password", "stop", unit, "--no-block"]
         );
         assert!(SystemdLaunchUnitBackend::stop_arguments("game-name").is_err());
         assert_eq!(
@@ -7020,7 +7048,7 @@ printf '[{{"success":true}}]'
         backend.stop(id).unwrap();
         assert_eq!(
             fs::read_to_string(&log).unwrap(),
-            format!("{show}--system --no-ask-password stop {unit}\n")
+            format!("{show}--system --no-ask-password stop {unit} --no-block\n")
         );
 
         // Frozen: thaw, then stop, in that order.
@@ -7030,7 +7058,7 @@ printf '[{{"success":true}}]'
         assert_eq!(
             fs::read_to_string(&log).unwrap(),
             format!(
-                "{show}--system --no-ask-password thaw {unit}\n--system --no-ask-password stop {unit}\n"
+                "{show}--system --no-ask-password thaw {unit}\n--system --no-ask-password stop {unit} --no-block\n"
             )
         );
         assert_eq!(fs::read_to_string(&freezer).unwrap(), "running");
@@ -9611,6 +9639,78 @@ printf '[{{"success":true}}]'
     }
 
     #[test]
+    fn requested_stop_kill_completes_normally_and_captures_once_only_after_exit() {
+        use crate::saves::{store::NativeSaveStore, SaveRepository};
+        let root = tempfile::tempdir().unwrap();
+        let save_root = root.path().join("game");
+        let folder = save_root.join("saves");
+        fs::create_dir_all(&folder).unwrap();
+        let input = serde_json::json!({"runnerId":"mgba","program":"game","accountRoot":root.path().join("users").join(PERSON),"saveRoot":save_root,"cacheRoot":root.path(),"files":{},"artifacts":{}});
+        let handoff = serde_json::json!({"plan":{"command":"game","args":[],"saveLocations":[{"key":"saves","kind":"save","path":folder}]},"runnerArgv":["game"],"releaseId":"gba-release"});
+        let command = vec![
+            "korrid".into(),
+            "plugin-launch".into(),
+            "unused-source".into(),
+            input.to_string(),
+            "{\"modifiers\":[]}".into(),
+            handoff.to_string(),
+        ];
+        let backend = Arc::new(DeterministicBackend::default());
+        let clock = TestClock::at(1_700_000_000);
+        let control = control_with_clock(root.path(), backend.clone(), clock.clone());
+        let id = control
+            .prepare("gba/wario", Some(PERSON), Ok(&command), &BTreeMap::new())
+            .unwrap()
+            .launch_id;
+        fs::write(folder.join("game.srm"), b"progress").unwrap();
+        let store = NativeSaveStore::new(root.path());
+        backend.state.lock().unwrap().stop_times_out = true;
+        assert_eq!(
+            control.stop(&id),
+            HostSessionStop::AlreadyStopping {
+                launch_id: id.clone()
+            }
+        );
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::Stopping { .. }
+        ));
+        assert!(store.records(PERSON, "gba/wario").unwrap().is_empty());
+        clock.advance(30);
+        {
+            let mut state = backend.state.lock().unwrap();
+            state.stop_times_out = false;
+            state
+                .failed_units
+                .insert(id.clone(), "game unit failed with signal 9".into());
+        }
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::Completed {
+                launch_id: id.clone()
+            }
+        );
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::Completed {
+                launch_id: id.clone()
+            }
+        );
+        assert_eq!(
+            control.stop(&id),
+            HostSessionStop::Completed { launch_id: id }
+        );
+        let records = store.records(PERSON, "gba/wario").unwrap();
+        assert_eq!(records.len(), 1);
+        // The surface treats the requested stop as normal, but a killed
+        // process may not have flushed its latest save. Keep that fact.
+        assert!(records[0].interrupted);
+        assert_eq!(records[0].duration_seconds, 30);
+        assert_eq!(stats(&control, "gba/wario").play_count, 1);
+        assert!(read_active(&control.identity_root).unwrap().is_none());
+    }
+
+    #[test]
     fn netplay_receiver_never_reads_or_captures_save_history() {
         use crate::saves::{store::NativeSaveStore, SaveRepository};
         let root = tempfile::tempdir().unwrap();
@@ -9894,7 +9994,7 @@ printf '[{{"success":true}}]'
             assert!(cleaning_failure, "failed-unit cleanup did not start");
             assert!(matches!(
                 observing.join().unwrap(),
-                HostSessionStatus::Failed { .. }
+                HostSessionStatus::Completed { .. }
             ));
             assert_eq!(
                 stopping.join().unwrap(),
