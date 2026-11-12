@@ -32,6 +32,7 @@ from discovery import (
     proc_environment,
     properties,
     tcp_ports,
+    watched_display,
 )
 
 
@@ -322,7 +323,20 @@ def discover() -> dict:
         "working_encoders": encoder_probe(current_log),
     }
     facts["display"] = get_output(facts)
+    # Why the frame-ID source must not go on this display; None where korrid's
+    # display facts mark it unwatched. Read here, before anything wakes it.
+    facts["watched_display"] = watched_display(
+        brain_env.get("KORRID_DISPLAYS"), facts["display"]["name"]
+    )
     return facts
+
+
+def korrid_displays() -> str | None:
+    """KORRID_DISPLAYS as the running korrid has it, or None when it has none."""
+    brain = proc_environment(
+        Path(f"/proc/{int(unit('korrid')['MainPID'])}/environ").read_bytes()
+    )
+    return brain.get("KORRID_DISPLAYS")
 
 
 def sway(facts: dict, *args: str) -> str:
@@ -514,6 +528,10 @@ class Session:
         operation = request["operation"]
         if operation == "discover":
             return self.facts
+        if operation in ("wake", "provision", "start") and self.facts["watched_display"]:
+            # A person may be looking at the display: nothing wakes it, and the
+            # source does not start on it.
+            raise RuntimeError(self.facts["watched_display"])
         if operation == "wake":
             return wake(self.facts)
         if operation == "clock":

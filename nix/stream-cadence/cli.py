@@ -707,6 +707,9 @@ def run_case(
     samples = []
     latest = ""
     try:
+        if facts.get("watched_display"):
+            # A person may be looking at the sender's display. Nothing wakes it.
+            raise Refusal(facts["watched_display"])
         host, port, app, _ = sender_stream(args, remote, facts, certificate, motion)
         before = clock(remote)
         facts["clock_bridge_before"] = before
@@ -1018,6 +1021,10 @@ def view_case(
     samples: list[dict] = []
     latest = ""
     try:
+        if facts.get("watched_display"):
+            # A product sender shows the source on its own display, and a person
+            # may be looking at it. A sender fixture has no such fact.
+            raise Refusal(facts["watched_display"])
         seat = viewer.request("discover")
         facts["viewer"] = seat
         # Before the sender fixture or anything else starts: a viewer device that
@@ -1052,6 +1059,9 @@ def view_case(
                 raise Refusal(
                     f"The viewer device's own display could not be read: {seat.get('display_unread')}"
                 )
+            if seat.get("watched_display"):
+                # Before the sender starts and before anything wakes that display.
+                raise Refusal("Viewer device: " + seat["watched_display"])
             mode = seat["display"]["mode"]
             viewer_refresh = seat["display"]["refresh_hz"]
             width, height = args.resolution or (mode["width"], mode["height"])

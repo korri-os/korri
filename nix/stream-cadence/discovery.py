@@ -97,3 +97,53 @@ def tcp_ports(text: str, inodes: set[str]) -> list[int]:
         if len(fields) > 9 and fields[3] == "0A" and fields[9] in inodes:
             ports.add(int(fields[1].rsplit(":", 1)[1], 16))
     return sorted(ports)
+
+
+def watched_display(facts: str | None, output: str) -> str | None:
+    """Why a test pattern must not go on this display, or None for an unwatched display.
+
+    `facts` is KORRID_DISPLAYS from korrid's environment: the device's own
+    display facts, where an entry carries `unwatched` (CONTEXT.md, "Unwatched
+    display": a display that no person looks at, such as a dummy plug). The
+    product-sender measure shows the frame-ID source fullscreen on the
+    device's display and wakes it. It does that only where the device says
+    that nobody looks. A fact that cannot be read is no permission.
+    """
+    looked = (
+        f"The tool looked for the display {output} in KORRID_DISPLAYS in korrid's environment"
+    )
+    refusal = (
+        " This measure shows a test pattern fullscreen on that display and wakes it, so it does "
+        "not start. Measure this device with a private pair: view with --sender-fixture and "
+        "the same target for sender and viewer uses no display of the device."
+    )
+    if facts is None:
+        found = "korrid has no KORRID_DISPLAYS"
+    else:
+        try:
+            rows = json.loads(facts)
+            row = next(
+                (r for r in rows if isinstance(r, dict) and r.get("name") == output), None
+            ) if isinstance(rows, list) else None
+        except ValueError:
+            rows, row = None, None
+        if not isinstance(rows, list):
+            found = "its value is not a list of displays"
+        elif row is None:
+            found = "it has no entry for that display"
+        elif not isinstance(row.get("unwatched"), bool):
+            found = "the entry does not say whether the display is unwatched"
+        elif row["unwatched"]:
+            return None
+        else:
+            return (
+                f"The display {output} of this device is not marked unwatched in korrid's "
+                "display facts (KORRID_DISPLAYS): a person may be looking at this display."
+                + refusal
+            )
+    return (
+        f"{looked}, and {found}. Whether a person looks at this display is not known, and "
+        "the tool does not guess." + refusal
+    )
+
+

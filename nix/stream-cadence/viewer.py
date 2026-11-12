@@ -32,6 +32,7 @@ import threading
 import time
 from typing import TextIO
 
+from discovery import watched_display
 from heat import END_MARGIN, must_end, no_start, thermal_limits, thermal_zones
 import device
 from device import (
@@ -41,6 +42,7 @@ from device import (
     games,
     get_output,
     hand_over,
+    korrid_displays,
     let_in,
     live_games,
     model,
@@ -279,6 +281,20 @@ def own_display(shell: dict, read=None) -> tuple[dict | None, str | None]:
         return None, str(error)
 
 
+def own_display_watched(display: dict | None, read=None) -> str | None:
+    """Why the installed viewer must not show on the device's own display, or None.
+
+    None also where no own display is read: only a viewer on that display asks.
+    """
+    if display is None:
+        return None
+    try:
+        facts = (read or korrid_displays)()
+    except Exception as error:
+        return f"{watched_display(None, display['name'])} (korrid's environment: {error})"
+    return watched_display(facts, display["name"])
+
+
 def product_compositor() -> dict:
     compositor = proc(int(unit("korri-compositor")["MainPID"]))
     if Path(compositor["exe"]).name != "sway":
@@ -313,6 +329,9 @@ class Session:
             # has its own output, so it does not need exactly one product output.
             "display": display,
             "display_unread": display_unread,
+            # Why the installed viewer must not show there: a person may be
+            # looking. None where korrid's display facts mark it unwatched.
+            "watched_display": own_display_watched(display),
             "plugin": installed,
             # Why no installed viewer is usable; a status that fails is not "absent".
             "plugin_missing": missing,
@@ -591,6 +610,9 @@ class Session:
                 f"The renderer {renderer!r} is not one of the fixture's compositor: "
                 f"{', '.join(RENDERERS)}. Only the fixture has a renderer to choose."
             )
+        if not request["fixture"] and self.facts["watched_display"]:
+            # Before anything wakes the display or starts on it.
+            raise RuntimeError(self.facts["watched_display"])
         plugin_viewer = bool(request.get("plugin_viewer"))
         if plugin_viewer and not (request["fixture"] and self.facts["plugin"]):
             raise RuntimeError(

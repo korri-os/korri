@@ -87,6 +87,23 @@ startup encoder probe failed with the panel off. The tool can wake an otherwise
 healthy service from idle-off: it sends compositor seat activity, waits for the
 output's power state, and repeats activity every 60 seconds.
 
+**No test pattern on a display that a person may be looking at.** `run`,
+`view` against a product sender, and the installed viewer on a device's own
+display show a test picture fullscreen on that display and wake it. They
+run only where the device marks the display unwatched (CONTEXT.md,
+"Unwatched display": a display that no person looks at, such as a dummy
+plug). The fact is the `unwatched` value of the display's entry in
+`KORRID_DISPLAYS`, which the agent reads from the environment of the running
+korrid. aka's `HDMI-A-1` is marked unwatched. ibuki's `DP-1` is a family's
+TV and is not: these paths refuse there before they wake the display or
+start anything, and the refusal names the private pair as the way to
+measure on such a device. When the fact cannot be read (no `KORRID_DISPLAYS`,
+no entry for the display, no `unwatched` value), the tool refuses and says
+what it looked for. There is no option that overrides this. A handheld's
+own panel is not unwatched either, so the installed-viewer path is refused
+on it today; the step that needs that path adds what it needs, with its own
+reasoning.
+
 Pacing marker strings live only in `discovery.py:MARKERS`. The published plugin
 may print none: that is `unmarked`, a valid measurement unless lock is required.
 Fallback and safety-guard markers label a run `fallback`.
@@ -221,7 +238,9 @@ it. The sender still revokes the certificate on exit.
 
 On a device with the enabled `@korri:moonlight` plugin, `view` runs the
 plugin's own `moonlight` on the device's own compositor and its real panel,
-when the sender is a product sender or is on another device. (A private
+when the sender is a product sender or is on another device, and only
+where the device marks that display unwatched (see "Discovery and
+refusal"); no handheld's panel is marked so today. (A private
 pair on one device never uses that device's display; see "The plugin's
 viewer in the fixture".)
 A plugin that is switched off, or whose `korri-plugin status` fails, is not
@@ -313,7 +332,7 @@ from the names of the targets. The reason for the rule is ibuki: a
 living-room device with the plugin, whose one display is the family's TV.
 The path on the device's own display stays for an installed viewer on
 another device than the sender, and for the installed viewer of a product
-sender. Nothing of a fixture run wakes the display, sends the product
+sender, where that display is marked unwatched. Nothing of a fixture run wakes the display, sends the product
 compositor seat activity or asks it for focus; the agent only reads the
 display's mode when it starts, and a display that cannot be read does not
 stop a fixture run.
