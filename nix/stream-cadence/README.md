@@ -309,8 +309,8 @@ viewer alone:
 | A run ends at once | 10 °C below a zone's critical trip point, or half-way between its highest passive trip point and its critical trip point when that is lower. |
 | A run does not start, and a running viewer is stopped | when the guard cannot read: a zone that has a limit is gone or gives no temperature, a zone's trip points cannot be read, or the guard's own thread fails. |
 | A device with a hardware picture path does not run | when no zone has a critical trip point: the guard has no limit for it. |
-| A device with a hardware picture path does not run the software viewer | ever. |
-| A viewer on a hardware picture path is stopped | when its log says that its first frame did not come from the hardware decoder, or when it uses more than 1.0 CPU second each second for 2 s. |
+| A device with a hardware picture path, or with a battery of its own, hosts no fixture | ever: no software viewer and no sender fixture. |
+| A viewer on a hardware picture path is stopped | when any line of its log says that a frame did not come from the hardware decoder, or when it uses more than 1.0 CPU second each second for 2 s. |
 | A valid run on a hardware picture path | needs the log line of the measured start that says hardware decode started. |
 
 **A device with no thermal zone.** The decision: a device with a hardware
@@ -330,8 +330,7 @@ or the fixture's Sunshine, compositor and source. A slow host or link cannot
 delay the stop. The run ends as invalid with the reason, also when the stop
 comes after the last sample, and cleanup runs as after any run.
 
-A hot build host is therefore refused as viewer and as sender. That is
-intended, and a measure that needs that host waits until it is cooler.
+A hot host is therefore refused as viewer and as sender. That is intended.
 
 Each viewer start writes its own `viewer.log`; the log of the locating start
 is kept as `viewer.earlier.log`. Each viewer sample holds `thermal` (a list:
@@ -360,9 +359,23 @@ nix run .#stream-cadence -- view --sender local --viewer operator@viewer \
 ```
 
 `--sender-fixture` gives the measure a private sender. The sender target
-then needs no product Sunshine, no Korri compositor, no certificate socket
-and no root. A game on a device does not stop the measure, because the
-fixture does not use the device's display.
+then needs no product Sunshine, no certificate socket and no product
+display. On a Korri device a `korri-game-*` unit still refuses the start and
+ends a run, until the pair is proven beside a game.
+
+**Where the fixtures run.** Both fixtures, sender and viewer, are for a
+machine on mains power with no hardware picture path: a server or a desktop.
+They do not start:
+
+- on a device whose chip is in korrid's table of hardware picture paths;
+- on a device with a battery of its own under `/sys/class/power_supply`. A
+  battery means a handheld or a laptop, also where korrid's table does not
+  know the chip. A peripheral's battery (scope `Device`) does not count; a
+  supply whose type cannot be read counts. The build host is a laptop, so
+  it hosts neither fixture;
+- on a hot host, or where the heat guard cannot read (see "The heat guard").
+
+A device with a battery runs only its installed viewer. The refusal says why.
 
 The agent `sender.py` owns one run directory under `/tmp`. In it run:
 
@@ -377,7 +390,7 @@ The fixture discovers what it uses:
 | Value | How |
 | --- | --- |
 | Ports | A port that the kernel reports free, with Sunshine's whole span free around it. The fixture never takes the span of Sunshine's default port. That keeps it away from a Sunshine that uses the default; it knows nothing of a Sunshine on other ports. |
-| Render node | Each node in `/dev/dri` that the user can open, in order. The first node on which Sunshine finds a hardware encoder wins. With none, the first node that encodes at all. |
+| Render node | Each node in `/dev/dri` that the fixture's user can open, tried as that user, in order. The first node on which Sunshine finds a hardware encoder wins. With none, the first node that encodes at all. |
 | Encoder | Sunshine's configuration names none. Sunshine tries hardware encoders first. The result records `encoder`, `working_encoders` and `sender_fixture.hardware_encoder`. |
 | Display mode | The requested stream size, at the steady refresh below. |
 
@@ -434,11 +447,13 @@ root, as for a product measure. Then:
 - Nothing of the fixture runs as root. The compositor, the source, Sunshine
   and `swaymsg` take the product compositor's user, with only the
   supplementary groups that own a render node. As root on a host with no
-  `korri-compositor` the fixture refuses.
+  `korri-compositor`, or where that compositor itself runs as root, the
+  fixture refuses; so does the viewer's agent.
 - The fixture makes no input device. Stock Sunshine makes a virtual mouse
   and keyboard when it starts, and a touch screen and a pen tablet for each
   client, all through `/dev/uinput`; the product's input stack would see
-  them. The fixture does not start where its user can open `/dev/uinput`.
+  them. The fixture does not start where its user can open `/dev/uinput`;
+  the open is tried as that user, so ACLs count.
   Its Sunshine has `mouse`, `keyboard` and `controller` off. A new entry
   under `/dev/input` during a run ends the run and fails the restore check
   (`restore.new_input_devices`), whoever made it.
@@ -449,12 +464,27 @@ root, as for a product measure. Then:
   sender's agent, except for the compositor's user. The viewer's agent
   compares the compositor's PID as before.
 
+**Files.** The agent owns the run directory and writes only there: its
+logs, `sway.conf`, `sunshine.conf`. The fixture's programs write in `home`
+and `rt`, which the agent hands to their user as its last step of preparing.
+Afterwards the agent writes nothing in them and only reads there. Every file
+that an agent creates, appends, reads or hands over in a run directory is
+opened without following a link, so a program of the run cannot send a root
+agent to a file outside. The viewer's agent keeps the same layout: the
+viewer's keys and caches and the capture's record are in `home`.
+
 **Cleanup.** Each child of the agent ends when the agent dies, however it
-dies. `close` stops the source, Sunshine and the compositor, then looks for
-any process that still carries the run directory in its arguments,
-environment or working directory. It ends each one and lists it in
-`restore.stray_processes_killed`. The restore check fails the run when a
-process or the directory is left.
+dies. Each program of the fixture starts in a session of its own. `close`
+stops the source, Sunshine and the compositor, then looks for any process
+that still carries the run directory in its arguments, environment or
+working directory. It kills one only when the fixture's user owns it and it
+is in a session that the agent started, and lists it in
+`restore.stray_processes_killed`. Any other match is listed in
+`restore.other_processes` and left alive: an operator's shell in the run
+directory is not the agent's to kill. The restore check fails the run when a
+fixture process or the directory is left, and also when a listed process
+belongs to the fixture's user, because it may be a fixture process that left
+its session.
 
 **What the fixture does not prove.** It is not the product's sender. It does
 not use the product's KMS capture, its encoder settings, its pacing or its
@@ -473,7 +503,10 @@ on one graphics card.
 both on aka (`view --sender root@aka --sender-fixture --viewer root@aka`), at
 the defaults: 1920x1080, a request of 60, 60 scored seconds. The fixture's
 Sunshine started beside the product's and encoded with the AMD card's VAAPI
-H.264 encoder, as the user `korri`. Two sets of five runs:
+H.264 encoder, as the user `korri`. Two sets of five runs. Set B's build is
+commit `6c092579f`. Set A's build came from the tree just before that commit
+and lacks three lines of it, which remove a stale compositor socket before a
+second render-node attempt; no run on aka made a second attempt.
 
 | | Set A | Set B |
 | --- | --- | --- |
@@ -594,7 +627,8 @@ How a gap is judged:
 - **The scored time.** A gap counts when any part of it lies in the scored
   time. A gap after the scored end also counts when it loses an ID that the
   sender presented inside the scored time, because `score()` books a lost ID
-  by the sender's time.
+  by the sender's time. A gap there that cannot be judged counts when any ID
+  that the records around it span was presented inside the scored time.
 
 A lost ID with no gap within one record of it is a dropped frame
 (`capture_misses`) and no gap.
@@ -647,7 +681,8 @@ for each metric.
 `verdict` refuses two results that were not measured under the same
 conditions: the sender's display mode, Sunshine version, encoder and capture
 backend, the sender's model and render node, the viewer device's model, and
-the requested resolution, frame rate, codec, bitrate and viewer refresh. A
+the requested resolution, frame rate, codec, bitrate and viewer refresh, and
+the limit `max_capture_gaps` of the run. A
 difference there would judge the sender or the device, not the viewer. The
 model is the device's own name for itself; on a board whose firmware gives a
 placeholder (aka says "System Product Name"), two such machines look alike.
