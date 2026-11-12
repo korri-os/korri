@@ -79,7 +79,7 @@ shoot() { # size name
     [[ -n $id ]] && break
     sleep 0.1
   done
-  if [[ -z $id ]]; then echo "no window for $name ($size)" >&2; cat "$run/shell.log" >&2; kill "$shell_pid" "$fixture_pid" 2>/dev/null || :; exec 7>&-; return 0; fi
+  if [[ -z $id ]]; then echo "no window for $name ($size)" >&2; cat "$run/shell.log" >&2; kill "$shell_pid" "$fixture_pid" 2>/dev/null || :; exec 7>&-; return 1; fi
   # Home asks Korri for its lists one after another before it settles.
   sleep 1.2
   while read -r step; do
@@ -111,7 +111,8 @@ shoot() { # size name
 
 for size in "${sizes[@]}"; do
   for name in "${names[@]}"; do
-    shoot "$size" "$name"
+    # A window that never came is tried once more.
+    shoot "$size" "$name" || shoot "$size" "$name" || { echo "no shot $size $name" >&2; continue; }
     echo "shot $size $name"
   done
 done

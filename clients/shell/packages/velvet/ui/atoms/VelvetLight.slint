@@ -1,6 +1,12 @@
 // VelvetLight: the stage light. Two soft pools of one colour on the dark:
 // the large one up and to the right, where the picture's subject usually
-// stands, and a low dim one at the left foot. Static: a gradient, no blur.
+// stands, and a low dim one at the left foot. Static: two radial gradients
+// drawn once, no blur and no filter. Each pool is far larger than the window
+// and fades to nothing well inside its own square, so no edge of it shows.
+//
+// Each stands on whole pixels: the renderer leaves the window's last column
+// undrawn under a part that starts on a fraction of a pixel and runs past
+// the window's right edge.
 
 import { Tokens } from "../tokens.slint";
 
@@ -8,16 +14,16 @@ export component VelvetLight inherits Rectangle {
     in property <color> glow: Tokens.usher;
     in property <bool> narrow;
     Rectangle {
-        x: parent.width * (root.narrow ? 0.5 : 0.7) - self.width / 2;
-        y: parent.height * (root.narrow ? 0.2 : 0.32) - self.height / 2;
-        width: Math.max(parent.width, parent.height) * 1.5;
+        x: Math.round((parent.width * (root.narrow ? 0.5 : 0.7) - self.width / 2) / 1px) * 1px;
+        y: Math.round((parent.height * (root.narrow ? 0.2 : 0.32) - self.height / 2) / 1px) * 1px;
+        width: Math.round(Math.max(parent.width, parent.height) * 1.5 / 1px) * 1px;
         height: self.width;
         background: @radial-gradient(circle, root.glow.with-alpha(0.9) 0%, root.glow.with-alpha(0.42) 30%, root.glow.with-alpha(0.1) 58%, root.glow.with-alpha(0) 72%);
     }
     Rectangle {
-        x: parent.width * 0.15 - self.width / 2;
-        y: parent.height * 0.95 - self.height / 2;
-        width: Math.max(parent.width, parent.height) * 1.1;
+        x: Math.round((parent.width * 0.15 - self.width / 2) / 1px) * 1px;
+        y: Math.round((parent.height * 0.95 - self.height / 2) / 1px) * 1px;
+        width: Math.round(Math.max(parent.width, parent.height) * 1.1 / 1px) * 1px;
         height: self.width;
         background: @radial-gradient(circle, root.glow.with-alpha(0.3) 0%, root.glow.with-alpha(0.08) 45%, root.glow.with-alpha(0) 72%);
     }

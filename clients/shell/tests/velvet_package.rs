@@ -18,6 +18,9 @@
 //! - The whole convention once a scenario (`korri_shell::targets::drawn`):
 //!   each focus entry of the view selects one element, and no element is
 //!   selected with no entry focused.
+//! - The backdrop has no seam: the stage's gradients reach every edge of the
+//!   window at every size (no neighbouring pixels more than a few levels
+//!   apart), alone and under the home with no art.
 //! - A system's set shows only that system's games, over the fixture
 //!   korrid's catalog (it filters `MoveCatalog` by `query.systemId`).
 //! - Budgets: logic.js loads well inside one call's budget; every `view()`
@@ -380,6 +383,176 @@ fn every_preview_state_draws_at_every_size() {
     }
     assert!(failures.is_empty(), "{failures:#?}");
     assert!(drawn >= 5 * 150, "only {drawn} frames");
+}
+
+/// The most one backdrop pixel may differ from its neighbour, a channel, in
+/// 8-bit levels. The stage's gradients run over hundreds of pixels: a level
+/// or two a pixel at their steepest. A layer that stops short of the window
+/// steps by ten or more.
+const SEAM_LEVELS: u8 = 4;
+
+/// The largest step between neighbours along the rows `rows` (across the
+/// window) and, with `down`, along every column too.
+fn worst_step(
+    pixels: &[Rgb8Pixel],
+    width: u32,
+    height: u32,
+    rows: &[u32],
+    down: bool,
+) -> (u8, u32, u32) {
+    let at = |x: u32, y: u32| pixels[(y * width + x) as usize];
+    let delta = |a: Rgb8Pixel, b: Rgb8Pixel| {
+        a.r.abs_diff(b.r)
+            .max(a.g.abs_diff(b.g))
+            .max(a.b.abs_diff(b.b))
+    };
+    let mut worst = (0, 0, 0);
+    for &y in rows {
+        for x in 1..width {
+            let step = delta(at(x - 1, y), at(x, y));
+            if step > worst.0 {
+                worst = (step, x, y);
+            }
+        }
+    }
+    if down {
+        for x in 0..width {
+            for y in 1..height {
+                let step = delta(at(x, y - 1), at(x, y));
+                if step > worst.0 {
+                    worst = (step, x, y);
+                }
+            }
+        }
+    }
+    worst
+}
+
+/// Windows no device has, for what must hold at every size: odd numbers, so
+/// that a half or a fifth of the window is a fraction of a pixel.
+const ODD_SIZES: [(u32, u32); 6] = [
+    (333, 251),
+    (853, 481),
+    (1001, 563),
+    (1367, 769),
+    (777, 1203),
+    (2561, 1441),
+];
+
+/// The backdrop has no seam. The stage is a few static gradients (the light,
+/// the vignette, the house lights) and each must reach every edge of the
+/// window at every size: one that stops short shows as a line down or across
+/// the stage. (The vignette's left-edge part once stood in the middle of the
+/// window, a fifth of the width in: #425.)
+///
+/// - The stage's parts alone (the light, the vignette, the stage with no
+///   picture), at the six sizes and six odd ones: no pixel differs from its neighbour, to the
+///   side or below, by more than SEAM_LEVELS.
+/// - The whole home with no art and the empty library, through logic.js, at
+///   the same sizes: the same along the rows over and under everything the
+///   page draws, to the window's last column.
+#[test]
+fn the_backdrop_has_no_seam() {
+    install();
+    let root = package();
+    let home = scenario(&root, "home-no-art");
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    let parts = [
+        (
+            "ui/atoms/VelvetLight.atom.preview.slint",
+            vec!["Ember", "Tide", "House"],
+        ),
+        (
+            "ui/atoms/VelvetScrim.atom.preview.slint",
+            vec!["Wide", "Narrow"],
+        ),
+        (
+            "ui/organisms/VelvetStage.organism.preview.slint",
+            vec!["LightOnly", "Library", "House"],
+        ),
+    ];
+    for (file, states) in &parts {
+        let result = pollster::block_on(
+            slint_interpreter::Compiler::default().build_from_path(root.join(file)),
+        );
+        assert!(
+            !result.has_errors(),
+            "{file}: {:?}",
+            result.diagnostics().collect::<Vec<_>>()
+        );
+        for state in states {
+            let definition = result
+                .component(state)
+                .unwrap_or_else(|| panic!("{file} has no state {state}"));
+            for (width, height) in SIZES.into_iter().chain(ODD_SIZES) {
+                let screen = start(&root, &home["models"][0], width, height)
+                    .0
+                    .view()
+                    .unwrap()["screen"]
+                    .clone();
+                let instance = definition.create().unwrap();
+                instance
+                    .window()
+                    .set_size(slint::PhysicalSize::new(width, height));
+                let _ = instance.set_property("screen", screen_value(&screen));
+                instance.show().unwrap();
+                // The frame hands the plan to the tokens after its first draw.
+                for _ in 0..3 {
+                    render(width, height);
+                    settle();
+                }
+                let pixels = render(width, height);
+                let rows: Vec<u32> = (0..height).collect();
+                let (step, x, y) = worst_step(&pixels, width, height, &rows, true);
+                checked += 1;
+                if step > SEAM_LEVELS {
+                    failures.push(format!(
+                        "{file} {state} at {width}x{height}: a step of {step} levels at ({x},{y})"
+                    ));
+                }
+                instance.hide().unwrap();
+            }
+        }
+    }
+    // The whole page: the rows over the Menu pill and under the row of games hold the backdrop alone.
+    let views =
+        korri_shell::package::compile(&korri_shell::package::Package::at(&root).unwrap()).unwrap();
+    for (name, rows_of) in [("home-no-art", true), ("empty", false)] {
+        let scenario = scenario(&root, name);
+        for (width, height) in SIZES.into_iter().chain(ODD_SIZES) {
+            let (mut engine, _korri) = start(&root, &scenario["models"][0], width, height);
+            let instance = views.surface.create().unwrap();
+            instance
+                .window()
+                .set_size(slint::PhysicalSize::new(width, height));
+            instance.show().unwrap();
+            let mut binder = view::Binder::new(&views.surface);
+            let mut images = ImageCache::new(&root);
+            binder
+                .apply(&instance, &engine.view().unwrap(), &mut images)
+                .unwrap();
+            for _ in 0..3 {
+                render(width, height);
+                settle();
+            }
+            let pixels = render(width, height);
+            let mut rows = vec![1, 2, 3];
+            if rows_of {
+                rows.extend([height - 4, height - 3, height - 2]);
+            }
+            let (step, x, y) = worst_step(&pixels, width, height, &rows, false);
+            checked += 1;
+            if step > SEAM_LEVELS {
+                failures.push(format!(
+                    "{name} at {width}x{height}: a step of {step} levels at ({x},{y})"
+                ));
+            }
+            instance.hide().unwrap();
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+    assert!(checked >= 12 * 10, "only {checked} backdrops");
 }
 
 /// The tour after a scenario's own steps: around, further in, and out again.

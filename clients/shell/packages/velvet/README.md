@@ -114,6 +114,34 @@ shell, `VELVET_FRAMES` (below) through the test harness.
   row: Configured or Not configured, edited on the keyboard with its text
   hidden, with "Clear key".
 
+## The stage
+
+Nothing on the stage is blurred, live or not; the shell's renderer has no
+blur and the authoring gate forbids it. From the back:
+
+1. House down, the window's ground.
+2. The stage light (`VelvetLight`): two radial gradients in the focused
+   game's colour, a large pool up and to the right and a low dim one at the
+   left foot. Each is a square far larger than the window that fades to
+   nothing inside itself. A second light cross-fades in when the game
+   changes. The colour is the art's (`color` of the hero, else the poster),
+   else one of twelve gels by the title, at a brightness that keeps House
+   light at 4.5 to 1 on its core (`src/colour.ts`).
+3. The hero, when there is one: a band across the top in its own shape,
+   with a linear gradient that takes its foot into the dark; the detail
+   cuts it to fill instead.
+4. The vignette (`VelvetScrim`), one overlay the size of the window at
+   every size: a radial fall-off towards the corners, a linear gradient
+   from the foot, and on a wide window a linear gradient from the left
+   edge, where the words stand. A narrow window (480x800) has the first
+   two; its words stand under the picture.
+5. The house lights (a flat veil whose weight says how far the person is
+   from the game), and once, when Velvet opens, the lights coming up.
+
+`the_backdrop_has_no_seam` (`clients/shell/tests/velvet_package.rs`) holds
+every part to the window's edges: at twelve sizes, six of them odd, no
+backdrop pixel differs from its neighbour by more than four levels.
+
 ## Limits
 
 - **Pixels.** The shell keeps 24 MiB of decoded pixels for a surface. A
@@ -177,6 +205,13 @@ a pattern can see; `velvet_package.rs` holds the rest.
    its way to the screen can lose that one frame: the empty library and the
    overlay stayed black until a press. The house lights (`t-open`, 700 ms)
    and the overlay panel's arrival draw the first view more than once.
+10. A part with no `x` or `y` of its own stands in the middle of its parent.
+    The vignette's left-edge gradient (three fifths of the window wide) had
+    none, stood from a fifth of the width to four fifths, and left a seam
+    down every wide stage.
+11. A part that starts on a fraction of a pixel and runs past the window's
+    right edge leaves the window's last column undrawn. The stage's large
+    gradients stand on whole pixels.
 
 ## Asked of the shell
 
@@ -220,7 +255,8 @@ settings-problem ended`.
 
 `velvet_package.rs` draws every preview state at five sizes, plays every
 scenario at six and checks the focused target is all in sight after every
-press, holds a system's set to that system's games, and times the calls.
+press, holds the backdrop free of seams, holds a system's set to that
+system's games, and times the calls.
 `VELVET_FRAMES=DIR VELVET_SIZES=WxH,... VELVET_ONLY=a,b` writes scenarios'
 last frames; `VELVET_PREVIEW_OUT=DIR` writes every preview state.
 

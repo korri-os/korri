@@ -1,6 +1,9 @@
 // VelvetScrim: the light vignette over the stage, the one grade every
 // picture shares. Velvet at the left edge and the foot, where the words and
-// the row stand, and a soft corner fall-off. A static overlay.
+// the row stand, and a soft corner fall-off. A static overlay: three
+// gradients, each reaching every edge of the window it shades, at every
+// size (a narrow window has no left-edge part: its words stand under the
+// picture). clients/shell/tests/velvet_package.rs holds it free of seams.
 
 import { Tokens } from "../tokens.slint";
 
@@ -8,19 +11,26 @@ export component VelvetScrim inherits Rectangle {
     in property <bool> narrow;
     // The fall-off: clear around the subject, velvet towards the corners.
     Rectangle {
-        x: parent.width * (root.narrow ? 0.5 : 0.74) - self.width / 2;
-        y: parent.height * (root.narrow ? 0.18 : 0.26) - self.height / 2;
-        width: Math.max(parent.width, parent.height) * 2.4;
+        // On whole pixels (VelvetLight says why).
+        x: Math.round((parent.width * (root.narrow ? 0.5 : 0.74) - self.width / 2) / 1px) * 1px;
+        y: Math.round((parent.height * (root.narrow ? 0.18 : 0.26) - self.height / 2) / 1px) * 1px;
+        width: Math.round(Math.max(parent.width, parent.height) * 2.4 / 1px) * 1px;
         height: self.width;
         background: @radial-gradient(circle, Tokens.velvet-30 0%, Tokens.velvet-55 55%, Tokens.velvet-70 100%);
     }
+    // Velvet at the left edge, where the words stand. It starts at the edge: a part with no
+    // place of its own stands in the middle of its parent, and this one did, from a fifth of
+    // the width to four fifths, which left a seam down the stage.
     if !root.narrow: Rectangle {
-        width: parent.width * 0.6;
+        x: 0;
+        y: 0;
+        width: Math.round(parent.width * 0.6 / 1px) * 1px;
         height: parent.height;
         background: @linear-gradient(90deg, Tokens.velvet-55 0%, Tokens.clear 100%);
     }
     Rectangle {
-        y: parent.height * (root.narrow ? 0.4 : 0.45);
+        x: 0;
+        y: Math.round(parent.height * (root.narrow ? 0.4 : 0.45) / 1px) * 1px;
         width: parent.width;
         height: parent.height - self.y;
         background: @linear-gradient(180deg, Tokens.clear 0%, Tokens.velvet-62 100%);

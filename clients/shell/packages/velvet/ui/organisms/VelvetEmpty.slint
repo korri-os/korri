@@ -35,10 +35,11 @@ export component VelvetEmpty inherits Rectangle {
     property <length> block: title.block + (lines.length > 0 ? body * 1.1 + lines.length * body * 1.3 : 0px) + (buttons.length > 0 ? body * 1.4 + pills.block : 0px);
     property <length> top: wide || !empty.ghosts ? Math.max(pad-y * 2.4, (self.height - block) / 2) : Math.max(pad-y * 2.6, (ghosts-y - block) / 2);
     if root.empty.ghosts: Rectangle {
-        // The cone of warm light over the empty places.
-        x: root.ghosts-x + root.ghosts-w / 2 - self.width / 2;
-        y: -self.height * 0.5;
-        width: Math.max(root.width, root.height) * 0.9;
+        // The cone of warm light over the empty places. On whole pixels: a part that starts
+        // on a fraction of one and runs past the window's edge leaves its last column undrawn.
+        x: Math.round((root.ghosts-x + root.ghosts-w / 2 - self.width / 2) / 1px) * 1px;
+        y: Math.round(-self.height * 0.5 / 1px) * 1px;
+        width: Math.round(Math.max(root.width, root.height) * 0.9 / 1px) * 1px;
         height: self.width;
         background: @radial-gradient(circle, Tokens.cone 0%, Tokens.cone.with-alpha(0.05) 50%, Tokens.cone.with-alpha(0) 72%);
     }
